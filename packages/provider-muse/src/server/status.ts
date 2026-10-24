@@ -47,7 +47,7 @@ export const makePendingMuseProvider = Effect.fn("makePendingMuseProvider")(func
       auth: { status: "unknown" },
       message: settings.enabled
         ? "Checking Muse Code CLI availability..."
-        : "Muse Code is disabled in T3 Code settings.",
+        : "Muse Code is disabled in Loom settings.", // fork: brand
     },
   });
 });
@@ -92,8 +92,10 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
       status: "error",
       auth: { status: "unknown" },
       message: missing
-        ? "Muse Code CLI (`muse`) was not found. Install Muse Code and run `muse login` on this T3 server host."
-        : "Failed to execute Muse Code CLI. Check its binary path on this T3 server host.",
+        ? // fork: brand
+          "Muse Code CLI (`muse`) was not found. Install Muse Code and run `muse login` on this Loom server host."
+        : // fork: brand
+          "Failed to execute Muse Code CLI. Check its binary path on this Loom server host.",
     });
   }
   if (Option.isNone(versionResult.success)) {
@@ -129,7 +131,8 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
       status: "error",
       auth: { status: "unknown" },
       message:
-        "Muse Code SDK could not read the model catalog. Check your Muse installation and run `muse login` on this T3 server host.",
+        // fork: brand
+        "Muse Code SDK could not read the model catalog. Check your Muse installation and run `muse login` on this Loom server host.",
     });
   }
   const models = catalog.success.value;
@@ -145,7 +148,8 @@ export const checkMuseProviderStatus = Effect.fn("checkMuseProviderStatus")(func
         : {
             status: "warning",
             message:
-              "Muse Code returned no models. Run `muse login` on this T3 server host and refresh its status.",
+              // fork: brand
+              "Muse Code returned no models. Run `muse login` on this Loom server host and refresh its status.",
           }),
     },
     models,

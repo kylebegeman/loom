@@ -36,7 +36,7 @@ export const VaultCoreToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_store", {
     description:
-      "Store or replace a Vault item using a secretRef from request_secret. Never ask for or pass a raw secret in chat. Retain id and operationId for retries. expectedVersion:0 creates; replacement requires the current version. Requires a full-access/default T3 thread and a matching manage grant for the item ID.",
+      "Store or replace a Vault item using a secretRef from request_secret. Never ask for or pass a raw secret in chat. Retain id and operationId for retries. expectedVersion:0 creates; replacement requires the current version. Requires a full-access/default Loom thread and a matching manage grant for the item ID.",
     parameters: VaultPrivateSave,
     success: VaultItemSummary,
     failure,
@@ -83,7 +83,7 @@ export const vaultCoreHandlers = McpToolAccess.toLayer(
           if (caller.thread === undefined)
             return yield* new OrchestratorMcpFailure({
               code: "thread_credential_required",
-              message: "Private Vault input needs a T3 thread's secret request.",
+              message: "Private Vault input needs a Loom thread's secret request.",
             });
           const context = yield* Effect.context<Effect.Services<typeof check>>();
           const authorize = check.pipe(

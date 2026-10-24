@@ -159,7 +159,8 @@ export async function startDesktopAppControlServer(input: {
       activeRequestId = parsed.requestId;
       void input.handle(parsed).then(finish, () => {
         finish(
-          invalidResponse(parsed.requestId, "T3 Code could not process the desktop app request."),
+          // fork: brand
+          invalidResponse(parsed.requestId, "Loom could not process the desktop app request."),
         );
       });
     });

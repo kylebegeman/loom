@@ -29,22 +29,39 @@ vocabulary gives these grants a familiar meaning.
 
 ### Identity remains a host-local grant
 
+<!-- fork: identity-renewal -->
+
 [Identity verification](../../apps/server/src/auth/PocketId.ts) accepts only the issuer,
 audience, clients and immutable subjects enrolled through the host's trusted process
 configuration. The Library's issuer or directory never delegates access to another
 computer. Each execution host needs its own explicitly accepted API resource; reusing a
-Library audience silently widens the trust boundary. Sessions are bounded by both the
-accepted token's expiry and one hour, and changes to the enrolled policy invalidate
-previous sessions after restart. IdP account removal alone is not immediate host-session
-revocation; revoke the local session to close that window.
+Library audience silently widens the trust boundary. Sessions are bounded by the accepted
+token's expiry, one hour and, when the host sets `LOOM_IDENTITY_MAX_SESSION_AGE`, that age
+counted from the ID token's `auth_time`. Refreshes never move `auth_time`, so it is the only
+limit a refresh grant cannot extend. Native clients ask for `offline_access` only from a host
+that publishes this limit, and such a host refuses the `/oauth/token` exchange because it
+carries no ID token. There is no default limit, because it would lock out clients that predate
+the ID-token exchange. Changes to the enrolled policy invalidate previous sessions after
+restart; a policy key added later counts only when set, so upgrading keeps them. IdP account
+removal alone is not immediate host-session revocation. Revoking the local session closes that
+window: revocation follows renewal links, and the session endpoint refuses a renewal that
+presents a revoked session. A stolen refresh grant used without a session still mints one
+until it is ended at Pocket ID or its subject leaves the allowed list.
+
+<!-- fork: identity-renewal -->
 
 A hosted frontend receives a short-lived, single-use PKCE code through an exactly bound
 opener message, then redeems it at the selected host without cookies. The host's OIDC
 callback stays on the host, and the application handoff never puts credentials in URLs.
-Saved native/browser connections pin the environment and Identity account; renewal
-requires an interactive sign-in. T3 Connect's Clerk relay remains a separate adapter.
-Cookie logout requires the configured host origin and clears its HttpOnly session cookie;
-bearer logout and connection removal revoke only their current local sessions.
+Saved connections pin the environment and Identity account. Native clients hold one
+refresh grant per computer, because a Pocket ID refresh keeps its original audience, and
+renew before each session ends by presenting the current session; the host records the new
+session as its successor and open sockets carry over to it. A renewal may use any address of
+the saved connection, since the reply must name the same environment and account. Browsers
+never see IdP tokens and still sign in interactively. T3 Connect's Clerk relay remains a
+separate adapter. Cookie logout requires the configured host origin and clears its HttpOnly
+session cookie; bearer logout, like any revocation, ends every session in the renewal chain,
+and removing a connection also ends the device's grant at Pocket ID.
 
 ### MCP clients are a separate audience
 

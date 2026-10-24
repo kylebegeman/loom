@@ -1,4 +1,5 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { noProjectTargetEnvironmentId, noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork"; // fork: no-project-first
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
@@ -8,7 +9,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { useEnvironments } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments"; // fork: no-project-first
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -25,6 +26,7 @@ function reportScratchFailure(title: string, error: unknown) {
 
 export function useScratchProject() {
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId(); // fork: no-project-first
   const openScratch = useAtomCommand(projectEnvironment.openScratch, { reportFailure: false });
   const handleNewThread = useNewThreadHandler();
 
@@ -33,13 +35,15 @@ export function useScratchProject() {
     return availableScratchWorkspaceRoot(environment?.connection.phase, environment?.serverConfig);
   };
 
-  const scratchEnvironmentId = (current: EnvironmentId | null): EnvironmentId | null => {
-    if (current !== null) return scratchWorkspaceRootFor(current) !== null ? current : null;
-    const offering = environments.filter(
-      (entry) => scratchWorkspaceRootFor(entry.environmentId) !== null,
-    );
-    return offering.length === 1 ? (offering[0]?.environmentId ?? null) : null;
-  };
+  // fork: no-project-first: current, then primary, then the first by name that can run work.
+  // The Library advertises a scratch folder too, so it is never a target.
+  const scratchEnvironmentId = (current: EnvironmentId | null): EnvironmentId | null =>
+    noProjectTargetEnvironmentId({
+      environments: environments.toSorted((a, b) => a.label.localeCompare(b.label)),
+      canRun: (entry) =>
+        noProjectWorkspaceRoot(entry.connection.phase, entry.serverConfig) !== null,
+      preferred: [current, primaryEnvironmentId],
+    });
 
   const openScratchProject = async (
     environmentId: EnvironmentId,

@@ -7,10 +7,14 @@ import {
   ScheduledTaskId,
   type ScheduledTask,
 } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
+import { whileWriterHeld } from "./VaultReader.testkit.ts";
 import * as Outcomes from "./VaultScheduledOutcomes.ts";
 const layer = Layer.effect(Outcomes.VaultScheduledOutcomes, Outcomes.make).pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
@@ -118,4 +122,31 @@ it.effect("publishes outcome changes once and removes deleted task ownership", (
     expect(yield* outcomes.changed).toBe(true);
     expect((yield* sql`SELECT * FROM fork_vault_scheduled_runs`).length).toBe(0);
   }).pipe(Effect.provide(layer)),
+);
+
+// A file database, so the poll's readOnly read really goes to the reader worker.
+const fileLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "vault-outcomes-" });
+    return Layer.effect(Outcomes.VaultScheduledOutcomes, Outcomes.make).pipe(
+      Layer.provideMerge(SqlitePersistence.layerFromPath(path.join(directory, "statev2.sqlite"))),
+    );
+  }),
+).pipe(Layer.provideMerge(NodeServices.layer));
+it.effect("polls without the writer unless an orphan needs removing", () =>
+  Effect.gen(function* () {
+    const outcomes = yield* Outcomes.VaultScheduledOutcomes;
+    expect(yield* whileWriterHeld(outcomes.changed)).toBe(false);
+    const sql = yield* seed;
+    yield* sql`INSERT INTO scheduled_tasks (task_id, title, prompt, enabled, schedule_json, project_id, thread_id, workspace_strategy_json, model_selection_json, runtime_mode, interaction_mode, created_by, creation_source, created_at, updated_at, next_run_at, last_run_at, last_run_status, last_run_error, run_count)
+    VALUES (${task.id}, 'proof', 'not stored in ownership', 0, '{"type":"interval","everyMs":60000}', ${task.projectId}, NULL, '{"type":"root"}', '{"instanceId":"codex","model":"test"}', 'full-access', 'default', 'user', 'web', ${stamp}, ${stamp}, NULL, ${stamp}, 'succeeded', NULL, 1)`;
+    yield* outcomes.track(task, stamp, messageId, prompt);
+    expect(yield* whileWriterHeld(outcomes.changed)).toBe(true);
+    expect(yield* whileWriterHeld(outcomes.changed)).toBe(false);
+    yield* sql`DELETE FROM scheduled_tasks WHERE task_id = ${task.id}`;
+    expect(yield* outcomes.changed).toBe(true);
+    expect((yield* sql`SELECT * FROM fork_vault_scheduled_runs`).length).toBe(0);
+  }).pipe(Effect.provide(fileLayer)),
 );

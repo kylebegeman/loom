@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer"; // fork: server-weight
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
@@ -213,4 +214,99 @@ it.effect.each(["success", "compaction failure", "timestamp write failure"] as c
         assert.equal(saved, outcome === "success" ? startupTime + 3 * minute : Number(previous));
       }
     }).pipe(Effect.provide(testConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+// fork: server-weight
+const recordingTracer = () => {
+  const ended: Array<Tracer.Span> = [];
+  const tracer = Tracer.make({
+    span(options) {
+      const span = new Tracer.NativeSpan(options);
+      const end = span.end.bind(span);
+      span.end = (endTime, exit) => {
+        end(endTime, exit);
+        ended.push(span);
+      };
+      return span;
+    },
+  });
+  const queries = () =>
+    ended.flatMap((span) => {
+      const query = span.attributes.get("db.query.text");
+      return typeof query === "string" ? [query] : [];
+    });
+  return { tracer, ended, queries };
+};
+
+// fork: server-weight
+it.effect("traces one compaction span with its counts instead of a span per page", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    // Three pages of one thread's archive state; only the newest survives.
+    yield* sql`
+      WITH RECURSIVE history(n) AS (
+        SELECT 1 UNION ALL SELECT n + 1 FROM history WHERE n < 120
+      )
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type,
+        occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+      )
+      SELECT 'archived:' || n, 'thread', 'thread:archived', n, 'thread.archived',
+        '2026-10-24T00:00:00.000Z', 'server', '{}', '{}', 2
+      FROM history
+    `;
+    const recorder = recordingTracer();
+    const result = yield* maintenance.compactEventStore.pipe(Effect.withTracer(recorder.tracer));
+
+    assert.equal(result.deletedEventCount, 119);
+    assert.deepEqual(yield* sql`SELECT event_id FROM orchestration_events`, [
+      { event_id: "archived:120" },
+    ]);
+    const passes = recorder.ended.filter(
+      (span) => span.name === "ProjectionMaintenanceV2.compactEventStore",
+    );
+    assert.equal(passes.length, 1);
+    assert.deepInclude(Object.fromEntries(passes[0]!.attributes), {
+      "orchestration_v2.compaction.scanned_event_count": 120,
+      "orchestration_v2.compaction.deleted_event_count": 119,
+      "orchestration_v2.compaction.scanned_receipt_count": 0,
+      "orchestration_v2.compaction.deleted_receipt_count": 0,
+    });
+    assert.isFalse(
+      recorder
+        .queries()
+        .some((query) =>
+          /ORDER BY event\.sequence DESC|DELETE FROM orchestration_events/.test(query),
+        ),
+    );
+  }).pipe(
+    Effect.provide(
+      ProjectionMaintenance.layer.pipe(
+        Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
+        Layer.provideMerge(Sqlite.layerMemory),
+      ),
+    ),
+  ),
+);
+
+// fork: server-weight
+it.effect("traces one reclaim span with its page count instead of a span per page", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const storage = yield* DatabaseStorage.DatabaseStorage;
+    yield* sql`CREATE TABLE discarded (value BLOB)`;
+    yield* sql`INSERT INTO discarded VALUES (zeroblob(1048576))`;
+    yield* sql`DROP TABLE discarded`;
+    const free = yield* freePages;
+    assert.isAbove(free, 0);
+    const recorder = recordingTracer();
+    yield* storage.reclaim.pipe(Effect.withTracer(recorder.tracer));
+
+    assert.equal(yield* freePages, 0);
+    const passes = recorder.ended.filter((span) => span.name === "DatabaseStorage.reclaim");
+    assert.equal(passes.length, 1);
+    assert.equal(passes[0]!.attributes.get("db.reclaimed_pages"), free);
+    assert.isFalse(recorder.queries().some((query) => query.includes("freelist_count")));
+  }).pipe(Effect.provide(storageLayer(testConfig))),
 );

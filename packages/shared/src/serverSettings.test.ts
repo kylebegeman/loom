@@ -73,7 +73,7 @@ describe("serverSettings helpers", () => {
       projectAfterDays: null,
       projectOnSettle: false,
       scratchAfterDays: null,
-      browserArtifactsAfterDays: null,
+      browserArtifactsAfterDays: 14, // fork: retention-defaults
       logsAfterDays: 30,
     });
   });

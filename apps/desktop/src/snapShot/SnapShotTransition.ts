@@ -114,7 +114,7 @@ function createWindow(
     resizable: false,
     show: false,
     skipTaskbar: true,
-    title: "T3 Code Snapshot Animation",
+    title: "Loom Snapshot Animation", // fork: brand
     transparent: true,
     webPreferences: {
       backgroundThrottling: false,

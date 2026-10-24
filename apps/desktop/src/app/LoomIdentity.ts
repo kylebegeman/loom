@@ -15,7 +15,9 @@ import {
   type LoomDesktopSignInRequest,
   LoomIdentitySessionResult,
   LOOM_IDENTITY_SESSION_PATH,
+  LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
+import { type IdentityGrant, identitySignInMaxAge } from "@t3tools/shared/fork/identity-grant";
 
 const decodeMetadata = Schema.decodeUnknownSync(LoomIdentityMetadata);
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
@@ -26,6 +28,7 @@ const decodeDiscovery = Schema.decodeUnknownSync(
     authorization_endpoint: Schema.String,
     token_endpoint: Schema.String,
     jwks_uri: Schema.String,
+    end_session_endpoint: Schema.optional(Schema.String),
   }),
 );
 const decodeTokens = Schema.decodeUnknownSync(
@@ -33,8 +36,11 @@ const decodeTokens = Schema.decodeUnknownSync(
     access_token: Schema.String,
     id_token: Schema.String,
     token_type: Schema.String,
+    // Optional so a provider that withholds it still signs in, only without renewal.
+    refresh_token: Schema.optional(Schema.String),
   }),
 );
+const OFFLINE_ACCESS_SCOPE = "offline_access";
 const SIGN_IN_TIMEOUT_MS = 300_000;
 const HTTP_TIMEOUT_MS = 15_000;
 const activeSignIns = new Map<string, AbortController>();
@@ -70,21 +76,33 @@ export function loomNativeAuthorization(input: {
   verifier: string;
   scopes: readonly string[];
   resource?: string;
+  /** The computer's published sign-in age limit. */
+  maxSessionAgeSeconds?: number;
 }) {
   const url = new URL(input.authorizationEndpoint);
   url.search = "";
+  // Only a computer that caps sign-in age makes a refresh grant end, so only there does this
+  // device ask for one; the metadata's scope list never adds it.
+  const renewable = input.maxSessionAgeSeconds !== undefined;
   const parameters = {
     client_id: input.clientId,
     response_type: "code",
     redirect_uri: input.redirectUri,
     scope: [
-      ...new Set(["openid", ...input.scopes.filter((scope) => scope !== "offline_access")]),
+      ...new Set([
+        "openid",
+        ...input.scopes.filter((scope) => scope !== OFFLINE_ACCESS_SCOPE),
+        ...(renewable ? [OFFLINE_ACCESS_SCOPE] : []),
+      ]),
     ].join(" "),
     state: input.state,
     nonce: input.nonce,
     code_challenge: NodeCrypto.createHash("sha256").update(input.verifier).digest("base64url"),
     code_challenge_method: "S256",
     ...(input.resource ? { resource: input.resource } : {}),
+    ...(input.maxSessionAgeSeconds === undefined
+      ? {}
+      : { max_age: identitySignInMaxAge(input.maxSessionAgeSeconds) }),
   };
   for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
   return url.href;
@@ -141,21 +159,41 @@ export async function verifyLoomIdToken(
   return verified.payload.sub;
 }
 
+class LoomRequestRejected extends Error {
+  readonly code: string | undefined;
+  constructor(code: string | undefined) {
+    super(
+      "The Loom sign-in service rejected the request. Check the computer address and account access, then try again.",
+    );
+    this.code = code;
+  }
+}
+
 async function jsonRequest(url: string, init: RequestInit, signal: AbortSignal) {
   const response = await fetch(url, {
     ...init,
     redirect: "error",
     signal: AbortSignal.any([signal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
   });
-  if (!response.ok)
-    throw new Error(
-      "The Loom sign-in service rejected the request. Check the computer address and account access, then try again.",
-    );
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const code =
+      typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+        ? body.error
+        : undefined;
+    throw new LoomRequestRejected(code);
+  }
   return response.json() as Promise<unknown>;
 }
 
 export function cancelLoomSignIn(httpBaseUrl: string) {
   activeSignIns.get(loomHostOrigin(httpBaseUrl))?.abort();
+}
+
+export interface LoomSignIn {
+  readonly session: LoomDesktopSignInResult;
+  /** Main process only. Null when the provider issued no refresh token or the computer cannot renew. */
+  readonly grant: IdentityGrant | null;
 }
 
 /** Credentials stay in the main process until the host verifies the account and issues its own session. */
@@ -164,7 +202,7 @@ export async function signInToLoom(
   openBrowser: (url: string) => Promise<boolean>,
   signal?: AbortSignal,
   expected?: Pick<LoomDesktopSignInRequest, "expectedEnvironmentId" | "expectedIdentity">,
-): Promise<LoomDesktopSignInResult> {
+): Promise<LoomSignIn> {
   const origin = loomHostOrigin(httpBaseUrl);
   if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this computer.");
   const abort = new AbortController();
@@ -276,6 +314,9 @@ export async function signInToLoom(
         verifier,
         scopes: metadata.scopes,
         ...(metadata.resource ? { resource: metadata.resource } : {}),
+        ...(metadata.maxSessionAgeSeconds === undefined
+          ? {}
+          : { maxSessionAgeSeconds: metadata.maxSessionAgeSeconds }),
       });
       if (!(await openBrowser(authorizationUrl)))
         throw new Error("Could not open the sign-in browser.");
@@ -345,6 +386,7 @@ export async function signInToLoom(
                   body: JSON.stringify({
                     type: "native",
                     accessToken: tokens.access_token,
+                    idToken: tokens.id_token,
                     environmentId: metadata.environmentId,
                     ...(expected?.expectedIdentity
                       ? { expectedIdentity: expected.expectedIdentity }
@@ -372,7 +414,14 @@ export async function signInToLoom(
                 abort.signal,
               ),
             );
-      } catch {
+      } catch (error) {
+        // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
+        if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
+          throw new Error(
+            "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.",
+            { cause: error },
+          );
+        // oxlint-disable-next-line preserve-caught-error -- A failed session decode can quote the issued token.
         throw new Error(
           "This Loom account is not authorized for this computer, or its session could not be issued.",
         );
@@ -390,15 +439,42 @@ export async function signInToLoom(
       }
       if (session.token_type !== "Bearer" || session.expires_in <= 0)
         throw new Error("The computer returned an unsupported desktop session type.");
+      const signedInAt = Date.now();
       return {
-        httpBaseUrl: origin,
-        environmentId: metadata.environmentId,
-        accessToken: session.access_token,
-        identity: { issuer: metadata.issuer, subject },
-        expiresAt: Math.min(
-          Date.now() + Math.min(session.expires_in, 3600) * 1000,
-          (accessClaims.exp ?? 0) * 1000,
-        ),
+        session: {
+          httpBaseUrl: origin,
+          environmentId: metadata.environmentId,
+          accessToken: session.access_token,
+          identity: { issuer: metadata.issuer, subject },
+          expiresAt: Math.min(
+            signedInAt + Math.min(session.expires_in, 3600) * 1000,
+            (accessClaims.exp ?? 0) * 1000,
+          ),
+        },
+        // Renewal exchanges at the native session endpoint, which older computers lack, and only a
+        // computer that caps sign-in age bounds the grant.
+        grant:
+          tokens.refresh_token &&
+          metadata.sessionExchangeEnabled &&
+          metadata.maxSessionAgeSeconds !== undefined
+            ? {
+                version: 1,
+                issuer: metadata.issuer,
+                subject,
+                environmentId: metadata.environmentId,
+                httpBaseUrl: origin,
+                clientId: metadata.nativeClientId,
+                tokenEndpoint: discovery.token_endpoint,
+                ...(discovery.end_session_endpoint
+                  ? { endSessionEndpoint: discovery.end_session_endpoint }
+                  : {}),
+                ...(metadata.resource ? { resource: metadata.resource } : {}),
+                refreshToken: tokens.refresh_token,
+                idToken: tokens.id_token,
+                grantedAt: signedInAt,
+                updatedAt: signedInAt,
+              }
+            : null,
       };
     } finally {
       abort.signal.removeEventListener("abort", cancelled);

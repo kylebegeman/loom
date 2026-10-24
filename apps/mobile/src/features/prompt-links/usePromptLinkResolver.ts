@@ -1,6 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork"; // fork: no-project-first
 import {
   findPromptLinkProject,
   findPromptLinkPullRequestThread,
@@ -152,8 +152,9 @@ export function usePromptLinkResolver(params: Readonly<Record<string, unknown>> 
       latestThreadEnvironmentIds(threads),
       connectedEnvironments
         .filter(
+          // fork: no-project-first - A Library advertises a scratch folder but cannot run work.
           (environment) =>
-            availableScratchWorkspaceRoot(
+            noProjectWorkspaceRoot(
               environment.connectionState,
               serverConfigs.get(environment.environmentId),
             ) !== null,

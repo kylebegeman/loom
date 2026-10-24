@@ -878,7 +878,7 @@ function RunPipelineOverlay({
         <LibraryNotice icon={WorkflowIcon}>
           {host.pipelinesSupported
             ? "It was deleted, or the link names a pipeline this computer never had."
-            : "Update T3 Code on that computer to chain bots into pipelines."}
+            : "Update Loom on that computer to chain bots into pipelines."}
         </LibraryNotice>
       )}
     </LibraryDialog>

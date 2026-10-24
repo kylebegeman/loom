@@ -74,6 +74,8 @@ import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
 import { runDesktopCommitWithReconnectObserver } from "../state/server.ts";
 import { v2ShellSnapshot } from "../state/orchestrationV2TestFixtures.ts";
+// fork: identity-renewal
+import { IdentityRenewal, type IdentityRenewalRequest } from "../fork/identity-renewal.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -502,6 +504,16 @@ function routesOf(targets: ReadonlyArray<ConnectionTarget>, environmentId: Envir
 
 function hasRoutes(targets: ReadonlyArray<ConnectionTarget>, environmentId: EnvironmentId) {
   return routesOf(targets, environmentId).length > 0;
+}
+
+// fork: identity-renewal
+function recordingIdentityRenewal(
+  forgotten: Array<Omit<IdentityRenewalRequest, "currentToken">>,
+): Context.Service.Shape<typeof IdentityRenewal> {
+  return {
+    renew: () => Effect.die("unused"),
+    forget: (request) => Effect.sync(() => void forgotten.push(request)),
+  };
 }
 
 function replaceRoutes(
@@ -1617,6 +1629,46 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  // fork: identity-renewal
+  it.effect("a renewed saved credential reaches the connected session without reconnecting", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const replaceCredential = registry.replaceCredential!;
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        const renewed = new BearerConnectionCredential({ token: "renewed-bearer" });
+
+        yield* replaceCredential(BEARER_TARGET.connectionId, renewed);
+        // A connection removed while its renewal was in flight is not saved again.
+        yield* replaceCredential("removed-connection", renewed);
+
+        const prepared = yield* registry.run(
+          BEARER_TARGET.environmentId,
+          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+            Effect.flatMap((supervisor) => SubscriptionRef.get(supervisor.prepared)),
+          ),
+        );
+        expect(Option.getOrThrow(prepared).httpAuthorization).toMatchObject({
+          token: "renewed-bearer",
+        });
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+        const stored = yield* Ref.get(harness.storedCredentials);
+        expect(stored.get(BEARER_TARGET.connectionId)).toEqual(renewed);
+        expect(stored.has("removed-connection")).toBe(false);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("a bearer replaced while an attempt is in flight retries with the new one", () =>
     Effect.gen(function* () {
       const attemptStarted = yield* Deferred.make<void>();
@@ -2669,9 +2721,11 @@ describe("EnvironmentRegistry routes", () => {
       }).pipe(Effect.provide(harness.layer));
     }).pipe(Effect.scoped),
   );
-  it.effect("keeps a saved Identity connection when its host cannot confirm logout", () =>
+  // fork: identity-renewal
+  it.effect("removes Identity access and its grant when its host cannot confirm logout", () =>
     Effect.gen(function* () {
       const identity = { issuer: "https://identity.test", subject: "owner" };
+      const forgotten: Array<Omit<IdentityRenewalRequest, "currentToken">> = [];
       const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
       const credential = new BearerConnectionCredential({
         token: "identity-token",
@@ -2689,18 +2743,29 @@ describe("EnvironmentRegistry routes", () => {
       );
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        expect((yield* Effect.result(registry.remove(BEARER_TARGET.environmentId)))._tag).toBe(
-          "Failure",
-        );
+        yield* registry.remove(BEARER_TARGET.environmentId);
+        expect(harness.identityRevocations).toHaveLength(1);
         expect(hasRoutes(yield* Ref.get(harness.storedTargets), BEARER_TARGET.environmentId)).toBe(
-          true,
+          false,
         );
-      }).pipe(Effect.provide(harness.layer));
+        expect(forgotten).toEqual([
+          {
+            httpBaseUrl: BEARER_PROFILE.httpBaseUrl,
+            environmentId: BEARER_TARGET.environmentId,
+            identity,
+          },
+        ]);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(IdentityRenewal, recordingIdentityRenewal(forgotten)),
+      );
     }).pipe(Effect.scoped),
   );
+  // fork: identity-renewal
   it.effect("forgets expired Identity access without requiring a reachable host", () =>
     Effect.gen(function* () {
       const identity = { issuer: "https://identity.test", subject: "owner" };
+      const forgotten: Array<Omit<IdentityRenewalRequest, "currentToken">> = [];
       const profile = new BearerConnectionProfile({ ...BEARER_PROFILE, identity });
       const credential = new BearerConnectionCredential({
         token: "identity-token",
@@ -2719,7 +2784,12 @@ describe("EnvironmentRegistry routes", () => {
       yield* Effect.gen(function* () {
         yield* (yield* EnvironmentRegistry.EnvironmentRegistry).remove(BEARER_TARGET.environmentId);
         expect(harness.identityRevocations).toEqual([]);
-      }).pipe(Effect.provide(harness.layer));
+        // The refresh grant outlives the hour-long session, so it is forgotten either way.
+        expect(forgotten.map((request) => request.identity)).toEqual([identity]);
+      }).pipe(
+        Effect.provide(harness.layer),
+        Effect.provideService(IdentityRenewal, recordingIdentityRenewal(forgotten)),
+      );
     }).pipe(Effect.scoped),
   );
 });

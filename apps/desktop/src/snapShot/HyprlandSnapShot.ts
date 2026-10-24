@@ -96,7 +96,8 @@ export class HyprlandCaptureSetup {
       const bundle = await regularFile(this.paths.bundle);
       if (!bundle)
         throw new Error(
-          "The Hyprland capture helper is missing from this build. Update or reinstall T3 Code.",
+          // fork: brand
+          "The Hyprland capture helper is missing from this build. Update or reinstall Loom.",
         );
       if (!installed.equals(bundle))
         return {

@@ -137,6 +137,23 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  // fork: retention-defaults
+  it.effect("keeps browser artifact cleanup off across a reload once the user turns it off", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      assert.equal((yield* service.getSettings).storageCleanup.browserArtifactsAfterDays, 14);
+      yield* service.updateSettings(
+        yield* decodeSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: null } }),
+      );
+      const persisted = yield* decodeServerSettingsJson(
+        yield* fs.readFileString(config.settingsPath),
+      );
+      assert.equal(persisted.storageCleanup.browserArtifactsAfterDays, null);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

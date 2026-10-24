@@ -456,6 +456,78 @@ describe("Codex usage history", () => {
   );
 });
 
+// fork: retention-defaults
+describe("legacy usage scan caches", () => {
+  it.live("deletes week-old legacy caches once per process, after a save succeeds", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+      yield* Effect.gen(function* () {
+        const { stateDir } = yield* ServerConfig.ServerConfig;
+        const cachePath = NodePath.join(stateDir, SCAN_CACHE_FILE_NAME);
+        const v6 = NodePath.join(stateDir, "usage-scan-cache-v6.json");
+        const v5 = NodePath.join(stateDir, "usage-scan-cache-v5.json");
+        const v4 = NodePath.join(stateDir, "usage-scan-cache.json");
+        const writeLegacy = (file: string, ageDays: number) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((nowMs) =>
+              Effect.promise(async () => {
+                await NodeFSP.writeFile(file, "{}");
+                const seconds = nowMs / 1000 - ageDays * 24 * 60 * 60;
+                await NodeFSP.utimes(file, seconds, seconds);
+              }),
+            ),
+          );
+        const present = Effect.promise(() =>
+          Promise.all(
+            [v6, v5, v4].map((file) =>
+              NodeFSP.access(file).then(
+                () => true,
+                () => false,
+              ),
+            ),
+          ),
+        );
+        const readCache = Effect.promise(() => NodeFSP.readFile(cachePath, "utf8"));
+
+        yield* Effect.promise(() => NodeFSP.mkdir(stateDir, { recursive: true }));
+        yield* writeLegacy(v6, 8);
+        yield* writeLegacy(v5, 1);
+        yield* writeLegacy(v4, 30);
+        // A folder where the cache file belongs makes the save fail.
+        const blocker = NodePath.join(cachePath, "blocker");
+        yield* Effect.promise(() => NodeFSP.mkdir(blocker, { recursive: true }));
+        const service = yield* UsageService.make;
+        yield* service.readSummary(WINDOW);
+        yield* service.awaitPersisted;
+        assert.deepStrictEqual(yield* present, [true, true, true]);
+
+        yield* Effect.promise(() => NodeFSP.rm(cachePath, { recursive: true }));
+        yield* service.readSummary(WINDOW);
+        yield* service.awaitPersisted;
+        assert.include(yield* readCache, transcript);
+        assert.deepStrictEqual(yield* present, [false, true, false]);
+
+        yield* writeLegacy(v6, 8);
+        const savedBefore = yield* readCache;
+        yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(2, 7)));
+        assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 12);
+        yield* service.awaitPersisted;
+        assert.notStrictEqual(yield* readCache, savedBefore);
+        assert.deepStrictEqual(yield* present, [true, true, false]);
+
+        const restarted = yield* UsageService.make;
+        yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(3, 1)));
+        assert.strictEqual(totalOutputTokens(yield* restarted.readSummary(WINDOW)), 13);
+        yield* restarted.awaitPersisted;
+        assert.deepStrictEqual(yield* present, [false, true, false]);
+      }).pipe(
+        Effect.provide(layerService({ prefix: "usage-service-legacy-cache-test", home, settings })),
+      );
+    }).pipe(Effect.scoped),
+  );
+});
+
 describe("UsageService", () => {
   it.live(
     "repairs initial Codex prices after unchanged-file retries, persists evidence and corrections, and honors later native tiers",

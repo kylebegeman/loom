@@ -1,11 +1,16 @@
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 
-import type { SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
+import type { SidebarProjectGroupMember } from "~/sidebarProjectGrouping"; // fork: no-project-first
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 export function ProjectEnvironmentBadge(props: {
-  readonly group: Pick<SidebarProjectSnapshot, "memberProjects">;
+  // fork: no-project-first: No project rows describe one computer without a project group.
+  readonly group: {
+    readonly memberProjects: ReadonlyArray<
+      Pick<SidebarProjectGroupMember, "environmentId" | "environmentLabel">
+    >;
+  };
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly machineByEnvironmentId: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
 }) {

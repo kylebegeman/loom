@@ -45,6 +45,11 @@ export class SshAgentTerminal extends Context.Service<
 >()("t3/fork/vault/SshAgentTerminal") {}
 const isRun = Schema.is(VaultSshAgentRunInput);
 const failed = () => new SshAgentTerminalError({ reason: "failed" });
+// Bounds how long a child may leave its agent connection silent. Each frame waits on the Loom
+// server's live Vault authorization, and on other sockets' frames ahead of it, so the timer is
+// paused while a socket has a frame queued or being relayed. The client request timeout and the
+// activation lifetime still bound that wait.
+const AGENT_IDLE_MS = 15_000;
 const make = Effect.gen(function* () {
   const client = yield* SshAgentClient.SshAgentClient,
     platform = yield* HostProcess.Platform,
@@ -114,6 +119,7 @@ const make = Effect.gen(function* () {
         channelId: string;
         sequence: number;
         frame: Buffer;
+        settle: () => void;
       }>(8);
       const denied = yield* Deferred.make<never, Failure>();
       const sockets = new Set<NodeNet.Socket>();
@@ -127,9 +133,14 @@ const make = Effect.gen(function* () {
             }
             const channelId = NodeCrypto.randomBytes(16).toString("hex");
             let buffer = Buffer.alloc(0),
-              sequence = 0;
+              sequence = 0,
+              inFlight = 0;
+            const settle = () => {
+              if (--inFlight === 0 && !socket.destroyed) socket.setTimeout(AGENT_IDLE_MS);
+            };
             sockets.add(socket);
-            socket.setTimeout(15_000, () => socket.destroy());
+            socket.setTimeout(AGENT_IDLE_MS);
+            socket.on("timeout", () => socket.destroy());
             socket.on("error", () => socket.destroy());
             socket.on("close", () => sockets.delete(socket));
             socket.on("data", (chunk: Buffer) => {
@@ -147,7 +158,16 @@ const make = Effect.gen(function* () {
                 if (buffer.length < size + 4) break;
                 const frame = buffer.subarray(4, size + 4);
                 buffer = buffer.subarray(size + 4);
-                if (!Queue.offerUnsafe(queue, { socket, frame, channelId, sequence: sequence++ })) {
+                if (inFlight++ === 0) socket.setTimeout(0);
+                if (
+                  !Queue.offerUnsafe(queue, {
+                    socket,
+                    frame,
+                    channelId,
+                    sequence: sequence++,
+                    settle,
+                  })
+                ) {
                   socket.destroy();
                   return;
                 }
@@ -177,25 +197,27 @@ const make = Effect.gen(function* () {
       yield* Effect.tryPromise({ try: () => NodeFSP.chmod(socketPath, 0o600), catch: failed });
       yield* Effect.gen(function* () {
         const request = yield* Queue.take(queue);
-        if (request.socket.destroyed) return;
-        const result = yield* client.frame({
-          sessionId: session.sessionId,
-          channelId: request.channelId,
-          sequence: request.sequence,
-          frame: request.frame.toString("base64"),
-        });
-        const response = Buffer.from(result.response, "base64");
-        if (
-          !response.length ||
-          response.length > 16_384 ||
-          response.toString("base64") !== result.response
-        )
-          return yield* failed();
-        if (!request.socket.destroyed) {
-          const length = Buffer.alloc(4);
-          length.writeUInt32BE(response.length);
-          request.socket.write(Buffer.concat([length, response]));
-        }
+        yield* Effect.gen(function* () {
+          if (request.socket.destroyed) return;
+          const result = yield* client.frame({
+            sessionId: session.sessionId,
+            channelId: request.channelId,
+            sequence: request.sequence,
+            frame: request.frame.toString("base64"),
+          });
+          const response = Buffer.from(result.response, "base64");
+          if (
+            !response.length ||
+            response.length > 16_384 ||
+            response.toString("base64") !== result.response
+          )
+            return yield* failed();
+          if (!request.socket.destroyed) {
+            const length = Buffer.alloc(4);
+            length.writeUInt32BE(response.length);
+            request.socket.write(Buffer.concat([length, response]));
+          }
+        }).pipe(Effect.ensuring(Effect.sync(request.settle)));
       }).pipe(
         Effect.catch((e) => Deferred.fail(denied, e).pipe(Effect.asVoid)),
         Effect.forever,

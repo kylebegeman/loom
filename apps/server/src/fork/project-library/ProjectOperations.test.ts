@@ -163,6 +163,7 @@ const fixture = Effect.gen(function* () {
       publishAttachments: () =>
         Ref.get(revokeAtAttachments).pipe(
           Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
+          Effect.as(new Set<string>()),
         ),
       ingest: () =>
         Effect.gen(function* () {

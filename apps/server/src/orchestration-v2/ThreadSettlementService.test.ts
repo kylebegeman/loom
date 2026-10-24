@@ -614,6 +614,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const snapshotReads = yield* Queue.unbounded<number>();
   const candidateReads = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
   const settings = yield* Ref.make(options.settings ?? DEFAULT_SERVER_SETTINGS);
+  const settingsReads = yield* Ref.make(0); // fork: server-weight
   const settingsChanges = yield* PubSub.unbounded<ContractServerSettings>();
   const mergedPullRequests = yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
   const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
@@ -680,7 +681,10 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const serverSettings = ServerSettings.ServerSettingsService.of({
     start: Effect.void,
     ready: Effect.void,
-    getSettings: Ref.get(settings),
+    // fork: server-weight
+    getSettings: Ref.update(settingsReads, (count) => count + 1).pipe(
+      Effect.andThen(Ref.get(settings)),
+    ),
     updateSettings,
     updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
     withSettingsSnapshot: (use) => Ref.get(settings).pipe(Effect.flatMap(use)),
@@ -765,6 +769,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     snapshotReadCount,
     snapshotReads,
     candidateReads,
+    settingsReads, // fork: server-weight
     commands,
     branchCalls,
     summaryCalls,
@@ -1200,6 +1205,94 @@ describe("ThreadSettlementServiceV2 worker", () => {
       }),
     ),
   );
+
+  // fork: server-weight
+  it.effect("reads settings once for every thread a sweep decides", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("first-branch", { branch: "first" }),
+            makeThread("second-branch", { branch: "second" }),
+            makeThread("no-branch"),
+          ]),
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: 30 },
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* Ref.set(fixture.settingsReads, 0);
+          yield* fixture.updateSettings({ sidebarAutoSettleAfterDays: 29 });
+          yield* Queue.take(fixture.snapshotReads);
+          yield* service.drain;
+
+          expect(yield* Ref.get(fixture.settingsReads)).toBe(1);
+          expect(yield* Ref.get(fixture.branchCalls)).toHaveLength(4);
+          expect(yield* Ref.get(fixture.commands)).toEqual([]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  // fork: server-weight
+  it.effect("decides with settings changed while a sweep waits on a lookup", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const lookups = yield* Ref.make(0);
+        const mergeLookupStarted = yield* Deferred.make<void>();
+        const releaseMergeLookup = yield* Deferred.make<void>();
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("branch-thread", {
+              branch: "saved-feature",
+              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+            }),
+          ]),
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: null,
+            sidebarAutoSettleOnMerge: true,
+          },
+          branchPullRequest: () =>
+            Ref.updateAndGet(lookups, (count) => count + 1).pipe(
+              Effect.flatMap((count) =>
+                count === 2
+                  ? Deferred.succeed(mergeLookupStarted, undefined).pipe(
+                      Effect.andThen(Deferred.await(releaseMergeLookup)),
+                      Effect.as(makeBranchPullRequest("merged")),
+                    )
+                  : Effect.succeed(makeBranchPullRequest("open")),
+              ),
+            ),
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishMerge;
+          yield* Deferred.await(mergeLookupStarted);
+          yield* Queue.take(fixture.snapshotReads);
+
+          // The worker's sweep for this change starts only after the change was observed.
+          yield* fixture.updateSettings({
+            sidebarAutoSettleOnMerge: false,
+            sidebarAutoSettleAfterDays: 30,
+          });
+          yield* Queue.take(fixture.snapshotReads);
+          yield* Deferred.succeed(releaseMergeLookup, undefined);
+          // Merge sweeps run in order, so the next one starting means the held one finished.
+          yield* fixture.publishMerge;
+          yield* Queue.take(fixture.snapshotReads);
+          yield* service.drain;
+
+          expect(yield* Ref.get(fixture.commands)).toEqual([]);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
 });
 
 describe("ThreadSettlementServiceV2 terminals", () => {
@@ -1403,6 +1496,62 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           expect(yield* service.prepareForCleanup(thread.id)).toBe(true);
           expect(yield* service.prepareForCleanup(thread.id)).toBe(true);
           expect(yield* Queue.size(fixture.scriptRuns)).toBe(2);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  // fork: server-weight
+  it.effect("requests a storage sweep only once a settled thread is done with its worktree", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const requests = yield* Ref.make(0);
+        const reopened = appThread("reopened-thread", "active", "/worktrees/reopened");
+        const shared = appThread("shared-checkout-thread", "settled");
+        const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
+        const kept = appThread("kept-worktree-thread", "settled", "/worktrees/kept");
+        const failed = appThread("failed-settle-thread", "settled", "/worktrees/failed");
+        const finished = appThread("finished-thread", "settled", "/worktrees/finished");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([makeThread("kept-holder", { worktreePath: "/worktrees/kept" })]),
+          currentThreads: [reopened, shared, missing, kept, failed, finished],
+          existingWorktreePaths: [
+            "/worktrees/reopened",
+            "/worktrees/kept",
+            "/worktrees/failed",
+            "/worktrees/finished",
+          ],
+          onCleanupRequested: Ref.update(requests, (count) => count + 1),
+          scriptResult: (input) =>
+            input.threadId === failed.id
+              ? {
+                  status: "started",
+                  scriptId: "settle",
+                  scriptName: "Settle",
+                  scriptCommand: "cleanup",
+                  terminalId: "settle-terminal",
+                  cwd: "/worktrees/failed",
+                  async: true,
+                  completion: Effect.succeed({ exitCode: 1, durationMs: 1 }),
+                }
+              : { status: "no-script" },
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          const probe = (threadId: ThreadId) =>
+            Effect.gen(function* () {
+              const before = yield* Ref.get(requests);
+              const ready = yield* service.prepareForCleanup(threadId);
+              return { ready, sweeps: (yield* Ref.get(requests)) - before };
+            });
+          expect(yield* probe(reopened.id)).toEqual({ ready: true, sweeps: 0 });
+          expect(yield* probe(shared.id)).toEqual({ ready: true, sweeps: 0 });
+          expect(yield* probe(failed.id)).toEqual({ ready: false, sweeps: 0 });
+          // Storage cleanup ignores a settlement that names a worktree, so these ask themselves.
+          expect(yield* probe(missing.id)).toEqual({ ready: true, sweeps: 1 });
+          expect(yield* probe(kept.id)).toEqual({ ready: true, sweeps: 1 });
+          expect(yield* probe(finished.id)).toEqual({ ready: true, sweeps: 1 });
+          expect(yield* probe(finished.id)).toEqual({ ready: true, sweeps: 0 });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

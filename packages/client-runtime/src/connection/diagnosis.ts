@@ -85,7 +85,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "offline":
       return "This device is offline";
     case "outdated":
-      return `${host} runs an older T3 Code`;
+      return `${host} runs an older version of Loom`; // fork: brand
     case "clock_skew":
       return "This device's clock is off";
     case "not_linked":
@@ -100,9 +100,9 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "tunnel_down":
       return `${host}'s tunnel is offline`;
     case "origin_unreachable":
-      return `Tunnel works, but T3 Code on ${host} did not answer`;
+      return `Tunnel works, but Loom on ${host} did not answer`; // fork: brand
     case "invalid_response":
-      return `T3 Code on ${host} sent an unexpected answer`;
+      return `Loom on ${host} sent an unexpected answer`; // fork: brand
     case "dns":
       return `${host}'s tunnel address did not resolve`;
     case "tls":
@@ -131,8 +131,8 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
         : `T3 Connect could not reach ${host}'s tunnel`;
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
-        ? `T3 Code on ${host} did not accept this device`
-        : `T3 Code on ${host} did not answer`;
+        ? `${host} did not accept this device` // fork: brand
+        : `${host} did not answer`; // fork: brand
   }
 }
 
@@ -140,9 +140,10 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   const checkHost = `On ${host}, check Settings > Connections or run \`t3 connect status\`.`;
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the internet. T3 Code reconnects on its own."];
+      // fork: brand
+      return ["Connect this device to the internet. Loom reconnects on its own."];
     case "outdated":
-      return [`Update T3 Code on ${host}.`];
+      return [`Update Loom on ${host}.`]; // fork: brand
     case "clock_skew":
       return [`Turn on automatic date and time on this device and on ${host}, then retry.`];
     case "not_linked":
@@ -151,10 +152,10 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         `On ${host}, open Settings > Connections and turn T3 Connect on.`,
       ];
     case "tunnel_pending":
-      return ["Wait a minute. T3 Code retries on its own.", checkHost];
+      return ["Wait a minute. Loom retries on its own.", checkHost]; // fork: brand
     case "relay_error":
       return [
-        "Wait a few minutes. T3 Code retries on its own.",
+        "Wait a few minutes. Loom retries on its own.", // fork: brand
         "If it keeps failing, copy the diagnostics and report it.",
       ];
     case "tunnel_not_enabled":
@@ -162,13 +163,13 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
     case "released":
     case "tunnel_down":
       return [
-        `Make sure ${host} is awake and T3 Code is running on it.`,
+        `Make sure ${host} is awake and Loom is running on it.`, // fork: brand
         checkHost,
         `A VPN or Tailscale exit node on ${host} can block the tunnel (port 7844). Turn it off or allow the tunnel.`,
       ];
     case "origin_unreachable":
     case "invalid_response":
-      return [`Open or restart T3 Code on ${host}.`, checkHost];
+      return [`Open or restart Loom on ${host}.`, checkHost]; // fork: brand
     // The relay saw these on its way to the host, so the fix is on the host.
     case "dns":
     case "tls":
@@ -182,7 +183,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   switch (located.hop) {
     case "device":
       return [
-        "Restart T3 Code on this device.",
+        "Restart Loom on this device.", // fork: brand
         `If it keeps failing, remove ${host} from this device and add it again.`,
       ];
     case "relay":
@@ -203,7 +204,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         : [`Make sure ${host} is awake and online.`, checkHost];
     case "server":
       return [
-        `Make sure T3 Code is running on ${host}.`,
+        `Make sure Loom is running on ${host}.`, // fork: brand
         "Retry. If it keeps failing, copy the diagnostics.",
       ];
   }
@@ -275,7 +276,7 @@ function hopLabel(hop: ConnectionHop, host: string): string {
     case "tunnel":
       return `${host} tunnel`;
     case "server":
-      return `T3 Code on ${host}`;
+      return `Loom on ${host}`; // fork: brand
   }
 }
 
@@ -338,7 +339,7 @@ const HOP_MARK = { ok: "ok", failed: "FAILED", unchecked: "not checked" } as con
 /** One plain-text block for bug reports. */
 export function connectionDiagnosisText(hostLabel: string, diagnosis: ConnectionDiagnosis): string {
   return [
-    `T3 Code connection to ${hostLabel}: ${diagnosis.headline}`,
+    `Loom connection to ${hostLabel}: ${diagnosis.headline}`, // fork: brand
     "",
     ...diagnosis.hops.map((hop) => `${hop.label}: ${HOP_MARK[hop.result]}`),
     "",

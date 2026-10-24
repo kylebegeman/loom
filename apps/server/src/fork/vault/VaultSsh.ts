@@ -25,6 +25,7 @@ import {
   type VaultSshInfo,
   type VaultSshResult,
   VaultItemId,
+  type VaultItemValue,
   vaultSshDestination,
   vaultSshCommandMessage,
 } from "@t3tools/contracts/fork";
@@ -130,15 +131,26 @@ const make = Effect.gen(function* () {
   };
   const agents = yield* Ref.make<ReadonlyMap<string, Activation>>(new Map());
 
+  const decodeRecord = Effect.fnUntraced(function* (value: VaultItemValue) {
+    const key = yield* decodeKey(Redacted.value(value.value)).pipe(Effect.mapError(invalid));
+    if ((yield* keys.publicKey(key.privateKey)) !== key.publicKey) return yield* invalid();
+    if (key.target.hostKey) yield* keys.fingerprint(key.target.hostKey);
+    return { item: value.item, key };
+  });
   const load = Effect.fnUntraced(function* (id: string) {
     const item = yield* core.inspect(id);
     if (!item) return yield* new VaultError({ reason: "not-found" });
     if (item.kind !== "ssh-key") return yield* invalid();
-    const value = yield* core.reveal({ id, expectedVersion: item.version });
-    const key = yield* decodeKey(Redacted.value(value.value)).pipe(Effect.mapError(invalid));
-    if ((yield* keys.publicKey(key.privateKey)) !== key.publicKey) return yield* invalid();
-    if (key.target.hostKey) yield* keys.fingerprint(key.target.hostKey);
-    return { item, key };
+    const record = yield* decodeRecord(yield* core.reveal({ id, expectedVersion: item.version }));
+    return { ...record, item };
+  });
+  // load() only inspects to learn the version for reveal, which reads the item again and fails
+  // with a conflict unless it is still that version. A caller that pins the version skips that
+  // first read.
+  const loadPinned = Effect.fnUntraced(function* (id: string, version: number) {
+    const value = yield* core.reveal({ id, expectedVersion: version });
+    if (value.item.kind !== "ssh-key") return yield* invalid();
+    return yield* decodeRecord(value);
   });
   const info = Effect.fnUntraced(function* (record: Effect.Success<ReturnType<typeof load>>) {
     return {
@@ -168,7 +180,8 @@ const make = Effect.gen(function* () {
     const activation = (yield* Ref.get(agents)).get(sessionId);
     if (!activation || activation.session.threadId !== threadId)
       return yield* new VaultError({ reason: "denied" });
-    yield* workloads.revalidate(activation.session);
+    // No revalidate here: agentFrame's authorize repeats the same check first thing after
+    // taking the session lock, with nothing in between that depends on it.
     return activation;
   });
   return VaultSsh.of({
@@ -255,9 +268,8 @@ const make = Effect.gen(function* () {
         if (input.sequence !== channel.sequence || (channel.signed && frame[0] === 13))
           return yield* new VaultSshError({ reason: "invalid-operation" });
         channel.sequence++;
-        const record = yield* load(held.metadata.id);
-        if (record.item.state !== "active" || record.item.version !== held.metadata.version)
-          return yield* new VaultError({ reason: "conflict" });
+        const record = yield* loadPinned(held.metadata.id, held.metadata.version);
+        if (record.item.state !== "active") return yield* new VaultError({ reason: "conflict" });
         yield* authorize;
         const result = yield* keys.respond({ ...record.key, frame, binding: channel.binding });
         channel.binding = result.binding;

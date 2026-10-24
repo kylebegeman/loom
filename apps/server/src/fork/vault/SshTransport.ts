@@ -39,6 +39,11 @@ export class SshTransport extends Context.Service<
   }
 >()("t3/fork/vault/SshTransport") {}
 const failed = () => new VaultSshError({ reason: "failed" });
+// Bounds how long ssh may leave its agent connection silent. Each frame is authorized against live
+// Vault state before it is answered, which can take seconds while ssh waits on us, so the timer is
+// paused while a socket has a frame queued or being answered. The operation timeout still bounds
+// the whole exchange.
+const AGENT_IDLE_MS = 3000;
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const make = Effect.gen(function* () {
   const crypto = yield* SshCrypto.SshCrypto,
@@ -80,7 +85,11 @@ const make = Effect.gen(function* () {
           },
           catch: failed,
         });
-        const queue = yield* Queue.bounded<{ socket: NodeNet.Socket; frame: Buffer }>(8);
+        const queue = yield* Queue.bounded<{
+          socket: NodeNet.Socket;
+          frame: Buffer;
+          settle: () => void;
+        }>(8);
         const denial = yield* Deferred.make<never, Failure>();
         const sockets = new Set<NodeNet.Socket>(),
           bindings = new Map<NodeNet.Socket, SshCrypto.SshBinding>();
@@ -93,8 +102,13 @@ const make = Effect.gen(function* () {
                 return;
               }
               sockets.add(socket);
-              let buffer = Buffer.alloc(0);
-              socket.setTimeout(3000, () => socket.destroy());
+              let buffer = Buffer.alloc(0),
+                inFlight = 0;
+              const settle = () => {
+                if (--inFlight === 0 && !socket.destroyed) socket.setTimeout(AGENT_IDLE_MS);
+              };
+              socket.setTimeout(AGENT_IDLE_MS);
+              socket.on("timeout", () => socket.destroy());
               socket.on("error", () => socket.destroy());
               socket.on("close", () => {
                 sockets.delete(socket);
@@ -115,7 +129,8 @@ const make = Effect.gen(function* () {
                   if (buffer.length < length + 4) break;
                   const frame = buffer.subarray(4, length + 4);
                   buffer = buffer.subarray(length + 4);
-                  if (!Queue.offerUnsafe(queue, { socket, frame })) {
+                  if (inFlight++ === 0) socket.setTimeout(0);
+                  if (!Queue.offerUnsafe(queue, { socket, frame, settle })) {
                     socket.destroy();
                     return;
                   }
@@ -139,20 +154,22 @@ const make = Effect.gen(function* () {
         );
         yield* Effect.tryPromise({ try: () => NodeFSP.chmod(socketPath, 0o600), catch: failed });
         yield* Effect.gen(function* () {
-          const { socket, frame } = yield* Queue.take(queue);
-          if (socket.destroyed) return;
-          yield* input.authorize;
-          if (frame[0] === 13 && signed) return yield* failed();
-          const result = yield* crypto.respond({
-            ...input,
-            frame,
-            binding: bindings.get(socket) ?? null,
-          });
-          if (result.binding) bindings.set(socket, result.binding);
-          if (result.signed) signed = true;
-          socket.write(
-            Buffer.concat([SshCrypto.sshUint32(result.response.length), result.response]),
-          );
+          const { socket, frame, settle } = yield* Queue.take(queue);
+          yield* Effect.gen(function* () {
+            if (socket.destroyed) return;
+            yield* input.authorize;
+            if (frame[0] === 13 && signed) return yield* failed();
+            const result = yield* crypto.respond({
+              ...input,
+              frame,
+              binding: bindings.get(socket) ?? null,
+            });
+            if (result.binding) bindings.set(socket, result.binding);
+            if (result.signed) signed = true;
+            socket.write(
+              Buffer.concat([SshCrypto.sshUint32(result.response.length), result.response]),
+            );
+          }).pipe(Effect.ensuring(Effect.sync(settle)));
         }).pipe(
           Effect.catch((error) => Deferred.fail(denial, error).pipe(Effect.asVoid)),
           Effect.forever,

@@ -817,6 +817,43 @@ it.layer(NodeServices.layer)("EventNdjsonLogger", (it) => {
     }),
   );
 
+  // fork: retention-defaults
+  it.effect("keeps the newest provider logs within 256 MiB by default", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const basePath = NodePath.join(tempDir, "events.log");
+      const mebibyte = 1024 * 1024;
+      // 257 MiB in total, so only the oldest file has to go to reach exactly 256 MiB.
+      const files = [
+        { path: ownedLogPath(basePath, "oldest"), bytes: mebibyte },
+        { path: ownedLogPath(basePath, "middle"), bytes: 128 * mebibyte },
+        { path: ownedLogPath(basePath, "newest"), bytes: 128 * mebibyte },
+      ];
+
+      try {
+        yield* TestClock.setTime(1_800_000_000_000);
+        const now = yield* Clock.currentTimeMillis;
+        files.forEach((file, index) => {
+          // Sparse files report their full size without filling the disk.
+          NodeFS.writeFileSync(file.path, "");
+          NodeFS.truncateSync(file.path, file.bytes);
+          const modifiedSeconds = (now - (files.length - index) * 1_000) / 1_000;
+          NodeFS.utimesSync(file.path, modifiedSeconds, modifiedSeconds);
+        });
+
+        const store = yield* makeEventNdjsonLogStore(basePath);
+        yield* store.close();
+
+        assert.deepEqual(
+          files.map((file) => NodeFS.existsSync(file.path)),
+          [false, true, true],
+        );
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }),
+  );
+
   it.effect("does not prune an active thread sink during an unrelated flush", () =>
     Effect.gen(function* () {
       const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));

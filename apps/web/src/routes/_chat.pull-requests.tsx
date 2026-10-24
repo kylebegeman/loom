@@ -1315,7 +1315,7 @@ function PullRequestsRouteView() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Pull requests unavailable"
-          error="Update your T3 Code servers to browse pull requests."
+          error="Update your Loom servers to browse pull requests." // fork: brand
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />

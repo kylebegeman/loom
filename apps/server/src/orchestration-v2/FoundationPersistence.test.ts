@@ -301,27 +301,23 @@ it.effect("keeps other database work runnable while discovering compaction candi
       };
       const queries = { events: 0, receipts: 0 };
       let finished = false;
-      const tracer = Tracer.make({
-        span(options) {
-          const span = new Tracer.NativeSpan(options);
-          const end = span.end.bind(span);
-          span.end = (endTime, exit) => {
-            end(endTime, exit);
-            const query = span.attributes.get("db.query.text");
-            if (typeof query !== "string" || !query.trimStart().startsWith("SELECT")) return;
-            if (query.includes("MAX(")) return;
-            const table = query.includes("FROM orchestration_command_receipts")
+      // fork: server-weight: page statements run untraced, so count them as they are prepared.
+      const countPages: Statement.Transformer = (statement) => {
+        const [query] = statement.compile();
+        const table =
+          !query.trimStart().startsWith("SELECT") || query.includes("MAX(")
+            ? undefined
+            : query.includes("FROM orchestration_command_receipts")
               ? "receipts"
               : query.includes("FROM orchestration_events")
                 ? "events"
                 : undefined;
-            if (table === undefined) return;
-            queries[table] += 1;
-            Deferred.doneUnsafe(discoveryStarted[table], Effect.void);
-          };
-          return span;
-        },
-      });
+        if (table !== undefined) {
+          queries[table] += 1;
+          Deferred.doneUnsafe(discoveryStarted[table], Effect.void);
+        }
+        return Effect.succeed(statement);
+      };
       const probes = yield* Effect.forEach(["events", "receipts"] as const, (table) =>
         Effect.gen(function* () {
           yield* Deferred.await(discoveryStarted[table]);
@@ -332,7 +328,7 @@ it.effect("keeps other database work runnable while discovering compaction candi
       );
 
       const summary = yield* maintenance.compactEventStore.pipe(
-        Effect.withTracer(tracer),
+        Effect.provideService(Statement.CurrentTransformer, countPages), // fork: server-weight
         Effect.provideService(Scheduler.MaxOpsBeforeYield, Number.POSITIVE_INFINITY),
         Effect.tap(() =>
           Effect.sync(() => {
@@ -3609,30 +3605,51 @@ it.effect.each(["events", "receipts"] as const)(
           )
           .pipe(NodeSqliteClient.readOnly, Effect.forkChild);
         yield* Deferred.await(readerHeld);
-        const discoveryStarted = yield* Deferred.make<Tracer.Span>();
-        const observeDiscovery: Statement.Transformer = (statement, _sql, _fiber, span) => {
+        // fork: server-weight: page statements run untraced, so the writer is held instead of reading db.connection.
+        const discoveryStarted = yield* Deferred.make<void>();
+        const writerHeld = yield* Deferred.make<void>(); // fork: server-weight
+        const deleting = yield* Deferred.make<void>(); // fork: server-weight
+        // fork: server-weight
+        const observeDiscovery: Statement.Transformer = (statement) => {
           const [query] = statement.compile();
           const pageQuery =
             kind === "events" ? /^\s*SELECT\s+event\.sequence/ : /^\s*SELECT\s+receipt\.rowid/;
-          return pageQuery.test(query)
-            ? Deferred.succeed(discoveryStarted, span).pipe(Effect.as(statement))
-            : Effect.succeed(statement);
+          const deleteQuery =
+            kind === "events"
+              ? /^\s*DELETE FROM orchestration_events/
+              : /^\s*DELETE FROM orchestration_command_receipts/;
+          if (pageQuery.test(query)) {
+            return Deferred.succeed(discoveryStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(writerHeld)),
+              Effect.as(statement),
+            );
+          }
+          if (deleteQuery.test(query)) {
+            return Deferred.succeed(deleting, undefined).pipe(Effect.as(statement));
+          }
+          return Effect.succeed(statement);
         };
         const compacted = yield* Deferred.make<void>();
         const compaction = yield* maintenance.compactEventStore.pipe(
           Effect.provideService(Statement.CurrentTransformer, observeDiscovery),
-          Effect.provideService(Statement.SpanPropagationEnabled, true),
           Effect.tap(() => Deferred.succeed(compacted, undefined)),
           Effect.forkChild,
         );
-        const discoverySpan = yield* Deferred.await(discoveryStarted);
+        yield* Deferred.await(discoveryStarted); // fork: server-weight
         yield* sql`INSERT INTO concurrent_writes VALUES ('committed')`;
         assert.isFalse(yield* Deferred.isDone(compacted));
         assert.deepEqual(yield* sql`SELECT value FROM concurrent_writes`, [{ value: "committed" }]);
-        yield* Deferred.succeed(releaseReader, undefined);
-        yield* Fiber.join(reader);
+        // fork: server-weight: while this transaction holds the writer, compaction reaches its delete only if discovery read on the reader.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(writerHeld, undefined);
+            yield* Deferred.succeed(releaseReader, undefined);
+            yield* Fiber.join(reader);
+            yield* Deferred.await(deleting);
+            assert.isFalse(yield* Deferred.isDone(compacted));
+          }),
+        );
         const result = yield* Fiber.join(compaction);
-        assert.equal(discoverySpan.attributes.get("db.connection"), "reader");
         assert.equal(result.deletedEventCount, kind === "events" ? 1 : 0);
         assert.equal(result.deletedReceiptCount, kind === "receipts" ? 1 : 0);
         const retained =

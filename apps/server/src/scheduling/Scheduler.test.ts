@@ -2,9 +2,11 @@ import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option"; // fork: server-weight
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
+import type * as Tracer from "effect/Tracer"; // fork: server-weight
 
 import * as ServerActivation from "../serverActivation.ts";
 import * as Scheduler from "./Scheduler.ts";
@@ -107,4 +109,27 @@ it.effect("holds due work and the clock until startup recovery activates the ser
     );
     assert.isAtLeast(yield* Ref.get(runs), 1);
   }),
+);
+
+// fork: server-weight
+it.effect("runs each pass of a source in its own trace, not the registering one", () =>
+  Effect.gen(function* () {
+    const scheduler = yield* Scheduler.Scheduler;
+    const passes = yield* Queue.unbounded<Tracer.Span>();
+    yield* scheduler
+      .register(
+        "traced",
+        Effect.currentSpan.pipe(
+          Effect.flatMap((span) => Queue.offer(passes, span)),
+          Effect.asVoid,
+          Effect.withSpan("source.pass"),
+        ),
+      )
+      .pipe(Effect.withSpan("server.startup"));
+    const first = yield* Queue.take(passes);
+    yield* TestClock.adjust("5 seconds");
+    const second = yield* Queue.take(passes);
+    for (const pass of [first, second]) assert.isTrue(Option.isNone(pass.parent));
+    assert.notEqual(first.traceId, second.traceId);
+  }).pipe(Effect.provide(Scheduler.layer)),
 );

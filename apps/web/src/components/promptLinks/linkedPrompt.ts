@@ -9,7 +9,8 @@ export function warnAboutHiddenCharacters(prompt: LinkedPrompt): void {
   toastManager.add({
     type: "warning",
     title: "This prompt had hidden characters, it may be malicious",
-    description: `T3 Code removed ${prompt.hiddenCharacters} hidden character${prompt.hiddenCharacters === 1 ? "" : "s"}. Read the prompt before you send it.`,
+    // fork: brand
+    description: `Loom removed ${prompt.hiddenCharacters} hidden character${prompt.hiddenCharacters === 1 ? "" : "s"}. Read the prompt before you send it.`,
     timeout: 0,
   });
 }

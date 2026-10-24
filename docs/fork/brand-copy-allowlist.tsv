@@ -1,0 +1,58 @@
+# Reviewed lines that keep the words "T3 Code". scripts/fork/loom.sh check fails on any other
+# product text that says T3 Code. Format: path<TAB>trimmed line. See FORK.md, Product text.
+# Prefer rewording to Loom with a fork: brand marker; add a line here only for a real identifier.
+
+# Connect-only surfaces. C05 in docs/fork/packets/LOOM-CONNECTIONS.md turns Connect off in Loom builds.
+apps/server/src/cloud/ConnectReachability.ts	"Restart T3 Code so the tunnel uses the port the server listens on.",
+apps/server/src/cloud/ConnectReachability.ts	"Restart T3 Code. If it stays down, check the server log for relay client errors.",
+apps/server/src/cloud/ConnectReachability.ts	const restart = "Restart T3 Code. If it stays, run `t3 connect` again.";
+apps/server/src/cloud/cliAuthHtml.ts	dev: "T3 Code (Dev)",
+apps/server/src/cloud/cliAuthHtml.ts	latest: "T3 Code",
+apps/server/src/cloud/cliAuthHtml.ts	nightly: "T3 Code (Nightly)",
+apps/server/src/cloud/relayResponse.ts	return "Check this machine's date and time, update T3 Code, then restart it.";
+apps/server/src/cloud/relayResponse.ts	return "Run `t3 connect login` to check this machine's authorization. If the stored credential was revoked, sign out with `t3 connect logout`, then run `t3 connect` again. Restart T3 Code after signing in.";
+apps/web/src/cloud/linkEnvironment.ts	? `T3 Code cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
+apps/web/src/cloud/linkEnvironment.ts	message: `T3 Code cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
+apps/web/src/components/clerk/MobileClientsUserProfilePage.logic.ts	return `${platform}${device.appVersion ? ` · T3 Code ${device.appVersion}` : ""}`;
+apps/web/src/components/cloud/RelayClientInstallDialog.tsx	Keep T3 Code open while the relay client is installed.
+apps/web/src/components/cloud/RelayClientInstallDialog.tsx	T3 Code will download and install version{" "}
+packages/contracts/src/relay.ts	.annotate(OpenApi.Title, "T3 Code Relay API")
+
+# Identifiers matched against existing files, profiles or desktop registrations.
+apps/desktop/src/app/DesktopCliShim.ts	export const MARKER = "Written by T3 Code: runs the desktop app's bundled t3 CLI.";
+apps/desktop/src/app/DesktopLegacyLocalStorage.ts	const V1_PROFILE_NAMES = ["T3 Code (Alpha)", "t3code"];
+apps/desktop/src/app/DesktopUserData.ts	: { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
+apps/desktop/src/app/DesktopUserData.ts	? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
+apps/desktop/src/snapShot/KdeSnapShot.ts	"Name=T3 Code SnapShots",
+apps/server/src/cloud/bootService.ts	"Description=T3 Code server",
+apps/web/src/components/settings/SnapShotSetupDialog.tsx	description: "Check T3 Code SnapShots in GNOME Extensions, then try again.",
+apps/web/src/components/settings/SnapShotSetupDialog.tsx	description: "Enable T3 Code SnapShots to start capturing windows.",
+
+# Names sent to third parties or written as git identities.
+apps/server/src/device/EasDeviceHost.ts	const name = `T3 Code · ${config.label} · ${(yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0")}`;
+apps/server/src/provider/CodexChatGptAuth.ts	: { agent_name_hint: "T3 Code" }),
+apps/server/src/provider/CodexProvider.ts	const CODEX_CLIENT_NAME = "T3 Code";
+apps/server/src/vcs/GitVcsDriver.ts	GIT_AUTHOR_NAME: "T3 Code",
+apps/server/src/vcs/GitVcsDriver.ts	GIT_COMMITTER_NAME: "T3 Code",
+packages/provider-cursor/src/server/adapter.ts	name: `T3 Code ${input.threadId}`,
+packages/provider-cursor/src/server/auth.ts	apiKeyName: `T3 Code - ${options.displayName}`,
+packages/provider-muse/src/server/sdk.ts	clientInfo: { name: "t3_code", title: "T3 Code", version: "1" },
+packages/provider-opencode/src/server/textGeneration.ts	title: `T3 Code ${input.operation}`,
+packages/provider-opencode/src/server/v2/textGeneration.ts	title: `T3 Code ${input.operation}`,
+packages/provider-testing/src/replayWorkspace.ts	yield* runGit(cwd, ["config", "user.name", "T3 Code Test"]);
+packages/source-control-github/src/server/githubStackRebase.ts	GIT_CONFIG_VALUE_1: "T3 Code",
+
+# T3 Code's own issue triage playbook and download link.
+apps/server/src/cli/triage.ts	"Investigate a T3 Code problem on this machine with claude or codex, and help file a good issue.",
+apps/server/src/cli/triagePrompt.ts	- How is T3 Code running on this machine: \`npx t3 serve\` in a terminal, the
+apps/server/src/cli/triagePrompt.ts	Do not patch the T3 Code source as a fix. A good issue with strong repro steps
+apps/server/src/cli/triagePrompt.ts	You are a support engineer for T3 Code (https://github.com/pingdotgg/t3code), working
+apps/server/src/cli/triagePrompt.ts	`Read the file "${promptFilePath}" and follow its instructions exactly: it is your T3 Code triage playbook, and it starts with asking the user what went wrong.`;
+apps/server/src/cli/triagePrompt.ts	export const TRIAGE_PLAYBOOK = `# T3 Code triage playbook
+apps/server/src/cli/triagePrompt.ts	export const buildTriageContext = (input: TriageContextInput) => `# T3 Code triage context
+apps/server/src/cli/triagePrompt.ts	export const buildTriageSeedPrompt = (contextFilePath: string) => `A T3 Code user is \
+apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	Get T3 Code
+
+# Text inside generated scripts that only ssh reads.
+packages/ssh/src/auth.ts	# Invoked by ssh via SSH_ASKPASS when T3 Code re-runs ssh with a cached password
+packages/ssh/src/auth.ts	const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when T3 Code re-runs\r

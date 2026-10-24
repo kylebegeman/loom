@@ -1,4 +1,4 @@
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork"; // fork: no-project-first
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
@@ -47,7 +47,8 @@ export function useLogicalProjectEnvironments(
   };
   if (scratchDraft) {
     for (const environment of environments) {
-      const scratchRoot = availableScratchWorkspaceRoot(
+      // fork: no-project-first: a No project draft cannot move to a computer that cannot run it.
+      const scratchRoot = noProjectWorkspaceRoot(
         environment.connection.phase,
         environment.serverConfig,
       );

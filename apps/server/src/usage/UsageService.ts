@@ -47,6 +47,7 @@ import {
   readDirectoryVolumeId,
   readTranscriptRecords,
 } from "./usageTranscriptReader.ts";
+import { pruneLegacyUsageCaches } from "../fork/retention/legacyUsageCaches.ts"; // fork: retention-defaults
 import {
   decodeScanCache,
   dedupeWithinFile,
@@ -418,6 +419,11 @@ export const make = Effect.gen(function* () {
   // keeps an older snapshot from landing after a newer one.
   const persistLock = yield* Semaphore.make(1);
 
+  // fork: retention-defaults
+  const pruneLegacyScanCaches = yield* Effect.cached(
+    pruneLegacyUsageCaches(fileSystem, path, config.stateDir, LEGACY_SCAN_CACHE_FILE_NAMES),
+  );
+
   // The dirty flag is cleared before encoding, so a change while the write is
   // in flight marks it dirty again. A failed write restores the flag, so the
   // next persist retries instead of leaving disk stale.
@@ -428,6 +434,7 @@ export const make = Effect.gen(function* () {
         writeScanCache(fileCache, { sources: Object.fromEntries(sourceCache) }),
       ).pipe(
         Effect.flatMap((contents) => writeCacheFile(scanCachePath, contents)),
+        Effect.andThen(pruneLegacyScanCaches), // fork: retention-defaults
         Effect.catchCause(() =>
           Effect.sync(() => {
             cacheDirty = true;

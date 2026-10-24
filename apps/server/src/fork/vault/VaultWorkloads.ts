@@ -1,4 +1,4 @@
-import { isVaultRunRunning } from "./active-run.ts";
+import { isVaultRunRunning, readVaultThreadShell } from "./active-run.ts";
 import { admissionStamp } from "./admission-stamp.ts";
 import { ThreadId, type ProviderInstanceId } from "@t3tools/contracts";
 import {
@@ -97,7 +97,7 @@ const make = Effect.gen(function* () {
     Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
   );
   const live = Effect.fnUntraced(function* (threadId: ThreadId) {
-    const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+    const thread = yield* readVaultThreadShell(threads, threadId).pipe(Effect.mapError(denied));
     if (
       !thread ||
       thread.archivedAt !== null ||
@@ -129,6 +129,10 @@ const make = Effect.gen(function* () {
     return session;
   });
   const authorize = Effect.fnUntraced(function* (session: VaultWorkloadSession) {
+    const machine = yield* host(session.machineId);
+    // live() reads the shell and confirms its run, which is all require would read about the
+    // thread, so require reuses them. It runs after the host check, right before require, so a
+    // stop that commits during the broker read still denies this call.
     const thread = yield* live(session.threadId);
     if (
       thread.activeRunId !== session.runId ||
@@ -136,8 +140,10 @@ const make = Effect.gen(function* () {
       thread.providerInstanceId !== session.providerInstanceId
     )
       return yield* denied();
-    const machine = yield* host(session.machineId);
-    yield* access.require(session.threadId, session.itemId, "use", session.destination);
+    yield* access.require(session.threadId, session.itemId, "use", session.destination, {
+      shell: thread,
+      running: true,
+    });
     return machine;
   });
   const verify = Effect.fnUntraced(function* (
@@ -217,7 +223,7 @@ const make = Effect.gen(function* () {
     }),
     terminalReadiness: Effect.fn("VaultWorkloads.terminalReadiness")(
       function* (threadId, providerInstanceId) {
-        const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(denied));
+        const thread = yield* readVaultThreadShell(threads, threadId).pipe(Effect.mapError(denied));
         if (
           !thread ||
           thread.providerInstanceId !== providerInstanceId ||

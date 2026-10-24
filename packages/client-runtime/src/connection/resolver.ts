@@ -51,6 +51,12 @@ import {
 } from "./compatibility.ts";
 import { credentialConnectionId } from "./routes.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
+import { IdentityRenewal } from "../fork/identity-renewal.ts"; // fork: identity-renewal
+// fork: identity-renewal
+import {
+  authorizeRenewingIdentity,
+  renewIdentityForConnect,
+} from "../fork/identity-renewal-worker.ts";
 
 export class ConnectionResolver extends Context.Service<
   ConnectionResolver,
@@ -126,6 +132,7 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
 const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")(function* () {
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+  const identityRenewal = yield* IdentityRenewal; // fork: identity-renewal
 
   return Effect.fn("clientRuntime.connection.broker.bearer")(function* (
     entry: ConnectionCatalogEntry & { readonly target: BearerConnectionTarget },
@@ -153,6 +160,15 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       });
       return { ...authorized, target } satisfies PreparedConnection;
     }
+    // fork: identity-renewal
+    const identityRenewalInput = {
+      renewal: identityRenewal,
+      credentials,
+      connectionId: credentialConnectionId(target.connectionId),
+      environmentId: target.environmentId,
+      profile,
+    };
+    yield* renewIdentityForConnect(identityRenewalInput); // fork: identity-renewal
     const credential = yield* credentials.get(credentialConnectionId(target.connectionId)).pipe(
       Effect.flatMap(
         Option.match({
@@ -185,13 +201,18 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         detail: "Sign in again with this computer's Identity account.",
       });
     }
-    const authorized = yield* remote.authorizeBearer({
-      expectedEnvironmentId: target.environmentId,
-      httpBaseUrl: profile.httpBaseUrl,
-      wsBaseUrl: profile.wsBaseUrl,
-      bearerToken: credential.token,
-      connectionMethod: "direct",
-    });
+    // fork: identity-renewal
+    const authorized = yield* authorizeRenewingIdentity(
+      { ...identityRenewalInput, credential },
+      (bearerToken) =>
+        remote.authorizeBearer({
+          expectedEnvironmentId: target.environmentId,
+          httpBaseUrl: profile.httpBaseUrl,
+          wsBaseUrl: profile.wsBaseUrl,
+          bearerToken,
+          connectionMethod: "direct",
+        }),
+    );
     return {
       environmentId: authorized.environmentId,
       label: authorized.label,

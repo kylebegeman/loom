@@ -28,15 +28,13 @@ export const revokeIdentitySession = Effect.fn("connection.identity.revoke")(fun
         () =>
           new ConnectionTransientError({
             reason: "network",
-            detail:
-              "Could not sign out of this computer. Reconnect and try again, or remove it after Identity access expires.",
+            detail: "Could not reach this computer to end its Identity session.",
           }),
       ),
     );
   if (response.status !== 200)
     return yield* new ConnectionTransientError({
       reason: "remote-unavailable",
-      detail:
-        "This computer could not revoke Identity access. Try again before removing the connection.",
+      detail: "This computer did not confirm that it ended the Identity session.",
     });
 });

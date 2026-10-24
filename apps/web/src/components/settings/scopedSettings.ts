@@ -462,7 +462,8 @@ export async function persistScopedSettingsPatch(
       return [
         {
           ...environment,
-          message: "This environment does not support this setting. Update T3 Code on it.",
+          // fork: brand
+          message: "This environment does not support this setting. Update Loom on it.",
         },
       ];
     }

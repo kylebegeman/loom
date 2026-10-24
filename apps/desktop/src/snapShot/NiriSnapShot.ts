@@ -173,7 +173,8 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
         (window) => window.pid === process.pid && window.title === title,
       );
       if (matches.length > 1)
-        throw new Error("More than one T3 Code window matches the capture destination.");
+        // fork: brand
+        throw new Error("More than one Loom window matches the capture destination.");
       return matches[0];
     });
     connection.send("EventStream");

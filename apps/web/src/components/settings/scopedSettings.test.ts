@@ -258,7 +258,8 @@ describe("scoped settings writes", () => {
     const unsupported = [
       {
         label: server.label,
-        message: "This environment does not support this setting. Update T3 Code on it.",
+        // fork: brand
+        message: "This environment does not support this setting. Update Loom on it.",
       },
     ];
 

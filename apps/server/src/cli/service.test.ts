@@ -35,7 +35,7 @@ it("reports the installed service version and host paths", () => {
   assert.equal(
     formatServiceStatus(status, "0.0.29"),
     [
-      "T3 Code service",
+      "Loom service", // fork: brand
       "  Status: installed · t3@0.0.29",
       "  Unit: /home/me/.config/systemd/user/t3code.service",
       "  Logs: /home/me/.t3/userdata/logs/boot-service.log",
@@ -178,7 +178,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
 
       const output = lines.join("\n");
       expect(output).not.toContain("Restarted");
-      expect(output).toContain("Queued a restart of the T3 Code service on t3@0.0.30");
+      expect(output).toContain("Queued a restart of the Loom service on t3@0.0.30"); // fork: brand
       expect(output).toContain(`Logs: ${status.logPath}`);
     }),
   );
@@ -212,7 +212,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
       );
 
       const output = lines.join("\n");
-      expect(output).not.toMatch(/(?:Installed|Updated) T3 Code service/);
+      expect(output).not.toMatch(/(?:Installed|Updated) Loom service/); // fork: brand
       expect(output).toContain("separate systemd unit");
       expect(output).toContain(status.logPath);
     }),

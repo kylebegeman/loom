@@ -196,6 +196,51 @@ it.live.skipIf(!configured)(
 );
 
 it.live.skipIf(!configured)(
+  "keeps ssh's agent connection open while each frame waits on slow authorization",
+  () =>
+    Effect.gen(function* () {
+      const keys = yield* SshCrypto.SshCrypto,
+        key = yield* keys.create;
+      const target = {
+        hostname: "127.0.0.1",
+        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+      };
+      yield* Effect.promise(() =>
+        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
+          mode: 0o600,
+        }),
+      );
+      const transport = yield* SshTransport.SshTransport;
+      let checks = 0;
+      const result = yield* transport.execute({
+        ...key,
+        target,
+        command: { expectedVersion: 1, argv: ["/usr/bin/true"], timeoutMs: 20000 },
+        // Agent frames are authorized for longer than the agent idle limit, as live Vault checks can be.
+        authorize: Effect.suspend(() =>
+          ++checks === 1 ? Effect.void : Effect.sleep("3500 millis"),
+        ),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(checks).toBeGreaterThan(1);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.merge(
+          NodeServices.layer,
+          SshTransport.layer.pipe(
+            Layer.provideMerge(SshCrypto.layer),
+            Layer.provide(NodeServices.layer),
+          ),
+        ),
+      ),
+    ),
+  30000,
+);
+
+it.live.skipIf(!configured)(
   "automatically signs Git ref listing and repeated fetches, denies wrong pins and revoked access, and releases sessions",
   () =>
     Effect.gen(function* () {

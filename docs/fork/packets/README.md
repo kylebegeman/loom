@@ -22,6 +22,10 @@ replay interactions. Remaining real-client checks and remote multi-computer prod
 rollout are still pending; mobile remains deferred. L100's Library implementation is local;
 it does not establish production rollout.
 
+[Loom-owned connections](./LOOM-CONNECTIONS.md) tracks replacing T3 Connect with Identity,
+the Library directory and Kyle's own tunnels (C01 to C05, L112 to L116). Kyle selected it on
+2026-10-24; Connect stays on until C01 to C03 work.
+
 Read these before touching a packet:
 
 - [CONVENTIONS.md](./CONVENTIONS.md): where fork code lives, naming, seam markers, commits,

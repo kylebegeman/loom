@@ -1476,7 +1476,8 @@ describe("buildThreadFeed", () => {
           "message",
         ]);
         expect(rows[2]).toMatchObject({
-          activities: [{ canExpand: true, groupStandIn: { label: "Waited for a T3 thread" } }],
+          // fork: brand
+          activities: [{ canExpand: true, groupStandIn: { label: "Waited for a Loom thread" } }],
         });
         expect(rows[2]).not.toMatchObject({ activities: [{ groupedToolDetail: true }] });
         // The group's own disclosure adds nothing while the call is alone.
@@ -1507,7 +1508,8 @@ describe("buildThreadFeed", () => {
         expect(rows.map((entry) => entry.type)).toEqual(["activity-group"]);
         expect(rows[0]).toMatchObject({
           id: "live-activity-row",
-          activities: [{ live: true, groupStandIn: { label: "Waiting for a T3 thread" } }],
+          // fork: brand
+          activities: [{ live: true, groupStandIn: { label: "Waiting for a Loom thread" } }],
         });
       }
 
@@ -1519,7 +1521,7 @@ describe("buildThreadFeed", () => {
         groupId,
         hiddenCount: 2,
         expanded: true,
-        summary: "Reading a T3 thread",
+        summary: "Reading a Loom thread", // fork: brand
       });
       expect(grouped[1]).toMatchObject({
         activities: [
@@ -1556,9 +1558,9 @@ describe("buildThreadFeed", () => {
     const feed = buildThreadFeed([projected(toolItem, 0)]);
     const activity = feed[0]?.type === "activity-group" ? feed[0].activities[0] : null;
 
-    expect(activity?.summary).toBe("Read a T3 thread");
+    expect(activity?.summary).toBe("Read a Loom thread"); // fork: brand
     expect(activity?.logo).toBe("t3-code");
-    expect(activity?.getCopyText().split("\n")[0]).toBe("Read a T3 thread");
+    expect(activity?.getCopyText().split("\n")[0]).toBe("Read a Loom thread"); // fork: brand
   });
 
   it.each(["cua_repl.js", "node_repl.js", "js"])(

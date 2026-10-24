@@ -48,6 +48,9 @@ PUBLISHER_PLIST="$HOME/Library/LaunchAgents/com.kylebegeman.loom-updates.plist"
 # lines it must keep (docs/fork/seams.tsv). run_checks fails when a merge drops
 # a seam, and when a marker appears that the manifest does not list.
 SEAMS_MANIFEST=docs/fork/seams.tsv
+# Visible "T3 Code" text that stays on purpose (identifiers, legacy detection,
+# attribution): path<TAB>trimmed source line. check_brand_copy fails on any other.
+BRAND_COPY_ALLOWLIST=docs/fork/brand-copy-allowlist.tsv
 # Branding tests live next to upstream code; fork_tests also discovers Loom
 # feature tests and the benchmark harness checks.
 BRAND_TESTS=(
@@ -150,6 +153,27 @@ check_seams() {
 $unlisted"
 }
 
+# Source lines naming T3 Code outside comments, tests and Connect copy (Connect
+# leaves with the Loom-owned connections work), as path<TAB>trimmed line.
+brand_copy_lines() {
+  # apps/marketing is T3's own site; transcripts and fixtures record provider output.
+  git grep -nF "T3 Code" -- ':(glob)apps/*/src/**' ':(glob)packages/*/src/**' \
+    ':(exclude)apps/marketing' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
+    ':(exclude)*.ndjson' ':(exclude)*.fixture.ts' \
+    | grep -vF "T3 Connect" \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/?\*)' \
+    | sed -E 's/^([^:]+):[0-9]+:[[:space:]]*/\1	/' | sort -u
+}
+
+# Upstream merges keep adding "T3 Code" copy; reword it (see FORK.md, Brand source).
+check_brand_copy() {
+  say "Checking for new T3 Code product text"
+  local unexpected
+  unexpected=$(comm -23 <(brand_copy_lines) <(grep -v '^#' "$BRAND_COPY_ALLOWLIST" | sort -u))
+  [ -z "$unexpected" ] || die "new T3 Code text; say Loom or drop the name, marking each line 'fork: brand' (or allowlist an identifier in $BRAND_COPY_ALLOWLIST):
+$unexpected"
+}
+
 fork_tests() {
   printf '%s\n' "${BRAND_TESTS[@]}"
   # Browser-mode tests need apps/web's headless Chromium project, which the root
@@ -186,6 +210,7 @@ check_omarchy_pack() {
 
 run_checks() {
   check_seams
+  check_brand_copy
   say "Installing dependencies"
   pnpm install --frozen-lockfile
   check_fork_lint

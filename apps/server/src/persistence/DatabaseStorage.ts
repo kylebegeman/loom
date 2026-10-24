@@ -20,6 +20,8 @@ import { forkParked } from "../serverActivation.ts";
 /** Pages returned per reclaim pass; one minute of churn, not a backlog. */
 const RECLAIM_PAGES_PER_PASS = 1024;
 const COMPACTION_INTERVAL = Duration.hours(6);
+// fork: server-weight: a pass runs two statements per page, up to 2,048 a minute, so pages run untraced and the pass span carries the count.
+const untracedPage = Effect.withTracerEnabled(false);
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,
@@ -81,16 +83,23 @@ const make = Effect.gen(function* () {
   const reclaim = Effect.gen(function* () {
     const mode = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`;
     if (mode[0]?.auto_vacuum !== 2) return;
+    let reclaimedPages = 0; // fork: server-weight
     // The driver steps a statement without result columns once, and each
     // step of incremental_vacuum frees one page. Yield between pages so
     // client requests can run.
     for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page++) {
-      const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
+      // fork: server-weight
+      const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`.pipe(
+        untracedPage,
+      );
       if ((free[0]?.freelist_count ?? 0) === 0) break;
-      yield* sql`PRAGMA incremental_vacuum(1)`;
+      yield* sql`PRAGMA incremental_vacuum(1)`.pipe(untracedPage); // fork: server-weight
+      reclaimedPages++; // fork: server-weight
       yield* Effect.yieldNow;
     }
+    yield* Effect.annotateCurrentSpan({ "db.reclaimed_pages": reclaimedPages }); // fork: server-weight
   }).pipe(
+    Effect.withSpan("DatabaseStorage.reclaim"), // fork: server-weight
     Effect.catch((cause) => Effect.logWarning("Database space reclamation failed", { cause })),
   );
 

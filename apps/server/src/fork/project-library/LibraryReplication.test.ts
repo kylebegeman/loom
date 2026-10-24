@@ -1,7 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "@effect/vitest";
 import * as NodeZlib from "node:zlib";
-import { MessageId, ThreadId } from "@t3tools/contracts";
+import {
+  ChatAttachmentId,
+  EventId,
+  MessageId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryCopyHealth,
@@ -13,14 +19,20 @@ import {
   type LibraryThreadArchive,
 } from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
-import { layerMemory } from "../../persistence/Sqlite.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import { layerFromPath, layerMemory } from "../../persistence/Sqlite.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as CopyHealth from "./LibraryCopyHealthPublication.ts";
@@ -31,6 +43,7 @@ import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import { LibraryHistoryMigrations } from "./history-migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
+import { libraryAttachments } from "./attachments.ts";
 import {
   source,
   threadId,
@@ -121,6 +134,7 @@ const fixture = Effect.gen(function* () {
   const rejectDeltas = yield* Ref.make(false);
   const failAssets = yield* Ref.make(false);
   const failSnapshot = yield* Ref.make(false);
+  const missingAttachments = yield* Ref.make<ReadonlySet<string>>(new Set());
   const claimedCursor = yield* Ref.make<number | null>(null);
   const authority = yield* Ref.make<LibraryInfo>({
     environmentId: source,
@@ -149,10 +163,21 @@ const fixture = Effect.gen(function* () {
     nextReplies: () => Effect.die("unused"),
     ackReply: () => Effect.die("unused"),
     signOutPageReaders: () => Effect.die("unused"),
-    publishAttachments: () =>
+    // Like the real publisher: a deleted conversation's lost attachments are reported back, while
+    // a live conversation cannot be acknowledged without them.
+    publishAttachments: (thread) =>
       Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "assets"]);
         if (yield* Ref.get(failAssets)) return yield* new LibraryError({ reason: "io" });
+        const missing = yield* Ref.get(missingAttachments);
+        const gone = new Set(
+          libraryAttachments(thread)
+            .map((attachment) => attachment.id)
+            .filter((id) => missing.has(id)),
+        );
+        if (gone.size > 0 && thread.summary.deleted !== true)
+          return yield* new LibraryError({ reason: "not-found" });
+        return gone;
       }),
     ingest: (input) =>
       Effect.gen(function* () {
@@ -207,6 +232,7 @@ const fixture = Effect.gen(function* () {
     rejectDeltas,
     failAssets,
     failSnapshot,
+    missingAttachments,
     claimedCursor,
     authority,
     event,
@@ -219,6 +245,20 @@ const withText = (archive: LibraryThreadArchive, text: string): LibraryThreadArc
     messages: [{ ...archive.projection.messages[0]!, text }],
   },
 });
+const withAttachment = (archive: LibraryThreadArchive): LibraryThreadArchive => ({
+  ...archive,
+  projection: {
+    ...archive.projection,
+    messages: [{ ...archive.projection.messages[0]!, attachments: [lostAttachment] }],
+  },
+});
+const lostAttachment = {
+  type: "file" as const,
+  id: ChatAttachmentId.make("source-thread-00000000-0000-4000-8000-000000000000-txt"),
+  name: "notes.txt",
+  mimeType: "text/plain",
+  sizeBytes: 3,
+};
 // About 600 KiB, so each snapshot waits two seconds before the next.
 const longText = "x".repeat(600 * 1024);
 // A service over several bound conversations sharing the fixture's publisher.
@@ -247,16 +287,31 @@ const pendingLimit = (bytes: number) =>
       ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_MAX_PENDING_BYTES: String(bytes) } }),
     ),
   );
-const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
+const memoryDatabase = layerMemory.pipe(Layer.provideMerge(NodeServices.layer));
+// A file database, so reads marked readOnly really use the reader worker.
+const fileDatabase = Layer.unwrap(
   Effect.gen(function* () {
-    const state = yield* fixture;
-    return yield* use(state);
-  }).pipe(
-    Effect.provideService(ServerActivation, Effect.never),
-    Effect.provideService(CopyHealth.LibraryCopyHealthSource, healthSource),
-    Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
-    Effect.scoped,
-  );
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "library-replication-" });
+    return layerFromPath(path.join(directory, "statev2.sqlite"));
+  }),
+).pipe(Layer.provideMerge(NodeServices.layer));
+const runOn =
+  <DatabaseError>(database: Layer.Layer<Layer.Success<typeof memoryDatabase>, DatabaseError>) =>
+  <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      const state = yield* fixture;
+      return yield* use(state);
+    }).pipe(
+      Effect.provideService(ServerActivation, Effect.never),
+      Effect.provideService(CopyHealth.LibraryCopyHealthSource, healthSource),
+      Effect.provide(database),
+      Effect.scoped,
+    );
+const run = runOn(memoryDatabase);
+const readerAt = DateTime.makeUnsafe(Date.UTC(2026, 9, 24));
+const readerProvider = ProviderInstanceId.make("codex");
 
 describe("durable Library history replication", () => {
   it.effect(
@@ -434,7 +489,7 @@ describe("durable Library history replication", () => {
               info: Ref.get(f.authority),
               registerCopy: (input) => Effect.succeed(input.copy),
               recordActivity: () => Effect.fail(new LibraryError({ reason: "blocked" })),
-              publishAttachments: () => Effect.void,
+              publishAttachments: () => Effect.succeed(new Set<string>()),
               project: () => Effect.die("unused"),
               proposeBrief: () => Effect.die("unused"),
               registerPreviews: () => Effect.die("unused"),
@@ -766,13 +821,144 @@ describe("durable Library history replication", () => {
           expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("io");
           expect(yield* Ref.get(f.requests)).toEqual([]);
           expect((yield* f.service.status).pendingEntries).toBe(1);
+          // The failed attempt already registered the unchanged copy.
+          expect(yield* Ref.get(f.order)).toEqual(["copy", "assets"]);
           yield* Ref.set(f.failAssets, false);
           yield* Ref.set(f.order, []);
           yield* f.service.drain;
-          expect(yield* Ref.get(f.order)).toEqual(["copy", "assets", "history"]);
+          expect(yield* Ref.get(f.order)).toEqual(["assets", "history"]);
           expect((yield* f.service.status).pendingEntries).toBe(0);
         }),
       ),
+  );
+  it.effect(
+    "publishes a deleted conversation without the attachment it lost, and the history behind it",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const deletedThread = ThreadId.make("deleted-thread");
+          const live = yield* Ref.get(f.archive);
+          const deleted = withAttachment({
+            ...live,
+            summary: { ...live.summary, deleted: true },
+          });
+          yield* Ref.set(f.missingAttachments, new Set([lostAttachment.id]));
+          const service = yield* serviceFor(f, [deletedThread, threadId], (input) =>
+            Effect.succeed(input.threadId === deletedThread ? deleted : live),
+          );
+          yield* service.drain;
+          const [request] = yield* Ref.get(f.requests);
+          expect(request?.entries.map((entry) => entry.thread.summary.deleted)).toEqual([
+            true,
+            undefined,
+          ]);
+          // The Library would otherwise count the attachment missing in every backup.
+          expect(request?.entries.map((entry) => libraryAttachments(entry.thread))).toEqual([
+            [],
+            [],
+          ]);
+          expect(yield* service.status).toMatchObject({ pendingEntries: 0, lastFailure: null });
+          expect((yield* service.status).threads).toMatchObject([
+            { threadId: deletedThread, acknowledgedSequence: 1, pending: false },
+            { threadId, acknowledgedSequence: 1, pending: false },
+          ]);
+          // Nothing will send the deleted conversation a delta, so it keeps no baseline.
+          expect(yield* f.sql`SELECT thread_id FROM fork_library_source_baselines`).toEqual([
+            { thread_id: threadId },
+          ]);
+        }),
+      ),
+  );
+  it.effect("keeps a live conversation pending while an attachment it needs is missing", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.archive, withAttachment);
+        yield* Ref.set(f.missingAttachments, new Set([lostAttachment.id]));
+        yield* f.event(1, "thread.created", "{}");
+        expect((yield* f.service.drain.pipe(Effect.flip)).reason).toBe("not-found");
+        expect(yield* Ref.get(f.requests)).toEqual([]);
+        expect(yield* f.service.status).toMatchObject({
+          pendingEntries: 1,
+          lastFailure: "not-found",
+        });
+      }),
+    ),
+  );
+  it.effect("registers a working copy again only once it changed", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const current = yield* Ref.make(receipt);
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            receipts: Ref.get(current).pipe(Effect.map((value) => [value])),
+            get: () => Ref.get(current),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({ cleanupTemporaryCopies: () => Effect.void }),
+          ),
+        );
+        const copyRegistrations = Ref.get(f.registered).pipe(
+          Effect.map((requests) => requests.filter((input) => input.requestId.includes(":copy:"))),
+        );
+        yield* f.event(1, "thread.created", "{}");
+        yield* service.drain;
+        yield* f.event(2, "checkpoint.captured", "{}");
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* service.drain;
+        expect(yield* Ref.get(f.requests)).toHaveLength(2);
+        expect(yield* copyRegistrations).toHaveLength(1);
+        yield* Ref.update(current, (value) => ({
+          ...value,
+          copy: { ...value.copy, keepOnComputer: !value.copy.keepOnComputer },
+        }));
+        yield* service.drain;
+        expect(yield* copyRegistrations).toHaveLength(2);
+      }),
+    ),
+  );
+  it.effect("keeps a bound conversation's baseline and removes ones no delta will use", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* Ref.update(f.authority, (info) => ({
+          ...info,
+          features: ["library-history-deltas"],
+        }));
+        yield* Ref.set(f.archive, withText(yield* Ref.get(f.archive), "transcript ".repeat(500)));
+        const unbound = ThreadId.make("unbound-thread");
+        const deleted = ThreadId.make("deleted-thread");
+        const stale = new Uint8Array([1]);
+        yield* f.sql`INSERT INTO fork_library_source_baselines(thread_id,bytes) VALUES (${unbound},${stale}),(${deleted},${stale})`;
+        // A bound conversation deleted after the Library acknowledged its last history.
+        yield* f.sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${deleted},5,5)`;
+        yield* f.sql`INSERT INTO orchestration_v2_projection_threads(thread_id,project_id,title,default_provider,runtime_mode,interaction_mode,created_at,updated_at,deleted_at,payload_json) VALUES (${deleted},'project','Deleted','codex','full-access','default','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z','2026-10-15T00:00:00.000Z','{}')`;
+        const service = yield* serviceFor(f, [deleted, threadId], () => Ref.get(f.archive));
+        yield* f.event(1, "thread.created", "{}");
+        yield* service.drain;
+        expect(yield* f.sql`SELECT thread_id FROM fork_library_source_baselines`).toEqual([
+          { thread_id: threadId },
+        ]);
+        yield* f.event(2, "checkpoint.captured", "{}");
+        yield* Ref.update(f.archive, (archive) => ({
+          ...archive,
+          summary: { ...archive.summary, sequence: 2 },
+        }));
+        yield* service.drain;
+        expect((yield* Ref.get(f.requests)).at(-1)!.entries[0]!.delta).toBeDefined();
+        expect(yield* service.status).toMatchObject({ pendingEntries: 0, lastFailure: null });
+      }),
+    ),
   );
   it.effect("scans token events cheaply and snapshots once at the committed milestone", () =>
     run((f) =>
@@ -1298,6 +1484,56 @@ describe("durable Library history replication", () => {
         }),
       ).pipe(pendingLimit(1_000_000)),
   );
+  it.effect(
+    "does not snapshot a waiting conversation again until the outbox has room for its last size",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const other = ThreadId.make("other-thread");
+          const taken = yield* Ref.make<ThreadId[]>([]);
+          yield* Ref.update(f.archive, (archive) => withText(archive, longText));
+          const service = yield* serviceFor(f, [other, threadId], (input) =>
+            Ref.update(taken, (ids) => [...ids, input.threadId]).pipe(
+              Effect.andThen(Ref.get(f.archive)),
+            ),
+          );
+          const snapshots = Ref.get(taken).pipe(
+            Effect.map((ids) => ids.filter((id) => id === threadId).length),
+          );
+          // Each snapshot fits the outbox alone, but not beside the other's, which the Library
+          // has not acknowledged yet.
+          yield* Ref.set(f.failAck, true);
+          expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("io");
+          expect(yield* snapshots).toBe(1);
+          for (let attempt = 0; attempt < 3; attempt++) {
+            yield* TestClock.adjust("5 seconds");
+            expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("io");
+          }
+          expect(yield* snapshots).toBe(1);
+          // This pass captures before its acknowledgement frees the room.
+          yield* Ref.set(f.failAck, false);
+          expect((yield* service.drain.pipe(Effect.flip)).reason).toBe("storage-limit");
+          expect(yield* snapshots).toBe(1);
+          yield* service.drain;
+          expect(yield* snapshots).toBe(2);
+          expect(yield* service.status).toMatchObject({ pendingEntries: 0, lastFailure: null });
+          // A flush still takes a milestone inside the conversation's spacing.
+          yield* f.event(2, "thread.settled", "{}");
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 2 },
+          }));
+          yield* service.drain;
+          expect(yield* snapshots).toBe(2);
+          yield* service.flush;
+          expect(yield* snapshots).toBe(3);
+          expect((yield* service.status).threads[1]).toMatchObject({
+            acknowledgedSequence: 2,
+            pending: false,
+          });
+        }),
+      ).pipe(pendingLimit(1_000_000)),
+  );
   it.effect("flushes a conversation that fits once the flush acknowledges the backlog", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -1462,7 +1698,7 @@ describe("durable Library history replication", () => {
         ingest: () => Effect.fail(new LibraryError({ reason: "blocked" })),
         registerCopy: () => Effect.fail(new LibraryError({ reason: "blocked" })),
         recordActivity: () => Effect.fail(new LibraryError({ reason: "blocked" })),
-        publishAttachments: () => Effect.void,
+        publishAttachments: () => Effect.succeed(new Set<string>()),
         project: () => Effect.die("unused"),
         proposeBrief: () => Effect.die("unused"),
         registerPreviews: () => Effect.die("unused"),
@@ -1491,6 +1727,80 @@ describe("durable Library history replication", () => {
         getEnvironmentId: Effect.succeed(source),
       }),
       Effect.scoped,
+    ),
+  );
+  it.effect("snapshots a conversation on the reader while another write holds the writer", () =>
+    runOn(fileDatabase)((f) =>
+      Effect.gen(function* () {
+        const { projections, history } = yield* Effect.all({
+          projections: ProjectionStore.ProjectionStoreV2,
+          history: HistorySource.LibraryHistorySource,
+        }).pipe(
+          Effect.provide(HistorySource.layer.pipe(Layer.provideMerge(ProjectionStore.layer))),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, workspace),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+        );
+        yield* projections.apply({
+          id: EventId.make("library-reader:thread"),
+          type: "thread.created",
+          threadId,
+          providerInstanceId: readerProvider,
+          occurredAt: readerAt,
+          payload: {
+            createdBy: "user",
+            creationSource: "web",
+            id: threadId,
+            projectId: localProjectId,
+            title: "Read on the reader",
+            providerInstanceId: readerProvider,
+            modelSelection: { instanceId: readerProvider, model: "gpt-5" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: null,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: readerAt,
+            updatedAt: readerAt,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+        });
+        yield* f.event(1, "thread.created", "{}");
+        const started = yield* Deferred.make<void>();
+        const held = yield* Deferred.make<void>();
+        const snapshotted = yield* Deferred.make<void>();
+        // Forked outside the drain, so this transaction takes the writer itself. A snapshot that
+        // needed the writer would wait for it forever.
+        const writer = yield* Deferred.await(started).pipe(
+          Effect.andThen(
+            f.sql.withTransaction(
+              Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(snapshotted))),
+            ),
+          ),
+          Effect.forkChild,
+        );
+        const service = yield* serviceFor(f, [threadId], (input) =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(held)),
+            Effect.andThen(history.snapshotThread(input)),
+            Effect.ensuring(Deferred.succeed(snapshotted, undefined)),
+          ),
+        );
+        yield* service.drain;
+        yield* Fiber.join(writer);
+        const sent = (yield* Ref.get(f.requests)).flatMap((request) => request.entries);
+        expect(sent.map((entry) => [entry.thread.summary.title, entry.sequence])).toEqual([
+          ["Read on the reader", 1],
+        ]);
+        expect((yield* service.status).pendingEntries).toBe(0);
+      }),
     ),
   );
 });

@@ -38,6 +38,8 @@ import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopWebLinks from "./app/DesktopWebLinks.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
+// fork: identity-renewal
+import * as DesktopIdentityRenewal from "./fork/identity-renewal/DesktopIdentityRenewal.ts";
 import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -140,6 +142,7 @@ const layerElectron = Layer.mergeAll(
 );
 
 const layerDesktopFoundation = Layer.mergeAll(
+  DesktopIdentityRenewal.layer, // fork: identity-renewal
   MacPermissions.layer,
   DesktopState.layer,
   DesktopShutdown.layer,

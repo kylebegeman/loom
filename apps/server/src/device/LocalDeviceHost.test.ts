@@ -8,7 +8,9 @@ import * as Path from "effect/Path";
 import * as FileSystem from "effect/FileSystem";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock"; // fork: retention-defaults
 
+import { IDLE_AGENT_DEVICE_SESSION_MS } from "../fork/retention/agentDeviceSessions.ts"; // fork: retention-defaults
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -236,6 +238,60 @@ describe("AgentDevice startup", () => {
         ready.agentDevice,
       );
       expect(attempts).toBe(2);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+});
+
+// fork: retention-defaults
+describe("AgentDevice session retention", () => {
+  const now = Date.parse("2026-10-24T12:00:00Z");
+  const idleSeconds = (now - IDLE_AGENT_DEVICE_SESSION_MS - 24 * 60 * 60 * 1000) / 1000;
+  const idleSession = Effect.fn("idleSession")(function* (stateDir: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const folder = `${stateDir}/sessions/t3-idle`;
+    yield* fs.makeDirectory(folder, { recursive: true });
+    yield* fs.writeFileString(`${folder}/app.log`, "log");
+    yield* fs.utimes(`${folder}/app.log`, idleSeconds, idleSeconds);
+    yield* fs.utimes(folder, idleSeconds, idleSeconds);
+    yield* TestClock.setTime(now);
+    return folder;
+  });
+  const daemonFile = JSON.stringify({ httpPort: 12345, token: "test-token" });
+
+  it.effect("removes idle session folders before starting a new daemon", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      let folderAtStart: boolean | undefined;
+      const { host, stateDir } = yield* agentFixture((daemonStateDir) =>
+        Effect.gen(function* () {
+          folderAtStart = yield* fs.exists(`${daemonStateDir}/sessions/t3-idle`);
+          yield* fs.writeFileString(`${daemonStateDir}/daemon.json`, daemonFile);
+          return processOutput(0);
+        }).pipe(Effect.orDie),
+      );
+      const folder = yield* idleSession(stateDir);
+      yield* host.ensureAgentReady(() => Effect.void);
+      expect(folderAtStart).toBe(false);
+      expect(yield* fs.exists(folder)).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps session folders while a running daemon can hold them", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      let attempts = 0;
+      const { host, stateDir } = yield* agentFixture(() =>
+        Effect.sync(() => {
+          attempts++;
+          return processOutput(0);
+        }),
+      );
+      const folder = yield* idleSession(stateDir);
+      yield* fs.writeFileString(`${stateDir}/daemon.json`, daemonFile);
+      const ready = yield* host.ensureAgentReady(() => Effect.void);
+      expect(ready.agentDevice).toMatchObject({ baseUrl: "http://127.0.0.1:12345" });
+      expect(attempts).toBe(0);
+      expect(yield* fs.exists(`${folder}/app.log`)).toBe(true);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

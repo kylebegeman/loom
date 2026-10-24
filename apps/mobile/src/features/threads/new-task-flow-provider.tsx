@@ -96,7 +96,7 @@ import {
   useRemoteConnectionStatus,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork"; // fork: no-project-first
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -353,8 +353,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const scratchEnvironments = connectedEnvironments.filter(
+    // fork: no-project-first - A Library advertises a scratch folder but cannot run work.
     (environment) =>
-      availableScratchWorkspaceRoot(
+      noProjectWorkspaceRoot(
         environment.connectionState,
         serverConfigs.get(environment.environmentId),
       ) !== null,

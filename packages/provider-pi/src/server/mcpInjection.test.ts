@@ -138,7 +138,8 @@ describe("pi T3 MCP injection", () => {
     assert.isFalse(launch.hasT3Mcp);
     assert.deepInclude(resolvePiLaunchArgs("--mode text"), {
       ok: false,
-      message: "Pi launch argument '--mode' is controlled by T3 Code and cannot be overridden.",
+      // fork: brand
+      message: "Pi launch argument '--mode' is controlled by Loom and cannot be overridden.",
     });
     assert.deepInclude(resolvePiLaunchArgs("--session old.jsonl"), { ok: false });
     assert.deepInclude(resolvePiLaunchArgs("prompt pi immediately"), { ok: false });

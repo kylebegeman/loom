@@ -27,6 +27,8 @@ import {
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
   BearerConnectionTarget,
+  type ConnectionAttemptError, // fork: identity-renewal
+  ConnectionBlockedError, // fork: identity-renewal
   ConnectionTransientError,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
@@ -40,6 +42,12 @@ import {
   gitHubRoutingConnectionKey,
   makeGitHubRoutingPermissions,
 } from "./githubRoutingPermissions.ts";
+// fork: identity-renewal
+import {
+  IdentityRenewal,
+  type IdentityRenewalOutcome,
+  type IdentityRenewalRequest,
+} from "../fork/identity-renewal.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const ENDPOINT = {
@@ -202,7 +210,8 @@ describe("ConnectionResolver", () => {
       const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
 
       expect(error).toMatchObject({ reason: "unsupported" });
-      expect(error.message).toContain("Update T3 Code on Compatible environment");
+      // fork: brand
+      expect(error.message).toContain("Update Loom on Compatible environment");
     }),
   );
 
@@ -426,6 +435,132 @@ describe("ConnectionResolver", () => {
           }
         }
       }),
+  );
+
+  // fork: identity-renewal
+  it.effect("renews an expired Identity credential before connecting with it", () =>
+    Effect.gen(function* () {
+      const identity = { issuer: "https://id.example.test", subject: "owner" };
+      const target = new BearerConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Computer",
+        connectionId: "identity",
+      });
+      const entry = catalogEntry(
+        target,
+        Option.some(
+          new BearerConnectionProfile({
+            ...ENDPOINT,
+            environmentId: ENVIRONMENT_ID,
+            label: "Computer",
+            connectionId: "identity",
+            identity,
+          }),
+        ),
+      );
+      const now = yield* Clock.currentTimeMillis;
+      const resolverWith = Effect.fn("test.resolverWith")(function* (
+        expiresAt: number,
+        outcome: Effect.Effect<IdentityRenewalOutcome, ConnectionAttemptError>,
+        rejects: ReadonlyArray<string> = [],
+      ) {
+        const requests: Array<IdentityRenewalRequest> = [];
+        const layer = yield* makeDependencies({
+          authorizeBearer: (input) =>
+            rejects.includes(input.bearerToken)
+              ? Effect.fail(
+                  new ConnectionBlockedError({ reason: "authentication", detail: "Rejected." }),
+                )
+              : Effect.succeed({
+                  environmentId: input.expectedEnvironmentId,
+                  label: "Computer",
+                  httpBaseUrl: input.httpBaseUrl,
+                  socketUrl: "wss://authorized.example.test/ws?wsTicket=bearer",
+                  httpAuthorization: { _tag: "Bearer" as const, token: input.bearerToken },
+                }),
+          credentials: [
+            [
+              "identity",
+              new BearerConnectionCredential({
+                token: "saved",
+                identity: { ...identity, environmentId: ENVIRONMENT_ID, expiresAt },
+              }),
+            ],
+          ],
+        });
+        const resolver = yield* ConnectionResolver.ConnectionResolver.pipe(
+          Effect.provide(layer),
+          Effect.provideService(IdentityRenewal, {
+            renew: (request) =>
+              Effect.suspend(() => {
+                requests.push(request);
+                return outcome;
+              }),
+            forget: () => Effect.void,
+          }),
+        );
+        return { resolver, requests };
+      });
+
+      const renewed = yield* resolverWith(
+        now - 1,
+        Effect.succeed({ _tag: "Renewed", token: "renewed", expiresAt: now + 3_600_000 }),
+      );
+      const first = yield* renewed.resolver.prepare(entry);
+      const second = yield* renewed.resolver.prepare(entry);
+      expect(first.httpAuthorization).toMatchObject({ token: "renewed" });
+      expect(second.httpAuthorization).toMatchObject({ token: "renewed" });
+      // The computer refuses to renew a session it revoked, so it sees the one being replaced.
+      expect(renewed.requests).toEqual([
+        {
+          httpBaseUrl: ENDPOINT.httpBaseUrl,
+          environmentId: ENVIRONMENT_ID,
+          identity,
+          currentToken: "saved",
+        },
+      ]);
+
+      const signInRequired = yield* resolverWith(
+        now - 1,
+        Effect.succeed({ _tag: "SignInRequired", reason: "Session limit reached." }),
+      );
+      const blocked = yield* signInRequired.resolver.prepare(entry).pipe(Effect.flip);
+      expect(blocked).toMatchObject({ reason: "authentication" });
+      expect(blocked.message).toContain("Sign in again");
+
+      const offline = new ConnectionTransientError({ reason: "network", detail: "offline" });
+      const expired = yield* resolverWith(now - 1, Effect.fail(offline));
+      expect(yield* expired.resolver.prepare(entry).pipe(Effect.flip)).toBe(offline);
+
+      // A live credential is the renewal worker's, which swaps it under the registry's lock.
+      const stillLive = yield* resolverWith(now + 30_000, Effect.fail(offline));
+      expect((yield* stillLive.resolver.prepare(entry)).httpAuthorization).toMatchObject({
+        token: "saved",
+      });
+      expect(stillLive.requests).toEqual([]);
+
+      // A computer that refuses a live credential, as after a policy change, gets one renewal.
+      const refused = yield* resolverWith(
+        now + 3_600_000,
+        Effect.succeed({ _tag: "Renewed", token: "renewed", expiresAt: now + 3_600_000 }),
+        ["saved"],
+      );
+      expect((yield* refused.resolver.prepare(entry)).httpAuthorization).toMatchObject({
+        token: "renewed",
+      });
+      expect(refused.requests.map((request) => request.currentToken)).toEqual(["saved"]);
+
+      // A revoked session is refused renewal, so the computer's refusal stands.
+      const revoked = yield* resolverWith(
+        now + 3_600_000,
+        Effect.succeed({ _tag: "SignInRequired", reason: "Sign in again." }),
+        ["saved"],
+      );
+      expect(yield* revoked.resolver.prepare(entry).pipe(Effect.flip)).toMatchObject({
+        reason: "authentication",
+        detail: "Rejected.",
+      });
+    }),
   );
 
   it.effect("exports the complete relay authorization flow through the product tracer", () =>

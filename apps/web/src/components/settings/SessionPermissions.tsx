@@ -32,7 +32,13 @@ export function SessionPermissions({
     </div>
   ) : (
     <p className="py-3 text-xs text-muted-foreground">
-      Permissions not checked. Connect to this computer to view this session’s permissions.
+      {!connected
+        ? "Permissions not checked. Connect to this computer to view this session’s permissions."
+        : session.data?.authenticated === false
+          ? "This computer no longer accepts this device’s credential, so it grants no permissions. Sign in or pair again."
+          : session.hasError
+            ? "Could not check this session’s permissions. Reconnect to try again."
+            : "Checking this session’s permissions..."}
     </p>
   );
 }

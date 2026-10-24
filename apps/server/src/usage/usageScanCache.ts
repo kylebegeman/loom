@@ -17,6 +17,7 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * both.
  */
+// fork: retention-defaults: fork/retention/legacyUsageCaches.ts deletes a legacy file a week after its last write.
 export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v7.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
   "usage-scan-cache-v6.json",

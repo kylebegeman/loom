@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -48,7 +48,7 @@ export function ComputerWorkSection({
       !isScratchProject(project, config?.scratchWorkspaceRoot),
   );
   const canStartScratch =
-    availableScratchWorkspaceRoot(connected ? "connected" : "offline", config) !== null;
+    noProjectWorkspaceRoot(connected ? "connected" : "offline", config) !== null;
   const recent = recentConversationForComputer(threads, projects, environmentId);
 
   async function run(label: string, action: () => Promise<void>) {

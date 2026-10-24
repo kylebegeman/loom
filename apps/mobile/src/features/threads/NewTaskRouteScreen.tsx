@@ -14,7 +14,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { useNoProjectTarget } from "../../fork/no-project/useNoProjectTarget"; // fork: no-project-first
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection"; // fork: fleet-connections
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
@@ -205,20 +205,14 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
-  const scratchEnvironments = connectedEnvironments.filter(
-    (environment) =>
-      availableScratchWorkspaceRoot(
-        environment.connectionState,
-        serverConfigs.get(environment.environmentId),
-      ) !== null,
-  );
-  const scratchEnvironment =
-    scratchEnvironments.find(
-      (environment) => environment.environmentId === selectedEnvironmentId,
-    ) ??
-    scratchEnvironments[0] ??
-    null;
+  const scratchEnvironment = useNoProjectTarget(selectedEnvironmentId); // fork: no-project-first
   const canStartScratch = scratchEnvironment !== null && reservedDestinationProject === null;
+  // fork: no-project-first - Name the computer, as project rows do. The empty state below has its own button.
+  const scratchSubtitle = scratchEnvironment
+    ? `Starts on ${savedConnectionsById[scratchEnvironment.environmentId]?.environmentLabel ?? scratchEnvironment.environmentLabel}`
+    : "Start a task without a project";
+  const emptyStateOffersScratch =
+    legacyScopes.length === 0 && sharedChoices.length === 0 && !projectEmptyState.loading;
   const scratchStartInFlightRef = useRef(false);
 
   async function selectProject(project: EnvironmentProject): Promise<void> {
@@ -333,15 +327,15 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
-          {/* fork: library */}
-          <NewTaskLibraryProjectChoices choices={sharedChoices} error={libraryProjects.error} />
-          {canStartScratch && listScopes.length > 0 ? (
+          {/* fork: no-project-first - No project leads the choices whenever a computer can run it. */}
+          {canStartScratch && !emptyStateOffersScratch ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
                 <NavigationRow
                   className="bg-grouped-card"
                   title="No project"
-                  subtitle="Start a task without a project"
+                  subtitle={scratchSubtitle} // fork: no-project-first
+                  subtitleNumberOfLines={1} // fork: no-project-first
                   onPress={() => void startScratch()}
                   leading={
                     <SymbolView
@@ -357,7 +351,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="No project"
+                  accessibilityLabel={`No project, ${scratchSubtitle}`} // fork: no-project-first
                   onPress={() => void startScratch()}
                   className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
                 >
@@ -372,7 +366,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   <View className="min-w-0 flex-1">
                     <Text className="text-base font-t3-bold leading-snug">No project</Text>
                     <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
-                      Start a task without a project
+                      {scratchSubtitle /* fork: no-project-first */}
                     </Text>
                   </View>
                   <SymbolView
@@ -385,6 +379,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               </View>
             )
           ) : null}
+          {/* fork: library */}
+          <NewTaskLibraryProjectChoices choices={sharedChoices} error={libraryProjects.error} />
           {legacyScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View
               collapsable={false}

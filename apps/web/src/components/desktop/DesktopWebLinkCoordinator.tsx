@@ -95,8 +95,10 @@ export function DesktopWebLinkCoordinator() {
       stackedThreadToast({ type: "error", title: "Could not open the link", description }),
     );
 
-  const startThread = async (url: string): Promise<ScopedThreadRef | null> => {
-    const environmentId = scratchEnvironmentId(primaryEnvironment?.environmentId ?? null);
+  // fork: no-project-first - A file path names this machine, so only the primary can open it.
+  const startThread = async (url: string, isFile: boolean): Promise<ScopedThreadRef | null> => {
+    const target = scratchEnvironmentId(primaryEnvironment?.environmentId ?? null);
+    const environmentId = isFile && target !== primaryEnvironment?.environmentId ? null : target;
     if (environmentId === null) {
       reportFailure(url);
       return null;
@@ -126,7 +128,7 @@ export function DesktopWebLinkCoordinator() {
       threadShowingBrowser(
         routeParams,
         isFile ? (primaryEnvironment?.environmentId ?? null) : null,
-      ) ?? (await startThread(url));
+      ) ?? (await startThread(url, isFile)); // fork: no-project-first
     if (threadRef === null) return;
     const result = isFile
       ? httpBaseUrl === null

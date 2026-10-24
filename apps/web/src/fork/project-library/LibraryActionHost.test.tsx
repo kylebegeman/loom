@@ -13,7 +13,12 @@ const state = vi.hoisted(() => ({
   navigate: vi.fn(),
   select: vi.fn(),
   refresh: vi.fn(),
+  noProject: { label: "Dorothy", start: vi.fn(async () => {}) } as {
+    label: string;
+    start: () => Promise<void>;
+  } | null,
 }));
+vi.mock("./useNoProjectStart", () => ({ useNoProjectStart: () => state.noProject }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
   useRouterState: () => ({}),
@@ -205,6 +210,7 @@ beforeEach(async () => {
   state.projects = [project, second, { ...project, id: "old", title: "Archived", archived: true }];
   state.copies = [copy];
   state.pending = false;
+  state.noProject = { label: "Dorothy", start: vi.fn(async () => {}) };
   vi.clearAllMocks();
   container = document.createElement("div");
   document.body.append(container);
@@ -313,4 +319,40 @@ it("replaces the source file selection when another folder for the same project 
   await click("Add existing folder");
   await click("Save");
   expect(launch().initialCopyId).toBe("another-folder");
+});
+
+it("leads a new conversation with No project and starts it without opening a project", async () => {
+  await act(() => openLibraryAction("new-conversation"));
+  const titles = Array.from(container.querySelectorAll("button")).map((entry) => entry.textContent);
+  expect(titles.slice(0, 3)).toEqual(["No project", "Alpha", "Beta"]);
+  await click("No project");
+  expect(state.noProject?.start).toHaveBeenCalledOnce();
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+  expect(state.select).not.toHaveBeenCalled();
+});
+it("keeps No project during Library setup and leaves it out when no computer can run it", async () => {
+  state.authorityId = null;
+  await act(() => openLibraryAction("new-conversation"));
+  expect(container.textContent).toContain("Connect Library");
+  expect(button("No project")).toBeDefined();
+  state.noProject = null;
+  state.authorityId = "library";
+  await act(() => openLibraryAction("new-conversation"));
+  expect(button("No project")).toBeUndefined();
+  expect(button("Alpha")).toBeDefined();
+});
+it("lets a project search beat No project when its computer shares the project's name", async () => {
+  state.noProject = { label: "Alpha studio", start: vi.fn(async () => {}) };
+  await act(() => openLibraryAction("new-conversation"));
+  await type("Search projects", "alpha");
+  expect(button("No project")).toBeUndefined();
+  expect(button("Alpha")).toBeDefined();
+  await type("Search projects", "without");
+  expect(button("No project")).toBeDefined();
+});
+it("offers No project only when the chooser starts a conversation", async () => {
+  await act(() => openLibraryAction("create-project"));
+  await click("Back");
+  expect(button("Alpha")).toBeDefined();
+  expect(button("No project")).toBeUndefined();
 });

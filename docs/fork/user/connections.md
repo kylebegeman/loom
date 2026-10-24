@@ -33,6 +33,28 @@ native clients. A browser on a local, IP or VPN address can use direct pairing;
 Connections provides the hosted-web sign-in link when that deployment supports
 it. A privately configured account service follows its own supported domains.
 
+## Stay signed in with Identity
+
+Each Identity sign-in to a computer lasts up to an hour. When the computer sets
+a sign-in limit, the desktop app and iPhone renew it on their own while you
+work. They ask you to sign in again once that limit is reached, counted from
+when you last signed in, or sooner if the computer stops accepting your account.
+A browser does not renew on its own, so it asks you to sign in again after each
+hour of use.
+
+Removing a connection signs this device out of that computer. If the computer is
+offline, removal still finishes and the device's access ends on its own within
+the hour. Revoking a device's session from the computer's Connections settings
+also ends its renewals, so that device must sign in again.
+
+To turn on renewal for a computer, set `LOOM_IDENTITY_MAX_SESSION_AGE` in its
+server environment and restart it. Use whole seconds or a number with `s`, `m`,
+`h` or `d`, such as `7d`, between one hour and 365 days. Update the desktop app
+and iPhone app on every device that signs in to that computer first, because
+older versions cannot sign in once the limit is set. Setting or changing the
+limit ends the computer's current Identity sign-ins when it restarts. Devices
+that were already renewing reconnect on their own, and others sign in again.
+
 ## Name and use a computer
 
 Rename a connected Loom computer in its connection settings. Its friendly name

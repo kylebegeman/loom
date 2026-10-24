@@ -7,6 +7,7 @@ import {
   AuthSessionId,
   EnvironmentId,
   ProjectId,
+  ProviderInstanceId,
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -38,6 +39,16 @@ import * as VaultCore from "./VaultCore.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import { makeVaultCoreRpcHandlers } from "./rpc.ts";
+import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
+import { memoryVault } from "./VaultLaunch.testkit.ts";
+import {
+  createReaderThread,
+  projectionThreads,
+  readerDatabase,
+  readerThreadId,
+  updateReaderRun,
+  whileWriterHeld,
+} from "./VaultReader.testkit.ts";
 
 const isLegacyPolicy = Schema.is(AccessPolicy.LegacyPolicy);
 const isProtectedPolicy = Schema.is(AccessPolicy.ProtectedPolicy);
@@ -98,6 +109,7 @@ const fixture = () => {
     approvalRequired: false,
     runStatus: "running" as "running" | "completed" | "cancelled",
     interactionMode: "default" as "default" | "plan",
+    reads: { shell: 0, records: 0, item: 0, policy: 0 },
   };
   const store = OpenBaoStore.OpenBaoStore.of({
     status: Effect.succeed({
@@ -108,6 +120,8 @@ const fixture = () => {
     read: (path) =>
       Effect.gen(function* () {
         if (state.failReads) return yield* new VaultError({ reason: "unavailable" });
+        if (path.includes("/items/")) state.reads.item++;
+        if (path.endsWith("/access-policy")) state.reads.policy++;
         const value = records.get(path) ?? null;
         const barrier = path.endsWith("/access-policy") ? state.readBarrier : null;
         if (barrier) {
@@ -174,31 +188,32 @@ const fixture = () => {
     }),
     Layer.mock(ThreadManagementService)({
       getThreadRecords: (id) =>
-        Effect.sync(
-          () =>
-            ({
-              thread: {
-                id,
-                projectId,
-                deletedAt: state.deleted ? "2026-10-18T00:00:00Z" : null,
-                archivedAt: null,
+        Effect.sync(() => {
+          state.reads.records++;
+          return {
+            thread: {
+              id,
+              projectId,
+              deletedAt: state.deleted ? "2026-10-18T00:00:00Z" : null,
+              archivedAt: null,
+              providerInstanceId: "codex",
+              runtimeMode: state.approvalRequired ? "approval-required" : "full-access",
+              interactionMode: state.interactionMode,
+            },
+            runs: [
+              {
+                id: state.runId,
+                threadId: id,
                 providerInstanceId: "codex",
-                runtimeMode: state.approvalRequired ? "approval-required" : "full-access",
-                interactionMode: state.interactionMode,
+                status: state.runStatus,
               },
-              runs: [
-                {
-                  id: state.runId,
-                  threadId: id,
-                  providerInstanceId: "codex",
-                  status: state.runStatus,
-                },
-              ],
-            }) as never,
-        ),
+            ],
+          } as never;
+        }),
       getThreadShell: (id) =>
-        Effect.sync(() =>
-          id === ThreadId.make("missing")
+        Effect.sync(() => {
+          state.reads.shell++;
+          return id === ThreadId.make("missing")
             ? null
             : ({
                 id,
@@ -214,8 +229,8 @@ const fixture = () => {
                   parentThreadId: id === childId ? threadId : null,
                   relationshipToParent: id === childId ? "subagent" : null,
                 },
-              } as never),
-        ),
+              } as never);
+        }),
     }),
   );
   const core = VaultCore.layer.pipe(Layer.provide(dependencies));
@@ -2660,4 +2675,104 @@ it.effect(
         expect((yield* access.snapshot.pipe(Effect.flip)).reason).toBe("invalid-response");
       }),
     ),
+);
+it.effect.each(["grant", "owner"] as const)(
+  "a restricted-metadata %s explanation matches the full decision from one set of reads",
+  (authority) =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        if (authority === "grant")
+          yield* access.apply(
+            { ...save, change: { type: "save", grant: { ...definition, actions: ["use"] } } },
+            "human",
+          );
+        else yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        const input = { threadId, itemId, action: "use" as const, destination: null };
+        const full = yield* access.explain(input);
+        const inspect = yield* access.explain({ ...input, action: "inspect" });
+        fixture.state.reads = { shell: 0, records: 0, item: 0, policy: 0 };
+        const restricted = yield* access.explain(input, true);
+        expect(restricted.decision).toEqual(full.decision);
+        expect(inspect.decision.allowed).toBe(authority === "owner");
+        expect(restricted.item).toEqual(authority === "owner" ? full.item : null);
+        expect(full.item).not.toBeNull();
+        expect(fixture.state.reads).toEqual({
+          shell: 1,
+          records: authority === "owner" ? 1 : 0,
+          item: 1,
+          policy: 1,
+        });
+      }),
+    ),
+);
+it.effect("require reads the thread again when it retries after a policy conflict", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      yield* access.apply(save, "human");
+      const shell = {
+        ...liveThreadShell(threadId, { activeRunId: fixture.state.runId }),
+        projectId,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      };
+      fixture.state.reads = { shell: 0, records: 0, item: 0, policy: 0 };
+      yield* access.require(threadId, itemId, "use", null, { shell, running: true });
+      expect(fixture.state.reads.shell).toBe(0);
+      fixture.state.auditConflicts = 1;
+      yield* access.require(threadId, itemId, "use", null, { shell, running: true });
+      expect(fixture.state.reads.shell).toBe(1);
+      fixture.state.deleted = true;
+      fixture.state.auditConflicts = 1;
+      expect(
+        (yield* access
+          .require(threadId, itemId, "use", null, { shell, running: true })
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+    }),
+  ),
+);
+it.effect("owner-trusted checks read the thread on the reader while the writer is held", () =>
+  Effect.gen(function* () {
+    yield* createReaderThread;
+    yield* updateReaderRun("running");
+    const access = yield* VaultAccess.VaultAccess;
+    const core = yield* VaultCore.VaultCore;
+    yield* core.save(
+      {
+        id: itemId,
+        operationId: "a".repeat(32),
+        expectedVersion: 0,
+        label: "Reader item",
+        kind: "secret",
+        value: Redacted.make("synthetic-reader"),
+      },
+      "human",
+    );
+    yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+    const input = { threadId: readerThreadId, itemId, action: "use" as const, destination: null };
+    const explanation = yield* whileWriterHeld(
+      access
+        .require(input.threadId, input.itemId, input.action, input.destination)
+        .pipe(Effect.andThen(access.explain(input))),
+    );
+    expect(explanation.decision).toMatchObject({ basis: "owner-trusted" });
+    expect(explanation.decision.reason).not.toBe("workload-inactive");
+  }).pipe(
+    Effect.provide(
+      VaultAccess.layer.pipe(
+        Layer.provide(ApprovalNotifications.stub),
+        Layer.provideMerge(VaultCore.layer),
+        Layer.provide(
+          Layer.mergeAll(
+            memoryVault,
+            projectionThreads,
+            Layer.mock(ProjectStoreV2)({}),
+            Layer.succeed(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("reader-test")),
+            }),
+          ),
+        ),
+        Layer.provideMerge(readerDatabase),
+      ),
+    ),
+  ),
 );

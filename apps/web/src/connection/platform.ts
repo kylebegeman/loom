@@ -62,6 +62,8 @@ import {
 } from "./desktopLocal";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
+import { IdentityRenewal } from "@t3tools/client-runtime/fork"; // fork: identity-renewal
+import { desktopIdentityRenewal } from "../fork/identity/renewal"; // fork: identity-renewal
 
 let nextObservedRpcRequestId = 0;
 
@@ -405,6 +407,7 @@ const layerCapabilities = Layer.effectContext(
     });
 
     return Context.make(ClientCapabilities.CloudSession, cloudSession).pipe(
+      Context.add(IdentityRenewal, desktopIdentityRenewal()), // fork: identity-renewal
       Context.add(ClientCapabilities.AnalyticsDevice, analyticsDevice),
       Context.add(ClientCapabilities.PrimaryEnvironmentAuth, primaryAuth),
       Context.add(ClientCapabilities.RelayDeviceIdentity, identity),

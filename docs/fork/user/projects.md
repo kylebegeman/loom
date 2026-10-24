@@ -9,7 +9,9 @@ its saved conversations.
 Open **New conversation** and search for a project, paste a repository URL, or enter a
 folder path. Repository matches offer existing projects before creating another one.
 Folder paths open the computer and folder chooser; the path belongs to the computer you
-choose, which may be remote. Recent projects appear first when you leave search empty.
+choose, which may be remote. With search empty, **No project** comes first, then recent
+projects. **No project** starts right away on the computer you are working on, or on another
+connected computer that can run work.
 
 Continue through the same searchable popup to choose files, computer and conversation
 settings. The final preview explains what will start. The **+** on an existing thread

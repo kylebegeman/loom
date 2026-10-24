@@ -4,6 +4,7 @@ import {
   LOOM_IDENTITY_METADATA_PATH,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_LOGOUT_PATH,
+  LOOM_IDENTITY_SIGN_IN_EXPIRED,
   LoomIdentityBrowserRequest,
   LoomIdentitySessionRequest,
 } from "@t3tools/contracts/fork";
@@ -38,6 +39,28 @@ const failed = (status: number) =>
     { error: "sign_in_failed", message: "Loom could not complete sign-in. Try again." },
     { status, headers: HEADERS },
   );
+const signInExpired = () =>
+  HttpServerResponse.jsonUnsafe(
+    {
+      error: LOOM_IDENTITY_SIGN_IN_EXPIRED,
+      message: new PocketId.PocketIdError({ reason: "expired" }).message,
+    },
+    { status: 401, headers: HEADERS },
+  );
+// Renewing clients keep their grant and retry on 5xx but ask for a new sign-in on 401, so a host
+// that cannot reach Pocket ID or its own session store, or whose operator mistyped its settings,
+// must not answer 401.
+const RETRYABLE_SESSION_FAILURES: ReadonlySet<PocketId.PocketIdError["reason"]> = new Set([
+  "configuration",
+  "discovery",
+  "session",
+]);
+const isPocketIdError = Schema.is(PocketId.PocketIdError);
+const sessionFailed = (error: unknown) => {
+  if (!isPocketIdError(error)) return failed(401);
+  if (error.reason === "expired") return signInExpired();
+  return failed(RETRYABLE_SESSION_FAILURES.has(error.reason) ? 503 : 401);
+};
 const setCookie = (
   response: HttpServerResponse.HttpServerResponse,
   name: string,
@@ -125,13 +148,18 @@ export const layer = Layer.unwrap(
       const body = yield* request.text;
       if (body.length > 40_000) return failed(400);
       const input = yield* decodeSessionRequest(body);
+      const authorization = request.headers.authorization;
+      const currentToken = authorization?.startsWith("Bearer ")
+        ? authorization.slice(7).trim()
+        : "";
       const session = yield* identity.createSession(
         input,
         deriveAuthClientMetadata({ request }),
         request.headers.origin,
+        currentToken === "" ? undefined : currentToken,
       );
       return HttpServerResponse.jsonUnsafe(session, { headers: HEADERS });
-    }).pipe(Effect.catch(() => Effect.succeed(failed(401))));
+    }).pipe(Effect.catch((error) => Effect.succeed(sessionFailed(error))));
     const logout = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const authorization = request.headers.authorization;

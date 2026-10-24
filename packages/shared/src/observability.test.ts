@@ -142,6 +142,30 @@ describe("truncateTraceAttributes", () => {
     const attributes = { short: "ok", nested: { fine: "also ok" } };
     assert.equal(truncateTraceAttributes(attributes), attributes);
   });
+
+  // fork: server-weight
+  it("collapses query whitespace before keeping its prefix", () => {
+    const indented = `
+        SELECT
+          event.sequence,
+          event.stream_id
+        FROM orchestration_events AS event
+        WHERE event.sequence <= ?
+      `;
+    assert.deepEqual(truncateTraceAttributes({ "db.query.text": indented }), {
+      "db.query.text":
+        "SELECT event.sequence, event.stream_id FROM orchestration_events AS event WHERE event.sequence <= ?",
+    });
+
+    const columns = Array.from({ length: 40 }, (_, index) => `column_${index}`);
+    const long = truncateTraceAttributes({
+      "db.query.text": `\n    SELECT\n      ${columns.join(",\n      ")}\n    FROM wide_table`,
+    })["db.query.text"] as string;
+    assert.equal(long, `SELECT ${columns.join(", ")}`.slice(0, 200) + "…[truncated]");
+
+    const compact = { "db.query.text": "SELECT 1" };
+    assert.equal(truncateTraceAttributes(compact), compact);
+  });
 });
 
 describe("decodeOtlpTraceRecords", () => {
@@ -290,6 +314,42 @@ describe("observability", () => {
         }
         assert.equal(records[0]?.exit._tag, Cause.hasInterrupts(cause) ? "Interrupted" : "Failure");
       }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  // fork: server-weight
+  it.effect("keeps a failed statement's exit and cause beside its collapsed query text", () =>
+    Effect.gen(function* () {
+      const records: Array<EffectTraceRecord> = [];
+      const tracer = yield* makeLocalFileTracer({
+        filePath: "unused",
+        maxBytes: 1024,
+        maxFiles: 1,
+        batchWindowMs: 10_000,
+        sink: {
+          filePath: "unused",
+          push: (record) => {
+            if (record.type === "effect-span") records.push(record);
+          },
+          flush: Effect.void,
+          close: () => Effect.void,
+        },
+      });
+      yield* Effect.fail({ _tag: "SqlError", message: "database is locked" }).pipe(
+        Effect.withSpan("sqlite", {
+          attributes: {
+            "db.query.text": "\n        DELETE FROM outbox\n        WHERE id = ?\n      ",
+          },
+        }),
+        Effect.provideService(Tracer.Tracer, tracer),
+        Effect.exit,
+      );
+
+      assert.equal(records.length, 1);
+      assert.equal(records[0]?.attributes["db.query.text"], "DELETE FROM outbox WHERE id = ?");
+      const exit = records[0]!.exit;
+      assert.equal(exit._tag, "Failure");
+      assert.include(exit._tag === "Failure" ? exit.cause : "", "database is locked");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

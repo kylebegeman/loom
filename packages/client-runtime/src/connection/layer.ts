@@ -15,6 +15,8 @@ import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
+// fork: identity-renewal
+import { forkIdentityRenewalWorker } from "../fork/identity-renewal-worker.ts";
 
 export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscoveredCompatibility")(
   function* () {
@@ -93,6 +95,7 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
         Stream.runForEach(registry.reconcilePlatform),
         Effect.forkScoped,
       );
+      yield* forkIdentityRenewalWorker(registry); // fork: identity-renewal
     }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
   );
   return layerConnectionStartup.pipe(

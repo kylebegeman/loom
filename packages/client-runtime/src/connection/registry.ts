@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
+import { IdentityRenewal } from "../fork/identity-renewal.ts"; // fork: identity-renewal
 import {
   type ConnectionCatalogEntry,
   type ConnectionCredential,
@@ -114,6 +115,15 @@ export class EnvironmentRegistry extends Context.Service<
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
     ) => Effect.Effect<void>;
+    // fork: identity-renewal
+    /**
+     * Swaps a saved credential, and its learned borrowers', without reconnecting. Optional only so
+     * upstream test doubles that list every method still compile; this registry always has it.
+     */
+    readonly replaceCredential?: (
+      connectionId: string,
+      credential: ConnectionCredential,
+    ) => Effect.Effect<void, ConnectionAttemptError>;
     readonly remove: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<
@@ -217,6 +227,7 @@ export const make = Effect.gen(function* () {
   const driver = yield* ConnectionDriver.ConnectionDriver;
   const wakeups = yield* ConnectionWakeups.ConnectionWakeups;
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
+  const identityRenewal = yield* IdentityRenewal; // fork: identity-renewal
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
@@ -649,6 +660,72 @@ export const make = Effect.gen(function* () {
     return yield* getEntry(environmentId);
   });
 
+  // fork: identity-renewal
+  /**
+   * Callers hold the lease lock and have stored the credential. A connected session keeps its
+   * socket and swaps only the HTTP bearer, which also refetches session state; an attempt that is
+   * pending or blocked on the old credential retries with the new one.
+   */
+  const applyCredentialLocked = Effect.fn("EnvironmentRegistry.applyCredentialLocked")(function* (
+    environmentId: EnvironmentId,
+    connectionId: string,
+    token: string,
+  ) {
+    const scope = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+    if (scope === undefined) return;
+    const state = yield* SubscriptionRef.get(scope.supervisor.state);
+    if (
+      state.phase === "connecting" ||
+      state.phase === "backoff" ||
+      (state.phase === "blocked" &&
+        state.lastFailure?._tag === "ConnectionBlockedError" &&
+        state.lastFailure.reason === "authentication")
+    ) {
+      yield* scope.supervisor.retryNow;
+    } else if (state.phase === "connected") {
+      yield* SubscriptionRef.updateSome(scope.supervisor.prepared, (current) =>
+        Option.isSome(current) &&
+        current.value.target._tag === "BearerConnectionTarget" &&
+        credentialConnectionId(current.value.target.connectionId) === connectionId &&
+        current.value.httpAuthorization?._tag === "Bearer" &&
+        current.value.httpAuthorization.token !== token
+          ? Option.some(
+              Option.some({
+                ...current.value,
+                httpAuthorization: { _tag: "Bearer", token },
+              }),
+            )
+          : Option.none(),
+      );
+    }
+  });
+
+  // fork: identity-renewal
+  const replaceCredential = Effect.fn("EnvironmentRegistry.replaceCredential")(function* (
+    connectionId: string,
+    credential: ConnectionCredential,
+  ) {
+    const owns = (entry: ConnectionCatalogEntry | undefined) =>
+      entry !== undefined &&
+      connectionRoutes(entry).some(
+        (route) =>
+          route.target._tag === "BearerConnectionTarget" &&
+          route.target.connectionId === connectionId,
+      );
+    const owner = [...(yield* SubscriptionRef.get(entries)).values()].find(owns);
+    if (owner === undefined) return;
+    const environmentId = owner.target.environmentId;
+    yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        // A removal that took the lock first already revoked this connection; drop the late swap.
+        if (!owns((yield* SubscriptionRef.get(entries)).get(environmentId))) return;
+        yield* credentials.put(connectionId, credential);
+        yield* applyCredentialLocked(environmentId, connectionId, credential.token);
+      }),
+    );
+  });
+
   const installPlatformRegistration = Effect.fn("EnvironmentRegistry.installPlatformRegistration")(
     function* (registration: PlatformConnectionRegistration) {
       const registered = connectionRegistrationCatalogEntry(registration);
@@ -738,36 +815,12 @@ export const make = Effect.gen(function* () {
           yield* installEntryLocked(entry, { retainEquivalentRuntime: true });
 
           if (bearerReplaced && registration._tag === "BearerConnectionRegistration") {
-            const scope = (yield* SubscriptionRef.get(serviceScopes)).get(target.environmentId);
-            if (scope !== undefined) {
-              const state = yield* SubscriptionRef.get(scope.supervisor.state);
-              if (
-                state.phase === "connecting" ||
-                state.phase === "backoff" ||
-                (state.phase === "blocked" &&
-                  state.lastFailure?._tag === "ConnectionBlockedError" &&
-                  state.lastFailure.reason === "authentication")
-              ) {
-                yield* scope.supervisor.retryNow;
-              } else if (state.phase === "connected") {
-                const token = registration.credential.token;
-                yield* SubscriptionRef.updateSome(scope.supervisor.prepared, (current) =>
-                  Option.isSome(current) &&
-                  current.value.target._tag === "BearerConnectionTarget" &&
-                  credentialConnectionId(current.value.target.connectionId) ===
-                    registration.target.connectionId &&
-                  current.value.httpAuthorization?._tag === "Bearer" &&
-                  current.value.httpAuthorization.token !== token
-                    ? Option.some(
-                        Option.some({
-                          ...current.value,
-                          httpAuthorization: { _tag: "Bearer", token },
-                        }),
-                      )
-                    : Option.none(),
-                );
-              }
-            }
+            // fork: identity-renewal
+            yield* applyCredentialLocked(
+              target.environmentId,
+              registration.target.connectionId,
+              registration.credential.token,
+            );
           }
         }),
       );
@@ -861,6 +914,8 @@ export const make = Effect.gen(function* () {
     kept: ReadonlyArray<ConnectionRoute> = [],
   ) {
     const seen = new Set<string>();
+    // fork: identity-renewal
+    const forgotten: Array<{ readonly issuer: string; readonly subject: string }> = [];
     for (const route of routes) {
       if (route.target._tag !== "BearerConnectionTarget") continue;
       const id = credentialConnectionId(route.target.connectionId);
@@ -875,13 +930,12 @@ export const make = Effect.gen(function* () {
         continue;
       seen.add(id);
       const credential = yield* credentials.get(id);
-      if (
-        Option.isNone(credential) ||
-        !credential.value.identity ||
-        credential.value.identity.expiresAt <= (yield* Clock.currentTimeMillis)
-      )
-        continue;
+      // fork: identity-renewal: an expired session needs no revocation, but its grant still renews.
+      if (Option.isNone(credential) || !credential.value.identity) continue;
+      // fork: identity-renewal
+      const live = credential.value.identity.expiresAt > (yield* Clock.currentTimeMillis);
       const profile = yield* profiles.get(id);
+      // fork: identity-renewal
       if (
         Option.isNone(profile) ||
         profile.value._tag !== "BearerConnectionProfile" ||
@@ -889,16 +943,52 @@ export const make = Effect.gen(function* () {
         credential.value.identity.environmentId !== environmentId ||
         profile.value.identity?.issuer !== credential.value.identity.issuer ||
         profile.value.identity.subject !== credential.value.identity.subject
-      )
+      ) {
+        if (!live) continue;
         return yield* new ConnectionBlockedError({
           reason: "configuration",
           detail:
             "The saved Identity connection belongs to another computer. Review its connection settings.",
         });
-      yield* revokeIdentitySession({
-        httpBaseUrl: profile.value.httpBaseUrl,
-        token: credential.value.token,
-      }).pipe(Effect.provideService(HttpClient.HttpClient, identityHttp));
+      }
+      // fork: identity-renewal
+      // Renewal keeps sessions live, so an unreachable computer must not block removal; its
+      // session ends on its own within the hour once the device forgets the token and grant.
+      if (live)
+        yield* revokeIdentitySession({
+          httpBaseUrl: profile.value.httpBaseUrl,
+          token: credential.value.token,
+        }).pipe(
+          Effect.provideService(HttpClient.HttpClient, identityHttp),
+          Effect.catch((error) =>
+            Effect.logWarning("Could not end the Identity session on the computer.", {
+              environmentId,
+              error,
+            }),
+          ),
+        );
+      // fork: identity-renewal
+      // The grant is per account and computer, so it stays while a kept route signs in with it.
+      const { issuer, subject } = credential.value.identity;
+      if (
+        identityRenewal !== null &&
+        !forgotten.some((account) => account.issuer === issuer && account.subject === subject) &&
+        !kept.some((candidate) => {
+          const keptProfile = Option.getOrNull(candidate.profile);
+          return (
+            keptProfile?._tag === "BearerConnectionProfile" &&
+            keptProfile.identity?.issuer === issuer &&
+            keptProfile.identity.subject === subject
+          );
+        })
+      ) {
+        forgotten.push({ issuer, subject });
+        yield* identityRenewal.forget({
+          httpBaseUrl: profile.value.httpBaseUrl,
+          environmentId,
+          identity: { issuer, subject },
+        });
+      }
     }
   });
 
@@ -1245,6 +1335,7 @@ export const make = Effect.gen(function* () {
     register,
     registerPlatform,
     reconcilePlatform,
+    replaceCredential, // fork: identity-renewal
     remove,
     removeRoute,
     reorderRoutes,

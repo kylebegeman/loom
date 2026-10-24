@@ -56,19 +56,30 @@ export const sshFixture = (
     const id = random.randomUUIDv4().pipe(Effect.map((value) => value.replaceAll("-", "")));
     const environmentId = EnvironmentId.make("ssh-fixture-" + (yield* id)),
       threadId = ThreadId.make("ssh-fixture-thread");
-    const state = { thread: liveThreadShell(threadId), runs: [] as OrchestrationV2Run[] };
+    const state = {
+      thread: liveThreadShell(threadId),
+      runs: [] as OrchestrationV2Run[],
+      threadReads: { shell: 0, records: 0 },
+    };
     const dependencies = Layer.mergeAll(
       Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
       Layer.mock(ThreadManagementService)({
-        getThreadShell: (id) => Effect.sync(() => (id === state.thread.id ? state.thread : null)),
+        getThreadShell: (id) =>
+          Effect.sync(() => {
+            state.threadReads.shell++;
+            return id === state.thread.id ? state.thread : null;
+          }),
         getThreadRecords: (_id, _fields, filter) =>
-          Effect.sync(() => ({
-            ...idleThreadProjection(state.thread),
-            runs: (state.runs.length > 0 || !state.thread.activeRunId
-              ? state.runs
-              : [vaultRun(state.thread)]
-            ).filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
-          })),
+          Effect.sync(() => {
+            state.threadReads.records++;
+            return {
+              ...idleThreadProjection(state.thread),
+              runs: (state.runs.length > 0 || !state.thread.activeRunId
+                ? state.runs
+                : [vaultRun(state.thread)]
+              ).filter((run) => !filter?.runIds || filter.runIds.includes(run.id)),
+            };
+          }),
       }),
       Layer.mock(ProjectStoreV2)({
         get: (projectId) =>

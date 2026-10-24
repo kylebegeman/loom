@@ -368,6 +368,27 @@ export type SessionCredentialError = typeof SessionCredentialError.Type;
 export class SessionStore extends Context.Service<
   SessionStore,
   {
+    // fork: identity-renewal
+    /** Links `successor` as the renewal of the live session behind `currentToken`, if they match. */
+    readonly linkSuccessor: (input: {
+      readonly currentToken: string;
+      readonly successor: Pick<IssuedSession, "sessionId" | "method" | "expiresAt"> & {
+        readonly subject: string;
+      };
+    }) => Effect.Effect<boolean>;
+    // fork: identity-renewal
+    /** Holds the session in `held`, moving it to its renewal at expiry, until the chain ends. */
+    readonly awaitSessionChain: (
+      held: Ref.Ref<AuthSessionId>,
+    ) => Effect.Effect<void, SessionCredentialVerificationError>;
+    // fork: identity-renewal
+    /** True for a token of a revoked session, expired or not, so its holder cannot renew it. */
+    readonly isRevokedSessionToken: (
+      token: string,
+    ) => Effect.Effect<boolean, SessionCredentialVerificationError>;
+    // fork: identity-renewal
+    /** `sessionId` and every session renewed from it: the sessions one renewing socket holds. */
+    readonly renewalsOf: (sessionId: AuthSessionId) => Effect.Effect<ReadonlySet<AuthSessionId>>;
     readonly cookieName: string;
     readonly legacyCookieName: string | undefined;
     readonly issue: (input?: {
@@ -1026,6 +1047,8 @@ export const make = Effect.gen(function* () {
         });
         yield* emitRemoved(sessionId);
       }
+      // fork: identity-renewal: revoking a device's session also ends its renewals.
+      yield* revokeLinked(sessionId);
       return revoked;
     },
   );
@@ -1093,7 +1116,172 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // fork: identity-renewal
+  // Renewal links, keyed by the renewed session. Only open sockets and logout read them, and an
+  // open socket never survives a restart, so the links are not persisted.
+  const renewalLinksRef = yield* Ref.make(
+    new Map<AuthSessionId, { readonly predecessor: AuthSessionId; readonly expiresAt: number }>(),
+  );
+  // fork: identity-renewal
+  const linkedSessionIds = (
+    links: ReadonlyMap<AuthSessionId, { readonly predecessor: AuthSessionId }>,
+    sessionId: AuthSessionId,
+    direction: "renewals" | "chain",
+  ) => {
+    const found = new Set([sessionId]);
+    const pending = [sessionId];
+    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+      const neighbours = [...links]
+        .filter(([, link]) => link.predecessor === id)
+        .map(([renewal]) => renewal);
+      const predecessor = direction === "chain" ? links.get(id)?.predecessor : undefined;
+      if (predecessor !== undefined) neighbours.push(predecessor);
+      for (const neighbour of neighbours) {
+        if (found.has(neighbour)) continue;
+        found.add(neighbour);
+        pending.push(neighbour);
+      }
+    }
+    found.delete(sessionId);
+    return found;
+  };
+  // fork: identity-renewal
+  const linkSuccessor: SessionStore["Service"]["linkSuccessor"] = Effect.fn(
+    "SessionStore.linkSuccessor",
+  )(function* ({ currentToken, successor }) {
+    // A stale, revoked or foreign token only means there is no socket to carry over.
+    const current = yield* Effect.option(verify(currentToken));
+    if (
+      Option.isNone(current) ||
+      current.value.sessionId === successor.sessionId ||
+      current.value.subject !== successor.subject ||
+      current.value.method !== successor.method
+    )
+      return false;
+    const now = yield* DateTime.now;
+    const connected = yield* Ref.get(connectedSessionsRef);
+    yield* Ref.update(renewalLinksRef, (links) => {
+      const next = new Map(
+        [...links].filter(
+          ([sessionId, link]) => link.expiresAt > now.epochMilliseconds || connected.has(sessionId),
+        ),
+      );
+      next.set(successor.sessionId, {
+        predecessor: current.value.sessionId,
+        expiresAt: successor.expiresAt.epochMilliseconds,
+      });
+      return next;
+    });
+    return true;
+  });
+  // fork: identity-renewal
+  /** The session a socket should hold next: itself while live, else its newest live renewal. */
+  const nextInChain = Effect.fn("SessionStore.nextInChain")(function* (sessionId: AuthSessionId) {
+    const lookup = (id: AuthSessionId) =>
+      authSessions
+        .getById({ sessionId: id })
+        .pipe(
+          Effect.mapError(
+            (cause) => new SessionCredentialVerificationError({ sessionId: id, cause }),
+          ),
+        );
+    const now = yield* DateTime.now;
+    const current = yield* lookup(sessionId);
+    if (Option.isNone(current) || current.value.revokedAt !== null) return Option.none();
+    if (current.value.expiresAt.epochMilliseconds > now.epochMilliseconds)
+      return Option.some(sessionId);
+    let next: { readonly sessionId: AuthSessionId; readonly expiresAt: number } | undefined;
+    for (const id of linkedSessionIds(yield* Ref.get(renewalLinksRef), sessionId, "renewals")) {
+      const row = yield* lookup(id);
+      if (Option.isNone(row) || row.value.revokedAt !== null) continue;
+      const expiresAt = row.value.expiresAt.epochMilliseconds;
+      if (expiresAt > now.epochMilliseconds && (next === undefined || expiresAt > next.expiresAt))
+        next = { sessionId: id, expiresAt };
+    }
+    return Option.fromNullishOr(next?.sessionId);
+  });
+  // fork: identity-renewal
+  const awaitSessionChain: SessionStore["Service"]["awaitSessionChain"] = Effect.fn(
+    "SessionStore.awaitSessionChain",
+  )(function* (held) {
+    for (;;) {
+      const current = yield* Ref.get(held);
+      yield* awaitInvalidation(current);
+      const next = yield* nextInChain(current);
+      if (Option.isNone(next)) return;
+      if (next.value === current) continue;
+      // Connect the renewal before releasing its predecessor so the client never reads as gone,
+      // and keep `held` exact for the socket's release.
+      yield* Effect.uninterruptible(
+        markConnected(next.value).pipe(
+          Effect.andThen(Ref.set(held, next.value)),
+          Effect.andThen(markDisconnected(current)),
+        ),
+      );
+    }
+  });
+  // fork: identity-renewal
+  /**
+   * Revokes the unexpired sessions renewal links to `sessionId`, in both directions, so a device
+   * cannot keep a session issued in advance. The links are taken first, which also ends the
+   * recursion through `revoke`.
+   */
+  const revokeLinked = Effect.fn("SessionStore.revokeLinked")(function* (sessionId: AuthSessionId) {
+    const chain = yield* Ref.modify(renewalLinksRef, (links) => {
+      const ids = linkedSessionIds(links, sessionId, "chain");
+      if (ids.size === 0) return [ids, links] as const;
+      ids.add(sessionId);
+      const next = new Map(
+        [...links].filter(([renewal, link]) => !ids.has(renewal) && !ids.has(link.predecessor)),
+      );
+      ids.delete(sessionId);
+      return [ids, next] as const;
+    });
+    const now = yield* DateTime.now;
+    for (const id of chain) {
+      const row = yield* authSessions
+        .getById({ sessionId: id })
+        .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId: id, cause })));
+      if (
+        Option.isNone(row) ||
+        row.value.revokedAt !== null ||
+        row.value.expiresAt.epochMilliseconds <= now.epochMilliseconds
+      )
+        continue;
+      yield* revoke(id);
+    }
+  });
+  // fork: identity-renewal
+  const isRevokedSessionToken: SessionStore["Service"]["isRevokedSessionToken"] = Effect.fn(
+    "SessionStore.isRevokedSessionToken",
+  )(function* (token) {
+    const verified = yield* Effect.result(verify(token));
+    if (verified._tag === "Success") return false;
+    const error = verified.failure;
+    if (error._tag === "SessionTokenRevokedError") return true;
+    if (error._tag === "SessionCredentialVerificationError") return yield* error;
+    // Expiry is checked before revocation, so an expired token needs its row read.
+    if (error._tag !== "SessionTokenExpiredError") return false;
+    const row = yield* authSessions
+      .getById({ sessionId: error.sessionId })
+      .pipe(
+        Effect.mapError(
+          (cause) => new SessionCredentialVerificationError({ sessionId: error.sessionId, cause }),
+        ),
+      );
+    return Option.isSome(row) && row.value.revokedAt !== null;
+  });
+  // fork: identity-renewal
+  const renewalsOf: SessionStore["Service"]["renewalsOf"] = (sessionId) =>
+    Ref.get(renewalLinksRef).pipe(
+      Effect.map((links) => linkedSessionIds(links, sessionId, "renewals").add(sessionId)),
+    );
+
   return SessionStore.of({
+    linkSuccessor, // fork: identity-renewal
+    awaitSessionChain, // fork: identity-renewal
+    isRevokedSessionToken, // fork: identity-renewal
+    renewalsOf, // fork: identity-renewal
     cookieName,
     legacyCookieName,
     issue,

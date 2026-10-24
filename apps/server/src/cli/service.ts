@@ -63,9 +63,11 @@ function formatServiceChange(
   result: Extract<ServiceReconcileResult, { readonly changed: true }>,
 ): string {
   if (result.plan.handedOff === true) {
-    return `Handed the T3 Code service switch to t3@${packageJson.version} to a separate systemd unit, since this session runs inside the service and disconnects when it restarts.\nResult: ${result.plan.logPath}`;
+    // fork: brand
+    return `Handed the Loom service switch to t3@${packageJson.version} to a separate systemd unit, since this session runs inside the service and disconnects when it restarts.\nResult: ${result.plan.logPath}`;
   }
-  return `${result.previouslyInstalled ? "Updated" : "Installed"} T3 Code service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`;
+  // fork: brand
+  return `${result.previouslyInstalled ? "Updated" : "Installed"} Loom service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`;
 }
 
 export function formatServiceStatus(
@@ -73,10 +75,12 @@ export function formatServiceStatus(
   cliVersion: string,
 ): string {
   if (!status.supported) {
-    return "T3 Code service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
+    // fork: brand
+    return "Loom service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
   }
   if (!status.installed) {
-    return "T3 Code service\n  Status: not installed\n  Next: Run `t3 service install`.";
+    // fork: brand
+    return "Loom service\n  Status: not installed\n  Next: Run `t3 service install`.";
   }
   const installedVersion = status.installedVersion ?? cliVersion;
   const problems = (status.problems ?? []).map(
@@ -88,7 +92,7 @@ export function formatServiceStatus(
     compareExactServiceVersions(status.installedVersion, cliVersion) > 0
   ) {
     return [
-      "T3 Code service",
+      "Loom service", // fork: brand
       `  Status: installed · t3@${installedVersion} (newer than this t3@${cliVersion} CLI)`,
       `  Unit: ${status.unitPath}`,
       `  Logs: ${status.logPath}`,
@@ -97,7 +101,7 @@ export function formatServiceStatus(
     ].join("\n");
   }
   return [
-    "T3 Code service",
+    "Loom service", // fork: brand
     `  Status: ${status.current ? `installed · t3@${installedVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
@@ -130,7 +134,7 @@ const serviceInstallCommand = Command.make("install", {
     Flag.withDefault(false),
   ),
 }).pipe(
-  Command.withDescription("Install T3 Code as a background service for this user."),
+  Command.withDescription("Install Loom as a background service for this user."), // fork: brand
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -139,7 +143,7 @@ const serviceInstallCommand = Command.make("install", {
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `T3 Code service is already installed with t3@${packageJson.version}.`,
+            `Loom service is already installed with t3@${packageJson.version}.`, // fork: brand
           );
           return;
         }
@@ -161,7 +165,8 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
         );
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
-          yield* Console.log(`T3 Code service is already using t3@${packageJson.version}.`);
+          // fork: brand
+          yield* Console.log(`Loom service is already using t3@${packageJson.version}.`);
           return;
         }
         yield* Console.log(formatServiceChange(result));
@@ -185,10 +190,11 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
           status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`;
         yield* Console.log(
           outcome === "restarted"
-            ? `Restarted the T3 Code service${onVersion}.`
+            ? `Restarted the Loom service${onVersion}.` // fork: brand
             : outcome === "queued"
-              ? `Queued a restart of the T3 Code service${onVersion}. This session runs inside the service and disconnects when it goes down.\nLogs: ${status.logPath}`
-              : "T3 Code service is not installed.",
+              ? // fork: brand
+                `Queued a restart of the Loom service${onVersion}. This session runs inside the service and disconnects when it goes down.\nLogs: ${status.logPath}`
+              : "Loom service is not installed.", // fork: brand
         );
       }),
     ),
@@ -196,7 +202,7 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
 );
 
 const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).pipe(
-  Command.withDescription("Stop and remove the T3 Code background service."),
+  Command.withDescription("Stop and remove the Loom background service."), // fork: brand
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -204,7 +210,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
         const service = yield* BootService.BootService;
         const removed = yield* service.uninstall;
         yield* Console.log(
-          removed ? "Removed the T3 Code service." : "T3 Code service is not installed.",
+          removed ? "Removed the Loom service." : "Loom service is not installed.", // fork: brand
         );
       }),
     ),
@@ -212,7 +218,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
 );
 
 const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
-  Command.withDescription("Show whether the T3 Code background service is installed."),
+  Command.withDescription("Show whether the Loom background service is installed."), // fork: brand
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -234,7 +240,8 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     return "skipped" as const;
   }
   if (installed && current) {
-    yield* Console.log("T3 Code is already set up to run in the background on this machine.");
+    // fork: brand
+    yield* Console.log("Loom is already set up to run in the background on this machine.");
     return "ready" as const;
   }
   for (const problem of status.problems ?? []) {
@@ -254,11 +261,11 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
   const wanted = yield* Prompt.run(
     Prompt.Confirm({
       message: installed
-        ? "The installed T3 Code service needs an update or repair. Update it now?"
+        ? "The installed Loom service needs an update or repair. Update it now?" // fork: brand
         : platform === "darwin"
-          ? "Run T3 Code in the background whenever you log in to this Mac? " +
+          ? "Run Loom in the background whenever you log in to this Mac? " + // fork: brand
             "It stays reachable through T3 Connect while you are logged in."
-          : "Run T3 Code in the background whenever this machine boots? " +
+          : "Run Loom in the background whenever this machine boots? " + // fork: brand
             "It stays reachable through T3 Connect even after you log out.",
       initial: true,
     }),
@@ -307,7 +314,7 @@ export const recoverServiceOnboardingOffer = <R>(
   );
 
 export const serviceCommand = Command.make("service").pipe(
-  Command.withDescription("Manage the T3 Code background service."),
+  Command.withDescription("Manage the Loom background service."), // fork: brand
   Command.withSubcommands([
     serviceInstallCommand,
     serviceRestartCommand,

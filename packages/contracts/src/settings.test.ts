@@ -63,7 +63,8 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettingsPatch({ storageCleanup })).toEqual({ storageCleanup });
   });
 
-  it("keeps cleanup disabled for existing installations", () => {
+  // fork: retention-defaults
+  it("keeps cleanup other than browser artifacts off for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
@@ -76,9 +77,21 @@ describe("storage cleanup settings", () => {
       projectAfterDays: null,
       projectOnSettle: false,
       scratchAfterDays: null,
-      browserArtifactsAfterDays: null,
+      browserArtifactsAfterDays: 14, // fork: retention-defaults
       logsAfterDays: null,
     });
+  });
+
+  // fork: retention-defaults
+  it("expires browser artifacts after 14 days unless the user chose a period or Off", () => {
+    expect(decodeServerSettings({ storageCleanup: {} }).storageCleanup).toMatchObject({
+      browserArtifactsAfterDays: 14,
+    });
+    for (const browserArtifactsAfterDays of [30, null]) {
+      expect(
+        decodeServerSettings({ storageCleanup: { browserArtifactsAfterDays } }).storageCleanup,
+      ).toMatchObject({ browserArtifactsAfterDays });
+    }
   });
 
   it("accepts eight-day retention and disabling one rule without resetting others", () => {

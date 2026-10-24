@@ -627,3 +627,224 @@ it.effect("expires an unredeemed browser handoff without issuing a bearer sessio
     }).pipe(Effect.provide(test.layer));
   }),
 );
+
+const atHash = (accessToken: string) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const hash = yield* crypto.digest("SHA-256", new TextEncoder().encode(accessToken));
+    return Base64Url.encode(hash.slice(0, hash.length / 2));
+  }).pipe(Effect.provide(NodeServices.layer));
+
+it.effect(
+  "requires a native ID token bound to the access token when the host caps sign-in age",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "1h";
+      const accessToken = yield* test.access();
+      const bound = yield* atHash(accessToken);
+      const idToken = (payload: Jose.JWTPayload = {}, audience = "loom-native") =>
+        test.signed({ at_hash: bound, auth_time: test.seconds - 60, ...payload }, audience, "JWT");
+      const native = (token?: string) => ({
+        type: "native" as const,
+        accessToken,
+        environmentId: EnvironmentId.make("host-id"),
+        ...(token === undefined ? {} : { idToken: token }),
+      });
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const refused = (token?: string) =>
+          identity.createSession(native(token), CLIENT).pipe(
+            Effect.flip,
+            Effect.map((error) => error.reason),
+          );
+        expect((yield* identity.metadata).maxSessionAgeSeconds).toBe(3600);
+        expect(yield* refused()).toBe("token");
+        expect(yield* refused(yield* idToken({ at_hash: yield* atHash(`${accessToken}x`) }))).toBe(
+          "token",
+        );
+        expect(yield* refused(yield* idToken({ at_hash: undefined }))).toBe("token");
+        expect(yield* refused(yield* idToken({}, CLIENT_ID))).toBe("token");
+        expect(yield* refused(yield* idToken({ azp: CLIENT_ID }))).toBe("token");
+        expect(yield* refused(yield* idToken({ sub: "different-owner" }))).toBe("subject");
+        expect(yield* refused(yield* idToken({ auth_time: undefined }))).toBe("token");
+        expect(yield* refused(yield* idToken({ auth_time: test.seconds - 3601 }))).toBe("expired");
+        expect(
+          (yield* identity
+            .exchangeAccessToken({ token: accessToken, client: CLIENT })
+            .pipe(Effect.flip)).reason,
+        ).toBe("token");
+        expect(test.issued).toHaveLength(0);
+        const session = yield* identity.createSession(
+          native(yield* idToken({ auth_time: test.seconds - 3540 })),
+          CLIENT,
+        );
+        expect(session.expires_in).toBe(60);
+        expect(Duration.toMillis(test.issued[0]!.ttl!)).toBe(60_000);
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+
+it.effect("verifies an offered native ID token even without a sign-in limit", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const accessToken = yield* test.access();
+    const idToken = yield* test.signed(
+      { at_hash: yield* atHash(accessToken) },
+      "loom-native",
+      "JWT",
+    );
+    const withoutIdToken = {
+      type: "native" as const,
+      accessToken,
+      environmentId: EnvironmentId.make("host-id"),
+    };
+    const request = (token: string) => ({ ...withoutIdToken, idToken: token });
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      expect((yield* identity.metadata).maxSessionAgeSeconds).toBeUndefined();
+      expect(
+        (yield* identity
+          .createSession(request(yield* test.signed({}, "loom-native", "JWT")), CLIENT)
+          .pipe(Effect.flip)).reason,
+      ).toBe("token");
+      expect((yield* identity.createSession(request(idToken), CLIENT)).expires_in).toBe(120);
+      expect((yield* identity.createSession(withoutIdToken, CLIENT)).expires_in).toBe(120);
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+it.effect("caps browser sign-in age and asks Pocket ID for a recent enough sign-in", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "2h";
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const signIn = (authTime: number) =>
+        Effect.gen(function* () {
+          const login = yield* identity.beginLogin();
+          const authorization = new URL(login.authorizationUrl);
+          expect(authorization.searchParams.get("max_age")).toBe("3600");
+          test.tokenReply.access = yield* test.access();
+          test.tokenReply.id = yield* test.signed(
+            { nonce: authorization.searchParams.get("nonce")!, auth_time: authTime },
+            CLIENT_ID,
+            "JWT",
+          );
+          return yield* identity.completeLogin({
+            state: authorization.searchParams.get("state")!,
+            code: "one-time-code",
+            cookieValue: login.cookieValue,
+            client: CLIENT,
+          });
+        });
+      expect(yield* signIn(test.seconds - 7200).pipe(Effect.flip)).toMatchObject({
+        reason: "expired",
+      });
+      const session = yield* signIn(test.seconds - 7170);
+      expect(session.expiresAt.epochMilliseconds - (yield* DateTime.now).epochMilliseconds).toBe(
+        30_000,
+      );
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+it.effect("refuses to enable Identity with a sign-in limit outside its range", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "30m";
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      expect((yield* identity.metadata.pipe(Effect.flip)).reason).toBe("configuration");
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+it.effect(
+  "links a native renewal to the caller's live session and ends the whole chain on logout",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const token = yield* test.access();
+      const sessions = SessionStore.layer.pipe(
+        Layer.provide(SqlitePersistence.layerMemory),
+        Layer.provide(ServerSecretStore.layer),
+        Layer.provide(
+          ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-renewal-test-" }),
+        ),
+      );
+      const layer = PocketId.layer.pipe(
+        Layer.provideMerge(sessions),
+        Layer.provideMerge(test.dependencies),
+        Layer.provideMerge(NodeServices.layer),
+      );
+      const native = {
+        type: "native" as const,
+        accessToken: token,
+        environmentId: EnvironmentId.make("host-id"),
+      };
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const local = yield* SessionStore.SessionStore;
+        const first = yield* identity.createSession(native, CLIENT);
+        const renewal = yield* identity.createSession(
+          native,
+          CLIENT,
+          undefined,
+          first.access_token,
+        );
+        const unrelated = yield* identity.createSession(native, CLIENT, undefined, "not-a-session");
+        const ordinary = yield* local.issue({
+          subject: "browser",
+          method: "bearer-access-token",
+        });
+        const foreign = yield* identity.createSession(native, CLIENT, undefined, ordinary.token);
+        yield* identity.logout({ bearerToken: renewal.access_token });
+        for (const revoked of [first, renewal])
+          expect((yield* Effect.result(local.verify(revoked.access_token)))._tag).toBe("Failure");
+        for (const kept of [unrelated, foreign]) yield* local.verify(kept.access_token);
+        yield* local.verify(ordinary.token);
+      }).pipe(Effect.provide(layer));
+    }),
+);
+
+it.effect("refuses to renew a session the host revoked, along with its earlier renewal", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const token = yield* test.access();
+    const layer = PocketId.layer.pipe(
+      Layer.provideMerge(
+        SessionStore.layer.pipe(
+          Layer.provide(SqlitePersistence.layerMemory),
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-revoke-test-" }),
+          ),
+        ),
+      ),
+      Layer.provideMerge(test.dependencies),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    const native = {
+      type: "native" as const,
+      accessToken: token,
+      environmentId: EnvironmentId.make("host-id"),
+    };
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const local = yield* SessionStore.SessionStore;
+      const first = yield* identity.createSession(native, CLIENT);
+      const renewal = yield* identity.createSession(native, CLIENT, undefined, first.access_token);
+      yield* local.revoke((yield* local.verify(first.access_token)).sessionId);
+      expect((yield* local.verify(renewal.access_token).pipe(Effect.flip))._tag).toBe(
+        "SessionTokenRevokedError",
+      );
+      for (const current of [first, renewal])
+        expect(
+          (yield* identity
+            .createSession(native, CLIENT, undefined, current.access_token)
+            .pipe(Effect.flip)).reason,
+        ).toBe("revoked");
+    }).pipe(Effect.provide(layer));
+  }),
+);

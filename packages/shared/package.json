@@ -519,6 +519,10 @@
       "types": "./src/fork/directory.ts",
       "import": "./src/fork/directory.ts"
     },
+    "./fork/identity-grant": {
+      "types": "./src/fork/identityGrant.ts",
+      "import": "./src/fork/identityGrant.ts"
+    },
     "./markdownMath": {
       "types": "./src/markdownMath.ts",
       "import": "./src/markdownMath.ts"

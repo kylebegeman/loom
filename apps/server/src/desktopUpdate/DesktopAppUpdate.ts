@@ -124,7 +124,8 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     }
     if (report.outcome === "up-to-date") {
       return yield* failWith(
-        `The T3 Code desktop app on this machine is already up to date on ${report.state.currentVersion}.`,
+        // fork: brand
+        `The Loom desktop app on this machine is already up to date on ${report.state.currentVersion}.`,
       );
     }
     return yield* failWith(
@@ -136,7 +137,8 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     function* (reportProgress) {
       if (!available) {
         return yield* failWith(
-          "This server was not started by the T3 Code desktop app, so it cannot drive a desktop update.",
+          // fork: brand
+          "This server was not started by the Loom desktop app, so it cannot drive a desktop update.",
         );
       }
       if (yield* Ref.getAndSet(inFlight, true)) {
@@ -155,11 +157,12 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
           // Subscribe before sending the request so a fast first report
           // cannot be missed.
           const { changes } = yield* receiver.desktopUpdates;
+          // fork: brand: the shorter message lets the formatter join this chain.
           yield* receiver
             .requestDesktopUpdate(requestId)
             .pipe(
               Effect.mapError((error) =>
-                failWith("Could not reach the T3 Code desktop app on this machine.", error),
+                failWith("Could not reach the Loom desktop app on this machine.", error),
               ),
             );
           return yield* consumeReports(requestId, changes, reportProgress).pipe(
@@ -191,7 +194,8 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
         });
         yield* Effect.uninterruptible(
           receiver.commitDesktopUpdate(requestId).pipe(
-            Effect.mapError((error) => failWith("Could not reach the T3 Code desktop app.", error)),
+            // fork: brand
+            Effect.mapError((error) => failWith("Could not reach the Loom desktop app.", error)),
             Effect.tap(() => onHandoffAccepted()),
           ),
         );

@@ -1,4 +1,5 @@
 import { signInToLoom, cancelLoomSignIn } from "./methods/loomIdentity.ts";
+import { renewLoomIdentity, forgetLoomIdentity } from "./methods/loomIdentity.ts"; // fork: identity-renewal
 import * as Effect from "effect/Effect";
 
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
@@ -151,6 +152,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(openExternal);
   yield* ipc.handle(signInToLoom);
   yield* ipc.handle(cancelLoomSignIn);
+  yield* ipc.handle(renewLoomIdentity); // fork: identity-renewal
+  yield* ipc.handle(forgetLoomIdentity); // fork: identity-renewal
   yield* ipc.handle(receiveProviderAuthCallback);
   yield* ipc.handle(cancelProviderAuthCallback);
   yield* ipc.handle(openSystemSettings);
