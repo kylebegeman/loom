@@ -659,3 +659,14 @@ apps/server/src/serverRuntimeStartup.ts	brand	1
 packages/provider-opencode/src/server/OpenCodeServerLedger.ts	brand	1
 packages/shared/src/relayClient.ts	brand	1
 apps/server/src/serviceLauncher.test.ts	brand	1
+apps/web/src/components/CommandPalette.tsx	no-project-first	1
+apps/web/src/components/ProjectEnvironmentBadge.tsx	no-project-first	2
+apps/web/src/components/chat/DraftHeroHeadline.tsx	no-project-first	10
+apps/web/src/hooks/useLogicalProjectEnvironments.ts	no-project-first	2
+apps/web/src/hooks/useScratchProject.ts	no-project-first	4
+apps/web/src/components/Sidebar.tsx	no-project-first	5
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
+apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8
+apps/mobile/src/features/threads/new-task-flow-provider.tsx	no-project-first	2
+apps/mobile/src/features/prompt-links/usePromptLinkResolver.ts	no-project-first	2
+apps/mobile/src/features/layout/createWorkspaceStackNavigator.ios.tsx	no-project-first	1

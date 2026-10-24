@@ -4,6 +4,7 @@ import { ArrowUpRightIcon, FolderIcon, MessageSquareIcon, PlusIcon } from "lucid
 import { Link } from "@tanstack/react-router";
 import { AuthOrchestrationOperateScope, type EnvironmentId } from "@t3tools/contracts";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
@@ -38,7 +39,11 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
   const action = useAction();
   const [choosingProject, setChoosingProject] = useState(false);
   const connected = environment.entry.enabled && environment.connection.phase === "connected";
+  // The scratch folder still hides this computer's No project home from its project list, but
+  // only a computer that can run work offers to start one.
   const scratchRoot = scratchWorkspaceRootFor(environment.environmentId);
+  const canStartScratch =
+    noProjectWorkspaceRoot(environment.connection.phase, environment.serverConfig) !== null;
   const machineProjects = projects.filter(
     (project) =>
       project.environmentId === environment.environmentId && project.workspaceRoot !== scratchRoot,
@@ -54,7 +59,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
       project.id === recentConversation?.projectId,
   );
   const agentsReady = readyAgentCount(providersByEnvironment.get(environment.environmentId) ?? []);
-  const choiceCount = machineProjects.length + (scratchRoot === null ? 0 : 1);
+  const choiceCount = machineProjects.length + (canStartScratch ? 1 : 0);
   const addProject = () =>
     openCommandPalette({ open: "add-project", environmentId: environment.environmentId });
 
@@ -124,7 +129,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
             }
             onClick={() => {
               if (choiceCount > 1) setChoosingProject((open) => !open);
-              else if (scratchRoot !== null)
+              else if (canStartScratch)
                 void action.act(() => startScratchThread(environment.environmentId));
               else if (machineProjects[0])
                 void action.act(() =>
@@ -170,7 +175,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
               Cancel
             </Button>
           </div>
-          {scratchRoot !== null && (
+          {canStartScratch && (
             <button
               disabled={action.busy || !canStartWork}
               onClick={() => void action.act(() => startScratchThread(environment.environmentId))}

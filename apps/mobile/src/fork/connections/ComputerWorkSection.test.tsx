@@ -13,12 +13,15 @@ const harness = vi.hoisted(() => ({
   openScratch: vi.fn(),
 }));
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => ({ providers: [] }) }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: () => ({
+    providers: [],
+    scratchWorkspaceRoot: harness.scratchRoot,
+    environment: { capabilities: {} },
+  }),
+}));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
-}));
-vi.mock("@t3tools/client-runtime/operations/projects", () => ({
-  availableScratchWorkspaceRoot: () => harness.scratchRoot,
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => harness.projects,

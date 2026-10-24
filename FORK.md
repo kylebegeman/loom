@@ -322,6 +322,31 @@ L05 adds the outline toggle and column to the file viewer in
 lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
 [user help](docs/fork/user/file-outline.md).
 
+The `no-project-first` seams put **No project** first in every new-chat picker and keep it off
+a Library. A Library with execution turned off still advertises a scratch folder, so
+`apps/web/src/hooks/useScratchProject.ts` (4 marker lines) picks the target through
+`packages/client-runtime/src/fork/no-project-target.ts`: the current computer, then the
+primary, then the first by name that can run work. `CommandPalette.tsx` (1 marker line)
+replaces upstream's second-place row in **New thread in...** and labels its computer.
+`DraftHeroHeadline.tsx` (10 marker lines) adds the row to the draft heading's project menu,
+which widens `ProjectEnvironmentBadge.tsx` (2 marker lines) to accept one computer, and
+`useLogicalProjectEnvironments.ts` (2 marker lines) keeps a No project draft from moving to
+a Library. Upstream's own scratch checks stay in `scratchWorkspaceRootFor`, which still
+recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 marker lines)
+keeps its New thread button enabled when No project or a Library is the only way to start,
+and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
+(2 marker lines) keeps `file:` links on the primary, since their path names that machine.
+
+On mobile, `NewTaskRouteScreen.tsx` (8 marker lines) moves the No project row above the
+Library and local projects, shows it whenever a computer can run it, and names that computer.
+`new-task-flow-provider.tsx` (2 marker lines) and `usePromptLinkResolver.ts` (2 marker lines)
+filter the scratch draft's computer list and prompt-link candidates through
+`noProjectWorkspaceRoot`, so neither offers a Library. `createWorkspaceStackNavigator.ios.tsx`
+(1 marker line) sends the iOS compose button to the New task picker unless a Library project
+is on screen. Keep `no-project-target.ts` free of runtime imports: `capabilities.ts`
+re-exports it, and `connection/compatibility.ts` imports `capabilities.ts`, so a runtime
+import there closes a cycle through the RPC client.
+
 ## Loom CLI and pairing copy
 
 User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`

@@ -115,6 +115,21 @@ describe("Library palette source", () => {
       expect(titles(submenu(list, value))).toEqual(["Loom", "Iris"]);
   });
 
+  it("leads New conversation in... with No project on the computer it starts on", async () => {
+    const start = vi.fn(async () => {});
+    const list = items({ startWithoutProject: { computerLabel: "Dorothy", run: start } });
+    const menu = submenu(list, "action:loom:library:new-conversation");
+    expect(titles(menu)).toEqual(["No project", "Loom", "Iris"]);
+    expect(menu?.groups[0]?.items[0]?.description).toBe("Starts on Dorothy");
+    expect(titles(submenu(list, "action:loom:library:go-to-project"))).toEqual(["Loom", "Iris"]);
+    await run(menu?.groups[0]?.items[0]);
+    expect(start).toHaveBeenCalledOnce();
+    // The root New thread without a project action covers a Library with nothing to pick.
+    expect(
+      items({ projects: [], startWithoutProject: { computerLabel: "Dorothy", run: start } }),
+    ).toEqual([]);
+  });
+
   it("opens the chosen project, its brief and its new conversation", async () => {
     const list = items();
     const first = (value: string) => submenu(list, value)?.groups[0]?.items[0];

@@ -80,7 +80,8 @@ export function LibraryPage(props: {
       const params = route.params;
       if (params && "projectId" in params && typeof params.projectId === "string")
         navigation.navigate("LibraryStart", { projectId: params.projectId });
-      else navigation.navigate("Library");
+      // Without a project in view, the picker offers No project ahead of Library projects.
+      else navigation.navigate("NewTaskSheet", { screen: "NewTask" });
       return true;
     }, [focused, route.params, navigation]),
   );

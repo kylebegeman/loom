@@ -26,3 +26,7 @@ export const OS_MANAGED_RUNTIME_NOTE = "This server's operating system manages i
 export const runtimeManagedByOperatingSystem = (
   capabilities: ExecutionEnvironmentCapabilities | null | undefined,
 ): boolean => capabilities?.serverRuntimeOwner === "operating-system";
+
+// `@t3tools/client-runtime/fork` exposes these through this module, which is why
+// no-project-target.ts keeps type-only imports.
+export { noProjectTargetEnvironmentId, noProjectWorkspaceRoot } from "./no-project-target.ts";

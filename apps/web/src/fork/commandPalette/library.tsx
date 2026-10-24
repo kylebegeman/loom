@@ -18,7 +18,13 @@ import {
   type LibraryThreadIndex,
 } from "@t3tools/contracts/fork";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { FileTextIcon, FolderGit2Icon, SearchIcon, SquarePenIcon } from "lucide-react";
+import {
+  FileTextIcon,
+  FolderGit2Icon,
+  MessageSquareDashedIcon,
+  SearchIcon,
+  SquarePenIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -36,6 +42,7 @@ import {
   requestLibraryHistorySearch,
 } from "../project-library/actions";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "../project-library/state";
+import { useNoProjectStart } from "../project-library/useNoProjectStart";
 import { onForkCommand } from "../keybindings/forkCommandBus";
 import type { ForkCommandPaletteSource } from "./registry";
 
@@ -89,6 +96,11 @@ export interface LibraryPaletteContext {
    * page. Null when the Library cannot search.
    */
   readonly searchHistory: (() => Promise<void>) | null;
+  /** Leads New conversation in...; absent when no connected computer can run work. */
+  readonly startWithoutProject?: {
+    readonly computerLabel: string;
+    readonly run: () => Promise<void>;
+  } | null;
 }
 
 const icon = (Icon: typeof FolderGit2Icon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -162,6 +174,7 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
         readonly searchTerms: ReadonlyArray<string>;
         readonly shortcutCommand?: KeybindingCommand;
       },
+      leading: ReadonlyArray<CommandPaletteActionItem> = [],
     ) => {
       const items = projectItems(library, name, Icon, run);
       if (items.length === 0) return [];
@@ -172,11 +185,25 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
           title,
           icon: icon(Icon),
           addonIcon: icon(Icon, ADDON_ICON_CLASS),
-          groups: [{ value: `library-${name}`, label: "Projects", items }],
+          groups: [{ value: `library-${name}`, label: "Projects", items: [...leading, ...items] }],
           ...extra,
         },
       ];
     };
+    const withoutProject = library.startWithoutProject;
+    const noProjectItems: CommandPaletteActionItem[] = withoutProject
+      ? [
+          {
+            kind: "action",
+            value: "action:loom:library:new-conversation:no-project",
+            title: "No project",
+            description: `Starts on ${withoutProject.computerLabel}`,
+            searchTerms: ["no project", "without project", "none", withoutProject.computerLabel],
+            icon: icon(MessageSquareDashedIcon),
+            run: withoutProject.run,
+          },
+        ]
+      : [];
     return [
       ...(threadProjectId
         ? [
@@ -218,6 +245,7 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
               searchTerms: ["library", "project", "new thread", "chat", "start"],
               shortcutCommand: "loom.library.newConversationIn",
             },
+            noProjectItems,
           )
         : []),
       ...(library.canEditBrief
@@ -326,6 +354,7 @@ export function useLibraryPaletteContext(
       : null,
   );
   const canUpdate = useLibraryPermission(projectLibrary.updateProject, authorityId);
+  const noProject = useNoProjectStart();
   return {
     projects,
     threadIndex: threadIndex.data,
@@ -354,6 +383,7 @@ export function useLibraryPaletteContext(
             : navigate({ to: "/library" }));
         }
       : null,
+    startWithoutProject: noProject && { computerLabel: noProject.label, run: noProject.start },
   };
 }
 

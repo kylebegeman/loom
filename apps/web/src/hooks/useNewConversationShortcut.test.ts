@@ -6,9 +6,13 @@ import type { ChatThreadActionContext } from "../lib/chatThreadActions";
 const state = vi.hoisted(() => ({
   library: vi.fn<() => Promise<boolean>>(),
   palette: vi.fn(),
+  noProject: null as { label: string; start: () => Promise<void> } | null,
 }));
 vi.mock("~/fork/project-library/useLibraryNewConversation", () => ({
   useLibraryNewConversation: () => state.library,
+}));
+vi.mock("~/fork/project-library/useNoProjectStart", () => ({
+  useNoProjectStart: () => state.noProject,
 }));
 vi.mock("../commandPaletteBus", () => ({ openCommandPalette: state.palette }));
 vi.mock("./useStableCallback", () => ({
@@ -32,6 +36,7 @@ const createContext = (overrides: Partial<ChatThreadActionContext> = {}) => ({
 beforeEach(() => {
   state.library.mockReset().mockResolvedValue(false);
   state.palette.mockReset();
+  state.noProject = null;
 });
 
 describe("new conversation shortcuts", () => {
@@ -118,5 +123,33 @@ describe("new conversation shortcuts", () => {
     expect(context.handleNewThread).toHaveBeenCalledExactlyOnceWith(
       scopeProjectRef(environmentId, projectId),
     );
+  });
+
+  it.each(["chat.new", "chat.newLocal"] as const)(
+    "%s starts without a project when there is no project to start in",
+    async (command) => {
+      const start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      state.noProject = { label: "Mac", start };
+      const context = {
+        ...createContext({ activeThread: undefined, defaultProjectRef: null }),
+        showProjectPicker: false,
+      };
+
+      await useNewConversationShortcut(context)(command);
+
+      expect(start).toHaveBeenCalledOnce();
+      expect(context.handleNewThread).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps an available project ahead of starting without one", async () => {
+    const start = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    state.noProject = { label: "Mac", start };
+    const context = { ...createContext(), showProjectPicker: false };
+
+    await useNewConversationShortcut(context)("chat.new");
+
+    expect(context.handleNewThread).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
   });
 });

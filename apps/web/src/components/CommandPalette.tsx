@@ -1330,19 +1330,36 @@ function OpenCommandPaletteDialog(props: {
     );
     if (scratchTargetEnvironmentId === null) return projectItems;
 
-    const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;
+    // fork: no-project-first: No project leads the picker and names the computer it starts on.
+    const noProjectLocation = projectEnvironmentLocationById.get(scratchTargetEnvironmentId);
     return [
-      ...projectItems.slice(0, noProjectIndex),
       {
         kind: "action" as const,
         value: "new-thread-in:no-project",
-        searchTerms: ["no project", "without project", "none"],
+        searchTerms: [
+          "no project",
+          "without project",
+          "none",
+          ...(noProjectLocation ? [noProjectLocation.label] : []),
+        ],
         title: "No project",
+        description: noProjectLocation ? (
+          <span className="inline-flex min-w-0 items-center gap-1">
+            {noProjectLocation.kind === "remote" ? (
+              <EnvironmentMachineIcon
+                aria-hidden
+                kind={noProjectLocation.machine}
+                className={COMMAND_PALETTE_META_ICON_CLASS}
+              />
+            ) : null}
+            <span className="truncate">{noProjectLocation.label}</span>
+          </span>
+        ) : undefined,
         icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newWithoutProject" as const,
         run: () => startScratchThread(scratchTargetEnvironmentId),
       },
-      ...projectItems.slice(noProjectIndex),
+      ...projectItems,
     ];
   })();
 

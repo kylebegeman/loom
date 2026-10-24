@@ -6,6 +6,7 @@ import { useSidebarLibraryScope } from "~/fork/project-library/useSidebarLibrary
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
+import { useNoProjectStart } from "~/fork/project-library/useNoProjectStart"; // fork: no-project-first
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
@@ -4626,6 +4627,7 @@ export default function Sidebar() {
   }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
   const tryLibraryConversation = useLibraryNewConversation(); // fork: library-projects
+  const noProjectStart = useNoProjectStart(); // fork: no-project-first
   const handleNewThreadFromThread = useStableCallback(async (threadRef: ScopedThreadRef) => {
     if (!(await tryLibraryConversation(threadRef, { inheritSettings: true }))) {
       const source = readThreadShell(threadRef);
@@ -4649,12 +4651,14 @@ export default function Sidebar() {
     }
     if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {
       if (isMobile) setOpenMobile(false);
-      void startNewThreadFromContext({
+      // fork: no-project-first - With no project to start in, No project is the only choice.
+      const started = await startNewThreadFromContext({
         activeDraftThread: newThreadContext.activeDraftThread,
         activeThread: newThreadContext.activeThread ?? undefined,
         defaultProjectRef: newThreadContext.defaultProjectRef,
         handleNewThread: newThreadContext.handleNewThread,
       });
+      if (!started) await noProjectStart?.start(); // fork: no-project-first
       return;
     }
     if (isMobile) setOpenMobile(false);
@@ -4805,7 +4809,9 @@ export default function Sidebar() {
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
-              newThreadDisabled={projects.length === 0}
+              newThreadDisabled={
+                projects.length === 0 && !libraryScope.authorityId && noProjectStart === null // fork: no-project-first
+              }
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}
               showNewThreadInProjectHint={projectGroups.length > 1}

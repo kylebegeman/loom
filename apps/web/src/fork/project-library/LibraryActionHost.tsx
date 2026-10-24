@@ -8,7 +8,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlusIcon, PlusIcon } from "lucide-react";
+import { FolderPlusIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import {
   projectLibrary,
   useLibraryProject,
@@ -20,7 +20,10 @@ import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { LibrarySetup } from "./LibrarySetup";
-import { LibraryPaletteView } from "./LibraryPalette";
+import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
+import { useNoProjectStart } from "./useNoProjectStart";
+
+const NO_PROJECT_TERMS = ["no project", "without project", "none"];
 
 export interface LibraryPaletteSession {
   readonly id: number;
@@ -137,6 +140,30 @@ export function LibraryActionHost({
   const needsProject =
     step === "project" || (step === "conversation" && (!project || project.archived));
   const back = () => setStep("project");
+  const noProject = useNoProjectStart();
+  const noProjectQuery = search.trim().toLocaleLowerCase();
+  // A new chat need not belong to a project, so the way out leads, even during Library setup.
+  // This list keeps its order and Enter takes the first match, so while searching it must match
+  // its own terms: the computer name in its description would otherwise beat a project search.
+  const noProjectItems: LibraryPaletteItem[] =
+    action === "new-conversation" &&
+    noProject &&
+    !loadingProject &&
+    NO_PROJECT_TERMS.some((term) => term.includes(noProjectQuery))
+      ? [
+          {
+            id: "no-project",
+            title: "No project",
+            description: `Starts on ${noProject.label}`,
+            terms: NO_PROJECT_TERMS,
+            icon: <MessageSquareDashedIcon className="size-4 text-muted-foreground" />,
+            select: () => {
+              onClose();
+              void noProject.start();
+            },
+          },
+        ]
+      : [];
   return (
     <>
       {!library.authorityId || needsProject ? (
@@ -157,8 +184,9 @@ export function LibraryActionHost({
           error={catalog.query.error ?? library.project.error}
           items={
             !library.authorityId || loadingProject
-              ? []
+              ? noProjectItems
               : [
+                  ...noProjectItems,
                   ...repositoryProjects.map((entry) => ({
                     id: `repository:${entry.id}`,
                     title: `Continue ${entry.title}`,

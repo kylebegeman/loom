@@ -298,17 +298,16 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     render: () => (
       <WorkspaceNativeTabs
         onNewTask={() => {
-          if (visibleRoute.name.startsWith("Library")) {
-            const params = visibleRoute.params;
-            if (
-              visibleRoute.name.startsWith("Library") &&
-              params &&
-              "projectId" in params &&
-              typeof params.projectId === "string"
-            )
-              props.navigation.navigate("LibraryStart", { projectId: params.projectId });
-            else props.navigation.navigate("Library");
-          } else props.navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+          // fork: no-project-first - Only a Library project skips the picker, which leads with No project.
+          const params = visibleRoute.params;
+          if (
+            visibleRoute.name.startsWith("Library") &&
+            params &&
+            "projectId" in params &&
+            typeof params.projectId === "string"
+          )
+            props.navigation.navigate("LibraryStart", { projectId: params.projectId });
+          else props.navigation.navigate("NewTaskSheet", { screen: "NewTask" });
         }}
         hidden={
           projection.detail.length > 0 &&
