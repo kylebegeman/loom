@@ -72,9 +72,9 @@ it.each(["thread", "project", "delegated"] as const)(
   },
 );
 
-it.effect(
-  "shows the actual format-3 reader accepts hypothetical intent and its writer erases it",
-  () =>
+it.effect.each(["policy", "grant", "approval"] as const)(
+  "shows the actual format-3 reader refuses hypothetical %s intent instead of erasing it",
+  (placement) =>
     Effect.gen(function* () {
       const f = yield* journalFixture;
       const [path, stored] = [...f.records.entries()].find(([key]) =>
@@ -83,42 +83,39 @@ it.effect(
       const policy = decodeRecord(Redacted.value(stored.value));
       const grants = decodeRecords(policy.grants);
       const approvals = decodeRecords(policy.approvals);
-      const hypothetical = { mode: "once", consumed: true, minimumReader: "future" };
-      f.records.set(path, {
+      expect(policy.schemaVersion).toBe(3);
+      expect(grants.length).toBeGreaterThan(0);
+      expect(approvals.length).toBeGreaterThan(0);
+      const intent = { mode: "once", consumed: true, minimumReader: "future" };
+      const tampered = {
         version: stored.version + 1,
         value: Redacted.make({
           ...policy,
-          intent: hypothetical,
-          grants: grants.map((g) => ({
-            ...g,
-            definition: {
-              ...decodeRecord(g.definition),
-              intent: hypothetical,
-            },
-          })),
-          approvals: approvals.map((a) => ({
-            ...a,
-            request: {
-              ...decodeRecord(a.request),
-              intent: hypothetical,
-            },
-          })),
+          ...(placement === "policy" ? { intent } : {}),
+          grants:
+            placement === "grant"
+              ? grants.map((g) => ({ ...g, definition: { ...decodeRecord(g.definition), intent } }))
+              : grants,
+          approvals:
+            placement === "approval"
+              ? approvals.map((a) => ({ ...a, request: { ...decodeRecord(a.request), intent } }))
+              : approvals,
         }),
-      });
+      };
+      f.records.set(path, tampered);
       const input = {
         threadId: f.threadId,
         itemId: f.itemId,
         action: "use" as const,
         destination: f.key.destination,
       };
-      expect((yield* f.access.explain(input)).decision.allowed).toBe(true);
-      expect((yield* f.access.explain(input)).decision.allowed).toBe(true);
-      // Normal audited authorization forces a real decode/encode/write through VaultAccess.
-      yield* f.access.require(f.threadId, f.itemId, "use", f.key.destination);
-      const rewritten = Redacted.value(f.records.get(path)!.value);
-      expect(rewritten).toMatchObject({ schemaVersion: 3 });
-      expect(JSON.stringify(rewritten)).not.toContain('"intent"');
-      expect((yield* f.access.explain(input)).decision.allowed).toBe(true);
+      expect((yield* f.access.explain(input).pipe(Effect.flip)).reason).toBe("invalid-response");
+      // Audited authorization is the path that would decode, re-encode and write the policy.
+      expect(
+        (yield* f.access.require(f.threadId, f.itemId, "use", f.key.destination).pipe(Effect.flip))
+          .reason,
+      ).toBe("invalid-response");
+      expect(f.records.get(path)).toEqual(tampered);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
