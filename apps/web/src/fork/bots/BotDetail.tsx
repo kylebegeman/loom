@@ -7,7 +7,7 @@ import type {
   BotStarterStatus,
   BotUsageRow,
 } from "@t3tools/contracts/fork";
-import { applyInboxChanges, botDraft, botVersionLabel } from "@t3tools/client-runtime/fork";
+import { botDraft, botVersionLabel } from "@t3tools/client-runtime/fork";
 import { formatModelSlugName } from "@t3tools/shared/model";
 import { formatCount, formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import {
@@ -38,7 +38,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
-import { useEnvironmentQuery } from "~/state/query";
 import { LibraryHero, LibraryVital, LibraryVitals } from "../project-library/LibraryCollection";
 import {
   LibraryErrorNotice,
@@ -58,18 +57,13 @@ import { BotPipelinesAside } from "./BotPipelines";
 import { RunRows, RunsView } from "./BotRuns";
 import { BotTriggersAside } from "./BotTriggers";
 import { NeedsYouBand } from "./BotsInbox";
-import {
-  runTicks,
-  useBotLifecycle,
-  useBotStarters,
-  useBotsCollectionPreferences,
-  useNewestRuns,
-} from "./BotsOverview";
-import { BotUsageAside, useBotUsage, type BotUsageDays } from "./BotsUsage";
-import { activeRuns, BOT_USAGE_WINDOW_SHORT, successFigure } from "./botsCollection";
+import { runTicks, useBotLifecycle, useBotStarters, useNewestRuns } from "./BotsOverview";
+import { BotUsageAside, useBotUsage, useBotUsageWindow } from "./BotsUsage";
+import { activeRuns, successFigure } from "./botsCollection";
 import { botPageTabs, selectedTab, type BotPageTab } from "./botsRoute";
 import { useBotsNavigation } from "./navigation";
-import { bots, inboxQueryInput, useBots, useBotsAccess } from "./state";
+import { useBots, useBotsAccess, useNeedsYouItems } from "./state";
+import { usageWindowShort, type BotUsageDays } from "./usageWindow";
 
 const TABS: Record<BotPageTab, { readonly label: string; readonly icon: typeof ActivityIcon }> = {
   overview: { label: "Overview", icon: LayoutDashboardIcon },
@@ -85,19 +79,11 @@ type NewestRuns = ReturnType<typeof useNewestRuns>;
 
 /** One bot's page: who it is and what to do with it in the hero, then its views. */
 export function BotPage({ bot }: { readonly bot: BotDefinition }) {
-  const { host, live, changes } = useBots();
+  const { host } = useBots();
   const nav = useBotsNavigation();
   const newest = useNewestRuns(bot.id);
-  const inbox = useEnvironmentQuery(
-    host.environmentId && live && host.inboxSupported
-      ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
-      : null,
-  );
-  const needsYou = inbox.data
-    ? applyInboxChanges(inbox.data, changes, { dismissed: false }).runs.filter(
-        (run) => run.botId === bot.id,
-      ).length
-    : 0;
+  // The same queue the Overview's Needs you band lists, so the badge and the band agree.
+  const needsYou = useNeedsYouItems(bot, newest.runs).length;
   const tabs = botPageTabs(host);
   const tab = selectedTab(tabs, nav.search.tab);
   return (
@@ -341,7 +327,7 @@ function BotHero({ bot, newest }: { readonly bot: BotDefinition; readonly newest
 function BotVitals({ bot, newest }: { readonly bot: BotDefinition; readonly newest: NewestRuns }) {
   const { host } = useBots();
   const nav = useBotsNavigation();
-  const [{ days }] = useBotsCollectionPreferences();
+  const [days] = useBotUsageWindow();
   const usage = useBotUsage(days);
   const last = newest.runs[0];
   const ticks = runTicks(newest.runs, HERO_TICKS);
@@ -409,7 +395,7 @@ function UsageVitals({
   readonly loading: boolean;
   readonly unavailable: boolean;
 }) {
-  const short = BOT_USAGE_WINDOW_SHORT[days];
+  const short = usageWindowShort(days);
   const figure = successFigure(row);
   const reading = (value: ReactNode) =>
     loading ? (

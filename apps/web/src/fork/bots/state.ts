@@ -30,12 +30,15 @@ import {
   BOTS_TRIGGERS_FEATURE,
   BOTS_VERDICTS_FEATURE,
   BOTS_VERSIONS_FEATURE,
+  type BotDefinition,
+  type BotRun,
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { environmentThreadShells } from "~/state/threads";
 import { useLibraryPermission } from "../project-library/state";
+import { triageItems, type TriageItem } from "./inboxWaiting";
 
 export const bots = createBotsAtoms(connectionAtomRuntime);
 const waitingBotRunsAtom = makeWaitingBotRunsAtom(environmentThreadShells.threadShellsAtom);
@@ -217,16 +220,45 @@ export function useWaitingBotRuns(environmentId: EnvironmentId | null) {
     : waiting.filter((thread) => thread.environmentId === environmentId);
 }
 
-/** Runs that need a person: the inbox total plus runs waiting on an answer. */
-export function useBotsAttentionCount() {
-  const host = useBotsHost();
-  const live = Boolean(host.environmentId && host.supported && host.inboxSupported);
-  const changes = useBotsChanges(host.environmentId, live && host.connected);
+/**
+ * The Needs you queue as the band lists it: inbox runs plus runs paused on an approval or a
+ * question, across every bot or for one. `runs` are runs the caller already holds, which name a
+ * waiting run's bot without a request of their own.
+ */
+export function useNeedsYouItems(
+  bot: Pick<BotDefinition, "id" | "name"> | null,
+  runs: readonly BotRun[],
+): TriageItem[] {
+  const { host, live, changes } = useBots();
   const inbox = useEnvironmentQuery(
-    host.environmentId && live
+    host.environmentId && live && host.inboxSupported
       ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
       : null,
   );
+  const waiting = useWaitingBotRuns(live ? host.environmentId : null);
+  const page = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }) : null;
+  return triageItems({
+    runs: page?.runs ?? [],
+    waiting,
+    findRun: (runId) => changes.runs.get(runId) ?? runs.find((run) => run.id === runId),
+    bot,
+  });
+}
+
+const noRun = () => undefined;
+
+/** Runs that need a person: the inbox total plus runs waiting on an answer. */
+export function useBotsAttentionCount() {
+  const host = useBotsHost();
+  const live = Boolean(host.environmentId && host.supported);
+  const inboxLive = live && host.inboxSupported;
+  const changes = useBotsChanges(host.environmentId, inboxLive && host.connected);
+  const inbox = useEnvironmentQuery(
+    host.environmentId && inboxLive
+      ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
+      : null,
+  );
+  // Waiting runs come from this client's thread shells, so no server feature gates them.
   const waiting = useWaitingBotRuns(live ? host.environmentId : null);
   const refresh = inbox.refresh;
   const wasConnected = useRef(host.connected);
@@ -235,6 +267,13 @@ export function useBotsAttentionCount() {
     wasConnected.current = host.connected;
   }, [host.connected, refresh]);
   useRefreshWhenBotsChangesPruned(changes, refresh);
-  const total = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }).total : 0;
-  return total + waiting.length;
+  const page = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }) : null;
+  // A waiting run already in the inbox counts once; the total covers inbox runs not loaded yet.
+  const waitingOnly = triageItems({
+    runs: page?.runs ?? [],
+    waiting,
+    findRun: noRun,
+    bot: null,
+  }).filter((item) => item.kind === "waiting").length;
+  return (page?.total ?? 0) + waitingOnly;
 }

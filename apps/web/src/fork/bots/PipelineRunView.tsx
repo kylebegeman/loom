@@ -147,7 +147,7 @@ function RunDetail({
   readonly runId: string;
 }) {
   const host = useBotsHost();
-  const { pipelines } = usePipelines(environmentId, true, host.connected);
+  const { list: pipelineList, pipelines } = usePipelines(environmentId, true, host.connected);
   const changes = useBotPipelineChanges(environmentId, host.connected);
   const query = useEnvironmentQuery(
     bots.getPipelineRun({ environmentId, input: { pipelineRunId: runId } }),
@@ -160,22 +160,30 @@ function RunDetail({
       : `${applied.run.status}:${applied.attempts.map((attempt) => `${attempt.seq}${attempt.state}`).join(",")}`,
     query.refresh,
   );
+  // Only a loaded list can say the run's pipeline is gone; until then it may still be coming.
+  const pipelinesLoaded = pipelineList.data !== null;
   const pipeline =
     applied === null
       ? undefined
       : pipelines.find((candidate) => candidate.id === applied.run.pipelineId);
   const back =
-    pipeline === undefined ? (
-      <LibraryBackLink to="/loom/bots" search={PIPELINES_TAB}>
-        Pipelines
-      </LibraryBackLink>
-    ) : (
+    pipeline !== undefined ? (
       <LibraryBackLink to="/loom/bots" search={{ pipeline: pipeline.id }}>
         {pipeline.name}
       </LibraryBackLink>
+    ) : applied !== null && !pipelinesLoaded ? (
+      <LibraryBackLink to="/loom/bots" search={{ pipeline: applied.run.pipelineId }}>
+        {applied.run.pipelineName}
+      </LibraryBackLink>
+    ) : (
+      <LibraryBackLink to="/loom/bots" search={PIPELINES_TAB}>
+        Pipelines
+      </LibraryBackLink>
     );
+  // Offline, the list may never arrive, so the run shows without claiming anything about it.
+  const pipelinesSettled = pipelinesLoaded || pipelineList.error !== null || !host.connected;
 
-  if (query.data === null || applied === null) {
+  if (query.data === null || applied === null || (!query.error && !pipelinesSettled)) {
     if (query.error && isNotFound(query.failure))
       return (
         <div className="flex flex-col">
@@ -224,6 +232,12 @@ function RunDetail({
       attempts={applied.attempts}
       report={query.data.report}
       pipeline={pipeline}
+      pipelinesLoaded={pipelinesLoaded}
+      pipelinesNotice={
+        pipelinesLoaded ? null : (
+          <LibraryErrorNotice error={pipelineList.error} onRetry={pipelineList.refresh} />
+        )
+      }
       back={back}
     />
   );
@@ -235,14 +249,20 @@ function RunOverview({
   attempts,
   report,
   pipeline,
+  pipelinesLoaded,
+  pipelinesNotice,
   back,
 }: {
   readonly environmentId: EnvironmentId;
   readonly run: BotPipelineRun;
   readonly attempts: ReadonlyArray<BotPipelineAttempt>;
   readonly report: BotPipelineRunDetail["report"];
-  /** The pipeline as saved now; undefined once deleted. */
+  /** The pipeline as saved now; undefined once deleted, or while the list could not load. */
   readonly pipeline: BotPipeline | undefined;
+  /** Whether the pipeline list loaded, so an undefined pipeline means it was deleted. */
+  readonly pipelinesLoaded: boolean;
+  /** Why the pipeline list could not load, with a retry. */
+  readonly pipelinesNotice: ReactNode;
   readonly back: ReactNode;
 }) {
   const nav = useBotsNavigation();
@@ -421,6 +441,7 @@ function RunOverview({
           {run.error ?? `It stopped at ${run.cursorStepId ?? "a step"}.`}
         </LibraryNotice>
       ) : null}
+      {pipelinesNotice}
       <LibraryErrorNotice error={error} />
 
       <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -449,9 +470,11 @@ function RunOverview({
             {exact ? null : (
               <p className="text-xs text-muted-foreground">
                 This run used v{run.pipelineVersion}
-                {pipeline === undefined
-                  ? ", and the pipeline has since been deleted"
-                  : `, and the pipeline is now v${pipeline.version}`}
+                {pipeline !== undefined
+                  ? `, and the pipeline is now v${pipeline.version}`
+                  : pipelinesLoaded
+                    ? ", and the pipeline has since been deleted"
+                    : ""}
                 , so this lists the steps it reached.
               </p>
             )}
@@ -505,15 +528,15 @@ function RunOverview({
                   {
                     label: "Pipeline",
                     value:
-                      pipeline === undefined ? (
+                      pipeline === undefined && pipelinesLoaded ? (
                         `${run.pipelineName}, deleted`
                       ) : (
                         <Link
                           to="/loom/bots"
-                          search={{ pipeline: pipeline.id }}
+                          search={{ pipeline: run.pipelineId }}
                           className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                         >
-                          {pipeline.name}
+                          {pipeline?.name ?? run.pipelineName}
                         </Link>
                       ),
                   },
@@ -910,8 +933,15 @@ function RunPipelineDialog({
   ).length;
   const full = activeRuns >= BOTS_MAX_ACTIVE_PIPELINES;
   const runReason = actionReason(host.connected, access.canRunPipelines, "run pipelines");
+  // Which steps need a project, and which bots are gone, both come from the bot list.
+  const botsReason =
+    botList.data !== null ? null : botList.error ? "The bots could not load." : "Loading bots…";
   const blocked =
-    runReason !== null || full || unavailable.length > 0 || (pickProject && projects.length === 0);
+    runReason !== null ||
+    botsReason !== null ||
+    full ||
+    unavailable.length > 0 ||
+    (pickProject && projects.length === 0);
 
   const submit = async () => {
     if (busy || blocked) return;
@@ -931,6 +961,8 @@ function RunPipelineDialog({
     });
     setBusy(false);
     if (result._tag === "Success") {
+      // Closing first replaces the form's entry, so Back from the run never reopens it.
+      nav.close();
       nav.open({ pipelineRun: result.value.id });
       return;
     }
@@ -954,7 +986,7 @@ function RunPipelineDialog({
           <Button shape="pill" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <WithReason reason={runReason}>
+          <WithReason reason={runReason ?? botsReason}>
             <Button shape="pill" disabled={busy || blocked} onClick={() => void submit()}>
               <PlayIcon />
               {busy ? "Starting…" : "Run"}
@@ -1012,7 +1044,16 @@ function RunPipelineDialog({
             />
           );
         })}
-        {pickProject ? (
+        {botList.data === null ? (
+          botList.error ? (
+            <LibraryErrorNotice error={botList.error} onRetry={botList.refresh} />
+          ) : (
+            <div role="status" aria-label="Loading bots" className="flex flex-col gap-1.5">
+              <Skeleton className="h-4 w-16" />
+              <Skeleton shape="card" className="h-8 w-full" />
+            </div>
+          )
+        ) : pickProject ? (
           projects.length === 0 ? (
             <LibraryNotice icon={FolderIcon} tone="warning">
               A step runs in a project, and this computer has none yet. Add a project first.

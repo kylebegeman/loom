@@ -13,11 +13,7 @@ import {
   type BotReplayItem,
   type BotRun,
 } from "@t3tools/contracts/fork";
-import {
-  applyRunChanges,
-  formatReplaySummary,
-  type LibraryWorkflowTone,
-} from "@t3tools/client-runtime/fork";
+import { applyRunChanges, type LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   BadgeCheckIcon,
@@ -69,6 +65,7 @@ import {
 } from "../project-library/LibraryControls";
 import { TickStrip } from "../project-library/LibraryData";
 import { BotRunStatusBadge, VerdictChip, runTime } from "./BotIdentity";
+import { botsRoute } from "./botsRoute";
 import { botsPageOf, useBotsNavigation } from "./navigation";
 import {
   ALL_REPLAY_FILTERS,
@@ -80,7 +77,9 @@ import {
   replayHeadline,
   replayInputSummary,
   replayMetricChanges,
+  replayRest,
   replayRunsById,
+  replayTally,
   toggleReplaySelection,
   type ReplayFilters,
   type ReplayOutcomeFilter,
@@ -832,7 +831,15 @@ function ReplayDecision({
         Back to editing
       </Button>
     ) : (
-      <Button shape="pill" variant="outline" onClick={() => nav.open({ bot: bot.id, edit: true })}>
+      <Button
+        shape="pill"
+        variant="outline"
+        onClick={() => {
+          // Closing first replaces the sheet's entry, so Back from the editor never reopens it.
+          nav.close();
+          nav.open({ bot: bot.id, edit: true });
+        }}
+      >
         <PencilIcon />
         Edit {bot.name}
       </Button>
@@ -864,7 +871,13 @@ function ReplayDecision({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       setConfirmRestore(false);
-      nav.open({ bot: bot.id, tab: "versions" });
+      // Closing first replaces the sheet's entry, so Back never reopens it. Over the bot's
+      // Versions already, closing is all it takes; over any other page, Versions opens on top.
+      const page = botsPageOf(nav.search);
+      const route = botsRoute(page);
+      nav.close();
+      if (route.kind !== "bot" || route.botId !== bot.id || page.tab !== "versions")
+        nav.open({ bot: bot.id, tab: "versions" });
     }, "Could not restore the version.");
   const blocked = !access.canSave || archived || busy || running;
   return (
@@ -1018,15 +1031,15 @@ function ReplaySheet({
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <p role="status" className="text-sm">
-                  <span className="font-medium">{replayHeadline(replay)} </span>
-                  <span className="text-muted-foreground">
-                    {formatReplaySummary(replay.summary)}.
-                  </span>
+                  <span className="font-medium">{replayHeadline(replay)}</span>
+                  {replayRest(replay) ? (
+                    <span className="text-muted-foreground"> {replayRest(replay)}.</span>
+                  ) : null}
                 </p>
                 {replay.items.length > 0 ? (
                   <TickStrip
                     size="fill"
-                    label={`Comparisons: ${formatReplaySummary(replay.summary)}`}
+                    label={`Comparisons: ${replayTally(replay.summary) || "none finished yet"}`}
                     ticks={replay.items.map((item, index) => ({
                       key: item.originalRunId,
                       tone: COMPARISONS[item.comparison].tone,
@@ -1085,20 +1098,23 @@ function ReplaySheet({
               Cancel replay
             </Button>
           ) : null}
-          <Button
-            shape="pill"
-            variant="ghost"
-            disabled={query.isPending || runsQuery.isPending}
-            onClick={() => {
-              query.refresh();
-              runsQuery.refresh();
-            }}
-          >
-            <RefreshCwIcon />
-            Refresh
-          </Button>
+          {/* Until the replay loads, the panel's own notice offers the retry. */}
           {replay ? (
-            <ReplayDecision environmentId={environmentId} replay={replay} bot={bot} />
+            <>
+              <Button
+                shape="pill"
+                variant="ghost"
+                disabled={query.isPending || runsQuery.isPending}
+                onClick={() => {
+                  query.refresh();
+                  runsQuery.refresh();
+                }}
+              >
+                <RefreshCwIcon />
+                Refresh
+              </Button>
+              <ReplayDecision environmentId={environmentId} replay={replay} bot={bot} />
+            </>
           ) : null}
           <Button shape="pill" variant="ghost" onClick={nav.close}>
             Close

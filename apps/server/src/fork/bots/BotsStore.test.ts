@@ -76,6 +76,42 @@ describe("BotsStore", () => {
     ),
   );
 
+  it.effect("leaves runs that reported no usage out of a version's tokens a run", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const saved = {
+          savedBy: "user",
+          savedAt: "2026-10-20T09:00:00.000Z",
+          changed: [],
+          restoredFrom: null,
+        } as const;
+        yield* store.insertVersion(testBot(), saved);
+        yield* store.insertVersion(testBot({ version: 2 }), saved);
+        const usage = (status: "complete" | "unavailable", tokens: number) => ({
+          inputTokens: tokens,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          status,
+        });
+        for (const [id, version, status, tokens] of [
+          ["r1", 1, "unavailable", 0],
+          ["r2", 1, "unavailable", 0],
+          ["r3", 2, "complete", 1200],
+          ["r4", 2, "unavailable", 0],
+        ] as const) {
+          const run = testRun(id, "2026-10-20T10:00:00.000Z", { botVersion: version });
+          yield* store.insertRun(run);
+          yield* store.saveRun({ ...run, usage: usage(status, tokens) });
+        }
+        const { versions } = yield* store.listVersions("reviewer", undefined, 10);
+        expect(versions.map((version) => [version.version, version.medianTotalTokens])).toEqual([
+          [2, 1200],
+          [1, null],
+        ]);
+      }),
+    ),
+  );
+
   it.effect("prunes only finished runs beyond the newest kept", () =>
     withStore((store) =>
       Effect.gen(function* () {

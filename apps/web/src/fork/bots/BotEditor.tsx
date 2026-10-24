@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useCanGoBack } from "@tanstack/react-router";
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -55,6 +55,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { scheduledTaskDefaultModel } from "~/components/settings/scheduledTasksSettings.logic";
 import { cn } from "~/lib/utils";
+import { ensureLocalApi } from "~/localApi";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery, useEnvironmentQueryRefresh } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -824,6 +825,7 @@ export function BotEditorForm({
   readonly suggestionId?: string | null;
 }) {
   const nav = useBotsNavigation();
+  const canGoBack = useCanGoBack();
   const { host } = useBots();
   const access = useBotsAccess();
   const lastReplay = useLatestReplayId(bot?.id ?? null);
@@ -900,6 +902,16 @@ export function BotEditorForm({
     projects.find((project) => project.id === id)?.title ?? (id === ANY_PROJECT ? "" : id);
   const back: BotsPageSearch = bot ? { bot: bot.id } : {};
   const isNew = bot === null;
+  /**
+   * Leaves for the bot's page without the editor staying behind in history: an edit returns where
+   * it was opened, and a new bot's page takes the place of the form (or the thread draft, which
+   * would draft again under a fresh id).
+   */
+  const leaveFor = (botId: string) =>
+    leave(() => {
+      if (!isNew && canGoBack) window.history.back();
+      else nav.show({ bot: botId });
+    });
   const archived = base?.archivedAt != null;
   const conflict = bot !== null && base !== null && bot.version !== base.version ? bot : null;
   const locked = refining !== null || busy;
@@ -985,7 +997,7 @@ export function BotEditorForm({
         await dismissSuggestion({ environmentId, input: { suggestionId, dismissed: true } });
         openSuggestions.refresh();
       }
-      leave(() => nav.open({ bot: saved.id }));
+      leaveFor(saved.id);
     } catch (cause) {
       setError(failureText(cause, "Could not save the bot."));
       setBusy(false);
@@ -1014,12 +1026,21 @@ export function BotEditorForm({
       const restored = result.value;
       setBase(restored);
       setConfirming(null);
-      leave(() => nav.open({ bot: restored.id }));
+      leaveFor(restored.id);
     } catch (cause) {
       setConfirming(null);
       setError(failureText(cause, "Could not restore the starter."));
       setBusy(false);
     }
+  };
+
+  const cancel = async () => {
+    if (dirty && !(await ensureLocalApi().dialogs.confirm("Discard your changes to this bot?")))
+      return;
+    leave(() => {
+      if (canGoBack) window.history.back();
+      else nav.show(back);
+    });
   };
 
   const loadLatest = (latest: BotDefinition) => {
@@ -1702,7 +1723,7 @@ export function BotEditorForm({
           size="sm"
           variant="ghost"
           disabled={busy}
-          onClick={() => leave(() => nav.show(back))}
+          onClick={() => void cancel()}
         >
           Cancel
         </Button>

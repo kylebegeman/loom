@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_LIST_RUNS_MAX_LIMIT,
   isTerminalBotRunStatus,
@@ -8,6 +8,7 @@ import {
   type BotRun,
 } from "@t3tools/contracts/fork";
 import {
+  applyInboxChanges,
   botColor,
   dismissRunIdBatches,
   type LibraryWorkflowTone,
@@ -68,9 +69,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import {
   LIBRARY_OUTLINE,
   LIBRARY_ROW,
-  LibraryDialog,
   LibraryErrorNotice,
-  LibraryField,
   LibraryFilterChip,
   LibraryGroupHeading,
   LibraryNotice,
@@ -83,9 +82,7 @@ import { ProjectColorDot } from "../project-library/ProjectIdentity";
 import { useLibraryPermission } from "../project-library/state";
 import { BotFindings, RawReply } from "./BotFindings";
 import { BotTile, runTime } from "./BotIdentity";
-import { BotModelPicker } from "./BotModelPicker";
 import {
-  applyTriageChanges,
   combineTriagePages,
   dismissibleRunIds,
   foldRepeats,
@@ -111,7 +108,9 @@ import {
   type TriageVerb,
 } from "./inboxWaiting";
 import { botsPageOf, useBotsNavigation, type BotsNavigation } from "./navigation";
+import { rememberRuns } from "./runLog";
 import { runDurationLabel, runTokensLabel, waitingAgeLabel } from "./runMetrics";
+import { RetryOnModelDialog } from "./RunSheet";
 import {
   bots,
   inboxQueryInput,
@@ -178,9 +177,6 @@ const failureMessage = (cause: unknown, fallback: string) =>
 const blockedReason = (allowed: boolean, connected: boolean) =>
   allowed ? null : connected ? READ_ONLY_REASON : OFFLINE_REASON;
 
-const sameModel = (left: ModelSelection, right: ModelSelection) =>
-  left.instanceId === right.instanceId && left.model === right.model;
-
 /** Where the queue comes from, for the band and the full view alike. */
 function useTriageSources(bot: BotDefinition | null, dismissed: boolean) {
   const { host, live, changes, list, bots: definitions } = useBots();
@@ -206,6 +202,13 @@ function useTriageSources(bot: BotDefinition | null, dismissed: boolean) {
   );
   const findRun = (runId: string) =>
     changes.runs.get(runId) ?? joined.data?.runs.find((run) => run.id === runId);
+  // A server that cannot look a run up opens one only from runs a list has shown.
+  useEffect(() => {
+    if (first.data) rememberRuns(first.data.runs);
+  }, [first.data]);
+  useEffect(() => {
+    if (joined.data) rememberRuns(joined.data.runs);
+  }, [joined.data]);
   return {
     host,
     environmentId,
@@ -366,98 +369,6 @@ function IconAction({
       </TooltipTrigger>
       <TooltipPopup>{reason ?? label}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-function RetryDialog({
-  environmentId,
-  run,
-  definition,
-  access,
-  onClose,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly run: BotRun;
-  readonly definition: BotDefinition | null;
-  readonly access: TriageAccess;
-  readonly onClose: () => void;
-}) {
-  const nav = useBotsNavigation();
-  // A plain retry runs the bot as saved now, so that is the model this one differs from.
-  const current = definition?.modelSelection ?? run.modelSelection ?? null;
-  const [model, setModel] = useState<ModelSelection | null>(current);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const retry = useAtomCommand(bots.retry, { reportFailure: false });
-  const unchanged = model === null || (current !== null && sameModel(model, current));
-  const reason = blockedReason(access.canRetry, access.connected);
-  const inputs = triageInputSummary(run.inputs);
-
-  const submit = async () => {
-    if (model === null) return;
-    setBusy(true);
-    setError(null);
-    const result = await retry({ environmentId, input: { runId: run.id, modelSelection: model } });
-    setBusy(false);
-    if (result._tag === "Failure") {
-      setError(failureMessage(squashAtomCommandFailure(result), "Could not retry the run."));
-      return;
-    }
-    announceRetry(nav, run.botName, result.value);
-    onClose();
-  };
-
-  return (
-    <LibraryDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-      title="Retry on another model"
-      description={`Runs ${run.botName} again with the same inputs on the model you pick. The bot keeps its own model.`}
-      actions={
-        <>
-          <Button shape="pill" variant="ghost" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-          <Guard reason={reason}>
-            <Button
-              shape="pill"
-              disabled={reason !== null || busy || unchanged}
-              onClick={() => void submit()}
-            >
-              {busy ? "Retrying…" : model ? `Retry on ${model.model}` : "Retry"}
-            </Button>
-          </Guard>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <div className={cn(LIBRARY_OUTLINE, "flex min-w-0 items-center gap-3 px-3 py-2.5")}>
-          <BotTile bot={{ id: run.botId }} />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{run.botName}</p>
-            <p className="truncate text-xs text-muted-foreground">{inputs || "No inputs"}</p>
-          </div>
-        </div>
-        <LibraryField label="Model">
-          <BotModelPicker environmentId={environmentId} value={model} onChange={setModel} />
-        </LibraryField>
-        <p className="text-xs text-muted-foreground">
-          {run.modelSelection ? `This run used ${run.modelSelection.model}. ` : null}
-          {current
-            ? unchanged
-              ? `Retry already uses ${current.model}; pick another to compare.`
-              : `Only this retry uses ${model?.model ?? "it"}.`
-            : null}
-        </p>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
-      </div>
-    </LibraryDialog>
   );
 }
 
@@ -643,7 +554,18 @@ function TriageMenu({
           </MenuItem>
         ) : null}
         {run?.batchId ? (
-          <MenuItem render={<Link to="/loom/bots" search={{ batch: run.batchId }} />}>
+          <MenuItem
+            render={
+              <Link
+                to="/loom/bots"
+                // From a bot's page, so the batch page leads back to that bot's batches.
+                search={{
+                  batch: run.batchId,
+                  ...(nav.search.bot ? { bot: nav.search.bot } : {}),
+                }}
+              />
+            }
+          >
             <LayersIcon />
             Open batch
           </MenuItem>
@@ -810,6 +732,7 @@ function TriageRow({
       const result = await retry({ environmentId, input: { runId: item.run.id } });
       if (result._tag === "Failure")
         return failureMessage(squashAtomCommandFailure(result), "Could not retry the run.");
+      rememberRuns([result.value]);
       announceRetry(nav, item.botName, result.value);
       return null;
     });
@@ -966,12 +889,16 @@ function TriageRow({
         </p>
       ) : null}
       {choosingModel && item.kind === "run" ? (
-        <RetryDialog
+        <RetryOnModelDialog
           environmentId={environmentId}
           run={item.run}
-          definition={definition}
-          access={access}
+          bot={definition}
           onClose={() => setChoosingModel(false)}
+          onRetried={(next) => {
+            setChoosingModel(false);
+            rememberRuns([next]);
+            announceRetry(nav, item.botName, next);
+          }}
         />
       ) : null}
     </li>
@@ -1219,7 +1146,10 @@ export function NeedsYouView({
   const { host, environmentId, inboxLive, changes, first } = sources;
   const access = useTriageAccess(environmentId, host.connected);
   const [paging, setPaging] = useState<Paging>(NO_PAGING);
-  const [botFilter, setBotFilter] = useState<string | null>(null);
+  // The Runs log's bot filter, so narrowing to a bot holds across scopes, reloads and Back.
+  const botFilter = bot === null ? (nav.search.runBot ?? null) : null;
+  const setBotFilter = (next: string | null) =>
+    nav.show({ ...botsPageOf(nav.search), runBot: next ?? undefined });
   const stamp = `${dismissed}:${first.dataUpdatedAt}`;
   const current = paging.stamp === stamp ? paging : NO_PAGING;
   const older = useEnvironmentQuery(
@@ -1242,11 +1172,14 @@ export function NeedsYouView({
   };
   useRefreshOnReconnect(host.connected, refresh);
   useRefreshWhenBotsChangesPruned(changes, refresh);
+  useEffect(() => {
+    if (older.data) rememberRuns(older.data.runs);
+  }, [older.data]);
 
   if (environmentId === null) return null;
 
   const page = first.data
-    ? applyTriageChanges(
+    ? applyInboxChanges(
         combineTriagePages(first.data, current.earlier, {
           before: current.before,
           page: older.data,
@@ -1279,7 +1212,7 @@ export function NeedsYouView({
     : dismissed
       ? (page?.total ?? null)
       : countQuery.data
-        ? applyTriageChanges(countQuery.data, changes, { dismissed: true }).total
+        ? applyInboxChanges(countQuery.data, changes, { dismissed: true }).total
         : null;
   const waitingFirst = inboxLive && page === null && !first.error;
   const loading = waitingFirst && host.connected;
@@ -1427,7 +1360,7 @@ export function NeedsYouBand({ bot }: { readonly bot: BotDefinition | null }) {
   const sources = useTriageSources(bot, false);
   const { environmentId, first, changes } = sources;
   const access = useTriageAccess(environmentId, sources.host.connected);
-  const page = first.data ? applyTriageChanges(first.data, changes, { dismissed: false }) : null;
+  const page = first.data ? applyInboxChanges(first.data, changes, { dismissed: false }) : null;
   const items = orderTriage(
     triageItems({
       runs: page?.runs ?? [],
@@ -1466,6 +1399,8 @@ export function NeedsYouBand({ bot }: { readonly bot: BotDefinition | null }) {
                   ? { bot: bot.id, tab: "runs", scope: "attention" }
                   : { tab: "runs", scope: "attention" }
               }
+              // A change of view, like the tabs, so Back leaves Bots rather than reopening this.
+              replace
             />
           }
         >

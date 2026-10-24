@@ -1,6 +1,5 @@
 import type { BotBudgetState, BotDefinition, BotRun, BotUsageRow } from "@t3tools/contracts/fork";
 import { BOT_RUN_STATES, BOT_VERDICT_STATES } from "@t3tools/client-runtime/fork";
-import type { BotUsageDays } from "./BotsUsage";
 
 export const BOT_SORTS = ["activity", "name", "tokens"] as const;
 export type BotSort = (typeof BOT_SORTS)[number];
@@ -8,22 +7,6 @@ export const BOT_SORT_LABELS: Record<BotSort, string> = {
   activity: "Recent activity",
   name: "Name",
   tokens: "Most tokens",
-};
-
-/** The usage windows, with the labels the Usage page gives them. */
-export const BOT_USAGE_WINDOWS = [1, 7, 30, 90] as const satisfies readonly BotUsageDays[];
-export const BOT_USAGE_WINDOW_LABELS: Record<BotUsageDays, string> = {
-  1: "Past 24h",
-  7: "7 days",
-  30: "30 days",
-  90: "90 days",
-};
-/** The same windows where a label has a few characters, such as "Runs · 7d". */
-export const BOT_USAGE_WINDOW_SHORT: Record<BotUsageDays, string> = {
-  1: "24h",
-  7: "7d",
-  30: "30d",
-  90: "90d",
 };
 
 export const BOT_STATE_FILTERS = ["failing", "attention", "budget"] as const;
@@ -48,7 +31,7 @@ export interface BotFacts {
   /** Its usage in the chosen window; undefined while usage loads or the server has none. */
   readonly row: BotUsageRow | undefined;
   readonly budget: BotBudgetState | undefined;
-  /** Its runs on the first page of Needs you. */
+  /** Its runs on the first page of Needs you, plus its runs waiting on an approval or answer. */
   readonly needsYou: number;
 }
 
@@ -69,9 +52,21 @@ export function runsByBot(runs: readonly BotRun[]): ReadonlyMap<string, readonly
   return grouped;
 }
 
-export function countByBot(runs: readonly BotRun[]): ReadonlyMap<string, number> {
+/**
+ * What needs a person, per bot, counted from the same queue the Needs you band lists. A waiting
+ * thread whose run is not loaded yet has no bot id, so it falls back to its title, which is the
+ * bot's name, the way the band matches it on a bot's page.
+ */
+export function needsYouByBot(
+  items: readonly { readonly botId: string | null; readonly botName: string }[],
+  bots: readonly Pick<BotDefinition, "id" | "name">[],
+): ReadonlyMap<string, number> {
+  const byName = new Map(bots.map((bot) => [bot.name, bot.id]));
   const counts = new Map<string, number>();
-  for (const run of runs) counts.set(run.botId, (counts.get(run.botId) ?? 0) + 1);
+  for (const item of items) {
+    const botId = item.botId ?? byName.get(item.botName);
+    if (botId !== undefined) counts.set(botId, (counts.get(botId) ?? 0) + 1);
+  }
   return counts;
 }
 

@@ -146,11 +146,16 @@ export function SitePreview({
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState(0);
   const [reloads, setReloads] = useState(0);
-  const [loadedFrame, setLoadedFrame] = useState<string | null>(null);
+  const [frameLoads, setFrameLoads] = useState({ key: "", count: 0 });
   const [slowFrame, setSlowFrame] = useState<string | null>(null);
   const [addressError, setAddressError] = useState<string | null>(null);
   const frameKey = `${reloads}:${frameUrl}`;
-  const loaded = loadedFrame === frameKey;
+  const loads = frameLoads.key === frameKey ? frameLoads.count : 0;
+  const loaded = loads > 0;
+  // A cross-origin frame's address can't be read, but each page it moves to fires another load.
+  // Moves inside a single-page app fire none, so this catches links and redirects, not every move.
+  const moved = loads > 1;
+  const typed = path ?? sitePath(site.url);
   // Measured, not animated: the frame rescales only when the stage itself changes size.
   useLayoutEffect(() => {
     const element = stageRef.current;
@@ -207,16 +212,17 @@ export function SitePreview({
             shape="pill"
             size="icon-sm"
             variant="ghost"
-            aria-label="Reload preview"
+            aria-label={moved ? `Back to ${typed}` : "Reload preview"}
             onClick={reload}
           >
             <RotateCwIcon />
           </Button>
           <div className="min-w-48 flex-1">
             <PreviewAddress
-              key={path ?? ""}
+              key={`${path ?? ""}:${moved}`}
               siteUrl={site.url}
               path={path}
+              moved={moved}
               onGo={go}
               onInvalid={setAddressError}
             />
@@ -256,6 +262,15 @@ export function SitePreview({
             Open in new tab
           </Button>
         </div>
+        {moved ? (
+          <p
+            role="status"
+            className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            The preview moved to another page. Reload and Open in new tab still go to{" "}
+            <span className="font-mono text-foreground/80">{typed}</span>.
+          </p>
+        ) : null}
         {addressError ? (
           <p
             role="alert"
@@ -305,7 +320,12 @@ export function SitePreview({
               title={`Live preview of ${shown}`}
               sandbox={SITE_PREVIEW_SANDBOX}
               referrerPolicy="no-referrer"
-              onLoad={() => setLoadedFrame(frameKey)}
+              onLoad={() =>
+                setFrameLoads((current) => ({
+                  key: frameKey,
+                  count: current.key === frameKey ? current.count + 1 : 1,
+                }))
+              }
               className={cn(
                 "absolute top-0 left-0 block border-0 transition-opacity duration-150 motion-reduce:transition-none",
                 loaded ? "opacity-100" : "opacity-0",
@@ -346,16 +366,19 @@ const originHost = (url: string) => {
 function PreviewAddress({
   siteUrl,
   path,
+  moved,
   onGo,
   onInvalid,
 }: {
   readonly siteUrl: string;
   readonly path: string | undefined;
+  /** The frame has left `path`, for a page this bar cannot read, so it shows none. */
+  readonly moved: boolean;
   readonly onGo: (path: string | undefined) => void;
   readonly onInvalid: (reason: string | null) => void;
 }) {
   const host = originHost(siteUrl);
-  const current = path ?? sitePath(siteUrl);
+  const current = moved ? "" : (path ?? sitePath(siteUrl));
   const [draft, setDraft] = useState(current);
   const [invalid, setInvalid] = useState(false);
   return (
@@ -380,7 +403,7 @@ function PreviewAddress({
           autoComplete="off"
           aria-label={`Page on ${host} to preview`}
           aria-invalid={invalid || undefined}
-          placeholder="/"
+          placeholder={moved ? "Page changed inside the preview" : "/"}
           onChange={(event) => {
             setDraft(event.target.value);
             if (invalid) {

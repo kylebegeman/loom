@@ -5,13 +5,12 @@ import {
   BOTS_RUN_DETAILS_FEATURE,
   isBotInboxRun,
   isTerminalBotRunStatus,
-  needsBotAttention,
   type BotDefinition,
   type BotId,
   type BotRun,
   type BotTriggerId,
 } from "@t3tools/contracts/fork";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { canRetryBotRun, isBotTriageRun, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   ArchiveIcon,
@@ -72,7 +71,6 @@ import { BotRunFeedback } from "./BotRunFeedback";
 import { BotRunForm } from "./BotRunForm";
 import { botsPageOf, useBotsNavigation } from "./navigation";
 import {
-  canRetryRun,
   knownRun,
   rememberRuns,
   runInputSummary,
@@ -365,10 +363,12 @@ function RunDetail({
   const threadTitle = (threadId: string | null | undefined) =>
     threadId ? threads.find((thread) => thread.id === threadId)?.title : undefined;
   const inInbox = host.inboxSupported && isBotInboxRun(run);
-  const restorable = host.inboxSupported && run.dismissedAt != null && needsBotAttention(run);
+  // The Dismissed list's own test, so every run it lists can be restored from here.
+  const restorable = host.inboxSupported && isBotTriageRun(run, true);
   // Retry and continuing in a thread arrived with Needs you; older servers have neither.
-  const retryable = host.inboxSupported && canRetryRun(run);
-  const promotable = host.inboxSupported && !active;
+  const retryable = host.inboxSupported && canRetryBotRun(run);
+  // The server forks the run's thread where it runs, which a remote run's is not.
+  const promotable = host.inboxSupported && !active && !run.ranOn;
   const runnable = bot !== null && bot.archivedAt === null && !active;
   const queued = runQueuedMs(run);
   const parameterLabel = (name: string) =>
@@ -463,7 +463,12 @@ function RunDetail({
           {
             label: "Batch",
             value: (
-              <Link to="/loom/bots" search={{ batch: run.batchId }} className={TEXT_LINK}>
+              <Link
+                to="/loom/bots"
+                // From a bot's page, so the batch page leads back to that bot's batches.
+                search={{ batch: run.batchId, ...(page.bot ? { bot: page.bot } : {}) }}
+                className={TEXT_LINK}
+              >
                 Open batch
               </Link>
             ),
@@ -905,7 +910,7 @@ const sameModel = (left: ModelSelection, right: ModelSelection) =>
   left.instanceId === right.instanceId && left.model === right.model;
 
 /** Runs a run again on another model, for comparing; the bot keeps its own. */
-function RetryOnModelDialog({
+export function RetryOnModelDialog({
   environmentId,
   run,
   bot,
@@ -925,6 +930,7 @@ function RetryOnModelDialog({
   const [error, setError] = useState<string | null>(null);
   const retry = useAtomCommand(bots.retry, { reportFailure: false });
   const { canRetry } = useBotsAccess();
+  const { connected } = useBotsHost();
   const unchanged = model === null || (current !== null && sameModel(model, current));
   const inputs = runInputSummary(run);
 
@@ -986,7 +992,11 @@ function RetryOnModelDialog({
               ? `A plain retry already uses ${current.model}; pick another to compare.`
               : `Only this retry uses ${model?.model ?? "it"}.`
             : null}
-          {canRetry ? null : " This connection cannot retry runs."}
+          {canRetry
+            ? null
+            : connected
+              ? " This connection cannot retry runs."
+              : " Reconnect to retry it."}
         </p>
         {error ? (
           <p role="alert" className="text-sm text-destructive-foreground">

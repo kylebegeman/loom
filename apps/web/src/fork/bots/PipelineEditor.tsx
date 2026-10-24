@@ -269,12 +269,16 @@ function PipelineBuilder({
 
   const botsById = useMemo(() => new Map(allBots.map((bot) => [bot.id, bot])), [allBots]);
   const botOf = (botId: string) => botsById.get(botId);
+  // Until the bot list loads, a step's bot is unknown rather than missing.
+  const botsLoaded = botList.data !== null;
   const runnable = allBots.filter((bot) => bot.archivedAt === null);
   const takenIds = useMemo(() => new Set(pipelines.map((pipeline) => pipeline.id)), [pipelines]);
   const latest =
     opened === null ? undefined : pipelines.find((pipeline) => pipeline.id === opened.id);
   const stale = latest !== undefined && latest.version !== baseVersion;
   const gone = !isNew && listed && latest === undefined && baseVersion !== 0;
+  // Once "Save as new" is chosen for a deleted pipeline, saving creates it again.
+  const savingAsNew = !isNew && baseVersion === 0;
 
   // The form's own rules apply at once; the server's check follows once typing settles.
   const local = draftProblems(draft, { takenIds, isNew: baseVersion === 0 });
@@ -486,7 +490,12 @@ function PipelineBuilder({
     // On success the page leaves, so the bar keeps saying Saving until it does.
     if (result._tag === "Success") {
       const saved = result.value;
-      leave(() => nav.open({ pipeline: saved.id }));
+      // The builder never stays behind in history: an edit returns where it was opened, and a
+      // new pipeline's page takes the builder's place.
+      leave(() => {
+        if (!isNew && canGoBack) window.history.back();
+        else nav.show({ pipeline: saved.id });
+      });
       return;
     }
     setSaving(false);
@@ -494,8 +503,8 @@ function PipelineBuilder({
     const message = cause instanceof Error ? cause.message : "Could not save the pipeline.";
     refreshList();
     const id = draft.id.trim();
-    // Saving as new expects nothing under the id, so this refusal means the id is taken. The
-    // server's wording speaks of an edit, which would confuse someone who never opened one.
+    // Saving as new expects nothing under the id, so this refusal means the id is taken. Older
+    // servers word it as a stale edit, which would confuse someone who never opened one.
     if (baseVersion === 0 && message.startsWith("This pipeline changed since"))
       setError(`Another pipeline already uses the id ${id}. Choose another id.`);
     else setError(message);
@@ -564,9 +573,13 @@ function PipelineBuilder({
   const insertReason =
     draft.steps.length >= BOTS_PIPELINE_MAX_STEPS
       ? `A pipeline holds up to ${BOTS_PIPELINE_MAX_STEPS} steps.`
-      : runnable.length === 0
-        ? "Make a bot first. Each step runs one."
-        : null;
+      : !botsLoaded
+        ? botList.error
+          ? "The bots could not load."
+          : "Loading bots…"
+        : runnable.length === 0
+          ? "Make a bot first. Each step runs one."
+          : null;
 
   return (
     <div
@@ -581,6 +594,8 @@ function PipelineBuilder({
         <LibraryBackLink to="/loom/bots" search={backSearch}>
           {opened === null ? "Pipelines" : opened.name}
         </LibraryBackLink>
+        {/* The name is an editable field, so the page's heading is for screen readers only. */}
+        <h1 className="sr-only">{opened === null ? "New pipeline" : `Edit ${opened.name}`}</h1>
         <header className="flex items-start gap-4">
           <PipelineTile pipelineId={id} size="xl" neutral={id === ""} />
           <div className="grid min-w-0 flex-1 gap-1.5">
@@ -690,6 +705,7 @@ function PipelineBuilder({
             step={step}
             index={index}
             botOf={botOf}
+            botsLoaded={botsLoaded}
             allBots={allBots}
             insertChoices={insertReason === null ? runnable : []}
             open={openKey === step.key}
@@ -705,7 +721,7 @@ function PipelineBuilder({
         ))}
         <Connector />
         <li className="flex flex-col gap-2">
-          {runnable.length === 0 && botList.data ? (
+          {runnable.length === 0 && botsLoaded ? (
             <LibraryNotice
               icon={WorkflowIcon}
               action={
@@ -759,7 +775,13 @@ function PipelineBuilder({
             reason={actionReason(host.connected, access.canSavePipelines, "save pipelines")}
           >
             <Button shape="pill" size="sm" disabled={saveDisabled} onClick={() => void submit()}>
-              {saving ? "Saving…" : gone ? "Save as new" : isNew ? "Save pipeline" : "Save changes"}
+              {saving
+                ? "Saving…"
+                : gone || savingAsNew
+                  ? "Save as new"
+                  : isNew
+                    ? "Save pipeline"
+                    : "Save changes"}
             </Button>
           </WithReason>
         </LibraryEditorBar>
@@ -1086,6 +1108,7 @@ function StepItem({
   step,
   index,
   botOf,
+  botsLoaded,
   allBots,
   insertChoices,
   open,
@@ -1103,6 +1126,8 @@ function StepItem({
   readonly step: PipelineStepDraft;
   readonly index: number;
   readonly botOf: (botId: string) => BotDefinition | undefined;
+  /** Whether the bot list loaded, so a bot it lacks is really gone. */
+  readonly botsLoaded: boolean;
   readonly allBots: ReadonlyArray<BotDefinition>;
   /** Bots to insert before this step; empty when no step can be added. */
   readonly insertChoices: ReadonlyArray<BotDefinition>;
@@ -1150,9 +1175,13 @@ function StepItem({
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
                   <span className="truncate font-mono text-sm font-medium">{id}</span>
-                  <span className="truncate text-sm text-muted-foreground">
-                    {bot?.name ?? (step.botId ? `Missing bot ${step.botId}` : "No bot")}
-                  </span>
+                  {bot === undefined && step.botId !== "" && !botsLoaded ? (
+                    <Skeleton className="h-3.5 w-20" />
+                  ) : (
+                    <span className="truncate text-sm text-muted-foreground">
+                      {bot?.name ?? (step.botId ? `Missing bot ${step.botId}` : "No bot")}
+                    </span>
+                  )}
                   {step.forEach ? (
                     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <LayersIcon aria-hidden className="size-3.5" />
@@ -1241,6 +1270,7 @@ function StepItem({
                 index={index}
                 bot={bot}
                 botOf={botOf}
+                botsLoaded={botsLoaded}
                 allBots={allBots}
                 problems={problems}
                 onChange={onChange}
@@ -1295,6 +1325,7 @@ function StepEditor({
   index,
   bot,
   botOf,
+  botsLoaded,
   allBots,
   problems,
   onChange,
@@ -1307,6 +1338,7 @@ function StepEditor({
   readonly index: number;
   readonly bot: BotDefinition | undefined;
   readonly botOf: (botId: string) => BotDefinition | undefined;
+  readonly botsLoaded: boolean;
   readonly allBots: ReadonlyArray<BotDefinition>;
   readonly problems: ReadonlyArray<BuilderProblem>;
   readonly onChange: (step: PipelineStepDraft) => void;
@@ -1391,7 +1423,7 @@ function StepEditor({
               </SelectPopup>
             </Select>
             <FieldProblems problems={at("botId")} />
-            {bot === undefined && step.botId !== "" ? (
+            {bot === undefined && step.botId !== "" && botsLoaded ? (
               <span className="text-xs font-normal text-warning-foreground">
                 There is no bot {step.botId} on this computer. Choose another to keep this step.
               </span>

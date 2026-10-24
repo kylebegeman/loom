@@ -146,7 +146,7 @@ function TrafficChart({
         onBlur={() => onFocus(null)}
         className="relative rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        <Sparkline size="fill" values={values} label="Daily page views" />
+        <Sparkline size="chart" values={values} label="Daily page views" />
         {point ? (
           <>
             <span

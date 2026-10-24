@@ -395,17 +395,23 @@ export function BotPipelineEditor({
         const saved = commandValue(
           await save({
             environmentId,
-            input: {
-              pipeline: built.input,
-              ...(pipeline ? { expectedVersion: pipeline.version } : {}),
-            },
+            // A new pipeline expects no pipeline under its id, so it never replaces one that
+            // shares its slug, such as a starter.
+            input: { pipeline: built.input, expectedVersion: pipeline?.version ?? 0 },
           }),
         );
         if (active.current) onSaved(saved);
       })
       .catch((cause: unknown) => {
-        if (active.current)
-          setError(cause instanceof Error ? cause.message : "Could not save the pipeline.");
+        if (!active.current) return;
+        const message = cause instanceof Error ? cause.message : "Could not save the pipeline.";
+        // For a new pipeline this refusal means the id is taken. Older servers word it as a stale
+        // edit, which would confuse someone who never opened one.
+        setError(
+          pipeline === null && message.startsWith("This pipeline changed since")
+            ? `Another pipeline already uses the id ${draft.id.trim()}. Choose another id.`
+            : message,
+        );
       });
     if (active.current) setBusy(false);
   };

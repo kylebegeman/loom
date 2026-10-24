@@ -28,6 +28,7 @@ import {
   botVersionDiff,
   BOTS_CHANGES_MAX_RUNS,
   botVersionLabel,
+  canRetryBotRun,
   dismissRunIdBatches,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOT_PIPELINE_CHANGES,
@@ -38,6 +39,7 @@ import {
   foldBotTriggerChange,
   foldBotsChange,
   formatReplaySummary,
+  isBotTriageRun,
   makeThreadBotRunsAtom,
   type BotsChanges,
   waitingBotRunThreads,
@@ -427,6 +429,81 @@ describe("bots inbox", () => {
     expect(dismissed).toMatchObject({ total: 1, runs: [{ id: "r1" }] });
   });
 
+  it("keeps a dismissed step that stopped its pipeline in Dismissed, whatever its verdict", () => {
+    const stopped = {
+      ...run("p1", "reviewer", "2026-10-20T11:00:00.000Z", "completed"),
+      pipelineRunId: "pipe",
+      pipelineStopped: true,
+      verdict: {
+        verdict: "pass" as const,
+        summary: "Fine.",
+        findings: [],
+        findingsTruncated: false,
+        source: "decoded" as const,
+      },
+    };
+    const dismissed = { ...stopped, dismissedAt: "2026-10-20T12:00:00.000Z" };
+    const page = applyInboxChanges(
+      { runs: [dismissed], total: 1, hasMore: false },
+      fold({ _tag: "run", run: { ...dismissed, rating: "up" } }),
+      { dismissed: true },
+    );
+    expect(page).toMatchObject({ total: 1, runs: [{ id: "p1", rating: "up" }] });
+
+    const restored = applyInboxChanges(
+      { runs: [dismissed], total: 1, hasMore: false },
+      fold({ _tag: "run", run: stopped }),
+      { dismissed: true },
+    );
+    expect(restored).toEqual({ runs: [], total: 0, hasMore: false });
+  });
+
+  it("selects what the server's inbox query selects, dismissed or not", () => {
+    const at = "2026-10-20T11:00:00.000Z";
+    const failedRun = failed("f", at);
+    expect(isBotTriageRun(failedRun, false)).toBe(true);
+    expect(isBotTriageRun(failedRun, true)).toBe(false);
+    expect(isBotTriageRun({ ...failedRun, dismissedAt: at }, true)).toBe(true);
+    expect(isBotTriageRun({ ...failedRun, dismissedAt: at }, false)).toBe(false);
+    expect(isBotTriageRun(run("passed", "reviewer", at, "completed"), false)).toBe(false);
+    expect(isBotTriageRun(run("cancelled", "reviewer", at, "cancelled"), false)).toBe(false);
+    expect(isBotTriageRun(failed("gated", at, { pipelineRunId: "pipe" }), false)).toBe(false);
+    expect(isBotTriageRun(failed("replay", at, { replayId: "r", dismissedAt: at }), true)).toBe(
+      false,
+    );
+    expect(
+      isBotTriageRun(failed("retried", at, { retriedBy: "next", dismissedAt: at }), true),
+    ).toBe(false);
+    expect(
+      isBotTriageRun(
+        failed("remote", at, {
+          requestedBy: { environmentId: EnvironmentId.make("other"), label: "Studio" },
+        }),
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it("offers Retry only where the server retries", () => {
+    const at = "2026-10-20T11:00:00.000Z";
+    expect(canRetryBotRun(failed("failed", at))).toBe(true);
+    expect(canRetryBotRun({ ...failed("late", at), status: "timed_out" })).toBe(true);
+    expect(canRetryBotRun(run("passed", "reviewer", at, "completed"))).toBe(false);
+    expect(canRetryBotRun(run("cancelled", "reviewer", at, "cancelled"))).toBe(false);
+    expect(canRetryBotRun(failed("retried", at, { retriedBy: "next" }))).toBe(false);
+    expect(canRetryBotRun(failed("dismissed", at, { dismissedAt: at }))).toBe(false);
+    expect(
+      canRetryBotRun(failed("stopped", at, { pipelineRunId: "pipe", pipelineStopped: true })),
+    ).toBe(false);
+    expect(
+      canRetryBotRun(
+        failed("remote", at, {
+          requestedBy: { environmentId: EnvironmentId.make("other"), label: "Laptop" },
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("splits dismissing an inbox grown past one request into requests the server accepts", () => {
     const shown = Array.from({ length: 120 }, (_, index) => ({ id: `r${index}` }));
     const batches = dismissRunIdBatches(shown);
@@ -551,6 +628,25 @@ describe("bot versions", () => {
       },
     ]);
     expect(botVersionDiff(before, before)).toEqual({ instructions: null, fields: [] });
+  });
+
+  it("calls a save that changed only the Vault slots a change", () => {
+    const slot = { name: "deploy", label: "Deploy key", action: "use" } as const;
+    const before = { ...bot("a", "Reviewer"), vaultSlots: [slot] };
+    const after = { ...before, vaultSlots: [{ ...slot, destination: "prod.example.com" }] };
+    expect(botVersionDiff(before, after)).toMatchObject({
+      instructions: null,
+      fields: [{ field: "vaultSlots", label: "Vault slots" }],
+    });
+    // Key order, and no list against an empty one, are no change.
+    const reordered = {
+      ...before,
+      vaultSlots: [{ action: "use", label: "Deploy key", name: "deploy" }] as const,
+    };
+    expect(botVersionDiff(before, reordered).fields).toEqual([]);
+    expect(
+      botVersionDiff(bot("a", "Reviewer"), { ...bot("a", "Reviewer"), vaultSlots: [] }),
+    ).toEqual({ instructions: null, fields: [] });
   });
 
   it("formats a replay summary and a version label", () => {

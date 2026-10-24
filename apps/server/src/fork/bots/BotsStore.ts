@@ -367,6 +367,7 @@ export const makeBotsStore = Effect.gen(function* () {
         yield* sql<VersionRow>`SELECT bot_id, version, '' AS definition_json, saved_by, saved_at, changed_json, restored_from FROM fork_bots_versions WHERE bot_id = ${botId} ${before === undefined ? sql`` : sql`AND version < ${before}`} ORDER BY version DESC LIMIT ${limit + 1}`;
       const page = rows.slice(0, limit);
       const versions = page.map((row) => Number(row.version));
+      // An `unavailable` run stores zero tokens it never measured, so only reported usage counts.
       const runs =
         versions.length === 0
           ? []
@@ -374,7 +375,7 @@ export const makeBotsStore = Effect.gen(function* () {
               bot_version: number;
               verdict: string | null;
               tokens: number | null;
-            }>`SELECT bot_version, verdict, CASE WHEN usage_status IS NULL THEN NULL ELSE COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) END AS tokens FROM fork_bots_runs WHERE bot_id = ${botId} AND bot_version IN ${sql.in(versions)} AND finished_at IS NOT NULL`;
+            }>`SELECT bot_version, verdict, CASE WHEN usage_status IS NULL OR usage_status = 'unavailable' THEN NULL ELSE COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0) END AS tokens FROM fork_bots_runs WHERE bot_id = ${botId} AND bot_version IN ${sql.in(versions)} AND finished_at IS NOT NULL`;
       const summaries = page.map((row): BotVersionSummary => {
         const own = runs.filter((run) => Number(run.bot_version) === Number(row.version));
         const judged = own.filter((run) => run.verdict !== null);

@@ -11,6 +11,8 @@ import {
   defaultReplaySelection,
   replayHeadline,
   replayInputSummary,
+  replayRest,
+  replayTally,
   replayCandidates,
   replayRunsById,
   filterReplayCandidates,
@@ -232,6 +234,26 @@ describe("replay results", () => {
     expect(
       replayHeadline(replay({ status: "cancelled", items: [], summary: replay().summary })),
     ).toBe("Cancelled. No run finished.");
+  });
+
+  it("adds only the counts the headline leaves out, in the badges' words", () => {
+    const done = (summary: BotReplay["summary"]) =>
+      replay({
+        status: "done",
+        summary,
+        items: [{ originalRunId: "a", replayRunId: "ra", comparison: "same", reason: null }],
+      });
+    const mixed = done({ fixed: 2, broke: 0, same: 8, changed: 1, failed: 1 });
+    expect(replayTally(mixed.summary)).toBe("2 better, 1 changed, 8 same, 1 failed");
+    // The headline already says better on 2 and worse on none.
+    expect(replayRest(mixed)).toBe("1 changed, 8 same, 1 failed");
+    // "No better or worse; 2 runs answered differently" covers changed.
+    expect(replayRest(done({ fixed: 0, broke: 0, same: 3, changed: 2, failed: 0 }))).toBe("3 same");
+    // "1 run could not be replayed" is the whole story.
+    expect(replayRest(done({ fixed: 0, broke: 0, same: 0, changed: 0, failed: 1 }))).toBe("");
+    // While running, the headline gives only progress, so every settled count follows it.
+    expect(replayRest(replay())).toBe("1 better");
+    expect(replayRest(replay({ status: "cancelled", items: [] }))).toBe("");
   });
 
   it("names each input once, in the order the run recorded them", () => {

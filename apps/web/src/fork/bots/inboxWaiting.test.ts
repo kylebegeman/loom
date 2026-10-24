@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { needsBotAttention, type BotRun, type BotsInboxPage } from "@t3tools/contracts/fork";
+import type { BotRun, BotsInboxPage } from "@t3tools/contracts/fork";
 import {
   makeWaitingBotRunsAtom,
   waitingBotRunThreads,
@@ -10,12 +10,10 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   TRIAGE_REPEAT_MIN,
-  applyTriageChanges,
   combineTriagePages,
   dismissibleRunIds,
   foldRepeats,
   groupTriage,
-  isTriageRun,
   olderCursor,
   orderTriage,
   triageBotCounts,
@@ -101,94 +99,8 @@ const page = (runs: BotRun[], fields: Partial<BotsInboxPage> = {}): BotsInboxPag
   ...fields,
 });
 
-const changesOf = (...runs: BotRun[]) => ({ runs: new Map(runs.map((run) => [run.id, run])) });
 const ids = (items: readonly { readonly key: string }[]) => items.map((item) => item.key);
 const at = (minute: number) => `2026-10-20T10:${String(minute).padStart(2, "0")}:00.000Z`;
-
-describe("isTriageRun", () => {
-  const stoppedOnFail = makeBotRun("stopped", {
-    pipelineRunId: "pipe",
-    pipelineStopped: true,
-    verdict: verdict("fail"),
-  });
-
-  it("keeps a pipeline stopped on a fail verdict once it is dismissed", () => {
-    const dismissed = { ...stoppedOnFail, dismissedAt: at(30) };
-    // The shared overlay's matcher, which dropped it from Dismissed with no way back.
-    expect(needsBotAttention(dismissed)).toBe(false);
-    expect(isTriageRun(stoppedOnFail, false)).toBe(true);
-    expect(isTriageRun(dismissed, true)).toBe(true);
-    expect(isTriageRun(dismissed, false)).toBe(false);
-  });
-
-  it("selects what the server's inbox query selects", () => {
-    expect(isTriageRun(makeBotRun("failed", { status: "failed" }), false)).toBe(true);
-    expect(isTriageRun(makeBotRun("late", { status: "timed_out" }), false)).toBe(true);
-    expect(isTriageRun(makeBotRun("unsure", { verdict: verdict("needs_attention") }), false)).toBe(
-      true,
-    );
-    expect(isTriageRun(makeBotRun("passed", { verdict: verdict("pass") }), false)).toBe(false);
-    expect(
-      isTriageRun(makeBotRun("gated", { status: "failed", pipelineRunId: "pipe" }), false),
-    ).toBe(false);
-  });
-
-  it("leaves out replays, retried runs and runs for another computer", () => {
-    expect(isTriageRun(makeBotRun("replay", { status: "failed", replayId: "r" }), false)).toBe(
-      false,
-    );
-    expect(isTriageRun(makeBotRun("retried", { status: "failed", retriedBy: "next" }), false)).toBe(
-      false,
-    );
-    expect(isTriageRun({ ...stoppedOnFail, retriedBy: "next" }, false)).toBe(false);
-    expect(
-      isTriageRun(
-        makeBotRun("remote", {
-          status: "failed",
-          requestedBy: { environmentId: EnvironmentId.make("other"), label: "Studio" },
-        }),
-        false,
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("applyTriageChanges", () => {
-  const older = makeBotRun("older", { status: "failed", createdAt: at(1) });
-  const newer = makeBotRun("newer", { status: "failed", createdAt: at(5) });
-
-  it("moves a dismissed run between the two views and keeps both totals", () => {
-    const dismissed = { ...newer, dismissedAt: at(40) };
-    const attention = applyTriageChanges(page([newer, older]), changesOf(dismissed), {
-      dismissed: false,
-    });
-    expect(attention.runs.map((run) => run.id)).toEqual(["older"]);
-    expect(attention.total).toBe(1);
-    const archive = applyTriageChanges(page([]), changesOf(dismissed), { dismissed: true });
-    expect(archive.runs.map((run) => run.id)).toEqual(["newer"]);
-    expect(archive.total).toBe(1);
-  });
-
-  it("adds a new run newest first and counts it", () => {
-    const latest = makeBotRun("latest", { status: "timed_out", createdAt: at(9) });
-    const next = applyTriageChanges(page([newer, older]), changesOf(latest), {
-      dismissed: false,
-    });
-    expect(next.runs.map((run) => run.id)).toEqual(["latest", "newer", "older"]);
-    expect(next.total).toBe(3);
-  });
-
-  it("leaves the total alone for a change older than every loaded run while more remain", () => {
-    const ancient = makeBotRun("ancient", { status: "failed", createdAt: at(0) });
-    const next = applyTriageChanges(
-      page([newer, older], { total: 7, hasMore: true }),
-      changesOf(ancient),
-      { dismissed: false },
-    );
-    expect(next.runs.map((run) => run.id)).toEqual(["newer", "older"]);
-    expect(next.total).toBe(7);
-  });
-});
 
 describe("combineTriagePages", () => {
   const first = page(

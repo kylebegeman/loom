@@ -81,6 +81,7 @@ import {
   useBotsAttentionCount,
   useBotsHost,
   useRefreshWhenBotsChangesPruned,
+  useWaitingBotRuns,
 } from "./state";
 
 export { runInputSummary } from "./runLog";
@@ -92,9 +93,17 @@ export function RunsView({ bot }: { readonly bot: BotDefinition | null }) {
   const nav = useBotsNavigation();
   const host = useBotsHost();
   const attention = useBotsAttentionCount();
+  // Without the inbox, runs waiting on an answer are all Needs you holds.
+  const waiting = useWaitingBotRuns(host.inboxSupported ? null : host.environmentId).length;
   const scope = resolveRunsScope(nav.search.scope, host);
   // The attention count covers every bot, so a bot's page leaves it off rather than overstate.
-  const toolbarEnd = <RunsScopeSwitch scope={scope} attention={bot === null ? attention : null} />;
+  const toolbarEnd = (
+    <RunsScopeSwitch
+      scope={scope}
+      needsYou={host.inboxSupported || waiting > 0}
+      attention={bot === null ? attention : null}
+    />
+  );
   switch (scope) {
     case "attention":
     case "dismissed":
@@ -109,16 +118,20 @@ export function RunsView({ bot }: { readonly bot: BotDefinition | null }) {
 
 function RunsScopeSwitch({
   scope,
+  needsYou,
   attention,
 }: {
   readonly scope: RunsScope;
+  /** Whether Needs you has anything to list; the open scope always keeps its own item. */
+  readonly needsYou: boolean;
   readonly attention: number | null;
 }) {
   const nav = useBotsNavigation();
   const host = useBotsHost();
-  if (!host.inboxSupported && !host.batchesSupported) return null;
   // Dismissed runs are a corner of Needs you, reached from inside it.
   const value = scope === "dismissed" ? "attention" : scope;
+  const showNeedsYou = needsYou || value === "attention";
+  if (!showNeedsYou && !host.batchesSupported) return null;
   return (
     <ToggleGroup
       shape="pill"
@@ -133,7 +146,7 @@ function RunsScopeSwitch({
       }}
     >
       <ToggleGroupItem value="all">All runs</ToggleGroupItem>
-      {host.inboxSupported ? (
+      {showNeedsYou ? (
         <ToggleGroupItem value="attention">
           Needs you
           {attention ? (
@@ -169,8 +182,13 @@ function RunLog({
   const access = useBotsAccess();
   const now = nowFromMinute(useNowMinute());
   const environmentId = live ? host.environmentId : null;
-  const [verdict, setVerdict] = useState<BotVerdictValue | null>(null);
-  const [filterBotId, setFilterBotId] = useState<BotId | null>(null);
+  // Filters live in the URL, so a narrowed log survives a reload, a shared link and Back.
+  const verdict = nav.search.verdict ?? null;
+  const filterBotId = nav.search.runBot ?? null;
+  const setFilters = (filters: Pick<BotsPageSearch, "verdict" | "runBot">) =>
+    nav.show({ ...botsPageOf(nav.search), ...filters });
+  const setVerdict = (next: BotVerdictValue | null) => setFilters({ verdict: next ?? undefined });
+  const setFilterBotId = (next: BotId | null) => setFilters({ runBot: next ?? undefined });
   const activeVerdict = host.verdictsSupported ? verdict : null;
   const pickedBot = bot === null ? filterBotId : null;
   const botId = bot?.id ?? pickedBot ?? undefined;
@@ -226,10 +244,7 @@ function RunLog({
   useRefreshWhenBotsChangesPruned(changes, refreshFirst);
   useRefreshWhenBotsChangesPruned(changes, filtered ? recent.refresh : noop);
 
-  const clearFilters = () => {
-    setVerdict(null);
-    setFilterBotId(null);
-  };
+  const clearFilters = () => setFilters({ verdict: undefined, runBot: undefined });
   const loadOlder = () => {
     const page = pages.cursor === null ? first.data?.runs : older.data?.runs;
     if (page) setPages(loadOlderRuns(pages, page));

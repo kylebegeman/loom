@@ -188,7 +188,7 @@ it("closes drafts when the Library changes instead of sending them to the new se
 
 it("can run checks on registered services before the first site exists", async () => {
   render();
-  click("Run checks now");
+  click("Run all checks");
   await act(async () => {});
   expect(harness.run).toHaveBeenCalledWith({
     environmentId: EnvironmentId.make("first"),

@@ -4,6 +4,7 @@ import {
   InboxIcon,
   LayersIcon,
   MonitorIcon,
+  PencilIcon,
   PlayIcon,
   PlusIcon,
   WorkflowIcon,
@@ -17,10 +18,10 @@ import {
   type CommandPaletteActionItem,
   type CommandPaletteSubmenuItem,
 } from "~/components/CommandPalette.logic";
-import type { BotsSearch } from "~/routes/loom.bots";
+import type { BotsSearch } from "./botsRoute";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { canSaveAsBot } from "./fromThread/logic";
-import { useBots, useBotsAccess, usePipelines } from "./state";
+import { useBots, useBotsAccess, usePipelines, useWaitingBotRuns } from "./state";
 
 type PaletteTarget = {
   readonly id: string;
@@ -32,15 +33,25 @@ type PaletteTarget = {
 export interface BotsPaletteContext {
   /** Opens a Bots page, or a dialog over one; every entry is a place on the Bots page. */
   readonly go: (search: BotsSearch) => Promise<void>;
-  /** Current bots this connection may run; archived ones stay off the palette. */
+  /** Current bots, whose pages anyone can open; archived ones stay off the palette. */
+  readonly openable: readonly PaletteTarget[];
+  /** Current bots this connection may change, empty while it cannot save. */
+  readonly editable: readonly PaletteTarget[];
+  /** Current bots this connection may run. */
   readonly runnable: readonly PaletteTarget[];
   /** Runnable bots with inputs to vary, empty while the server cannot run batches. */
   readonly batchable: readonly PaletteTarget[];
+  /** Every pipeline, whose pages anyone can open; empty while the server has none. */
+  readonly pipelinePages: readonly PaletteTarget[];
   /** Pipelines this connection may run; empty while the server has none. */
   readonly pipelines: readonly PaletteTarget[];
   /** Current bots that may gain a trigger, empty while this connection cannot add one. */
   readonly triggerable: readonly PaletteTarget[];
+  /** Whether Needs you has anything to show: the inbox, or runs waiting on an answer. */
   readonly needsYou: boolean;
+  /** Whether the server has the index's Pipelines and Triggers views. */
+  readonly pipelinesView: boolean;
+  readonly triggersView: boolean;
   readonly newBot: boolean;
   readonly newPipeline: boolean;
   readonly computers: boolean;
@@ -126,6 +137,28 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
             ),
           ]
         : []),
+      ...(context.pipelinesView
+        ? [
+            action(
+              "pipelines",
+              "Bot pipelines",
+              ["bots", "pipelines", "chain", "steps", "review", "fix", "verify"],
+              WorkflowIcon,
+              () => go({ tab: "pipelines" }),
+            ),
+          ]
+        : []),
+      ...(context.triggersView
+        ? [
+            action(
+              "triggers",
+              "Bot triggers",
+              ["bots", "triggers", "webhook", "schedule", "automate", "when"],
+              ZapIcon,
+              () => go({ tab: "triggers" }),
+            ),
+          ]
+        : []),
       ...(saveAsBot !== null && activeThreadRef !== null && saveAsBot.allowed(activeThreadRef)
         ? [
             action(
@@ -156,6 +189,24 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
           ]
         : []),
       ...submenu(
+        "open-bot",
+        "Open bot...",
+        ["bots", "open", "bot", "page", "go"],
+        BotIcon,
+        "Bots",
+        targetItems(context.openable, "open-bot", BotIcon, (bot) => go({ bot: bot.id })),
+      ),
+      ...submenu(
+        "edit-bot",
+        "Edit bot...",
+        ["bots", "edit", "change", "brief", "instructions", "settings"],
+        PencilIcon,
+        "Bots",
+        targetItems(context.editable, "edit-bot", BotIcon, (bot) =>
+          go({ bot: bot.id, edit: true }),
+        ),
+      ),
+      ...submenu(
         "run",
         "Run bot...",
         ["bots", "run", "job", "start"],
@@ -171,6 +222,16 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
         "Bots",
         targetItems(context.batchable, "run-many", BotIcon, (bot) =>
           go({ bot: bot.id, many: bot.id }),
+        ),
+      ),
+      ...submenu(
+        "open-pipeline",
+        "Open pipeline...",
+        ["bots", "pipeline", "open", "page", "runs"],
+        WorkflowIcon,
+        "Pipelines",
+        targetItems(context.pipelinePages, "open-pipeline", WorkflowIcon, (pipeline) =>
+          go({ pipeline: pipeline.id }),
         ),
       ),
       ...submenu(
@@ -215,17 +276,23 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   const access = useBotsAccess();
   const pipelinesLive = live && host.pipelinesSupported;
   const { pipelines } = usePipelines(host.environmentId, pipelinesLive, host.connected);
+  const waiting = useWaitingBotRuns(live ? host.environmentId : null);
   if (!live) return null;
   const capabilities = host.environment?.serverConfig?.environment.capabilities;
   const current = listed.filter((bot) => bot.archivedAt === null);
   const runnable = access.canRun ? current : [];
   return {
     go: (search) => navigate({ to: "/loom/bots", search }),
+    openable: current,
+    editable: access.canSave ? current : [],
     runnable,
     batchable: host.batchesSupported ? runnable.filter((bot) => bot.parameters.length) : [],
+    pipelinePages: pipelinesLive ? pipelines : [],
     pipelines: pipelinesLive && access.canRunPipelines ? pipelines : [],
     triggerable: host.triggersSupported && access.canOperateTriggers ? current : [],
-    needsYou: host.inboxSupported,
+    needsYou: host.inboxSupported || waiting.length > 0,
+    pipelinesView: pipelinesLive,
+    triggersView: host.triggersSupported,
     newBot: access.canSave,
     newPipeline: pipelinesLive && access.canSavePipelines,
     computers: host.anywhereSupported,

@@ -6,6 +6,7 @@ import {
   lastRunState,
   matchesBotFilters,
   matchesBotSearch,
+  needsYouByBot,
   runOutcomeLabel,
   runsByBot,
   sortBots,
@@ -260,5 +261,40 @@ describe("runOutcomeLabel", () => {
       "Needs attention",
     );
     expect(runOutcomeLabel(makeBotRun("b", { status: "timed_out" }))).toBe("Timed out");
+  });
+});
+
+describe("needsYouByBot", () => {
+  const bots = [
+    { id: "reviewer", name: "Reviewer" },
+    { id: "verifier", name: "Verifier" },
+  ];
+
+  it("counts each item against its bot", () => {
+    const counts = needsYouByBot(
+      [
+        { botId: "reviewer", botName: "Reviewer" },
+        { botId: "reviewer", botName: "Reviewer" },
+        { botId: "verifier", botName: "Verifier" },
+      ],
+      bots,
+    );
+    expect(counts.get("reviewer")).toBe(2);
+    expect(counts.get("verifier")).toBe(1);
+  });
+
+  it("finds the bot by name for a waiting thread that does not carry its id", () => {
+    const counts = needsYouByBot(
+      [
+        { botId: null, botName: "Verifier" },
+        { botId: "verifier", botName: "Verifier" },
+      ],
+      bots,
+    );
+    expect(counts.get("verifier")).toBe(2);
+  });
+
+  it("leaves out an item whose bot it cannot name", () => {
+    expect(needsYouByBot([{ botId: null, botName: "Gone" }], bots).size).toBe(0);
   });
 });

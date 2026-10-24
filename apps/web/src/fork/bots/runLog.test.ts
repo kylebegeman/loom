@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
 import { EMPTY_BOTS_CHANGES, type BotsChanges } from "@t3tools/client-runtime/fork";
 import { BOTS_LIST_RUNS_MAX_LIMIT, type BotRun } from "@t3tools/contracts/fork";
 import {
-  canRetryRun,
   dayLabel,
   groupRunsByDay,
   knownRun,
@@ -29,14 +27,15 @@ const changesWith = (...runs: BotRun[]): BotsChanges => ({
 const ids = (runs: readonly BotRun[]) => runs.map((run) => run.id);
 
 describe("runs scope", () => {
-  it("opens every run when the server cannot serve the asked-for scope", () => {
+  it("opens every run when the server cannot serve the asked-for scope, but keeps Needs you", () => {
     const all = { inboxSupported: true, batchesSupported: true };
     const none = { inboxSupported: false, batchesSupported: false };
     expect(resolveRunsScope(undefined, all)).toBe("all");
     expect(resolveRunsScope("attention", all)).toBe("attention");
     expect(resolveRunsScope("dismissed", all)).toBe("dismissed");
     expect(resolveRunsScope("batches", all)).toBe("batches");
-    expect(resolveRunsScope("attention", none)).toBe("all");
+    // Runs waiting on an answer come from this client's threads, so Needs you still has them.
+    expect(resolveRunsScope("attention", none)).toBe("attention");
     expect(resolveRunsScope("dismissed", none)).toBe("all");
     expect(resolveRunsScope("batches", none)).toBe("all");
   });
@@ -198,33 +197,6 @@ describe("run presentation", () => {
     expect(runOrigin(makeBotRun("b", { triggerId: "t", retryOf: "x" })).kind).toBe("trigger");
     expect(runOrigin(makeBotRun("c", { startedBy: "agent" })).kind).toBe("agent");
     expect(runOrigin(makeBotRun("d"))).toEqual({ kind: "person", label: "You" });
-  });
-
-  it("offers Retry only where the server retries", () => {
-    expect(canRetryRun(makeBotRun("failed", { status: "failed" }))).toBe(true);
-    expect(canRetryRun(makeBotRun("passed"))).toBe(false);
-    expect(canRetryRun(makeBotRun("cancelled", { status: "cancelled" }))).toBe(false);
-    expect(canRetryRun(makeBotRun("retried", { status: "failed", retriedBy: "next" }))).toBe(false);
-    expect(
-      canRetryRun(makeBotRun("dismissed", { status: "failed", dismissedAt: at(20, 12) })),
-    ).toBe(false);
-    expect(
-      canRetryRun(
-        makeBotRun("stopped-pipeline", {
-          status: "failed",
-          pipelineRunId: "pipeline-run",
-          pipelineStopped: true,
-        }),
-      ),
-    ).toBe(false);
-    expect(
-      canRetryRun(
-        makeBotRun("remote", {
-          status: "failed",
-          requestedBy: { environmentId: EnvironmentId.make("other"), label: "Laptop" },
-        }),
-      ),
-    ).toBe(false);
   });
 
   it("heads a run with its verdict, else its error, else its reply", () => {

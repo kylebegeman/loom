@@ -7,7 +7,6 @@ import {
 } from "@t3tools/client-runtime/fork";
 import {
   BOTS_LIST_RUNS_MAX_LIMIT,
-  isBotInboxRun,
   isTerminalBotRunStatus,
   type BotRun,
   type BotVerdictValue,
@@ -15,13 +14,18 @@ import {
 
 export type RunsScope = "all" | "attention" | "dismissed" | "batches";
 
-/** A scope the server cannot serve, such as an old link to Batches, opens every run instead. */
+/**
+ * A scope the server cannot serve, such as an old link to Batches, opens every run instead. Needs
+ * you always opens: runs waiting on an answer come from this client's threads, so a server
+ * without the inbox still has those to show.
+ */
 export function resolveRunsScope(
   scope: RunsScope | undefined,
   host: { readonly inboxSupported: boolean; readonly batchesSupported: boolean },
 ): RunsScope {
   switch (scope) {
     case "attention":
+      return scope;
     case "dismissed":
       return host.inboxSupported ? scope : "all";
     case "batches":
@@ -241,12 +245,6 @@ export function runOrigin(run: BotRun): { readonly kind: RunOriginKind; readonly
                 : "person";
   return { kind, label: ORIGIN_LABELS[kind] };
 }
-
-/**
- * The server retries only runs in the inbox, and never a pipeline's step, which resuming the
- * pipeline reruns. Anything else can be run again with the same inputs instead.
- */
-export const canRetryRun = (run: BotRun) => run.pipelineRunId == null && isBotInboxRun(run);
 
 export const runInputSummary = (run: Pick<BotRun, "inputs">) =>
   Object.entries(run.inputs)

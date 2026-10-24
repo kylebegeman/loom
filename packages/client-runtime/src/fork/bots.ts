@@ -28,7 +28,6 @@ import {
   isBotInboxRun,
   isBotRunThreadId,
   isTerminalBotRunStatus,
-  needsBotAttention,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
@@ -191,25 +190,39 @@ export function makeThreadBotRunsAtom(
 }
 
 /**
- * The first inbox page with watched changes applied, its total kept without a refetch. A changed
- * run on the page was counted; one missing from it was not, unless it is older than an unfinished
- * page, where its earlier state is unknown and the total is left alone.
+ * The server's inbox query for either list. A dismissed run is one the inbox would hold but for
+ * its dismissal, which includes the step that stopped a pipeline whatever its verdict, so asking
+ * `needsBotAttention` instead drops that step from Dismissed with no way to restore it.
+ */
+export const isBotTriageRun = (run: BotRun, dismissed: boolean): boolean =>
+  dismissed
+    ? run.dismissedAt != null && isBotInboxRun({ ...run, dismissedAt: null })
+    : isBotInboxRun(run);
+
+/**
+ * The server retries only a run in the inbox, and never a pipeline's step, which resuming the
+ * pipeline reruns. Anything else can be run again with the same inputs instead.
+ */
+export const canRetryBotRun = (run: BotRun): boolean =>
+  run.pipelineRunId == null && isBotInboxRun(run);
+
+/**
+ * Loaded inbox pages with watched changes applied, the total kept without a refetch. A changed run
+ * that was loaded was counted; one that was not was not, unless it is older than every loaded run
+ * while more remain, where its earlier state is unknown and the total is left alone.
  */
 export const applyInboxChanges = (
   page: BotsInboxPage,
-  changes: BotsChanges,
+  changes: Pick<BotsChanges, "runs">,
   options: { readonly dismissed: boolean },
 ): BotsInboxPage => {
-  const matches = options.dismissed
-    ? (run: BotRun) => run.dismissedAt != null && needsBotAttention(run)
-    : isBotInboxRun;
   const oldest = page.runs.at(-1)?.createdAt;
   const merged = new Map(page.runs.map((run) => [run.id, run]));
   let total = page.total;
   for (const [id, run] of changes.runs) {
     const listed = merged.has(id);
     if (!listed && page.hasMore && oldest !== undefined && run.createdAt < oldest) continue;
-    const now = matches(run);
+    const now = isBotTriageRun(run, options.dismissed);
     total += Number(now) - Number(listed);
     if (now) merged.set(id, run);
     else merged.delete(id);
@@ -368,12 +381,17 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   scopeProjectId: "Project",
   output: "Output",
   budget: "Budget",
+  vaultSlots: "Vault slots",
 };
 
-/** Field values as text, objects with sorted keys so key order never reads as a change. */
+/**
+ * Field values as text, objects with sorted keys so key order never reads as a change. An empty
+ * list reads as none, since a version saved before a list field existed has no list at all.
+ */
 const fieldText = (value: unknown): string => {
   if (value === undefined || value === null) return "None";
   if (typeof value === "string") return value === "" ? "None" : value;
+  if (Array.isArray(value) && value.length === 0) return "None";
   const sorted = (item: unknown): unknown =>
     Array.isArray(item)
       ? item.map(sorted)

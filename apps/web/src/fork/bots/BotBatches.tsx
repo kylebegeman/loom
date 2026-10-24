@@ -121,7 +121,8 @@ import {
   type RetryPlan,
 } from "./batches";
 import { BotTile, formatSpan, runDuration, runTime } from "./BotIdentity";
-import { useBotsNavigation } from "./navigation";
+import { botsPageOf, useBotsNavigation, type BotsPageSearch } from "./navigation";
+import { rememberRuns } from "./runLog";
 import { elapsedLabel } from "./runMetrics";
 import { bots, useBotBatchChanges, useBots, useBotsAccess, useBotsHost } from "./state";
 
@@ -220,8 +221,12 @@ function BatchesList({
   const environmentId = host.environmentId;
   const now = useMinute();
   const canStart = useLibraryPermission(bots.runBatch, environmentId) && host.connected;
+  const nav = useBotsNavigation();
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<BatchStatusFilter>("all");
+  // The status filter lives in the URL, so a narrowed list survives a reload and Back.
+  const status: BatchStatusFilter = nav.search.batchStatus ?? "all";
+  const setStatus = (next: BatchStatusFilter) =>
+    nav.show({ ...botsPageOf(nav.search), batchStatus: next === "all" ? undefined : next });
   const [showOlder, setShowOlder] = useState(false);
   const live = environmentId !== null && host.batchesSupported;
   const changes = useBotBatchChanges(environmentId, live && host.connected);
@@ -854,6 +859,10 @@ function BatchPageContent({
   const query = useEnvironmentQuery(bots.getBatch({ environmentId, input: { batchId } }));
   useRefreshOnReconnect(host.connected, query.refresh);
   const fetched = query.data;
+  // A server that cannot look a run up opens one only from runs a list has shown.
+  useEffect(() => {
+    if (fetched) rememberRuns(fetched.items.flatMap((item) => (item.run ? [item.run] : [])));
+  }, [fetched]);
   if (fetched === null)
     return (
       <div className="flex flex-col">
@@ -1156,7 +1165,13 @@ function BatchDetail({
         <LibraryErrorNotice error={staleError} onRetry={refresh} />
       </div>
       <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <BatchItems batch={batch} items={items} now={now} onOpenRun={openRun} />
+        <BatchItems
+          batch={batch}
+          items={items}
+          now={now}
+          page={botsPageOf(nav.search)}
+          onOpenRun={openRun}
+        />
         <aside aria-label="About this batch" className="flex min-w-0 flex-col gap-4">
           <BatchFacts
             environmentId={environmentId}
@@ -1458,11 +1473,14 @@ function BatchItems({
   batch,
   items,
   now,
+  page,
   onOpenRun,
 }: {
   readonly batch: BotBatch;
   readonly items: ReadonlyArray<BotBatchItem>;
   readonly now: number;
+  /** The page under the run sheet each row opens. */
+  readonly page: BotsPageSearch;
   readonly onOpenRun: (runId: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -1534,7 +1552,7 @@ function BatchItems({
       ) : (
         <LibraryTable label="Items" columns={ITEM_COLUMNS}>
           {visible.map((item) => (
-            <ItemRow key={item.index} item={item} now={now} onOpenRun={onOpenRun} />
+            <ItemRow key={item.index} item={item} now={now} page={page} onOpenRun={onOpenRun} />
           ))}
           {visible.length < shown.length ? (
             <tr>
@@ -1554,10 +1572,12 @@ function BatchItems({
 function ItemRow({
   item,
   now,
+  page,
   onOpenRun,
 }: {
   readonly item: BotBatchItem;
   readonly now: number;
+  readonly page: BotsPageSearch;
   readonly onOpenRun: (runId: string) => void;
 }) {
   const outcome = itemOutcome(item);
@@ -1578,13 +1598,14 @@ function ItemRow({
             {item.index + 1}
           </span>
           {run ? (
-            <button
-              type="button"
-              onClick={() => onOpenRun(run.id)}
+            <Link
+              to="/loom/bots"
+              search={{ ...page, runId: run.id }}
+              replace
               className={cn(LIBRARY_ROW_TARGET, "min-w-0 truncate font-mono text-xs")}
             >
               {item.label}
-            </button>
+            </Link>
           ) : (
             <span className="min-w-0 truncate font-mono text-xs">{item.label}</span>
           )}

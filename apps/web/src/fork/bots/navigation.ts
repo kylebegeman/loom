@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import type { BotsSearch } from "~/routes/loom.bots";
+import type { BotsSearch } from "./botsRoute";
 
 /** The search keys of dialogs and sheets, which open over a page rather than being one. */
 const OVERLAY_KEYS = [

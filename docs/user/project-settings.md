@@ -505,17 +505,34 @@ reset an instance that holds real application data.
 ## Sites and the personal API
 
 Open **Sites** from the sidebar or command palette to see registered websites,
-their endpoint checks, and thirty days of activity. On mobile, open **Sites and
+whether they are up, and the visits they receive. On mobile, open **Sites and
 activity** from Projects. Sites uses your chosen Library server independently of
-the computer running your work. Reconnect the Library and refresh to get current
-results; stale checks do not count as healthy.
+the computer running your work. Results do not refresh while the page stays
+open: choose **Updated** beside the summary, on Sites or on a site's page, to
+read them again. Results older than the server's freshness window show as out of
+date, and checks that have not run yet show as not checked; neither counts as
+healthy.
+
+To see a site on web or desktop, open it and choose **Preview**. The site runs
+live inside Loom at desktop, tablet, or phone width. Type a page into the
+address bar or choose one from **Pages**; the Traffic tab and project pages can
+also open a page there. Each preview load counts as a visit in the site's
+traffic. Some sites refuse to be shown inside other apps and leave the preview
+blank, so use **Open in new tab** for those. After you follow a link inside the
+preview, **Reload** and **Open in new tab** still go to the page you typed. To
+show live front pages on the Sites cards, turn on **Display** > **Live
+previews**. It is off by default because every card's load counts as a visit
+too.
 
 Register and edit sites directly in Loom. Each site belongs to at least one
-Library project; project pages link back to their sites. Register shared services,
-link them to sites, and add HTTPS endpoint checks. Turn an entry off to pause it
-without deleting its history, and turn it on to resume. **Run checks now** refreshes
-endpoint health on demand. Management needs a manager connection configured on
-your Library server and permission to change its settings.
+Library project; project pages link back to their sites. Register shared
+services on the **Services** tab, link them to sites, and add HTTPS endpoint
+checks. Pause a site, service, or check from its menu to stop its checks without
+deleting its history, and resume it the same way or from the notice on a paused
+site's page. Each pause or resume offers **Undo**. **Run all checks** runs every
+check in the Library, even from one site's page. Management needs a manager
+connection configured on your Library server and permission to change its
+settings.
 
 Agents use `loom_sites`, `loom_site_analytics`, `loom_site_save`,
 `loom_site_service_save`, `loom_site_check_save`, and `loom_site_checks_run`.
@@ -525,6 +542,14 @@ Pass a JSON object matching the corresponding MCP tool. Saves replace the entry'
 settings, so include its project, origin, and service selections.
 Use the agent terminal's MCP connection or set `LOOM_MCP_ENDPOINT` and
 `LOOM_MCP_AUTHORIZATION` privately. Management tools require full access.
+
+Sites reads the personal API through your Library server, using client
+credentials set in that server's environment. Set `LOOM_IDENTITY_ISSUER`,
+`LOOM_SITES_CLIENT_ID`, and `LOOM_SITES_CLIENT_SECRET` to connect it, and
+`LOOM_SITES_API_ORIGIN` only for an API other than `https://api.begam.in`. Both
+addresses must be HTTPS origins. To manage sites from Loom, also set
+`LOOM_SITES_MANAGER_CLIENT_ID` and `LOOM_SITES_MANAGER_CLIENT_SECRET` for a
+separate client. Restart the server after changing them.
 
 The personal API catalog at `https://api.begam.in/v1/public/catalog` lists
 capabilities available to other projects. Public reads work across origins;

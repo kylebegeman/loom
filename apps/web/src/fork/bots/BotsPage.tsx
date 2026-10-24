@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { BOTS_LIST_RUNS_MAX_LIMIT, type LibraryProjectColor } from "@t3tools/contracts/fork";
+import {
+  BOTS_LIST_BATCHES_MAX_LIMIT,
+  BOTS_LIST_RUNS_MAX_LIMIT,
+  type LibraryProjectColor,
+} from "@t3tools/contracts/fork";
 import { botColor } from "@t3tools/client-runtime/fork";
 import {
   ActivityIcon,
@@ -38,7 +42,7 @@ import {
   BotsCollectionSkeleton,
   useBotsCollectionPreferences,
 } from "./BotsOverview";
-import { BotsUsageClause, useBotUsage } from "./BotsUsage";
+import { BotsUsageClause, useBotUsage, useBotUsageWindow } from "./BotsUsage";
 import {
   botsRoute,
   indexTabs,
@@ -51,6 +55,7 @@ import {
 import { BotFromThreadPage } from "./fromThread/BotFromThreadEditor";
 import { useBotsNavigation } from "./navigation";
 import { PipelineBuilderPage } from "./PipelineEditor";
+import { pipelineRunsInput } from "./pipelineDraft";
 import { PipelineRunPage, PipelinesOverlays } from "./PipelineRunView";
 import { BatchesOverlays } from "./RunOnManyDialog";
 import { RunsOverlays } from "./RunSheet";
@@ -329,6 +334,7 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
   const access = useBotsAccess();
   const nav = useBotsNavigation();
   const [preferences] = useBotsCollectionPreferences();
+  const [days] = useBotUsageWindow();
   const attention = useBotsAttentionCount();
   const environmentId = host.environmentId;
   const pipelinesLive = live && host.pipelinesSupported;
@@ -337,7 +343,7 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
     pipelinesLive,
     host.connected,
   );
-  const usage = useBotUsage(preferences.days);
+  const usage = useBotUsage(days);
   const starters = useEnvironmentQueryRefresh(
     environmentId && live && host.startersSupported
       ? bots.listStarters({ environmentId, input: {} })
@@ -353,6 +359,28 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
       ? bots.inbox({ environmentId, input: inboxQueryInput(false) })
       : null,
   );
+  // The inputs the Triggers, Pipelines and Runs > Batches views and the suggestions ask with, so
+  // Refresh reloads whichever of them is open. A query no view shows is not fetched by a refresh.
+  const triggers = useEnvironmentQueryRefresh(
+    environmentId && live && host.triggersSupported
+      ? bots.listTriggers({ environmentId, input: {} })
+      : null,
+  );
+  const suggestions = useEnvironmentQueryRefresh(
+    environmentId && live && host.fromThreadSupported
+      ? bots.suggestions({ environmentId, input: {} })
+      : null,
+  );
+  const pipelineRuns = useEnvironmentQueryRefresh(
+    environmentId && pipelinesLive
+      ? bots.listPipelineRuns({ environmentId, input: pipelineRunsInput() })
+      : null,
+  );
+  const batches = useEnvironmentQueryRefresh(
+    environmentId && live && host.batchesSupported
+      ? bots.listBatches({ environmentId, input: { limit: BOTS_LIST_BATCHES_MAX_LIMIT } })
+      : null,
+  );
   const tabs = indexTabs(host);
   const tab = selectedTab(tabs, nav.search.tab);
   const current = allBots.filter((bot) => bot.archivedAt === null).length;
@@ -362,6 +390,10 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
     newest.refresh();
     inbox.refresh();
     usage.refresh();
+    triggers.refresh();
+    suggestions.refresh();
+    pipelineRuns.refresh();
+    batches.refresh();
     if (pipelinesLive) pipelineList.refresh();
   };
 
@@ -372,7 +404,7 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
           <h1 className="text-2xl font-semibold tracking-tight">Bots</h1>
           <div className="flex min-h-5 max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             {host.budgetsSupported && allBots.length ? (
-              <BotsUsageClause days={preferences.days} />
+              <BotsUsageClause days={days} />
             ) : (
               "Reusable jobs with a fixed brief. Every run starts from the same instructions, inputs and settings."
             )}

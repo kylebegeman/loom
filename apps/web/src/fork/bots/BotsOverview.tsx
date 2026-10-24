@@ -8,7 +8,7 @@ import {
   type BotStarterStatus,
   type BotUsageRow,
 } from "@t3tools/contracts/fork";
-import { applyInboxChanges, applyRunChanges, botColor } from "@t3tools/client-runtime/fork";
+import { applyRunChanges, botColor } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { formatModelSlugName } from "@t3tools/shared/model";
 import { formatPercent } from "@t3tools/shared/usageFormat";
@@ -87,7 +87,7 @@ import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { botRecord, chronological, runTone } from "./BotActivity";
 import { BotTile, StarterBadge, runTime } from "./BotIdentity";
 import { NeedsYouBand } from "./BotsInbox";
-import { BotBudgetMeter, BotTokensCell, useBotUsage, type BotUsageDays } from "./BotsUsage";
+import { BotBudgetMeter, BotTokensCell, useBotUsage, useBotUsageWindow } from "./BotsUsage";
 import {
   activeRuns,
   BOT_ORIGIN_FILTER_LABELS,
@@ -96,13 +96,10 @@ import {
   BOT_SORTS,
   BOT_STATE_FILTER_LABELS,
   BOT_STATE_FILTERS,
-  BOT_USAGE_WINDOW_LABELS,
-  BOT_USAGE_WINDOW_SHORT,
-  BOT_USAGE_WINDOWS,
   budgetLevel,
-  countByBot,
   lastRunState,
   matchesBotFilters,
+  needsYouByBot,
   runOutcomeLabel,
   runsByBot,
   sortBots,
@@ -116,26 +113,30 @@ import { BotSuggestionsSection } from "./fromThread/BotSuggestions";
 import { useBotsNavigation } from "./navigation";
 import {
   bots,
-  inboxQueryInput,
   useBots,
   useBotsAccess,
   useBotsHost,
+  useNeedsYouItems,
   useRefreshWhenBotsChangesPruned,
 } from "./state";
+import {
+  BOT_USAGE_DAYS,
+  usageWindowLabel,
+  usageWindowShort,
+  type BotUsageDays,
+} from "./usageWindow";
 
 const PREFERENCES_KEY = "loom:bots:collection-view:v1";
+// Earlier versions also stored the usage window here; decoding ignores that key, and the window
+// now lives in `useBotUsageWindow`, shared with a bot's page.
 const BotsPreferences = Schema.Struct({
   view: Schema.Literals(["cards", "list"]),
   sort: Schema.Literals(BOT_SORTS),
-  days: Schema.Literals(BOT_USAGE_WINDOWS),
 });
 type BotsPreferences = typeof BotsPreferences.Type;
-const DEFAULT_PREFERENCES: BotsPreferences = { view: "cards", sort: "activity", days: 7 };
+const DEFAULT_PREFERENCES: BotsPreferences = { view: "cards", sort: "activity" };
 
-/**
- * How the collection is laid out and which usage window it reads. The index header and a bot's
- * vitals read the same window, so a figure means the same span wherever it appears.
- */
+/** How the collection is laid out and sorted. */
 export function useBotsCollectionPreferences() {
   return useLocalStorage(PREFERENCES_KEY, DEFAULT_PREFERENCES, BotsPreferences);
 }
@@ -449,14 +450,14 @@ function BotSuccess({
     if (!figure)
       return (
         <span className="whitespace-nowrap text-muted-foreground/70">
-          No runs in {BOT_USAGE_WINDOW_SHORT[usage.days]}
+          No runs in {usageWindowShort(usage.days)}
         </span>
       );
     return (
       <SuccessReading
         share={figure.share}
         label={figure.label}
-        detail={`${figure.label} ${figure.detail} finished runs, ${BOT_USAGE_WINDOW_LABELS[usage.days].toLowerCase()}`}
+        detail={`${figure.label} ${figure.detail} finished runs, ${usageWindowLabel(usage.days).toLowerCase()}`}
       />
     );
   }
@@ -566,11 +567,10 @@ function BotCard({
   readonly context: CollectionContext;
 }) {
   const { bot, facts, starter } = item;
-  const nav = useBotsNavigation();
   return (
     <li style={projectColorStyle(botColor(bot))} className={cn(LIBRARY_CARD, "min-h-44")}>
       <ProjectWash />
-      <LibraryCardTarget label={bot.name} onOpen={() => nav.open({ bot: bot.id })} />
+      <LibraryCardTarget label={bot.name} to="/loom/bots" search={{ bot: bot.id }} />
       <div className="flex items-start gap-3">
         <BotTile bot={bot} size="lg" />
         <div className="min-w-0 flex-1 pt-0.5">
@@ -607,14 +607,13 @@ function BotCard({
 
 /** Archived bots keep a face, a smaller one, so they stay easy to find without crowding. */
 function ArchivedBotCard({ bot }: { readonly bot: BotDefinition }) {
-  const nav = useBotsNavigation();
   return (
     <li
       style={projectColorStyle(botColor(bot))}
       className={cn(LIBRARY_CARD, "flex-row items-center gap-2.5 py-2 ps-2.5 pe-2")}
     >
       <ProjectWash />
-      <LibraryCardTarget label={bot.name} onOpen={() => nav.open({ bot: bot.id })} />
+      <LibraryCardTarget label={bot.name} to="/loom/bots" search={{ bot: bot.id }} />
       <span className="opacity-70 grayscale transition-[filter,opacity] duration-200 group-hover/card:opacity-100 group-hover/card:grayscale-0">
         <BotTile bot={bot} />
       </span>
@@ -642,7 +641,7 @@ function BotRows({
 }) {
   const access = useBotsAccess();
   const nav = useBotsNavigation();
-  const short = BOT_USAGE_WINDOW_SHORT[context.usage.days];
+  const short = usageWindowShort(context.usage.days);
   const maxTokens = Math.max(0, ...items.map(({ facts }) => facts.row?.tokens.total ?? 0));
   const columns = [
     { key: "bot", label: "Bot" },
@@ -728,7 +727,7 @@ function BotRows({
             ) : null}
             {showBudget ? (
               <td className={cn(LIBRARY_CELL, "hidden xl:table-cell")}>
-                <BotBudgetMeter botId={bot.id} />
+                <BotBudgetMeter botId={bot.id} days={context.usage.days} />
               </td>
             ) : null}
             <td className={cn(LIBRARY_CELL, "hidden text-xs tabular-nums md:table-cell")}>
@@ -778,26 +777,20 @@ const toggled = <T,>(set: ReadonlySet<T>, value: T): ReadonlySet<T> => {
  * with how they have been doing, then ways to start a new one.
  */
 export function BotsCollection() {
-  const { host, live, changes, list, bots: allBots } = useBots();
+  const { host, list, bots: allBots } = useBots();
   const access = useBotsAccess();
   const nav = useBotsNavigation();
   const [preferences, setPreferences] = useBotsCollectionPreferences();
+  const [days, setDays] = useBotUsageWindow();
   const [query, setQuery] = useState("");
   const [states, setStates] = useState<ReadonlySet<BotStateFilter>>(new Set());
   const [origins, setOrigins] = useState<ReadonlySet<BotOriginFilter>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const newest = useNewestRuns(null);
-  const usage = useBotUsage(preferences.days);
+  const usage = useBotUsage(days);
   const starters = useBotStarters();
   const lifecycle = useBotLifecycle();
-  const inbox = useEnvironmentQuery(
-    host.environmentId && live && host.inboxSupported
-      ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
-      : null,
-  );
-  const needsYou = countByBot(
-    inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }).runs : [],
-  );
+  const needsYou = needsYouByBot(useNeedsYouItems(null, newest.runs), allBots);
   const recentByBot = runsByBot(newest.runs);
   const factsOf = (bot: BotDefinition): BotFacts => ({
     recent: recentByBot.get(bot.id) ?? [],
@@ -832,14 +825,11 @@ export function BotsCollection() {
       supported: usageSupported,
       loading: usageSupported && usage.isPending && !usage.usage,
       unavailable: usageSupported && usage.error !== null && !usage.usage,
-      days: preferences.days,
+      days,
     },
     runs: { full: newest.full, loading: newest.loading, unavailable: newest.unavailable },
   };
-  const stateOptions = BOT_STATE_FILTERS.filter(
-    (state) =>
-      (state !== "attention" || host.inboxSupported) && (state !== "budget" || usageSupported),
-  );
+  const stateOptions = BOT_STATE_FILTERS.filter((state) => state !== "budget" || usageSupported);
   // Each option counts the bots in view it would keep alongside the search and other filters.
   const stateCounts = new Map(
     stateOptions.map((state) => [
@@ -925,8 +915,10 @@ export function BotsCollection() {
             ) : null}
             <BotDisplayMenu
               preferences={{ ...preferences, sort }}
+              days={days}
               usageSupported={usageSupported}
               onChange={setPreferences}
+              onDaysChange={setDays}
             />
             <LibraryLayoutToggle
               value={preferences.view}
@@ -1253,12 +1245,16 @@ function BotFilterMenu({
 
 function BotDisplayMenu({
   preferences,
+  days,
   usageSupported,
   onChange,
+  onDaysChange,
 }: {
   readonly preferences: BotsPreferences;
+  readonly days: BotUsageDays;
   readonly usageSupported: boolean;
   readonly onChange: (preferences: BotsPreferences) => void;
+  readonly onDaysChange: (days: BotUsageDays) => void;
 }) {
   const sorts = BOT_SORTS.filter((sort) => sort !== "tokens" || usageSupported);
   return (
@@ -1290,15 +1286,15 @@ function BotDisplayMenu({
             <MenuGroup>
               <MenuGroupLabel>Usage over</MenuGroupLabel>
               <MenuRadioGroup
-                value={String(preferences.days)}
+                value={String(days)}
                 onValueChange={(value) => {
-                  const days = BOT_USAGE_WINDOWS.find((entry) => String(entry) === value);
-                  if (days) onChange({ ...preferences, days });
+                  const choice = BOT_USAGE_DAYS.find((entry) => String(entry) === value);
+                  if (choice) onDaysChange(choice);
                 }}
               >
-                {BOT_USAGE_WINDOWS.map((days) => (
-                  <MenuRadioItem key={days} value={String(days)}>
-                    {BOT_USAGE_WINDOW_LABELS[days]}
+                {BOT_USAGE_DAYS.map((entry) => (
+                  <MenuRadioItem key={entry} value={String(entry)}>
+                    {usageWindowLabel(entry)}
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>

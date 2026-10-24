@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { LibraryProject, SiteAnalytics, SitesSnapshot } from "@t3tools/contracts/fork";
 import {
@@ -140,6 +140,7 @@ export function SiteDetail({
   onEdit,
   manageHint,
   activeToggle,
+  refresh,
 }: {
   readonly site: Site;
   readonly snapshot: SitesSnapshot;
@@ -154,6 +155,8 @@ export function SiteDetail({
   readonly manageHint?: string | null | undefined;
   /** Pauses and resumes in one click; without it, the editor is the way to either. */
   readonly activeToggle?: ActiveToggle | undefined;
+  /** Reads the site's results and traffic again, beside when its checks last ran. */
+  readonly refresh?: ReactNode;
 }) {
   const search = useSearch({ from: "/sites" });
   const navigate = useNavigate();
@@ -228,6 +231,7 @@ export function SiteDetail({
                 "Not checked yet"
               )}
             </span>
+            {refresh}
             {primary ? (
               <span className="inline-flex items-center gap-1.5">
                 <StarIcon aria-hidden className="size-3.5 opacity-70" />

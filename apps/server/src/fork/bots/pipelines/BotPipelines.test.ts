@@ -306,8 +306,14 @@ describe("BotPipelines", () => {
         expect(refused.message).toBe("Fix: There is no bot nobody.");
 
         yield* pipelines.save({ pipeline: broken }, USER_CALLER);
-        const stale = yield* pipelines
+        const taken = yield* pipelines
           .save({ pipeline: broken, expectedVersion: 0 }, USER_CALLER)
+          .pipe(Effect.flip);
+        expect(taken.message).toBe(
+          `Another pipeline already uses the id ${broken.id}. Choose another id.`,
+        );
+        const stale = yield* pipelines
+          .save({ pipeline: broken, expectedVersion: 2 }, USER_CALLER)
           .pipe(Effect.flip);
         expect(stale.message).toMatch(/^This pipeline changed since it was opened\./);
         const missing = yield* pipelines

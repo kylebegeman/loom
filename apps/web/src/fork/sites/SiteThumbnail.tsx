@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useState, useSyncExternalStore } from "react";
 import type { SitesSnapshot } from "@t3tools/contracts/fork";
 import { cn } from "~/lib/utils";
 import { HeroTexture, ProjectGlow } from "../project-library/ProjectIdentity";
@@ -11,10 +11,16 @@ type Site = SitesSnapshot["sites"][number];
 const APP_ORIGIN = typeof window === "undefined" ? "" : window.location.origin;
 
 /**
- * Each live frame is a whole renderer running the site's own scripts, so only a few load at once.
- * Cards render worst first, so the sites most worth seeing take the slots.
+ * Loading a site runs its own scripts in a whole renderer, so only a few live frames load at once.
+ * Cards render worst first, so the sites most worth seeing load first. A frame frees its place once
+ * it has loaded and settled, or after `LIVE_FRAME_GIVE_UP_MS` if it never does, so the next card
+ * waiting can start and every card gets its preview in turn.
  */
-export const MAX_LIVE_THUMBNAILS = 6;
+const MAX_LIVE_THUMBNAIL_LOADS = 6;
+/** Room for the page's own startup work after `load`, before the next frame starts loading. */
+const LIVE_FRAME_SETTLE_MS = 1_000;
+/** A frame that neither loads nor fails, like a hung server, stops holding up the queue. */
+const LIVE_FRAME_GIVE_UP_MS = 15_000;
 
 const liveFrames = {
   granted: new Set<symbol>(),
@@ -27,7 +33,7 @@ function notifyLiveFrames() {
 }
 
 function requestLiveFrame(token: symbol) {
-  if (liveFrames.granted.size < MAX_LIVE_THUMBNAILS) liveFrames.granted.add(token);
+  if (liveFrames.granted.size < MAX_LIVE_THUMBNAIL_LOADS) liveFrames.granted.add(token);
   else liveFrames.queue.push(token);
   notifyLiveFrames();
 }
@@ -48,19 +54,24 @@ function subscribeLiveFrames(listener: () => void) {
   };
 }
 
-/** Whether this thumbnail holds one of the few live frame slots. It keeps it until unmounted. */
-function useLiveFrameSlot(wanted: boolean) {
+/**
+ * Whether this thumbnail may start its frame. It waits in line for a load slot, holds it until
+ * `settle` is called, and from then on keeps its frame without taking a slot.
+ */
+function useLiveFrameTurn() {
   const [token] = useState(() => Symbol("site-thumbnail"));
+  const [settled, setSettled] = useState(false);
   useEffect(() => {
-    if (!wanted) return;
+    if (settled) return;
     requestLiveFrame(token);
     return () => releaseLiveFrame(token);
-  }, [wanted, token]);
-  return useSyncExternalStore(
+  }, [settled, token]);
+  const granted = useSyncExternalStore(
     subscribeLiveFrames,
-    () => wanted && liveFrames.granted.has(token),
+    () => liveFrames.granted.has(token),
     () => false,
   );
+  return { started: granted || settled, settle: () => setSettled(true) };
 }
 
 const seenCallbacks = new Map<Element, () => void>();
@@ -111,8 +122,9 @@ function savesData() {
 
 /**
  * The top of a site's card: its live front page when `live` is on, otherwise a still made from its
- * mark on the site's color. The card's body carries the name and address, so the still does not. A live frame is only ever a picture. It loads once the card is on screen,
- * holds one of a few frame slots, never takes focus or pointer input, and sends no referrer.
+ * mark on the site's color. The card's body carries the name and address, so the still does not.
+ * A live frame is only ever a picture. It loads once the card is on screen and its turn comes,
+ * never takes focus or pointer input, and sends no referrer.
  */
 export function SiteThumbnail({
   site,
@@ -123,7 +135,6 @@ export function SiteThumbnail({
 }) {
   const [ref, seen] = useSeen();
   const frameUrl = siteFrameUrl(site.url, undefined, APP_ORIGIN);
-  const granted = useLiveFrameSlot(live && seen && frameUrl !== null && !savesData());
   return (
     <div
       ref={ref}
@@ -134,8 +145,9 @@ export function SiteThumbnail({
       )}
     >
       <ThumbnailStill url={site.url} />
-      {granted && frameUrl ? (
-        <ThumbnailFrame key={frameUrl} src={frameUrl} host={siteHost(site.url)} />
+      {/* Keyed by address, so an edited address waits for its own turn to load. */}
+      {live && seen && frameUrl && !savesData() ? (
+        <LiveThumbnail key={frameUrl} src={frameUrl} host={siteHost(site.url)} />
       ) : null}
     </div>
   );
@@ -151,19 +163,39 @@ function ThumbnailStill({ url }: { readonly url: string }) {
   );
 }
 
+function LiveThumbnail({ src, host }: { readonly src: string; readonly host: string }) {
+  const turn = useLiveFrameTurn();
+  return turn.started ? <ThumbnailFrame src={src} host={host} onSettled={turn.settle} /> : null;
+}
+
 /**
  * The frame lays the page out at four times the card's size and draws it at a quarter, so the
  * card shows the site's desktop layout without measuring anything.
  */
-function ThumbnailFrame({ src, host }: { readonly src: string; readonly host: string }) {
+function ThumbnailFrame({
+  src,
+  host,
+  onSettled,
+}: {
+  readonly src: string;
+  readonly host: string;
+  readonly onSettled: () => void;
+}) {
   const [loaded, setLoaded] = useState(false);
+  const settle = useEffectEvent(onSettled);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => settle(),
+      loaded ? LIVE_FRAME_SETTLE_MS : LIVE_FRAME_GIVE_UP_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [loaded]);
   return (
     <iframe
       src={src}
       title={`${host} preview`}
       sandbox={SITE_THUMBNAIL_SANDBOX}
       referrerPolicy="no-referrer"
-      loading="lazy"
       tabIndex={-1}
       aria-hidden
       inert

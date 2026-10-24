@@ -2,8 +2,8 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
-import type { SitesSnapshot } from "@t3tools/contracts/fork";
+import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
+import { SITES_FEATURE, type SitesSnapshot } from "@t3tools/contracts/fork";
 
 const harness = vi.hoisted(() => ({ authorityId: "first", run: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({
@@ -11,19 +11,19 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
-vi.mock("../project-library/state", () => ({
-  useLibraryAuthority: () => ({
-    authorityId: EnvironmentId.make(harness.authorityId),
-    connected: true,
-    environment: { serverConfig: { environment: { capabilities: {} } } },
-  }),
-  useLibraryProjects: () => ({ query: { data: [] } }),
-  useLibraryPermission: () => true,
-}));
-vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/fork")>()),
-  supportsLoomFeature: () => true,
-}));
+vi.mock("../project-library/state", async () => {
+  const { SITES_FEATURE, SITES_MANAGEMENT_FEATURE } = await import("@t3tools/contracts/fork");
+  const capabilities = { loomFeatures: [SITES_FEATURE, SITES_MANAGEMENT_FEATURE] };
+  return {
+    useLibraryAuthority: () => ({
+      authorityId: EnvironmentId.make(harness.authorityId),
+      connected: true,
+      environment: { label: "Library", serverConfig: { environment: { capabilities } } },
+    }),
+    useLibraryProjects: () => ({ query: { data: [] } }),
+    useLibraryPermission: () => true,
+  };
+});
 vi.mock("./state", () => ({
   sites: { snapshot: () => "snapshot", analytics: () => "analytics", runChecks: {} },
 }));
@@ -86,6 +86,7 @@ import {
   filterServices,
   filterSites,
   sitesAttention,
+  sitesGate,
   sitesStatus,
   sortSites,
   SitesPage,
@@ -131,7 +132,7 @@ it("closes drafts when the Library changes instead of sending them to the new se
 
 it("can run checks on registered services before the first site exists", async () => {
   act(() => root.render(<SitesPage />));
-  click("Run checks now");
+  click("Run all checks");
   await act(async () => {});
   expect(harness.run).toHaveBeenCalledWith({
     environmentId: EnvironmentId.make("first"),
@@ -398,6 +399,42 @@ describe("sitesStatus", () => {
     expect(sitesStatus(snapshotOf({ checks: [check("c")] }), NOW).label).toBe("All normal");
     const paused = snapshotOf({ checks: [check("a", { state: "disabled" })] });
     expect(sitesStatus(paused, NOW)).toMatchObject({ tone: "neutral", label: "Nothing watched" });
+  });
+
+  it("never calls a check that has not run yet normal or passing", () => {
+    const waiting = snapshotOf({ checks: [check("new", { last: null }), check("c")] });
+    expect(sitesStatus(waiting, NOW)).toMatchObject({
+      tone: "neutral",
+      label: "1 not checked yet",
+      watched: 2,
+      passing: 1,
+    });
+    const failing = snapshotOf({
+      checks: [check("new", { last: null }), check("a", { state: "failing" })],
+    });
+    expect(sitesStatus(failing, NOW)).toMatchObject({ tone: "danger", passing: 0 });
+  });
+});
+
+describe("sitesGate", () => {
+  const capabilities = (loomFeatures: readonly string[]) =>
+    ({ loomFeatures }) as unknown as ExecutionEnvironmentCapabilities;
+
+  it("waits for a connecting Library's config instead of asking for an update", () => {
+    expect(sitesGate({ chosen: true, connected: true, capabilities: null })).toBe("connecting");
+    expect(sitesGate({ chosen: true, connected: false, capabilities: undefined })).toBe("offline");
+  });
+
+  it("asks for an update only when a known config lacks Sites", () => {
+    expect(sitesGate({ chosen: true, connected: true, capabilities: capabilities([]) })).toBe(
+      "unsupported",
+    );
+    expect(
+      sitesGate({ chosen: true, connected: false, capabilities: capabilities([SITES_FEATURE]) }),
+    ).toBeNull();
+    expect(sitesGate({ chosen: false, connected: false, capabilities: null })).toBe(
+      "choose-library",
+    );
   });
 });
 

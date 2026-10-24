@@ -1,6 +1,13 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { botPageTabs, botsRoute, indexTabs, routeFeature, selectedTab } from "./botsRoute";
+import {
+  botPageTabs,
+  botsRoute,
+  indexTabs,
+  parseBotsSearch,
+  routeFeature,
+  selectedTab,
+} from "./botsRoute";
 
 const everything = { pipelinesSupported: true, triggersSupported: true, versionsSupported: true };
 const nothing = { pipelinesSupported: false, triggersSupported: false, versionsSupported: false };
@@ -52,5 +59,55 @@ describe("tabs", () => {
     expect(selectedTab(indexTabs(nothing), "pipelines")).toBe("bots");
     expect(selectedTab(botPageTabs(everything), "versions")).toBe("versions");
     expect(selectedTab(botPageTabs(everything), undefined)).toBe("overview");
+  });
+});
+
+describe("parseBotsSearch", () => {
+  it("drops only the keys that are invalid, so the page beside them still opens", () => {
+    expect(parseBotsSearch({ bot: "reviewer", tab: "runs", runId: "" })).toEqual({
+      bot: "reviewer",
+      tab: "runs",
+    });
+    expect(parseBotsSearch({ bot: "reviewer", trigger: "not-a-trigger" })).toEqual({
+      bot: "reviewer",
+    });
+    expect(parseBotsSearch({ bot: "Not A Bot", tab: "nowhere", edit: "yes" })).toEqual({});
+  });
+
+  it("keeps the filters a narrowed view puts in the URL", () => {
+    expect(
+      parseBotsSearch({
+        tab: "runs",
+        runBot: "reviewer",
+        verdict: "fail",
+        triggerKinds: ["webhook", "schedule"],
+        triggerState: "paused",
+        batchStatus: "retry",
+      }),
+    ).toEqual({
+      tab: "runs",
+      runBot: "reviewer",
+      verdict: "fail",
+      triggerKinds: ["webhook", "schedule"],
+      triggerState: "paused",
+      batchStatus: "retry",
+    });
+    expect(parseBotsSearch({ triggerKinds: ["webhook", "lunchtime"], verdict: "maybe" })).toEqual(
+      {},
+    );
+  });
+
+  it("opens a retired view where its content lives now", () => {
+    expect(parseBotsSearch({ tab: "inbox" })).toEqual({ tab: "runs", scope: "attention" });
+    expect(parseBotsSearch({ tab: "batches" })).toEqual({ tab: "runs", scope: "batches" });
+    expect(parseBotsSearch({ bot: "reviewer", tab: "history" })).toEqual({
+      bot: "reviewer",
+      tab: "versions",
+    });
+    expect(parseBotsSearch({ bot: "reviewer", tab: "triggers" })).toEqual({
+      bot: "reviewer",
+      tab: "overview",
+    });
+    expect(parseBotsSearch({ tab: "computers" })).toEqual({ tab: "bots", computers: true });
   });
 });

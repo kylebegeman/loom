@@ -12,7 +12,13 @@ import {
   type BotRunRating,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
-import { BOT_RUN_STATES, BOT_VERDICT_STATES, applyRunChanges } from "@t3tools/client-runtime/fork";
+import {
+  BOT_RUN_STATES,
+  BOT_VERDICT_STATES,
+  applyRunChanges,
+  canRetryBotRun,
+  isBotTriageRun,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -317,6 +323,12 @@ export function BotRunActions({
   const [model, setModel] = useState<ModelSelection | null>(run.modelSelection ?? null);
   const active = !isTerminalBotRunStatus(run.status);
   const disabled = busy || !capabilities.connected;
+  // Retry, continuing in a thread and dismissing arrived with the inbox; older servers have none.
+  const retryable = capabilities.inboxSupported && canRetryBotRun(run);
+  // The server forks the run's thread where it runs, which a remote run's is not.
+  const promotable = capabilities.inboxSupported && !active && !run.ranOn;
+  const dismissible = capabilities.inboxSupported && isBotTriageRun(run, false);
+  const restorable = capabilities.inboxSupported && isBotTriageRun(run, true);
   const act = async (work: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -386,7 +398,7 @@ export function BotRunActions({
               })
             }
           />
-        ) : (
+        ) : retryable ? (
           <>
             <Button
               label="Retry"
@@ -399,43 +411,41 @@ export function BotRunActions({
               onPress={() => setChooseModel((shown) => !shown)}
             />
           </>
-        )}
-        {!active && capabilities.inboxSupported ? (
-          <>
-            <Button
-              label="Open as thread"
-              disabled={disabled || !promoteAllowed}
-              onPress={() =>
-                void act(async () => {
-                  const result = await promote({ environmentId, input: { runId: run.id } });
-                  const promoted = commandValue(result);
-                  if (!live.current) return;
-                  navigation.navigate("Thread", { environmentId, threadId: promoted.threadId });
-                })
-              }
-            />
-            <Button
-              label={run.dismissedAt ? "Restore to inbox" : "Dismiss from inbox"}
-              disabled={disabled || !dismissAllowed}
-              onPress={() =>
-                void act(async () => {
-                  const result = await dismiss({
-                    environmentId,
-                    input: { runIds: [run.id], dismissed: !run.dismissedAt },
-                  });
-                  commandValue(result);
-                  setMessage(
-                    run.dismissedAt
-                      ? "Restored to inbox."
-                      : "Dismissed. Use Restore to inbox to undo.",
-                  );
-                })
-              }
-            />
-          </>
+        ) : null}
+        {promotable ? (
+          <Button
+            label={run.promotedThreadId ? "Open continued thread" : "Open as thread"}
+            disabled={disabled || !promoteAllowed}
+            onPress={() =>
+              void act(async () => {
+                const result = await promote({ environmentId, input: { runId: run.id } });
+                const promoted = commandValue(result);
+                if (!live.current) return;
+                navigation.navigate("Thread", { environmentId, threadId: promoted.threadId });
+              })
+            }
+          />
+        ) : null}
+        {dismissible || restorable ? (
+          <Button
+            label={restorable ? "Restore to inbox" : "Dismiss from inbox"}
+            disabled={disabled || !dismissAllowed}
+            onPress={() =>
+              void act(async () => {
+                const result = await dismiss({
+                  environmentId,
+                  input: { runIds: [run.id], dismissed: !restorable },
+                });
+                commandValue(result);
+                setMessage(
+                  restorable ? "Restored to inbox." : "Dismissed. Use Restore to inbox to undo.",
+                );
+              })
+            }
+          />
         ) : null}
       </View>
-      {chooseModel ? (
+      {chooseModel && retryable ? (
         <View className="gap-3">
           <BotModelField
             environmentId={environmentId}

@@ -504,7 +504,9 @@ it("compares verdicts, runtime and complete token totals alongside retained repl
   expect(results.textContent).toContain("500 fewer tokens (50%)");
   expect(results.textContent).toContain("Found a bug.");
   expect(results.textContent).toContain("Fixed the bug.");
-  expect(container.textContent).toContain("Fixed 1, broke 0, same 0");
+  // The status line counts in the badges' words, and names each count once.
+  expect(container.textContent).toContain("Done. Better on 1 run, worse on none.");
+  expect(container.textContent).not.toContain("Fixed 1");
 });
 
 it("cancels a replay immediately even while its query still holds an older running value", async () => {
@@ -638,5 +640,28 @@ it("restores the replayed version only after confirming, against the version it 
     environmentId,
     input: { botId: bot.id, version: 1, expectedVersion: bot.version },
   });
+  // Over Versions already, the sheet only closes, so Back never reopens it.
+  expect(nav.get()).toEqual({ bot: bot.id, tab: "versions" });
+  expect(nav.open).not.toHaveBeenCalled();
+});
+
+it("opens Versions over another page once the sheet's entry is replaced", async () => {
+  nav.set({ bot: bot.id, replay: "comparison" });
+  state.replay = {
+    ...replay([original.id]),
+    source: { kind: "version", version: 1 },
+    status: "done",
+    items: [{ originalRunId: original.id, replayRunId: null, comparison: "same", reason: null }],
+    summary: { fixed: 0, broke: 0, same: 1, changed: 0, failed: 0 },
+  };
+  state.restore.mockResolvedValue({ _tag: "Success", value: { ...bot, version: 3 } });
+  act(() => root.render(<ReplayOverlays />));
+  act(() => button("Restore v1…").click());
+  const confirm = [...document.querySelectorAll("button")].find(
+    (element) => element.textContent === "Restore as v3",
+  )!;
+  await act(async () => confirm.click());
+  expect(nav.close).toHaveBeenCalled();
+  expect(nav.close.mock.invocationCallOrder[0]).toBeLessThan(nav.open.mock.invocationCallOrder[0]!);
   expect(nav.open).toHaveBeenCalledWith({ bot: bot.id, tab: "versions" });
 });

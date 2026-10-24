@@ -7,9 +7,30 @@ whether you start it, an agent starts it, or you start it for the tenth time tod
 
 ## Opening Bots
 
-- **Web and desktop:** the bot icon in the sidebar footer, after Sites.
-- **Command palette:** **Go to Bots** opens the page. **Run bot...** lists your bots; picking one
-  opens its run form.
+- **Web and desktop:** the bot icon in the sidebar footer, after Sites. A dot on it means runs
+  need you.
+- **Command palette:** **Go to Bots** opens the page, and **Bot runs that need you**, **Bot
+  pipelines** and **Bot triggers** open those views. **Open bot...**, **Edit bot...**, **Run
+  bot...** and **Open pipeline...** list your bots or pipelines and open the one you pick.
+
+On web and desktop, the Bots page has four tabs:
+
+- **Bots** shows every bot as **Cards** or a **List**. Search by name, description or input, and
+  use **Archived** to see archived bots. The **Display** menu sorts the bots and sets **Usage
+  over**, the window for every usage figure on the page.
+- **Runs** lists runs. **All runs** is every bot's recent runs, **Needs you** is the runs waiting
+  on a person, and **Batches** is the runs started on many items. See [Runs](#runs) and [Needs
+  you](#needs-you).
+- **Pipelines** and **Triggers** list every pipeline and trigger, with **New pipeline** and **New
+  trigger**.
+
+Open a bot for its own page. **Overview** holds its brief, inputs and settings, with its
+**Triggers**, **Pipelines**, **Usage** and **Sharing** beside them. **Runs** lists only its runs,
+and **Versions** its saved versions. The page header has **Run**, **Run on many** and **Edit**;
+its more menu has **Add trigger**, **Copy link**, **Archive** and **Delete**.
+
+**Computers** at the top of the page opens a sheet for running bots across your computers; see
+[Bots on your other computers](#bots-on-your-other-computers).
 
 On mobile, open **Bots** above the thread list or in **Settings > Automations**. Choose the
 computer that owns your bots. Open a bot to edit or run it; its management actions include
@@ -56,19 +77,28 @@ Loom adds three ready-made bots the first time it starts with Bots:
 Edit a starter like any other bot; its chip then reads **Starter, edited**. When a later Loom
 ships better instructions, the chip reads **Newer starter available**. **Restore starter** in the
 editor puts back the shipped instructions, inputs and settings and keeps your model and project.
-A starter you delete is not added again; restore it from **Starters you removed** on the Bots
-page.
+A starter you delete is not added again; restore it from **Starters you removed** on the **Bots**
+tab.
 
 ## Running a bot
 
-Select a bot and choose **Run**. The form asks for each input and, when the bot does not name a
+Open a bot and choose **Run**. The form asks for each input and, when the bot does not name a
 project, which project to run in. A bot that runs in the checkout it is run for also asks which
-checkout: the project root or the worktree of one of the project's threads. The run appears under **Runs** with its status. **Show reply**
-shows the bot's final answer, and **Open thread** shows the whole conversation. Queued and
-running runs can be cancelled.
+checkout: the project root or the worktree of one of the project's threads.
 
-Bot runs stay out of the thread list and do not send completion notifications. **All runs** on
-the Bots page lists every bot's recent runs.
+Bot runs stay out of the thread list and do not send completion notifications.
+
+## Runs
+
+**Runs** lists runs newest first, with what is running now at the top. **Filters** narrows the
+list to one verdict or one bot; the filters stay in the page's address, so a narrowed list can be
+shared or reloaded.
+
+Select a run to open it in a side panel: its status and verdict, its inputs, findings, reply and
+details such as model, tokens, duration and what started it. **Open thread** shows the whole
+conversation, **Cancel run** stops one that is queued or running, and **Run again** opens the run
+form with the same inputs. Mark a finished run **Good** or **Bad** under **Feedback**; see
+[Versions and replay](#versions-and-replay). The more menu has **Copy link** and **Copy run ID**.
 
 ## Running a bot on many items
 
@@ -79,11 +109,12 @@ which input each item fills; the other inputs are shared by every item. The form
 items it found and the first of them before anything starts. A batch holds at most 200 items.
 
 The items run within the bot's **Runs at once** limit, using the bot as it was saved when the
-batch started. Open the batch under **Batches** to see one square per item, colored by outcome;
-select a square to open that run's thread. **Cancel batch** stops the items that have not
-started. Once a batch ends, **Retry failed** reruns only the items that failed, timed out or
-were marked Fail, and a verdict bot can also retry the items that need attention. Each item runs
-at most five times. **Report** collects every outcome in one Markdown summary you can copy.
+batch started. Open the batch from **Runs > Batches** to see one square per item, colored by
+outcome; select a square to open that item's run. **Cancel batch** stops the items that have not
+started. Once a batch ends, **Retry N failed** reruns only the items that failed, timed out or
+were marked Fail. Its menu can include the items that need attention, or use a version saved since
+the batch started. Each item runs at most five times. **Report** collects every outcome in one
+Markdown summary you can **Copy**.
 
 Batches also appear in the command palette under **Run bot on many...**, and agents can start
 one with a list of inputs.
@@ -95,30 +126,34 @@ or **Needs attention**, a short summary and a list of findings, each with an opt
 line. Loom asks the bot for this format, so its instructions only need to say what counts as a
 pass or a failure.
 
-The verdict shows next to the run's status. **Show findings** lists them with a copy button for
-each file and line, followed by the raw reply. Use **All**, **Pass**, **Fail** and **Needs
-attention** above the runs to show only runs with that verdict.
+The verdict shows next to the run's status. A run's side panel lists its findings, each with its
+file and line, followed by the raw reply. **Filters** in **Runs** shows only runs with one verdict.
 
 A reply Loom cannot read as a verdict is marked **Needs attention** and shows the raw reply in
 full, so nothing the bot said is lost. Runs that fail, time out or are cancelled have no verdict.
 Agents get the verdict with the run's reply, and a result posted to a thread leads with it.
 
-## Inbox
+## Needs you
 
-The **Inbox** tab collects the runs that need you: runs that failed or timed out, and runs whose
-verdict is **Needs attention**. The Bots icon in the sidebar footer shows how many there are.
+**Runs > Needs you** collects the runs that need a person, grouped as **Waiting on you**, **Failed
+or timed out**, **Undecided** (a verdict of **Needs attention**) and **Stopped pipelines**. The
+same runs lead the **Bots** tab and each bot's page, and a dot on the Bots icon in the sidebar
+footer says there are some.
 
-- **Retry** runs the bot again with the same inputs. **Retry on another model** does the same on
-  a model you choose for that one retry; the bot keeps its own model. A retried run leaves the
-  inbox, and a run from a batch hands its place in the batch to the retry.
-- **Dismiss** clears a run you have dealt with. **Dismiss all shown** clears the whole list at
-  once. Turn on **Dismissed** to see cleared runs and **Restore** one.
-- **Open as thread** copies the run into an ordinary thread in your sidebar, so you can carry on
-  the conversation yourself. Opening the same run again goes back to that thread.
+- A run that stops to ask for an approval or an answer is **Waiting on you**, because nobody would
+  see the question otherwise. **Answer** opens its thread.
+- **Retry** runs the bot again with the same inputs. **Retry on another model…** in a run's side
+  panel does the same on a model you choose for that one retry; the bot keeps its own model. A
+  retried run leaves Needs you, and a run from a batch hands its place in the batch to the retry.
+- **Dismiss N** on a group clears every run in it once you have dealt with them, and **Dismiss
+  from Needs you** in a run's side panel clears one. **Show dismissed** lists cleared runs, where
+  **Restore** puts one back.
+- **Continue in a thread**, in a run's side panel, copies the run into an ordinary thread in your
+  sidebar, so you can carry on the conversation yourself. **Open continued thread** then goes
+  back to it.
 
-A run that stops to ask for an approval or an answer shows under **Waiting for you** at the top,
-because nobody would see the question otherwise. **Answer** opens its thread. Agents read the
-inbox, retry and dismiss runs with `loom_bots_inbox`, `loom_bots_retry` and `loom_bots_dismiss`.
+Agents read this queue, retry and dismiss runs with `loom_bots_inbox`, `loom_bots_retry` and
+`loom_bots_dismiss`.
 
 ## Run a bot from a thread
 
@@ -139,26 +174,29 @@ sidebar context menu, or run **Save this thread as a bot** from the command pale
 opens a new bot filled from the thread: its first message becomes the instructions, file paths and
 pull request numbers in it become inputs, and the thread's model, modes and workspace carry over.
 **Refine with model** asks a model to tidy the name, description, instructions and inputs; check its
-changes before saving. Nothing is saved until you choose **Save bot**. An input's description is
+changes before saving. Nothing is saved until you choose **Create bot**. An input's description is
 shown as a hint under its field when the bot runs.
 
 When you open three threads with the same request in two weeks, differing only in files, numbers or
-quoted values, the Bots page suggests making it a bot. **Create** opens the same draft; **Dismiss**
-hides the suggestion, which comes back once if you keep opening that kind of thread. Find hidden
-ones under **Dismissed suggestions** and choose **Restore**. Agents draft a bot with
+quoted values, **Suggested bots** on the **Bots** tab offers to make it a bot. **Create** opens the
+same draft; dismissing hides the suggestion, which comes back once if you keep opening that kind of
+thread. Choose **Dismissed** to find hidden ones and **Restore** one. Agents draft a bot with
 `loom_bots_draft_from_thread` and read suggestions with `loom_bots_suggestions`.
 
 ## Usage and budgets
 
-The **Usage** tab lists every bot that ran in the last 24 hours, 7 days or 30 days: runs, how
-often it passed (or, for bots without verdicts, completed), its median duration and its share of
-bot tokens. Open a bot to see its outcomes, slowest run and tokens, and the same numbers per
-model, which helps when deciding whether **Retry on another model** is worth it. Some providers do
-not report every token, so figures marked "at least" are lower bounds. The Usage page shows a
-short Bots section under Totals with bot tokens for the shown window and the top three bots.
+The top of the Bots page sums up bot runs and tokens over a window: the past 24 hours, 7 days, 30
+days or 90 days. Choose the window under **Usage over** in the **Display** menu, or in the
+**Usage** panel on a bot's page; both set the same window. Sort the **Bots** tab by **Most tokens** to
+see which bots cost the most. A bot's **Usage** panel shows its runs, outcomes, how often it passed
+(or, for bots without verdicts, completed), its duration and tokens, and the same numbers per
+model, which helps when deciding whether **Retry on another model…** is worth it. Some providers
+do not report every token, so figures marked "at least" are lower bounds. The Usage page shows a
+short Bots section with bot tokens for the shown window and the top bots.
 
 In the bot editor, **Runs per 24 hours** and **Tokens per 24 hours** set an optional budget;
-leave a field empty for no limit. The window is rolling, so it never resets all at once. A run
+leave a field empty for no limit. A bot's **Usage** panel shows how much of it the last 24 hours
+used. The window is rolling, so it never resets all at once. A run
 that would pass a limit is refused with how long to wait, and a batch pauses and continues on its
 own when the window allows. Runs already in progress are never stopped, so the token limit can be
 passed by the runs that were in flight when it was reached. Agents read the same numbers with
@@ -166,8 +204,10 @@ passed by the runs that were in flight when it was reached. Agents read the same
 
 ## Triggers
 
-A trigger runs a bot when something happens. Open a bot, choose the **Triggers** tab and **New
-trigger**, or run **New bot trigger...** from the command palette. Pick what starts it:
+A trigger runs a bot when something happens. Choose **New trigger** on the **Triggers** tab,
+**Add trigger** in a bot's more menu, or run **New bot trigger...** from the command palette. A
+bot's own triggers are listed in its **Triggers** panel, and the **Triggers** tab filters every
+trigger by kind and by whether it is on or **Paused**. Pick what starts it:
 
 - **Pull request checks fail**: a linked pull request's checks turn failing, and again for each
   new failing commit.
@@ -186,35 +226,34 @@ Under **Inputs**, map each of the bot's inputs to a field of the event, a fixed 
 default. Every required input needs one. For a webhook, name fields as `body.pull_request.number`,
 `headers.x-github-event` or `query.ref`.
 
-Each trigger fires once per event, however often Loom sees it, and waits out its **Cooldown** and
-**Runs per day, at most** before firing again. The bot's budget still applies. A firing that is
-held back becomes a skipped run in the inbox with the reason, and **Firings** on the trigger lists
-recent firings with the run each one started.
+Each trigger fires once per event, however often Loom sees it, and respects its **Limits**: **Time
+between runs, at least** and **Runs a day, at most**. The bot's budget still applies. A firing that
+is held back becomes a skipped run in Needs you with the reason, and **Firings** on the trigger
+lists recent firings with the run each one started.
 
-**Version to run** chooses which version of the bot a trigger starts: the version it was saved
-with, the latest version, or the stable version (the latest while none is marked). A trigger
+**Version** chooses which version of the bot a trigger starts: the version it was saved with,
+**Latest**, or **Stable** (the latest while none is marked). A trigger
 pinned to an older version keeps running it; choose **Use version N** on the trigger to move it to
 the current one. A merge conflict trigger runs a batch, which always uses the latest version, so
 pinned to an older one its firings are skipped.
 
-**Starts** chooses whether a trigger runs the bot or a pipeline that begins with it; the inputs
-then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions, and
+**What it runs** chooses whether a trigger runs the bot or a pipeline that starts with it; the
+inputs then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions, and
 cannot start from merge conflicts. This choice is fixed once the trigger is saved. Deleting a
 pipeline deletes its triggers.
 
-**Test** fires the trigger once with event fields you enter. It skips the filters, cooldown and
-daily limit, and starts a real run.
+**Fire once**, under **Test firing** on a trigger, fires it once with event fields you enter. It
+skips the filters and limits, and starts a real run.
 
 ### Webhooks
 
 After saving a webhook or merge conflict trigger, its address is shown on the trigger with
 **Copy**; only people who can run bots see it. To start a bot from GitHub, add a webhook in the
 repository's settings, paste the address as the payload URL, choose `application/json`, and set a
-secret. On the trigger, turn on the signature check with the header `x-hub-signature-256`,
-prefix `sha256=` and the same secret. A delivery that GitHub, GitLab, Linear or a Standard Webhooks
-sender resends fires once; a service that sends
-no delivery id fires on every request. **Rotate** replaces
-the address; the old one stops working.
+secret. In the trigger's editor, turn on **Check a signature** with the header
+`x-hub-signature-256`, prefix `sha256=` and the same secret. A delivery that GitHub, GitLab,
+Linear or a Standard Webhooks sender resends fires once; a service that sends no delivery id fires
+on every request. **New address** replaces the address; the old one stops working.
 
 For merge conflicts, set `LOOM_BOTS_CONFLICT_HOOK` to the address before running
 `scripts/fork/loom.sh integrate`. The script posts the conflicting files and carries on whether or
@@ -223,33 +262,34 @@ not the post succeeds.
 ## Versions and replay
 
 Every save keeps the bot as a numbered version, and every run records the version it used. Open a
-bot and choose the **History** tab to see each version, who saved it, what it changed, and how its
-runs went. **Compare with vN** shows the brief as a diff and every other changed field side by
-side. **Restore** saves an old version again as a new one, so nothing in the history is lost.
-Version numbers never repeat, even after a bot is deleted and made again.
+bot and choose the **Versions** tab to see each version, who saved it, what it changed, and how
+its runs went. **Compare vN with** picks another version and shows the brief as a diff and every
+other changed field side by side. **Restore as vN…** saves an old version again as a new one, so
+nothing in the history is lost. Version numbers never repeat, even after a bot is deleted and made
+again.
 
-**Mark stable** flags the version you trust. Triggers set to the stable version run it while you
+**Mark as stable** flags the version you trust. Triggers set to the stable version run it while you
 keep editing; without one, they run the latest.
 
-Mark a finished run **Good** or **Bad** on its row. In the editor, **Suggest an edit** asks the
+Mark a finished run **Good** or **Bad** in its side panel. In the editor, **Suggest an edit** asks the
 bot's model to change the brief so later runs avoid what the Bad runs got wrong, keeping what the
 Good runs got right. It needs at least one Bad run, takes up to three minutes, and fills the
 editor without saving.
 
-To check an edit before saving it, choose **Try on past runs** in the editor, or **Replay** on a
-version in History. Pick up to 20 finished runs (rated runs come first) and Loom runs each one's
-inputs again, then shows the new result beside the original: **Fixed** or **Broke** when a
-verdict changed between passing and failing, **Same** or **Changed** otherwise. Replays count
-toward the bot's budget, and the whole replay must fit in it before it starts. Replay runs appear
-in the run list with a **Replay** badge but never reach the inbox. **Cancel replay** stops runs in
+To check an edit before saving it, choose **Try on past runs** in the editor, or **Try on past
+runs…** on a version in **Versions**. Pick up to 20 finished runs (rated runs come first) and Loom
+runs each one's inputs again, then shows the new result beside the original: **Better** or
+**Worse** when a verdict changed between passing and failing, **Same** or **Changed** otherwise.
+Replays count toward the bot's budget, and the whole replay must fit in it before it starts.
+Replay runs appear in the run list marked as replays but never reach Needs you. **Cancel replay** stops runs in
 flight and skips the rest.
 
 ## Pipelines
 
 A pipeline runs bots one after another and passes what each found to the next, such as review,
-fix, verify. Choose the **Pipelines** tab on the Bots page and **New pipeline**. Give it inputs as
-you would a bot, then add steps. Each step runs one bot and fills that bot's inputs from
-templates:
+fix, verify. Choose **New pipeline** on the **Pipelines** tab; the builder opens as its own page.
+Give it inputs as you would a bot, then **Add a step**. Each step runs one bot and fills that
+bot's inputs from templates:
 
 - `{{input.target}}`: a pipeline input.
 - `{{steps.review.summary}}`, `{{steps.review.findings}}`, `{{steps.review.verdict}}` and
@@ -261,18 +301,19 @@ The editor checks the pipeline as you type and marks each problem on its step. W
 a step that edits in its own worktree and so will not see an earlier step's changes, do not block
 saving.
 
-Turn on **Run once per item, as a batch** to run a step once per finding of an earlier step, or
-once per line of a text input. For a step whose bot returns a verdict, **On a fail verdict** and
-**On needs attention** choose whether the pipeline stops, carries on, or goes back to an earlier
-step for another round, at most 5 rounds. **When the run fails or times out** chooses the same
-for errors. A step can pin a version of its bot and run on another model than the bot's own.
+Under a step's **Runs**, choose **Once per item** to run it as a batch, once per finding of an
+earlier step or once per line of a text input. Under **When it ends**, for a step whose bot
+returns a verdict, **If it fails** and **If it needs attention** choose **Stop the pipeline**,
+**Carry on**, or **Go back to a step** for another round, at most 5 rounds. **If its run errors**
+chooses the same for a run that fails or times out. A step can pin a version of its bot and run
+on another model than the bot's own.
 
 **Run** asks for the pipeline's inputs and, when a step needs one, a project. The run view shows
 each step as it goes, with its verdict, links to its run or batch, and a report once the pipeline
-ends. A step held back by its bot's budget waits until the budget allows it. **Cancel pipeline**
-stops the run in flight. A pipeline that stopped or failed shows one inbox item, its stopping
-run, with **Open pipeline run**; **Resume** there runs the stopped step again without repeating
-earlier steps. At most 5 pipelines run at once. Pipelines keep running across server restarts.
+ends. A step held back by its bot's budget waits until the budget allows it. **Cancel run** stops
+the run in flight. A pipeline that stopped or failed shows under **Stopped pipelines** in Needs
+you with **Open pipeline run**; **Resume** runs the stopped step again without repeating earlier
+steps. At most 5 pipelines run at once. Pipelines keep running across server restarts.
 
 Run **Run pipeline...** from the command palette to start one from anywhere. Loom adds a
 **Review, fix, verify** starter pipeline, with a **Fixer** bot, when the starter reviewer and
@@ -281,30 +322,31 @@ verifier bots exist.
 ## Bots on your other computers
 
 When this computer is connected to a Library that supports shared bots, a bot can be shared once
-and run on any of your computers. Select the bot and choose **Share to Library** in its
-**Library** panel. Every computer connected to the same Library gets a copy within a few minutes,
-marked **From the Library**, and edits on any computer reach the others. A bot scoped to a
+and run on any of your computers. Open the bot and choose **Share** in its **Sharing** panel.
+Every computer connected to the same Library gets a copy within a few minutes, marked **In the
+Library**, and edits on any computer reach the others. A bot scoped to a
 project needs that project in the Library first. **Stop sharing** leaves every computer its copy
 as an ordinary bot, and deleting a shared bot on one computer removes only that computer's copy.
 
-A computer runs bots for the others only after you allow it. On that computer, open the
-**Computers** tab on the Bots page, turn on **Run bots for other computers**, and choose the
-highest permissions their runs may use. A run that asks for more is refused. Turning the switch
-off refuses new runs and those still waiting to start; runs already going finish. **Sync shared
-bots** fetches changes from the Library at once instead of waiting.
+A computer runs bots for the others only after you allow it. On that computer, choose
+**Computers** at the top of the Bots page, turn on **Run bots for other computers**, and choose
+the **Highest permissions** their runs may use. A run that asks for more is refused. Turning the
+switch off refuses new runs and those still waiting to start; runs already going finish. The same
+sheet lists your computers, your shared bots and recent remote runs, and **Sync now** fetches
+changes from the Library at once instead of waiting.
 
 **Run**, **Run on many** and each pipeline step then offer **Run on**: this computer, one of your
 other computers, or **Best available**, the ready computer with the most free slots. Each
 computer shows whether it is ready, and why not: offline, remote runs off, the bot's model not
 set up there, or the bot's project or Vault items missing. In a batch, each item picks its own
 computer. A run on another computer appears on both: here as **Ran on** that computer, there as
-**Requested by** this one, and **Open thread** opens the thread where it ran. A remote run uses
+**Asked for by** this one, and **Open thread** opens the thread where it ran. A remote run uses
 the shared version of the bot, not a version pinned on this computer, and works in that
 computer's own copy of the project rather than in one of this computer's checkouts.
 
 Secrets never leave a computer. A bot that needs one declares a **Vault slot** in its editor, such
-as an npm token it may use. Each computer binds that slot to one of its own Vault items in the
-bot's **Library** panel, and a run is refused until the slot is bound. A computer that runs the bot
+as an npm token it may use. Each computer binds that slot to one of its own Vault items under
+**Credentials on this computer** in the bot's **Sharing** panel, and a run is refused until the slot is bound. A computer that runs the bot
 on a model of its own keeps that choice when it saves; the others keep the shared model.
 
 ## Agents

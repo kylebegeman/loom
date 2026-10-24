@@ -199,7 +199,7 @@ function SitesScreen({
               <View className="gap-3">
                 <SitesSummaryLine snapshot={snapshot} now={now} />
                 <Button
-                  label={running ? "Running checks…" : "Run checks now"}
+                  label={running ? "Running checks…" : "Run all checks"}
                   icon="play"
                   disabled={!canManage || running}
                   onPress={() => void run()}

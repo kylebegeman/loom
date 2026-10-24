@@ -76,6 +76,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
 import { toastManager } from "~/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { WizardHeader, WizardPanel, WizardPopup } from "~/components/ui/wizard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
@@ -127,15 +128,15 @@ import {
   testFieldsInput,
   TRIGGER_KINDS,
   triggerAgenda,
+  triggerRowActivity,
   triggerVersion,
   triggerWhen,
   type TestField,
   type TriggerStateFilter,
 } from "./triggerDraft";
 
-/** The first page of a trigger's firings. Rows and the sheet ask with the same input, so they share it. */
+/** The first page of a trigger's firings, which only the sheet loads. */
 const FIRINGS_PAGE = Math.min(20, BOTS_TRIGGER_FIRINGS_MAX_LIMIT);
-const ROW_TICKS = 12;
 const SHEET_TICKS = 30;
 const EMPTY_TICK_KEYS = Array.from({ length: SHEET_TICKS }, (_, slot) => `empty-${slot}`);
 const SKELETON_ROWS = ["first", "second", "third"];
@@ -187,12 +188,17 @@ function useTriggerData() {
     hostLabel,
     changes,
     list,
-    loading: list.isPending && !list.data,
+    loading: !list.data && !list.error,
     triggers: applyTriggerChanges(list.data?.triggers ?? [], changes),
     allBots,
-    botsLoading: botList.isPending && !botList.data,
+    // A bot or pipeline is missing only once its list has loaded; until then it may be coming.
+    botList,
+    botsLoaded: botList.data !== null,
+    botsLoading: !botList.data && !botList.error,
     pipelines,
-    pipelinesLoading: host.pipelinesSupported && pipelineList.isPending && !pipelineList.data,
+    pipelineList,
+    pipelinesLoaded: !host.pipelinesSupported || pipelineList.data !== null,
+    pipelinesLoading: host.pipelinesSupported && !pipelineList.data && !pipelineList.error,
     canOperate: canOperateTriggers,
     /** The page already says when a connection can neither run nor change bots. */
     pageReadOnly: !canSave && !canRun,
@@ -250,10 +256,10 @@ function useFirstFirings(
 /** What a trigger runs, by name: its bot and version, or its pipeline. Never a raw id. */
 function runsLabel(data: TriggerData, trigger: BotTrigger) {
   if (trigger.pipelineId != null)
-    return `Starts ${data.pipelineOf(trigger.pipelineId)?.name ?? "a deleted pipeline"}`;
+    return `Starts ${data.pipelineOf(trigger.pipelineId)?.name ?? (data.pipelinesLoaded ? "a deleted pipeline" : "a pipeline")}`;
   const bot = data.botOf(trigger.botId);
   const version = triggerVersion(trigger, bot);
-  return `Runs ${bot?.name ?? "a deleted bot"}${version ? ` · ${version.short}` : ""}`;
+  return `Runs ${bot?.name ?? (data.botsLoaded ? "a deleted bot" : "a bot")}${version ? ` · ${version.short}` : ""}`;
 }
 
 /** When a schedule fires next, or what a trigger that waits for something accepts. */
@@ -435,8 +441,8 @@ function KindFilterMenu({
 }
 
 /**
- * When a trigger last started work, apart from the firings its limits skipped. The trigger's own
- * `lastFiredAt` counts skips, so it alone would show a held-back trigger as having just run.
+ * A trigger's latest firing, from the list and the watch alone. Rows never fetch firings: that is
+ * one request per trigger. The sheet loads them, with what each one did.
  */
 function TriggerActivity({
   data,
@@ -447,44 +453,22 @@ function TriggerActivity({
   readonly trigger: BotTrigger;
   readonly now: number;
 }) {
-  const fired = trigger.lastFiredAt !== null;
-  const { query, firings } = useFirstFirings(data.environmentId, trigger, data.changes, fired);
-  if (!fired) return <p className="text-xs text-muted-foreground">Never fired</p>;
-  if (firings.length === 0 && query.error)
-    return <p className="text-xs text-muted-foreground">Firings did not load</p>;
-  if (firings.length === 0)
-    return (
-      <div className="grid gap-1.5" role="status" aria-label="Loading firings">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-3 w-28" />
-      </div>
-    );
-  const activity = firingActivity(firings);
-  const { ticks } = firingTicks(firings, ROW_TICKS, now);
-  return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      <span className="hidden shrink-0 lg:inline-flex">
-        <TickStrip
-          ticks={ticks}
-          label={`Of the last ${Math.min(firings.length, ROW_TICKS)} firings, ${activity.ran} ran and ${activity.skipped} were skipped`}
-        />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-xs">
-          {activity.lastRun ? `Ran ${runTime(activity.lastRun.firedAt, now)}` : "No runs yet"}
+  const activity = triggerRowActivity(trigger, data.changes.firings.get(trigger.id) ?? []);
+  switch (activity.kind) {
+    case "never":
+      return <p className="text-xs text-muted-foreground">Never fired</p>;
+    case "ran":
+      return <p className="truncate text-xs">Ran {runTime(activity.at, now)}</p>;
+    case "skipped":
+      return (
+        <p className="flex min-w-0 items-center gap-1.5 text-xs">
+          <LibraryStateDot tone="warning" className="size-1.5" />
+          <span className="truncate">Skipped {runTime(activity.at, now)}</span>
         </p>
-        {activity.lastSkip && activity.skippedSinceRun > 0 ? (
-          <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <LibraryStateDot tone="warning" className="size-1.5" />
-            <span className="truncate">
-              Skipped {runTime(activity.lastSkip.firedAt, now)}
-              {activity.skippedSinceRun > 1 ? `, ${activity.skippedSinceRun} times since` : ""}
-            </span>
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
+      );
+    case "fired":
+      return <p className="truncate text-xs">Fired {runTime(activity.at, now)}</p>;
+  }
 }
 
 const ROW_GRID =
@@ -635,8 +619,13 @@ export function TriggersView() {
   const nav = useBotsNavigation();
   const now = useNowMs();
   const [search, setSearch] = useState("");
-  const [kinds, setKinds] = useState<ReadonlySet<BotTriggerEventKind>>(() => new Set());
-  const [state, setState] = useState<TriggerStateFilter>("all");
+  // Kind and state filters live in the URL, so a narrowed agenda survives a reload and Back.
+  const kinds: ReadonlySet<BotTriggerEventKind> = new Set(nav.search.triggerKinds ?? []);
+  const state: TriggerStateFilter = nav.search.triggerState ?? "all";
+  const setFilters = (filters: Pick<BotsPageSearch, "triggerKinds" | "triggerState">) =>
+    nav.show({ ...botsPageOf(nav.search), ...filters });
+  const setState = (next: TriggerStateFilter) =>
+    setFilters({ triggerState: next === "all" ? undefined : next });
   if (!data.enabled)
     return (
       <LibraryNotice icon={ZapIcon}>
@@ -659,17 +648,15 @@ export function TriggersView() {
     return count > 0 ? [{ kind, count }] : [];
   });
   const onCount = triggers.filter((trigger) => trigger.enabled).length;
-  const toggleKind = (kind: BotTriggerEventKind) =>
-    setKinds((current) => {
-      const next = new Set(current);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
+  const toggleKind = (kind: BotTriggerEventKind) => {
+    const next = new Set(kinds);
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    setFilters({ triggerKinds: next.size > 0 ? [...next] : undefined });
+  };
   const clearFilters = () => {
     setSearch("");
-    setKinds(new Set());
-    setState("all");
+    setFilters({ triggerKinds: undefined, triggerState: undefined });
   };
 
   return (
@@ -1295,14 +1282,18 @@ function TestFiringSection({
   data,
   trigger,
   target,
+  targetReason,
   now,
 }: {
   readonly data: TriggerData;
   readonly trigger: BotTrigger;
   readonly target: Pick<BotDefinition, "name" | "parameters"> | undefined;
+  /** Why the target cannot be fired at, while it is loading, did not load or was deleted. */
+  readonly targetReason: string | null;
   readonly now: number;
 }) {
   const [open, setOpen] = useState(false);
+  // Keyed on the target's arrival by the sheet, so field types come from its parameters.
   const [fields, setFields] = useState(() =>
     initialTestFields(trigger, target ?? { parameters: [] }),
   );
@@ -1310,7 +1301,7 @@ function TestFiringSection({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BotTriggerFiring | null>(null);
   const test = useAtomCommand(bots.testTrigger, { reportFailure: false });
-  const reason = target === undefined ? "What this trigger runs was deleted." : data.operateReason;
+  const reason = targetReason ?? data.operateReason;
   const fire = async () => {
     if (!data.environmentId || reason !== null) return;
     const input = testFieldsInput(fields);
@@ -1438,16 +1429,27 @@ function TriggerSheet({
   const bot = data.botOf(trigger.botId);
   const isPipeline = trigger.pipelineId != null;
   const target = isPipeline ? data.pipelineOf(trigger.pipelineId) : bot;
+  const targetList = isPipeline ? data.pipelineList : data.botList;
+  const targetLoaded = isPipeline ? data.pipelinesLoaded : data.botsLoaded;
   const targetLoading = isPipeline ? data.pipelinesLoading : data.botsLoading;
   const version = triggerVersion(trigger, bot);
   const when = triggerWhen(trigger.event, data.projectTitle);
   const signature = trigger.event.kind === "webhook" ? trigger.event.signature : undefined;
-  const editReason =
-    target === undefined
-      ? isPipeline
-        ? "The pipeline it starts was deleted."
-        : "The bot it runs was deleted."
-      : data.operateReason;
+  const targetReason =
+    target !== undefined
+      ? null
+      : targetLoading
+        ? isPipeline
+          ? "Loading the pipeline it starts…"
+          : "Loading the bot it runs…"
+        : !targetLoaded
+          ? isPipeline
+            ? "The pipelines did not load."
+            : "The bots did not load."
+          : isPipeline
+            ? "The pipeline it starts was deleted."
+            : "The bot it runs was deleted.";
+  const editReason = targetReason ?? data.operateReason;
 
   // The sheet closes as the delete goes out, so it never shows the trigger as missing while the
   // reply is on its way; a failure comes back as a toast.
@@ -1491,7 +1493,13 @@ function TriggerSheet({
       value:
         target === undefined ? (
           <span className="text-muted-foreground">
-            {targetLoading ? "…" : isPipeline ? "A deleted pipeline" : "A deleted bot"}
+            {targetLoading
+              ? "…"
+              : !targetLoaded
+                ? "Did not load"
+                : isPipeline
+                  ? "A deleted pipeline"
+                  : "A deleted bot"}
           </span>
         ) : (
           <Link
@@ -1637,7 +1645,10 @@ function TriggerSheet({
                 restored.
               </LibraryNotice>
             ) : null}
-            {target === undefined && !targetLoading ? (
+            {target === undefined && !targetLoading && !targetLoaded ? (
+              <LibraryErrorNotice error={targetList.error} onRetry={targetList.refresh} />
+            ) : null}
+            {target === undefined && targetLoaded ? (
               <LibraryNotice icon={TriangleAlertIcon} tone="danger">
                 {isPipeline
                   ? "The pipeline this trigger starts was deleted, so its firings are skipped. Delete the trigger, or add a new one for another pipeline."
@@ -1675,7 +1686,14 @@ function TriggerSheet({
               <WebhookAddressSection data={data} trigger={trigger} />
             ) : null}
             <FiringsSection data={data} trigger={trigger} now={now} />
-            <TestFiringSection data={data} trigger={trigger} target={target} now={now} />
+            <TestFiringSection
+              key={target === undefined ? "no-target" : "target"}
+              data={data}
+              trigger={trigger}
+              target={target}
+              targetReason={targetReason}
+              now={now}
+            />
           </div>
         </SheetPanel>
       </SheetPopup>
@@ -1714,6 +1732,45 @@ function SheetSkeleton() {
         </SheetPanel>
       </SheetPopup>
     </Sheet>
+  );
+}
+
+/** The trigger editor's frame while what it edits loads, so a link never opens onto nothing. */
+function WizardSkeleton() {
+  const nav = useBotsNavigation();
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) nav.close();
+      }}
+    >
+      <WizardPopup size="wide">
+        <WizardHeader
+          title="Loading the trigger editor"
+          identity={
+            <div
+              role="status"
+              aria-label="Loading the trigger editor"
+              className="flex min-w-0 items-center gap-3"
+            >
+              <Skeleton shape="card" className="size-8" />
+              <div className="grid flex-1 gap-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+            </div>
+          }
+        />
+        <WizardPanel>
+          <div className="grid gap-3">
+            {SKELETON_ROWS.map((row) => (
+              <Skeleton key={row} shape="card" className="h-10 w-full" />
+            ))}
+          </div>
+        </WizardPanel>
+      </WizardPopup>
+    </Dialog>
   );
 }
 
@@ -1799,6 +1856,22 @@ function OpenTriggerOverlay({
       />
     );
 
+  /** A list the overlay needs failed to load, so whether its target exists is unknown. */
+  const listFailed = (
+    what: string,
+    list: { readonly error: string | null; readonly refresh: () => void },
+  ) => (
+    <TriggerNotice
+      title={`The ${what} did not load`}
+      description={list.error ?? "Try again."}
+      action={
+        <Button shape="pill" variant="outline" onClick={list.refresh}>
+          Try again
+        </Button>
+      }
+    />
+  );
+
   if (triggerId) {
     const trigger = findTrigger(triggerId);
     if (trigger) return <TriggerSheet key={trigger.id} data={data} trigger={trigger} />;
@@ -1828,17 +1901,25 @@ function OpenTriggerOverlay({
 
   if (editTriggerId) {
     const trigger = findTrigger(editTriggerId);
-    if (!trigger) return data.loading ? null : triggerMissing();
+    if (!trigger) return data.loading ? <WizardSkeleton /> : triggerMissing();
     const bot = data.botOf(trigger.botId);
     if (!bot)
-      return data.botsLoading ? null : (
+      return data.botsLoading ? (
+        <WizardSkeleton />
+      ) : !data.botsLoaded ? (
+        listFailed("bots", data.botList)
+      ) : (
         <TriggerNotice
           title="Its bot was deleted"
           description={`${trigger.name} cannot be edited because the bot it runs is gone.`}
         />
       );
     if (trigger.pipelineId != null && !data.pipelineOf(trigger.pipelineId))
-      return data.pipelinesLoading ? null : (
+      return data.pipelinesLoading ? (
+        <WizardSkeleton />
+      ) : !data.pipelinesLoaded ? (
+        listFailed("pipelines", data.pipelineList)
+      ) : (
         <TriggerNotice
           title="Its pipeline was deleted"
           description={`${trigger.name} cannot be edited because the pipeline it starts is gone. You can still pause or delete it.`}
@@ -1859,7 +1940,11 @@ function OpenTriggerOverlay({
   if (!newTriggerBotId) return null;
   const bot = data.botOf(newTriggerBotId);
   if (!bot)
-    return data.botsLoading ? null : (
+    return data.botsLoading ? (
+      <WizardSkeleton />
+    ) : !data.botsLoaded ? (
+      listFailed("bots", data.botList)
+    ) : (
       <TriggerNotice
         title="Bot not found"
         description={`This bot is not on ${data.hostLabel}. It may have been deleted.`}
@@ -1883,7 +1968,8 @@ function OpenTriggerOverlay({
     );
   if (pipelineId && data.host.pipelinesSupported) {
     const pipeline = data.pipelineOf(pipelineId);
-    if (!pipeline && data.pipelinesLoading) return null;
+    if (!pipeline && data.pipelinesLoading) return <WizardSkeleton />;
+    if (!pipeline && !data.pipelinesLoaded) return listFailed("pipelines", data.pipelineList);
     if (!pipeline || pipeline.steps[0]?.botId !== bot.id)
       return (
         <TriggerNotice

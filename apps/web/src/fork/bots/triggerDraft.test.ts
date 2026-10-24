@@ -27,6 +27,7 @@ import {
   spanAhead,
   testFieldsInput,
   triggerAgenda,
+  triggerRowActivity,
   triggerStepProblem,
   triggerVersion,
   triggerWhen,
@@ -557,6 +558,37 @@ describe("firing activity", () => {
         firing("2026-10-23T11:00:00.000Z", "skipped"),
       ]),
     ).toBe("2026-10-23T11:00:00.000Z");
+  });
+});
+
+describe("row activity", () => {
+  it("names the outcome when a watched firing is the latest one", () => {
+    const watched = [
+      firing("2026-10-23T09:00:00.000Z", "run"),
+      firing("2026-10-23T11:00:00.000Z", "skipped", "Cooling down."),
+    ];
+    expect(triggerRowActivity({ lastFiredAt: "2026-10-23T11:00:00.000Z" }, watched)).toEqual({
+      kind: "skipped",
+      at: "2026-10-23T11:00:00.000Z",
+    });
+    expect(triggerRowActivity({ lastFiredAt: null }, watched.slice(0, 1))).toEqual({
+      kind: "ran",
+      at: "2026-10-23T09:00:00.000Z",
+    });
+  });
+
+  it("claims no outcome when the trigger fired since the watch saw it", () => {
+    // lastFiredAt counts skips, so a newer firing than any watched one may not have run.
+    expect(
+      triggerRowActivity({ lastFiredAt: "2026-10-23T12:00:00.000Z" }, [
+        firing("2026-10-23T09:00:00.000Z", "run"),
+      ]),
+    ).toEqual({ kind: "fired", at: "2026-10-23T12:00:00.000Z" });
+    expect(triggerRowActivity({ lastFiredAt: "2026-10-23T12:00:00.000Z" }, [])).toEqual({
+      kind: "fired",
+      at: "2026-10-23T12:00:00.000Z",
+    });
+    expect(triggerRowActivity({ lastFiredAt: null }, [])).toEqual({ kind: "never" });
   });
 });
 

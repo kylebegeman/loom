@@ -332,6 +332,8 @@ type EditorProps = {
   readonly environmentId: EnvironmentId;
   /** Whether saving can work right now: connected, permitted and configured. */
   readonly connected: boolean;
+  /** Why saving cannot work, when the page knows better than "reconnect". */
+  readonly blockedReason?: string | null | undefined;
   readonly onSaved: (id: string) => void;
   readonly onClose: () => void;
 };
@@ -375,6 +377,7 @@ function SiteWizard({
   snapshot,
   environmentId,
   connected,
+  blockedReason,
   onSaved,
   onClose,
 }: EditorProps & { target: Extract<SiteEditTarget, { kind: "site" }> }) {
@@ -664,7 +667,13 @@ function SiteWizard({
             </Button>
           ) : null}
           {editing || last ? (
-            <SaveButton form={formId} canSave={canSave} connected={connected} allowed={allowed}>
+            <SaveButton
+              form={formId}
+              canSave={canSave}
+              connected={connected}
+              allowed={allowed}
+              reason={blockedReason}
+            >
               {busy ? "Saving…" : editing ? "Save changes" : "Register site"}
             </SaveButton>
           ) : (
@@ -683,12 +692,14 @@ function SaveButton({
   canSave,
   connected,
   allowed,
+  reason,
   children,
 }: {
   readonly form: string;
   readonly canSave: boolean;
   readonly connected: boolean;
   readonly allowed: boolean;
+  readonly reason: string | null | undefined;
   readonly children: ReactNode;
 }) {
   const button = (
@@ -701,7 +712,9 @@ function SaveButton({
     <span className="inline-flex flex-col items-end gap-1">
       {button}
       <span className="text-xs text-muted-foreground">
-        {allowed ? "Reconnect your Library to save." : "You need settings access to save."}
+        {!allowed
+          ? "You need settings access to save."
+          : (reason ?? "Reconnect your Library to save.")}
       </span>
     </span>
   );
@@ -1126,6 +1139,7 @@ function ServiceDialog({
   snapshot,
   environmentId,
   connected,
+  blockedReason,
   onSaved,
   onClose,
 }: EditorProps & { target: Extract<SiteEditTarget, { kind: "service" }> }) {
@@ -1234,7 +1248,13 @@ function ServiceDialog({
           >
             Cancel
           </Button>
-          <SaveButton form={formId} canSave={canSave} connected={connected} allowed={allowed}>
+          <SaveButton
+            form={formId}
+            canSave={canSave}
+            connected={connected}
+            allowed={allowed}
+            reason={blockedReason}
+          >
             {busy
               ? "Saving…"
               : editing
@@ -1393,6 +1413,7 @@ function CheckDialog({
   snapshot,
   environmentId,
   connected,
+  blockedReason,
   onSaved,
   onClose,
 }: EditorProps & { target: Extract<SiteEditTarget, { kind: "check" }> }) {
@@ -1499,7 +1520,13 @@ function CheckDialog({
           >
             Cancel
           </Button>
-          <SaveButton form={formId} canSave={canSave} connected={connected} allowed={allowed}>
+          <SaveButton
+            form={formId}
+            canSave={canSave}
+            connected={connected}
+            allowed={allowed}
+            reason={blockedReason}
+          >
             {busy ? "Saving…" : editing ? "Save changes" : "Add check"}
           </SaveButton>
         </>

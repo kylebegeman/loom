@@ -157,3 +157,36 @@ export const replayHeadline = (replay: Pick<BotReplay, "status" | "items" | "sum
     return `${prefix}No better or worse${changed > 0 ? `; ${runCount(changed)} answered differently` : ""}.`;
   return `${prefix}${runCount(failed)} could not be replayed.`;
 };
+
+type ReplayCount = keyof BotReplay["summary"];
+
+/** Each count in the words of the comparison badges, in the order the badges rank them. */
+const TALLY_WORDS: ReadonlyArray<readonly [ReplayCount, string]> = [
+  ["fixed", "better"],
+  ["broke", "worse"],
+  ["changed", "changed"],
+  ["same", "same"],
+  ["failed", "failed"],
+];
+
+/** Every count above zero, such as "2 better, 8 same"; empty while nothing has settled. */
+export const replayTally = (
+  summary: BotReplay["summary"],
+  omit: ReadonlySet<ReplayCount> = new Set(),
+) =>
+  TALLY_WORDS.filter(([key]) => summary[key] > 0 && !omit.has(key))
+    .map(([key, word]) => `${summary[key]} ${word}`)
+    .join(", ");
+
+/**
+ * The counts {@link replayHeadline} leaves out, so the status line never names a count twice
+ * under two words. Empty when the headline already says everything.
+ */
+export const replayRest = (replay: Pick<BotReplay, "status" | "items" | "summary">) => {
+  if (replay.status === "running") return replayTally(replay.summary);
+  if (replay.items.every((item) => item.comparison === "pending")) return "";
+  const { fixed, broke, same, changed } = replay.summary;
+  if (fixed > 0 || broke > 0) return replayTally(replay.summary, new Set(["fixed", "broke"]));
+  if (same + changed > 0) return replayTally(replay.summary, new Set(["changed"]));
+  return "";
+};

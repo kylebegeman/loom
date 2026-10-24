@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerContext } from "../../composer/registry";
+import { LibraryErrorNotice } from "../../project-library/LibraryControls";
 import { ParameterField } from "../BotRunForm";
 import { initialRunValues, runInputs } from "@t3tools/client-runtime/fork";
 import { bots, useBots } from "../state";
@@ -154,9 +155,14 @@ function BotRunDrawer({
               canRun={canRun}
               onClose={onClose}
             />
+          ) : list.error && !list.data ? (
+            // A failed load says nothing about the bot, so it offers a retry, not a verdict.
+            <div className="pb-2">
+              <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
+            </div>
           ) : (
             <p role="status" className="pb-2 text-sm text-muted-foreground">
-              {list.isPending ? "Loading…" : "That bot no longer exists."}
+              {list.data && !bot ? "That bot no longer exists." : "Loading…"}
             </p>
           )}
         </ComposerBanner.Body>

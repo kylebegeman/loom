@@ -60,6 +60,16 @@ export const LIBRARY_ROW_TARGET =
 export const LIBRARY_CELL = "px-3 py-2.5 align-middle";
 
 /**
+ * `sm` sits in a table cell or a `LibraryVital` line, whose h-5 it must not overflow. `fill`
+ * stretches across its container at panel height; `chart` is tall enough to lead a tab.
+ */
+const SPARKLINE_SIZE = {
+  sm: "h-5 w-24",
+  fill: "h-16 w-full",
+  chart: "h-48 w-full",
+} as const;
+
+/**
  * One series as a line over a soft area, for trends inside a table cell or along a panel. Too
  * small for axes, so the caller states the total beside it and `label` carries the reading.
  */
@@ -70,8 +80,7 @@ export function Sparkline({
 }: {
   readonly values: readonly number[];
   readonly label: string;
-  /** `fill` stretches across its container at panel height. */
-  readonly size?: "sm" | "fill";
+  readonly size?: keyof typeof SPARKLINE_SIZE;
 }) {
   const top = Math.max(1, ...values);
   const step = values.length > 1 ? 100 / (values.length - 1) : 100;
@@ -82,10 +91,7 @@ export function Sparkline({
       aria-label={label}
       viewBox="0 0 100 24"
       preserveAspectRatio="none"
-      className={cn(
-        "shrink-0 text-(--project-color)",
-        size === "fill" ? "h-16 w-full" : "h-6 w-24",
-      )}
+      className={cn("shrink-0 text-(--project-color)", SPARKLINE_SIZE[size])}
     >
       {values.length > 1 ? (
         <>
@@ -94,7 +100,7 @@ export function Sparkline({
             points={points.join(" ")}
             fill="none"
             stroke="currentColor"
-            strokeWidth={size === "fill" ? 2 : 1.5}
+            strokeWidth={size === "sm" ? 1.5 : 2}
             strokeLinejoin="round"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"

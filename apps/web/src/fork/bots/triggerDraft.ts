@@ -425,6 +425,32 @@ export function firingActivity(firings: readonly BotTriggerFiring[]): FiringActi
   };
 }
 
+/** What a trigger's row says of its latest firing, from what the list and the watch carry. */
+export type TriggerRowActivity =
+  | { readonly kind: "never" }
+  /** Fired, with an outcome only its firings know: `lastFiredAt` counts skips too. */
+  | { readonly kind: "fired"; readonly at: string }
+  | { readonly kind: "ran"; readonly at: string }
+  | { readonly kind: "skipped"; readonly at: string };
+
+/**
+ * A row's activity without fetching each trigger's firings, which would cost one request per row.
+ * A watched firing at least as new as `lastFiredAt` is the latest one, so its outcome is known.
+ */
+export function triggerRowActivity(
+  trigger: Pick<BotTrigger, "lastFiredAt">,
+  watched: readonly BotTriggerFiring[],
+): TriggerRowActivity {
+  const newest = watched.reduce<BotTriggerFiring | null>(
+    (latest, firing) => (latest === null || firing.firedAt > latest.firedAt ? firing : latest),
+    null,
+  );
+  const last = trigger.lastFiredAt;
+  if (newest !== null && (last === null || newest.firedAt >= last))
+    return { kind: newest.outcome === "run" ? "ran" : "skipped", at: newest.firedAt };
+  return last === null ? { kind: "never" } : { kind: "fired", at: last };
+}
+
 /** The newest firing time a page holds, to tell when the trigger fired since it was fetched. */
 export const newestFiredAt = (firings: readonly BotTriggerFiring[]) =>
   firings.reduce<string | null>(

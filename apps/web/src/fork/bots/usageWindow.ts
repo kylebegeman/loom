@@ -65,26 +65,31 @@ export const usagePageWindow = (window: UsageSummaryInput): BotsUsageWindow => {
   };
 };
 
-/** The usage windows the Bots page offers, in days back from now. */
-export type BotUsageDays = 1 | 7 | 30 | 90;
+/** The usage windows the Bots page offers, in days back from now, shortest first. */
+export const BOT_USAGE_DAYS = [1, 7, 30, 90] as const;
+export type BotUsageDays = (typeof BOT_USAGE_DAYS)[number];
 
 /** Labels match the Usage page's own window choices, so the two pages read alike. */
-export const BOT_USAGE_WINDOWS: readonly {
-  readonly days: BotUsageDays;
-  readonly label: string;
-  readonly short: string;
-  readonly phrase: string;
-}[] = [
-  { days: 1, label: "Past 24h", short: "24h", phrase: "in 24 hours" },
-  { days: 7, label: "7 days", short: "7d", phrase: "in 7 days" },
-  { days: 30, label: "30 days", short: "30d", phrase: "in 30 days" },
-  { days: 90, label: "90 days", short: "90d", phrase: "in 90 days" },
-];
+const WINDOW_TEXT: Record<
+  BotUsageDays,
+  { readonly label: string; readonly short: string; readonly phrase: string }
+> = {
+  1: { label: "Past 24h", short: "24h", phrase: "in 24 hours" },
+  7: { label: "7 days", short: "7d", phrase: "in 7 days" },
+  30: { label: "30 days", short: "30d", phrase: "in 30 days" },
+  90: { label: "90 days", short: "90d", phrase: "in 90 days" },
+};
+
+export const BOT_USAGE_WINDOWS = BOT_USAGE_DAYS.map((days) => ({ days, ...WINDOW_TEXT[days] }));
 
 export const DEFAULT_BOT_USAGE_DAYS: BotUsageDays = 7;
 
-export const usageWindowPhrase = (days: BotUsageDays) =>
-  BOT_USAGE_WINDOWS.find((entry) => entry.days === days)?.phrase ?? `in ${days} days`;
+/** The window as a menu offers it, such as "7 days". */
+export const usageWindowLabel = (days: BotUsageDays) => WINDOW_TEXT[days].label;
+/** The window where a label has a few characters to spare, such as "Runs · 7d". */
+export const usageWindowShort = (days: BotUsageDays) => WINDOW_TEXT[days].short;
+/** The window inside a sentence, such as "No runs in 7 days". */
+export const usageWindowPhrase = (days: BotUsageDays) => WINDOW_TEXT[days].phrase;
 
 /** One refetch at most this often while runs keep finishing. */
 export const USAGE_REFETCH_INTERVAL_MS = 5_000;

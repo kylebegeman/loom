@@ -34,7 +34,7 @@ import { useBotsNavigation } from "./navigation";
 import { formatDuration } from "./runMetrics";
 import { bots, useBotsAccess, useBotsHost } from "./state";
 import {
-  BOT_USAGE_WINDOWS,
+  BOT_USAGE_DAYS,
   BUDGET_WARN_SHARE,
   DEFAULT_BOT_USAGE_DAYS,
   USAGE_REFETCH_INTERVAL_MS,
@@ -57,10 +57,10 @@ import {
   usageClauseText,
   usageRate,
   usageWindowPhrase,
+  usageWindowShort,
   verdictText,
 } from "./usageWindow";
 
-export { budgetMeterText, BOT_USAGE_WINDOWS, DEFAULT_BOT_USAGE_DAYS };
 export type { BotUsageDays };
 
 /** The Bots page's own ink, so a token bar reads the same inside any bot's colour scope. */
@@ -97,7 +97,7 @@ const usageViewAtom = Atom.family((key: string) => {
   const split = key.lastIndexOf("|");
   const environmentId = EnvironmentId.make(key.slice(0, split));
   const days =
-    BOT_USAGE_WINDOWS.find((entry) => String(entry.days) === key.slice(split + 1))?.days ??
+    BOT_USAGE_DAYS.find((entry) => String(entry) === key.slice(split + 1)) ??
     DEFAULT_BOT_USAGE_DAYS;
   return Atom.make((get): UsageView | null => {
     const window = get(usageWindowAtom(days));
@@ -149,6 +149,17 @@ function refetchUsage(
   ledgers.set(usageKey(environmentId, days), { until: next.until, signature, fetchedAt: nowMs });
   if (next === current) registry.refresh(bots.usage({ environmentId, input: current }));
   else registry.set(windowAtom, next);
+}
+
+const USAGE_DAYS_KEY = "loom:bots:usage-days:v1";
+const UsageDays = Schema.Literals(BOT_USAGE_DAYS);
+
+/**
+ * The usage window the Bots pages read, chosen once: the index's Display menu and a bot's Usage
+ * aside set the same one, so a figure covers the same span wherever it appears.
+ */
+export function useBotUsageWindow() {
+  return useLocalStorage(USAGE_DAYS_KEY, DEFAULT_BOT_USAGE_DAYS, UsageDays);
 }
 
 /**
@@ -429,9 +440,6 @@ export function BotBudgetMeter({
   );
 }
 
-const ASIDE_WINDOWS = [7, 30] as const satisfies readonly BotUsageDays[];
-const AsideDays = Schema.Literals(ASIDE_WINDOWS);
-const ASIDE_DAYS_KEY = "loom:bots:usage-aside-days:v1";
 const ASIDE_SKELETON_ROWS = ["runs", "outcomes", "rate", "duration", "tokens"];
 
 function UsageAsideSkeleton() {
@@ -575,7 +583,8 @@ function BudgetBlock({
 /** A bot's usage, for the aside of its Overview. */
 export function BotUsageAside({ bot }: { readonly bot: BotDefinition }) {
   const host = useBotsHost();
-  const [days, setDays] = useLocalStorage(ASIDE_DAYS_KEY, DEFAULT_BOT_USAGE_DAYS, AsideDays);
+  // The hero's vitals read this window too, so this toggle is the bot page's one window control.
+  const [days, setDays] = useBotUsageWindow();
   const { usage, rowOf, budgetOf, error, refresh } = useBotUsage(days);
   if (!host.supported || !host.budgetsSupported) return null;
   const row = rowOf(bot.id);
@@ -590,13 +599,13 @@ export function BotUsageAside({ bot }: { readonly bot: BotDefinition }) {
             aria-label="Usage window"
             value={[String(days)]}
             onValueChange={(next) => {
-              const choice = ASIDE_WINDOWS.find((entry) => String(entry) === next[0]);
+              const choice = BOT_USAGE_DAYS.find((entry) => String(entry) === next[0]);
               if (choice) setDays(choice);
             }}
           >
-            {ASIDE_WINDOWS.map((entry) => (
+            {BOT_USAGE_DAYS.map((entry) => (
               <ToggleGroupItem key={entry} value={String(entry)}>
-                {BOT_USAGE_WINDOWS.find((window) => window.days === entry)?.short}
+                {usageWindowShort(entry)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>

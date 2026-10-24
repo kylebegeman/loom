@@ -2,61 +2,11 @@ import {
   BOT_RUN_THREAD_PREFIX,
   isBotRunThreadId,
   isTerminalBotRunStatus,
-  needsBotAttention,
   type BotDefinition,
   type BotRun,
   type BotsInboxPage,
 } from "@t3tools/contracts/fork";
-import type {
-  BotsChanges,
-  LibraryWorkflowTone,
-  WaitingBotRunThread,
-} from "@t3tools/client-runtime/fork";
-
-/**
- * The server's inbox query for either view, kept in step with its SQL. The shared overlay's
- * dismissed matcher asks `needsBotAttention`, which drops a run that stopped its pipeline on a
- * `fail` verdict, so dismissing one made it vanish from Dismissed with no way to restore it.
- */
-export const isTriageRun = (run: BotRun, dismissed: boolean): boolean =>
-  (dismissed ? run.dismissedAt != null : run.dismissedAt == null) &&
-  run.replayId == null &&
-  // A run for another computer belongs in that computer's inbox.
-  run.requestedBy == null &&
-  (run.pipelineRunId == null
-    ? needsBotAttention(run)
-    : run.pipelineStopped === true && run.retriedBy == null);
-
-const newestFirst = (left: BotRun, right: BotRun) =>
-  right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
-
-/**
- * Loaded inbox pages with watched changes applied, the total kept without a refetch. A changed run
- * that was loaded was counted; one that was not was not, unless it is older than every loaded run
- * while more remain, where its earlier state is unknown and the total is left alone.
- */
-export const applyTriageChanges = (
-  page: BotsInboxPage,
-  changes: Pick<BotsChanges, "runs">,
-  options: { readonly dismissed: boolean },
-): BotsInboxPage => {
-  const oldest = page.runs.at(-1)?.createdAt;
-  const merged = new Map(page.runs.map((run) => [run.id, run]));
-  let total = page.total;
-  for (const [id, run] of changes.runs) {
-    const listed = merged.has(id);
-    if (!listed && page.hasMore && oldest !== undefined && run.createdAt < oldest) continue;
-    const now = isTriageRun(run, options.dismissed);
-    total += Number(now) - Number(listed);
-    if (now) merged.set(id, run);
-    else merged.delete(id);
-  }
-  return {
-    runs: [...merged.values()].sort(newestFirst),
-    total: Math.max(0, total),
-    hasMore: page.hasMore,
-  };
-};
+import type { LibraryWorkflowTone, WaitingBotRunThread } from "@t3tools/client-runtime/fork";
 
 /**
  * The first page joined with older pages loaded since. `earlier` holds pages already behind the

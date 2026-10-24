@@ -1,3 +1,4 @@
+import { Link, type LinkProps } from "@tanstack/react-router";
 import { LayoutGridIcon, ListIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
@@ -44,19 +45,18 @@ export const LIBRARY_CARD =
 /** The grid Library cards share, so Projects, Bots and Sites wrap at the same widths. */
 export const LIBRARY_CARD_GRID = "grid gap-3 sm:grid-cols-2 xl:grid-cols-3";
 
-/** The card's own way in, stretched under its content. Controls inside sit above it with `relative`. */
+/**
+ * The card's own way in: a real link stretched under its content, so a card opens in a new tab
+ * like Projects' cards. Controls inside sit above it with `relative`.
+ */
 export function LibraryCardTarget({
   label,
-  onOpen,
-}: {
-  readonly label: string;
-  readonly onOpen: () => void;
-}) {
+  ...link
+}: { readonly label: string } & Pick<LinkProps, "to" | "params" | "search">) {
   return (
-    <button
-      type="button"
+    <Link
+      {...link}
       aria-label={label}
-      onClick={onOpen}
       className="absolute inset-0 rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     />
   );

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import {
   SITE_CHECK_STATES,
   SITE_HEALTH_STATES,
@@ -106,7 +106,7 @@ import {
   useLibraryPermission,
   useLibraryProjects,
 } from "../project-library/state";
-import { SiteDetail } from "./SiteDetail";
+import { SiteDetail, SiteDetailSkeleton } from "./SiteDetail";
 import { SiteEditor, useSiteActiveToggle, type SiteEditTarget } from "./SiteEditor";
 import {
   ActionHint,
@@ -147,6 +147,11 @@ const CATALOG_URL = "https://api.begam.in/v1/public/catalog";
 /** The project filter's entry for sites that serve no project yet. */
 export const UNLINKED_PROJECT = "unlinked";
 const OFFLINE_NOTICE = "Saved check results and traffic below may be out of date.";
+/**
+ * A site's page runs wider than the index so the Preview shrinks a desktop layout less. Every tab
+ * shares it, so switching to Preview never resizes the hero above it.
+ */
+const SITE_PAGE_WIDTH = "expanded";
 
 export const SITE_SORTS = ["attention", "name", "visits"] as const;
 export type SiteSort = (typeof SITE_SORTS)[number];
@@ -350,33 +355,58 @@ export function sitesAttention(
     .map(({ rank: _rank, ...item }) => item);
 }
 
-/** The one-word answer to "is everything up?" that leads the header. */
+/**
+ * The one-word answer to "is everything up?" that leads the header. Only a passing result counts
+ * as normal: a check that has not run yet says nothing, as `siteChecksHealth` reads it on a card.
+ */
 export function sitesStatus(snapshot: SitesSnapshot, now: number) {
   let watched = 0;
+  let passing = 0;
   let failing = 0;
   let stale = 0;
+  let unchecked = 0;
   for (const check of snapshot.checks) {
     const state = siteCheckState(check, snapshot.staleAfterSeconds, now);
     if (state === "disabled") continue;
     watched += 1;
-    if (state === "failing") failing += 1;
+    if (state === "healthy") passing += 1;
+    else if (state === "failing") failing += 1;
     else if (state === "stale") stale += 1;
+    else unchecked += 1;
   }
   const tone: LibraryWorkflowTone = failing
     ? "danger"
     : stale
       ? "warning"
-      : watched
-        ? "success"
-        : "neutral";
+      : unchecked || !watched
+        ? "neutral"
+        : "success";
   const label = failing
     ? `${failing} failing`
     : stale
       ? `${stale} out of date`
-      : watched
-        ? "All normal"
-        : "Nothing watched";
-  return { tone, label, watched, failing, stale };
+      : unchecked
+        ? `${unchecked} not checked yet`
+        : watched
+          ? "All normal"
+          : "Nothing watched";
+  return { tone, label, watched, passing, failing, stale, unchecked };
+}
+
+export type SitesGate = "choose-library" | "connecting" | "offline" | "unsupported" | null;
+
+/**
+ * What stands between the page and asking for a snapshot. Support is only known once the Library
+ * has sent its config, so until then the page waits or says it is offline, never "update".
+ */
+export function sitesGate(library: {
+  readonly chosen: boolean;
+  readonly connected: boolean;
+  readonly capabilities: ExecutionEnvironmentCapabilities | null | undefined;
+}): SitesGate {
+  if (!library.chosen) return "choose-library";
+  if (!library.capabilities) return library.connected ? "connecting" : "offline";
+  return supportsLoomFeature(library.capabilities, SITES_FEATURE) ? null : "unsupported";
 }
 
 function serviceHealth(
@@ -434,7 +464,12 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
   const navigate = useNavigate();
   const environmentId = authority.authorityId;
   const capabilities = authority.environment?.serverConfig?.environment.capabilities;
-  const supported = supportsLoomFeature(capabilities, SITES_FEATURE);
+  const gate = sitesGate({
+    chosen: Boolean(environmentId),
+    connected: authority.connected,
+    capabilities,
+  });
+  const supported = gate === null;
   const manages = supportsLoomFeature(capabilities, SITES_MANAGEMENT_FEATURE);
   const projects = useLibraryProjects(true);
   const allowed = useLibraryPermission(sites.saveSite, environmentId);
@@ -483,10 +518,20 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
   const projectsById = new Map(
     (projects.query.data ?? []).map((project) => [project.id, project] as const),
   );
+  // On a site's page the read covers its traffic too, so one control brings the whole page current.
   const refresh = () => {
     query.refresh();
     if (opened) analytics.refresh();
   };
+  const updated = snapshot ? (
+    <UpdatedButton
+      subject={opened?.name ?? "sites"}
+      observedAt={snapshot.observedAt || null}
+      updating={query.isPending || (opened !== null && analytics.isPending)}
+      disabled={!authority.connected || query.isPending}
+      onRefresh={refresh}
+    />
+  ) : null;
   const toggleActive = useSiteActiveToggle({
     environmentId,
     connected: canManage,
@@ -525,6 +570,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
         snapshot={snapshot}
         environmentId={environmentId}
         connected={canManage}
+        blockedReason={manageReason}
         onClose={closeEditor}
         onSaved={saved}
       />
@@ -563,39 +609,52 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
     </>
   );
 
-  // Whatever stands between the page and a snapshot, said where the content belongs.
-  const blocker = !environmentId ? (
-    <LibraryEmpty
-      icon={GlobeIcon}
-      title="Choose your Library first"
-      action={
-        <Button shape="pill" render={<Link to="/projects" />}>
-          Open Projects
-        </Button>
-      }
-    >
-      Sites live on your Library server. Pick it in Projects, then come back to watch your sites.
-    </LibraryEmpty>
-  ) : !supported ? (
-    <LibraryEmpty icon={CloudOffIcon} title="Sites need a newer Library server">
-      Update {libraryLabel} to watch your sites here.
-    </LibraryEmpty>
-  ) : query.data?.configured === false ? (
-    <NotConfigured label={libraryLabel} pending={query.isPending} onCheck={query.refresh} />
-  ) : !snapshot && query.error ? (
-    <LibraryEmpty
-      icon={CircleAlertIcon}
-      title="Sites could not load"
-      action={
-        <Button shape="pill" variant="outline" disabled={query.isPending} onClick={query.refresh}>
-          <RefreshCwIcon />
-          Try again
-        </Button>
-      }
-    >
-      {query.error}
-    </LibraryEmpty>
-  ) : null;
+  // Whatever stands between the page and a snapshot, said where the content belongs. A Library
+  // still connecting has no blocker, so the page waits in its loading shape.
+  const blocker =
+    gate === "choose-library" ? (
+      <LibraryEmpty
+        icon={GlobeIcon}
+        title="Choose your Library first"
+        action={
+          <Button shape="pill" render={<Link to="/projects" />}>
+            Open Projects
+          </Button>
+        }
+      >
+        Sites live on your Library server. Pick it in Projects, then come back to watch your sites.
+      </LibraryEmpty>
+    ) : gate === "offline" ? (
+      <LibraryEmpty
+        icon={CloudOffIcon}
+        title={
+          authority.environment
+            ? `${authority.environment.label} is offline`
+            : "Your Library server is not connected"
+        }
+      >
+        Sites load when it reconnects.
+      </LibraryEmpty>
+    ) : gate === "unsupported" ? (
+      <LibraryEmpty icon={CloudOffIcon} title="Sites need a newer Library server">
+        Update {libraryLabel} to watch your sites here.
+      </LibraryEmpty>
+    ) : query.data?.configured === false ? (
+      <NotConfigured label={libraryLabel} pending={query.isPending} onCheck={query.refresh} />
+    ) : !snapshot && query.error ? (
+      <LibraryEmpty
+        icon={CircleAlertIcon}
+        title="Sites could not load"
+        action={
+          <Button shape="pill" variant="outline" disabled={query.isPending} onClick={query.refresh}>
+            <RefreshCwIcon />
+            Try again
+          </Button>
+        }
+      >
+        {query.error}
+      </LibraryEmpty>
+    ) : null;
 
   if (search.siteId) {
     if (opened && snapshot) {
@@ -605,6 +664,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
           section={{ label: "Sites", to: "/sites" }}
           offlineNotice={OFFLINE_NOTICE}
           style={projectColorStyle(siteColor(opened, projectsById))}
+          width={SITE_PAGE_WIDTH}
         >
           {notices}
           <SiteDetail
@@ -620,6 +680,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
             onEdit={openEditor}
             manageHint={manageReason}
             activeToggle={toggleActive}
+            refresh={updated}
           />
           {editor}
         </LibraryPageFrame>
@@ -632,6 +693,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
         section={{ label: "Sites", to: "/sites" }}
         offlineNotice={OFFLINE_NOTICE}
         style={projectColorStyle(SITES_COLOR)}
+        width={SITE_PAGE_WIDTH}
       >
         {blocker ??
           (snapshot ? (
@@ -687,7 +749,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
                 </span>
                 {snapshot.checks.length ? (
                   <TickStrip
-                    label={`${status.watched - status.failing - status.stale} of ${status.watched} checks passing`}
+                    label={`${status.passing} of ${status.watched} checks passing`}
                     ticks={orderChecksForAttention(snapshot.checks, snapshot.staleAfterSeconds, now)
                       .slice(0, MAX_HEADER_TICKS)
                       .map((check) => ({
@@ -698,12 +760,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
                       }))}
                   />
                 ) : null}
-                <UpdatedButton
-                  observedAt={snapshot.observedAt || null}
-                  updating={query.isPending}
-                  disabled={!authority.connected || query.isPending}
-                  onRefresh={refresh}
-                />
+                {updated}
               </>
             ) : (
               "Your websites, whether they are up, and the visits they receive."
@@ -720,7 +777,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
               onClick={() => void run()}
             >
               <PlayIcon />
-              {running ? "Running checks…" : "Run checks now"}
+              {running ? "Running checks…" : "Run all checks"}
             </Button>
           </ActionHint>
           <ActionHint hint={manageReason}>
@@ -849,11 +906,14 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
 
 /** The last read's age as the way to read again, so the page carries one refresh control. */
 function UpdatedButton({
+  subject,
   observedAt,
   updating,
   disabled,
   onRefresh,
 }: {
+  /** What a refresh reads again, for its accessible name. */
+  readonly subject: string;
   readonly observedAt: string | null;
   readonly updating: boolean;
   readonly disabled: boolean;
@@ -873,7 +933,7 @@ function UpdatedButton({
       variant="ghost"
       disabled={disabled}
       onClick={onRefresh}
-      aria-label={age ? `Refresh sites, updated ${age}` : "Refresh sites"}
+      aria-label={age ? `Refresh ${subject}, updated ${age}` : `Refresh ${subject}`}
     >
       <RefreshCwIcon />
       {updating ? "Updating…" : age ? `Updated ${age}` : "Refresh"}
@@ -1185,7 +1245,7 @@ function DisplayMenu({
           <span className="flex max-w-60 flex-col gap-0.5">
             <span>Live previews</span>
             <span className="text-xs text-muted-foreground">
-              Cards load each site&apos;s front page, which counts as a visit.
+              Cards load each site&apos;s front page, a few at a time. Each load counts as a visit.
             </span>
           </span>
         </MenuCheckboxItem>
@@ -1290,17 +1350,13 @@ function SiteCard({
   const health = siteHealth(site, snapshot, now);
   const checks = siteChecks(site, snapshot);
   const certificate = checkVitals(checks, now).certificate;
-  const navigate = useNavigate();
   return (
     <li
       style={projectColorStyle(siteColor(site, projects))}
       className={cn(LIBRARY_CARD, "gap-0 overflow-hidden p-0")}
     >
       <ProjectWash />
-      <LibraryCardTarget
-        label={`Open ${site.name}`}
-        onOpen={() => void navigate({ to: "/sites", search: { siteId: site.id } })}
-      />
+      <LibraryCardTarget label={`Open ${site.name}`} to="/sites" search={{ siteId: site.id }} />
       <SiteThumbnail site={site} live={previews} />
       {/* Content lets clicks fall through to the card's own target; only the menu takes them. */}
       <div className="pointer-events-none flex min-w-0 flex-1 flex-col gap-2.5 p-3.5">
@@ -1713,32 +1769,6 @@ function SitesSkeleton({ view }: { readonly view: "cards" | "list" }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-/** A site's page while the snapshot loads: its hero, its tabs and the first panel. */
-function SiteDetailSkeleton() {
-  return (
-    <div role="status" aria-label="Loading site" className="flex flex-col gap-6">
-      <div className="flex flex-col gap-5 rounded-3xl border border-border p-5 sm:p-6">
-        <div className="flex items-center gap-5">
-          <Skeleton shape="card" className="size-16" />
-          <div className="flex flex-1 flex-col gap-2">
-            <Skeleton className="h-7 w-1/3" />
-            <Skeleton className="h-3 w-1/2" />
-          </div>
-          <Skeleton shape="pill" className="hidden h-8 w-28 sm:block" />
-        </div>
-        <div className="flex gap-8 border-t border-border/70 pt-4">
-          <Skeleton className="h-8 w-20" />
-          <Skeleton className="h-8 w-20" />
-          <Skeleton className="h-8 w-20" />
-          <Skeleton className="hidden h-8 w-20 sm:block" />
-        </div>
-      </div>
-      <Skeleton shape="pill" className="h-10 w-80 max-w-full" />
-      <Skeleton shape="card" className="aspect-16/10 w-full max-w-3xl" />
     </div>
   );
 }

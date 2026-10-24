@@ -517,11 +517,14 @@ function PipelineMenu({
   const canDelete = useLibraryPermission(bots.deletePipeline, environmentId) && connected;
   const deletePipeline = useDeletePipeline(environmentId);
   const firstBot = pipeline.steps[0]?.botId;
-  const reason = actionReason(
-    connected,
-    canDelete && (!host.triggersSupported || access.canOperateTriggers),
-    "change pipelines",
-  );
+  // Adding a trigger and deleting take different permissions, so the line names only what is off.
+  const blockedActions = [
+    host.triggersSupported && !access.canOperateTriggers ? "add triggers" : null,
+    canDelete ? null : "delete pipelines",
+  ].filter((action) => action !== null);
+  const reason = blockedActions.length
+    ? actionReason(connected, false, blockedActions.join(" or "))
+    : null;
   return (
     <Menu>
       <MenuTrigger
@@ -576,11 +579,14 @@ function pipelineAttention(
   pipeline: BotPipeline,
   runs: ReadonlyArray<BotPipelineRun>,
   botOf: (botId: string) => BotDefinition | undefined,
+  /** Whether the bot list loaded, so a bot it lacks is really gone. */
+  botsLoaded: boolean,
 ): { readonly tone: LibraryWorkflowTone; readonly label: string } | null {
   const active = runs.find((run) => isActiveBotPipelineRunStatus(run.status));
   if (active) return BOT_PIPELINE_RUN_STATES[active.status];
   const stepBots = pipeline.steps.map((step) => botOf(step.botId));
-  if (stepBots.some((bot) => bot === undefined)) return { tone: "warning", label: "Bot missing" };
+  if (botsLoaded && stepBots.some((bot) => bot === undefined))
+    return { tone: "warning", label: "Bot missing" };
   if (stepBots.some((bot) => bot?.archivedAt != null))
     return { tone: "warning", label: "Bot archived" };
   const last = runs[0];
@@ -688,7 +694,8 @@ function PipelinesIndex({ environmentId }: { readonly environmentId: Environment
     <div className="flex flex-col gap-10">
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
-          {pipelines.length >= SEARCH_FROM ? (
+          {/* A search still in force stays visible, or nothing on screen could clear it. */}
+          {pipelines.length >= SEARCH_FROM || search !== "" ? (
             <LibrarySearch
               value={search}
               onChange={setSearch}
@@ -720,6 +727,7 @@ function PipelinesIndex({ environmentId }: { readonly environmentId: Environment
                 runs={runs.filter((run) => run.pipelineId === pipeline.id)}
                 usage={usageOf(pipeline.id)}
                 botOf={botOf}
+                botsLoaded={botList.data !== null}
                 connected={host.connected}
               />
             ))}
@@ -754,6 +762,7 @@ function PipelineCard({
   runs,
   usage,
   botOf,
+  botsLoaded,
   connected,
 }: {
   readonly environmentId: EnvironmentId;
@@ -762,11 +771,12 @@ function PipelineCard({
   readonly runs: ReadonlyArray<BotPipelineRun>;
   readonly usage: BotPipelineUsageRow | undefined;
   readonly botOf: (botId: string) => BotDefinition | undefined;
+  readonly botsLoaded: boolean;
   readonly connected: boolean;
 }) {
   const nav = useBotsNavigation();
   const access = useBotsAccess();
-  const attention = pipelineAttention(pipeline, runs, botOf);
+  const attention = pipelineAttention(pipeline, runs, botOf, botsLoaded);
   const last = runs[0];
   const editReason = actionReason(connected, access.canSavePipelines, "edit pipelines");
   const runReason = actionReason(connected, access.canRunPipelines, "run pipelines");
@@ -958,7 +968,7 @@ function PipelineOverview({
   readonly back: ReactNode;
 }) {
   const nav = useBotsNavigation();
-  const { host, bots: allBots } = useBots();
+  const { host, bots: allBots, list: botList } = useBots();
   const access = useBotsAccess();
   const {
     query: runsQuery,
@@ -968,8 +978,9 @@ function PipelineOverview({
   const usage = usePipelineUsage()(pipeline.id);
   const botsById = useMemo(() => new Map(allBots.map((bot) => [bot.id, bot])), [allBots]);
   const botOf = (botId: string) => botsById.get(botId);
+  const botsLoaded = botList.data !== null;
   const draft = useMemo(() => pipelineDraft(pipeline), [pipeline]);
-  const attention = pipelineAttention(pipeline, runs, botOf);
+  const attention = pipelineAttention(pipeline, runs, botOf, botsLoaded);
   const record = pipelineRecord(runs);
   const last = runs[0];
   const editReason = actionReason(host.connected, access.canSavePipelines, "edit pipelines");
@@ -1075,7 +1086,10 @@ function PipelineOverview({
       <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-10">
           <LibrarySection title="Steps" icon={WorkflowIcon} count={pipeline.steps.length}>
-            <StepFlow steps={draft.steps} draft={draft} botOf={botOf} />
+            {botList.data === null ? (
+              <LibraryErrorNotice error={botList.error} onRetry={botList.refresh} />
+            ) : null}
+            <StepFlow steps={draft.steps} draft={draft} botOf={botOf} botsLoaded={botsLoaded} />
           </LibrarySection>
           <LibrarySection title="Runs" icon={HistoryIcon} count={runs.length || undefined}>
             <LibraryErrorNotice error={runsQuery.error} onRetry={runsQuery.refresh} />
@@ -1147,10 +1161,13 @@ function StepFlow({
   steps,
   draft,
   botOf,
+  botsLoaded,
 }: {
   readonly steps: ReadonlyArray<PipelineStepDraft>;
   readonly draft: PipelineDraft;
   readonly botOf: (botId: string) => BotDefinition | undefined;
+  /** Whether the bot list loaded, so a bot it lacks is really gone. */
+  readonly botsLoaded: boolean;
 }) {
   return (
     <ol aria-label="Steps" className="flex flex-col">
@@ -1170,15 +1187,21 @@ function StepFlow({
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                 <h3 className="font-mono text-sm font-medium">{step.id}</h3>
-                <Link
-                  to="/loom/bots"
-                  search={{ bot: step.botId }}
-                  className="truncate rounded-sm text-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                >
-                  {bot?.name ?? step.botId}
-                </Link>
+                {bot === undefined && !botsLoaded ? (
+                  <Skeleton className="h-3.5 w-24" />
+                ) : (
+                  <Link
+                    to="/loom/bots"
+                    search={{ bot: step.botId }}
+                    className="truncate rounded-sm text-sm text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                  >
+                    {bot?.name ?? step.botId}
+                  </Link>
+                )}
                 {bot === undefined ? (
-                  <LibraryStateBadge tone="warning">Bot missing</LibraryStateBadge>
+                  botsLoaded ? (
+                    <LibraryStateBadge tone="warning">Bot missing</LibraryStateBadge>
+                  ) : null
                 ) : bot.archivedAt !== null ? (
                   <LibraryStateBadge tone="warning">Archived</LibraryStateBadge>
                 ) : null}
