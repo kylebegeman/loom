@@ -34,6 +34,14 @@ session reference that upstream checks at expiry; no extension point reaches tha
 registry and resolver seams sit where upstream already swaps a bearer credential under its
 lease lock.
 
+## Merge check
+
+`git merge-tree --write-tree --name-only --no-messages HEAD v0.1.3-nightly.20261024.3630` at
+7bb2bf1df3: 196 conflicting files, the branch base's 195 plus
+`apps/server/src/auth/SessionStore.test.ts`. That conflict is the marked `effect/Ref` import
+beside an `effect/Stream` import upstream removed; keep the `Ref` line and drop `Stream` if
+nothing else uses it.
+
 ## FORK.md rows
 
 One paragraph under "Packet seams", after the `no-project-first` entry.
