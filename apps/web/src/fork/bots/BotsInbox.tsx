@@ -4,22 +4,48 @@ import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
 import type { BotRun } from "@t3tools/contracts/fork";
 import {
   applyInboxChanges,
+  BOT_RUN_STATES,
+  BOT_VERDICT_STATES,
   type BotsChanges,
   dismissRunIdBatches,
   type WaitingBotRunThread,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ArrowUpRightIcon,
+  CheckCheckIcon,
+  CpuIcon,
+  EllipsisIcon,
+  InboxIcon,
+  LayersIcon,
+  MessageCircleQuestionIcon,
+  RefreshCwIcon,
+  RotateCcwIcon,
+  WorkflowIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useNowMinute } from "~/hooks/useNowMinute";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LIBRARY_OUTLINE,
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryField,
+  LibrarySection,
+  LibraryStateBadge,
+  LibraryStateDot,
+} from "../project-library/LibraryControls";
 import { BotModelPicker } from "./BotModelPicker";
-import { runInputSummary } from "./BotRuns";
+import { BotRowsSkeleton, BotsEmptyList, runInputSummary } from "./BotRuns";
 import { bots, inboxQueryInput, useRefreshWhenBotsChangesPruned } from "./state";
-import { BotRunStatusBadge, VerdictChip, runTime } from "./BotIdentity";
+import { BotRunStatusBadge, BotTile, VerdictChip, runTime } from "./BotIdentity";
 import { runDurationLabel, waitingAgeLabel } from "./runMetrics";
 
 const failureMessage = (cause: unknown, fallback: string) =>
@@ -63,10 +89,10 @@ function RetryDialog({
       description="Only this retry uses the model you choose; the bot keeps its own."
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button shape="pill" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || model === null} onClick={() => void submit()}>
+          <Button shape="pill" disabled={busy || model === null} onClick={() => void submit()}>
             {busy ? "Retrying…" : "Retry"}
           </Button>
         </>
@@ -102,6 +128,17 @@ function InboxRow({
   const promote = useAtomCommand(bots.promote, { reportFailure: false });
   const dismissed = run.dismissedAt != null;
   const summary = runInputSummary(run);
+  const tone = run.verdict
+    ? BOT_VERDICT_STATES[run.verdict.verdict].tone
+    : BOT_RUN_STATES[run.status].tone;
+  const retryable = !dismissed && run.pipelineRunId == null;
+  const meta = [
+    runTime(run.finishedAt) ?? runTime(run.createdAt),
+    runDurationLabel(run),
+    run.modelSelection?.model ?? null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const act = async (kind: "retry" | "dismiss" | "open", fallback: string) => {
     setBusy(kind);
@@ -124,34 +161,23 @@ function InboxRow({
   };
 
   return (
-    <li className="grid gap-2 rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {run.verdict ? (
-            <VerdictChip verdict={run.verdict.verdict} />
-          ) : (
-            <BotRunStatusBadge status={run.status} />
-          )}
-          <span className="font-medium">{run.botName}</span>
-          <span className="text-xs text-muted-foreground">{runDurationLabel(run)}</span>
-          <span className="text-xs text-muted-foreground">
-            {runTime(run.finishedAt) ?? runTime(run.createdAt)}
-            {run.modelSelection ? ` · ${run.modelSelection.model}` : ""}
-          </span>
+    <li className="flex min-w-0 flex-col gap-2 px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <BotTile bot={{ id: run.botId }} status={<LibraryStateDot tone={tone} />} />
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="truncate text-sm font-medium">{run.botName}</p>
+          <p className="truncate text-xs tabular-nums text-muted-foreground">{meta}</p>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {run.batchId ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              render={<Link to="/loom/bots" search={{ tab: "batches", batch: run.batchId }} />}
-            >
-              Open batch
-            </Button>
-          ) : null}
+        {run.verdict ? (
+          <VerdictChip verdict={run.verdict.verdict} />
+        ) : (
+          <BotRunStatusBadge status={run.status} />
+        )}
+        <div className="flex flex-wrap items-center gap-0.5">
           {dismissed ? null : run.pipelineRunId != null ? (
             // The server refuses to retry a pipeline's run; resuming the pipeline reruns it.
             <Button
+              shape="pill"
               size="xs"
               variant="ghost"
               render={
@@ -161,37 +187,33 @@ function InboxRow({
                 />
               }
             >
+              <WorkflowIcon />
               Open pipeline run
             </Button>
           ) : (
-            <>
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={!canAct || busy !== null}
-                onClick={() => void act("retry", "Could not retry the run.")}
-              >
-                {busy === "retry" ? "Retrying…" : "Retry"}
-              </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={!canAct || busy !== null}
-                onClick={() => setRetryingElsewhere(true)}
-              >
-                Retry on another model
-              </Button>
-            </>
+            <Button
+              shape="pill"
+              size="xs"
+              variant="ghost"
+              disabled={!canAct || busy !== null}
+              onClick={() => void act("retry", "Could not retry the run.")}
+            >
+              <RotateCcwIcon />
+              {busy === "retry" ? "Retrying…" : "Retry"}
+            </Button>
           )}
           <Button
+            shape="pill"
             size="xs"
             variant="ghost"
             disabled={!canAct || busy !== null}
             onClick={() => void act("open", "Could not open the run as a thread.")}
           >
+            <ArrowUpRightIcon />
             {busy === "open" ? "Opening…" : "Open as thread"}
           </Button>
           <Button
+            shape="pill"
             size="xs"
             variant="ghost"
             disabled={!canAct || busy !== null}
@@ -202,17 +224,63 @@ function InboxRow({
               )
             }
           >
+            {dismissed ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
             {dismissed ? "Restore" : "Dismiss"}
           </Button>
+          {retryable || run.batchId ? (
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Button
+                    shape="pill"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`More actions for this ${run.botName} run`}
+                  />
+                }
+              >
+                <EllipsisIcon />
+              </MenuTrigger>
+              <MenuPopup side="bottom" align="end">
+                {retryable ? (
+                  <MenuItem
+                    disabled={!canAct || busy !== null}
+                    onClick={() => setRetryingElsewhere(true)}
+                  >
+                    <CpuIcon />
+                    Retry on another model
+                  </MenuItem>
+                ) : null}
+                {run.batchId ? (
+                  <MenuItem
+                    render={
+                      <Link to="/loom/bots" search={{ tab: "batches", batch: run.batchId }} />
+                    }
+                  >
+                    <LayersIcon />
+                    Open batch
+                  </MenuItem>
+                ) : null}
+              </MenuPopup>
+            </Menu>
+          ) : null}
         </div>
       </div>
-      {summary ? <p className="truncate text-xs text-muted-foreground">{summary}</p> : null}
-      {run.verdict ? <p className="line-clamp-2 text-sm">{run.verdict.summary}</p> : null}
-      {run.error ? <p className="text-sm text-destructive-foreground">{run.error}</p> : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
+      {summary || run.verdict || run.error || error ? (
+        <div className="flex min-w-0 flex-col gap-1.5 ps-12">
+          {summary ? <p className="truncate text-xs text-muted-foreground">{summary}</p> : null}
+          {run.verdict ? (
+            <p className="line-clamp-2 text-sm text-foreground/90">{run.verdict.summary}</p>
+          ) : null}
+          {run.error ? (
+            <p className="text-sm text-destructive-foreground wrap-anywhere">{run.error}</p>
+          ) : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive-foreground">
+              {error}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {retryingElsewhere ? (
         <RetryDialog
@@ -225,42 +293,52 @@ function InboxRow({
   );
 }
 
+/** Threads blocked on a person read first and wear the warning tone, so they never blend in. */
 function WaitingRuns({ waiting }: { readonly waiting: ReadonlyArray<WaitingBotRunThread> }) {
   const minute = useNowMinute();
   const now = Date.parse(`${minute}:00Z`);
   if (waiting.length === 0) return null;
   return (
-    <section className="space-y-2" aria-label="Waiting for you">
-      <h3 className="font-medium">Waiting for you</h3>
-      <ul className="grid gap-2">
+    <LibrarySection title="Waiting for you" icon={MessageCircleQuestionIcon} count={waiting.length}>
+      <ul
+        className={cn(
+          LIBRARY_OUTLINE,
+          "flex flex-col divide-y divide-warning/20 overflow-hidden border-warning/40 bg-warning/5",
+        )}
+      >
         {waiting.map((thread) => (
           <li
             key={thread.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border p-3"
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <Badge variant="warning">
-                {thread.hasPendingApprovals ? "Needs approval" : "Has a question"}
-              </Badge>
-              <span className="min-w-0">
-                <span className="block truncate">{thread.title}</span>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<span tabIndex={0} className="block text-xs text-muted-foreground" />}
-                  >
-                    {thread.waitingSince
-                      ? `Waiting ${waitingAgeLabel(thread.waitingSince, now) ?? "since an unknown time"}`
-                      : `Last activity ${waitingAgeLabel(thread.updatedAt, now) ?? "an unknown time"} ago`}
-                  </TooltipTrigger>
-                  <TooltipPopup>
-                    {runTime(thread.waitingSince ?? thread.updatedAt) ?? "Time unavailable"}
-                  </TooltipPopup>
-                </Tooltip>
-              </span>
+            <LibraryStateDot tone="warning" className="mx-1" />
+            <div className="min-w-0 flex-1 basis-48">
+              <p className="truncate text-sm font-medium">{thread.title}</p>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span
+                      tabIndex={0}
+                      className="block w-fit rounded-sm text-xs tabular-nums text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    />
+                  }
+                >
+                  {thread.waitingSince
+                    ? `Waiting ${waitingAgeLabel(thread.waitingSince, now) ?? "since an unknown time"}`
+                    : `Last activity ${waitingAgeLabel(thread.updatedAt, now) ?? "an unknown time"} ago`}
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {runTime(thread.waitingSince ?? thread.updatedAt) ?? "Time unavailable"}
+                </TooltipPopup>
+              </Tooltip>
             </div>
+            <LibraryStateBadge tone="warning">
+              {thread.hasPendingApprovals ? "Needs approval" : "Has a question"}
+            </LibraryStateBadge>
             <Button
+              shape="pill"
               size="xs"
-              variant="ghost"
+              variant="outline"
               render={
                 <Link
                   to="/$environmentId/$threadId"
@@ -268,14 +346,17 @@ function WaitingRuns({ waiting }: { readonly waiting: ReadonlyArray<WaitingBotRu
                 />
               }
             >
+              <ArrowUpRightIcon />
               Open thread
             </Button>
           </li>
         ))}
       </ul>
-    </section>
+    </LibrarySection>
   );
 }
+
+const VIEWS = ["open", "dismissed"] as const;
 
 /** Runs that need a person: waiting on an answer first, then failed or undecided runs. */
 export function BotsInbox({
@@ -324,59 +405,79 @@ export function BotsInbox({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">
+          Runs that need a person: questions and approvals first, then failed, timed out and
+          undecided runs.
+        </p>
+        <div className="flex items-center gap-1.5">
+          <ToggleGroup
+            shape="pill"
+            variant="segmented"
+            aria-label="Inbox view"
+            value={[showDismissed ? "dismissed" : "open"]}
+            onValueChange={(next) => {
+              const view = VIEWS.find((entry) => entry === next[0]);
+              if (view) setShowDismissed(view === "dismissed");
+            }}
+          >
+            <ToggleGroupItem value="open">Needs attention</ToggleGroupItem>
+            <ToggleGroupItem value="dismissed">Dismissed</ToggleGroupItem>
+          </ToggleGroup>
+          <Button
+            shape="pill"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh inbox"
+            disabled={!connected || query.isPending}
+            onClick={query.refresh}
+          >
+            <RefreshCwIcon />
+          </Button>
+        </div>
+      </div>
       {showDismissed || waiting.length === 0 ? null : <WaitingRuns waiting={waiting} />}
-      <section className="space-y-3" aria-label="Needs attention">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-medium">{showDismissed ? "Dismissed" : "Needs attention"}</h3>
-          <div className="flex flex-wrap gap-1">
-            {!showDismissed && page && page.runs.length > 1 ? (
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={!canAct || dismissing}
-                onClick={() => void dismissAll(page.runs)}
-              >
-                {dismissing ? "Dismissing…" : "Dismiss all shown"}
-              </Button>
-            ) : null}
+      <LibrarySection
+        title={showDismissed ? "Dismissed" : "Needs attention"}
+        icon={showDismissed ? ArchiveIcon : InboxIcon}
+        count={page?.total}
+        action={
+          !showDismissed && page && page.runs.length > 1 ? (
             <Button
-              size="xs"
-              variant={showDismissed ? "secondary" : "ghost"}
-              aria-pressed={showDismissed}
-              onClick={() => setShowDismissed((shown) => !shown)}
-            >
-              Dismissed
-            </Button>
-            <Button
+              shape="pill"
               size="xs"
               variant="ghost"
-              disabled={!connected || query.isPending}
-              onClick={query.refresh}
+              disabled={!canAct || dismissing}
+              onClick={() => void dismissAll(page.runs)}
             >
-              Refresh
+              <CheckCheckIcon />
+              {dismissing ? "Dismissing…" : "Dismiss all shown"}
             </Button>
-          </div>
-        </div>
-        {query.error || error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {query.error ?? error}
-          </p>
-        ) : null}
+          ) : null
+        }
+      >
+        <LibraryErrorNotice
+          error={query.error ?? error}
+          {...(query.error ? { onRetry: query.refresh } : {})}
+        />
         {page === null ? (
           query.isPending ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              Loading the inbox…
-            </p>
+            <BotRowsSkeleton label="Loading the inbox" />
           ) : null
         ) : page.runs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {showDismissed
-              ? "No dismissed run."
-              : "Nothing needs you. Failed, timed out and undecided runs land here."}
-          </p>
+          <BotsEmptyList
+            icon={showDismissed ? ArchiveIcon : CheckCheckIcon}
+            message={
+              showDismissed
+                ? "No dismissed run."
+                : "Nothing needs you. Failed, timed out and undecided runs land here."
+            }
+          />
         ) : (
-          <ul className="grid gap-2">
+          <ul
+            className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
+          >
             {page.runs.map((run) => (
               <InboxRow key={run.id} environmentId={environmentId} run={run} canAct={canAct} />
             ))}
@@ -387,7 +488,7 @@ export function BotsInbox({
             Showing the newest {page.runs.length} of {page.total}.
           </p>
         ) : null}
-      </section>
+      </LibrarySection>
     </div>
   );
 }

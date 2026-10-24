@@ -1,4 +1,12 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import {
+  CheckIcon,
+  KeyRoundIcon,
+  LibraryBigIcon,
+  MonitorIcon,
+  MonitorSmartphoneIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import type { EnvironmentId, ProjectId, RuntimeMode } from "@t3tools/contracts";
 import type {
   BotDefinition,
@@ -17,10 +25,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LIBRARY_OUTLINE,
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryField,
+  LibraryNotice,
+  LibrarySection,
+  LibraryStateBadge,
+  LibraryStateDot,
+} from "../project-library/LibraryControls";
 import { VaultReferencePicker } from "../vault/ReferencePicker";
 import { Choice, RUNTIME_MODE_LABELS } from "./BotEditor";
 import { bots } from "./state";
@@ -133,12 +152,20 @@ export function BotTargetField({
   );
 }
 
+type SlotState = "loading" | "bound" | "unreadable" | "unbound";
+
+const SLOT_STATES = {
+  bound: { tone: "success", text: null },
+  unreadable: { tone: "danger", text: "Bound to an item this computer can no longer read" },
+  unbound: { tone: "warning", text: "Not bound on this computer" },
+} as const;
+
 function VaultSlotBinding({
   environmentId,
   bot,
   slot,
   itemLabel,
-  bound,
+  state,
   canChange,
   onChanged,
 }: {
@@ -146,7 +173,7 @@ function VaultSlotBinding({
   readonly bot: BotDefinition;
   readonly slot: BotVaultSlot;
   readonly itemLabel: string | null;
-  readonly bound: boolean;
+  readonly state: SlotState;
   readonly canChange: boolean;
   readonly onChanged: () => void;
 }) {
@@ -154,6 +181,7 @@ function VaultSlotBinding({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bind = useAtomCommand(bots.bindVaultSlot, { reportFailure: false });
+  const bound = state === "bound" || state === "unreadable";
 
   const setItem = async (itemId: string | null) => {
     setBusy(true);
@@ -174,27 +202,33 @@ function VaultSlotBinding({
   };
 
   return (
-    <li className="grid gap-1">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
+    <li className="flex min-w-0 flex-col gap-1 py-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <KeyRoundIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
           <p className="truncate">{slot.label}</p>
-          <p className="text-xs text-muted-foreground">
-            {bound
-              ? (itemLabel ?? "Bound to an item this computer can no longer read")
-              : "Not bound on this computer"}
-          </p>
+          {state === "loading" ? (
+            <Skeleton className="mt-1 h-2.5 w-32" />
+          ) : (
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <LibraryStateDot tone={SLOT_STATES[state].tone} className="size-1.5" />
+              <span className="truncate">{SLOT_STATES[state].text ?? itemLabel}</span>
+            </p>
+          )}
         </div>
-        <div className="flex gap-1">
+        <div className="flex shrink-0 gap-1">
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
-            disabled={!canChange || busy}
+            disabled={!canChange || busy || state === "loading"}
             onClick={() => setPicking(true)}
           >
             {bound ? "Change" : "Bind"}
           </Button>
           {bound ? (
             <Button
+              shape="pill"
               size="xs"
               variant="ghost"
               disabled={!canChange || busy}
@@ -206,7 +240,7 @@ function VaultSlotBinding({
         </div>
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
+        <p role="alert" className="ps-7 text-sm text-destructive-foreground">
           {error}
         </p>
       ) : null}
@@ -219,7 +253,7 @@ function VaultSlotBinding({
           title={`Bind ${slot.label}`}
           description={`Choose the Vault item ${bot.name} uses on this computer. It never leaves this computer.`}
           actions={
-            <Button variant="ghost" onClick={() => setPicking(false)}>
+            <Button shape="pill" variant="ghost" onClick={() => setPicking(false)}>
               Cancel
             </Button>
           }
@@ -232,6 +266,16 @@ function VaultSlotBinding({
         </LibraryDialog>
       ) : null}
     </li>
+  );
+}
+
+/** A titled stretch inside an outlined panel, set off by a hairline rather than its own box. */
+function PanelPart({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+  return (
+    <div className="border-t border-border px-4 py-2.5">
+      <h4 className="pt-0.5 text-xs font-medium text-muted-foreground">{label}</h4>
+      {children}
+    </div>
   );
 }
 
@@ -278,25 +322,36 @@ export function BotSharingPanel({
   // Most people have one computer and no Library; the panel would only be noise for them.
   if ((library === null || library === "none") && slots.length === 0) return null;
   return (
-    <section
-      className="grid gap-3 rounded-lg border border-border p-3 text-sm"
-      aria-label="Library"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="font-medium">Library</h3>
-          <p className="text-muted-foreground">
-            {library === null
-              ? "Checking the Library…"
-              : library !== "available"
+    <section className={cn(LIBRARY_OUTLINE, "overflow-hidden text-sm")} aria-label="Library">
+      <div className="flex min-w-0 items-center gap-3 px-4 py-3">
+        <span
+          aria-hidden
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+        >
+          <LibraryBigIcon className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="flex items-center gap-2 font-semibold">
+            Library
+            {library === "available" && bot.library != null ? (
+              <LibraryStateBadge tone="active">Shared</LibraryStateBadge>
+            ) : null}
+          </h3>
+          {library === null ? (
+            <Skeleton role="status" aria-label="Checking the Library" className="mt-1 h-3 w-56" />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {library !== "available"
                 ? LIBRARY_NOTICE[library]
                 : bot.library != null
                   ? `Shared with your other computers, revision ${bot.library.revision}.`
                   : "Only on this computer. Share it to run it on your other computers."}
-          </p>
+            </p>
+          )}
         </div>
         {library === "available" ? (
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
             disabled={!canChange || busy}
@@ -307,31 +362,46 @@ export function BotSharingPanel({
         ) : null}
       </div>
       {bot.library?.modelOverride ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           This computer runs it on {bot.library.modelOverride.model}; the Library keeps the shared
           model for the others.
         </p>
       ) : null}
       {library === "available" && others.length > 0 ? (
-        <ul className="grid gap-1" aria-label="Computers">
-          {others.map((target) => (
-            <li key={target.environmentId} className="flex flex-wrap justify-between gap-2">
-              <span className="truncate">{target.label}</span>
-              <span className="text-xs text-muted-foreground">{readinessText(target)}</span>
-            </li>
-          ))}
-        </ul>
+        <PanelPart label="Your other computers">
+          <ul aria-label="Computers" className="flex flex-col">
+            {others.map((target) => (
+              <li key={target.environmentId} className="flex min-w-0 items-center gap-3 py-2">
+                <MonitorIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{target.label}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <LibraryStateDot
+                    tone={target.ready ? "success" : "warning"}
+                    className="size-1.5"
+                  />
+                  <span className="truncate">{readinessText(target)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </PanelPart>
       ) : null}
       {slots.length > 0 ? (
-        <div className="grid gap-2">
-          <h4 className="text-xs font-medium text-muted-foreground">
-            Vault slots on this computer
-          </h4>
-          <ul className="grid gap-2">
+        <PanelPart label="Vault slots on this computer">
+          <ul className="flex flex-col">
             {slots.map((slot) => {
               const binding = bindingsQuery.data?.bindings.find(
                 (entry) => entry.slot === slot.name,
               );
+              const state: SlotState = !bindingsQuery.data
+                ? bindingsQuery.error
+                  ? "unbound"
+                  : "loading"
+                : binding?.itemId == null
+                  ? "unbound"
+                  : binding.itemLabel == null
+                    ? "unreadable"
+                    : "bound";
               return (
                 <VaultSlotBinding
                   key={slot.name}
@@ -339,7 +409,7 @@ export function BotSharingPanel({
                   bot={bot}
                   slot={slot}
                   itemLabel={binding?.itemLabel ?? null}
-                  bound={binding?.itemId != null}
+                  state={state}
                   canChange={canChange}
                   onChanged={() => {
                     bindingsQuery.refresh();
@@ -349,12 +419,12 @@ export function BotSharingPanel({
               );
             })}
           </ul>
-        </div>
+        </PanelPart>
       ) : null}
       {error ? (
-        <p role="alert" className="text-destructive-foreground">
-          {error}
-        </p>
+        <div className="border-t border-border px-4">
+          <LibraryErrorNotice error={error} />
+        </div>
       ) : null}
     </section>
   );
@@ -418,30 +488,45 @@ export function BotRemoteRunsSettings({
     });
 
   return (
-    <section className="grid gap-4 text-sm" aria-label="Remote runs">
-      <div className="grid gap-1">
-        <h3 className="font-medium">Remote runs</h3>
-        <p className="text-muted-foreground">
-          Let your other computers run shared bots here. Their runs show on this computer as
-          requested by the computer that sent them.
-        </p>
-      </div>
-      {settingsQuery.error ? (
-        <p role="alert" className="text-destructive-foreground">
-          {settingsQuery.error}
-        </p>
-      ) : null}
+    <LibrarySection
+      title="Remote runs"
+      icon={MonitorSmartphoneIcon}
+      action={
+        <Button
+          shape="pill"
+          size="xs"
+          variant="outline"
+          disabled={!canChange || busy}
+          onClick={() => void syncNow()}
+        >
+          <RefreshCwIcon />
+          Sync shared bots
+        </Button>
+      }
+    >
+      <p className="-mt-1 max-w-prose text-sm text-muted-foreground">
+        Let your other computers run shared bots here. Their runs show on this computer as requested
+        by the computer that sent them.
+      </p>
+      {notice ? <LibraryNotice icon={CheckIcon}>{notice}</LibraryNotice> : null}
+      <LibraryErrorNotice error={settingsQuery.error} onRetry={settingsQuery.refresh} />
       {settings ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex items-center gap-2">
+        <div className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border text-sm")}>
+          <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+            <span className="min-w-0 font-medium">Run bots for other computers</span>
             <Switch
               checked={settings.acceptRemote}
               disabled={!canChange || busy}
               onCheckedChange={(acceptRemote) => void change({ acceptRemote })}
             />
-            Run bots for other computers
           </label>
-          <LibraryField label="Highest permissions for their runs">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+            <label htmlFor="bots-remote-ceiling" className="min-w-0">
+              <span className="block font-medium">Highest permissions for their runs</span>
+              <span className="block text-xs text-muted-foreground">
+                A shared bot that needs more is refused here.
+              </span>
+            </label>
             <Choice
               id="bots-remote-ceiling"
               value={settings.runtimeModeCeiling}
@@ -450,25 +535,28 @@ export function BotRemoteRunsSettings({
               disabled={!canChange || busy}
               onChange={(runtimeModeCeiling) => void change({ runtimeModeCeiling })}
             />
-          </LibraryField>
+          </div>
         </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={!canChange || busy}
-          onClick={() => void syncNow()}
+      ) : settingsQuery.error ? null : (
+        <div
+          role="status"
+          aria-label="Loading remote run settings"
+          className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border")}
         >
-          Sync shared bots
-        </Button>
-        {notice ? <span className="text-muted-foreground">{notice}</span> : null}
-      </div>
-      {error ? (
-        <p role="alert" className="text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
-    </section>
+          {SETTING_SKELETONS.map((row) => (
+            <div key={row} className="flex items-center gap-4 px-4 py-3">
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-3.5 w-48" />
+                <Skeleton className="h-2.5 w-64" />
+              </div>
+              <Skeleton shape="pill" className="h-6 w-24" />
+            </div>
+          ))}
+        </div>
+      )}
+      <LibraryErrorNotice error={error} />
+    </LibrarySection>
   );
 }
+
+const SETTING_SKELETONS = ["accept", "ceiling"];

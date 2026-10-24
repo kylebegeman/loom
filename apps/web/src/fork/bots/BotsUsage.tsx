@@ -3,8 +3,20 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { BotBudgetState, BotUsageRow } from "@t3tools/contracts/fork";
 import { rollingBotsUsageWindow, type BotsChanges } from "@t3tools/client-runtime/fork";
 import { formatCount, formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
+import { ChartColumnIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
+import {
+  LIBRARY_OUTLINE,
+  LibraryErrorNotice,
+  LibraryFigure,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
+import { BotTile } from "./BotIdentity";
+import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
 import { formatDuration } from "./runMetrics";
 
@@ -51,32 +63,79 @@ export const budgetMeterText = (state: BotBudgetState) => {
 function UsageRow({
   row,
   share,
+  barWidth,
   phrase,
   atLeast,
   budget,
 }: {
   readonly row: BotUsageRow;
   readonly share: number | null;
+  /** The row's tokens against the busiest bot's, so the ranking reads at a glance. */
+  readonly barWidth: number;
   readonly phrase: string;
   readonly atLeast: boolean;
   readonly budget: BotBudgetState | undefined;
 }) {
+  const [open, setOpen] = useState(false);
   const verdicts = row.pass + row.fail + row.needsAttention > 0;
   const summary = [
     `${runsText(row.runs)} ${phrase}`,
     rateText({ successRate: row.successRate, verdicts }),
     row.medianDurationMs === null ? null : `${formatDuration(row.medianDurationMs)} median`,
-    share === null ? null : `${atLeast ? "at least " : ""}${formatPercent(share, 0)} of bot tokens`,
   ].filter((part) => part !== null);
+  const detailId = `bot-usage-${row.botId}`;
   return (
-    <li className="rounded-lg border border-border">
-      <details>
-        <summary className="cursor-pointer p-3">
-          <span className="font-medium">{row.botName}</span>
-          <span className="text-sm text-muted-foreground">: {summary.join(", ")}</span>
-        </summary>
-        <div className="grid gap-2 px-3 pb-3 text-sm">
-          <p className="text-muted-foreground">
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <BotTile bot={{ id: row.botId }} />
+        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium">{row.botName}</span>
+            {budget?.retryAt !== undefined ? (
+              <LibraryStateBadge tone="warning">At its limit</LibraryStateBadge>
+            ) : null}
+          </span>
+          <span className="truncate text-xs tabular-nums text-muted-foreground">
+            {summary.join(" · ")}
+          </span>
+          <span
+            aria-hidden
+            className="block h-1 overflow-hidden rounded-full bg-muted dark:bg-accent"
+          >
+            <span
+              className="block h-full rounded-full bg-(--project-color)"
+              style={{ width: `${barWidth * 100}%` }}
+            />
+          </span>
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-0.5 tabular-nums">
+          <span className="text-sm font-medium">
+            {row.usageComplete ? "" : "at least "}
+            {formatTokens(row.tokens.total)}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {share === null
+              ? "tokens"
+              : `${atLeast ? "at least " : ""}${formatPercent(share, 0)} of bot tokens`}
+          </span>
+        </span>
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open ? (
+        <div id={detailId} className="flex flex-col gap-3 px-4 pb-4 sm:ps-16">
+          <p className="text-sm text-muted-foreground">
             {formatCount(row.completed)} completed, {formatCount(row.failed)} failed,{" "}
             {formatCount(row.timedOut)} timed out, {formatCount(row.cancelled)} cancelled.
             {row.maxDurationMs === null
@@ -92,23 +151,34 @@ function UsageRow({
               : ""}
           </p>
           {budget ? (
-            <p className="text-muted-foreground">Budget: {budgetMeterText(budget)}</p>
+            <p className="text-sm text-muted-foreground">Budget: {budgetMeterText(budget)}</p>
           ) : null}
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
+            <caption className="sr-only">{row.botName} by model</caption>
             <thead className="text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1 font-normal">Model</th>
-                <th className="py-1 font-normal">Runs</th>
-                <th className="py-1 font-normal">{verdicts ? "Pass" : "Completed"}</th>
-                <th className="py-1 font-normal">Median</th>
-                <th className="py-1 font-normal">Tokens</th>
+              <tr className="border-b border-border">
+                <th scope="col" className="py-1.5 text-start font-normal">
+                  Model
+                </th>
+                <th scope="col" className="py-1.5 text-end font-normal">
+                  Runs
+                </th>
+                <th scope="col" className="py-1.5 text-end font-normal">
+                  {verdicts ? "Pass" : "Completed"}
+                </th>
+                <th scope="col" className="py-1.5 text-end font-normal">
+                  Median
+                </th>
+                <th scope="col" className="py-1.5 text-end font-normal">
+                  Tokens
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border/60">
               {row.byModel.map((model) => (
                 <tr key={`${model.assumed ? "assumed" : "recorded"}:${model.model}`}>
-                  <td className="py-1">
-                    {model.model}
+                  <td className="py-1.5 pe-3">
+                    <span className="font-mono text-xs">{model.model}</span>
                     {model.assumed ? (
                       <span className="text-xs text-muted-foreground">
                         {" "}
@@ -116,21 +186,40 @@ function UsageRow({
                       </span>
                     ) : null}
                   </td>
-                  <td className="py-1 tabular-nums">{formatCount(model.runs)}</td>
-                  <td className="py-1 tabular-nums">
+                  <td className="py-1.5 text-end tabular-nums">{formatCount(model.runs)}</td>
+                  <td className="py-1.5 text-end tabular-nums">
                     {model.successRate === null ? "-" : formatPercent(model.successRate, 0)}
                   </td>
-                  <td className="py-1 tabular-nums">
+                  <td className="py-1.5 text-end tabular-nums">
                     {model.medianDurationMs === null ? "-" : formatDuration(model.medianDurationMs)}
                   </td>
-                  <td className="py-1 tabular-nums">{formatTokens(model.totalTokens)}</td>
+                  <td className="py-1.5 text-end tabular-nums">
+                    {formatTokens(model.totalTokens)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </details>
+      ) : null}
     </li>
+  );
+}
+
+/** The usage panel's shape while its numbers load, so nothing jumps when they arrive. */
+function UsageSkeleton() {
+  return (
+    <div className="flex flex-col gap-6">
+      <div aria-hidden className="flex gap-5">
+        {["runs", "tokens", "bots"].map((figure) => (
+          <div key={figure} className="flex flex-col gap-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-7 w-20" />
+          </div>
+        ))}
+      </div>
+      <BotRowsSkeleton label="Loading usage" />
+    </div>
   );
 }
 
@@ -178,60 +267,86 @@ export function BotsUsage({
   const phrase = WINDOWS.find((entry) => entry.days === days)?.phrase ?? "";
   const data = query.data;
   const total = data?.totals.tokens.total ?? 0;
+  const busiest = Math.max(1, ...(data?.rows ?? []).map((row) => row.tokens.total));
+  const unfinished = (data?.rows ?? []).reduce((sum, row) => sum + row.failed + row.timedOut, 0);
 
   return (
-    <section className="space-y-3" aria-label="Usage">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1" role="group" aria-label="Window">
-          {WINDOWS.map((entry) => (
-            <Button
-              key={entry.days}
-              size="xs"
-              variant={days === entry.days ? "secondary" : "ghost"}
-              aria-pressed={days === entry.days}
-              onClick={() => choose(entry.days)}
-            >
-              {entry.label}
-            </Button>
-          ))}
-        </div>
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={!connected || query.isPending}
-          onClick={() => refetch(Date.now())}
-        >
-          Refresh
-        </Button>
-      </div>
-      {query.error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {query.error}
+    <section className="flex flex-col gap-6" aria-label="Usage">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">
+          Runs, outcomes, durations and tokens per bot.
         </p>
-      ) : null}
+        <div className="flex items-center gap-1.5">
+          <ToggleGroup
+            shape="pill"
+            variant="segmented"
+            aria-label="Window"
+            value={[String(days)]}
+            onValueChange={(next) => {
+              const entry = WINDOWS.find((option) => String(option.days) === next[0]);
+              if (entry) choose(entry.days);
+            }}
+          >
+            {WINDOWS.map((entry) => (
+              <ToggleGroupItem key={entry.days} value={String(entry.days)}>
+                {entry.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <Button
+            shape="pill"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh usage"
+            disabled={!connected || query.isPending}
+            onClick={() => refetch(Date.now())}
+          >
+            <RefreshCwIcon />
+          </Button>
+        </div>
+      </div>
+      <LibraryErrorNotice error={query.error} onRetry={() => refetch(Date.now())} />
       {data === null ? (
         query.isPending ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading usage…
-          </p>
+          <UsageSkeleton />
         ) : null
       ) : data.rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No bot ran {phrase}.</p>
+        <BotsEmptyList icon={ChartColumnIcon} message={`No bot ran ${phrase}.`} />
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
-            {runsText(data.totals.runs)} {phrase}, {data.totals.usageComplete ? "" : "at least "}
-            {formatTokens(total)} tokens.
-            {data.totals.usageComplete
-              ? ""
-              : " Some runs did not report all their tokens, so token figures are lower bounds."}
-          </p>
-          <ul className="grid gap-2">
+          <div className="flex flex-col gap-2">
+            <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
+              <LibraryFigure
+                label="Runs"
+                value={formatCount(data.totals.runs)}
+                detail={unfinished > 0 ? `${formatCount(unfinished)} failed or timed out` : phrase}
+              />
+              <LibraryFigure
+                label="Tokens"
+                value={formatTokens(total)}
+                detail={data.totals.usageComplete ? "Input and output" : "A lower bound"}
+              />
+              <LibraryFigure
+                label="Bots"
+                value={formatCount(data.rows.length)}
+                detail={`ran ${phrase}`}
+              />
+            </dl>
+            {data.totals.usageComplete ? null : (
+              <p className="text-xs text-muted-foreground">
+                Some runs did not report all their tokens, so token figures are lower bounds.
+              </p>
+            )}
+          </div>
+          <ul
+            className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
+          >
             {data.rows.map((row) => (
               <UsageRow
                 key={row.botId}
                 row={row}
                 share={total > 0 ? row.tokens.total / total : null}
+                barWidth={row.tokens.total / busiest}
                 phrase={phrase}
                 atLeast={!data.totals.usageComplete}
                 budget={data.budgets[row.botId]}

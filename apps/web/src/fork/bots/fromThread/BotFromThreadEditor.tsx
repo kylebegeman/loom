@@ -2,9 +2,11 @@ import { useEffect, useEffectEvent, useState } from "react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotDraftResult } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { CircleAlertIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog } from "../../project-library/LibraryControls";
+import { LibraryDialog, LibraryNotice } from "../../project-library/LibraryControls";
 import { BotEditor } from "../BotEditor";
 import { bots } from "../state";
 
@@ -96,20 +98,44 @@ export function BotFromThreadEditor({
       title="Save as bot"
       description="The thread's first message becomes the bot's instructions."
       actions={
-        <Button variant="ghost" onClick={onClose}>
+        <Button shape="pill" variant="ghost" onClick={onClose}>
           {loaded._tag === "failed" ? "Close" : "Cancel"}
         </Button>
       }
     >
       {loaded._tag === "failed" ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
+        <LibraryNotice icon={CircleAlertIcon} tone="danger">
           {loaded.message}
-        </p>
+        </LibraryNotice>
       ) : (
-        <p role="status" className="text-sm text-muted-foreground">
-          Drafting a bot from the thread…
-        </p>
+        <DraftSkeleton />
       )}
     </LibraryDialog>
   );
 }
+
+/** The editor's first fields, held in place while the draft arrives so the dialog keeps its size. */
+function DraftSkeleton() {
+  return (
+    <div role="status" aria-label="Drafting a bot from the thread" className="flex flex-col gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {DRAFT_FIELDS.map((field) => (
+          <div key={field} className="flex flex-col gap-2">
+            <Skeleton className="h-3.5 w-16" />
+            <Skeleton shape="card" className="h-9" />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-3.5 w-24" />
+        <Skeleton shape="card" className="h-9" />
+      </div>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-3.5 w-24" />
+        <Skeleton shape="card" className="h-40" />
+      </div>
+    </div>
+  );
+}
+
+const DRAFT_FIELDS = ["name", "id"];

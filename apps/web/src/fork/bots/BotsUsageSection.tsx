@@ -1,7 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, UsageSummaryInput } from "@t3tools/contracts";
+import { botColor } from "@t3tools/client-runtime/fork";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
+import { ArrowUpRightIcon } from "lucide-react";
+import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
+import { projectColorStyle } from "../project-library/ProjectIdentity";
+import { BotTile } from "./BotIdentity";
 import { bots, useBotsHost } from "./state";
 import { usagePageWindow } from "./usageWindow";
 
@@ -41,28 +46,47 @@ export function BotsUsageSection({
     totalTokens > 0
       ? `, ${complete ? "about" : "at least"} ${formatPercent(botTokens / totalTokens, 0)} of all tokens`
       : "";
+  const rows = data.rows.slice(0, TOP_BOTS);
+  const busiest = Math.max(1, ...rows.map((row) => row.tokens.total));
   return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2">
+    <section aria-label="Bots" className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-foreground">Bots</h2>
-        <Link to="/loom/bots" search={{ tab: "usage" }} className="text-xs underline">
+        <Button
+          shape="pill"
+          size="xs"
+          variant="ghost"
+          render={<Link to="/loom/bots" search={{ tab: "usage" }} />}
+        >
           Open Bots
-        </Link>
+          <ArrowUpRightIcon />
+        </Button>
       </div>
       <p className="text-sm text-muted-foreground">
         {complete ? "" : "At least "}
         {formatTokens(botTokens)} tokens from bot runs{share}.
       </p>
-      <ul className="grid gap-1 text-sm">
-        {data.rows.slice(0, TOP_BOTS).map((row) => (
-          <li key={row.botId} className="flex justify-between gap-4">
-            <span className="truncate">{row.botName}</span>
-            <span className="tabular-nums text-muted-foreground">
+      <ol className="flex flex-col gap-1">
+        {rows.map((row) => (
+          <li
+            key={row.botId}
+            style={projectColorStyle(botColor({ id: row.botId }))}
+            className="relative isolate flex min-w-0 items-center gap-2.5 overflow-hidden rounded-md px-2 py-1.5 text-sm"
+          >
+            {/* Each bot's share of the top bot's tokens, drawn behind its row in the bot's color. */}
+            <span
+              aria-hidden
+              className="absolute inset-y-0 start-0 -z-10 rounded-md bg-(--project-color)/10 dark:bg-(--project-color)/14"
+              style={{ width: `${(row.tokens.total / busiest) * 100}%` }}
+            />
+            <BotTile bot={{ id: row.botId }} size="sm" />
+            <span className="min-w-0 flex-1 truncate">{row.botName}</span>
+            <span className="shrink-0 text-xs font-medium tabular-nums">
               {formatTokens(row.tokens.total)}
             </span>
           </li>
         ))}
-      </ul>
+      </ol>
     </section>
   );
 }

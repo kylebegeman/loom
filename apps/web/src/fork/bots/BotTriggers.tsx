@@ -1,11 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { CopyIcon } from "lucide-react";
+import {
+  BadgeXIcon,
+  ChevronDownIcon,
+  ClockIcon,
+  CopyIcon,
+  EllipsisIcon,
+  FlaskConicalIcon,
+  MessageSquareIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  RotateCwIcon,
+  Trash2Icon,
+  WebhookIcon,
+  ZapIcon,
+  type LucideIcon,
+} from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
   BOTS_TRIGGER_FIRINGS_MAX_LIMIT,
   type BotDefinition,
   type BotTrigger,
+  type BotTriggerEventKind,
   type BotTriggerFiring,
 } from "@t3tools/contracts/fork";
 import {
@@ -16,21 +33,38 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
-import { Badge } from "~/components/ui/badge";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  LIBRARY_OUTLINE,
+  LibraryErrorNotice,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
 import { runTime } from "./BotIdentity";
+import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
 
 const FIRINGS_PAGE = Math.min(20, BOTS_TRIGGER_FIRINGS_MAX_LIMIT);
+
+const KIND_ICONS: Record<BotTriggerEventKind, LucideIcon> = {
+  "pull-request-checks-failing": BadgeXIcon,
+  "pull-request-opened": PullRequestGlyph.pullRequest,
+  "thread-settled": MessageSquareIcon,
+  "merge-conflict": PullRequestGlyph.conflicting,
+  webhook: WebhookIcon,
+  schedule: ClockIcon,
+};
 
 const errorText = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
@@ -65,17 +99,19 @@ function WebhookAddress({
       setError(errorText(squashAtomCommandFailure(result), "Could not rotate the address."));
   };
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <Input
-          readOnly
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
+        {/* Selects in one click, so an address that cannot be copied can still be taken by hand. */}
+        <code
           aria-label={`${trigger.name} address`}
-          value={address}
-          onFocus={(event) => event.currentTarget.select()}
-        />
+          className="min-w-0 flex-1 basis-64 select-all rounded-lg bg-muted/60 px-2.5 py-1.5 font-mono text-xs break-all text-foreground/90 dark:bg-accent/60"
+        >
+          {address}
+        </code>
         <Button
-          size="sm"
-          variant="outline"
+          shape="pill"
+          size="xs"
+          variant="ghost"
           disabled={!copyable}
           onClick={() => copyToClipboard(address, undefined)}
         >
@@ -83,18 +119,21 @@ function WebhookAddress({
           {isCopied ? "Copied" : "Copy"}
         </Button>
         <Button
-          size="sm"
-          variant="outline"
+          shape="pill"
+          size="xs"
+          variant="ghost"
           disabled={busy || !canOperate}
           onClick={() => void rotateAddress()}
         >
+          <RotateCwIcon />
           Rotate
         </Button>
       </div>
       {note !== null ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       {trigger.event.kind === "merge-conflict" ? (
         <p className="text-xs text-muted-foreground">
-          Set LOOM_BOTS_CONFLICT_HOOK to this address before running the fork integrate script.
+          Set <span className="font-mono">LOOM_BOTS_CONFLICT_HOOK</span> to this address before
+          running the fork integrate script.
         </p>
       ) : null}
       {error ? (
@@ -108,24 +147,31 @@ function WebhookAddress({
 
 function FiringList({ firings }: { readonly firings: ReadonlyArray<BotTriggerFiring> }) {
   if (firings.length === 0)
-    return <p className="text-sm text-muted-foreground">This trigger has not fired yet.</p>;
+    return <p className="py-1 text-xs text-muted-foreground">This trigger has not fired yet.</p>;
   return (
-    <ul className="space-y-1 text-sm">
+    <ol className="flex flex-col">
       {firings.map((firing) => (
-        <li key={firing.id} className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-xs text-muted-foreground">{runTime(firing.firedAt)}</span>
-          <span className="min-w-0 truncate">{firing.eventSummary}</span>
-          <Badge variant={firing.outcome === "run" ? "success" : "secondary"}>
+        <li
+          key={firing.id}
+          className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 text-sm"
+        >
+          <span className="w-20 shrink-0 text-xs tabular-nums text-muted-foreground">
+            {runTime(firing.firedAt)}
+          </span>
+          <span className="min-w-0 flex-1 basis-40 truncate">{firing.eventSummary}</span>
+          <LibraryStateBadge tone={firing.outcome === "run" ? "success" : "neutral"}>
             {firing.outcome === "run" ? "Ran" : "Skipped"}
-          </Badge>
+          </LibraryStateBadge>
           {firing.reason ? (
-            <span className="text-xs text-muted-foreground">{firing.reason}</span>
+            <span className="basis-full ps-23 text-xs text-muted-foreground">{firing.reason}</span>
           ) : null}
         </li>
       ))}
-    </ul>
+    </ol>
   );
 }
+
+const FIRING_SKELETON = ["first", "second", "third"];
 
 function TriggerFirings({
   environmentId,
@@ -139,17 +185,18 @@ function TriggerFirings({
   const query = useEnvironmentQuery(
     bots.triggerFirings({ environmentId, input: { triggerId: trigger.id, limit: FIRINGS_PAGE } }),
   );
-  if (query.error)
-    return (
-      <p role="alert" className="text-sm text-destructive-foreground">
-        {query.error}
-      </p>
-    );
+  if (query.error) return <LibraryErrorNotice error={query.error} onRetry={query.refresh} />;
   if (query.isPending && !query.data)
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        Loading firings…
-      </p>
+      <div role="status" aria-label="Loading firings" className="flex flex-col gap-2.5 py-1.5">
+        {FIRING_SKELETON.map((row) => (
+          <div key={row} className="flex items-center gap-3">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 flex-1" />
+            <Skeleton shape="pill" className="h-5 w-14" />
+          </div>
+        ))}
+      </div>
     );
   const firings = applyFiringChanges(query.data?.firings ?? [], changes, trigger.id);
   return (
@@ -227,7 +274,8 @@ function TestFiring({
     }
   };
   return (
-    <div className="space-y-2 rounded-lg border border-border p-3">
+    <section aria-label="Test firing" className="flex flex-col gap-2 border-t border-border pt-3">
+      <h4 className="text-xs font-medium text-muted-foreground">Test firing</h4>
       <p className="text-sm">
         Fire once with these event fields, past the trigger&apos;s filters and limits. This starts a
         real run.
@@ -238,11 +286,12 @@ function TestFiring({
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
-      <div className="flex gap-2">
-        <Button size="sm" disabled={busy || !canOperate} onClick={() => void fire()}>
+      <div className="flex gap-1.5">
+        <Button shape="pill" size="sm" disabled={busy || !canOperate} onClick={() => void fire()}>
+          <ZapIcon />
           {busy ? "Firing…" : "Fire"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onClose}>
+        <Button shape="pill" size="sm" variant="ghost" onClick={onClose}>
           Close
         </Button>
       </div>
@@ -252,7 +301,7 @@ function TestFiring({
           {error}
         </p>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -320,106 +369,171 @@ function TriggerRow({
     !trigger.followLatest &&
     trigger.followStable !== true &&
     bot.version !== trigger.pinnedVersion;
+  const KindIcon = KIND_ICONS[trigger.event.kind];
+  const timing = [
+    trigger.lastFiredAt ? `Last ran ${runTime(trigger.lastFiredAt)}` : "Has not run yet",
+    trigger.nextFireAt ? `next ${runTime(trigger.nextFireAt)}` : null,
+    `at most ${trigger.dailyLimit} a day`,
+    trigger.cooldownMinutes > 0 ? `${trigger.cooldownMinutes} minutes apart` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <li className="space-y-2 rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{trigger.name}</span>
-            {trigger.enabled ? null : <Badge variant="secondary">Off</Badge>}
+    <li className="flex min-w-0 flex-col gap-3 px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex size-9 shrink-0 items-center justify-center rounded-xl",
+            trigger.enabled
+              ? "bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+              : "bg-muted text-muted-foreground dark:bg-accent",
+          )}
+        >
+          <KindIcon className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1 basis-56">
+          <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className={cn(
+                "truncate text-sm font-medium",
+                !trigger.enabled && "text-muted-foreground",
+              )}
+            >
+              {trigger.name}
+            </span>
+            {trigger.enabled ? null : <LibraryStateBadge tone="neutral">Off</LibraryStateBadge>}
             {trigger.pipelineId != null ? (
-              <Badge variant="outline">Starts pipeline {trigger.pipelineId}</Badge>
+              <LibraryStateBadge tone="neutral">
+                Starts pipeline {trigger.pipelineId}
+              </LibraryStateBadge>
             ) : trigger.followLatest ? (
-              <Badge variant="outline">Latest version</Badge>
+              <LibraryStateBadge tone="neutral">Latest version</LibraryStateBadge>
             ) : trigger.followStable === true ? (
-              <Badge variant="outline">Stable version</Badge>
+              <LibraryStateBadge tone="neutral">Stable version</LibraryStateBadge>
             ) : null}
             {showBot ? (
-              <span className="text-xs text-muted-foreground">{bot?.name ?? "Deleted bot"}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {bot?.name ?? "Deleted bot"}
+              </span>
             ) : null}
-          </div>
-          <p className="text-sm text-muted-foreground">
+          </p>
+          <p
+            className={cn(
+              "truncate text-xs text-foreground/80",
+              trigger.event.kind === "schedule" && "font-mono",
+            )}
+          >
             {triggerSummary(trigger.event, projectTitle)}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {trigger.lastFiredAt ? `Last ran ${runTime(trigger.lastFiredAt)}` : "Has not run yet"}
-            {trigger.nextFireAt ? `, next ${runTime(trigger.nextFireAt)}` : ""}
-            {`. At most ${trigger.dailyLimit} a day`}
-            {trigger.cooldownMinutes > 0 ? `, ${trigger.cooldownMinutes} minutes apart.` : "."}
-          </p>
+          <p className="truncate text-xs tabular-nums text-muted-foreground">{timing}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-0.5">
           <Switch
             aria-label={trigger.enabled ? `Turn off ${trigger.name}` : `Turn on ${trigger.name}`}
             checked={trigger.enabled}
             disabled={busy || !canOperate}
             onCheckedChange={(enabled) => void toggle(enabled)}
           />
+          <span aria-hidden className="mx-1.5 h-4 border-s border-border" />
           <Button
+            shape="pill"
             size="xs"
             variant="ghost"
             disabled={!canOperate || bot === undefined}
             onClick={onEdit}
           >
+            <PencilIcon />
             Edit
           </Button>
           <Button
-            size="xs"
-            variant="ghost"
-            disabled={!canOperate}
-            onClick={() => setTesting((current) => !current)}
-          >
-            Test
-          </Button>
-          <Button
+            shape="pill"
             size="xs"
             variant="ghost"
             onClick={() => setShowFirings((current) => !current)}
             aria-expanded={showFirings}
           >
             Firings
+            <ChevronDownIcon
+              className={cn("transition-transform duration-200", showFirings && "rotate-180")}
+            />
           </Button>
-          <Button
-            size="xs"
-            variant="destructive-outline"
-            disabled={busy || !canOperate}
-            onClick={() => void deleteTrigger()}
-          >
-            Delete
-          </Button>
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  shape="pill"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`More actions for ${trigger.name}`}
+                />
+              }
+            >
+              <EllipsisIcon />
+            </MenuTrigger>
+            <MenuPopup side="bottom" align="end">
+              <MenuItem disabled={!canOperate} onClick={() => setTesting((current) => !current)}>
+                <FlaskConicalIcon />
+                {testing ? "Close test" : "Test"}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                variant="destructive"
+                disabled={busy || !canOperate}
+                onClick={() => void deleteTrigger()}
+              >
+                <Trash2Icon />
+                Delete
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
         </div>
       </div>
-      {outdated ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm" role="status">
-          <span>
-            Runs version {trigger.pinnedVersion}; {bot.name} is now version {bot.version}.
-          </span>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={busy || !canOperate}
-            onClick={() => void repinToCurrent()}
-          >
-            Use version {bot.version}
-          </Button>
+      {outdated || trigger.webhook !== undefined || testing || showFirings || error ? (
+        <div className="flex min-w-0 flex-col gap-3 ps-12">
+          {outdated ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-warning-foreground"
+            >
+              <span>
+                Runs version {trigger.pinnedVersion}; {bot.name} is now version {bot.version}.
+              </span>
+              <Button
+                shape="pill"
+                size="xs"
+                variant="outline"
+                disabled={busy || !canOperate}
+                onClick={() => void repinToCurrent()}
+              >
+                Use version {bot.version}
+              </Button>
+            </div>
+          ) : null}
+          <WebhookAddress environmentId={environmentId} trigger={trigger} canOperate={canOperate} />
+          {testing ? (
+            <TestFiring
+              environmentId={environmentId}
+              trigger={trigger}
+              canOperate={canOperate}
+              onClose={() => setTesting(false)}
+            />
+          ) : null}
+          {showFirings ? (
+            <section
+              aria-label="Firings"
+              className="flex flex-col gap-1 border-t border-border pt-3"
+            >
+              <h4 className="text-xs font-medium text-muted-foreground">Recent firings</h4>
+              <TriggerFirings environmentId={environmentId} trigger={trigger} changes={changes} />
+            </section>
+          ) : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive-foreground">
+              {error}
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      <WebhookAddress environmentId={environmentId} trigger={trigger} canOperate={canOperate} />
-      {testing ? (
-        <TestFiring
-          environmentId={environmentId}
-          trigger={trigger}
-          canOperate={canOperate}
-          onClose={() => setTesting(false)}
-        />
-      ) : null}
-      {showFirings ? (
-        <TriggerFirings environmentId={environmentId} trigger={trigger} changes={changes} />
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
       ) : null}
     </li>
   );
@@ -462,47 +576,56 @@ export function BotTriggers({
   }, [connected, refresh]);
   const triggers = applyTriggerChanges(query.data?.triggers ?? [], changes, selected?.id);
   const botOf = (botId: string) => allBots.find((bot) => bot.id === botId);
+  const newTrigger = selected ? (
+    <Button
+      shape="pill"
+      size="sm"
+      variant="outline"
+      disabled={!canOperate || selected.archivedAt !== null}
+      onClick={() => onNew(selected)}
+    >
+      <PlusIcon />
+      New trigger
+    </Button>
+  ) : null;
   return (
-    <section className="space-y-3" aria-label="Triggers">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-medium">{selected ? "Triggers" : "All triggers"}</h3>
-        <div className="flex gap-2">
-          {selected ? (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!canOperate || selected.archivedAt !== null}
-              onClick={() => onNew(selected)}
-            >
-              New trigger
-            </Button>
-          ) : null}
+    <section className="flex flex-col gap-4" aria-label="Triggers">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">
+          {selected
+            ? `What starts ${selected.name} on its own, and when it runs next.`
+            : "What starts each bot on its own, and when it runs next."}
+        </p>
+        <div className="flex items-center gap-1.5">
+          {triggers.length > 0 ? newTrigger : null}
           <Button
-            size="xs"
+            shape="pill"
+            size="icon-sm"
             variant="ghost"
+            aria-label="Refresh triggers"
             disabled={!connected || query.isPending}
             onClick={query.refresh}
           >
-            Refresh
+            <RefreshCwIcon />
           </Button>
         </div>
       </div>
       {query.error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {query.error}
-        </p>
+        <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
       ) : query.isPending && !query.data ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading triggers…
-        </p>
+        <BotRowsSkeleton label="Loading triggers" />
       ) : triggers.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {selected
-            ? `Nothing starts ${selected.name} on its own yet. Add a trigger to run it when checks fail, a pull request opens, a webhook arrives or on a schedule.`
-            : "No bot has a trigger yet. Choose a bot to add one."}
-        </p>
+        <BotsEmptyList
+          icon={ZapIcon}
+          message={
+            selected
+              ? `Nothing starts ${selected.name} on its own yet. Add a trigger to run it when checks fail, a pull request opens, a webhook arrives or on a schedule.`
+              : "No bot has a trigger yet. Choose a bot to add one."
+          }
+          action={newTrigger}
+        />
       ) : environmentId ? (
-        <ul className="grid gap-2">
+        <ul className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}>
           {triggers.map((trigger) => (
             <TriggerRow
               key={trigger.id}

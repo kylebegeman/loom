@@ -10,14 +10,30 @@ import {
 } from "@t3tools/contracts/fork";
 import { botVersionDiff } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
+import { formatTokens } from "@t3tools/shared/usageFormat";
+import {
+  BadgeCheckIcon,
+  GitCompareIcon,
+  HistoryIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
 import { useTheme } from "~/hooks/useTheme";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
+import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  LIBRARY_OUTLINE,
+  LibraryErrorNotice,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
 import { runTime } from "./BotIdentity";
+import { BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
 
 const SAVED_BY: Record<BotVersionSavedBy, string> = {
@@ -33,8 +49,8 @@ const versionStats = (version: BotVersionSummary) =>
     ...(version.passRate === null ? [] : [`${Math.round(version.passRate * 100)}% passed`]),
     ...(version.medianTotalTokens === null
       ? []
-      : [`${version.medianTotalTokens.toLocaleString()} tokens a run`]),
-  ].join(", ");
+      : [`${formatTokens(version.medianTotalTokens)} tokens a run`]),
+  ].join(" · ");
 
 /** What changed from one version to the next: a line diff of the brief, then other fields. */
 function VersionCompare({
@@ -73,22 +89,18 @@ function VersionCompare({
     [diff],
   );
   const error = older.error ?? newer.error;
-  if (error)
-    return (
-      <p role="alert" className="text-sm text-destructive-foreground">
-        {error}
-      </p>
-    );
+  if (error) return <LibraryErrorNotice error={error} />;
   if (!diff)
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        Loading versions…
-      </p>
+      <div role="status" aria-label="Loading versions" className="grid gap-2">
+        <Skeleton shape="card" className="h-32" />
+        <Skeleton className="h-3 w-1/3" />
+      </div>
     );
   return (
     <div className="grid gap-3" aria-label={`Changes from v${before} to v${after}`}>
       {instructions ? (
-        <div className="max-h-96 overflow-auto rounded-lg border text-xs">
+        <div className="max-h-96 overflow-auto rounded-xl border border-border text-xs">
           <FileDiff
             fileDiff={instructions}
             options={{
@@ -100,16 +112,16 @@ function VersionCompare({
         </div>
       ) : null}
       {diff.fields.length > 0 ? (
-        <dl className="grid gap-2 text-sm">
+        <dl className="grid gap-3 text-sm">
           {diff.fields.map((field) => (
-            <div key={field.field} className="grid gap-1">
-              <dt className="font-medium">{field.label}</dt>
+            <div key={field.field} className="grid gap-1.5">
+              <dt className="text-xs font-medium text-muted-foreground">{field.label}</dt>
               <dd className="grid gap-2 sm:grid-cols-2">
-                <pre className="whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
+                <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2.5 text-xs wrap-anywhere dark:bg-accent/60">
                   <span className="text-muted-foreground">Before: </span>
                   {field.before}
                 </pre>
-                <pre className="whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
+                <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2.5 text-xs wrap-anywhere dark:bg-accent/60">
                   <span className="text-muted-foreground">After: </span>
                   {field.after}
                 </pre>
@@ -119,7 +131,7 @@ function VersionCompare({
         </dl>
       ) : null}
       {!instructions && diff.fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground">These versions are the same.</p>
+        <p className="text-xs text-muted-foreground">These versions are the same.</p>
       ) : null}
     </div>
   );
@@ -186,69 +198,109 @@ function VersionRow({
     }, "Could not restore the version.");
 
   return (
-    <li className="grid gap-2 rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="font-medium">v{version.version}</span>
-          {current ? <Badge variant="secondary">Current</Badge> : null}
-          {stable ? <Badge variant="success">Stable</Badge> : null}
-          <span className="text-xs text-muted-foreground">
-            {SAVED_BY[version.savedBy]}
-            {version.restoredFrom === null ? "" : ` from v${version.restoredFrom}`} ·{" "}
-            {runTime(version.savedAt)}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {previous !== null ? (
-            <Button size="xs" variant="ghost" onClick={() => setComparing((open) => !open)}>
-              {comparing ? "Hide changes" : `Compare with v${previous}`}
-            </Button>
-          ) : null}
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={!canRun || archived}
-            onClick={() => onReplay(version.version)}
-          >
-            Replay
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={!canSave || busy || archived}
-            onClick={() => void toggleStable()}
-          >
-            {stable ? "Clear stable" : "Mark stable"}
-          </Button>
-          {current ? null : (
+    <li className="relative flex min-w-0 gap-3 px-4 py-3">
+      {/* The rail joins each version to the one it came from; the oldest has nothing below. */}
+      {previous !== null ? (
+        <span aria-hidden className="absolute start-6 top-6 -bottom-6 border-s border-border" />
+      ) : null}
+      <span
+        aria-hidden
+        className="relative mt-1 inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-background"
+      >
+        <span
+          className={cn(
+            "rounded-full",
+            stable
+              ? "size-3 bg-success ring-3 ring-success/20"
+              : current
+                ? "size-2.5 bg-(--project-color)"
+                : "size-2 bg-muted-foreground/45",
+          )}
+        />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1 basis-56">
+            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-sm font-semibold tabular-nums">v{version.version}</span>
+              {stable ? (
+                <LibraryStateBadge tone="success" icon={BadgeCheckIcon}>
+                  Stable
+                </LibraryStateBadge>
+              ) : null}
+              {current ? <LibraryStateBadge tone="active">Current</LibraryStateBadge> : null}
+              <span className="text-xs text-muted-foreground">
+                {SAVED_BY[version.savedBy]}
+                {version.restoredFrom === null ? "" : ` from v${version.restoredFrom}`} ·{" "}
+                {runTime(version.savedAt)}
+              </span>
+            </p>
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {version.changed.length > 0 ? `Changed ${version.changed.join(", ")}. ` : ""}
+              {versionStats(version)}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-0.5">
+            {previous !== null ? (
+              <Button
+                shape="pill"
+                size="xs"
+                variant="ghost"
+                aria-expanded={comparing}
+                onClick={() => setComparing((open) => !open)}
+              >
+                <GitCompareIcon />
+                {comparing ? "Hide changes" : `Compare with v${previous}`}
+              </Button>
+            ) : null}
             <Button
+              shape="pill"
+              size="xs"
+              variant="ghost"
+              disabled={!canRun || archived}
+              onClick={() => onReplay(version.version)}
+            >
+              <PlayIcon />
+              Replay
+            </Button>
+            <Button
+              shape="pill"
               size="xs"
               variant="ghost"
               disabled={!canSave || busy || archived}
-              onClick={() => void restoreThis()}
+              onClick={() => void toggleStable()}
             >
-              Restore
+              <BadgeCheckIcon />
+              {stable ? "Clear stable" : "Mark stable"}
             </Button>
-          )}
+            {current ? null : (
+              <Button
+                shape="pill"
+                size="xs"
+                variant="ghost"
+                disabled={!canSave || busy || archived}
+                onClick={() => void restoreThis()}
+              >
+                <RotateCcwIcon />
+                Restore
+              </Button>
+            )}
+          </div>
         </div>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive-foreground">
+            {error}
+          </p>
+        ) : null}
+        {comparing && previous !== null ? (
+          <VersionCompare
+            environmentId={environmentId}
+            botId={bot.id}
+            before={previous}
+            after={version.version}
+          />
+        ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {version.changed.length > 0 ? `Changed ${version.changed.join(", ")}. ` : ""}
-        {versionStats(version)}
-      </p>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
-      {comparing && previous !== null ? (
-        <VersionCompare
-          environmentId={environmentId}
-          botId={bot.id}
-          before={previous}
-          after={version.version}
-        />
-      ) : null}
     </li>
   );
 }
@@ -280,35 +332,33 @@ export function BotHistory({
   const versions = query.data?.versions ?? [];
 
   return (
-    <section className="space-y-3" aria-label="History">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="font-medium">History</h3>
-          <p className="text-xs text-muted-foreground">
-            Triggers that follow the stable version run it; without one they run the latest.
-          </p>
-        </div>
+    <section className="flex flex-col gap-4" aria-label="History">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">
+          Triggers that follow the stable version run it; without one they run the latest.
+        </p>
         <Button
-          size="xs"
+          shape="pill"
+          size="icon-sm"
           variant="ghost"
+          aria-label="Refresh history"
           disabled={!connected || query.isPending}
           onClick={query.refresh}
         >
-          Refresh
+          <RefreshCwIcon />
         </Button>
       </div>
       {query.error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {query.error}
-        </p>
+        <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
       ) : query.isPending && !query.data ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading versions…
-        </p>
+        <HistorySkeleton />
       ) : versions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No saved versions yet.</p>
+        <BotsEmptyList icon={HistoryIcon} message="No saved versions yet." />
       ) : (
-        <ul className="grid gap-2">
+        <ol
+          aria-label={`${bot.name} versions, newest first`}
+          className={cn(LIBRARY_OUTLINE, "flex flex-col py-1")}
+        >
           {versions.map((version, index) => (
             <VersionRow
               key={version.version}
@@ -321,7 +371,7 @@ export function BotHistory({
               onReplay={onReplay}
             />
           ))}
-        </ul>
+        </ol>
       )}
       {query.data?.hasMore ? (
         <p className="text-xs text-muted-foreground">
@@ -329,5 +379,29 @@ export function BotHistory({
         </p>
       ) : null}
     </section>
+  );
+}
+
+const SKELETON_VERSIONS = ["first", "second", "third"];
+
+/** Timeline-shaped rows while the versions load, so the panel keeps its height. */
+function HistorySkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading versions"
+      className={cn(LIBRARY_OUTLINE, "flex flex-col py-1")}
+    >
+      {SKELETON_VERSIONS.map((row) => (
+        <div key={row} className="flex items-start gap-3 px-4 py-3">
+          <Skeleton shape="pill" className="mt-1 size-4" />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Skeleton className="h-3.5 w-1/4" />
+            <Skeleton className="h-2.5 w-1/2" />
+          </div>
+          <Skeleton shape="pill" className="h-6 w-24" />
+        </div>
+      ))}
+    </div>
   );
 }

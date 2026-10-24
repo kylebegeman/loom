@@ -11,7 +11,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
-import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useProjects } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
@@ -124,10 +124,10 @@ export function BotTriggerEditor({
       description="A trigger runs the bot when something happens. Runs keep the bot's own limits."
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button shape="pill" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !canSave} onClick={() => void submit()}>
+          <Button shape="pill" disabled={busy || !canSave} onClick={() => void submit()}>
             {busy ? "Saving…" : "Save trigger"}
           </Button>
         </>
@@ -163,20 +163,22 @@ export function BotTriggerEditor({
             }
           />
         ) : null}
-        <Choice
-          label="When"
-          value={draft.kind}
-          options={
-            Object.entries(TRIGGER_KIND_LABELS) as ReadonlyArray<[BotTriggerEventKind, string]>
-          }
-          onChange={(kind) =>
-            update({
-              kind,
-              mapping: trigger === null ? guessMapping(target, kind) : draft.mapping,
-            })
-          }
-        />
-        <p className="-mt-2 text-xs text-muted-foreground">{KIND_HINTS[draft.kind]}</p>
+        <div className="grid gap-1.5">
+          <Choice
+            label="When"
+            value={draft.kind}
+            options={
+              Object.entries(TRIGGER_KIND_LABELS) as ReadonlyArray<[BotTriggerEventKind, string]>
+            }
+            onChange={(kind) =>
+              update({
+                kind,
+                mapping: trigger === null ? guessMapping(target, kind) : draft.mapping,
+              })
+            }
+          />
+          <p className="text-xs text-muted-foreground">{KIND_HINTS[draft.kind]}</p>
+        </div>
         {pullRequest || draft.kind === "thread-settled" ? (
           <Choice
             label="Project"
@@ -210,8 +212,8 @@ export function BotTriggerEditor({
         {draft.kind === "schedule" ? (
           <div className="grid gap-3">
             <ToggleGroup
-              variant="outline"
-              size="sm"
+              shape="pill"
+              variant="segmented"
               aria-label="Schedule"
               value={[draft.scheduleType]}
               onValueChange={(values) => {
@@ -219,8 +221,8 @@ export function BotTriggerEditor({
                 if (next === "interval" || next === "fixed_time") update({ scheduleType: next });
               }}
             >
-              <Toggle value="interval">Every interval</Toggle>
-              <Toggle value="fixed_time">At a time</Toggle>
+              <ToggleGroupItem value="interval">Every interval</ToggleGroupItem>
+              <ToggleGroupItem value="fixed_time">At a time</ToggleGroupItem>
             </ToggleGroup>
             {draft.scheduleType === "interval" ? (
               <LibraryField label="Every (minutes)">
@@ -232,26 +234,27 @@ export function BotTriggerEditor({
               </LibraryField>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <Input
-                  type="time"
-                  nativeInput
-                  aria-label="Time of day"
-                  className="w-32"
-                  value={draft.timeOfDay}
-                  onChange={(event) => update({ timeOfDay: event.target.value })}
-                />
+                <div className="w-32">
+                  <Input
+                    type="time"
+                    nativeInput
+                    aria-label="Time of day"
+                    value={draft.timeOfDay}
+                    onChange={(event) => update({ timeOfDay: event.target.value })}
+                  />
+                </div>
                 <ToggleGroup
                   multiple
-                  variant="outline"
-                  size="sm"
+                  shape="pill"
+                  variant="segmented"
                   aria-label="Days"
                   value={draft.weekdays.map(String)}
                   onValueChange={(values) => update({ weekdays: values.map(Number) })}
                 >
                   {WEEKDAY_LABELS.map((label, day) => (
-                    <Toggle key={label} value={String(day)}>
+                    <ToggleGroupItem key={label} value={String(day)}>
                       {label}
-                    </Toggle>
+                    </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
               </div>
@@ -260,7 +263,7 @@ export function BotTriggerEditor({
         ) : null}
         {draft.kind === "webhook" ? (
           <div className="grid gap-3">
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2.5 text-sm">
               <Switch checked={draft.signed} onCheckedChange={(signed) => update({ signed })} />
               Check an HMAC-SHA256 signature
             </label>
@@ -301,8 +304,9 @@ export function BotTriggerEditor({
           </div>
         ) : null}
         {target.parameters.length > 0 ? (
-          <fieldset className="grid gap-3">
-            <legend className="mb-2 text-sm font-medium">Inputs</legend>
+          <fieldset className="grid gap-3 border-t border-border pt-4">
+            {/* A floated legend joins the grid instead of cutting through the fieldset's rule. */}
+            <legend className="float-left w-full text-sm font-medium">Inputs</legend>
             {target.parameters.map((parameter) => {
               const entry = draft.mapping[parameter.name] ?? {
                 mode: "none" as const,
@@ -370,7 +374,7 @@ export function BotTriggerEditor({
             })}
           </fieldset>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
           <LibraryField label="Cooldown (minutes)">
             <Input
               inputMode="numeric"
@@ -403,7 +407,7 @@ export function BotTriggerEditor({
             onChange={(follow) => update({ follow })}
           />
         )}
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2.5 text-sm">
           <Switch checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} />
           On
         </label>
