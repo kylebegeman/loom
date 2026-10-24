@@ -152,17 +152,15 @@ function ProjectAccess({
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not update project access. Refresh access and try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not update project access. Refresh access and try again.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const findMatching = async () => {
     if (locked || !subjects || !matchingSupported || !canScan) return;

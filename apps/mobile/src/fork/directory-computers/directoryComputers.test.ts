@@ -19,7 +19,10 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import type { NativeIdentitySignIn } from "../library/nativeIdentitySignIn";
 import {
   connectDirectoryComputer,
+  directoryPairing,
+  directoryPairingAddress,
   directorySectionContent,
+  pairingFormChecks,
   type DirectoryConnectDependencies,
 } from "./directoryComputers";
 
@@ -259,5 +262,61 @@ describe("connecting a Library computer", () => {
       connectDirectoryComputer({ row, libraryEnvironmentId: LIBRARY }, cancelDeps),
     ).resolves.toEqual({ kind: "cancelled" });
     expect(cancelDeps.save).not.toHaveBeenCalled();
+  });
+});
+
+describe("pairing a Library computer", () => {
+  const step = (httpBaseUrl: string | null) =>
+    ({
+      kind: "pairing",
+      environmentId: BOOK,
+      httpBaseUrl,
+      reason: "library-issuer-unknown",
+      reasonText: "Loom could not confirm your Library's sign-in provider.",
+    }) as const;
+
+  it("expects the listed computer and offers no Identity sign-in", () => {
+    const pairing = directoryPairing(step("https://book.example.ts.net"));
+    expect(pairing.httpBaseUrl).toBe("https://book.example.ts.net");
+    expect(pairingFormChecks(pairing.params)).toEqual({
+      expectedEnvironmentId: BOOK,
+      offersIdentity: false,
+    });
+  });
+
+  it("leaves the address empty when every listed one reached another computer", () => {
+    expect(directoryPairing(step(null))).toEqual({
+      httpBaseUrl: "",
+      params: { libraryComputer: BOOK },
+    });
+  });
+
+  it("drops the computer's address once its form closes, and keeps any other pending address", () => {
+    let pending = "https://plain.example.ts.net";
+    const address = directoryPairingAddress((next) => {
+      pending = next;
+    });
+    address.close();
+    expect(pending).toBe("https://plain.example.ts.net");
+
+    address.open(directoryPairing(step("https://book.example.ts.net")));
+    expect(pending).toBe("https://book.example.ts.net");
+    address.close();
+    expect(pending).toBe("");
+
+    pending = "https://plain.example.ts.net";
+    address.close();
+    expect(pending).toBe("https://plain.example.ts.net");
+  });
+
+  it("leaves ordinary pairing and adding an address unchanged", () => {
+    expect(pairingFormChecks({})).toEqual({
+      expectedEnvironmentId: undefined,
+      offersIdentity: true,
+    });
+    expect(pairingFormChecks({ routeFor: STUDIO })).toEqual({
+      expectedEnvironmentId: STUDIO,
+      offersIdentity: true,
+    });
   });
 });

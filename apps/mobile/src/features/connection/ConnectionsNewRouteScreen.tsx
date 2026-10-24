@@ -32,8 +32,11 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { splitEnvironmentSections } from "./environmentSections";
+// fork: directory-computers
+import { pairingFormChecks } from "../../fork/directory-computers/directoryComputers";
 
 type ConnectionsNewRouteParams = {
+  readonly libraryComputer?: EnvironmentId; // fork: directory-computers
   readonly mode?: string;
   readonly pairingUrl?: string;
   readonly autoConnect?: string;
@@ -163,7 +166,11 @@ export function ConnectionsNewRouteScreen({
   const connectAndClose = async (pairingUrl: string) => {
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    const result = await onConnectPress(pairingUrl, params.routeFor);
+    // fork: directory-computers
+    const result = await onConnectPress(
+      pairingUrl,
+      pairingFormChecks(params).expectedEnvironmentId,
+    );
     setIsSubmitting(false);
     void Haptics.notificationAsync(
       AsyncResult.isSuccess(result)
@@ -293,23 +300,26 @@ export function ConnectionsNewRouteScreen({
             </Text>
           </View>
 
-          <View className="gap-2 px-4">
-            <Text className="text-sm text-foreground-muted">
-              If this computer has Identity configured, use its address to sign in without a pairing
-              code.
-            </Text>
-            <Button
-              label="Sign in with Identity"
-              tone="text"
-              disabled={isSubmitting}
-              onPress={() =>
-                navigation.navigate("IdentitySignIn", {
-                  ...(hostInput.trim() ? { address: hostInput.trim() } : {}),
-                  ...(params.routeFor ? { environmentId: params.routeFor } : {}),
-                })
-              }
-            />
-          </View>
+          {/* fork: directory-computers */}
+          {pairingFormChecks(params).offersIdentity ? (
+            <View className="gap-2 px-4">
+              <Text className="text-sm text-foreground-muted">
+                If this computer has Identity configured, use its address to sign in without a
+                pairing code.
+              </Text>
+              <Button
+                label="Sign in with Identity"
+                tone="text"
+                disabled={isSubmitting}
+                onPress={() =>
+                  navigation.navigate("IdentitySignIn", {
+                    ...(hostInput.trim() ? { address: hostInput.trim() } : {}),
+                    ...(params.routeFor ? { environmentId: params.routeFor } : {}),
+                  })
+                }
+              />
+            </View>
+          ) : null}
           <Button
             label={params.routeFor ? "Add connection address" : "Connect computer"}
             tone="primary"

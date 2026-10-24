@@ -37,7 +37,7 @@ const signInStep: LibraryComputerSignInStep = {
   surface: "browser",
   environmentId: STUDIO,
   route: ROUTE,
-  request: { httpBaseUrl: ROUTE.url, expectedEnvironmentId: STUDIO },
+  request: { httpBaseUrl: ROUTE.url, expectedEnvironmentId: STUDIO, expectedIssuer: ISSUER },
   issuer: ISSUER,
 };
 
@@ -127,6 +127,8 @@ it("signs in natively on desktop in one click and refuses a session from another
   const input = connect.mock.calls[0]![0];
   expect(input.popup).toBeUndefined();
   expect(input.httpBaseUrl).toBe(ROUTE.url);
+  // The pin reaches desktop main, which refuses another provider before the browser opens.
+  expect(input.expectedIssuer).toBe(ISSUER);
   verifyRefusesOtherIssuer(input);
 });
 
@@ -142,6 +144,7 @@ it("signs in from a browser in the window opened by the second click", async () 
   const input = connect.mock.calls[0]![0];
   expect(input.popup).toBe(popup);
   expect(popup.close).toHaveBeenCalled();
+  expect(input.expectedIssuer).toBe(ISSUER);
   verifyRefusesOtherIssuer(input);
 });
 

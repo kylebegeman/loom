@@ -5,6 +5,7 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
+import { EnvironmentNotRegisteredError } from "../connection/registry.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { storedDirectoryListing, type StoredDirectoryListing } from "./directory-cache.ts";
 import { directoryComputersView } from "./directory-computers-view.ts";
@@ -100,6 +101,18 @@ describe("directoryComputersView", () => {
       AsyncResult.failure(Cause.fail(new DirectoryError({ reason: "not-authority" }))),
     );
     expect(shown.error).toBe("The computer set as your Library does not keep a computer list.");
+  });
+
+  it("says the Library is not saved here when its connection was removed from this device", () => {
+    const shown = view(
+      AsyncResult.failure(
+        Cause.fail(new EnvironmentNotRegisteredError({ environmentId: LIBRARY })),
+      ),
+    );
+    expect(shown).toMatchObject({
+      status: "failed",
+      error: "Your Library is not saved on this device.",
+    });
   });
 
   it("shows the kept listing while the first read runs", () => {

@@ -30,7 +30,7 @@ function setup(settings = metadata) {
   const popup = {
     closed: false,
     close: vi.fn(),
-    location: { replace: (url: string) => navigation.resolve(url) },
+    location: { replace: vi.fn((url: string) => navigation.resolve(url)) },
   };
   vi.stubGlobal("window", {
     location: { origin: "https://app.example.test" },
@@ -177,6 +177,26 @@ it("rejects saved environment and issuer changes before opening account authoriz
       test.popup as unknown as Window,
     ),
   ).rejects.toThrow("provider changed");
+});
+
+it("pins a directory computer to the Library's issuer before the window reaches its provider", async () => {
+  const moved = setup();
+  await expect(
+    signInToLoomBrowser(
+      { httpBaseUrl: origin, expectedIssuer: "https://library-id.test" },
+      moved.popup as unknown as Window,
+    ),
+  ).rejects.toThrow("different sign-in provider than your Library");
+  expect(moved.popup.location.replace).not.toHaveBeenCalled();
+  expect(moved.popup.close).toHaveBeenCalled();
+
+  const kept = setup();
+  const result = signInToLoomBrowser(
+    { httpBaseUrl: origin, expectedIssuer: metadata.issuer! },
+    kept.popup as unknown as Window,
+  );
+  kept.send(await kept.navigation.promise);
+  await expect(result).resolves.toMatchObject({ identity: { issuer: metadata.issuer } });
 });
 
 it("revokes the current same-origin cookie session and surfaces logout failure", async () => {

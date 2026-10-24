@@ -97,7 +97,12 @@ describe("resolveDirectoryConnect", () => {
         surface: "native",
         environmentId: BOOK,
         route: { kind: "tailnet", url: TAILNET },
-        request: { httpBaseUrl: TAILNET, expectedEnvironmentId: BOOK, expectedIdentity: ACCOUNT },
+        request: {
+          httpBaseUrl: TAILNET,
+          expectedEnvironmentId: BOOK,
+          expectedIssuer: LIBRARY_ISSUER,
+          expectedIdentity: ACCOUNT,
+        },
         issuer: LIBRARY_ISSUER,
       });
     }),
@@ -178,11 +183,12 @@ describe("resolveDirectoryConnect", () => {
         pairedLibrary,
       );
       expect(requested).toEqual([PUBLIC, LIBRARY_URL]);
-      // No account to pin, so the sign-in carries none; the issuer check stays with the caller.
+      // No account to pin, but the sign-in still refuses another provider before it opens.
       expect(step).toMatchObject({ kind: "sign-in", issuer: LIBRARY_ISSUER });
       expect(step?.kind === "sign-in" ? step.request : null).toEqual({
         httpBaseUrl: PUBLIC,
         expectedEnvironmentId: BOOK,
+        expectedIssuer: LIBRARY_ISSUER,
       });
     }),
   );
@@ -245,7 +251,12 @@ describe("directorySignInMismatch", () => {
     surface: "native",
     environmentId: BOOK,
     route: { kind: "public", url: PUBLIC },
-    request: { httpBaseUrl: PUBLIC, expectedEnvironmentId: BOOK, expectedIdentity: ACCOUNT },
+    request: {
+      httpBaseUrl: PUBLIC,
+      expectedEnvironmentId: BOOK,
+      expectedIssuer: LIBRARY_ISSUER,
+      expectedIdentity: ACCOUNT,
+    },
     issuer: LIBRARY_ISSUER,
   };
 

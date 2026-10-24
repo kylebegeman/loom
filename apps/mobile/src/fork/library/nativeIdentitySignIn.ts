@@ -22,10 +22,20 @@ import {
   type IdentityOptions,
 } from "./libraryIdentity";
 
-/** Matches the Identity sign-in screen: long enough for a passkey, bounded if the sheet hangs. */
+/** Long enough for a passkey, bounded if the provider sheet hangs. */
 const SIGN_IN_TIMEOUT_MS = 300_000;
 
 export type NativeIdentitySignIn = Awaited<ReturnType<typeof completeNativeIdentitySignIn>>;
+
+/** Callers word the progress for their own surface. */
+export type NativeIdentitySignInStage = "signing-in" | "verifying";
+
+/** The sign-in outlived its time limit and its sheet was closed. */
+export class NativeIdentitySignInExpired extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Sign-in expired. Try again.", options);
+  }
+}
 
 function dismissSignInSheet() {
   try {
@@ -42,11 +52,13 @@ function dismissSignInSheet() {
  */
 export async function signInWithNativeIdentity(input: {
   readonly httpBaseUrl: string;
-  readonly expectedEnvironmentId: EnvironmentId;
+  /** Refuses an address that reaches another computer. Absent when adding a new one. */
+  readonly expectedEnvironmentId?: EnvironmentId | undefined;
   readonly options: Omit<IdentityOptions, "signal">;
-  readonly label: string;
+  /** The saved connection's name. Defaults to the address's host name. */
+  readonly label?: string | undefined;
   readonly signal: AbortSignal;
-  readonly onProgress: (text: string) => void;
+  readonly onProgress: (stage: NativeIdentitySignInStage) => void;
 }): Promise<NativeIdentitySignIn | null> {
   if (input.signal.aborted) return null;
   const abort = new AbortController();
@@ -83,13 +95,13 @@ export async function signInWithNativeIdentity(input: {
       scopes: [...nativeIdentityScopes(metadata)],
       extraParams: nativeIdentityAuthorizationParameters(metadata),
     });
-    input.onProgress("Signing in...");
+    input.onProgress("signing-in");
     const result = await auth.promptAsync(discovery);
     if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
     if (result.type === "cancel" || result.type === "dismiss") return null;
     if (result.type !== "success" || !result.params.code || !auth.codeVerifier)
       throw new Error("Account sign-in did not complete. Try again.");
-    input.onProgress("Verifying...");
+    input.onProgress("verifying");
     const account = await exchangeCodeAsync(
       {
         clientId: metadata.nativeClientId,
@@ -108,13 +120,13 @@ export async function signInWithNativeIdentity(input: {
       metadata,
       discovery,
       tokens: account,
-      label: input.label,
+      label: input.label ?? new URL(destination.httpBaseUrl).hostname,
       options,
       request: fetch,
       now: Date.now,
     });
   } catch (cause) {
-    if (expired) throw new Error("Sign-in expired. Try again.", { cause });
+    if (expired) throw new NativeIdentitySignInExpired({ cause });
     if (abort.signal.aborted) return null;
     throw cause;
   } finally {

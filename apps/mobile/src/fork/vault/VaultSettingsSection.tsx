@@ -39,6 +39,10 @@ const encodeFile = Schema.encodeSync(Schema.fromJsonString(VaultFileContent));
 const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(VaultFileContent));
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "The Vault operation failed. Try again.";
+// Outside the component because the React Compiler cannot lower conditionals inside try/catch.
+const removeCacheCopy = (file: File | undefined) => {
+  if (file?.uri.startsWith(Paths.cache.uri) && file.exists) file.delete();
+};
 
 export function VaultSettingsSection({
   environmentId,
@@ -115,13 +119,9 @@ function VaultItems({
     if (busy || !connected) return;
     setBusy(true);
     setError(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const change = (item: VaultItemSummary, action: "archive" | "restore" | "delete") =>
     act(async () => {
@@ -170,11 +170,7 @@ function VaultItems({
             file.write(decoded.value.base64, { encoding: "base64" });
           },
         });
-        try {
-          await preview?.share(controller.signal);
-        } finally {
-          preview?.dispose();
-        }
+        if (preview) await preview.share(controller.signal).finally(() => preview.dispose());
       } else setRevealed({ id: item.id, value });
     });
   return (
@@ -366,7 +362,9 @@ function VaultEditor({
   const pickFile = async () => {
     let file: File | undefined;
     setBusy(true);
-    try {
+    // Stands in for try/finally, which the React Compiler cannot lower. Every return and throw,
+    // synchronous ones included, still reaches the cleanup.
+    await (async () => {
       const selection = await DocumentPicker.getDocumentAsync({
         multiple: false,
         copyToCacheDirectory: true,
@@ -389,43 +387,41 @@ function VaultEditor({
       if (!label) setLabel(asset.name);
       changed();
       setError(null);
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-      try {
-        if (file?.uri.startsWith(Paths.cache.uri) && file.exists) file.delete();
-      } catch {
-        setError(
-          "The imported cache copy could not be removed. Clear the app cache when finished.",
-        );
-      }
-    }
+    })()
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => {
+        setBusy(false);
+        try {
+          removeCacheCopy(file);
+        } catch {
+          setError(
+            "The imported cache copy could not be removed. Clear the app cache when finished.",
+          );
+        }
+      });
   };
   const save = async () => {
     if (busy || !connected || !allowed) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await saveItem({
-        environmentId,
-        input: {
-          id,
-          operationId,
-          expectedVersion: item?.version ?? 0,
-          label,
-          kind,
-          ...(replace ? { value: Redacted.make(value) } : {}),
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setValue("");
-      onSaved();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await saveItem({
+      environmentId,
+      input: {
+        id,
+        operationId,
+        expectedVersion: item?.version ?? 0,
+        label,
+        kind,
+        ...(replace ? { value: Redacted.make(value) } : {}),
+      },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setValue("");
+        onSaved();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   return (
     <Sheet

@@ -98,20 +98,20 @@ function Imports({
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
-      const next = await work();
-      setResult(next);
-      if (!["prepared", "applying"].includes(next.plan.state)) setValue("");
-      list.refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Import failed. Refresh its status before retrying.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .then((next) => {
+        setResult(next);
+        if (!["prepared", "applying"].includes(next.plan.state)) setValue("");
+        list.refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Import failed. Refresh its status before retrying.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const reset = () => {
     setResult(null);

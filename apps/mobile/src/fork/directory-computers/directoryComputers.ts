@@ -87,6 +87,62 @@ export type DirectoryConnectOutcome =
   | { readonly kind: "cancelled" }
   | { readonly kind: "failed"; readonly message: string };
 
+/** The pairing form's route params that decide what it checks. */
+export interface PairingFormParams {
+  readonly routeFor?: EnvironmentId;
+  /**
+   * A computer the Library lists. Set only from a directory row; a deep link that sets it only
+   * narrows what the form accepts.
+   */
+  readonly libraryComputer?: EnvironmentId;
+}
+
+/** What opens the pairing form when a listed computer cannot use Loom Identity. */
+export interface DirectoryPairing {
+  /** The shared pending pairing address. Empty when every listed address reached another computer. */
+  readonly httpBaseUrl: string;
+  readonly params: { readonly libraryComputer: EnvironmentId };
+}
+
+export function directoryPairing(step: PairingStep): DirectoryPairing {
+  return { httpBaseUrl: step.httpBaseUrl ?? "", params: { libraryComputer: step.environmentId } };
+}
+
+/**
+ * Holds a listed computer's address in the shared pending pairing address only while its pairing
+ * form is open. The plain "Connect computer" form reads the same address and offers Identity
+ * sign-in with no issuer pin, so it must not reopen on a computer the Library's check refused.
+ * A pending address left by any other form stays.
+ */
+export function directoryPairingAddress(setPendingAddress: (address: string) => void) {
+  let open = false;
+  return {
+    open: (pairing: DirectoryPairing) => {
+      open = true;
+      setPendingAddress(pairing.httpBaseUrl);
+    },
+    /** Once the screen that opened the form is shown again or goes away. */
+    close: () => {
+      if (!open) return;
+      open = false;
+      setPendingAddress("");
+    },
+  };
+}
+
+/**
+ * For a listed computer the form expects that computer, so an address reaching another one is
+ * refused before the pairing code is sent. It also drops "Sign in with Identity", which has no
+ * issuer pin: a listed computer signs in with Identity only through the Library's issuer check,
+ * which this one did not pass. Without the param the form is unchanged.
+ */
+export function pairingFormChecks(params: PairingFormParams) {
+  return {
+    expectedEnvironmentId: params.routeFor ?? params.libraryComputer,
+    offersIdentity: params.libraryComputer === undefined,
+  };
+}
+
 /** One computer's native sign-in, with the checks the directory requires. */
 export interface DirectorySignInRequest {
   readonly httpBaseUrl: string;

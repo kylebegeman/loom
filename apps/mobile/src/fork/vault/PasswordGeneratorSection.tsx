@@ -67,14 +67,15 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
     if (password === null || copying) return;
     setCopying(true);
     setError(null);
-    try {
-      if (!(await copyLocalVaultPassword(password))) throw new Error("Copy failed.");
-      setCopied(true);
-    } catch {
-      setError("The password could not be copied. Reveal it to copy manually, or try again.");
-    } finally {
-      setCopying(false);
-    }
+    await copyLocalVaultPassword(password)
+      .then((copied) => {
+        if (!copied) throw new Error("Copy failed.");
+        setCopied(true);
+      })
+      .catch(() => {
+        setError("The password could not be copied. Reveal it to copy manually, or try again.");
+      })
+      .finally(() => setCopying(false));
   };
   return (
     <Sheet title="Generate a password" onClose={onClose}>

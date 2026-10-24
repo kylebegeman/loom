@@ -1,9 +1,9 @@
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, RefreshControl, View } from "react-native";
 import { useAuth } from "@clerk/expo";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -32,6 +32,10 @@ import {
   DirectoryComputersSection,
   useDirectoryComputers,
 } from "../directory-computers/DirectoryComputersSection";
+import {
+  directoryPairingAddress,
+  type DirectoryPairing,
+} from "../directory-computers/directoryComputers";
 
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
@@ -74,16 +78,20 @@ export function ConnectionsScreen() {
     }
   }
 
-  // The pairing form reads the shared pending address when it opens.
+  // The pairing form reads the shared pending address when it opens. A Library row's form opens
+  // above this screen, so coming back here, or leaving, means that form has closed.
+  const [directoryAddress] = useState(() => directoryPairingAddress(onChangeConnectionPairingUrl));
+  useFocusEffect(directoryAddress.close);
+  useEffect(() => directoryAddress.close, [directoryAddress]);
   const pairDirectoryComputer = useCallback(
-    (httpBaseUrl: string) => {
-      onChangeConnectionPairingUrl(httpBaseUrl);
+    (pairing: DirectoryPairing) => {
+      directoryAddress.open(pairing);
       navigation.navigate("SettingsSheet", {
         screen: "SettingsContent",
-        params: { screen: "SettingsEnvironmentNew" },
+        params: { screen: "SettingsEnvironmentNew", params: pairing.params },
       });
     },
-    [navigation, onChangeConnectionPairingUrl],
+    [directoryAddress, navigation],
   );
 
   const openEnvironment = useCallback(

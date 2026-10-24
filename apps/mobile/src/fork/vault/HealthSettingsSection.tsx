@@ -107,16 +107,14 @@ function Inbox({
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      await work();
-      snapshot.refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not update health. Refresh and retry.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .then(() => snapshot.refresh())
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : "Could not update health. Refresh and retry.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const change = async (change: VaultHealthMutation["change"]) => {
     if (!snapshotData) return;

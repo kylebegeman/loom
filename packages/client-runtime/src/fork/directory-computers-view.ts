@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 
 import type { EnvironmentConnectionPresentation } from "../connection/presentation.ts";
+import { EnvironmentNotRegisteredError } from "../connection/registry.ts";
 import {
   directoryCatalogRows,
   type DirectoryCatalogRow,
@@ -46,6 +47,7 @@ const LIBRARY_UNREACHABLE = "Your Library is not reachable right now.";
 
 const isDirectoryError = Schema.is(DirectoryError);
 const isAuthorizationError = Schema.is(EnvironmentAuthorizationError);
+const isUnregistered = Schema.is(EnvironmentNotRegisteredError);
 
 const fetchedAtMs = (stored: StoredDirectoryListing | null) =>
   stored === null ? Number.NEGATIVE_INFINITY : Date.parse(stored.fetchedAt);
@@ -59,6 +61,8 @@ export function directoryListingErrorText(cause: Cause.Cause<unknown>): string {
       : "Your Library could not read its computer list. Try again.";
   if (isAuthorizationError(error))
     return "This device is not allowed to read your Library's computer list.";
+  // The Library stays chosen after this device removes its connection, which the read runs on.
+  if (isUnregistered(error)) return "Your Library is not saved on this device.";
   const tag =
     typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : null;
   if (

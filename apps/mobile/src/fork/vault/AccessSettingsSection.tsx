@@ -118,15 +118,13 @@ function AccessManager({
   const preview = async (input: VaultGrantMutation) => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await previewCommand({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setPending({ input, preview: result.value });
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await previewCommand({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setPending({ input, preview: result.value });
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   return (
     <View className="gap-3">
@@ -429,34 +427,30 @@ function GrantEditor({
     }
     setBusy(true);
     setError(null);
-    try {
-      const input: VaultGrantMutation = {
-        operationId,
-        expectedRevision: revision,
-        change: { type: "save", grant: definition.value },
-      };
-      const result = await previewCommand({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setPending({ input, preview: result.value });
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    const input: VaultGrantMutation = {
+      operationId,
+      expectedRevision: revision,
+      change: { type: "save", grant: definition.value },
+    };
+    await previewCommand({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setPending({ input, preview: result.value });
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const apply = async () => {
     if (!pending) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await applyCommand({ environmentId, input: pending.input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      onSaved();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await applyCommand({ environmentId, input: pending.input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        onSaved();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   return (
     <Sheet
@@ -710,15 +704,13 @@ function MutationSheet({
   const apply = async () => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await applyCommand({ environmentId, input: pending.input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      onSaved();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await applyCommand({ environmentId, input: pending.input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        onSaved();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   return (
     <Sheet title="Review grant change" dismissible={!busy} onClose={onClose}>
@@ -789,7 +781,9 @@ function AccessCheck({
     setReport(null);
     setExplanation(null);
     setError(null);
-    try {
+    // Stands in for try/finally, which the React Compiler cannot lower. Every return and throw,
+    // synchronous ones included, still reaches the cleanup.
+    await (async () => {
       const input = {
         threadId: ThreadId.make(principal.slice("thread:".length)),
         itemId,
@@ -822,16 +816,18 @@ function AccessCheck({
       );
       if (ready._tag === "Failure") throw squashAtomCommandFailure(ready);
       setReport(ready.value);
-    } catch (cause) {
-      setError(
-        cancellation.signal.aborted
-          ? "Check cancelled. Run it again for a fresh result."
-          : message(cause),
-      );
-    } finally {
-      setController(null);
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(
+          cancellation.signal.aborted
+            ? "Check cancelled. Run it again for a fresh result."
+            : message(cause),
+        );
+      })
+      .finally(() => {
+        setController(null);
+        setBusy(false);
+      });
   };
   return (
     <View className="gap-3 rounded-2xl bg-subtle p-3">

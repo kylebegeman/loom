@@ -208,13 +208,9 @@ function ProfileManager({
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const apply = (change: VaultProfileMutation["change"]) =>
     act(async () => {

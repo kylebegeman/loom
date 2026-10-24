@@ -106,17 +106,15 @@ function Inventory({
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not update migration planning. Refresh and retry.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not update migration planning. Refresh and retry.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const planAct = (work: () => Promise<VaultReplacementResult>) =>
     act(async () => {

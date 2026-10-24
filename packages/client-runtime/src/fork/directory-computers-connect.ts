@@ -114,7 +114,8 @@ export type DirectoryConnectStep =
       readonly route: DirectoryRoute;
       /**
        * For desktop's `signInToLoom`, the browser popup sign-in or the phone's native sign-in.
-       * It carries the Library account when known, so the sign-in itself refuses another issuer.
+       * It pins the Library's issuer, and its account when known, so a computer that switched
+       * provider since the plan is refused before the provider opens.
        */
       readonly request: LoomDesktopSignInRequest;
       /** The Library's issuer. Check the finished sign-in with `directorySignInMismatch`. */
@@ -196,6 +197,7 @@ export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConn
       request: {
         httpBaseUrl: answered.route.url,
         expectedEnvironmentId: row.environmentId,
+        expectedIssuer: libraryIssuer,
         ...(library.account === null ? {} : { expectedIdentity: library.account }),
       },
       issuer: libraryIssuer,

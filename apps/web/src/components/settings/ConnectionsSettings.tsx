@@ -2499,6 +2499,8 @@ export function ConnectionsSettings() {
     const result = await connectSshEnvironment({
       target,
       label: "",
+      // fork: directory-computers
+      ...(libraryPairing === null ? {} : { expectedEnvironmentId: libraryPairing }),
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
@@ -3926,6 +3928,8 @@ export function ConnectionsSettings() {
               onOpenChange={(open) => {
                 setAddBackendDialogOpen(open);
                 setLibraryPairing(null); // fork: directory-computers
+                // fork: directory-computers: a Library row's address must not prefill the next plain form.
+                if (!open && libraryPairing !== null) setSavedBackendHost("");
                 if (open) {
                   setRouteTarget(null);
                 } else {

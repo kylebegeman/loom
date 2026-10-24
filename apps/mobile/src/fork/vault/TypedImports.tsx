@@ -100,20 +100,20 @@ export function TypedImports({
     if (busy || !connected) return;
     setBusy(true);
     setError(null);
-    try {
-      const next = await work();
-      setResult(next);
-      if (!["prepared", "applying"].includes(next.plan.state)) setValue("");
-      refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Import response was lost. Refresh its receipt before retrying.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .then((next) => {
+        setResult(next);
+        if (!["prepared", "applying"].includes(next.plan.state)) setValue("");
+        refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Import response was lost. Refresh its receipt before retrying.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const credential = (): VaultTypedMigrationCredential =>
     result

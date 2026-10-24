@@ -90,21 +90,23 @@ export function LibraryExistingFolder(props: {
     setPending(`${environmentId}:${rootPath}`);
     props.onPending(true);
     setError(null);
-    try {
-      const result = await inspect({ environmentId, input: { rootPath } });
-      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-      const inferred = libraryFolderResources(result.value);
-      setInspection(result.value);
-      setInspectionEnvironmentId(environmentId);
-      setSelectedSource(`${environmentId}:${rootPath}`);
-      props.onChoose({ ...inferred, environmentId });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The folder could not be inspected.");
-    } finally {
-      busy.current = false;
-      setPending(null);
-      props.onPending(false);
-    }
+    await inspect({ environmentId, input: { rootPath } })
+      .then((result) => {
+        if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+        const inferred = libraryFolderResources(result.value);
+        setInspection(result.value);
+        setInspectionEnvironmentId(environmentId);
+        setSelectedSource(`${environmentId}:${rootPath}`);
+        props.onChoose({ ...inferred, environmentId });
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "The folder could not be inspected.");
+      })
+      .finally(() => {
+        busy.current = false;
+        setPending(null);
+        props.onPending(false);
+      });
   }
   return (
     <SettingsSection title="Files you already have">
