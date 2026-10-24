@@ -9,6 +9,10 @@ import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
 import { ComputerConnectionDetails } from "./ComputerConnectionDetails";
 import { FleetUpdatesSection } from "./FleetUpdatesSection";
+import {
+  LibraryComputers,
+  type PairLibraryComputer,
+} from "../directory-computers/LibraryComputers";
 
 const PRIMARY_DETAIL_TARGETS = [
   "connections-environment",
@@ -31,6 +35,7 @@ export function ComputerConnectionsHome({
   discoveredRows,
   headerActions,
   isReady,
+  onPairComputer,
 }: {
   readonly primaryEnvironment: EnvironmentPresentation | null;
   readonly primaryDetails: ReactNode;
@@ -39,6 +44,11 @@ export function ComputerConnectionsHome({
   readonly discoveredRows: ReactNode;
   readonly headerActions: ReactNode;
   readonly isReady: boolean;
+  /**
+   * Opens the pairing form for a Library computer that does not get Loom sign-in here. The form
+   * expects that computer and offers no unchecked Identity sign-in.
+   */
+  readonly onPairComputer: PairLibraryComputer;
 }) {
   return (
     <>
@@ -82,6 +92,7 @@ export function ComputerConnectionsHome({
         {computerRows}
         {discoveredRows}
       </SettingsSection>
+      <LibraryComputers onPair={onPairComputer} />
       <FleetUpdatesSection />
     </>
   );

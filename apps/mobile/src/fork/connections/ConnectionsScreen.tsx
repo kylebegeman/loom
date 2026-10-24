@@ -28,12 +28,17 @@ import {
   SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS,
   SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS,
 } from "../../features/showcase/showcaseEnvironmentRows";
+import {
+  DirectoryComputersSection,
+  useDirectoryComputers,
+} from "../directory-computers/DirectoryComputersSection";
 
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
 export function ConnectionsScreen() {
   const {
     connectedEnvironments,
+    onChangeConnectionPairingUrl,
     onReconnectEnvironment,
     onRemoveEnvironmentPress,
     onSetEnvironmentEnabled,
@@ -54,6 +59,7 @@ export function ConnectionsScreen() {
     relayEnvironmentDiscovery.refresh,
     "relay environment refresh",
   );
+  const directoryComputers = useDirectoryComputers();
   const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
   const cloudRefreshPendingRef = useRef(false);
   async function refreshCloudEnvironments() {
@@ -67,6 +73,18 @@ export function ConnectionsScreen() {
       setIsRefreshingCloud(false);
     }
   }
+
+  // The pairing form reads the shared pending address when it opens.
+  const pairDirectoryComputer = useCallback(
+    (httpBaseUrl: string) => {
+      onChangeConnectionPairingUrl(httpBaseUrl);
+      navigation.navigate("SettingsSheet", {
+        screen: "SettingsContent",
+        params: { screen: "SettingsEnvironmentNew" },
+      });
+    },
+    [navigation, onChangeConnectionPairingUrl],
+  );
 
   const openEnvironment = useCallback(
     (environmentId: EnvironmentId) => {
@@ -154,10 +172,13 @@ export function ConnectionsScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
         refreshControl={
-          relaySession ? (
+          relaySession || directoryComputers.content.kind !== "hidden" ? (
             <RefreshControl
               refreshing={isRefreshingCloud}
-              onRefresh={() => void refreshCloudEnvironments()}
+              onRefresh={() => {
+                directoryComputers.refresh();
+                void refreshCloudEnvironments();
+              }}
             />
           ) : undefined
         }
@@ -185,6 +206,7 @@ export function ConnectionsScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={handleUpdateEnvironment}
         />
+        <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
 
         {/* Always mounted: already-connected relay environments must stay
             visible (and removable) even when cloud config is missing or the

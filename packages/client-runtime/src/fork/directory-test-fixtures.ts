@@ -12,6 +12,9 @@ export const ago = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(NOW - 
 export const MINUTES = 60_000;
 
 export const STUDIO = EnvironmentId.make("studio");
+export const LIBRARY = EnvironmentId.make("library");
+export const LIBRARY_ISSUER = "https://login.example.com";
+export const APP_ORIGIN = "https://app.example.com";
 export const BOOK = EnvironmentId.make("book");
 export const DESK = EnvironmentId.make("desk");
 
@@ -65,7 +68,7 @@ export function identity(
   return {
     enabled: true,
     browserLoginEnabled: true,
-    issuer: "https://login.example.com",
+    issuer: LIBRARY_ISSUER,
     clientId: "loom-web",
     nativeClientId: "loom-native",
     authorizationEndpoint: "https://login.example.com/authorize",
@@ -73,6 +76,8 @@ export function identity(
     scopes: ["openid"],
     audience: "loom",
     environmentId,
+    sessionExchangeEnabled: true,
+    browserOrigins: [APP_ORIGIN],
     ...overrides,
   };
 }

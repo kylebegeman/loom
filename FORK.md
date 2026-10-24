@@ -383,6 +383,12 @@ the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPe
 (8), `ThreadSettlementService.test.ts` (6), `DatabaseStorage.test.ts` (4),
 `Scheduler.test.ts` (3) and `observability.test.ts` (2).
 
+L113 `directory-computers` seams list the Library directory's unsaved computers on desktop, web
+and iPhone and connect each with Loom Identity. `ConnectionsSettings.tsx` (5 marker lines) opens
+the pairing form for a Library row with its address, passes the computer's environment ID so a
+wrong address is refused, and hides the form's unpinned Identity sign-in for that row. See the
+[L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
+
 ## Loom CLI and pairing copy
 
 User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`

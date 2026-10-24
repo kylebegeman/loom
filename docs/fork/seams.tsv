@@ -712,3 +712,4 @@ apps/server/src/persistence/Sqlite.ts	server-weight	1
 apps/server/src/preview/ServerBrowserContexts.ts	server-weight	1
 packages/shared/src/observability.ts	server-weight	3
 packages/shared/src/observability.test.ts	server-weight	2
+apps/web/src/components/settings/ConnectionsSettings.tsx	directory-computers	5

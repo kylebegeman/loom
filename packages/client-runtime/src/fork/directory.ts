@@ -208,50 +208,100 @@ export function directoryUnattachedMachines(
 /** A browser signs in through the computer's login page; desktop and mobile sign in natively. */
 export type DirectorySignInSurface = "browser" | "native";
 
+/** How this client signs in. A browser page can sign in only where the computer allows its origin. */
+export type DirectorySignIn =
+  | { readonly surface: "native" }
+  | { readonly surface: "browser"; readonly origin: string };
+
+/** Why a discovered computer connects by pairing instead of Loom sign-in. */
+export type DirectoryPairingReason =
+  | "unreachable"
+  | "no-sign-in"
+  | "other-computer"
+  | "not-here"
+  | "library-issuer-unknown"
+  | "issuer-mismatch";
+
+/** One short line per reason, for the row that offers pairing. */
+export const DIRECTORY_PAIRING_REASON_TEXT: Readonly<Record<DirectoryPairingReason, string>> = {
+  unreachable: "Loom could not reach this computer to check its sign-in.",
+  "no-sign-in": "This computer does not offer Loom sign-in.",
+  "other-computer": "The address Loom has for this computer reaches a different one.",
+  "not-here": "This computer does not allow Loom sign-in from this app.",
+  "library-issuer-unknown": "Loom could not confirm your Library's sign-in provider.",
+  "issuer-mismatch": "This computer uses a different sign-in provider than your Library.",
+};
+
 export interface DirectoryConnectPlan {
   readonly environmentId: EnvironmentId;
   /** Directory routes to try in order: public first, then tailnet. */
   readonly routes: readonly DirectoryRoute[];
   /**
-   * Loom Identity when the computer advertises it for this surface, pairing otherwise. The
-   * directory never issues a credential, so either way the computer's own sign-in decides.
+   * Loom Identity when the computer offers it here under the Library's issuer, pairing otherwise.
+   * The directory never issues a credential, so either way the computer's own sign-in decides.
    */
   readonly signIn: "loom-identity" | "pairing";
+  /** Why the plan is pairing; null for Loom Identity. */
+  readonly reason: DirectoryPairingReason | null;
 }
 
-function offersLoomIdentity(
-  identity: LoomIdentityMetadata,
+export interface DirectoryConnectOptions {
+  readonly signIn: DirectorySignIn;
+  /** The Library's own Identity issuer, or null when this device does not know it. */
+  readonly libraryIssuer: string | null;
+}
+
+function pairingReason(
+  identity: LoomIdentityMetadata | null,
   environmentId: EnvironmentId,
-  surface: DirectorySignInSurface,
-): boolean {
+  options: DirectoryConnectOptions,
+): DirectoryPairingReason | null {
+  if (identity === null) return "no-sign-in";
   // Metadata from another environment means the route reaches some other computer, so signing in
   // there would hand that computer a session meant for this one.
-  if (!identity.enabled || identity.environmentId !== environmentId) return false;
-  if (identity.authorizationEndpoint === null || identity.tokenEndpoint === null) return false;
-  return surface === "browser"
-    ? identity.browserLoginEnabled && identity.clientId !== null && identity.issuer !== null
-    : identity.nativeClientId !== undefined && identity.nativeClientId.length > 0;
+  if (identity.environmentId !== environmentId) return "other-computer";
+  if (
+    !identity.enabled ||
+    identity.issuer === null ||
+    identity.authorizationEndpoint === null ||
+    identity.tokenEndpoint === null
+  )
+    return "no-sign-in";
+  const { signIn } = options;
+  const offeredHere =
+    identity.sessionExchangeEnabled === true &&
+    (signIn.surface === "browser"
+      ? identity.browserLoginEnabled &&
+        identity.clientId !== null &&
+        (identity.browserOrigins ?? []).includes(signIn.origin)
+      : identity.nativeClientId !== undefined && identity.nativeClientId.length > 0);
+  if (!offeredHere) return "not-here";
+  // The client signs in with whatever issuer the computer names. The directory vouches for a
+  // computer only under the Library's own issuer; anything else could send this device's passkey
+  // sign-in to a provider the computer chose.
+  if (options.libraryIssuer === null) return "library-issuer-unknown";
+  if (identity.issuer !== options.libraryIssuer) return "issuer-mismatch";
+  return null;
 }
 
 /**
- * How to connect to a discovered computer. Read the identity metadata from the plan's first route
- * and plan again with it; before that, or when it is missing, the plan is pairing. Null for a
- * saved connection or a computer with no usable route.
+ * How to connect to a discovered computer, given the identity metadata one of its routes
+ * returned (null when it has none). `resolveDirectoryConnect` reads the metadata and calls this.
+ * Null for a saved connection or a computer with no usable route.
  */
 export function directoryConnectPlan(
   row: DirectoryCatalogRow,
   identity: LoomIdentityMetadata | null,
-  surface: DirectorySignInSurface,
+  options: DirectoryConnectOptions,
 ): DirectoryConnectPlan | null {
   if (row.saved !== null || row.action !== "connect") return null;
   const routes = directoryRoutes(row.routes);
   if (routes.length === 0) return null;
+  const reason = pairingReason(identity, row.environmentId, options);
   return {
     environmentId: row.environmentId,
     routes,
-    signIn:
-      identity !== null && offersLoomIdentity(identity, row.environmentId, surface)
-        ? "loom-identity"
-        : "pairing",
+    signIn: reason === null ? "loom-identity" : "pairing",
+    reason,
   };
 }

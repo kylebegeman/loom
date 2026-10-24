@@ -2145,6 +2145,8 @@ export function ConnectionsSettings() {
   const [isRevokingOtherDesktopClients, setIsRevokingOtherDesktopClients] = useState(false);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
   const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
+  // fork: directory-computers
+  const [libraryPairing, setLibraryPairing] = useState<EnvironmentId | null>(null);
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
@@ -2565,6 +2567,8 @@ export function ConnectionsSettings() {
 
     const result = await connectPairing({
       ...remotePairingInput,
+      // fork: directory-computers
+      ...(libraryPairing === null ? {} : { expectedEnvironmentId: libraryPairing }),
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
@@ -2885,15 +2889,18 @@ export function ConnectionsSettings() {
         </div>
       ) : null}
       {renderRemoteFields()}
-      <ComputerIdentityConnect
-        address={savedBackendHost}
-        {...(routeTarget ? { entry: routeTarget.entry } : {})}
-        onConnected={() => {
-          setAddBackendDialogOpen(false);
-          setSavedBackendHost("");
-          setSavedBackendPairingCode("");
-        }}
-      />
+      {/* fork: directory-computers: Library computers sign in only from their row */}
+      {libraryPairing === null || routeTarget !== null ? (
+        <ComputerIdentityConnect
+          address={savedBackendHost}
+          {...(routeTarget ? { entry: routeTarget.entry } : {})}
+          onConnected={() => {
+            setAddBackendDialogOpen(false);
+            setSavedBackendHost("");
+            setSavedBackendPairingCode("");
+          }}
+        />
+      ) : null}
       {savedBackendError ? <p className="text-xs text-destructive">{savedBackendError}</p> : null}
       <Button
         variant="outline"
@@ -3896,6 +3903,16 @@ export function ConnectionsSettings() {
       <LibrarySetup showConnectionsLink={false} />
       {/* fork: fleet-connections */}
       <ComputerConnectionsHome
+        // fork: directory-computers
+        onPairComputer={(environmentId, httpBaseUrl) => {
+          setRouteTarget(null);
+          setLibraryPairing(environmentId);
+          setSavedBackendMode("remote");
+          setSavedBackendHost(httpBaseUrl);
+          setSavedBackendPairingCode("");
+          setSavedBackendError(null);
+          setAddBackendDialogOpen(true);
+        }}
         primaryEnvironment={primaryEnvironment}
         primaryDetails={primarySettings}
         primaryActions={
@@ -3908,6 +3925,7 @@ export function ConnectionsSettings() {
               open={addBackendDialogOpen}
               onOpenChange={(open) => {
                 setAddBackendDialogOpen(open);
+                setLibraryPairing(null); // fork: directory-computers
                 if (open) {
                   setRouteTarget(null);
                 } else {
