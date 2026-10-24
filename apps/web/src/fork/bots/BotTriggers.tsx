@@ -54,6 +54,7 @@ import {
 import { runTime } from "./BotIdentity";
 import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
+import type { BotDefinition as StubBot } from "@t3tools/contracts/fork";
 
 const FIRINGS_PAGE = Math.min(20, BOTS_TRIGGER_FIRINGS_MAX_LIMIT);
 
@@ -642,4 +643,20 @@ export function BotTriggers({
       ) : null}
     </section>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The index's Triggers view. */
+export function TriggersView() {
+  return null;
+}
+
+/** A bot's triggers, for the aside of its Overview, with its one way to add one. */
+export function BotTriggersAside(_props: { readonly bot: StubBot }) {
+  return null;
+}
+
+/** The trigger sheet (`trigger`) and the trigger editor (`newTrigger`, `editTrigger`), over any page. */
+export function TriggersOverlays() {
+  return null;
 }

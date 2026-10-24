@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
+import { ScrollArea } from "~/components/ui/scroll-area";
 
 const Sheet = SheetPrimitive.Root;
 
@@ -57,6 +58,7 @@ function SheetPopup({
   transitionDurationMs,
   side = "right",
   variant = "default",
+  size = "default",
   style,
   ...props
 }: SheetPrimitive.Popup.Props & {
@@ -65,6 +67,8 @@ function SheetPopup({
   transitionDurationMs?: number;
   side?: "right" | "left" | "top" | "bottom";
   variant?: "default" | "inset";
+  /** `wide` gives a side sheet room for a detail view, such as a run with its findings. */
+  size?: "default" | "wide";
 }) {
   const transitionStyle =
     transitionDurationMs === undefined
@@ -91,9 +95,10 @@ function SheetPopup({
             side === "top" &&
               "data-ending-style:-translate-y-8 data-starting-style:-translate-y-8 border-b",
             side === "left" &&
-              "data-ending-style:-translate-x-8 data-starting-style:-translate-x-8 w-[calc(100%-(--spacing(12)))] max-w-md border-e",
+              "data-ending-style:-translate-x-8 data-starting-style:-translate-x-8 w-[calc(100%-(--spacing(12)))] border-e",
             side === "right" &&
-              "col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
+              "col-start-2 w-[calc(100%-(--spacing(12)))] border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
+            (side === "left" || side === "right") && (size === "wide" ? "max-w-2xl" : "max-w-md"),
             variant === "inset" &&
               "before:hidden sm:rounded-2xl sm:border sm:before:rounded-[calc(var(--radius-2xl)-1px)] sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-2xl)-1px)]",
             instant &&
@@ -133,6 +138,36 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** The sheet's scrolling body, between its header and footer. */
+function SheetPanel({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <ScrollArea scrollFade>
+      <div
+        className={cn(
+          "space-y-4 px-6 pb-6 in-[[data-slot=sheet-popup]:has([data-slot=sheet-footer])]:pb-4",
+          className,
+        )}
+        data-slot="sheet-panel"
+        {...props}
+      />
+    </ScrollArea>
+  );
+}
+
+/** Actions pinned under the sheet's body, on a hairline. */
+function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col-reverse gap-2 border-t px-6 py-4 sm:flex-row sm:justify-end",
+        className,
+      )}
+      data-slot="sheet-footer"
+      {...props}
+    />
+  );
+}
+
 function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
   return (
     <SheetPrimitive.Title
@@ -161,6 +196,8 @@ export {
   SheetPopup,
   SheetPopup as SheetContent,
   SheetHeader,
+  SheetPanel,
+  SheetFooter,
   SheetTitle,
   SheetDescription,
 };

@@ -413,3 +413,9 @@ export function RunOnManyDialog({
     </LibraryDialog>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The Run on many wizard (`many`), over whichever page is open. */
+export function BatchesOverlays() {
+  return null;
+}

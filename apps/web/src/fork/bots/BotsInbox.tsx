@@ -47,6 +47,7 @@ import { BotRowsSkeleton, BotsEmptyList, runInputSummary } from "./BotRuns";
 import { bots, inboxQueryInput, useRefreshWhenBotsChangesPruned } from "./state";
 import { BotRunStatusBadge, BotTile, VerdictChip, runTime } from "./BotIdentity";
 import { runDurationLabel, waitingAgeLabel } from "./runMetrics";
+import type { BotDefinition as StubBot } from "@t3tools/contracts/fork";
 
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
@@ -252,11 +253,7 @@ function InboxRow({
                   </MenuItem>
                 ) : null}
                 {run.batchId ? (
-                  <MenuItem
-                    render={
-                      <Link to="/loom/bots" search={{ tab: "batches", batch: run.batchId }} />
-                    }
-                  >
+                  <MenuItem render={<Link to="/loom/bots" search={{ batch: run.batchId }} />}>
                     <LayersIcon />
                     Open batch
                   </MenuItem>
@@ -491,4 +488,18 @@ export function BotsInbox({
       </LibrarySection>
     </div>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The full queue of what needs a person, for the Runs view's Needs you scope. */
+export function NeedsYouView(_props: {
+  readonly bot: StubBot | null;
+  readonly dismissed: boolean;
+}) {
+  return null;
+}
+
+/** The first few things that need a person, leading a page; nothing at all when the queue is clear. */
+export function NeedsYouBand(_props: { readonly bot: StubBot | null }) {
+  return null;
 }

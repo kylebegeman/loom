@@ -405,3 +405,9 @@ function HistorySkeleton() {
     </div>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** A bot's Versions view. */
+export function BotVersionsView(_props: { readonly bot: BotDefinition }) {
+  return null;
+}

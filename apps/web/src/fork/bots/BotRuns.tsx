@@ -25,6 +25,7 @@ import { BotFindings, RawReply } from "./BotFindings";
 import { BotRunStatusBadge, BotTile, VerdictChip, runDuration, runTime } from "./BotIdentity";
 import { BotRunFeedback } from "./BotRunFeedback";
 import { bots } from "./state";
+import type { BotDefinition as StubBot } from "@t3tools/contracts/fork";
 
 export const runInputSummary = (run: BotRun) =>
   Object.entries(run.inputs)
@@ -312,4 +313,15 @@ export function BotRowsSkeleton({ label = "Loading runs" }: { readonly label?: s
       ))}
     </div>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The Runs view: every run on the index, or one bot's on its page, in the scope the search names. */
+export function RunsView(_props: { readonly bot: StubBot | null }) {
+  return null;
+}
+
+/** A short list of runs whose rows open the run sheet, such as a bot's most recent runs. */
+export function RunRows(_props: { readonly runs: readonly BotRun[]; readonly showBot: boolean }) {
+  return null;
 }

@@ -60,15 +60,18 @@ export const LIBRARY_ROW_TARGET =
 export const LIBRARY_CELL = "px-3 py-2.5 align-middle";
 
 /**
- * One series as a line over a soft area, for trends inside a table cell. Too small for axes, so
- * the caller states the total beside it and `label` carries the reading.
+ * One series as a line over a soft area, for trends inside a table cell or along a panel. Too
+ * small for axes, so the caller states the total beside it and `label` carries the reading.
  */
 export function Sparkline({
   values,
   label,
+  size = "sm",
 }: {
   readonly values: readonly number[];
   readonly label: string;
+  /** `fill` stretches across its container at panel height. */
+  readonly size?: "sm" | "fill";
 }) {
   const top = Math.max(1, ...values);
   const step = values.length > 1 ? 100 / (values.length - 1) : 100;
@@ -79,7 +82,10 @@ export function Sparkline({
       aria-label={label}
       viewBox="0 0 100 24"
       preserveAspectRatio="none"
-      className="h-6 w-24 shrink-0 text-(--project-color)"
+      className={cn(
+        "shrink-0 text-(--project-color)",
+        size === "fill" ? "h-16 w-full" : "h-6 w-24",
+      )}
     >
       {values.length > 1 ? (
         <>
@@ -88,7 +94,7 @@ export function Sparkline({
             points={points.join(" ")}
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.5}
+            strokeWidth={size === "fill" ? 2 : 1.5}
             strokeLinejoin="round"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
@@ -107,6 +113,14 @@ const TICK_TONES: Record<LibraryWorkflowTone, string> = {
   danger: "bg-destructive",
 };
 
+export type LibraryTick = {
+  readonly key: string;
+  /** A tick without a tone is an empty slot, so a short history still reads as a full track. */
+  readonly tone: LibraryWorkflowTone | null;
+  /** What the tick stands for, read out when ticks are buttons. */
+  readonly label?: string;
+};
+
 /**
  * A row of thin status bars, one per item, oldest first: the uptime-strip shape status pages use,
  * so a run of failures reads as a block of color before any label is read.
@@ -117,39 +131,135 @@ export function TickStrip({
   size = "sm",
   focused,
   onFocusTick,
+  onSelectTick,
 }: {
-  /** A tick without a tone is an empty slot, so a short history still reads as a full track. */
-  readonly ticks: readonly { readonly key: string; readonly tone: LibraryWorkflowTone | null }[];
+  readonly ticks: readonly LibraryTick[];
   readonly label: string;
-  /** `fill` stretches the ticks across the strip's container, for a strip that leads a panel. */
-  readonly size?: "sm" | "lg" | "fill";
-  /** With `onFocusTick`, the strip becomes a readout: hovering a tick dims the others. */
+  /**
+   * `fill` stretches the ticks across the strip's container, for a strip that leads a panel.
+   * `grid` wraps them into rows at a fixed pitch, for hundreds of items such as a batch.
+   */
+  readonly size?: "sm" | "lg" | "fill" | "grid";
+  /** With `onFocusTick`, the strip becomes a readout: pointing at a tick dims the others. */
   readonly focused?: number | null;
   readonly onFocusTick?: (index: number | null) => void;
+  /** Makes each toned tick a button that opens its item, such as the run behind it. */
+  readonly onSelectTick?: (index: number) => void;
 }) {
   return (
     <span
-      role="img"
+      role={onSelectTick ? "group" : "img"}
       aria-label={label}
       onPointerLeave={onFocusTick ? () => onFocusTick(null) : undefined}
       className={cn(
         "items-stretch gap-0.5",
-        size === "fill" ? "flex h-8 w-full" : "inline-flex",
+        size === "fill" && "flex h-8 w-full",
+        size === "grid" && "grid w-full grid-cols-[repeat(auto-fill,minmax(0.5rem,1fr))] gap-1",
+        (size === "sm" || size === "lg") && "inline-flex",
         size === "lg" ? "h-7" : size === "sm" && "h-4",
       )}
     >
-      {ticks.map((tick, index) => (
+      {ticks.map((tick, index) => {
+        const className = cn(
+          "block shrink-0 rounded-xs transition-opacity duration-150",
+          size === "fill"
+            ? "max-w-3 min-w-1 flex-1"
+            : size === "grid"
+              ? "h-5"
+              : size === "lg"
+                ? "w-1.5"
+                : "w-1",
+          tick.tone ? TICK_TONES[tick.tone] : "bg-muted dark:bg-accent/60",
+          focused != null && focused !== index && "opacity-35",
+        );
+        const hover = onFocusTick ? () => onFocusTick(index) : undefined;
+        return onSelectTick && tick.tone ? (
+          <button
+            key={tick.key}
+            type="button"
+            aria-label={tick.label}
+            onPointerEnter={hover}
+            onFocus={hover}
+            onBlur={onFocusTick ? () => onFocusTick(null) : undefined}
+            onClick={() => onSelectTick(index)}
+            className={cn(
+              className,
+              "cursor-pointer outline-none hover:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            )}
+          />
+        ) : (
+          <span
+            key={tick.key}
+            aria-hidden={onSelectTick ? true : undefined}
+            onPointerEnter={hover}
+            className={className}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * How much of a limit is used, as a thin track in one hue. The fill turns to a status tone only
+ * at the threshold, so a meter shouts when it matters and stays quiet otherwise. Always labelled.
+ */
+export function LibraryMeter({
+  value,
+  max,
+  label,
+  warnAt = 0.8,
+}: {
+  readonly value: number;
+  readonly max: number;
+  readonly label: string;
+  /** The share of `max` at which the fill turns to a warning. */
+  readonly warnAt?: number;
+}) {
+  const share = max > 0 ? Math.min(1, value / max) : 0;
+  return (
+    <span
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={Math.min(value, max)}
+      className="relative block h-1.5 w-full overflow-hidden rounded-full bg-muted dark:bg-accent"
+    >
+      <span
+        className={cn(
+          "absolute inset-y-0 start-0 rounded-full",
+          share >= 1 ? "bg-destructive" : share >= warnAt ? "bg-warning" : "bg-(--project-color)",
+        )}
+        style={{ width: `${share * 100}%` }}
+      />
+    </span>
+  );
+}
+
+/**
+ * One magnitude as a thin bar beside its value, for comparing rows in a table column. The value
+ * stays in text ink; the bar carries the item's color. `share` is the row's part of the largest.
+ */
+export function LibraryBar({
+  share,
+  children,
+}: {
+  readonly share: number;
+  readonly children: ReactNode;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span
+        aria-hidden
+        className="relative h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-muted dark:bg-accent"
+      >
         <span
-          key={tick.key}
-          onPointerEnter={onFocusTick ? () => onFocusTick(index) : undefined}
-          className={cn(
-            "block shrink-0 rounded-xs transition-opacity duration-150",
-            size === "fill" ? "max-w-3 min-w-1 flex-1" : size === "lg" ? "w-1.5" : "w-1",
-            tick.tone ? TICK_TONES[tick.tone] : "bg-muted dark:bg-accent/60",
-            focused != null && focused !== index && "opacity-35",
-          )}
+          className="absolute inset-y-0 start-0 rounded-full bg-(--project-color)/70"
+          style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }}
         />
-      ))}
+      </span>
+      <span className="shrink-0 tabular-nums">{children}</span>
     </span>
   );
 }

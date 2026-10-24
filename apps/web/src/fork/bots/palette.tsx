@@ -203,7 +203,7 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
     runnable: canRun ? listed.filter((bot) => bot.archivedAt === null) : [],
     openBots: () => navigate({ to: "/loom/bots" }),
     openInbox: host.inboxSupported
-      ? () => navigate({ to: "/loom/bots", search: { tab: "inbox" } })
+      ? () => navigate({ to: "/loom/bots", search: { tab: "runs", scope: "attention" } })
       : null,
     runBot: (botId) => navigate({ to: "/loom/bots", search: { bot: botId, run: botId } }),
     pipelines: pipelinesLive && canRunPipeline ? pipelines : [],

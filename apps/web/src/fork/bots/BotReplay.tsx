@@ -742,3 +742,9 @@ export function BotReplayDialog({
     </LibraryDialog>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The replay results sheet (`replay`), over whichever page is open. */
+export function ReplayOverlays() {
+  return null;
+}

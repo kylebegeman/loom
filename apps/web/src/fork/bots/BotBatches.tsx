@@ -49,6 +49,7 @@ import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { BotTile, runTime } from "./BotIdentity";
 import { BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
+import type { BotDefinition as StubBot } from "@t3tools/contracts/fork";
 
 /** A state tone, plus the quieter fill of work that has not started yet. */
 export type ProgressTone = LibraryWorkflowTone | "waiting";
@@ -500,4 +501,15 @@ export function BatchView({
       <BatchReport environmentId={environmentId} batch={batch} />
     </section>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The batches of the index, or of one bot on its page, for the Runs view's Batches scope. */
+export function BatchesView(_props: { readonly bot: StubBot | null }) {
+  return null;
+}
+
+/** One batch as its own page. */
+export function BatchPage(_props: { readonly batchId: string }) {
+  return null;
 }

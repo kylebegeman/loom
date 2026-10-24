@@ -637,3 +637,14 @@ export function PipelineRunView({
     </section>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** One pipeline run as its own page. */
+export function PipelineRunPage(_props: { readonly runId: string }) {
+  return null;
+}
+
+/** The pipeline run form (`runPipeline`), over whichever page is open. */
+export function PipelinesOverlays() {
+  return null;
+}

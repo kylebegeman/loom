@@ -214,3 +214,9 @@ export function BotSuggestions({
     </section>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** Suggested bots drawn from recent threads, for the Bots view. Nothing when there are none. */
+export function BotSuggestionsSection() {
+  return null;
+}

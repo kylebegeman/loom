@@ -31,6 +31,10 @@ import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { PipelineEditor } from "./PipelineEditor";
 import { PipelineRunList, PipelineRunView, PipelineSteps } from "./PipelineRunView";
 import { bots, usePipelines } from "./state";
+import type {
+  BotDefinition as StubBot,
+  BotPipelineId as StubPipelineId,
+} from "@t3tools/contracts/fork";
 
 type Editing = { readonly pipeline: BotPipeline | null } | null;
 
@@ -248,4 +252,20 @@ export function BotPipelines({
       ) : null}
     </section>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The index's Pipelines view. */
+export function PipelinesView() {
+  return null;
+}
+
+/** One pipeline as its own page. */
+export function PipelinePage(_props: { readonly pipelineId: StubPipelineId }) {
+  return null;
+}
+
+/** The pipelines a bot takes part in, for the aside of its Overview. Nothing when there are none. */
+export function BotPipelinesAside(_props: { readonly bot: StubBot }) {
+  return null;
 }

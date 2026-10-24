@@ -56,6 +56,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 
 import { bots, useBotsHost } from "./state";
+import type { BotPipelineId as StubPipelineId } from "@t3tools/contracts/fork";
 
 const CHECK_DEBOUNCE_MS = 400;
 
@@ -599,4 +600,10 @@ export function PipelineEditor({
       </form>
     </LibraryDialog>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The pipeline builder as a full page: a new pipeline for `null`, else that pipeline. */
+export function PipelineBuilderPage(_props: { readonly pipelineId: StubPipelineId | null }) {
+  return null;
 }

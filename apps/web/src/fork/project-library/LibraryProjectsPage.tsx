@@ -7,14 +7,11 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
-  LayoutGridIcon,
   ListFilterIcon,
-  ListIcon,
   MessageSquareIcon,
   PlusIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
-  XIcon,
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -66,11 +63,14 @@ import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
 import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { LibraryLayoutToggle } from "./LibraryCollection";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import {
   LIBRARY_ROW,
   LibraryErrorNotice,
+  LibraryFilterChip,
+  LibraryGroupHeading,
   LibrarySearch,
   LibraryStateBadge,
 } from "./LibraryControls";
@@ -346,34 +346,26 @@ export function LibraryProjectsPage() {
                 onComputer={setComputer}
               />
               {[...colors].map((color) => (
-                <Button
+                <LibraryFilterChip
                   key={color}
-                  shape="pill"
-                  size="xs"
-                  variant="secondary"
-                  aria-label={`Stop showing only ${PROJECT_COLOR_NAMES[color]} projects`}
-                  onClick={() => toggleColor(color)}
-                >
-                  <ProjectColorDot color={color} />
-                  {PROJECT_COLOR_NAMES[color]}
-                  <XIcon aria-hidden />
-                </Button>
+                  label={PROJECT_COLOR_NAMES[color]}
+                  removeLabel={`Stop showing only ${PROJECT_COLOR_NAMES[color]} projects`}
+                  marker={<ProjectColorDot color={color} />}
+                  onRemove={() => toggleColor(color)}
+                />
               ))}
               {computer ? (
-                <Button
-                  shape="pill"
-                  size="xs"
-                  variant="secondary"
-                  aria-label={`Stop showing only projects on ${hostLabel(computer)}`}
-                  onClick={() => setComputer(null)}
-                >
-                  <ComputerLabel
-                    environmentId={computer}
-                    label={hostLabel(computer)}
-                    className="text-foreground"
-                  />
-                  <XIcon aria-hidden />
-                </Button>
+                <LibraryFilterChip
+                  label={
+                    <ComputerLabel
+                      environmentId={computer}
+                      label={hostLabel(computer)}
+                      className="text-foreground"
+                    />
+                  }
+                  removeLabel={`Stop showing only projects on ${hostLabel(computer)}`}
+                  onRemove={() => setComputer(null)}
+                />
               ) : null}
               <div className="ms-auto flex items-center gap-1.5">
                 {archivedCount || showArchived ? (
@@ -401,24 +393,10 @@ export function LibraryProjectsPage() {
                   preferences={{ ...preferences, group }}
                   onChange={(next) => setPreferences(next)}
                 />
-                <ToggleGroup
-                  shape="pill"
-                  aria-label="Layout"
-                  variant="segmented"
-                  value={[preferences.view]}
-                  onValueChange={(value) => {
-                    const view = value[0];
-                    if (view === "cards" || view === "list")
-                      setPreferences({ ...preferences, view });
-                  }}
-                >
-                  <ToggleGroupItem value="cards" aria-label="Cards">
-                    <LayoutGridIcon />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="list" aria-label="List">
-                    <ListIcon />
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                <LibraryLayoutToggle
+                  value={preferences.view}
+                  onChange={(view) => setPreferences({ ...preferences, view })}
+                />
               </div>
             </div>
           ) : null}
@@ -441,7 +419,7 @@ export function LibraryProjectsPage() {
                     className="space-y-2.5"
                   >
                     {section.kind === "all" ? null : (
-                      <SectionHeading
+                      <LibraryGroupHeading
                         title={
                           section.kind === "color"
                             ? PROJECT_COLOR_NAMES[section.color]
@@ -449,7 +427,11 @@ export function LibraryProjectsPage() {
                         }
                         count={section.entries.length}
                         hint={section.kind === "color" ? undefined : heading.hint}
-                        color={section.kind === "color" ? section.color : undefined}
+                        marker={
+                          section.kind === "color" ? (
+                            <ProjectColorDot color={section.color} />
+                          ) : undefined
+                        }
                       />
                     )}
                     {show(section.entries, showArchived || section.kind === "resting")}
@@ -654,31 +636,6 @@ const SECTION_HEADINGS = {
   all: { title: "Projects", hint: undefined },
   color: { title: "", hint: undefined },
 } as const;
-
-function SectionHeading({
-  title,
-  count,
-  hint,
-  color,
-}: {
-  readonly title: string;
-  readonly count: number;
-  readonly hint?: string | undefined;
-  readonly color?: LibraryProjectColor | undefined;
-}) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      {color ? <ProjectColorDot color={color} className="self-center" /> : null}
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-      {hint ? (
-        <p className="ms-1 hidden min-w-0 truncate text-xs text-muted-foreground/75 sm:block">
-          {hint}
-        </p>
-      ) : null}
-    </div>
-  );
-}
 
 /** A section that stays out of the way until asked for, like folders not yet in a project. */
 function FoldedSection({

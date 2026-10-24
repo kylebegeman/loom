@@ -56,7 +56,7 @@ export function BotsUsageSection({
           shape="pill"
           size="xs"
           variant="ghost"
-          render={<Link to="/loom/bots" search={{ tab: "usage" }} />}
+          render={<Link to="/loom/bots" search={{}} />}
         >
           Open Bots
           <ArrowUpRightIcon />

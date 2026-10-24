@@ -375,3 +375,82 @@ export function LibraryEmpty({
 /** A row inside a section: no rule between rows, a soft fill on hover that bleeds past the text. */
 export const LIBRARY_ROW =
   "-mx-2.5 rounded-lg px-2.5 transition-colors duration-150 hover:bg-accent/50";
+
+/**
+ * The heading over one group in a Library collection: its name, its count, and an optional hint
+ * that drops out on narrow screens. `marker` leads it, such as a color dot or a state dot.
+ */
+export function LibraryGroupHeading({
+  title,
+  count,
+  hint,
+  marker,
+  action,
+}: {
+  readonly title: string;
+  readonly count?: number | undefined;
+  readonly hint?: string | undefined;
+  readonly marker?: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-7 min-w-0 items-center gap-2">
+      {marker}
+      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+      {count === undefined ? null : (
+        <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+      )}
+      {hint ? (
+        <p className="ms-1 hidden min-w-0 truncate text-xs text-muted-foreground/75 sm:block">
+          {hint}
+        </p>
+      ) : null}
+      {action ? <div className="ms-auto flex shrink-0 items-center gap-1.5">{action}</div> : null}
+    </div>
+  );
+}
+
+/** A chosen filter beside the Filters menu; pressing it removes the filter. */
+export function LibraryFilterChip({
+  label,
+  removeLabel,
+  marker,
+  onRemove,
+}: {
+  readonly label: ReactNode;
+  /** What pressing it does, such as "Stop showing only failed runs". */
+  readonly removeLabel: string;
+  readonly marker?: ReactNode;
+  readonly onRemove: () => void;
+}) {
+  return (
+    <Button shape="pill" size="xs" variant="secondary" aria-label={removeLabel} onClick={onRemove}>
+      {marker}
+      {label}
+      <XIcon aria-hidden />
+    </Button>
+  );
+}
+
+/**
+ * Settings or facts as a spec sheet: one hairline row per entry, label left, value right. For
+ * asides and sheets, where a table would be too heavy and prose too loose.
+ */
+export function LibrarySpecSheet({
+  label,
+  rows,
+}: {
+  readonly label: string;
+  readonly rows: readonly { readonly label: string; readonly value: ReactNode }[];
+}) {
+  return (
+    <dl aria-label={label} className="flex flex-col divide-y divide-border text-xs">
+      {rows.map((row) => (
+        <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-4 py-1.5">
+          <dt className="shrink-0 text-muted-foreground">{row.label}</dt>
+          <dd className="min-w-0 text-end font-medium wrap-anywhere">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}

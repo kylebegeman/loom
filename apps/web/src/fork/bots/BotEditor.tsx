@@ -920,3 +920,9 @@ export function BotEditor({
     </LibraryDialog>
   );
 }
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The bot editor as a full page: a new bot for `null`, else that bot. */
+export function BotEditorPage(_props: { readonly bot: BotDefinition | null }) {
+  return null;
+}

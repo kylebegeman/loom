@@ -35,6 +35,7 @@ import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { environmentThreadShells } from "~/state/threads";
+import { useLibraryPermission } from "../project-library/state";
 
 export const bots = createBotsAtoms(connectionAtomRuntime);
 const waitingBotRunsAtom = makeWaitingBotRunsAtom(environmentThreadShells.threadShellsAtom);
@@ -59,6 +60,38 @@ export function useBotsHost() {
     versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
     pipelinesSupported: supportsLoomFeature(capabilities, BOTS_PIPELINES_FEATURE),
     anywhereSupported: supportsLoomFeature(capabilities, BOTS_ANYWHERE_FEATURE),
+  };
+}
+
+/**
+ * What this client may do with the host's bots. Each is false while the host is away, so a control
+ * never offers an action the server cannot take; the server still checks every call.
+ */
+export function useBotsAccess() {
+  const { environmentId, connected } = useBotsHost();
+  const canSave = useLibraryPermission(bots.save, environmentId);
+  const canRun = useLibraryPermission(bots.run, environmentId);
+  const canCancel = useLibraryPermission(bots.cancel, environmentId);
+  const canRate = useLibraryPermission(bots.rateRun, environmentId);
+  const canRetry = useLibraryPermission(bots.retry, environmentId);
+  const canDismiss = useLibraryPermission(bots.dismiss, environmentId);
+  const canReplay = useLibraryPermission(bots.replay, environmentId);
+  const canRunPipelines = useLibraryPermission(bots.runPipeline, environmentId);
+  const canSavePipelines = useLibraryPermission(bots.savePipeline, environmentId);
+  const canOperateTriggers = useLibraryPermission(bots.saveTrigger, environmentId);
+  const canShare = useLibraryPermission(bots.share, environmentId);
+  return {
+    canSave: canSave && connected,
+    canRun: canRun && connected,
+    canCancel: canCancel && connected,
+    canRate: canRate && connected,
+    canRetry: canRetry && connected,
+    canDismiss: canDismiss && connected,
+    canReplay: canReplay && connected,
+    canRunPipelines: canRunPipelines && connected,
+    canSavePipelines: canSavePipelines && connected,
+    canOperateTriggers: canOperateTriggers && connected,
+    canShare: canShare && connected,
   };
 }
 

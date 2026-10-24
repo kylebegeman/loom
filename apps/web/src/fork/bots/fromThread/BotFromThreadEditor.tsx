@@ -139,3 +139,12 @@ function DraftSkeleton() {
 }
 
 const DRAFT_FIELDS = ["name", "id"];
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The bot editor as a full page, opened on a draft made from a thread. */
+export function BotFromThreadPage(_props: {
+  readonly threadId: ThreadId;
+  readonly suggestionId: string | null;
+}) {
+  return null;
+}

@@ -73,7 +73,7 @@ export function LibraryPageFrame({
 export function LibraryBackLink({
   children,
   ...link
-}: Pick<LinkProps, "to" | "params"> & { readonly children: ReactNode }) {
+}: Pick<LinkProps, "to" | "params" | "search"> & { readonly children: ReactNode }) {
   return (
     <Link
       {...link}

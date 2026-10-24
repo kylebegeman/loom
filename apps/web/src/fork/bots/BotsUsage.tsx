@@ -19,6 +19,11 @@ import { BotTile } from "./BotIdentity";
 import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { bots } from "./state";
 import { formatDuration } from "./runMetrics";
+import type {
+  BotDefinition as StubBot,
+  BotId as StubBotId,
+  BotsUsageResult as StubUsage,
+} from "@t3tools/contracts/fork";
 
 export { formatDuration } from "./runMetrics";
 
@@ -357,4 +362,53 @@ export function BotsUsage({
       )}
     </section>
   );
+}
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The usage windows the Bots page offers, in days back from now. */
+export type BotUsageDays = 1 | 7 | 30 | 90;
+
+/**
+ * The host's bot usage over the window ending now, shared by every view that asks for the same
+ * window. Refetched as runs finish. `rowOf` and `budgetOf` are undefined until the usage arrives.
+ */
+export function useBotUsage(_days: BotUsageDays): {
+  readonly usage: StubUsage | null;
+  readonly rowOf: (botId: StubBotId) => BotUsageRow | undefined;
+  readonly budgetOf: (botId: StubBotId) => BotBudgetState | undefined;
+  readonly isPending: boolean;
+  readonly error: string | null;
+  readonly refresh: () => void;
+} {
+  return {
+    usage: null,
+    rowOf: () => undefined,
+    budgetOf: () => undefined,
+    isPending: false,
+    error: null,
+    refresh: () => {},
+  };
+}
+
+/** The index header's usage clause, such as "142 runs in 7 days · at least 3.2M tokens". */
+export function BotsUsageClause(_props: { readonly days: BotUsageDays }) {
+  return null;
+}
+
+/** A bot's tokens in the window as a figure over a bar scaled to the largest, for the list view. */
+export function BotTokensCell(_props: {
+  readonly row: BotUsageRow | undefined;
+  readonly max: number;
+}) {
+  return null;
+}
+
+/** A bot's use of its daily budget as a meter; nothing for a bot without a budget. */
+export function BotBudgetMeter(_props: { readonly botId: StubBotId }) {
+  return null;
+}
+
+/** A bot's usage, for the aside of its Overview. */
+export function BotUsageAside(_props: { readonly bot: StubBot }) {
+  return null;
 }

@@ -43,6 +43,7 @@ import {
 import { VaultReferencePicker } from "../vault/ReferencePicker";
 import { Choice, RUNTIME_MODE_LABELS } from "./BotEditor";
 import { bots } from "./state";
+import type { BotDefinition as StubBot } from "@t3tools/contracts/fork";
 
 const LIBRARY_NOTICE: Record<Exclude<BotLibraryAvailability, "available">, string> = {
   none: "Connect this computer to a Library to share bots with your other computers.",
@@ -560,3 +561,19 @@ export function BotRemoteRunsSettings({
 }
 
 const SETTING_SKELETONS = ["accept", "ceiling"];
+
+// STUB(bots-redesign): replaced by the owning area's implementation.
+/** The header control that opens the Computers sheet, with whether this computer takes remote runs. */
+export function ComputersButton() {
+  return null;
+}
+
+/** The Computers sheet (`computers`), over whichever page is open. */
+export function ComputersOverlay() {
+  return null;
+}
+
+/** Sharing and credentials for one bot, for the aside of its Overview. */
+export function BotSharingAside(_props: { readonly bot: StubBot }) {
+  return null;
+}

@@ -284,7 +284,6 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
           <SitesStatus snapshot={snapshot} now={now} onOpenSite={openSite} />
           <LibraryTabs
             label="Sites views"
-            variant="underline"
             selected={view}
             onSelect={showView}
             tabs={[

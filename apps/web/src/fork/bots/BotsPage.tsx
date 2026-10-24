@@ -475,9 +475,9 @@ export function BotsPage() {
       allBots={allBots}
       connected={host.connected}
       selectedRunId={search.pipelineRun}
-      onSelectRun={(pipelineRun) => go({ tab: "pipelines", pipelineRun })}
+      onSelectRun={(pipelineRun) => go({ pipelineRun })}
       onRun={(pipeline) => go({ tab: "pipelines", runPipeline: pipeline.id })}
-      onOpenBatch={(batch) => go({ tab: "batches", batch })}
+      onOpenBatch={(batch) => go({ batch })}
     />
   ) : tab === "batches" ? (
     <section className="flex flex-col gap-3" aria-label="Batches">
@@ -490,7 +490,7 @@ export function BotsPage() {
           latestVersionOf={latestVersionOf}
           canRun={canRun}
           canCancel={canCancel}
-          onClose={() => go({ bot: search.bot, tab: "batches" })}
+          onClose={() => go({ bot: search.bot, tab: "runs", scope: "batches" })}
         />
       ) : null}
       <LibraryErrorNotice error={batchesQuery.error} onRetry={batchesQuery.refresh} />
@@ -501,7 +501,7 @@ export function BotsPage() {
           batches={batches}
           selectedId={search.batch}
           showBot={!selected}
-          onSelect={(batch) => go({ bot: search.bot, tab: "batches", batch: batch.id })}
+          onSelect={(batch) => go({ bot: search.bot, batch: batch.id })}
           emptyMessage={
             selected ? `${selected.name} has not run on many items yet.` : "No batch has run yet."
           }
@@ -536,9 +536,16 @@ export function BotsPage() {
   const views = (
     <LibraryTabs
       label={selected ? `${selected.name} views` : "Bots views"}
-      variant="underline"
       selected={tab}
-      onSelect={(value) => go({ bot: search.bot, tab: value })}
+      onSelect={(value) =>
+        go({
+          bot: search.bot,
+          tab:
+            value === "runs" || value === "bots" || value === "pipelines" || value === "triggers"
+              ? value
+              : "runs",
+        })
+      }
       actions={tabActions}
       tabs={tabs.map((value): LibraryTab<BotsTab> => ({
         value,
@@ -758,7 +765,7 @@ export function BotsPage() {
           bot={manyTarget}
           canRun={canRun}
           onClose={() => go({ bot: search.bot, tab: search.tab })}
-          onStarted={(batch) => go({ bot: batch.botId, tab: "batches", batch: batch.id })}
+          onStarted={(batch) => go({ batch: batch.id })}
         />
       ) : null}
     </LibraryPageFrame>
