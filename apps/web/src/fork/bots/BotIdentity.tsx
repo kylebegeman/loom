@@ -1,39 +1,64 @@
 import type {
   BotDefinition,
   BotRunStatus,
+  BotStarterId,
   BotStarterState,
   BotStarterStatus,
   BotVerdictValue,
 } from "@t3tools/contracts/fork";
 import { BOT_RUN_STATES, BOT_VERDICT_STATES, botColor } from "@t3tools/client-runtime/fork";
-import { BotIcon } from "lucide-react";
+import {
+  BotIcon,
+  GitCompareArrowsIcon,
+  ScanEyeIcon,
+  ShieldCheckIcon,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryStateBadge } from "../project-library/LibraryControls";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
 
+// The large sizes match the project tiles, so a bot's hero lines up with a project's.
 const TILE_SIZES = {
   sm: "size-6 rounded-md",
   md: "size-8 rounded-lg",
   lg: "size-11 rounded-xl",
+  xl: "size-14 rounded-2xl",
+  "2xl": "size-16 rounded-2xl",
 } as const;
 
-const TILE_ICON_SIZES = { sm: "size-3.5", md: "size-4", lg: "size-5" } as const;
+const TILE_ICON_SIZES = {
+  sm: "size-3.5",
+  md: "size-4",
+  lg: "size-5",
+  xl: "size-6",
+  "2xl": "size-7",
+} as const;
+
+/** Starters wear what they do, so they stand apart from the bots people wrote. */
+const STARTER_GLYPHS: Record<BotStarterId, LucideIcon> = {
+  "merge-conflict-resolver": GitCompareArrowsIcon,
+  reviewer: ScanEyeIcon,
+  verifier: ShieldCheckIcon,
+};
 
 /**
- * A bot's mark: its stable color around the bot glyph. Scopes `--project-color` itself so a run
- * row in a mixed list wears its own bot's color. `status` rides on the corner, like a site's.
+ * A bot's mark: its stable color around the bot glyph, or a starter's own glyph when `bot` carries
+ * its origin. Scopes `--project-color` itself so a run row in a mixed list wears its own bot's
+ * color. `status` rides on the corner, like a site's.
  */
 export function BotTile({
   bot,
   size = "md",
   status,
 }: {
-  readonly bot: Pick<BotDefinition, "id">;
+  readonly bot: Pick<BotDefinition, "id" | "origin">;
   readonly size?: keyof typeof TILE_SIZES;
   readonly status?: ReactNode;
 }) {
+  const Glyph = bot.origin ? STARTER_GLYPHS[bot.origin.starterId] : BotIcon;
   return (
     <span
       aria-hidden
@@ -43,7 +68,7 @@ export function BotTile({
         TILE_SIZES[size],
       )}
     >
-      <BotIcon className={TILE_ICON_SIZES[size]} />
+      <Glyph className={TILE_ICON_SIZES[size]} />
       {status ? (
         <span className="absolute -end-0.5 -bottom-0.5 inline-flex rounded-full bg-background p-0.5">
           {status}

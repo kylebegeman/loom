@@ -2,6 +2,7 @@ import {
   BOTS_REPLAY_MAX_RUNS,
   isTerminalBotRunStatus,
   type BotDefinitionInput,
+  type BotReplay,
   type BotRun,
   type BotRunRating,
   type BotVerdictValue,
@@ -119,4 +120,40 @@ export const replayMetricChanges = (before: BotRun | undefined, after: BotRun | 
           ? "Same token use"
           : `${Math.abs(tokens).toLocaleString()} ${tokens > 0 ? "more" : "fewer"} tokens${percentChange(beforeTokens!, afterTokens!)}`,
   };
+};
+
+/** A run's inputs on one line, such as "pr: 94, depth: 2"; empty without inputs. */
+export const replayInputSummary = (run: Pick<BotRun, "inputs">) =>
+  Object.entries(run.inputs)
+    .map(([name, value]) => `${name}: ${String(value)}`)
+    .join(", ");
+
+/**
+ * The replay to show. A finished fetch wins; while the fetch still says running, the answer to a
+ * cancel is newer, and before any fetch the replay as started stands in.
+ */
+export const currentReplay = (
+  started: BotReplay | null,
+  fetched: BotReplay | null,
+  cancelled: BotReplay | null,
+): BotReplay | null =>
+  fetched !== null && fetched.status !== "running" ? fetched : (cancelled ?? fetched ?? started);
+
+const runCount = (count: number) => (count === 1 ? "1 run" : `${count} runs`);
+
+/** Whether the replayed definition did better or worse, in one sentence. */
+export const replayHeadline = (replay: Pick<BotReplay, "status" | "items" | "summary">) => {
+  const total = replay.items.length;
+  const settled = replay.items.filter((item) => item.comparison !== "pending").length;
+  if (replay.status === "running") return `Replaying. ${settled} of ${runCount(total)} done.`;
+  const { fixed, broke, same, changed, failed } = replay.summary;
+  const prefix = replay.status === "cancelled" ? "Cancelled. " : "Done. ";
+  if (settled === 0) return `${prefix}No run finished.`;
+  if (broke > 0 && fixed > 0)
+    return `${prefix}Better on ${runCount(fixed)}, worse on ${runCount(broke)}.`;
+  if (broke > 0) return `${prefix}Worse on ${runCount(broke)}, better on none.`;
+  if (fixed > 0) return `${prefix}Better on ${runCount(fixed)}, worse on none.`;
+  if (same + changed > 0)
+    return `${prefix}No better or worse${changed > 0 ? `; ${runCount(changed)} answered differently` : ""}.`;
+  return `${prefix}${runCount(failed)} could not be replayed.`;
 };

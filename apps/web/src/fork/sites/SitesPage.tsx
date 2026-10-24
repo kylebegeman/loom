@@ -1,55 +1,93 @@
-import { useSiteCheckClock } from "./use-site-check-clock";
-import { useMemo, useState } from "react";
-import { Link, useSearch, useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { useState } from "react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { EnvironmentId } from "@t3tools/contracts";
 import {
   SITE_CHECK_STATES,
   SITE_HEALTH_STATES,
+  SITE_TLS_WARNING_DAYS,
+  libraryProjectColor,
   siteCheckState,
+  siteChecksHealth,
   siteHealth,
   siteTrafficDays,
   supportsLoomFeature,
   type LibraryWorkflowTone,
+  type SiteHealthState,
 } from "@t3tools/client-runtime/fork";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   SITES_FEATURE,
   SITES_MANAGEMENT_FEATURE,
   type LibraryProject,
   type SitesSnapshot,
 } from "@t3tools/contracts/fork";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { AsyncResult, Atom } from "effect/reactivity";
 import {
+  AppWindowIcon,
   ArrowUpRightIcon,
   CircleAlertIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
   CloudOffIcon,
+  CopyIcon,
+  EllipsisIcon,
+  ExternalLinkIcon,
   GlobeIcon,
+  ListFilterIcon,
+  LockIcon,
+  PauseIcon,
+  PencilIcon,
   PlayIcon,
+  PlugZapIcon,
   PlusIcon,
   RefreshCwIcon,
   ServerIcon,
-  TriangleAlertIcon,
+  SlidersHorizontalIcon,
   WrenchIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { Skeleton } from "~/components/ui/skeleton";
-import { cn } from "~/lib/utils";
-import { useAtomCommand } from "~/state/use-atom-command";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { SiteEditor, type SiteEditTarget } from "./SiteEditor";
-import { sites } from "./state";
-import { useEnvironmentQuery } from "~/state/query";
 import {
-  useLibraryAuthority,
-  useLibraryProjects,
-  useLibraryPermission,
-} from "../project-library/state";
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "~/components/ui/empty";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "~/components/ui/menu";
+import { Skeleton } from "~/components/ui/skeleton";
+import { toastManager } from "~/components/ui/toast";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { useRelativeTimeState } from "~/hooks/useRelativeTimeState";
+import { cn } from "~/lib/utils";
+import { useEnvironmentQuery } from "~/state/query";
+import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  LibraryCardTarget,
+  LibraryLayoutToggle,
+  LIBRARY_CARD,
+  LIBRARY_CARD_GRID,
+} from "../project-library/LibraryCollection";
 import {
   LibraryEmpty,
   LibraryErrorNotice,
+  LibraryFilterChip,
   LibraryNotice,
+  LibrarySearch,
   LibraryStateBadge,
+  LibraryStateDot,
 } from "../project-library/LibraryControls";
 import {
   LIBRARY_CELL,
@@ -61,25 +99,329 @@ import {
 } from "../project-library/LibraryData";
 import { LibraryPageFrame } from "../project-library/LibraryPageFrame";
 import { LibraryTabs } from "../project-library/LibraryTabs";
-import { projectColorStyle } from "../project-library/ProjectIdentity";
-import { SiteDetail } from "./SiteDetail";
+import { ProjectWash } from "../project-library/ProjectCollection";
+import { ProjectColorDot, projectColorStyle } from "../project-library/ProjectIdentity";
 import {
-  CertificateLabel,
+  useLibraryAuthority,
+  useLibraryPermission,
+  useLibraryProjects,
+} from "../project-library/state";
+import { SiteDetail } from "./SiteDetail";
+import { SiteEditor, useSiteActiveToggle, type SiteEditTarget } from "./SiteEditor";
+import {
+  ActionHint,
   CheckTicks,
   EndpointsTable,
   SITES_COLOR,
-  SiteTile,
+  SiteMark,
   checkVitals,
-  formatDuration,
+  orderChecksForAttention,
   siteChecks,
   siteColor,
   siteHost,
+  type ActiveToggle,
 } from "./SiteHealth";
+import { SiteThumbnail, useSeen } from "./SiteThumbnail";
 import { formatCount } from "./SiteTraffic";
+import { sites } from "./state";
+import { useSiteCheckClock } from "./use-site-check-clock";
+
+type Site = SitesSnapshot["sites"][number];
+type Service = SitesSnapshot["services"][number];
+type Check = SitesSnapshot["checks"][number];
 
 export type SitesView = "sites" | "services";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+const byName = (a: { readonly name: string }, b: { readonly name: string }) =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+
+/** Below this many sites everything fits in one look, so a search field would only be noise. */
+const SEARCH_THRESHOLD = 6;
+const MAX_ATTENTION_ITEMS = 3;
+/** Past this many checks the header strip would outgrow its line; worst checks lead, so none hide. */
+const MAX_HEADER_TICKS = 60;
+const MAX_CARD_PROJECTS = 1;
+const MAX_ROW_PROJECTS = 2;
+const CATALOG_URL = "https://api.begam.in/v1/public/catalog";
+/** The project filter's entry for sites that serve no project yet. */
+export const UNLINKED_PROJECT = "unlinked";
+const OFFLINE_NOTICE = "Saved check results and traffic below may be out of date.";
+
+export const SITE_SORTS = ["attention", "name", "visits"] as const;
+export type SiteSort = (typeof SITE_SORTS)[number];
+const SORT_LABELS: Record<SiteSort, string> = {
+  attention: "Needs attention first",
+  name: "Name",
+  visits: "Most visited",
+};
+
+const PREFERENCES_KEY = "loom:sites:index-view:v1";
+const SitesPreferences = Schema.Struct({
+  view: Schema.Literals(["cards", "list"]),
+  sort: Schema.Literals(SITE_SORTS),
+  previews: Schema.Boolean,
+});
+type SitesPreferences = typeof SitesPreferences.Type;
+const DEFAULT_PREFERENCES: SitesPreferences = { view: "cards", sort: "attention", previews: false };
+
+export const SERVICE_FILTERS = ["all", "failing", "paused"] as const;
+export type ServiceFilter = (typeof SERVICE_FILTERS)[number];
+const SERVICE_FILTER_LABELS: Record<ServiceFilter, string> = {
+  all: "All",
+  failing: "Failing",
+  paused: "Paused",
+};
+
+// Worst news first, and paused sites last, since they say nothing about whether anything is up.
+const HEALTH_ATTENTION: Record<SiteHealthState, number> = {
+  failing: 0,
+  stale: 1,
+  unchecked: 2,
+  unmonitored: 3,
+  healthy: 4,
+  paused: 5,
+};
+const HEALTH_ORDER = Object.keys(HEALTH_ATTENTION) as readonly SiteHealthState[];
+
+export type SiteFilters = {
+  readonly query: string;
+  readonly states: ReadonlySet<SiteHealthState>;
+  /** Project IDs, plus `UNLINKED_PROJECT` for sites that serve none. */
+  readonly projects: ReadonlySet<string>;
+};
+
+const NO_FILTERS: SiteFilters = { query: "", states: new Set(), projects: new Set() };
+
+export const hasSiteFilters = (filters: SiteFilters) =>
+  Boolean(filters.query.trim() || filters.states.size || filters.projects.size);
+
+/** The sites matching every active filter. Search reads names, addresses, IDs and project titles. */
+export function filterSites(
+  snapshot: SitesSnapshot,
+  now: number,
+  filters: SiteFilters,
+  projects: ReadonlyMap<string, Pick<LibraryProject, "title">>,
+): readonly Site[] {
+  const needle = filters.query.trim().toLowerCase();
+  return snapshot.sites.filter((site) => {
+    if (filters.states.size && !filters.states.has(siteHealth(site, snapshot, now).state)) {
+      return false;
+    }
+    const served = site.projectIds ?? [];
+    if (
+      filters.projects.size &&
+      !(served.length
+        ? served.some((projectId) => filters.projects.has(projectId))
+        : filters.projects.has(UNLINKED_PROJECT))
+    ) {
+      return false;
+    }
+    if (!needle) return true;
+    return [
+      site.name,
+      site.id,
+      siteHost(site.url),
+      ...served.map((projectId) => projects.get(projectId)?.title ?? ""),
+    ].some((text) => text.toLowerCase().includes(needle));
+  });
+}
+
+/**
+ * Sites in the chosen order. Needs attention puts failing and stale sites first, then certificates
+ * running out. Name keeps the primary site first, as the API names it the lead. Most visited
+ * sorts by page views, with sites whose traffic has not loaded yet after the rest.
+ */
+export function sortSites(
+  list: readonly Site[],
+  snapshot: SitesSnapshot,
+  now: number,
+  sort: SiteSort,
+  visits: ReadonlyMap<string, number> | null,
+): readonly Site[] {
+  const primary = (site: Site) => (site.id === snapshot.primarySiteId ? 0 : 1);
+  if (sort === "name") {
+    return list.toSorted((a, b) => primary(a) - primary(b) || byName(a, b));
+  }
+  if (sort === "visits") {
+    return list.toSorted((a, b) => {
+      const left = visits?.get(a.id);
+      const right = visits?.get(b.id);
+      if (left === undefined || right === undefined) {
+        return (left === undefined ? 1 : 0) - (right === undefined ? 1 : 0) || byName(a, b);
+      }
+      return right - left || byName(a, b);
+    });
+  }
+  return list
+    .map((site) => {
+      const certificate = checkVitals(siteChecks(site, snapshot), now).certificate;
+      return {
+        site,
+        rank: HEALTH_ATTENTION[siteHealth(site, snapshot, now).state],
+        certificate:
+          site.active && certificate !== null && certificate <= SITE_TLS_WARNING_DAYS ? 0 : 1,
+      };
+    })
+    .toSorted((a, b) => a.rank - b.rank || a.certificate - b.certificate || byName(a.site, b.site))
+    .map(({ site }) => site);
+}
+
+export type SitesAttentionItem = {
+  readonly key: string;
+  readonly tone: "danger" | "warning";
+  readonly title: string;
+  readonly detail: string;
+  /** Where the item opens: its site's Checks tab, or Services for a service no site uses. */
+  readonly search:
+    | { readonly siteId: string; readonly tab: "checks" }
+    | { readonly view: "services" };
+};
+
+/** What a failing check did, short enough to sit after the site's name. */
+function failureReading(check: Check) {
+  const host = siteHost(check.url);
+  const last = check.last;
+  if (!last) return `${host} is failing`;
+  if (last.status === null) return `${host} did not answer`;
+  if (last.status !== (check.expected_status ?? 200)) return `${host} answered ${last.status}`;
+  return check.content ? `${host} is missing “${check.content}”` : `${host} is failing`;
+}
+
+function certificateReading(days: number) {
+  if (days < 0) return "certificate expired";
+  if (days === 0) return "certificate expires today";
+  return days === 1 ? "certificate expires tomorrow" : `certificate expires in ${days} days`;
+}
+
+/**
+ * What needs someone now, one item per site with its worst problem: a failing check, an expired
+ * certificate, results gone stale, then a certificate inside the warning window. A failing service
+ * no site uses gets its own item, so nothing that is down hides behind the Services tab.
+ */
+export function sitesAttention(
+  snapshot: SitesSnapshot,
+  now: number,
+): readonly SitesAttentionItem[] {
+  const items: (SitesAttentionItem & { readonly rank: number })[] = [];
+  for (const site of snapshot.sites) {
+    if (!site.active) continue;
+    const checks = siteChecks(site, snapshot);
+    const health = siteHealth(site, snapshot, now);
+    const certificate = checkVitals(checks, now).certificate;
+    const search = { siteId: site.id, tab: "checks" } as const;
+    const base = { key: `site:${site.id}`, title: site.name, search };
+    if (health.state === "failing") {
+      const failing = checks.filter(
+        (check) => siteCheckState(check, snapshot.staleAfterSeconds, now) === "failing",
+      );
+      const [only] = failing;
+      items.push({
+        ...base,
+        tone: "danger",
+        rank: 0,
+        detail:
+          failing.length === 1 && only ? failureReading(only) : `${failing.length} checks failing`,
+      });
+    } else if (certificate !== null && certificate < 0) {
+      items.push({ ...base, tone: "danger", rank: 1, detail: certificateReading(certificate) });
+    } else if (health.state === "stale") {
+      items.push({ ...base, tone: "warning", rank: 2, detail: "check results are out of date" });
+    } else if (certificate !== null && certificate <= SITE_TLS_WARNING_DAYS) {
+      items.push({ ...base, tone: "warning", rank: 3, detail: certificateReading(certificate) });
+    }
+  }
+  const used = new Set(snapshot.sites.flatMap((site) => site.serviceIds));
+  for (const service of snapshot.services) {
+    if (!service.active || used.has(service.id)) continue;
+    const health = serviceHealth(service, snapshot, now);
+    if (health.state !== "failing") continue;
+    items.push({
+      key: `service:${service.id}`,
+      title: service.name,
+      tone: "danger",
+      rank: 0,
+      detail: `${plural(health.failing, "check")} failing`,
+      search: { view: "services" },
+    });
+  }
+  return items
+    .toSorted((a, b) => a.rank - b.rank || a.title.localeCompare(b.title))
+    .map(({ rank: _rank, ...item }) => item);
+}
+
+/** The one-word answer to "is everything up?" that leads the header. */
+export function sitesStatus(snapshot: SitesSnapshot, now: number) {
+  let watched = 0;
+  let failing = 0;
+  let stale = 0;
+  for (const check of snapshot.checks) {
+    const state = siteCheckState(check, snapshot.staleAfterSeconds, now);
+    if (state === "disabled") continue;
+    watched += 1;
+    if (state === "failing") failing += 1;
+    else if (state === "stale") stale += 1;
+  }
+  const tone: LibraryWorkflowTone = failing
+    ? "danger"
+    : stale
+      ? "warning"
+      : watched
+        ? "success"
+        : "neutral";
+  const label = failing
+    ? `${failing} failing`
+    : stale
+      ? `${stale} out of date`
+      : watched
+        ? "All normal"
+        : "Nothing watched";
+  return { tone, label, watched, failing, stale };
+}
+
+function serviceHealth(
+  service: Service,
+  snapshot: Pick<SitesSnapshot, "checks" | "staleAfterSeconds">,
+  now: number,
+) {
+  return siteChecksHealth(
+    snapshot.checks.filter((check) => check.service_id === service.id),
+    snapshot.staleAfterSeconds,
+    now,
+    !service.active,
+  );
+}
+
+/** The services the Services tab shows under its filter, with each filter's count. */
+export function filterServices(snapshot: SitesSnapshot, now: number, filter: ServiceFilter) {
+  const failing = snapshot.services.filter(
+    (service) => serviceHealth(service, snapshot, now).state === "failing",
+  );
+  const paused = snapshot.services.filter((service) => !service.active);
+  return {
+    services: filter === "failing" ? failing : filter === "paused" ? paused : snapshot.services,
+    counts: { all: snapshot.services.length, failing: failing.length, paused: paused.length },
+  };
+}
+
+/**
+ * Page views for every listed site, read only while sorting by them. One derived atom per site
+ * list joins the per-site queries the cards already share, so nothing is requested twice.
+ */
+const siteVisitsAtom = Atom.family((key: string) => {
+  const [environment = "", ...siteIds] = key.split("\n");
+  const environmentId = EnvironmentId.make(environment);
+  return Atom.make((get): AsyncResult.AsyncResult<ReadonlyMap<string, number>> => {
+    const visits = new Map<string, number>();
+    for (const siteId of siteIds) {
+      const analytics = Option.getOrNull(
+        AsyncResult.value(get(sites.analytics({ environmentId, input: { siteId } }))),
+      );
+      if (analytics) visits.set(siteId, analytics.pageviews);
+    }
+    return AsyncResult.success(visits);
+  });
+});
 
 export function SitesPage() {
   const authority = useLibraryAuthority();
@@ -90,420 +432,1103 @@ export function SitesPage() {
 function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAuthority> }) {
   const search = useSearch({ from: "/sites" });
   const navigate = useNavigate();
+  const environmentId = authority.authorityId;
   const capabilities = authority.environment?.serverConfig?.environment.capabilities;
   const supported = supportsLoomFeature(capabilities, SITES_FEATURE);
   const manages = supportsLoomFeature(capabilities, SITES_MANAGEMENT_FEATURE);
   const projects = useLibraryProjects(true);
-  const allowed = useLibraryPermission(sites.saveSite, authority.authorityId);
-  const [editing, setEditing] = useState<SiteEditTarget | null>(null);
+  const allowed = useLibraryPermission(sites.saveSite, environmentId);
+  // A local editor remembers the page it opened on, so going Back from there leaves it behind.
+  const [editing, setEditing] = useState<{
+    readonly target: SiteEditTarget;
+    readonly at: string | undefined;
+  } | null>(null);
   const [running, setRunning] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<SiteFilters>(NO_FILTERS);
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("all");
+  const [preferences, setPreferences] = useLocalStorage(
+    PREFERENCES_KEY,
+    DEFAULT_PREFERENCES,
+    SitesPreferences,
+  );
   const runChecks = useAtomCommand(sites.runChecks, { reportFailure: false });
   const query = useEnvironmentQuery(
-    authority.authorityId && supported
-      ? sites.snapshot({ environmentId: authority.authorityId, input: {} })
-      : null,
+    environmentId && supported ? sites.snapshot({ environmentId, input: {} }) : null,
   );
-  const snapshot = query.data?.snapshot;
+  const snapshot = query.data?.snapshot ?? null;
   const now = useSiteCheckClock(snapshot);
-  // A link to a site that has since been removed lands on the index rather than an empty page.
-  const opened = search.siteId ? snapshot?.sites.find((site) => site.id === search.siteId) : null;
+  const opened = search.siteId
+    ? (snapshot?.sites.find((site) => site.id === search.siteId) ?? null)
+    : null;
   const analytics = useEnvironmentQuery(
-    authority.authorityId && supported && opened
-      ? sites.analytics({ environmentId: authority.authorityId, input: { siteId: opened.id } })
+    environmentId && opened
+      ? sites.analytics({ environmentId, input: { siteId: opened.id } })
       : null,
   );
-  const canManage = Boolean(
-    manages && query.data?.managementConfigured && allowed && authority.connected,
+  const managementConfigured = query.data?.managementConfigured === true;
+  const canManage = Boolean(manages && managementConfigured && allowed && authority.connected);
+  const libraryLabel = authority.environment?.label ?? "your Library server";
+  const manageReason = !snapshot
+    ? null
+    : !authority.connected
+      ? `Reconnect ${libraryLabel} to make changes.`
+      : !manages
+        ? `Update ${libraryLabel} to manage sites here.`
+        : !managementConfigured
+          ? "Site management needs a manager connection on your Library server."
+          : !allowed
+            ? `Ask an owner of ${libraryLabel} for settings access to change sites.`
+            : null;
+  const projectsById = new Map(
+    (projects.query.data ?? []).map((project) => [project.id, project] as const),
   );
-  const projectsById = useMemo(
-    () => new Map((projects.query.data ?? []).map((project) => [project.id, project])),
-    [projects.query.data],
-  );
-  const view: SitesView = search.view ?? "sites";
-  const openSite = (siteId: string) => void navigate({ to: "/sites", search: { siteId } });
-  const showView = (next: SitesView) =>
-    void navigate({
-      to: "/sites",
-      search: { view: next === "services" ? "services" : undefined },
-      replace: true,
-    });
   const refresh = () => {
     query.refresh();
-    analytics.refresh();
+    if (opened) analytics.refresh();
   };
+  const toggleActive = useSiteActiveToggle({
+    environmentId,
+    connected: canManage,
+    onChanged: query.refresh,
+  });
+
+  const routeTarget: SiteEditTarget | null =
+    search.edit === "new"
+      ? { kind: "site" }
+      : search.edit === "site" && opened
+        ? { kind: "site", row: opened }
+        : null;
+  const target = (editing && editing.at === search.siteId ? editing.target : null) ?? routeTarget;
+  const openEditor = (next: SiteEditTarget) => setEditing({ target: next, at: search.siteId });
+  const clearEditParam = () =>
+    void navigate({ to: "/sites", search: { ...search, edit: undefined }, replace: true });
+  const closeEditor = () => {
+    setEditing(null);
+    if (search.edit) clearEditParam();
+  };
+  const saved = (id: string) => {
+    const registered = target?.kind === "site" && !target.row;
+    setEditing(null);
+    query.refresh();
+    if (registered) {
+      void navigate({ to: "/sites", search: { siteId: id }, replace: Boolean(search.edit) });
+    } else if (search.edit) {
+      clearEditParam();
+    }
+  };
+  const editor =
+    snapshot && environmentId && target ? (
+      <SiteEditor
+        key={`${target.kind}:${target.row?.id ?? "new"}:${target.kind === "site" ? (target.step ?? "") : ""}`}
+        target={target}
+        snapshot={snapshot}
+        environmentId={environmentId}
+        connected={canManage}
+        onClose={closeEditor}
+        onSaved={saved}
+      />
+    ) : null;
+
   const run = async () => {
-    if (!authority.authorityId || !canManage || running) return;
+    if (!environmentId || !canManage || running) return;
     setRunning(true);
     setActionError(null);
     try {
-      const result = await runChecks({ environmentId: authority.authorityId, input: {} });
+      const result = await runChecks({ environmentId, input: {} });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      refresh();
+      query.refresh();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Could not run checks.");
     } finally {
       setRunning(false);
     }
   };
+
   const notices = (
     <>
       {actionError ? <LibraryErrorNotice error={actionError} /> : null}
-      {authority.authorityId &&
-      supported &&
-      query.data?.configured &&
-      !query.data.managementConfigured ? (
+      {query.data?.configured && !managementConfigured ? (
         <LibraryNotice icon={WrenchIcon}>
           {manages
             ? "Viewing only. Site management needs a manager connection on your Library server."
-            : "Viewing only. Update your Library server to manage sites here."}
+            : `Viewing only. Update ${libraryLabel} to manage sites here.`}
+        </LibraryNotice>
+      ) : query.data?.configured && manages && !allowed ? (
+        <LibraryNotice icon={LockIcon}>
+          You can view sites. Ask an owner of {libraryLabel} for settings access to change them.
         </LibraryNotice>
       ) : null}
-      <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
+      {snapshot ? <LibraryErrorNotice error={query.error} onRetry={query.refresh} /> : null}
     </>
   );
-  const editor =
-    snapshot && authority.authorityId && editing ? (
-      <SiteEditor
-        key={`${editing.kind}:${editing.row?.id ?? "new"}`}
-        target={editing}
-        snapshot={snapshot}
-        environmentId={authority.authorityId}
-        connected={canManage}
-        onClose={() => setEditing(null)}
-        onSaved={(id) => {
-          if (editing.kind === "site" && !editing.row) openSite(id);
-          setEditing(null);
-          refresh();
-        }}
-      />
-    ) : null;
 
-  if (opened && snapshot) {
+  // Whatever stands between the page and a snapshot, said where the content belongs.
+  const blocker = !environmentId ? (
+    <LibraryEmpty
+      icon={GlobeIcon}
+      title="Choose your Library first"
+      action={
+        <Button shape="pill" render={<Link to="/projects" />}>
+          Open Projects
+        </Button>
+      }
+    >
+      Sites live on your Library server. Pick it in Projects, then come back to watch your sites.
+    </LibraryEmpty>
+  ) : !supported ? (
+    <LibraryEmpty icon={CloudOffIcon} title="Sites need a newer Library server">
+      Update {libraryLabel} to watch your sites here.
+    </LibraryEmpty>
+  ) : query.data?.configured === false ? (
+    <NotConfigured label={libraryLabel} pending={query.isPending} onCheck={query.refresh} />
+  ) : !snapshot && query.error ? (
+    <LibraryEmpty
+      icon={CircleAlertIcon}
+      title="Sites could not load"
+      action={
+        <Button shape="pill" variant="outline" disabled={query.isPending} onClick={query.refresh}>
+          <RefreshCwIcon />
+          Try again
+        </Button>
+      }
+    >
+      {query.error}
+    </LibraryEmpty>
+  ) : null;
+
+  if (search.siteId) {
+    if (opened && snapshot) {
+      return (
+        <LibraryPageFrame
+          title={opened.name}
+          section={{ label: "Sites", to: "/sites" }}
+          offlineNotice={OFFLINE_NOTICE}
+          style={projectColorStyle(siteColor(opened, projectsById))}
+        >
+          {notices}
+          <SiteDetail
+            key={opened.id}
+            site={opened}
+            snapshot={snapshot}
+            now={now}
+            projects={projectsById}
+            analytics={analytics}
+            canManage={canManage}
+            running={running}
+            onRunChecks={() => void run()}
+            onEdit={openEditor}
+            manageHint={manageReason}
+            activeToggle={toggleActive}
+          />
+          {editor}
+        </LibraryPageFrame>
+      );
+    }
+    // A link to one site waits in that site's shape and never flashes the index on the way.
     return (
       <LibraryPageFrame
-        title={opened.name}
+        title={snapshot ? "Not found" : "Site"}
         section={{ label: "Sites", to: "/sites" }}
-        offlineNotice="Saved check results and traffic below may be out of date."
-        style={projectColorStyle(siteColor(opened, projectsById))}
+        offlineNotice={OFFLINE_NOTICE}
+        style={projectColorStyle(SITES_COLOR)}
       >
-        {notices}
-        <SiteDetail
-          key={opened.id}
-          site={opened}
-          snapshot={snapshot}
-          now={now}
-          projects={projectsById}
-          analytics={analytics}
-          canManage={canManage}
-          running={running}
-          onRunChecks={() => void run()}
-          onEdit={setEditing}
-        />
-        {editor}
+        {blocker ??
+          (snapshot ? (
+            <LibraryEmpty
+              icon={GlobeIcon}
+              title="This site is no longer registered"
+              action={
+                <Button shape="pill" variant="outline" render={<Link to="/sites" />}>
+                  Back to Sites
+                </Button>
+              }
+            >
+              It may have been removed or renamed in another session. Every registered site is on
+              the Sites page.
+            </LibraryEmpty>
+          ) : (
+            <SiteDetailSkeleton />
+          ))}
       </LibraryPageFrame>
     );
   }
 
+  const view: SitesView = search.view ?? "sites";
+  const showView = (next: SitesView) =>
+    void navigate({
+      to: "/sites",
+      search: { view: next === "services" ? "services" : undefined },
+      replace: true,
+    });
+  const attention = snapshot ? sitesAttention(snapshot, now) : [];
+  const status = snapshot ? sitesStatus(snapshot, now) : null;
+  const services = snapshot ? filterServices(snapshot, now, serviceFilter) : null;
+  const servicesFailing = services?.counts.failing ?? 0;
+  const registerSite = () => openEditor({ kind: "site" });
+  const registerService = () => openEditor({ kind: "service" });
+
   return (
     <LibraryPageFrame
       section={{ label: "Sites", to: "/sites" }}
-      offlineNotice="Saved check results and traffic below may be out of date."
+      offlineNotice={OFFLINE_NOTICE}
       style={projectColorStyle(SITES_COLOR)}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
-          <h1 className="text-xl font-semibold tracking-tight">Sites</h1>
-          <p className="text-sm text-muted-foreground">
-            Your websites, whether they are up, and the visits they receive.
-          </p>
+      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
+        <div className="min-w-0 space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
+          <div className="flex max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
+            {snapshot && status ? (
+              <>
+                <LibraryStateBadge tone={status.tone}>{status.label}</LibraryStateBadge>
+                <span>
+                  {plural(snapshot.sites.length, "site")} · {plural(status.watched, "check")} on{" "}
+                  {plural(snapshot.services.length, "service")}
+                </span>
+                {snapshot.checks.length ? (
+                  <TickStrip
+                    label={`${status.watched - status.failing - status.stale} of ${status.watched} checks passing`}
+                    ticks={orderChecksForAttention(snapshot.checks, snapshot.staleAfterSeconds, now)
+                      .slice(0, MAX_HEADER_TICKS)
+                      .map((check) => ({
+                        key: check.id,
+                        tone: SITE_CHECK_STATES[
+                          siteCheckState(check, snapshot.staleAfterSeconds, now)
+                        ].tone,
+                      }))}
+                  />
+                ) : null}
+                <UpdatedButton
+                  observedAt={snapshot.observedAt || null}
+                  updating={query.isPending}
+                  disabled={!authority.connected || query.isPending}
+                  onRefresh={refresh}
+                />
+              </>
+            ) : (
+              "Your websites, whether they are up, and the visits they receive."
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            shape="pill"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Refresh sites"
-            onClick={refresh}
-            disabled={!authority.connected || !supported || query.isPending}
-          >
-            <RefreshCwIcon />
-          </Button>
-          <Button
-            shape="pill"
-            size="sm"
-            variant="outline"
-            disabled={!canManage || !snapshot || running}
-            onClick={() => void run()}
-          >
-            <PlayIcon />
-            {running ? "Running checks…" : "Run checks now"}
-          </Button>
-          <Button
-            shape="pill"
-            size="sm"
-            disabled={!canManage || !snapshot}
-            onClick={() => setEditing({ kind: "site" })}
-          >
-            <PlusIcon />
-            Register site
-          </Button>
+          <ActionHint hint={manageReason}>
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              disabled={!canManage || !snapshot || running}
+              onClick={() => void run()}
+            >
+              <PlayIcon />
+              {running ? "Running checks…" : "Run checks now"}
+            </Button>
+          </ActionHint>
+          <ActionHint hint={manageReason}>
+            <Button
+              shape="pill"
+              size="sm"
+              disabled={!canManage || !snapshot}
+              onClick={registerSite}
+            >
+              <PlusIcon />
+              Register site
+            </Button>
+          </ActionHint>
         </div>
       </header>
 
       {notices}
 
-      {!authority.authorityId ? (
-        <LibraryEmpty
-          icon={GlobeIcon}
-          title="Choose your Library first"
-          action={
-            <Button shape="pill" render={<Link to="/projects" />}>
-              Open Projects
-            </Button>
-          }
-        >
-          Sites live on your Library server. Pick it in Projects, then come back to watch your
-          sites.
-        </LibraryEmpty>
-      ) : !supported ? (
-        <LibraryEmpty icon={CloudOffIcon} title="Sites need a newer Library server">
-          Update {authority.environment?.label ?? "your Library server"} to watch your sites here.
-        </LibraryEmpty>
-      ) : query.data?.configured === false ? (
-        <LibraryEmpty icon={CloudOffIcon} title="Connect the personal API">
-          Connect the personal API to {authority.environment?.label ?? "your Library server"} to see
-          your sites, their checks and their traffic.
-        </LibraryEmpty>
-      ) : !snapshot ? (
-        query.isPending ? (
-          <SitesSkeleton />
-        ) : null
-      ) : (
-        <>
-          <SitesStatus snapshot={snapshot} now={now} onOpenSite={openSite} />
-          <LibraryTabs
-            label="Sites views"
-            selected={view}
-            onSelect={showView}
-            tabs={[
-              { value: "sites", label: "Sites", icon: GlobeIcon, count: snapshot.sites.length },
-              {
-                value: "services",
-                label: "Services",
-                icon: ServerIcon,
-                count: snapshot.services.length,
-              },
-            ]}
-            actions={
-              view === "services" && snapshot.services.length ? (
-                <Button
-                  shape="pill"
-                  size="xs"
-                  variant="outline"
-                  disabled={!canManage}
-                  onClick={() => setEditing({ kind: "service" })}
-                >
-                  <PlusIcon />
-                  Register service
-                </Button>
-              ) : null
-            }
-          >
-            {view === "services" ? (
-              <ServicesRegistry
-                snapshot={snapshot}
-                now={now}
-                canManage={canManage}
-                onEdit={setEditing}
-                onOpenSite={openSite}
-              />
-            ) : snapshot.sites.length ? (
-              <SitesTable
-                environmentId={authority.authorityId}
-                snapshot={snapshot}
-                now={now}
-                projects={projectsById}
-                onOpenSite={openSite}
-              />
-            ) : (
-              <LibraryEmpty
-                icon={GlobeIcon}
-                title="Register your first site"
-                action={
-                  <Button
-                    shape="pill"
-                    disabled={!canManage}
-                    onClick={() => setEditing({ kind: "site" })}
-                  >
-                    <PlusIcon />
-                    Register a site
-                  </Button>
-                }
-              >
-                Link a site to the projects it serves. Loom watches its endpoints and counts its
-                visits, so you know it is up without opening it.
-              </LibraryEmpty>
-            )}
-          </LibraryTabs>
-        </>
-      )}
-
+      {blocker ??
+        (!snapshot || !environmentId ? (
+          <SitesSkeleton view={preferences.view} />
+        ) : (
+          <>
+            <AttentionStrip items={attention} />
+            <LibraryTabs
+              label="Sites views"
+              selected={view}
+              onSelect={showView}
+              tabs={[
+                { value: "sites", label: "Sites", icon: GlobeIcon, count: snapshot.sites.length },
+                {
+                  value: "services",
+                  label: "Services",
+                  icon: ServerIcon,
+                  count: servicesFailing || snapshot.services.length,
+                  urgent: servicesFailing > 0,
+                },
+              ]}
+              actions={
+                view === "services" ? (
+                  snapshot.services.length ? (
+                    <>
+                      <ToggleGroup
+                        shape="pill"
+                        variant="segmented"
+                        aria-label="Which services"
+                        value={[serviceFilter]}
+                        onValueChange={(value) => {
+                          const next = SERVICE_FILTERS.find((entry) => entry === value[0]);
+                          if (next) setServiceFilter(next);
+                        }}
+                      >
+                        {SERVICE_FILTERS.map((entry) => (
+                          <ToggleGroupItem key={entry} value={entry}>
+                            {SERVICE_FILTER_LABELS[entry]}
+                            <span className="tabular-nums opacity-60">
+                              {services?.counts[entry] ?? 0}
+                            </span>
+                          </ToggleGroupItem>
+                        ))}
+                      </ToggleGroup>
+                      <ActionHint hint={manageReason}>
+                        <Button
+                          shape="pill"
+                          size="sm"
+                          variant="outline"
+                          disabled={!canManage}
+                          onClick={registerService}
+                        >
+                          <PlusIcon />
+                          Register service
+                        </Button>
+                      </ActionHint>
+                    </>
+                  ) : null
+                ) : snapshot.sites.length ? (
+                  <SitesControls
+                    snapshot={snapshot}
+                    now={now}
+                    projects={projectsById}
+                    filters={filters}
+                    preferences={preferences}
+                    onFilters={setFilters}
+                    onPreferences={setPreferences}
+                  />
+                ) : null
+              }
+            >
+              {view === "services" ? (
+                <ServicesView
+                  snapshot={snapshot}
+                  services={services?.services ?? []}
+                  filter={serviceFilter}
+                  now={now}
+                  canManage={canManage}
+                  manageReason={manageReason}
+                  activeToggle={toggleActive}
+                  onFilter={setServiceFilter}
+                  onEdit={openEditor}
+                  onRegister={registerService}
+                />
+              ) : (
+                <SitesCollection
+                  environmentId={environmentId}
+                  snapshot={snapshot}
+                  now={now}
+                  projects={projectsById}
+                  filters={filters}
+                  preferences={preferences}
+                  canManage={canManage}
+                  manageReason={manageReason}
+                  pending={toggleActive.pending}
+                  onClearFilters={() => setFilters(NO_FILTERS)}
+                  onEdit={openEditor}
+                  onToggleActive={(site) => toggleActive.toggle({ kind: "site", row: site })}
+                  onRegister={registerSite}
+                />
+              )}
+            </LibraryTabs>
+          </>
+        ))}
       {editor}
-      <p className="text-xs text-muted-foreground">
-        Building something new?{" "}
-        <a
-          className="inline-flex items-center gap-0.5 font-medium text-foreground/80 underline-offset-4 hover:underline"
-          href="https://api.begam.in/v1/public/catalog"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Explore the personal API catalog
-          <ArrowUpRightIcon aria-hidden className="size-3" />
-        </a>
-      </p>
     </LibraryPageFrame>
   );
 }
 
-const STATUS_TONES: Record<
-  LibraryWorkflowTone,
-  { readonly surface: string; readonly icon: string; readonly glyph: typeof CircleCheckIcon }
-> = {
-  success: { surface: "bg-success/8", icon: "text-success", glyph: CircleCheckIcon },
-  danger: {
-    surface: "bg-destructive/8 dark:bg-destructive/12",
-    icon: "text-destructive",
-    glyph: CircleAlertIcon,
-  },
-  warning: { surface: "bg-warning/10", icon: "text-warning", glyph: TriangleAlertIcon },
-  neutral: {
-    surface: "bg-muted/50 dark:bg-accent/40",
-    icon: "text-muted-foreground",
-    glyph: CircleDashedIcon,
-  },
-  active: { surface: "bg-(--project-color)/8", icon: "text-(--project-color)", glyph: GlobeIcon },
-};
+/** The last read's age as the way to read again, so the page carries one refresh control. */
+function UpdatedButton({
+  observedAt,
+  updating,
+  disabled,
+  onRefresh,
+}: {
+  readonly observedAt: string | null;
+  readonly updating: boolean;
+  readonly disabled: boolean;
+  readonly onRefresh: () => void;
+}) {
+  const relative = useRelativeTimeState(observedAt);
+  const age =
+    relative.status === "relative"
+      ? relative.suffix
+        ? `${relative.value} ${relative.suffix}`
+        : relative.value
+      : null;
+  return (
+    <Button
+      shape="pill"
+      size="xs"
+      variant="ghost"
+      disabled={disabled}
+      onClick={onRefresh}
+      aria-label={age ? `Refresh sites, updated ${age}` : "Refresh sites"}
+    >
+      <RefreshCwIcon />
+      {updating ? "Updating…" : age ? `Updated ${age}` : "Refresh"}
+    </Button>
+  );
+}
 
-/**
- * The status-page answer first: is everything up? One tinted line says so, names what is not,
- * and shows every check as a tick, so a failure is visible before any row is read.
- */
-function SitesStatus({
+function NotConfigured({
+  label,
+  pending,
+  onCheck,
+}: {
+  readonly label: string;
+  readonly pending: boolean;
+  readonly onCheck: () => void;
+}) {
+  return (
+    <LibraryEmpty
+      icon={PlugZapIcon}
+      title="Connect the personal API"
+      action={
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button shape="pill" variant="outline" disabled={pending} onClick={onCheck}>
+            <RefreshCwIcon />
+            Check again
+          </Button>
+          <Button
+            shape="pill"
+            variant="ghost"
+            render={<a href={CATALOG_URL} target="_blank" rel="noreferrer" />}
+          >
+            Explore the personal API catalog
+            <ArrowUpRightIcon />
+          </Button>
+        </div>
+      }
+    >
+      Sites reads your sites, checks and traffic through the personal API. Whoever runs {label}{" "}
+      connects it on the server; once that is done, check again here.
+    </LibraryEmpty>
+  );
+}
+
+function AttentionStrip({ items }: { readonly items: readonly SitesAttentionItem[] }) {
+  if (!items.length) return null;
+  const shown = items.slice(0, MAX_ATTENTION_ITEMS);
+  const rest = items.slice(MAX_ATTENTION_ITEMS);
+  return (
+    <LibraryNotice
+      icon={CircleAlertIcon}
+      tone={items.some((item) => item.tone === "danger") ? "danger" : "warning"}
+      action={
+        rest.length ? (
+          <Menu>
+            <MenuTrigger render={<Button shape="pill" size="xs" variant="ghost" />}>
+              +{rest.length} more
+            </MenuTrigger>
+            <MenuPopup side="bottom" align="end">
+              {rest.map((item) => (
+                <MenuItem key={item.key} render={<Link to="/sites" search={item.search} />}>
+                  <LibraryStateDot tone={item.tone} />
+                  <span className="font-medium">{item.title}</span>
+                  <span className="text-muted-foreground">{item.detail}</span>
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
+        ) : null
+      }
+    >
+      <ul aria-label="Needs attention" className="flex min-w-0 flex-wrap gap-x-5 gap-y-1">
+        {shown.map((item) => (
+          <li key={item.key} className="min-w-0 max-w-full">
+            <Link
+              to="/sites"
+              search={item.search}
+              className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <LibraryStateDot tone={item.tone} />
+              <span className="shrink-0 font-medium text-foreground">{item.title}</span>
+              <span className="min-w-0 truncate text-muted-foreground">{item.detail}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </LibraryNotice>
+  );
+}
+
+function SitesControls({
   snapshot,
   now,
-  onOpenSite,
+  projects,
+  filters,
+  preferences,
+  onFilters,
+  onPreferences,
 }: {
   readonly snapshot: SitesSnapshot;
   readonly now: number;
-  readonly onOpenSite: (siteId: string) => void;
+  readonly projects: ReadonlyMap<string, LibraryProject>;
+  readonly filters: SiteFilters;
+  readonly preferences: SitesPreferences;
+  readonly onFilters: (filters: SiteFilters) => void;
+  readonly onPreferences: (preferences: SitesPreferences) => void;
 }) {
-  const states = snapshot.checks.map((check) => ({
-    check,
-    state: siteCheckState(check, snapshot.staleAfterSeconds, now),
-  }));
-  const watched = states.filter(({ state }) => state !== "disabled");
-  const failing = watched.filter(({ state }) => state === "failing").length;
-  const stale = watched.filter(({ state }) => state === "stale").length;
-  const tone: LibraryWorkflowTone = failing
-    ? "danger"
-    : stale
-      ? "warning"
-      : watched.length
-        ? "success"
-        : "neutral";
-  const headline = failing
-    ? `${plural(failing, "check")} failing`
-    : stale
-      ? `${plural(stale, "check")} out of date`
-      : watched.length
-        ? "All systems normal"
-        : "Nothing is watched yet";
-  const troubled = snapshot.sites.filter((site) => {
-    const state = siteHealth(site, snapshot, now).state;
-    return state === "failing" || state === "stale";
-  });
-  const presentation = STATUS_TONES[tone];
+  const toggleIn = <T,>(values: ReadonlySet<T>, value: T) => {
+    const next = new Set(values);
+    if (!next.delete(value)) next.add(value);
+    return next;
+  };
+  const toggleState = (state: SiteHealthState) =>
+    onFilters({ ...filters, states: toggleIn(filters.states, state) });
+  const toggleProject = (projectId: string) =>
+    onFilters({ ...filters, projects: toggleIn(filters.projects, projectId) });
+  const projectLabel = (projectId: string) =>
+    projectId === UNLINKED_PROJECT
+      ? "Not linked"
+      : (projects.get(projectId)?.title ?? "Unavailable project");
   return (
-    <section
-      aria-label="Status"
-      className={cn(
-        "flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-4 py-3",
-        presentation.surface,
-      )}
-    >
-      <presentation.glyph aria-hidden className={cn("size-5 shrink-0", presentation.icon)} />
-      <div className="min-w-0 flex-1 basis-56">
-        <p className="text-sm font-semibold">{headline}</p>
-        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-          {troubled.length ? (
-            <>
-              Affects
-              {troubled.map((site, index) => (
-                <span key={site.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenSite(site.id)}
-                    className="rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  >
-                    {site.name}
-                  </button>
-                  {index < troubled.length - 1 ? "," : null}
-                </span>
-              ))}
-            </>
-          ) : (
-            <span className="tabular-nums">
-              {plural(watched.length, "check")} across {plural(snapshot.services.length, "service")}
-            </span>
-          )}
-          {snapshot.observedAt ? (
-            <span>· Updated {formatRelativeTimeLabel(snapshot.observedAt)}</span>
-          ) : null}
-        </p>
-      </div>
-      {states.length ? (
-        <TickStrip
-          size="lg"
-          label={`${watched.length - failing - stale} of ${watched.length} checks passing`}
-          ticks={states.map(({ check, state }) => ({
-            key: check.id,
-            tone: SITE_CHECK_STATES[state].tone,
-          }))}
+    <>
+      {snapshot.sites.length > SEARCH_THRESHOLD || filters.query ? (
+        <LibrarySearch
+          value={filters.query}
+          onChange={(query) => onFilters({ ...filters, query })}
+          placeholder="Search names, addresses, projects"
+          label="Search sites"
         />
       ) : null}
-    </section>
+      <FilterMenu
+        snapshot={snapshot}
+        now={now}
+        projects={projects}
+        filters={filters}
+        onToggleState={toggleState}
+        onToggleProject={toggleProject}
+      />
+      {[...filters.states].map((state) => (
+        <LibraryFilterChip
+          key={state}
+          label={SITE_HEALTH_STATES[state].label}
+          removeLabel={`Stop showing only ${SITE_HEALTH_STATES[state].label.toLowerCase()} sites`}
+          marker={<LibraryStateDot tone={SITE_HEALTH_STATES[state].tone} />}
+          onRemove={() => toggleState(state)}
+        />
+      ))}
+      {[...filters.projects].map((projectId) => {
+        const project = projects.get(projectId);
+        return (
+          <LibraryFilterChip
+            key={projectId}
+            label={projectLabel(projectId)}
+            removeLabel={`Stop showing only sites for ${projectLabel(projectId)}`}
+            marker={project ? <ProjectColorDot color={libraryProjectColor(project)} /> : undefined}
+            onRemove={() => toggleProject(projectId)}
+          />
+        );
+      })}
+      <DisplayMenu preferences={preferences} onChange={onPreferences} />
+      <LibraryLayoutToggle
+        value={preferences.view}
+        onChange={(view) => onPreferences({ ...preferences, view })}
+      />
+    </>
   );
+}
+
+function FilterMenu({
+  snapshot,
+  now,
+  projects,
+  filters,
+  onToggleState,
+  onToggleProject,
+}: {
+  readonly snapshot: SitesSnapshot;
+  readonly now: number;
+  readonly projects: ReadonlyMap<string, LibraryProject>;
+  readonly filters: SiteFilters;
+  readonly onToggleState: (state: SiteHealthState) => void;
+  readonly onToggleProject: (projectId: string) => void;
+}) {
+  const stateCounts = new Map<SiteHealthState, number>();
+  const projectCounts = new Map<string, number>();
+  for (const site of snapshot.sites) {
+    const state = siteHealth(site, snapshot, now).state;
+    stateCounts.set(state, (stateCounts.get(state) ?? 0) + 1);
+    const served = site.projectIds ?? [];
+    for (const projectId of served.length ? served : [UNLINKED_PROJECT]) {
+      projectCounts.set(projectId, (projectCounts.get(projectId) ?? 0) + 1);
+    }
+  }
+  const states = HEALTH_ORDER.filter(
+    (state) => stateCounts.has(state) || filters.states.has(state),
+  );
+  const projectIds = [...projectCounts.keys()]
+    .filter((projectId) => projectId === UNLINKED_PROJECT || projects.has(projectId))
+    .toSorted((a, b) =>
+      a === UNLINKED_PROJECT
+        ? 1
+        : b === UNLINKED_PROJECT
+          ? -1
+          : (projects.get(a)?.title ?? "").localeCompare(projects.get(b)?.title ?? ""),
+    );
+  const active = filters.states.size + filters.projects.size;
+  if (states.length < 2 && projectIds.length < 2 && !active) return null;
+  return (
+    <Menu>
+      <MenuTrigger render={<Button shape="pill" size="sm" variant="outline" />}>
+        <ListFilterIcon />
+        Filters
+        {active ? (
+          <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">
+            {active}
+          </span>
+        ) : null}
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="start">
+        <MenuGroup>
+          <MenuGroupLabel>State</MenuGroupLabel>
+          {states.map((state) => (
+            <MenuCheckboxItem
+              key={state}
+              checked={filters.states.has(state)}
+              onCheckedChange={() => onToggleState(state)}
+            >
+              <span className="flex w-full items-center gap-2">
+                <LibraryStateDot tone={SITE_HEALTH_STATES[state].tone} />
+                <span className="flex-1">{SITE_HEALTH_STATES[state].label}</span>
+                <span className="ps-4 text-xs tabular-nums text-muted-foreground">
+                  {stateCounts.get(state) ?? 0}
+                </span>
+              </span>
+            </MenuCheckboxItem>
+          ))}
+        </MenuGroup>
+        {projectIds.length > 1 || filters.projects.size ? (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Serves</MenuGroupLabel>
+              {projectIds.map((projectId) => {
+                const project = projects.get(projectId);
+                return (
+                  <MenuCheckboxItem
+                    key={projectId}
+                    checked={filters.projects.has(projectId)}
+                    onCheckedChange={() => onToggleProject(projectId)}
+                  >
+                    <span className="flex w-full items-center gap-2">
+                      {project ? (
+                        <ProjectColorDot color={libraryProjectColor(project)} />
+                      ) : (
+                        <LibraryStateDot tone="neutral" />
+                      )}
+                      <span className="flex-1 truncate">
+                        {project?.title ?? "Not linked to a project"}
+                      </span>
+                      <span className="ps-4 text-xs tabular-nums text-muted-foreground">
+                        {projectCounts.get(projectId) ?? 0}
+                      </span>
+                    </span>
+                  </MenuCheckboxItem>
+                );
+              })}
+            </MenuGroup>
+          </>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function DisplayMenu({
+  preferences,
+  onChange,
+}: {
+  readonly preferences: SitesPreferences;
+  readonly onChange: (preferences: SitesPreferences) => void;
+}) {
+  return (
+    <Menu>
+      <MenuTrigger render={<Button shape="pill" size="sm" variant="ghost" />}>
+        <SlidersHorizontalIcon />
+        Display
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="end">
+        <MenuGroup>
+          <MenuGroupLabel>Sort by</MenuGroupLabel>
+          <MenuRadioGroup
+            value={preferences.sort}
+            onValueChange={(value) => {
+              const sort = SITE_SORTS.find((entry) => entry === value);
+              if (sort) onChange({ ...preferences, sort });
+            }}
+          >
+            {SITE_SORTS.map((sort) => (
+              <MenuRadioItem key={sort} value={sort}>
+                {SORT_LABELS[sort]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuCheckboxItem
+          checked={preferences.previews}
+          onCheckedChange={(previews) => onChange({ ...preferences, previews })}
+        >
+          <span className="flex max-w-60 flex-col gap-0.5">
+            <span>Live previews</span>
+            <span className="text-xs text-muted-foreground">
+              Cards load each site&apos;s front page, which counts as a visit.
+            </span>
+          </span>
+        </MenuCheckboxItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+type CollectionProps = {
+  readonly environmentId: EnvironmentId;
+  readonly snapshot: SitesSnapshot;
+  readonly now: number;
+  readonly projects: ReadonlyMap<string, LibraryProject>;
+  readonly canManage: boolean;
+  readonly manageReason: string | null;
+  /** The `kind:id` of the entry being paused or resumed. */
+  readonly pending: string | null;
+  readonly onEdit: (target: SiteEditTarget) => void;
+  readonly onToggleActive: (site: Site) => void;
+};
+
+function SitesCollection({
+  filters,
+  preferences,
+  onClearFilters,
+  onRegister,
+  ...props
+}: CollectionProps & {
+  readonly filters: SiteFilters;
+  readonly preferences: SitesPreferences;
+  readonly onClearFilters: () => void;
+  readonly onRegister: () => void;
+}) {
+  const { environmentId, snapshot, now, projects } = props;
+  const visits = useEnvironmentQuery(
+    preferences.sort === "visits" && snapshot.sites.length
+      ? siteVisitsAtom([environmentId, ...snapshot.sites.map((site) => site.id)].join("\n"))
+      : null,
+  ).data;
+  if (!snapshot.sites.length) {
+    return (
+      <LibraryEmpty
+        icon={GlobeIcon}
+        title="Register your first site"
+        action={
+          <ActionHint hint={props.manageReason}>
+            <Button shape="pill" disabled={!props.canManage} onClick={onRegister}>
+              <PlusIcon />
+              Register a site
+            </Button>
+          </ActionHint>
+        }
+      >
+        Link a site to the projects it serves. Loom watches its endpoints and counts its visits, so
+        you know it is up without opening it.
+      </LibraryEmpty>
+    );
+  }
+  const shown = sortSites(
+    filterSites(snapshot, now, filters, projects),
+    snapshot,
+    now,
+    preferences.sort,
+    visits,
+  );
+  if (!shown.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-border">
+        <Empty size="compact">
+          <EmptyHeader>
+            <EmptyTitle>No sites match</EmptyTitle>
+            <EmptyDescription>
+              Search looks at names, addresses, IDs and the projects each site serves.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button shape="pill" size="sm" variant="outline" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </div>
+    );
+  }
+  return preferences.view === "list" ? (
+    <SiteRows sites={shown} {...props} />
+  ) : (
+    <ul aria-label="Sites" className={LIBRARY_CARD_GRID}>
+      {shown.map((site) => (
+        <SiteCard key={site.id} site={site} previews={preferences.previews} {...props} />
+      ))}
+    </ul>
+  );
+}
+
+function SiteCard({
+  site,
+  previews,
+  ...props
+}: CollectionProps & { readonly site: Site; readonly previews: boolean }) {
+  const { environmentId, snapshot, now, projects } = props;
+  const health = siteHealth(site, snapshot, now);
+  const checks = siteChecks(site, snapshot);
+  const certificate = checkVitals(checks, now).certificate;
+  const navigate = useNavigate();
+  return (
+    <li
+      style={projectColorStyle(siteColor(site, projects))}
+      className={cn(LIBRARY_CARD, "gap-0 overflow-hidden p-0")}
+    >
+      <ProjectWash />
+      <LibraryCardTarget
+        label={`Open ${site.name}`}
+        onOpen={() => void navigate({ to: "/sites", search: { siteId: site.id } })}
+      />
+      <SiteThumbnail site={site} live={previews} />
+      {/* Content lets clicks fall through to the card's own target; only the menu takes them. */}
+      <div className="pointer-events-none flex min-w-0 flex-1 flex-col gap-2.5 p-3.5">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="min-w-0 flex-1">
+            <h3 className="flex min-w-0 items-baseline gap-1.5 text-sm leading-5 font-semibold tracking-tight">
+              <span className="truncate">{site.name}</span>
+              {site.id === snapshot.primarySiteId ? (
+                <span className="shrink-0 text-2xs font-normal text-muted-foreground">Primary</span>
+              ) : null}
+            </h3>
+            <p className="truncate font-mono text-2xs text-muted-foreground">
+              {siteHost(site.url)}
+            </p>
+          </div>
+          <div className="pointer-events-auto relative">
+            <SiteMenu site={site} {...props} />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <SiteState state={health.state} />
+          <ServedProjects site={site} projects={projects} max={MAX_CARD_PROJECTS} />
+        </div>
+        <div className="mt-auto flex min-w-0 items-center justify-between gap-3 border-t border-border/70 pt-2.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <CheckTicks checks={checks} staleAfterSeconds={snapshot.staleAfterSeconds} now={now} />
+            <CertificateWarning days={site.active ? certificate : null} />
+          </div>
+          <SiteVisits environmentId={environmentId} siteId={site.id} />
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** Color only for news: a failing or stale site gets the filled pill, everything else stays quiet. */
+function SiteState({ state }: { readonly state: SiteHealthState }) {
+  const presentation = SITE_HEALTH_STATES[state];
+  if (state === "failing" || state === "stale" || state === "paused") {
+    return <LibraryStateBadge tone={presentation.tone}>{presentation.label}</LibraryStateBadge>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <LibraryStateDot tone={presentation.tone} />
+      {presentation.label}
+    </span>
+  );
+}
+
+function CertificateWarning({ days }: { readonly days: number | null }) {
+  if (days === null || days > SITE_TLS_WARNING_DAYS) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <LibraryStateDot tone={days < 0 ? "danger" : "warning"} />
+      {days < 0 ? "Certificate expired" : `Certificate ${days}d`}
+    </span>
+  );
+}
+
+function ServedProjects({
+  site,
+  projects,
+  max,
+}: {
+  readonly site: Site;
+  readonly projects: ReadonlyMap<string, LibraryProject>;
+  readonly max: number;
+}) {
+  const served = site.projectIds ?? [];
+  if (!served.length) return <span className="text-muted-foreground/75">Not linked</span>;
+  const known = served.flatMap((projectId) => {
+    const project = projects.get(projectId);
+    return project ? [project] : [];
+  });
+  const shown = known.slice(0, max);
+  const more = served.length - shown.length;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <span aria-hidden>·</span>
+      <span className="shrink-0">Serves</span>
+      {shown.map((project) => (
+        <span key={project.id} className="inline-flex min-w-0 items-center gap-1">
+          <ProjectColorDot color={libraryProjectColor(project)} />
+          <span className="truncate text-foreground/80">{project.title}</span>
+        </span>
+      ))}
+      {more ? (
+        <span className="shrink-0 tabular-nums">
+          {shown.length ? `+${more}` : plural(more, "project")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * A site's page views over the analytics window. The read waits until the card or row is on
+ * screen, so a long list does not ask for every site's traffic at once.
+ */
+function SiteVisits({
+  environmentId,
+  siteId,
+  align = "end",
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly siteId: string;
+  readonly align?: "end" | "start";
+}) {
+  const [ref, seen] = useSeen();
+  const analytics = useEnvironmentQuery(
+    seen ? sites.analytics({ environmentId, input: { siteId } }) : null,
+  );
+  const data = analytics.data;
+  return (
+    <span
+      ref={ref}
+      className={cn(
+        "flex shrink-0 items-center gap-2",
+        align === "end" ? "justify-end" : "justify-start",
+      )}
+    >
+      {data ? (
+        <>
+          <Sparkline
+            values={siteTrafficDays(data).map((day) => day.pageviews)}
+            label={`${formatCount(data.pageviews)} page views over the last ${data.days} days`}
+          />
+          <span className="text-xs font-medium tabular-nums">{formatCount(data.pageviews)}</span>
+          <span className="text-2xs tabular-nums text-muted-foreground">{data.days}d</span>
+        </>
+      ) : analytics.error ? (
+        <span className="text-xs text-muted-foreground">No traffic data</span>
+      ) : (
+        <Skeleton className="h-5 w-28" />
+      )}
+    </span>
+  );
+}
+
+function SiteMenu({
+  site,
+  canManage,
+  manageReason,
+  pending,
+  onEdit,
+  onToggleActive,
+}: CollectionProps & { readonly site: Site }) {
+  const pausing = pending === `site:${site.id}`;
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            shape="pill"
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Actions for ${site.name}`}
+          />
+        }
+      >
+        <EllipsisIcon />
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="end">
+        <MenuItem render={<Link to="/sites" search={{ siteId: site.id }} />}>
+          <GlobeIcon />
+          Open
+        </MenuItem>
+        <MenuItem render={<Link to="/sites" search={{ siteId: site.id, tab: "preview" }} />}>
+          <AppWindowIcon />
+          Preview
+        </MenuItem>
+        <MenuItem render={<a href={site.url} target="_blank" rel="noreferrer" />}>
+          <ExternalLinkIcon />
+          Visit site
+        </MenuItem>
+        <MenuItem onClick={() => void copyAddress(site.url)}>
+          <CopyIcon />
+          Copy address
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem disabled={!canManage} onClick={() => onEdit({ kind: "site", row: site })}>
+          <PencilIcon />
+          Edit site
+        </MenuItem>
+        <MenuItem disabled={!canManage || pausing} onClick={() => onToggleActive(site)}>
+          {site.active ? <PauseIcon /> : <PlayIcon />}
+          {pausing ? "Saving…" : site.active ? "Pause monitoring" : "Resume monitoring"}
+        </MenuItem>
+        {manageReason ? (
+          <p className="max-w-60 px-2 py-1.5 text-xs text-muted-foreground">{manageReason}</p>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+async function copyAddress(url: string) {
+  try {
+    await writeTextToClipboard(url, "address");
+    toastManager.add({ type: "success", title: "Address copied" });
+  } catch {
+    toastManager.add({
+      type: "warning",
+      title: "This host blocks copying",
+      description: `Copy it by hand: ${url}`,
+    });
+  }
 }
 
 const SITE_COLUMNS = [
   { key: "site", label: "Site" },
   { key: "state", label: "State", className: "w-32" },
-  { key: "checks", label: "Checks", className: "hidden w-36 sm:table-cell" },
-  { key: "response", label: "Slowest", className: "hidden w-24 lg:table-cell" },
-  { key: "certificate", label: "Certificate", className: "hidden w-28 lg:table-cell" },
-  { key: "traffic", label: "Page views", className: "hidden w-44 md:table-cell", align: "end" },
+  { key: "checks", label: "Checks", className: "hidden w-32 sm:table-cell" },
+  { key: "serves", label: "Serves", className: "hidden w-44 lg:table-cell" },
+  { key: "traffic", label: "Page views", className: "hidden w-48 md:table-cell", align: "end" },
+  { key: "actions", label: "Actions", hideLabel: true, className: "w-10" },
 ] as const;
 
-function SitesTable({
-  environmentId,
-  snapshot,
-  now,
-  projects,
-  onOpenSite,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly snapshot: SitesSnapshot;
-  readonly now: number;
-  readonly projects: ReadonlyMap<string, LibraryProject>;
-  readonly onOpenSite: (siteId: string) => void;
-}) {
+function SiteRows({
+  sites: list,
+  ...props
+}: CollectionProps & { readonly sites: readonly Site[] }) {
+  const { environmentId, snapshot, now, projects } = props;
   return (
     <LibraryTable label="Registered sites" columns={SITE_COLUMNS}>
-      {snapshot.sites.map((site) => {
-        const state = SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state];
+      {list.map((site) => {
         const checks = siteChecks(site, snapshot);
-        const vitals = checkVitals(checks, now);
+        const certificate = checkVitals(checks, now).certificate;
         return (
           <tr
             key={site.id}
@@ -512,23 +1537,24 @@ function SitesTable({
           >
             <td className={LIBRARY_CELL}>
               <div className="flex min-w-0 items-center gap-3">
-                <SiteTile />
+                <SiteMark url={site.url} />
                 <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => onOpenSite(site.id)}
+                  <Link
+                    to="/sites"
+                    search={{ siteId: site.id }}
                     className={cn(LIBRARY_ROW_TARGET, "block max-w-full truncate font-medium")}
                   >
                     {site.name}
-                  </button>
-                  <p className="truncate font-mono text-xs text-muted-foreground">
-                    {siteHost(site.url)}
+                  </Link>
+                  <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span className="truncate font-mono">{siteHost(site.url)}</span>
+                    <CertificateWarning days={site.active ? certificate : null} />
                   </p>
                 </div>
               </div>
             </td>
-            <td className={LIBRARY_CELL}>
-              <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
+            <td className={cn(LIBRARY_CELL, "text-xs text-muted-foreground")}>
+              <SiteState state={siteHealth(site, snapshot, now).state} />
             </td>
             <td className={cn(LIBRARY_CELL, "hidden sm:table-cell")}>
               <CheckTicks
@@ -537,18 +1563,14 @@ function SitesTable({
                 now={now}
               />
             </td>
-            <td className={cn(LIBRARY_CELL, "hidden text-xs tabular-nums lg:table-cell")}>
-              {vitals.slowest === null ? (
-                <span className="text-muted-foreground">None</span>
-              ) : (
-                formatDuration(vitals.slowest)
-              )}
-            </td>
-            <td className={cn(LIBRARY_CELL, "hidden text-xs lg:table-cell")}>
-              <CertificateLabel days={vitals.certificate} />
+            <td className={cn(LIBRARY_CELL, "hidden text-xs text-muted-foreground lg:table-cell")}>
+              <ServedProjects site={site} projects={projects} max={MAX_ROW_PROJECTS} />
             </td>
             <td className={cn(LIBRARY_CELL, "hidden md:table-cell")}>
-              <SiteTrafficCell environmentId={environmentId} siteId={site.id} />
+              <SiteVisits environmentId={environmentId} siteId={site.id} />
+            </td>
+            <td className={cn(LIBRARY_CELL, "relative py-1.5 text-end")}>
+              <SiteMenu site={site} {...props} />
             </td>
           </tr>
         );
@@ -557,76 +1579,86 @@ function SitesTable({
   );
 }
 
-/** Each row reads its own site's traffic; the query is shared with the site's page. */
-function SiteTrafficCell({
-  environmentId,
-  siteId,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly siteId: string;
-}) {
-  const analytics = useEnvironmentQuery(sites.analytics({ environmentId, input: { siteId } }));
-  const data = analytics.data;
-  if (!data) {
-    return analytics.isPending ? (
-      <Skeleton className="ms-auto h-6 w-36" />
-    ) : (
-      <p className="text-end text-xs text-muted-foreground">Unavailable</p>
-    );
-  }
-  const days = siteTrafficDays(data);
-  return (
-    <div className="flex items-center justify-end gap-3">
-      <Sparkline
-        values={days.map((day) => day.pageviews)}
-        label={`Daily page views over the last ${data.days} days`}
-      />
-      <span className="w-10 text-end text-sm font-medium tabular-nums">
-        {formatCount(data.pageviews)}
-      </span>
-    </div>
-  );
-}
-
 /** Every service, read apart from the sites that use it, since one service can back several. */
-function ServicesRegistry({
+function ServicesView({
   snapshot,
+  services,
+  filter,
   now,
   canManage,
+  manageReason,
+  activeToggle,
+  onFilter,
   onEdit,
-  onOpenSite,
+  onRegister,
 }: {
   readonly snapshot: SitesSnapshot;
+  readonly services: readonly Service[];
+  readonly filter: ServiceFilter;
   readonly now: number;
   readonly canManage: boolean;
+  readonly manageReason: string | null;
+  readonly activeToggle: ActiveToggle;
+  readonly onFilter: (filter: ServiceFilter) => void;
   readonly onEdit: (target: SiteEditTarget) => void;
-  readonly onOpenSite: (siteId: string) => void;
+  readonly onRegister: () => void;
 }) {
+  const navigate = useNavigate();
   if (!snapshot.services.length) {
     return (
       <LibraryEmpty
         icon={ServerIcon}
         title="No services yet"
         action={
-          <Button shape="pill" disabled={!canManage} onClick={() => onEdit({ kind: "service" })}>
-            <PlusIcon />
-            Register service
-          </Button>
+          <ActionHint hint={manageReason}>
+            <Button shape="pill" disabled={!canManage} onClick={onRegister}>
+              <PlusIcon />
+              Register service
+            </Button>
+          </ActionHint>
         }
       >
-        A service is an origin your sites depend on, like the site itself or the API behind it. Add
+        A service is an address your sites depend on, like the site itself or the API behind it. Add
         checks to a service to know when it stops answering.
       </LibraryEmpty>
+    );
+  }
+  if (!services.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-border">
+        <Empty size="compact">
+          <EmptyHeader>
+            <EmptyTitle>
+              {filter === "failing" ? "Nothing is failing" : "No paused services"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {filter === "failing"
+                ? "Every watched service answered as expected on its last check."
+                : "Every service is watched. Pause one from its menu to stop its checks."}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button shape="pill" size="sm" variant="outline" onClick={() => onFilter("all")}>
+              Show all services
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </div>
     );
   }
   return (
     <EndpointsTable
       label="Services and their checks"
-      services={snapshot.services}
+      services={services}
       snapshot={snapshot}
       now={now}
       canManage={canManage}
-      usedBy={{ sites: snapshot.sites, onOpenSite }}
+      manageHint={manageReason}
+      activeToggle={activeToggle}
+      usedBy={{
+        sites: snapshot.sites,
+        onOpenSite: (siteId) => void navigate({ to: "/sites", search: { siteId } }),
+      }}
       onEditService={(service) => onEdit({ kind: "service", row: service })}
       onAddCheck={(service) => onEdit({ kind: "check", serviceId: service.id })}
       onEditCheck={(check) => onEdit({ kind: "check", row: check })}
@@ -634,30 +1666,79 @@ function ServicesRegistry({
   );
 }
 
-const SKELETON_ROWS = ["first", "second", "third", "fourth"];
+const SKELETON_KEYS = ["first", "second", "third", "fourth", "fifth", "sixth"] as const;
 
-/** The page's own shape while the first snapshot loads, so the layout holds when it arrives. */
-function SitesSkeleton() {
+/** The index's own shape while the first snapshot loads, in the layout last chosen. */
+function SitesSkeleton({ view }: { readonly view: "cards" | "list" }) {
   return (
-    <div role="status" aria-label="Loading sites" className="flex flex-col gap-5">
-      <Skeleton shape="card" className="h-15 w-full" />
-      <div className="flex h-10 items-end gap-5 border-b border-border pb-3">
-        <Skeleton className="h-3.5 w-14" />
-        <Skeleton className="h-3.5 w-18" />
+    <div role="status" aria-label="Loading sites" className="flex flex-col gap-6">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton shape="pill" className="h-10 w-52" />
+        <Skeleton shape="pill" className="h-8 w-40" />
       </div>
-      <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
-        {SKELETON_ROWS.map((row) => (
-          <div key={row} className="flex items-center gap-3 px-3 py-2.5">
-            <Skeleton shape="card" className="size-7" />
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Skeleton className="h-3.5 w-40 max-w-full" />
-              <Skeleton className="h-2.5 w-28 max-w-full" />
+      {view === "cards" ? (
+        <div className={LIBRARY_CARD_GRID}>
+          {SKELETON_KEYS.map((key) => (
+            <div key={key} className="overflow-hidden rounded-xl border border-border">
+              <Skeleton className="aspect-16/10 w-full" />
+              <div className="flex flex-col gap-2.5 p-3.5">
+                <div className="flex items-center gap-2.5">
+                  <Skeleton shape="card" className="size-7" />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-2/5" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                </div>
+                <Skeleton className="h-3 w-1/2" />
+                <div className="flex items-center justify-between border-t border-border/70 pt-2.5">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-5 w-28" />
+                </div>
+              </div>
             </div>
-            <Skeleton shape="pill" className="h-5 w-16" />
-            <Skeleton className="hidden h-6 w-36 md:block" />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
+          {SKELETON_KEYS.map((key) => (
+            <div key={key} className="flex items-center gap-3 px-3 py-2.5">
+              <Skeleton shape="card" className="size-7" />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-3.5 w-40 max-w-full" />
+                <Skeleton className="h-2.5 w-28 max-w-full" />
+              </div>
+              <Skeleton shape="pill" className="h-5 w-16" />
+              <Skeleton className="hidden h-5 w-36 md:block" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A site's page while the snapshot loads: its hero, its tabs and the first panel. */
+function SiteDetailSkeleton() {
+  return (
+    <div role="status" aria-label="Loading site" className="flex flex-col gap-6">
+      <div className="flex flex-col gap-5 rounded-3xl border border-border p-5 sm:p-6">
+        <div className="flex items-center gap-5">
+          <Skeleton shape="card" className="size-16" />
+          <div className="flex flex-1 flex-col gap-2">
+            <Skeleton className="h-7 w-1/3" />
+            <Skeleton className="h-3 w-1/2" />
           </div>
-        ))}
+          <Skeleton shape="pill" className="hidden h-8 w-28 sm:block" />
+        </div>
+        <div className="flex gap-8 border-t border-border/70 pt-4">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="hidden h-8 w-20 sm:block" />
+        </div>
       </div>
+      <Skeleton shape="pill" className="h-10 w-80 max-w-full" />
+      <Skeleton shape="card" className="aspect-16/10 w-full max-w-3xl" />
     </div>
   );
 }

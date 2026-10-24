@@ -59,14 +59,21 @@ function AttachedRun({
       </div>
       <div className="flex justify-end gap-1">
         <Button
+          shape="pill"
           size="xs"
           variant="ghost"
-          render={<Link to="/loom/bots" search={{ bot: run.botId }} />}
+          render={<Link to="/loom/bots" search={{ bot: run.botId, runId: run.id }} />}
         >
           Open
         </Button>
         {canCancel ? (
-          <Button size="xs" variant="ghost" disabled={busy} onClick={() => void stop()}>
+          <Button
+            shape="pill"
+            size="xs"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => void stop()}
+          >
             {busy ? "Cancelling…" : "Cancel"}
           </Button>
         ) : null}

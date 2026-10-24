@@ -97,10 +97,10 @@ function BotRunDrawerForm({
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+        <Button type="button" shape="pill" size="sm" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={busy || !canRun}>
+        <Button type="submit" shape="pill" size="sm" disabled={busy || !canRun}>
           {busy ? "Starting…" : "Run"}
         </Button>
       </div>

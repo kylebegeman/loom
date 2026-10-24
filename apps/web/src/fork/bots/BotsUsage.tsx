@@ -1,414 +1,621 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { BotBudgetState, BotUsageRow } from "@t3tools/contracts/fork";
-import { rollingBotsUsageWindow, type BotsChanges } from "@t3tools/client-runtime/fork";
+import { useContext, useEffect, useEffectEvent, useRef, type ContextType } from "react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { AsyncResult, Atom } from "effect/reactivity";
+import { EnvironmentId } from "@t3tools/contracts";
+import type {
+  BotBudgetState,
+  BotDefinition,
+  BotId,
+  BotUsageRow,
+  BotsUsageResult,
+  LibraryProjectColor,
+} from "@t3tools/contracts/fork";
+import { rollingBotsUsageWindow, type BotsUsageWindow } from "@t3tools/client-runtime/fork";
 import { formatCount, formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
-import { ChartColumnIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
+import { GaugeIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
-import { useEnvironmentQuery } from "~/state/query";
+import { formatEnvironmentQueryError, useEnvironmentQuery } from "~/state/query";
 import {
-  LIBRARY_OUTLINE,
   LibraryErrorNotice,
-  LibraryFigure,
+  LibraryGroupHeading,
+  LibrarySpecSheet,
   LibraryStateBadge,
 } from "../project-library/LibraryControls";
-import { BotTile } from "./BotIdentity";
-import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
-import { bots } from "./state";
+import { LibraryBar, LibraryMeter } from "../project-library/LibraryData";
+import { projectColorStyle } from "../project-library/ProjectIdentity";
+import { useBotsNavigation } from "./navigation";
 import { formatDuration } from "./runMetrics";
-import type {
-  BotDefinition as StubBot,
-  BotId as StubBotId,
-  BotsUsageResult as StubUsage,
-} from "@t3tools/contracts/fork";
+import { bots, useBotsAccess, useBotsHost } from "./state";
+import {
+  BOT_USAGE_WINDOWS,
+  BUDGET_WARN_SHARE,
+  DEFAULT_BOT_USAGE_DAYS,
+  USAGE_REFETCH_INTERVAL_MS,
+  advanceUsageWindow,
+  budgetAlertText,
+  budgetAlerts,
+  budgetCaption,
+  budgetMeterText,
+  budgetStatus,
+  budgetUseText,
+  emptyUsageRow,
+  finishedRunsSignature,
+  nextBudgetRetryMs,
+  outcomeText,
+  planUsageRefetch,
+  tokenShare,
+  tokensText,
+  type BotUsageDays,
+  type UsageFetchLedger,
+  usageClauseText,
+  usageRate,
+  usageWindowPhrase,
+  verdictText,
+} from "./usageWindow";
 
-export { formatDuration } from "./runMetrics";
+export { budgetMeterText, BOT_USAGE_WINDOWS, DEFAULT_BOT_USAGE_DAYS };
+export type { BotUsageDays };
 
-const WINDOWS = [
-  { days: 1, label: "24 hours", phrase: "in 24 hours" },
-  { days: 7, label: "7 days", phrase: "this week" },
-  { days: 30, label: "30 days", phrase: "in 30 days" },
-] as const;
-type WindowDays = (typeof WINDOWS)[number]["days"];
+/** The Bots page's own ink, so a token bar reads the same inside any bot's colour scope. */
+const BOTS_COLOR: LibraryProjectColor = "plum";
 
-/** One refetch at most this often while runs keep finishing. */
-const REFETCH_INTERVAL_MS = 5_000;
+/** As long as a query lingers once nothing shows it, so a quick return reuses it. */
+const USAGE_IDLE_TTL_MS = 5 * 60_000;
 
-const windowEndingNow = (days: WindowDays) => rollingBotsUsageWindow(days, Date.now());
+/** A limited bot's state clears just after its retry time, not a hair before it. */
+const RETRY_SLACK_MS = 1_000;
 
-const runsText = (count: number) => `${formatCount(count)} ${count === 1 ? "run" : "runs"}`;
+/** Every view of the same window reads this one window, so they all share one usage query. */
+const usageWindowAtom = Atom.family((days: BotUsageDays) =>
+  Atom.writable(
+    () => rollingBotsUsageWindow(days, Date.now()),
+    (ctx, window: BotsUsageWindow) => ctx.setSelf(window),
+  ).pipe(Atom.setIdleTTL(USAGE_IDLE_TTL_MS), Atom.withLabel(`loom:bots:usage-window:${days}`)),
+);
 
-/** The pass rate for bots that give verdicts, the completed share for the rest. */
-const rateText = (
-  row: Pick<BotUsageRow, "successRate"> & { readonly verdicts: boolean },
-): string | null =>
-  row.successRate === null
-    ? null
-    : `${formatPercent(row.successRate, 0)} ${row.verdicts ? "pass" : "completed"}`;
-
-/** "38 of 50 runs in the last 24 hours", and when the next run may start once a limit is reached. */
-export const budgetMeterText = (state: BotBudgetState) => {
-  const parts = [
-    ...(state.runsPerDay === undefined
-      ? []
-      : [`${formatCount(state.runsInWindow)} of ${runsText(state.runsPerDay)}`]),
-    ...(state.tokensPerDay === undefined
-      ? []
-      : [`${formatTokens(state.tokensInWindow)} of ${formatTokens(state.tokensPerDay)} tokens`]),
-  ];
-  const used = `${parts.join(" and ")} in the last 24 hours.`;
-  if (state.retryAt === undefined) return used;
-  const at = new Date(state.retryAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${used} The next run is possible at ${at}.`;
-};
-
-function UsageRow({
-  row,
-  share,
-  barWidth,
-  phrase,
-  atLeast,
-  budget,
-}: {
-  readonly row: BotUsageRow;
-  readonly share: number | null;
-  /** The row's tokens against the busiest bot's, so the ranking reads at a glance. */
-  readonly barWidth: number;
-  readonly phrase: string;
-  readonly atLeast: boolean;
-  readonly budget: BotBudgetState | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const verdicts = row.pass + row.fail + row.needsAttention > 0;
-  const summary = [
-    `${runsText(row.runs)} ${phrase}`,
-    rateText({ successRate: row.successRate, verdicts }),
-    row.medianDurationMs === null ? null : `${formatDuration(row.medianDurationMs)} median`,
-  ].filter((part) => part !== null);
-  const detailId = `bot-usage-${row.botId}`;
-  return (
-    <li>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={detailId}
-        onClick={() => setOpen((current) => !current)}
-        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <BotTile bot={{ id: row.botId }} />
-        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{row.botName}</span>
-            {budget?.retryAt !== undefined ? (
-              <LibraryStateBadge tone="warning">At its limit</LibraryStateBadge>
-            ) : null}
-          </span>
-          <span className="truncate text-xs tabular-nums text-muted-foreground">
-            {summary.join(" · ")}
-          </span>
-          <span
-            aria-hidden
-            className="block h-1 overflow-hidden rounded-full bg-muted dark:bg-accent"
-          >
-            <span
-              className="block h-full rounded-full bg-(--project-color)"
-              style={{ width: `${barWidth * 100}%` }}
-            />
-          </span>
-        </span>
-        <span className="flex shrink-0 flex-col items-end gap-0.5 tabular-nums">
-          <span className="text-sm font-medium">
-            {row.usageComplete ? "" : "at least "}
-            {formatTokens(row.tokens.total)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {share === null
-              ? "tokens"
-              : `${atLeast ? "at least " : ""}${formatPercent(share, 0)} of bot tokens`}
-          </span>
-        </span>
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-      {open ? (
-        <div id={detailId} className="flex flex-col gap-3 px-3 pb-3 sm:ps-14">
-          <p className="text-sm text-muted-foreground">
-            {formatCount(row.completed)} completed, {formatCount(row.failed)} failed,{" "}
-            {formatCount(row.timedOut)} timed out, {formatCount(row.cancelled)} cancelled.
-            {row.maxDurationMs === null
-              ? ""
-              : ` Slowest ${formatDuration(row.maxDurationMs)}.`}{" "}
-            {row.usageComplete ? "" : "At least "}
-            {formatTokens(row.tokens.total)} tokens ({formatTokens(row.tokens.input)} in,{" "}
-            {formatTokens(row.tokens.output)} out).
-            {row.replays
-              ? row.replays === 1
-                ? " One run was a replay."
-                : ` ${formatCount(row.replays)} runs were replays.`
-              : ""}
-          </p>
-          {budget ? (
-            <p className="text-sm text-muted-foreground">Budget: {budgetMeterText(budget)}</p>
-          ) : null}
-          <table className="w-full text-start text-sm">
-            <caption className="sr-only">{row.botName} by model</caption>
-            <thead className="text-xs text-muted-foreground">
-              <tr className="border-b border-border">
-                <th scope="col" className="py-1.5 text-start font-normal">
-                  Model
-                </th>
-                <th scope="col" className="py-1.5 text-end font-normal">
-                  Runs
-                </th>
-                <th scope="col" className="py-1.5 text-end font-normal">
-                  {verdicts ? "Pass" : "Completed"}
-                </th>
-                <th scope="col" className="py-1.5 text-end font-normal">
-                  Median
-                </th>
-                <th scope="col" className="py-1.5 text-end font-normal">
-                  Tokens
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {row.byModel.map((model) => (
-                <tr key={`${model.assumed ? "assumed" : "recorded"}:${model.model}`}>
-                  <td className="py-1.5 pe-3">
-                    <span className="font-mono text-xs">{model.model}</span>
-                    {model.assumed ? (
-                      <span className="text-xs text-muted-foreground">
-                        {" "}
-                        (current model, assumed)
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="py-1.5 text-end tabular-nums">{formatCount(model.runs)}</td>
-                  <td className="py-1.5 text-end tabular-nums">
-                    {model.successRate === null ? "-" : formatPercent(model.successRate, 0)}
-                  </td>
-                  <td className="py-1.5 text-end tabular-nums">
-                    {model.medianDurationMs === null ? "-" : formatDuration(model.medianDurationMs)}
-                  </td>
-                  <td className="py-1.5 text-end tabular-nums">
-                    {formatTokens(model.totalTokens)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </li>
-  );
+interface UsageView {
+  readonly usage: BotsUsageResult | null;
+  readonly window: BotsUsageWindow;
+  readonly error: string | null;
+  readonly isPending: boolean;
 }
 
-/** The usage panel's shape while its numbers load, so nothing jumps when they arrive. */
-function UsageSkeleton() {
-  return (
-    <div className="flex flex-col gap-6">
-      <div aria-hidden className="flex gap-5">
-        {["runs", "tokens", "bots"].map((figure) => (
-          <div key={figure} className="flex flex-col gap-2">
-            <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-7 w-20" />
-          </div>
-        ))}
-      </div>
-      <BotRowsSkeleton label="Loading usage" />
-    </div>
-  );
+const usageKey = (environmentId: EnvironmentId, days: BotUsageDays) => `${environmentId}|${days}`;
+
+/**
+ * One environment's usage over one window. Moving to the next minute's window starts a new
+ * query; the last numbers stay up while it loads, so nothing blanks on a refetch.
+ */
+const usageViewAtom = Atom.family((key: string) => {
+  const split = key.lastIndexOf("|");
+  const environmentId = EnvironmentId.make(key.slice(0, split));
+  const days =
+    BOT_USAGE_WINDOWS.find((entry) => String(entry.days) === key.slice(split + 1))?.days ??
+    DEFAULT_BOT_USAGE_DAYS;
+  return Atom.make((get): UsageView | null => {
+    const window = get(usageWindowAtom(days));
+    const result = get(bots.usage({ environmentId, input: window }));
+    const usage =
+      Option.getOrNull(AsyncResult.value(result)) ??
+      Option.match(get.self<UsageView | null>(), {
+        onNone: () => null,
+        onSome: (previous) => previous?.usage ?? null,
+      });
+    return {
+      usage,
+      window,
+      error: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : null,
+      isPending: result.waiting,
+    };
+  }).pipe(Atom.setIdleTTL(USAGE_IDLE_TTL_MS), Atom.withLabel(`loom:bots:usage-view:${key}`));
+});
+const NO_USAGE_VIEW = Atom.make<UsageView | null>(null);
+
+const NO_FINISHED_RUNS = finishedRunsSignature([]);
+/** Changes only when a run finishes, so a view re-renders on that and not on every run event. */
+const finishedRunsAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) =>
+    Option.match(AsyncResult.value(get(bots.changes({ environmentId, input: {} }))), {
+      onNone: () => NO_FINISHED_RUNS,
+      onSome: (changes) => finishedRunsSignature(changes.runs.values()),
+    }),
+  ),
+);
+const IDLE_FINISHED_RUNS = Atom.make(NO_FINISHED_RUNS);
+
+/** What each window's last fetch counted, shared by every view so only one of them refetches. */
+const ledgers = new Map<string, UsageFetchLedger>();
+
+type Registry = ContextType<typeof RegistryContext>;
+
+/** Refetches the window ending now: the same query within the minute, the next one after it. */
+function refetchUsage(
+  registry: Registry,
+  environmentId: EnvironmentId,
+  days: BotUsageDays,
+  signature: string,
+) {
+  const windowAtom = usageWindowAtom(days);
+  const current = registry.get(windowAtom);
+  const nowMs = Date.now();
+  const next = advanceUsageWindow(current, days, nowMs);
+  ledgers.set(usageKey(environmentId, days), { until: next.until, signature, fetchedAt: nowMs });
+  if (next === current) registry.refresh(bots.usage({ environmentId, input: current }));
+  else registry.set(windowAtom, next);
 }
-
-/** Runs, outcomes, durations and tokens per bot over a rolling window. */
-export function BotsUsage({
-  environmentId,
-  changes,
-  connected,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly changes: BotsChanges;
-  readonly connected: boolean;
-}) {
-  const [days, setDays] = useState<WindowDays>(7);
-  const [window, setWindow] = useState(() => windowEndingNow(7));
-  const query = useEnvironmentQuery(bots.usage({ environmentId, input: window }));
-  const choose = (next: WindowDays) => {
-    setDays(next);
-    setWindow(windowEndingNow(next));
-  };
-
-  const lastFetch = useRef(0);
-  /** The same minute's window is the same query, so it is refetched rather than replaced. */
-  const refetch = (nowMs: number) => {
-    lastFetch.current = nowMs;
-    const next = rollingBotsUsageWindow(days, nowMs);
-    if (next.until === window.until) query.refresh();
-    else setWindow(next);
-  };
-  const reload = useEffectEvent(refetch);
-
-  // A run that finishes changes the numbers; refetch, at most once per interval.
-  const finished = [...changes.runs.values()].filter((run) => run.finishedAt !== null).length;
-  useEffect(() => {
-    if (finished === 0 || !connected) return;
-    const wait = lastFetch.current + REFETCH_INTERVAL_MS - Date.now();
-    if (wait <= 0) {
-      reload(Date.now());
-      return;
-    }
-    const timer = setTimeout(() => reload(Date.now()), wait);
-    return () => clearTimeout(timer);
-  }, [finished, connected]);
-
-  const phrase = WINDOWS.find((entry) => entry.days === days)?.phrase ?? "";
-  const data = query.data;
-  const total = data?.totals.tokens.total ?? 0;
-  const busiest = Math.max(1, ...(data?.rows ?? []).map((row) => row.tokens.total));
-  const unfinished = (data?.rows ?? []).reduce((sum, row) => sum + row.failed + row.timedOut, 0);
-
-  return (
-    <section className="flex flex-col gap-6" aria-label="Usage">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 basis-64 text-sm text-muted-foreground">
-          Runs, outcomes, durations and tokens per bot.
-        </p>
-        <div className="flex items-center gap-1.5">
-          <ToggleGroup
-            shape="pill"
-            variant="segmented"
-            aria-label="Window"
-            value={[String(days)]}
-            onValueChange={(next) => {
-              const entry = WINDOWS.find((option) => String(option.days) === next[0]);
-              if (entry) choose(entry.days);
-            }}
-          >
-            {WINDOWS.map((entry) => (
-              <ToggleGroupItem key={entry.days} value={String(entry.days)}>
-                {entry.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <Button
-            shape="pill"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Refresh usage"
-            disabled={!connected || query.isPending}
-            onClick={() => refetch(Date.now())}
-          >
-            <RefreshCwIcon />
-          </Button>
-        </div>
-      </div>
-      <LibraryErrorNotice error={query.error} onRetry={() => refetch(Date.now())} />
-      {data === null ? (
-        query.isPending ? (
-          <UsageSkeleton />
-        ) : null
-      ) : data.rows.length === 0 ? (
-        <BotsEmptyList icon={ChartColumnIcon} message={`No bot ran ${phrase}.`} />
-      ) : (
-        <>
-          <div className="flex flex-col gap-2">
-            <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
-              <LibraryFigure
-                label="Runs"
-                value={formatCount(data.totals.runs)}
-                detail={unfinished > 0 ? `${formatCount(unfinished)} failed or timed out` : phrase}
-              />
-              <LibraryFigure
-                label="Tokens"
-                value={formatTokens(total)}
-                detail={data.totals.usageComplete ? "Input and output" : "A lower bound"}
-              />
-              <LibraryFigure
-                label="Bots"
-                value={formatCount(data.rows.length)}
-                detail={`ran ${phrase}`}
-              />
-            </dl>
-            {data.totals.usageComplete ? null : (
-              <p className="text-xs text-muted-foreground">
-                Some runs did not report all their tokens, so token figures are lower bounds.
-              </p>
-            )}
-          </div>
-          <ul
-            className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
-          >
-            {data.rows.map((row) => (
-              <UsageRow
-                key={row.botId}
-                row={row}
-                share={total > 0 ? row.tokens.total / total : null}
-                barWidth={row.tokens.total / busiest}
-                phrase={phrase}
-                atLeast={!data.totals.usageComplete}
-                budget={data.budgets[row.botId]}
-              />
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
-  );
-}
-
-// STUB(bots-redesign): replaced by the owning area's implementation.
-/** The usage windows the Bots page offers, in days back from now. */
-export type BotUsageDays = 1 | 7 | 30 | 90;
 
 /**
  * The host's bot usage over the window ending now, shared by every view that asks for the same
- * window. Refetched as runs finish. `rowOf` and `budgetOf` are undefined until the usage arrives.
+ * window. Refetched as runs finish, at most once per interval, and when a limited bot may run
+ * again. `rowOf` and `budgetOf` are undefined until the usage arrives.
  */
-export function useBotUsage(_days: BotUsageDays): {
-  readonly usage: StubUsage | null;
-  readonly rowOf: (botId: StubBotId) => BotUsageRow | undefined;
-  readonly budgetOf: (botId: StubBotId) => BotBudgetState | undefined;
+export function useBotUsage(days: BotUsageDays): {
+  readonly usage: BotsUsageResult | null;
+  readonly rowOf: (botId: BotId) => BotUsageRow | undefined;
+  readonly budgetOf: (botId: BotId) => BotBudgetState | undefined;
   readonly isPending: boolean;
   readonly error: string | null;
   readonly refresh: () => void;
 } {
+  const host = useBotsHost();
+  const environmentId =
+    host.environmentId !== null && host.supported && host.budgetsSupported
+      ? host.environmentId
+      : null;
+  const key = environmentId === null ? null : usageKey(environmentId, days);
+  const view = useAtomValue(key === null ? NO_USAGE_VIEW : usageViewAtom(key));
+  const watching = environmentId !== null && host.connected;
+  const signature = useAtomValue(watching ? finishedRunsAtom(environmentId) : IDLE_FINISHED_RUNS);
+  const registry = useContext(RegistryContext);
+  const until = view?.window.until ?? null;
+
+  const refetch = useEffectEvent(() => {
+    if (environmentId !== null) refetchUsage(registry, environmentId, days, signature);
+  });
+
+  const plan = useEffectEvent((key: string, until: string, signature: string) => {
+    const next = planUsageRefetch(ledgers.get(key), until, signature, Date.now());
+    if (next.kind === "adopt") ledgers.set(key, { until, signature, fetchedAt: Date.now() });
+    if (next.kind === "now") refetch();
+    return next;
+  });
+
+  // A finished run changes the numbers.
+  useEffect(() => {
+    if (!watching || key === null || until === null) return;
+    const next = plan(key, until, signature);
+    if (next.kind !== "wait") return;
+    const timer = setTimeout(() => void plan(key, until, signature), next.ms);
+    return () => clearTimeout(timer);
+  }, [watching, key, until, signature]);
+
+  // Runs may have finished while the host was away.
+  const wasConnected = useRef(host.connected);
+  const reconnected = useEffectEvent(() => {
+    const ledger = key === null ? undefined : ledgers.get(key);
+    if (ledger !== undefined && Date.now() - ledger.fetchedAt >= USAGE_REFETCH_INTERVAL_MS)
+      refetch();
+  });
+  useEffect(() => {
+    if (host.connected && !wasConnected.current) reconnected();
+    wasConnected.current = host.connected;
+  }, [host.connected]);
+
+  // A bot at its limit may run again at its retry time; nothing else would refetch then.
+  const budgets = view?.usage?.budgets;
+  const retryReached = useEffectEvent((at: number) => {
+    const ledger = key === null ? undefined : ledgers.get(key);
+    if (ledger === undefined || ledger.fetchedAt < at) refetch();
+  });
+  useEffect(() => {
+    if (!watching || budgets === undefined) return;
+    const at = nextBudgetRetryMs(budgets, Date.now());
+    if (at === null) return;
+    const timer = setTimeout(() => retryReached(at), at - Date.now() + RETRY_SLACK_MS);
+    return () => clearTimeout(timer);
+  }, [watching, budgets]);
+
+  const usage = view?.usage ?? null;
+  const rows = new Map(usage?.rows.map((row) => [row.botId, row]));
   return {
-    usage: null,
-    rowOf: () => undefined,
-    budgetOf: () => undefined,
-    isPending: false,
-    error: null,
-    refresh: () => {},
+    usage,
+    rowOf: (botId) => (usage === null ? undefined : (rows.get(botId) ?? emptyUsageRow(botId))),
+    budgetOf: (botId) => usage?.budgets[botId],
+    isPending: view?.isPending ?? false,
+    error: view?.error ?? null,
+    refresh: () => {
+      if (environmentId !== null) refetchUsage(registry, environmentId, days, signature);
+    },
   };
 }
 
+/** Who is at or near a limit, by name, for the header badge's tooltip. */
+function budgetAlertLines(usage: BotsUsageResult) {
+  const names = new Map<string, string>(usage.rows.map((row) => [row.botId, row.botName]));
+  return Object.entries(usage.budgets)
+    .filter(([, state]) => budgetStatus(state).level !== "ok")
+    .map(([botId, state]) => ({
+      botId,
+      text: `${names.get(botId) || "A bot"}: ${budgetCaption(state)}`,
+    }));
+}
+
 /** The index header's usage clause, such as "142 runs in 7 days · at least 3.2M tokens". */
-export function BotsUsageClause(_props: { readonly days: BotUsageDays }) {
-  return null;
+export function BotsUsageClause({ days }: { readonly days: BotUsageDays }) {
+  const { usage, isPending, error, refresh } = useBotUsage(days);
+  if (usage === null) {
+    if (error)
+      return (
+        <span className="inline-flex items-center gap-1.5">
+          Usage unavailable
+          <Button shape="pill" size="micro" variant="ghost" onClick={refresh}>
+            Try again
+          </Button>
+        </span>
+      );
+    // Holds the line's height so the header does not shift when the numbers arrive.
+    return isPending ? <span aria-hidden className="inline-block h-5" /> : null;
+  }
+  const alert = budgetAlertText(budgetAlerts(usage.budgets));
+  return (
+    <span className="inline-flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="tabular-nums">{usageClauseText(usage.totals, days)}</span>
+      {alert ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <LibraryStateBadge tone="warning" icon={GaugeIcon}>
+              {alert}
+            </LibraryStateBadge>
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">
+            <ul className="flex flex-col gap-0.5">
+              {budgetAlertLines(usage).map((line) => (
+                <li key={line.botId}>{line.text}</li>
+              ))}
+            </ul>
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+    </span>
+  );
 }
 
 /** A bot's tokens in the window as a figure over a bar scaled to the largest, for the list view. */
-export function BotTokensCell(_props: {
+export function BotTokensCell({
+  row,
+  max,
+}: {
   readonly row: BotUsageRow | undefined;
   readonly max: number;
 }) {
-  return null;
+  const share = row === undefined ? 0 : tokenShare(row.tokens.total, max);
+  return (
+    <span
+      style={projectColorStyle(BOTS_COLOR)}
+      className="flex w-full min-w-16 flex-col items-end gap-1"
+    >
+      {row === undefined ? (
+        // Static rather than shimmering: the row stays undefined when usage failed to load, too.
+        <span className="h-5 w-10 rounded-sm bg-muted dark:bg-accent">
+          <span className="sr-only">No token figure yet</span>
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "text-sm leading-5 tabular-nums",
+            row.tokens.total === 0 && "text-muted-foreground",
+          )}
+        >
+          {row.usageComplete ? null : (
+            <>
+              <span aria-hidden className="text-muted-foreground">
+                ≥{" "}
+              </span>
+              <span className="sr-only">at least </span>
+            </>
+          )}
+          {formatTokens(row.tokens.total)}
+          <span className="sr-only"> tokens</span>
+        </span>
+      )}
+      <span
+        aria-hidden
+        className="relative block h-1 w-full overflow-hidden rounded-full bg-muted dark:bg-accent"
+      >
+        {share > 0 ? (
+          <span
+            className="absolute inset-y-0 start-0 rounded-full bg-(--project-color)/70"
+            style={{ width: `${share * 100}%` }}
+          />
+        ) : null}
+      </span>
+    </span>
+  );
 }
 
-/** A bot's use of its daily budget as a meter; nothing for a bot without a budget. */
-export function BotBudgetMeter(_props: { readonly botId: StubBotId }) {
-  return null;
+/** One limit's meter, labelled with the whole budget sentence for screen readers. */
+function BudgetLimitMeter({
+  state,
+  limit,
+  label,
+}: {
+  readonly state: BotBudgetState;
+  readonly limit: "runs" | "tokens";
+  readonly label: string;
+}) {
+  const value = limit === "runs" ? state.runsInWindow : state.tokensInWindow;
+  const max = (limit === "runs" ? state.runsPerDay : state.tokensPerDay) ?? 0;
+  const share = max > 0 ? value / max : 0;
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 items-baseline justify-between gap-3 text-xs">
+        <span className="shrink-0 text-muted-foreground">{label}</span>
+        <span
+          className={cn(
+            "min-w-0 truncate tabular-nums",
+            share >= BUDGET_WARN_SHARE ? "font-medium text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {budgetUseText(state, limit)}
+        </span>
+      </div>
+      <LibraryMeter value={value} max={max} label={`${label}: ${budgetMeterText(state)}`} />
+    </div>
+  );
+}
+
+function MeterSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col gap-1">
+      <div className="flex justify-between">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+      <Skeleton shape="pill" className="h-1.5 w-full" />
+    </div>
+  );
+}
+
+/**
+ * A bot's use of its daily budget as a meter on its tighter limit; nothing for a bot without a
+ * budget. Pass the page's usage window as `days` so the meter reads the page's query.
+ */
+export function BotBudgetMeter({
+  botId,
+  days = DEFAULT_BOT_USAGE_DAYS,
+}: {
+  readonly botId: BotId;
+  readonly days?: BotUsageDays;
+}) {
+  const host = useBotsHost();
+  const { usage, budgetOf } = useBotUsage(days);
+  // The definition says whether a meter is coming, so a card keeps its height while usage loads.
+  const list = useEnvironmentQuery(
+    usage === null && host.environmentId !== null && host.supported
+      ? bots.list({ environmentId: host.environmentId, input: {} })
+      : null,
+  );
+  const state = budgetOf(botId);
+  if (state === undefined) {
+    const budgeted = list.data?.bots.some((bot) => bot.id === botId && bot.budget !== undefined);
+    return usage === null && budgeted && host.budgetsSupported ? <MeterSkeleton /> : null;
+  }
+  const status = budgetStatus(state);
+  if (status.limit === null) return null;
+  const value = status.limit === "runs" ? state.runsInWindow : state.tokensInWindow;
+  const max = (status.limit === "runs" ? state.runsPerDay : state.tokensPerDay) ?? 0;
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 items-baseline justify-between gap-3 text-xs">
+        <span className="shrink-0 text-muted-foreground">Daily budget</span>
+        <span
+          className={cn(
+            "min-w-0 truncate tabular-nums",
+            status.level === "ok" ? "text-muted-foreground" : "font-medium text-foreground",
+          )}
+        >
+          {budgetCaption(state)}
+        </span>
+      </div>
+      <LibraryMeter value={value} max={max} label={budgetMeterText(state)} />
+    </div>
+  );
+}
+
+const ASIDE_WINDOWS = [7, 30] as const satisfies readonly BotUsageDays[];
+const AsideDays = Schema.Literals(ASIDE_WINDOWS);
+const ASIDE_DAYS_KEY = "loom:bots:usage-aside-days:v1";
+const ASIDE_SKELETON_ROWS = ["runs", "outcomes", "rate", "duration", "tokens"];
+
+function UsageAsideSkeleton() {
+  return (
+    <div role="status" aria-label="Loading usage" className="flex flex-col divide-y divide-border">
+      {ASIDE_SKELETON_ROWS.map((row) => (
+        <div key={row} className="flex items-center justify-between gap-4 py-2">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function usageRows(row: BotUsageRow) {
+  const rate = usageRate(row);
+  const verdicts = verdictText(row);
+  return [
+    {
+      label: "Runs",
+      value: row.replays
+        ? `${formatCount(row.runs)} · ${formatCount(row.replays)} ${row.replays === 1 ? "replay" : "replays"}`
+        : formatCount(row.runs),
+    },
+    { label: "Outcomes", value: outcomeText(row) },
+    ...(verdicts ? [{ label: "Verdicts", value: verdicts }] : []),
+    ...(rate ? [{ label: rate.label, value: formatPercent(rate.share, 0) }] : []),
+    ...(row.medianDurationMs === null
+      ? []
+      : [
+          {
+            label: "Duration",
+            value:
+              row.maxDurationMs === null
+                ? `${formatDuration(row.medianDurationMs)} median`
+                : `${formatDuration(row.medianDurationMs)} median · ${formatDuration(row.maxDurationMs)} max`,
+          },
+        ]),
+    { label: "Tokens", value: tokensText(row.tokens.total, row.usageComplete) },
+    {
+      label: "Input",
+      value: row.tokens.cachedInput
+        ? `${formatTokens(row.tokens.input)} · ${formatTokens(row.tokens.cachedInput)} cached`
+        : formatTokens(row.tokens.input),
+    },
+    { label: "Output", value: formatTokens(row.tokens.output) },
+  ];
+}
+
+function ModelUsage({ row }: { readonly row: BotUsageRow }) {
+  const busiest = Math.max(0, ...row.byModel.map((model) => model.totalTokens));
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-xs font-medium text-muted-foreground">By model</h3>
+      <ul className="flex flex-col gap-2">
+        {row.byModel.map((model) => (
+          <li
+            key={`${model.assumed ? "assumed" : "recorded"}:${model.model}`}
+            className="flex min-w-0 flex-col gap-1 text-xs"
+          >
+            <span className="flex min-w-0 items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate font-mono">
+                {model.model}
+                {model.assumed ? (
+                  <span className="font-sans text-muted-foreground"> · assumed</span>
+                ) : null}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {formatCount(model.runs)} {model.runs === 1 ? "run" : "runs"}
+                {model.successRate === null ? "" : ` · ${formatPercent(model.successRate, 0)}`}
+              </span>
+            </span>
+            <LibraryBar share={tokenShare(model.totalTokens, busiest)}>
+              {formatTokens(model.totalTokens)}
+            </LibraryBar>
+          </li>
+        ))}
+      </ul>
+      {row.byModel.some((model) => model.assumed) ? (
+        <p className="text-xs text-muted-foreground">
+          Older runs did not record their model; they count under the current one.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function BudgetBlock({
+  bot,
+  state,
+  loading,
+}: {
+  readonly bot: BotDefinition;
+  readonly state: BotBudgetState | undefined;
+  readonly loading: boolean;
+}) {
+  const nav = useBotsNavigation();
+  const { canSave } = useBotsAccess();
+  const limits = state === undefined ? null : budgetStatus(state);
+  const hasBudget = state !== undefined ? limits?.limit !== null : bot.budget !== undefined;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">Daily budget</h3>
+        <Button
+          shape="pill"
+          size="xs"
+          variant="ghost"
+          disabled={!canSave}
+          onClick={() => nav.open({ bot: bot.id, edit: true })}
+        >
+          {hasBudget ? "Edit budget" : "Set a budget"}
+        </Button>
+      </div>
+      {state === undefined ? (
+        loading && bot.budget !== undefined ? (
+          <MeterSkeleton />
+        ) : (
+          <p className="text-xs text-muted-foreground">No daily limit.</p>
+        )
+      ) : limits?.limit === null ? (
+        <p className="text-xs text-muted-foreground">No daily limit.</p>
+      ) : (
+        <>
+          {state.runsPerDay === undefined ? null : (
+            <BudgetLimitMeter state={state} limit="runs" label="Runs" />
+          )}
+          {state.tokensPerDay === undefined ? null : (
+            <BudgetLimitMeter state={state} limit="tokens" label="Tokens" />
+          )}
+          <p className="text-xs text-muted-foreground">
+            {limits?.level === "blocked" ? budgetCaption(state) : "Over the last 24 hours."}
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** A bot's usage, for the aside of its Overview. */
-export function BotUsageAside(_props: { readonly bot: StubBot }) {
-  return null;
+export function BotUsageAside({ bot }: { readonly bot: BotDefinition }) {
+  const host = useBotsHost();
+  const [days, setDays] = useLocalStorage(ASIDE_DAYS_KEY, DEFAULT_BOT_USAGE_DAYS, AsideDays);
+  const { usage, rowOf, budgetOf, error, refresh } = useBotUsage(days);
+  if (!host.supported || !host.budgetsSupported) return null;
+  const row = rowOf(bot.id);
+  return (
+    <section aria-label="Usage" className="flex flex-col gap-3">
+      <LibraryGroupHeading
+        title="Usage"
+        action={
+          <ToggleGroup
+            shape="pill"
+            variant="segmented"
+            aria-label="Usage window"
+            value={[String(days)]}
+            onValueChange={(next) => {
+              const choice = ASIDE_WINDOWS.find((entry) => String(entry) === next[0]);
+              if (choice) setDays(choice);
+            }}
+          >
+            {ASIDE_WINDOWS.map((entry) => (
+              <ToggleGroupItem key={entry} value={String(entry)}>
+                {BOT_USAGE_WINDOWS.find((window) => window.days === entry)?.short}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        }
+      />
+      <LibraryErrorNotice error={error} onRetry={refresh} />
+      {row === undefined ? (
+        error ? null : (
+          <UsageAsideSkeleton />
+        )
+      ) : row.runs === 0 ? (
+        <p className="text-xs text-muted-foreground">No runs {usageWindowPhrase(days)}.</p>
+      ) : (
+        <>
+          <LibrarySpecSheet label={`Usage ${usageWindowPhrase(days)}`} rows={usageRows(row)} />
+          {row.byModel.length > 0 ? <ModelUsage row={row} /> : null}
+        </>
+      )}
+      <BudgetBlock bot={bot} state={budgetOf(bot.id)} loading={usage === null && !error} />
+    </section>
+  );
 }

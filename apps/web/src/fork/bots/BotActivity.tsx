@@ -9,18 +9,13 @@ import { cn } from "~/lib/utils";
 import { LibraryStateDot } from "../project-library/LibraryControls";
 import { TickStrip } from "../project-library/LibraryData";
 import { formatSpan, runDuration, runTime } from "./BotIdentity";
+import { runOutcome } from "./runLog";
 
 /** A run's outcome as one tone: its verdict once it has one, else where the run stands. */
 export function runTone(run: BotRun): LibraryWorkflowTone {
   return run.verdict && run.status === "completed"
     ? BOT_VERDICT_STATES[run.verdict.verdict].tone
     : BOT_RUN_STATES[run.status].tone;
-}
-
-function runOutcome(run: BotRun) {
-  return run.verdict && run.status === "completed"
-    ? BOT_VERDICT_STATES[run.verdict.verdict].label
-    : BOT_RUN_STATES[run.status].label;
 }
 
 /** Oldest first, so the strip reads left to right like time. Lists arrive newest first. */
@@ -38,24 +33,42 @@ const LEGEND: readonly { tone: LibraryWorkflowTone; label: string }[] = [
 const ACTIVITY_SLOTS = 50;
 const EMPTY_SLOTS = Array.from({ length: ACTIVITY_SLOTS }, (_, index) => `empty-${index}`);
 
+const runReadout = (run: BotRun) =>
+  [
+    runOutcome(run).label,
+    runTime(run.finishedAt ?? run.startedAt ?? run.createdAt),
+    isTerminalBotRunStatus(run.status) ? runDuration(run.startedAt, run.finishedAt) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
 /**
  * The last runs across every bot as one strip of ticks, the shape status pages use for uptime.
- * Pointing at a tick reads that run out in the header, so the strip doubles as a timeline.
+ * Pointing at a tick reads that run out in the header, so the strip doubles as a timeline; with
+ * `onSelectRun` each tick also opens its run.
  */
-export function ActivityStrip({ runs }: { readonly runs: readonly BotRun[] }) {
+export function ActivityStrip({
+  runs,
+  onSelectRun,
+}: {
+  readonly runs: readonly BotRun[];
+  readonly onSelectRun?: (run: BotRun) => void;
+}) {
   const [focused, setFocused] = useState<number | null>(null);
   const ticks = chronological(runs, ACTIVITY_SLOTS);
   const padding = ACTIVITY_SLOTS - ticks.length;
   const counts = new Map<LibraryWorkflowTone, number>();
   for (const run of ticks) counts.set(runTone(run), (counts.get(runTone(run)) ?? 0) + 1);
   const current = focused === null ? null : (ticks[focused - padding] ?? null);
+  const summary = LEGEND.map(
+    ({ tone, label }) => `${counts.get(tone) ?? 0} ${label.toLowerCase()}`,
+  ).join(", ");
   return (
     <section
       aria-label="Recent activity"
-      className="flex flex-col gap-3 rounded-xl border border-border px-4 py-3"
+      className="flex flex-col gap-2.5 rounded-xl border border-border px-4 py-3"
     >
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-semibold tracking-tight">Recent activity</h2>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
         <p
           aria-live="polite"
           className="min-w-0 truncate text-xs tabular-nums text-muted-foreground"
@@ -63,44 +76,54 @@ export function ActivityStrip({ runs }: { readonly runs: readonly BotRun[] }) {
           {current ? (
             <>
               <span className="font-medium text-foreground">{current.botName}</span>
-              {` · ${runOutcome(current)} · ${runTime(current.finishedAt ?? current.startedAt ?? current.createdAt)}`}
-              {isTerminalBotRunStatus(current.status)
-                ? ` · ${runDuration(current.startedAt, current.finishedAt) ?? ""}`
-                : null}
+              {` · ${runReadout(current)}`}
             </>
           ) : (
-            `Last ${ticks.length} runs, oldest first`
+            <>
+              <span className="font-medium text-foreground">Last {ticks.length} runs</span>, oldest
+              first
+            </>
           )}
         </p>
+        <ul className="flex flex-wrap gap-x-3.5 gap-y-1 text-xs text-muted-foreground">
+          {LEGEND.filter(({ tone }) => tone !== "neutral" || counts.get(tone)).map(
+            ({ tone, label }) => (
+              <li
+                key={tone}
+                className={cn("flex items-center gap-1.5", !counts.get(tone) && "opacity-60")}
+              >
+                <LibraryStateDot tone={tone} className="size-1.5" />
+                {label}
+                <span className="font-medium tabular-nums text-foreground">
+                  {counts.get(tone) ?? 0}
+                </span>
+              </li>
+            ),
+          )}
+        </ul>
       </div>
       <TickStrip
         size="fill"
-        label={`Last ${ticks.length} runs: ${LEGEND.map(
-          ({ tone, label }) => `${counts.get(tone) ?? 0} ${label.toLowerCase()}`,
-        ).join(", ")}`}
+        label={`Last ${ticks.length} runs: ${summary}`}
         ticks={[
           ...EMPTY_SLOTS.slice(0, padding).map((key) => ({ key, tone: null })),
-          ...ticks.map((run) => ({ key: run.id, tone: runTone(run) })),
+          ...ticks.map((run) => ({
+            key: run.id,
+            tone: runTone(run),
+            label: `${run.botName}, ${runReadout(run)}`,
+          })),
         ]}
         focused={focused}
         onFocusTick={setFocused}
+        {...(onSelectRun
+          ? {
+              onSelectTick: (index: number) => {
+                const run = ticks[index - padding];
+                if (run) onSelectRun(run);
+              },
+            }
+          : {})}
       />
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {LEGEND.filter(({ tone }) => tone !== "neutral" || counts.get(tone)).map(
-          ({ tone, label }) => (
-            <li
-              key={tone}
-              className={cn("flex items-center gap-1.5", !counts.get(tone) && "opacity-60")}
-            >
-              <LibraryStateDot tone={tone} className="size-1.5" />
-              {label}
-              <span className="font-medium tabular-nums text-foreground">
-                {counts.get(tone) ?? 0}
-              </span>
-            </li>
-          ),
-        )}
-      </ul>
     </section>
   );
 }
