@@ -17,7 +17,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { ensureLocalApi } from "~/localApi";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { runTime } from "./BotRuns";
+import { runTime } from "./BotIdentity";
 import { bots } from "./state";
 
 const SAVED_BY: Record<BotVersionSavedBy, string> = {

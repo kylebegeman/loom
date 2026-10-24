@@ -9,7 +9,6 @@ import type {
   BotVaultSlot,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -30,10 +29,6 @@ const LIBRARY_NOTICE: Record<Exclude<BotLibraryAvailability, "available">, strin
   none: "Connect this computer to a Library to share bots with your other computers.",
   unsupported: "Your Library does not support shared bots yet.",
 };
-
-export function FromLibraryBadge({ bot }: { readonly bot: BotDefinition }) {
-  return bot.library == null ? null : <Badge variant="outline">From the Library</Badge>;
-}
 
 const HERE = "here";
 const BEST = "best";

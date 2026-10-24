@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import type { SiteAnalytics, SitesSnapshot } from "@t3tools/contracts/fork";
 import type { LibraryWorkflowTone } from "./library-workflows.ts";
 
@@ -126,7 +127,7 @@ export function siteTrafficDays(
   if (!Number.isFinite(start)) return analytics.byDay;
   const recorded = new Map(analytics.byDay.map((entry) => [entry.day.slice(0, 10), entry]));
   return Array.from({ length: analytics.days }, (_, index) => {
-    const day = new Date(start + index * DAY_MS).toISOString().slice(0, 10);
+    const day = DateTime.formatIso(DateTime.makeUnsafe(start + index * DAY_MS)).slice(0, 10);
     const entry = recorded.get(day);
     return { day, pageviews: entry?.pageviews ?? 0, visitors: entry?.visitors ?? 0 };
   });

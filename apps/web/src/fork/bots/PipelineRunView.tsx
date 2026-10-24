@@ -36,7 +36,7 @@ import { ParameterField } from "./BotRunForm";
 import { formatDuration } from "./BotsUsage";
 
 import { bots } from "./state";
-import { VerdictChip } from "./VerdictChip";
+import { VerdictChip } from "./BotIdentity";
 
 const time = (value: string) => new Date(value).toLocaleString();
 

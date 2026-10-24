@@ -17,6 +17,7 @@ export function LibraryPageFrame({
   title,
   section = PROJECTS_SECTION,
   offlineNotice,
+  libraryStatus = true,
   width = "wide",
   style,
   children,
@@ -26,6 +27,8 @@ export function LibraryPageFrame({
   readonly section?: { readonly label: string; readonly to: "/projects" | "/sites" | "/loom/bots" };
   /** What still works while the Library server is away. */
   readonly offlineNotice?: string;
+  /** Off for pages served by another server, which report their own connection. */
+  readonly libraryStatus?: boolean;
   readonly width?: WorkspacePageWidth;
   /** Scopes `--project-color` for pages that are not about one project. */
   readonly style?: CSSProperties;
@@ -53,7 +56,7 @@ export function LibraryPageFrame({
       </WorkspacePageHeader>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <WorkspacePageContainer width={width}>
-          {authority.authorityId && !authority.connected ? (
+          {libraryStatus && authority.authorityId && !authority.connected ? (
             <p role="status" className="text-xs text-muted-foreground">
               Library offline. {offlineNotice ?? "Saved projects and history remain available."}{" "}
               Reconnect {authority.environment?.label ?? "your Library server"} to save changes.

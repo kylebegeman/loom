@@ -17,9 +17,9 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
 import { BotModelPicker } from "./BotModelPicker";
-import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
+import { runInputSummary } from "./BotRuns";
 import { bots, inboxQueryInput, useRefreshWhenBotsChangesPruned } from "./state";
-import { VerdictChip } from "./VerdictChip";
+import { BotRunStatusBadge, VerdictChip, runTime } from "./BotIdentity";
 import { runDurationLabel, waitingAgeLabel } from "./runMetrics";
 
 const failureMessage = (cause: unknown, fallback: string) =>
@@ -101,7 +101,6 @@ function InboxRow({
   const dismiss = useAtomCommand(bots.dismiss, { reportFailure: false });
   const promote = useAtomCommand(bots.promote, { reportFailure: false });
   const dismissed = run.dismissedAt != null;
-  const status = RUN_STATUS[run.status];
   const summary = runInputSummary(run);
 
   const act = async (kind: "retry" | "dismiss" | "open", fallback: string) => {
@@ -131,7 +130,7 @@ function InboxRow({
           {run.verdict ? (
             <VerdictChip verdict={run.verdict.verdict} />
           ) : (
-            <Badge variant={status.variant}>{status.label}</Badge>
+            <BotRunStatusBadge status={run.status} />
           )}
           <span className="font-medium">{run.botName}</span>
           <span className="text-xs text-muted-foreground">{runDurationLabel(run)}</span>

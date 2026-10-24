@@ -27,7 +27,7 @@ import { useProjects } from "~/state/entities";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { runTime } from "./BotRuns";
+import { runTime } from "./BotIdentity";
 import { bots } from "./state";
 
 const FIRINGS_PAGE = Math.min(20, BOTS_TRIGGER_FIRINGS_MAX_LIMIT);

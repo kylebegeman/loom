@@ -1,39 +1,47 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import {
-  isTerminalBotRunStatus,
-  type BotRun,
-  type BotRunStatus,
-  type BotVerdictValue,
-} from "@t3tools/contracts/fork";
+import { isTerminalBotRunStatus, type BotRun, type BotVerdictValue } from "@t3tools/contracts/fork";
+import { BOT_RUN_STATES, BOT_VERDICT_STATES } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
+import { ArrowUpRightIcon, ChevronDownIcon, PlayIcon, SquareIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { cn } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  LIBRARY_OUTLINE,
+  LibraryStateBadge,
+  LibraryStateDot,
+} from "../project-library/LibraryControls";
 import { BotFindings, RawReply } from "./BotFindings";
+import { BotTile, BotRunStatusBadge, VerdictChip, runDuration, runTime } from "./BotIdentity";
 import { BotRunFeedback } from "./BotRunFeedback";
 import { bots } from "./state";
-import { VERDICT_LABELS, VerdictChip } from "./VerdictChip";
-
-export const RUN_STATUS: Record<
-  BotRunStatus,
-  { readonly label: string; readonly variant: "secondary" | "success" | "error" | "warning" }
-> = {
-  queued: { label: "Queued", variant: "secondary" },
-  running: { label: "Running", variant: "secondary" },
-  completed: { label: "Completed", variant: "success" },
-  failed: { label: "Failed", variant: "error" },
-  cancelled: { label: "Cancelled", variant: "warning" },
-  timed_out: { label: "Timed out", variant: "error" },
-};
-
-export const runTime = (value: string | null) => (value ? new Date(value).toLocaleString() : null);
 
 export const runInputSummary = (run: BotRun) =>
   Object.entries(run.inputs)
     .map(([name, value]) => `${name}: ${String(value)}`)
     .join(", ");
+
+/** The one line under a run's title: when, how long, where and who, in that order of interest. */
+function runMeta(run: BotRun) {
+  const active = !isTerminalBotRunStatus(run.status);
+  const parts = [
+    active
+      ? run.status === "queued"
+        ? `Queued ${runTime(run.createdAt)}`
+        : `Started ${runTime(run.startedAt ?? run.createdAt)}`
+      : runTime(run.finishedAt ?? run.startedAt ?? run.createdAt),
+    active ? null : runDuration(run.startedAt, run.finishedAt),
+    `v${run.botVersion}`,
+    run.ranOn ? `on ${run.ranOn.label}` : null,
+    run.requestedBy ? `for ${run.requestedBy.label}` : null,
+    run.startedBy === "agent" ? "started by an agent" : null,
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
 
 function RunRow({
   environmentId,
@@ -52,10 +60,11 @@ function RunRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useAtomCommand(bots.cancel, { reportFailure: false });
-  const status = RUN_STATUS[run.status];
+  const tone = BOT_RUN_STATES[run.status].tone;
   const active = !isTerminalBotRunStatus(run.status);
   const summary = runInputSummary(run);
   const verdict = run.verdict ?? null;
+  const detail = verdict ? "findings" : run.result ? "reply" : null;
 
   const stop = async () => {
     setBusy(true);
@@ -69,23 +78,40 @@ function RunRow({
   };
 
   return (
-    <li className="grid gap-2 rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge variant={status.variant}>{status.label}</Badge>
-          {verdict ? <VerdictChip verdict={verdict.verdict} /> : null}
-          {run.replayId ? <Badge variant="outline">Replay</Badge> : null}
-          {showBot ? <span className="font-medium">{run.botName}</span> : null}
-          <span className="text-xs text-muted-foreground">
-            {runTime(run.finishedAt) ?? runTime(run.startedAt) ?? runTime(run.createdAt)}
-            {run.startedBy === "agent" ? " · started by an agent" : ""}
-            {run.ranOn ? ` · Ran on ${run.ranOn.label}` : ""}
-            {run.requestedBy ? ` · Requested by ${run.requestedBy.label}` : ""}
-          </span>
+    <li className="flex min-w-0 flex-col gap-2 px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        {showBot ? (
+          <BotTile bot={{ id: run.botId }} status={<LibraryStateDot tone={tone} />} />
+        ) : (
+          <LibraryStateDot tone={tone} className="mx-1" />
+        )}
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="truncate text-sm font-medium">
+            {showBot ? run.botName : summary || "No inputs"}
+          </p>
+          <p className="truncate text-xs tabular-nums text-muted-foreground">{runMeta(run)}</p>
         </div>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {verdict ? <VerdictChip verdict={verdict.verdict} /> : null}
+          {verdict && run.status === "completed" ? null : <BotRunStatusBadge status={run.status} />}
+          {run.replayId ? <LibraryStateBadge tone="neutral">Replay</LibraryStateBadge> : null}
+        </div>
+        <div className="flex items-center gap-0.5">
+          {active ? (
+            <Button
+              shape="pill"
+              size="xs"
+              variant="ghost"
+              disabled={!canCancel || busy}
+              onClick={() => void stop()}
+            >
+              <SquareIcon />
+              {busy ? "Cancelling…" : "Cancel"}
+            </Button>
+          ) : null}
           {run.status === "queued" ? null : (
             <Button
+              shape="pill"
               size="xs"
               variant="ghost"
               render={
@@ -99,53 +125,55 @@ function RunRow({
                 />
               }
             >
+              <ArrowUpRightIcon />
               Open thread
             </Button>
           )}
-          {verdict || run.result ? (
-            <Button size="xs" variant="ghost" onClick={() => setExpanded((open) => !open)}>
-              {verdict
-                ? expanded
-                  ? "Hide findings"
-                  : "Show findings"
-                : expanded
-                  ? "Hide reply"
-                  : "Show reply"}
-            </Button>
-          ) : null}
-          {active ? (
+          {detail ? (
             <Button
-              size="xs"
+              shape="pill"
+              size="icon-xs"
               variant="ghost"
-              disabled={!canCancel || busy}
-              onClick={() => void stop()}
+              aria-expanded={expanded}
+              aria-label={`${expanded ? "Hide" : "Show"} ${detail}`}
+              onClick={() => setExpanded((open) => !open)}
             >
-              {busy ? "Cancelling…" : "Cancel"}
+              <ChevronDownIcon
+                className={cn("transition-transform duration-200", expanded && "rotate-180")}
+              />
             </Button>
           ) : null}
         </div>
       </div>
-      {summary ? <p className="truncate text-xs text-muted-foreground">{summary}</p> : null}
-      {verdict && !expanded ? <p className="line-clamp-2 text-sm">{verdict.summary}</p> : null}
-      {run.error ? <p className="text-sm text-destructive-foreground">{run.error}</p> : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
-      {!active && (canRate || run.rating != null || run.note) ? (
-        <BotRunFeedback environmentId={environmentId} run={run} canRate={canRate} />
-      ) : null}
-      {expanded && verdict ? (
-        <BotFindings run={run} verdict={verdict} />
-      ) : expanded && run.result ? (
-        <RawReply run={run} />
-      ) : null}
+      <div className={cn("flex min-w-0 flex-col gap-2", showBot ? "ps-12" : "ps-7")}>
+        {showBot && summary ? (
+          <p className="truncate text-xs text-muted-foreground">{summary}</p>
+        ) : null}
+        {verdict && !expanded ? (
+          <p className="line-clamp-2 text-sm text-foreground/90">{verdict.summary}</p>
+        ) : null}
+        {run.error ? (
+          <p className="text-sm text-destructive-foreground wrap-anywhere">{run.error}</p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive-foreground">
+            {error}
+          </p>
+        ) : null}
+        {expanded && verdict ? (
+          <BotFindings run={run} verdict={verdict} />
+        ) : expanded && run.result ? (
+          <RawReply run={run} />
+        ) : null}
+        {!active && (canRate || run.rating != null || run.note) ? (
+          <BotRunFeedback environmentId={environmentId} run={run} canRate={canRate} />
+        ) : null}
+      </div>
     </li>
   );
 }
 
-const FILTERS: ReadonlyArray<BotVerdictValue | null> = [null, "pass", "fail", "needs_attention"];
+const FILTERS = ["all", "pass", "fail", "needs_attention"] as const;
 
 /** Narrows the run list to one verdict; runs without a verdict only show under All. */
 export function VerdictFilter({
@@ -156,19 +184,22 @@ export function VerdictFilter({
   readonly onChange: (value: BotVerdictValue | null) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Filter runs by verdict">
+    <ToggleGroup
+      shape="pill"
+      variant="segmented"
+      aria-label="Filter runs by verdict"
+      value={[value ?? "all"]}
+      onValueChange={(next) => {
+        const filter = FILTERS.find((entry) => entry === next[0]);
+        if (filter) onChange(filter === "all" ? null : filter);
+      }}
+    >
       {FILTERS.map((filter) => (
-        <Button
-          key={filter ?? "all"}
-          size="xs"
-          variant={value === filter ? "secondary" : "ghost"}
-          aria-pressed={value === filter}
-          onClick={() => onChange(filter)}
-        >
-          {filter === null ? "All" : VERDICT_LABELS[filter]}
-        </Button>
+        <ToggleGroupItem key={filter} value={filter}>
+          {filter === "all" ? "All" : BOT_VERDICT_STATES[filter].label}
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
 
@@ -179,6 +210,7 @@ export function BotRuns({
   canCancel,
   canRate,
   emptyMessage,
+  emptyAction,
 }: {
   readonly environmentId: EnvironmentId;
   readonly runs: ReadonlyArray<BotRun>;
@@ -187,10 +219,13 @@ export function BotRuns({
   /** Good and Bad mark runs for replays and suggested edits. */
   readonly canRate: boolean;
   readonly emptyMessage: string;
+  readonly emptyAction?: ReactNode;
 }) {
-  if (runs.length === 0) return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
+  if (runs.length === 0) {
+    return <BotsEmptyList icon={PlayIcon} message={emptyMessage} action={emptyAction} />;
+  }
   return (
-    <ul className="grid gap-2">
+    <ul className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}>
       {runs.map((run) => (
         <RunRow
           key={run.id}
@@ -202,5 +237,53 @@ export function BotRuns({
         />
       ))}
     </ul>
+  );
+}
+
+/** A list with nothing in it yet: a dashed outline the rows will fill, and the way to start. */
+export function BotsEmptyList({
+  icon: Icon,
+  message,
+  action,
+}: {
+  readonly icon: typeof PlayIcon;
+  readonly message: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-4">
+      <span
+        aria-hidden
+        className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+      >
+        <Icon className="size-4" />
+      </span>
+      <p className="min-w-0 flex-1 basis-48 text-sm text-muted-foreground">{message}</p>
+      {action}
+    </div>
+  );
+}
+
+const SKELETON_ROWS = ["first", "second", "third", "fourth"];
+
+/** Rows shaped like runs while the list loads, so the page keeps its height when they arrive. */
+export function BotRowsSkeleton({ label = "Loading runs" }: { readonly label?: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
+    >
+      {SKELETON_ROWS.map((row) => (
+        <div key={row} className="flex items-center gap-3 px-4 py-3">
+          <Skeleton shape="card" className="size-9" />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Skeleton className="h-3.5 w-1/3" />
+            <Skeleton className="h-2.5 w-1/2" />
+          </div>
+          <Skeleton shape="pill" className="h-5 w-20" />
+        </div>
+      ))}
+    </div>
   );
 }

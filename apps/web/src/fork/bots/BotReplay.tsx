@@ -25,7 +25,8 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
 import { RawReply } from "./BotFindings";
-import { RUN_STATUS, runInputSummary, runTime } from "./BotRuns";
+import { runInputSummary } from "./BotRuns";
+import { BotRunStatusBadge, VerdictChip, runTime } from "./BotIdentity";
 import {
   ALL_REPLAY_FILTERS,
   defaultReplaySelection,
@@ -41,7 +42,6 @@ import {
 } from "./replay";
 import { runDurationLabel, runTokensLabel } from "./runMetrics";
 import { bots, useBotsChanges, useRefreshWhenBotsChangesPruned } from "./state";
-import { VerdictChip } from "./VerdictChip";
 
 export type BotReplaySourceChoice =
   | { readonly kind: "draft"; readonly draft: BotDefinitionInput }
@@ -160,12 +160,11 @@ function RunOutcome({
         <span className="text-muted-foreground">{missing}</span>
       </div>
     );
-  const status = RUN_STATUS[run.status];
   return (
     <div className="grid min-w-0 content-start gap-2 rounded-md bg-muted p-2 text-xs">
       <div className="flex flex-wrap items-center gap-1">
         <span className="text-muted-foreground">{title}</span>
-        <Badge variant={status.variant}>{status.label}</Badge>
+        <BotRunStatusBadge status={run.status} />
         {run.verdict ? <VerdictChip verdict={run.verdict.verdict} /> : null}
       </div>
       <p className="text-muted-foreground">
@@ -585,7 +584,6 @@ export function BotReplayDialog({
                   initially.
                 </legend>
                 {visible.map((run) => {
-                  const status = RUN_STATUS[run.status];
                   const checked = chosen.some((candidate) => candidate.id === run.id);
                   return (
                     <label key={run.id} className="flex items-start gap-2 text-sm">
@@ -598,7 +596,7 @@ export function BotReplayDialog({
                       />
                       <span className="grid min-w-0 gap-0.5">
                         <span className="flex flex-wrap items-center gap-1">
-                          <Badge variant={status.variant}>{status.label}</Badge>
+                          <BotRunStatusBadge status={run.status} />
                           {run.verdict ? <VerdictChip verdict={run.verdict.verdict} /> : null}
                           {run.rating ? (
                             <Badge variant={run.rating === "up" ? "success" : "error"}>
