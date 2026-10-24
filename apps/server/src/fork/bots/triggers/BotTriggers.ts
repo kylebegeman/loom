@@ -130,6 +130,8 @@ const readConflictReport = (bodyText: string) => {
 interface Outcome {
   readonly outcome: BotTriggerFiring["outcome"];
   readonly runId: string | null;
+  readonly pipelineRunId?: string;
+  readonly batchId?: string;
   readonly reason: string | null;
 }
 
@@ -466,7 +468,12 @@ export const make = Effect.gen(function* () {
           { triggerId: trigger.id },
         )
         .pipe(
-          Effect.as<Outcome>({ outcome: "run", runId: null, reason: "Started a pipeline run." }),
+          Effect.map((run): Outcome => ({
+            outcome: "run",
+            runId: null,
+            pipelineRunId: run.id,
+            reason: "Started a pipeline run.",
+          })),
           Effect.catch((error) => skip(error.message)),
         );
     }
@@ -495,6 +502,7 @@ export const make = Effect.gen(function* () {
           Effect.map((batch): Outcome => ({
             outcome: "run",
             runId: null,
+            batchId: batch.id,
             reason: `Started a batch of ${batch.total} file${batch.total === 1 ? "" : "s"}.`,
           })),
           Effect.catch((error) => skip(error.message)),

@@ -1,11 +1,7 @@
-import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import { libraryCopiesForScope } from "@t3tools/shared/fork/library-launch";
-import { Input } from "~/components/ui/input";
-import { LibraryField } from "./LibraryControls";
-import { ProfileReadiness } from "./ProfileReadiness";
 
 type LaunchFilesInput = {
   readonly project: LibraryProject;
@@ -127,68 +123,4 @@ export function libraryLaunchRootPath(
   let suffix = 2;
   while (overlaps(candidate)) candidate = `${versioned}-${suffix++}`;
   return candidate;
-}
-
-/** Starting the conversation prepares files in place, with a location override when needed. */
-export function LaunchGetCopy({
-  environmentId,
-  project,
-  hostLabel,
-  rootPath,
-  temporary,
-  disabled,
-  needsExistingFolder,
-  onRootPathChange,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly project: LibraryProject;
-  readonly hostLabel: string;
-  readonly rootPath: string;
-  readonly temporary: boolean;
-  readonly disabled: boolean;
-  readonly needsExistingFolder: boolean;
-  readonly onRootPathChange: (path: string) => void;
-}) {
-  const [editingLocation, setEditingLocation] = useState(needsExistingFolder || !rootPath);
-  const location = (
-    <LibraryField label="Folder">
-      <Input
-        font="mono"
-        value={rootPath}
-        placeholder="/path/to/project"
-        disabled={disabled}
-        onChange={(event) => {
-          setEditingLocation(true);
-          onRootPathChange(event.target.value);
-        }}
-      />
-    </LibraryField>
-  );
-  return (
-    <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">
-        Starting prepares project files on {hostLabel}.{" "}
-        {temporary
-          ? "New files are temporary unless you keep them."
-          : "Remove the files when you finish; your project and conversations stay available."}
-      </p>
-      <details
-        className="text-sm text-muted-foreground"
-        open={editingLocation || !rootPath}
-        onToggle={(event) => setEditingLocation(event.currentTarget.open)}
-      >
-        <summary className="cursor-pointer break-words">
-          Files location{rootPath ? `: ${rootPath}` : ""}
-        </summary>
-        <div className="mt-2">{location}</div>
-      </details>
-      {needsExistingFolder ? (
-        <p className="text-xs text-muted-foreground">
-          This project includes a local repository. Use a folder that already contains it, or reopen
-          its saved files.
-        </p>
-      ) : null}
-      <ProfileReadiness environmentId={environmentId} project={project} />
-    </div>
-  );
 }

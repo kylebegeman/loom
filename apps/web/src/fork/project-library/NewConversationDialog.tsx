@@ -1,3 +1,8 @@
+import type { ModelEsque } from "~/components/chat/providerIconUtils";
+import { getCustomModelOptionsByInstance } from "~/modelSelection";
+import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
+import { ConversationPalette } from "./ConversationPalette";
+import { LibraryPaletteDialog } from "./LibraryPalette";
 import { useState } from "react";
 import {
   libraryContinuationContext,
@@ -6,13 +11,12 @@ import {
   libraryPortableRecoveryPlan,
   libraryLaunchDefaults,
   libraryLaunchWarning,
-  isRepositoryResource,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
-import { libraryLaunchCandidateSummary } from "@t3tools/shared/fork/library-launch";
+
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentProviders } from "~/state/environments";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import {
   EnvironmentId,
   ModelSelection,
@@ -20,6 +24,7 @@ import {
   ProviderInteractionMode,
   ThreadId,
   type ProjectId,
+  type ProviderInstanceId,
   type ServerSettings,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -37,17 +42,7 @@ import {
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Schema from "effect/Schema";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Switch } from "~/components/ui/switch";
-import { Textarea } from "~/components/ui/textarea";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectPopup,
-  SelectItem,
-} from "~/components/ui/select";
+
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
@@ -61,20 +56,15 @@ import { type LegacyProjectSettingsFields } from "@t3tools/shared/projectSetting
 import { useProjects, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
-import { TraitsPicker } from "~/components/chat/TraitsPicker";
-import { runtimeModeConfig, runtimeModeOptions } from "~/components/chat/runtimeModeConfig";
-import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
-import { getCustomModelOptionsByInstance } from "~/modelSelection";
-import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
+
 import { newThreadId, randomUUID } from "~/lib/utils";
 import { useLibraryAttempt } from "./attempts";
 import { PortableLaunchAttempt, restoreLibraryLaunchCopy } from "./portableLaunch";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
-import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import {
-  LaunchGetCopy,
   libraryLaunchCopyMatchesScope,
   libraryLaunchPathOverlaps,
   libraryLaunchRetainedCopy,
@@ -197,7 +187,9 @@ export function libraryConversationDefaults(input: {
 }
 
 /** Persist an empty upstream thread, bind verified files, and register history before its first send. */
-export function NewConversationDialog({
+export function useLibraryConversationSetup({
+  open = true,
+  embedded = false,
   project,
   copies,
   copiesQuery,
@@ -213,6 +205,8 @@ export function NewConversationDialog({
   onChanged,
   onClose,
 }: {
+  readonly open?: boolean;
+  readonly embedded?: boolean;
   readonly project: LibraryProject;
   readonly copies: readonly LibraryWorkingCopy[];
   readonly copiesQuery: Pick<
@@ -561,6 +555,9 @@ export function NewConversationDialog({
   });
   const create = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const bind = useAtomCommand(projectLibrary.bindThread, { reportFailure: false });
+  const executeOperation = useAtomCommand(projectLibrary.executeOperation, {
+    reportFailure: false,
+  });
   const prepareCopy = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const reopenCopy = useAtomCommand(projectLibrary.reopenCopy, { reportFailure: false });
   const readCopyStatus = useAtomCommand(projectLibrary.readCopyStatus, { reportFailure: false });
@@ -596,6 +593,7 @@ export function NewConversationDialog({
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canRegisterCopy = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
+  const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
   const submit = async () => {
     const authorityId = authority.authorityId;
@@ -933,71 +931,100 @@ export function NewConversationDialog({
         };
         saveAttempt(next);
       }
-      if (!next.created) {
-        const created = await create({
+      const durableLaunch = supportsLoomFeature(
+        host?.serverConfig?.environment.capabilities,
+        "project-workflows",
+      );
+      if (durableLaunch) {
+        const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
-            threadId: next.threadId,
-            projectId: resolved.value.localProjectId,
-            title: next.title,
-            modelSelection: next.modelSelection,
-            runtimeMode: next.runtimeMode,
-            interactionMode: next.interactionMode ?? "default",
-            branch: null,
-            worktreePath: resolved.value.cwd,
-            createdAt: next.createdAt,
+            operationId: `${next.registerRequestId}:launch`,
+            request: {
+              kind: "launch",
+              input: {
+                project: next.project,
+                binding: next.binding,
+                threadId: next.threadId,
+                title: next.title,
+                modelSelection: next.modelSelection,
+                runtimeMode: next.runtimeMode,
+                interactionMode: next.interactionMode ?? "default",
+                ...(launchCopy.ownership === "managed" && next.keepOnComputer !== undefined
+                  ? { keepOnComputer: next.keepOnComputer }
+                  : {}),
+              },
+            },
           },
         });
-        // A lost create response may leave the same empty thread upstream. Binding that ID is recoverable.
-        if (created._tag === "Failure") {
-          const recovery = await bind({
-            environmentId: next.environmentId,
-            input: { threadId: next.threadId, binding: next.binding, project: next.project },
-          });
-          if (recovery._tag === "Failure") throw squashAtomCommandFailure(created);
-        }
-        next = { ...next, created: true };
-        saveAttempt(next);
-      }
-      const bound = await bind({
-        environmentId: next.environmentId,
-        input: { threadId: next.threadId, binding: next.binding, project: next.project },
-      });
-      if (bound._tag === "Failure") throw squashAtomCommandFailure(bound);
-      // Binding protects restored temporary files before cleanup becomes eligible again.
-      if (
-        launchCopy.ownership === "managed" &&
-        next.keepOnComputer !== undefined &&
-        (next.retentionCopy || (launchCopy.keepOnComputer !== false) !== next.keepOnComputer)
-      ) {
-        if (!next.retentionCopy) {
-          const updated = await setRetention({
+        if (launched._tag === "Failure") throw squashAtomCommandFailure(launched);
+      } else {
+        if (!next.created) {
+          const created = await create({
             environmentId: next.environmentId,
             input: {
-              workingCopyId: next.binding.workingCopyId,
-              keepOnComputer: next.keepOnComputer,
+              threadId: next.threadId,
+              projectId: resolved.value.localProjectId,
+              title: next.title,
+              modelSelection: next.modelSelection,
+              runtimeMode: next.runtimeMode,
+              interactionMode: next.interactionMode ?? "default",
+              branch: null,
+              worktreePath: resolved.value.cwd,
+              createdAt: next.createdAt,
             },
           });
-          if (updated._tag === "Failure") throw squashAtomCommandFailure(updated);
-          next = { ...next, retentionCopy: updated.value };
+          // A lost create response may leave the same empty thread upstream. Binding that ID is recoverable.
+          if (created._tag === "Failure") {
+            const recovery = await bind({
+              environmentId: next.environmentId,
+              input: { threadId: next.threadId, binding: next.binding, project: next.project },
+            });
+            if (recovery._tag === "Failure") throw squashAtomCommandFailure(created);
+          }
+          next = { ...next, created: true };
           saveAttempt(next);
         }
-        const published = await registerCopy({
-          environmentId: authorityId,
-          input: { requestId: `${next.registerRequestId}:retention`, copy: next.retentionCopy! },
+        const bound = await bind({
+          environmentId: next.environmentId,
+          input: { threadId: next.threadId, binding: next.binding, project: next.project },
         });
-        if (published._tag === "Failure") throw squashAtomCommandFailure(published);
+        if (bound._tag === "Failure") throw squashAtomCommandFailure(bound);
+        // Binding protects restored temporary files before cleanup becomes eligible again.
+        if (
+          launchCopy.ownership === "managed" &&
+          next.keepOnComputer !== undefined &&
+          (next.retentionCopy || (launchCopy.keepOnComputer !== false) !== next.keepOnComputer)
+        ) {
+          if (!next.retentionCopy) {
+            const updated = await setRetention({
+              environmentId: next.environmentId,
+              input: {
+                workingCopyId: next.binding.workingCopyId,
+                keepOnComputer: next.keepOnComputer,
+              },
+            });
+            if (updated._tag === "Failure") throw squashAtomCommandFailure(updated);
+            next = { ...next, retentionCopy: updated.value };
+            saveAttempt(next);
+          }
+          const published = await registerCopy({
+            environmentId: authorityId,
+            input: { requestId: `${next.registerRequestId}:retention`, copy: next.retentionCopy! },
+          });
+          if (published._tag === "Failure") throw squashAtomCommandFailure(published);
+        }
+        const archived = await snapshot({
+          environmentId: next.environmentId,
+          input: { threadId: next.threadId },
+        });
+        if (archived._tag === "Failure") throw squashAtomCommandFailure(archived);
+        const saved = await register({
+          environmentId: authorityId,
+          input: { requestId: next.registerRequestId, thread: archived.value },
+        });
+        if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
       }
-      const archived = await snapshot({
-        environmentId: next.environmentId,
-        input: { threadId: next.threadId },
-      });
-      if (archived._tag === "Failure") throw squashAtomCommandFailure(archived);
-      const saved = await register({
-        environmentId: authorityId,
-        input: { requestId: next.registerRequestId, thread: archived.value },
-      });
-      if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
       if (next.context.trim())
         useComposerDraftStore
           .getState()
@@ -1070,7 +1097,7 @@ export function NewConversationDialog({
     } else setReviewingFiles(true);
     setBusy(false);
   };
-  const canCreate =
+  const canContinue =
     !needsSourceReview &&
     !busy &&
     !pulling &&
@@ -1113,11 +1140,24 @@ export function NewConversationDialog({
         (filesPolicy && (filesPolicy.keepOnComputer !== false) !== keepOnComputer))
     ) ||
       (canSetRetention && canRegisterCopy)) &&
-    modelSelection !== null &&
     (continuation === undefined || (source.isSuccess && !source.isPending)) &&
     authority.connected &&
     host?.connection.phase === "connected" &&
     host.entry.enabled;
+  const supportsOperations = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    "project-workflows",
+  );
+  const operationProgress = useEnvironmentQuery(
+    busy && hostId && supportsOperations
+      ? projectLibrary.operations({ environmentId: hostId, input: { projectId: project.id } })
+      : null,
+  );
+  const operationPhase = operationProgress.data?.find(
+    (operation) => operation.id === `${attempt?.registerRequestId}:launch`,
+  )?.phase;
+  const canCreate =
+    canContinue && modelSelection !== null && (!supportsOperations || canExecuteOperation);
   const rankOf = (environmentId: EnvironmentId) => {
     const index = ranking.candidates.findIndex(
       (candidate) => candidate.environmentId === environmentId,
@@ -1131,599 +1171,190 @@ export function NewConversationDialog({
         supportsLoomFeature(entry.serverConfig?.environment.capabilities, "project-library"),
     )
     .toSorted((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId));
-  const connectedExecutionHosts = executionHosts.filter(
-    (entry) => entry.entry.enabled && entry.connection.phase === "connected",
-  );
-  const canChooseComputer =
-    connectedExecutionHosts.length > 1 ||
-    !connectedExecutionHosts.some((entry) => entry.environmentId === hostId);
   /** Why a computer ranks low and is never preselected, for example "Xcode missing". */
   const toolProblemsOf = (environmentId: EnvironmentId) =>
     ranking.candidates
       .find((candidate) => candidate.environmentId === environmentId && candidate.kind !== "mini")
       ?.toolProblems.join(", ") ?? "";
-  // Mini runs long jobs for conversations on the computer it is registered on.
-  const miniCandidates = ranking.candidates.filter(
-    (candidate) => candidate.kind === "mini" && candidate.environmentId === hostId,
-  );
-  if (reviewingFiles && preparation?.copy)
-    return (
-      <ReleaseCopyDialog
-        copy={preparation.copy}
-        onClose={() => setReviewingFiles(false)}
-        onReleased={() => {
-          savePreparation(null);
-          setReviewingFiles(false);
-          setPreparedCopy(null);
-          onChanged();
-        }}
-      />
-    );
-  return (
-    <LibraryDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-      title={continuation ? "Continue elsewhere" : "New conversation"}
-      description={
-        continuation
-          ? "Start a conversation with the context you choose. The original conversation keeps its computer and history."
-          : "Start work in this project. Any files you need are prepared before the conversation opens."
-      }
-      actions={
-        <>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
-            Close
-          </Button>
-          {restoring && needsSourceReview ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                saveRestoring({
-                  ...restoring,
-                  sourceReviewToken: undefined,
-                  sourceSnapshotRejected: undefined,
-                  snapshotRequestId: randomUUID(),
-                });
-                setError(null);
-              }}
-            >
-              Review latest source files
-            </Button>
-          ) : null}
-          {restoring && !restoring.copy && !attempt && error ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setRootPath(restoring.rootPath);
-                saveRestoring(null);
-                setError(null);
-                retained.refresh();
-                onChanged();
-              }}
-            >
-              Choose files again
-            </Button>
-          ) : null}
-          {preparation?.copy?.state === "failed" ? (
-            <Button
-              variant="outline"
-              disabled={busy || !canRegisterCopy || !authority.connected}
-              onClick={() => void reviewFiles()}
-            >
-              Review files
-            </Button>
-          ) : null}
-          <Button disabled={!canCreate} onClick={() => void submit()}>
-            {busy ? "Starting..." : locked ? "Retry conversation" : "Start conversation"}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <LibraryField label="Project">
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-sm font-medium">{project.title}</span>
-            {onChooseProject ? (
-              <Button variant="ghost" size="xs" disabled={busy || locked} onClick={onChooseProject}>
-                Change project
-              </Button>
-            ) : null}
-          </div>
-        </LibraryField>
-        <LibraryField label="Conversation title">
-          <Input
-            value={title}
-            disabled={busy || locked}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </LibraryField>
-        <LibraryField label="Scope">
-          <Select
-            value={launchResourceIds.length > 1 ? "source-scope" : (resourceId ?? "whole")}
-            disabled={busy || locked}
-            onValueChange={(value) => {
-              if (value === "source-scope") return;
-              setScopeChanged(true);
-              setResourceId(value === "whole" ? null : value);
-              setCopyId(null);
-              setSourceChoiceId(null);
-              setExistingFolder(null);
-              setLocalFolder(null);
-              setRootPath(null);
-              setKeepChoice(null);
-            }}
-            items={[
-              { value: "whole", label: "Whole project" },
-              ...(launchResourceIds.length > 1
-                ? [{ value: "source-scope", label: "Original repositories" }]
-                : []),
-              ...project.resources
-                .filter(isRepositoryResource)
-                .map((resource) => ({ value: resource.id, label: resource.title })),
-            ]}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="whole">Whole project</SelectItem>
-              {launchResourceIds.length > 1 ? (
-                <SelectItem value="source-scope">Original repositories</SelectItem>
-              ) : null}
-              {project.resources.filter(isRepositoryResource).map((resource) => (
-                <SelectItem key={resource.id} value={resource.id}>
-                  {resource.title}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LibraryField>
-        <details className="text-sm" open={!chosen?.online || undefined}>
-          <summary className="cursor-pointer text-muted-foreground">
-            {host ? `On ${host.label}` : "Choose a computer"}
-          </summary>
-          <div className="mt-2 space-y-2">
-            {canChooseComputer ? (
-              <LibraryField label="Computer">
-                <Select
-                  value={hostId}
-                  disabled={busy || locked}
-                  onValueChange={(value) => {
-                    setHostId(value);
-                    setCopyId(null);
-                    setSourceChoiceId(null);
-                    setExistingFolder(null);
-                    setLocalFolder(null);
-                    setRootPath(null);
-                    setModelChoice(null);
-                    setRuntimeChoice(null);
-                    setInteractionChoice("default");
-                    setKeepChoice(null);
-                  }}
-                  items={executionHosts.map((entry) => ({
-                    value: entry.environmentId,
-                    label: entry.label,
-                  }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a computer" />
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {executionHosts.map((entry) => (
-                      <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                        {entry.label}
-                        {entry.connection.phase !== "connected"
-                          ? " (offline)"
-                          : toolProblemsOf(entry.environmentId)
-                            ? ` (${toolProblemsOf(entry.environmentId)})`
-                            : ""}
-                      </SelectItem>
-                    ))}
-                    {authority.computers
-                      .filter(
-                        (computer) =>
-                          computer.supportsExecution &&
-                          !authority.environments.some(
-                            (entry) => entry.environmentId === computer.environmentId,
-                          ),
-                      )
-                      .map((computer) => (
-                        <SelectItem
-                          key={computer.environmentId}
-                          value={computer.environmentId}
-                          disabled
-                        >
-                          {computer.label} (connect first)
-                        </SelectItem>
-                      ))}
-                  </SelectPopup>
-                </Select>
-                {chosen && !attempt ? (
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    {libraryLaunchCandidateSummary(chosen).replace(
-                      "no copy yet",
-                      "files prepared when starting",
-                    )}
-                  </p>
-                ) : null}
-                {!attempt
-                  ? miniCandidates.map((candidate) => (
-                      <p
-                        key={candidate.kind === "mini" ? candidate.workerId : candidate.label}
-                        className="mt-1 text-xs text-muted-foreground"
-                      >
-                        {libraryLaunchCandidateSummary(candidate)}
-                      </p>
-                    ))
-                  : null}
-              </LibraryField>
-            ) : chosen ? (
-              <p className="text-xs text-muted-foreground">
-                {libraryLaunchCandidateSummary(chosen).replace(
-                  "no copy yet",
-                  "files prepared when starting",
-                )}
-              </p>
-            ) : null}
-          </div>
-        </details>
-        {hostId && host?.serverConfig && modelSelection && defaults ? (
-          <LibraryField label="Model">
-            <div className="flex flex-wrap items-center gap-2">
-              <ProviderModelPicker
-                environmentId={hostId}
-                activeInstanceId={modelSelection.instanceId}
-                model={modelSelection.model}
-                lockedProvider={null}
-                instanceEntries={defaults.entries}
-                modelOptionsByInstance={getCustomModelOptionsByInstance(
-                  mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
-                  defaults.providers,
-                  modelSelection.instanceId,
-                  modelSelection.model,
-                )}
-                disabled={busy || locked}
-                onInstanceModelChange={(instanceId, model) => setModelChoice({ instanceId, model })}
-              />
-              {providerEntry ? (
-                <TraitsPicker
-                  provider={providerEntry.driverKind}
-                  instanceId={modelSelection.instanceId}
-                  models={providerEntry.models}
-                  model={modelSelection.model}
-                  modelOptions={modelSelection.options}
-                  prompt=""
-                  onPromptChange={() => {}}
-                  allowPromptInjectedEffort={false}
-                  planModeEnabled={interactionMode === "plan"}
-                  isComposerOwned={false}
-                  disabled={busy || locked}
-                  onModelOptionsChange={(options) =>
-                    setModelChoice({ ...modelSelection, options: options ?? [] })
-                  }
-                />
-              ) : null}
-            </div>
-          </LibraryField>
-        ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <LibraryField label="Permissions">
-            <Select
-              value={runtimeMode}
-              disabled={busy || locked}
-              onValueChange={(value) => {
-                if (value) setRuntimeChoice(value);
-              }}
-              items={runtimeModeOptions.map((mode) => ({
-                value: mode,
-                label: runtimeModeConfig[mode].label,
-              }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup>
-                {runtimeModeOptions.map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {runtimeModeConfig[mode].label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-          <LibraryField label="Mode">
-            <Select
-              value={interactionMode}
-              disabled={busy || locked}
-              onValueChange={(value) => {
-                if (value) setInteractionChoice(value);
-              }}
-              items={[
-                { value: "default", label: "Do the work" },
-                { value: "plan", label: "Plan only" },
-              ]}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup>
-                <SelectItem value="default">Do the work</SelectItem>
-                <SelectItem value="plan">Plan only</SelectItem>
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        </div>
-        {authority.computers.some(
-          (computer) =>
-            computer.supportsExecution &&
-            !authority.environments.some((entry) => entry.environmentId === computer.environmentId),
-        ) ? (
-          <p className="text-sm text-muted-foreground">
-            Your Library remembers other computers.{" "}
-            <Link to="/settings/connections" className="underline underline-offset-4">
-              Connect a computer
-            </Link>{" "}
-            to run work there. Saved conversations are available here.
-          </p>
-        ) : null}
-        {!locked && sourcePlan.kind === "choose" ? (
-          <LibraryField label="Files">
-            <p className="mb-2 text-xs text-muted-foreground">{sourcePlan.reason}</p>
-            <Select
-              value={sourceChoiceId}
-              disabled={busy}
-              items={sourcePlan.candidates.map((entry) => ({
-                value: entry.id,
-                label: entry.rootPath,
-              }))}
-              onValueChange={(value) => {
-                setSourceChoiceId(value);
-                setExistingFolder(null);
-                setLocalFolder(null);
-                setCopyId(value);
-                setRootPath(null);
-                setKeepChoice(null);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose project files" />
-              </SelectTrigger>
-              <SelectPopup>
-                {sourcePlan.candidates.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.rootPath} on{" "}
-                    {authority.environments.find(
-                      (host) => host.environmentId === entry.environmentId,
-                    )?.label ??
-                      authority.computers.find((host) => host.environmentId === entry.environmentId)
-                        ?.label ??
-                      entry.environmentId}
-                    {entry.environmentId === hostId && entry.state === "ready"
-                      ? " (on this computer)"
-                      : " (saved files)"}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        ) : candidates.length > 1 && !sourceWorkingCopyId && !portableSource ? (
-          <LibraryField label="Files location">
-            <Select
-              value={copy?.id ?? null}
-              onValueChange={(value) => {
-                setCopyId(value);
-                setSourceChoiceId(value);
-                setKeepChoice(null);
-              }}
-              disabled={busy || locked}
-              items={candidates.map((entry) => ({ value: entry.id, label: entry.rootPath }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a folder" />
-              </SelectTrigger>
-              <SelectPopup>
-                {candidates.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.rootPath}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LibraryField>
-        ) : null}
-        {existingFolder ? (
-          <div className="space-y-2">
-            <p role="alert" className="text-sm text-muted-foreground">
-              {existingFolder} already has files. Choose which files to use.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setRootPath(existingFolder);
-                  setLocalFolder(existingFolder);
-                  setExistingFolder(null);
-                }}
-              >
-                Use files in this folder
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setExistingFolder(null);
-                  setRootPath("");
-                }}
-              >
-                Choose another folder
-              </Button>
-            </div>
-          </div>
-        ) : null}
-        {hostId && !locked && filesPlan.kind === "unavailable" && !needsReopen ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            {filesPlan.message}
-          </p>
-        ) : null}
-        {needsPortable && !supportsPortable ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            Update Loom on this computer to use these saved files here.
-          </p>
-        ) : null}
-        {needsPortable && !sourceCanSnapshot ? (
-          <p role="alert" className="text-sm text-muted-foreground">
-            Connect the source computer to save its latest files before starting here.
-          </p>
-        ) : null}
-        {copiesReadiness === "loading" ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            Loading project files...
-          </p>
-        ) : copiesReadiness === "error" ? (
-          <LibraryErrorNotice
-            error={copiesQuery.error ?? "Could not load project files."}
-            onRetry={copiesQuery.refresh}
-          />
-        ) : copy?.state === "ready" && !needsPortable ? (
-          <div className="space-y-2">
-            <p className="break-words text-sm text-muted-foreground">
-              Files on {host?.label}: {copy.rootPath}
-            </p>
-            <details className="text-sm text-muted-foreground">
-              <summary className="cursor-pointer">Files location</summary>
-              <div className="mt-2">
-                <LibraryField label="Folder">
-                  <Input
-                    font="mono"
-                    value={rootPath}
-                    disabled={busy || locked}
-                    onChange={(event) => setRootPath(event.target.value)}
-                  />
-                </LibraryField>
-              </div>
-            </details>
-            {warning ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm text-warning-foreground">
-                  {warning.message
-                    .replace("This copy is", "These files are")
-                    .replace("This copy has", "These files have")
-                    .replace(" and has ", " and have ")
-                    .replace("in this copy", "in this project")}
-                </p>
-                {warning.pullPaths && canPull ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={!canCreate}
-                    onClick={() => void pullThenSubmit(warning.pullPaths ?? [])}
-                  >
-                    {pulling ? "Pulling..." : "Pull first"}
-                  </Button>
-                ) : null}
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={!canCreate}
-                  onClick={() => void submit()}
-                >
-                  Continue anyway
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : hostId ? (
-          <LaunchGetCopy
-            environmentId={hostId}
-            project={project}
-            hostLabel={host?.label ?? "this computer"}
-            temporary={supportsLoomFeature(
-              host?.serverConfig?.environment.capabilities,
-              LIBRARY_FILE_LIFECYCLE_FEATURE,
-            )}
-            rootPath={rootPath}
-            disabled={busy || pulling || locked || host?.connection.phase !== "connected"}
-            needsExistingFolder={
-              !needsPortable &&
-              project.resources.some(
-                (resource) =>
-                  isRepositoryResource(resource) &&
-                  (!resourceId || resource.id === resourceId) &&
-                  !resource.remoteUrl,
-              )
-            }
-            onRootPathChange={(path) => {
-              setRootPath(path);
-              setExistingFolder(null);
-            }}
-          />
-        ) : null}
-        {supportsReopen && filesPolicy?.ownership !== "borrowed" ? (
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span>
-              Keep files on this computer
-              <span className="mt-1 block text-xs text-muted-foreground">
-                With Keep off, finished work can be cleaned up to free space.
-              </span>
-            </span>
-            <Switch
-              checked={keepOnComputer}
-              onCheckedChange={setKeepChoice}
-              disabled={busy || locked || !canSetRetention || !canRegisterCopy}
-            />
-          </label>
-        ) : null}
-        {copy?.state !== "ready" && retained.error ? (
-          <LibraryErrorNotice error={retained.error} onRetry={retained.refresh} />
-        ) : null}
-        {copy?.state !== "ready" && retained.isPending ? (
-          <p role="status" className="text-xs text-muted-foreground">
-            Checking saved files...
-          </p>
-        ) : null}
-        {project.brief ? (
-          <details className="text-sm text-muted-foreground">
-            <summary className="cursor-pointer">Shared project brief</summary>
-            <p className="mt-2 whitespace-pre-wrap">{project.brief}</p>
-          </details>
-        ) : null}
-        {continuation && !source.data ? (
-          <LibraryErrorNotice
-            error={source.error ?? "Loading recent saved context..."}
-            onRetry={source.refresh}
-          />
-        ) : null}
-        {continuation ? (
-          <LibraryField label="Context to carry forward">
-            <Textarea
-              disabled={busy || locked}
-              value={context}
-              onChange={(event) => {
-                setContext(event.target.value);
-              }}
-              placeholder="Summarize the decisions and next step to carry into the new conversation."
-            />
-          </LibraryField>
-        ) : null}
-        {hostId && !modelSelection ? (
-          <p className="text-xs text-muted-foreground">
-            Connect this computer and enable a provider before creating a conversation.
-          </p>
-        ) : null}
-        {locked ? (
-          <p className="text-xs text-muted-foreground">
-            {needsSourceReview
-              ? "Review the latest source files to continue this conversation."
-              : "This conversation is waiting for confirmation. Retry to recover it without starting another one."}
-          </p>
-        ) : null}
-        <LibraryErrorNotice error={error} />
-      </div>
-    </LibraryDialog>
+  const blocker = !authority.connected
+    ? "Reconnect your Library before starting."
+    : !hostId
+      ? "Choose a computer to run this conversation."
+      : host?.connection.phase !== "connected"
+        ? "Reconnect the selected computer before starting."
+        : copiesReadiness === "loading"
+          ? "Loading project files..."
+          : copiesReadiness === "error"
+            ? (copiesQuery.error ?? "Could not load project files.")
+            : !modelSelection
+              ? "Enable an authenticated provider on this computer."
+              : filesPlan.kind === "choose"
+                ? filesPlan.reason
+                : filesPlan.kind === "unavailable" && !needsReopen
+                  ? filesPlan.message
+                  : needsPortable && !supportsPortable
+                    ? "Update this computer to restore saved project files."
+                    : needsPortable && !sourceCanSnapshot
+                      ? "Connect the source computer to save its latest files."
+                      : toolProblemsOf(hostId) ||
+                        (!canCreate && !busy && !existingFolder
+                          ? "Review the selected computer, files and connection permissions."
+                          : null);
+  return {
+    project,
+    operationPhase,
+    open,
+    embedded,
+    onClose,
+    onChooseProject,
+    title,
+    setTitle,
+    context,
+    setContext,
+    continuation,
+    hostId,
+    hostLabel: host?.label,
+    executionHosts,
+    computers: authority.computers,
+    selectHost: (value: EnvironmentId) => {
+      if (value === hostId) return;
+      setHostId(value);
+      setCopyId(null);
+      setSourceChoiceId(null);
+      setExistingFolder(null);
+      setLocalFolder(null);
+      setRootPath(null);
+      setModelChoice(null);
+      setRuntimeChoice(null);
+      setInteractionChoice("default");
+      setKeepChoice(null);
+    },
+    scope: launchResourceIds,
+    selectScope: (value: string | null) => {
+      if (
+        value === null
+          ? launchResourceIds.length === 0
+          : launchResourceIds.length === 1 && launchResourceIds[0] === value
+      )
+        return;
+      setScopeChanged(true);
+      setResourceId(value);
+      setCopyId(null);
+      setSourceChoiceId(null);
+      setExistingFolder(null);
+      setLocalFolder(null);
+      setRootPath(null);
+      setKeepChoice(null);
+    },
+    modelSelection,
+    entries: defaults?.entries ?? [],
+    modelOptionsByInstance:
+      host?.serverConfig && defaults
+        ? getCustomModelOptionsByInstance(
+            mergeEnvironmentSettings(host.serverConfig.settings, clientSettings),
+            defaults.providers,
+            modelSelection?.instanceId,
+            modelSelection?.model,
+          )
+        : new Map<ProviderInstanceId, readonly ModelEsque[]>(),
+    providerEntry,
+    setModelChoice,
+    runtimeMode,
+    setRuntimeChoice,
+    interactionMode,
+    setInteractionChoice,
+    rootPath,
+    setRootPath,
+    copy,
+    filesPlan,
+    candidates,
+    sourcePlan,
+    selectCopy: (value: string) => {
+      setCopyId(value);
+      setSourceChoiceId(value);
+      setExistingFolder(null);
+      setLocalFolder(null);
+      setRootPath(null);
+      setKeepChoice(null);
+    },
+    selectFolder: (path: string) => {
+      setRootPath(path);
+      setLocalFolder(path);
+      setExistingFolder(null);
+    },
+    chooseAnotherFolder: () => {
+      setExistingFolder(null);
+      setRootPath("");
+    },
+    existingFolder,
+    keepOnComputer,
+    setKeepChoice,
+    canKeep:
+      supportsReopen && filesPolicy?.ownership !== "borrowed" && canSetRetention && canRegisterCopy,
+    needsReopen,
+    needsPortable,
+    locked,
+    busy: busy || pulling,
+    canCreate,
+    warning,
+    canPull,
+    pullThenSubmit,
+    submit,
+    error,
+    blocker,
+    refreshFiles: () => {
+      copiesQuery.refresh();
+      retained.refresh();
+    },
+    reviewLatest:
+      restoring && needsSourceReview
+        ? () => {
+            saveRestoring({
+              ...restoring,
+              sourceReviewToken: undefined,
+              sourceSnapshotRejected: undefined,
+              snapshotRequestId: randomUUID(),
+            });
+            setError(null);
+          }
+        : null,
+    chooseFilesAgain:
+      restoring && !restoring.copy && !attempt && error
+        ? () => {
+            setRootPath(restoring.rootPath);
+            saveRestoring(null);
+            setError(null);
+            retained.refresh();
+            onChanged();
+          }
+        : null,
+    reviewFiles: preparation?.copy?.state === "failed" ? reviewFiles : null,
+    review:
+      reviewingFiles && preparation?.copy ? (
+        <ReleaseCopyDialog
+          copy={preparation.copy}
+          onClose={() => setReviewingFiles(false)}
+          onReleased={() => {
+            savePreparation(null);
+            setReviewingFiles(false);
+            setPreparedCopy(null);
+            onChanged();
+          }}
+        />
+      ) : null,
+  };
+}
+
+export function NewConversationDialog(props: Parameters<typeof useLibraryConversationSetup>[0]) {
+  const setup = useLibraryConversationSetup(props);
+  if (!setup.open) return null;
+  if (setup.review) return setup.review;
+  const content = <ConversationPalette setup={setup} />;
+  return setup.embedded ? (
+    content
+  ) : (
+    <LibraryPaletteDialog title="New conversation" onClose={setup.onClose}>
+      {content}
+    </LibraryPaletteDialog>
   );
 }

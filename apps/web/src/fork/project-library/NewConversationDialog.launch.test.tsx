@@ -15,12 +15,13 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { act, type ComponentProps, type ReactNode } from "react";
+import { act, useEffect, type ComponentProps } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   commands: {
+    executeOperation: { run: vi.fn() },
     bindThread: { run: vi.fn() },
     prepareCopy: { run: vi.fn() },
     reopenCopy: { run: vi.fn() },
@@ -87,7 +88,7 @@ vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: () => ({}),
   mergeEnvironmentSettings: (settings: unknown) => settings,
 }));
-vi.mock("~/modelSelection", () => ({ getCustomModelOptionsByInstance: () => ({}) }));
+vi.mock("~/modelSelection", () => ({ getCustomModelOptionsByInstance: () => new Map() }));
 vi.mock("~/composerDraftStore", () => ({
   useComposerDraftStore: { getState: () => ({ setPrompt: vi.fn() }) },
 }));
@@ -99,42 +100,31 @@ vi.mock("@tanstack/react-router", () => ({
   Link: "a",
   useNavigate: () => state.navigate,
 }));
-vi.mock("~/components/ui/button", () => ({ Button: "button" }));
-vi.mock("~/components/ui/input", () => ({ Input: "input" }));
-vi.mock("~/components/ui/switch", () => ({ Switch: "input" }));
-vi.mock("~/components/ui/textarea", () => ({ Textarea: "textarea" }));
-vi.mock("~/components/ui/select", () => ({
-  Select: "select",
-  SelectTrigger: "div",
-  SelectValue: "span",
-  SelectPopup: "div",
-  SelectItem: "option",
-}));
-vi.mock("~/components/chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
-vi.mock("~/components/chat/TraitsPicker", () => ({ TraitsPicker: () => null }));
-vi.mock("./ProfileReadiness", () => ({ ProfileReadiness: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
-vi.mock("./LibraryControls", () => ({
-  LibraryDialog: ({ children, actions }: { children: ReactNode; actions: ReactNode }) => (
-    <dialog>
-      {children}
-      {actions}
-    </dialog>
+vi.mock("~/fork/switchboard/switchboardPicker", () => ({
+  withSwitchboardEntries: (component: unknown) => component,
+}));
+vi.mock("./ProfileReadiness", () => ({ ProfileReadiness: () => null }));
+vi.mock("./LibraryPalette", () => ({
+  LibraryPaletteDialog: ({ children }: { children: import("react").ReactNode }) => <>{children}</>,
+  LibraryPaletteView: (
+    props: ComponentProps<typeof import("./LibraryPalette").LibraryPaletteView>,
+  ) => (
+    <>
+      <input value={props.query} onChange={(event) => props.onQueryChange(event.target.value)} />
+      {props.onBack ? <button onClick={props.onBack}>Back</button> : null}
+      {props.items.map((item) => (
+        <button key={item.id} disabled={props.busy || item.disabled} onClick={item.select}>
+          {item.title}
+        </button>
+      ))}
+      {props.message}
+    </>
   ),
-  LibraryField: ({ children, label }: { children: ReactNode; label: string }) => (
-    <label>
-      {label}
-      {children}
-    </label>
-  ),
-  LibraryErrorNotice: ({ error }: { error: string | null }) =>
-    error ? <p role="alert">{error}</p> : null,
 }));
 
-import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
-import { TraitsPicker } from "~/components/chat/TraitsPicker";
-import { NewConversationDialog } from "./NewConversationDialog";
+import { NewConversationDialog, useLibraryConversationSetup } from "./NewConversationDialog";
 import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
 const environmentId = EnvironmentId.make("host");
@@ -212,13 +202,22 @@ const bindingReceipt = AsyncResult.success(null);
 let renderer: ReactTestRenderer | undefined;
 let storage: Storage;
 
+let launch: ReturnType<typeof useLibraryConversationSetup>;
+function SetupHarness(props: Parameters<typeof useLibraryConversationSetup>[0]) {
+  const current = useLibraryConversationSetup(props);
+  useEffect(() => {
+    launch = current;
+  });
+  return null;
+}
+
 async function mount(
   copies: readonly LibraryWorkingCopy[] = [],
-  defaults: Partial<ComponentProps<typeof NewConversationDialog>> = {},
+  defaults: Partial<Parameters<typeof useLibraryConversationSetup>[0]> = {},
 ) {
   await act(() => {
     renderer = create(
-      <NewConversationDialog
+      <SetupHarness
         project={project}
         copies={copies}
         {...defaults}
@@ -229,16 +228,17 @@ async function mount(
     );
   });
 }
-function button(label: string) {
-  const match = renderer!.root
-    .findAllByType("button")
-    .find((node) => node.children.includes(label));
-  if (!match) throw new Error(`Button not found: ${label}`);
-  return match;
-}
 async function click(label: string) {
-  expect(button(label).props.disabled).not.toBe(true);
-  await act(() => button(label).props.onClick());
+  if (label === "Start conversation" || label === "Retry conversation") {
+    expect(launch.canCreate).toBe(true);
+    await act(() => {
+      void launch.submit();
+    });
+  } else if (label === "Review latest source files") await act(() => launch.reviewLatest?.());
+  else if (label === "Choose files again") await act(() => launch.chooseFilesAgain?.());
+  else if (label === "Use files in this folder")
+    await act(() => launch.selectFolder(launch.existingFolder!));
+  else throw new Error(`Unknown launch operation: ${label}`);
 }
 function savedAttempt() {
   const serialized = storage.getItem(attemptKey);
@@ -383,8 +383,7 @@ describe("Library conversation retention", () => {
       });
       commands.bindThread.run.mockReturnValueOnce(bindingPromise);
       await mount();
-      const keep = renderer!.root.findAllByType("input").find((node) => "checked" in node.props);
-      expect(keep?.props.checked).toBe(false);
+      expect(launch.keepOnComputer).toBe(false);
       await click("Start conversation");
 
       expect(commands.reopenCopy.run).toHaveBeenCalledExactlyOnceWith({
@@ -438,9 +437,7 @@ describe("Library conversation retention", () => {
     await mount();
     await click("Start conversation");
 
-    expect(renderer!.root.findByProps({ role: "alert" }).children).toContain(
-      "Authority unavailable",
-    );
+    expect(launch.error).toContain("Authority unavailable");
     expect(commands.setCopyRetention.run).toHaveBeenCalledOnce();
     expect(savedAttempt()).toMatchObject({ retentionCopy: temporaryCopy });
     expect(commands.snapshotThread.run).not.toHaveBeenCalled();
@@ -467,9 +464,7 @@ describe("Library conversation retention", () => {
     await mount();
     await click("Start conversation");
 
-    expect(renderer!.root.findByProps({ role: "alert" }).children).toContain(
-      "Thread binding failed",
-    );
+    expect(launch.error).toContain("Thread binding failed");
     expect(commands.setCopyRetention.run).not.toHaveBeenCalled();
     expect(commands.registerCopy.run).toHaveBeenCalledTimes(1);
     expect(commands.registerCopy.run).toHaveBeenCalledWith({
@@ -512,7 +507,7 @@ describe("new conversations with source settings", () => {
 
   it("restores files automatically and creates a fresh empty conversation with the source launch settings", async () => {
     await mount([], sourceDefaults);
-    expect(renderer!.root.findAllByType("textarea")).toHaveLength(0);
+    expect(launch.continuation).toBeUndefined();
     expect(commands.create.run).not.toHaveBeenCalled();
     await click("Start conversation");
     expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
@@ -539,22 +534,12 @@ describe("new conversations with source settings", () => {
 
   it("uses edits to the source model, options, permissions and mode before starting", async () => {
     await mount([], sourceDefaults);
-    await act(() =>
-      renderer!.root
-        .findByType(ProviderModelPicker)
-        .props.onInstanceModelChange(instanceId, "edited-model"),
-    );
+    await act(() => launch.setModelChoice({ instanceId, model: "edited-model" }));
     const options = [{ id: "reasoningEffort", value: "low" }];
-    await act(() => renderer!.root.findByType(TraitsPicker).props.onModelOptionsChange(options));
+    await act(() => launch.setModelChoice({ instanceId, model: "edited-model", options }));
     await act(() => {
-      renderer!.root
-        .findAllByType("select")
-        .find((node) => node.props.value === "auto")!
-        .props.onValueChange("approval-required");
-      renderer!.root
-        .findAllByType("select")
-        .find((node) => node.props.value === "plan")!
-        .props.onValueChange("default");
+      launch.setRuntimeChoice("approval-required");
+      launch.setInteractionChoice("default");
     });
     await click("Start conversation");
     expect(commands.create.run).toHaveBeenCalledWith({
@@ -626,20 +611,8 @@ describe("new conversations with source settings", () => {
     );
     const otherCopy = { ...restoredCopy, id: "other-files", environmentId: otherId };
     await mount([restoredCopy, otherCopy], sourceDefaults);
-    await act(() =>
-      renderer!.root
-        .findAllByType("select")
-        .find((node) => node.props.value === environmentId)!
-        .props.onValueChange(otherId),
-    );
-    await act(() =>
-      renderer!.root
-        .findAllByType("select")
-        .find((node) =>
-          node.props.items?.some((item: { value: string }) => item.value === otherCopy.id),
-        )!
-        .props.onValueChange(otherCopy.id),
-    );
+    await act(() => launch.selectHost(otherId));
+    await act(() => launch.selectCopy(otherCopy.id));
     await click("Start conversation");
     expect(commands.create.run).toHaveBeenCalledWith({
       environmentId: otherId,
@@ -690,8 +663,7 @@ describe("new conversations with source settings", () => {
 
   it("leaves the regular form blank and resolves its project defaults", async () => {
     await mount();
-    const title = renderer!.root.findAllByType("input").find((node) => "value" in node.props);
-    expect(title?.props.value).toBe("");
+    expect(launch.title).toBe("");
     await click("Start conversation");
     expect(commands.create.run).toHaveBeenCalledWith({
       environmentId,
@@ -866,16 +838,9 @@ describe("portable project launch", () => {
     const second = { ...sourceCopy, id: "other-saved-files", rootPath: "/other/project" };
     setup([sourceCopy, second]);
     await mount();
-    expect(button("Start conversation").props.disabled).toBe(true);
+    expect(launch.canCreate).toBe(false);
     expect(commands.authorizeRecovery.run).not.toHaveBeenCalled();
-    await act(() =>
-      renderer!.root
-        .findAllByType("select")
-        .find((node) =>
-          node.props.items?.some((item: { value: string }) => item.value === second.id),
-        )!
-        .props.onValueChange(sourceCopy.id),
-    );
+    await act(() => launch.selectCopy(sourceCopy.id));
     await click("Start conversation");
     expect(commands.authorizeRecovery.run).toHaveBeenCalledWith({
       environmentId: authorityId,
@@ -886,10 +851,8 @@ describe("portable project launch", () => {
   it("blocks an offline ready source even when an older archive is available", async () => {
     setup([{ ...sourceCopy, state: "ready" }]);
     await mount();
-    expect(button("Start conversation").props.disabled).toBe(true);
-    expect(
-      renderer!.root.findAllByProps({ role: "alert" }).map((node) => node.children.join()),
-    ).toContain("Connect the source computer to save its latest files before starting here.");
+    expect(launch.canCreate).toBe(false);
+    expect(launch.blocker).toContain("Connect the source computer to save its latest files");
     expect(commands.authorizeRecovery.run).not.toHaveBeenCalled();
   });
 
@@ -929,12 +892,12 @@ describe("portable project launch", () => {
     });
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expect(commands.create.run).not.toHaveBeenCalled();
-    expect(button("Retry conversation").props.disabled).toBe(true);
+    expect(launch.canCreate).toBe(false);
 
     await act(() => renderer!.unmount());
     renderer = undefined;
     await mount([], { continuation: sourceSummary });
-    expect(button("Retry conversation").props.disabled).toBe(true);
+    expect(launch.canCreate).toBe(false);
     await click("Review latest source files");
     const reviewed = JSON.parse(storage.getItem(portableKey)!);
     expect(reviewed.snapshotRequestId).not.toBe(rejected.snapshotRequestId);
@@ -991,11 +954,7 @@ describe("portable project launch", () => {
       }),
     );
     await mount();
-    expect(
-      renderer!.root
-        .findAllByType("button")
-        .some((node) => node.children.includes("Review latest source files")),
-    ).toBe(false);
+    expect(launch.reviewLatest).toBeNull();
     await click("Retry conversation");
     expect(commands.snapshotCopy.run.mock.calls[1]).toEqual(snapshot);
     expect(commands.readCopyStatus.run).toHaveBeenCalledOnce();
@@ -1011,7 +970,7 @@ describe("portable project launch", () => {
     await click("Start conversation");
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expect(storage.getItem(portableKey)).toBeNull();
-    expect(button("Start conversation").props.disabled).toBe(true);
+    expect(launch.canCreate).toBe(false);
     await click("Use files in this folder");
     const existing = { ...destinationCopy, ownership: "borrowed" as const };
     commands.prepareCopy.run.mockResolvedValue(AsyncResult.success(existing));
@@ -1037,8 +996,8 @@ describe("portable project launch", () => {
     );
     await click("Start conversation");
     expect(commands.restoreCopy.run).toHaveBeenCalledOnce();
-    expect(button("Start conversation").props.disabled).toBe(true);
-    expect(button("Use files in this folder")).toBeDefined();
+    expect(launch.canCreate).toBe(false);
+    expect(launch.existingFolder).toBeTruthy();
   });
 
   it("retries destination registration across remount without restoring or changing the destination identity", async () => {
@@ -1102,15 +1061,8 @@ describe("portable project launch", () => {
   it("requires a deliberate choice before continuing with different files already on the destination", async () => {
     setup();
     await mount([restoredCopy], { continuation: sourceSummary });
-    expect(button("Start conversation").props.disabled).toBe(true);
-    await act(() =>
-      renderer!.root
-        .findAllByType("select")
-        .find((node) =>
-          node.props.items?.some((item: { value: string }) => item.value === sourceCopy.id),
-        )!
-        .props.onValueChange(restoredCopy.id),
-    );
+    expect(launch.canCreate).toBe(false);
+    await act(() => launch.selectCopy(restoredCopy.id));
     await click("Start conversation");
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expect(commands.authorizeRecovery.run).not.toHaveBeenCalled();
@@ -1234,12 +1186,7 @@ describe("portable project launch", () => {
       AsyncResult.success({ localProjectId, cwd: newPath }),
     );
     await mount([localSource]);
-    await act(() =>
-      renderer!.root
-        .findAllByType("input")
-        .find((node) => node.props.font === "mono")!
-        .props.onChange({ target: { value: newPath } }),
-    );
+    await act(() => launch.setRootPath(newPath));
     await click("Start conversation");
     expect(commands.snapshotCopy.run).toHaveBeenCalledWith({
       environmentId,
@@ -1262,8 +1209,92 @@ describe("portable project launch", () => {
   it("blocks source-less continuations instead of preparing an unrelated clone", async () => {
     setup();
     await mount([], { continuation: { ...sourceSummary, workingCopyId: null } });
-    expect(button("Start conversation").props.disabled).toBe(true);
+    expect(launch.canCreate).toBe(false);
     expect(commands.prepareCopy.run).not.toHaveBeenCalled();
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("conversation palette ergonomics", () => {
+  async function mountPalette() {
+    await act(() => {
+      renderer = create(
+        <NewConversationDialog
+          project={project}
+          initialHostId={environmentId}
+          initialCopyId={restoredCopy.id}
+          initialModelSelection={{
+            instanceId,
+            model: "test-model",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          }}
+          initialRuntimeMode="approval-required"
+          initialInteractionMode="plan"
+          copies={[restoredCopy]}
+          copiesQuery={{ isPending: false, isSuccess: true, error: null, refresh: vi.fn() }}
+          onChanged={onChanged}
+          onClose={onClose}
+        />,
+      );
+    });
+  }
+  function action(title: string) {
+    return renderer!.root.findAllByType("button").find((node) => node.children.includes(title))!;
+  }
+  async function choose(title: string) {
+    expect(action(title).props.disabled).not.toBe(true);
+    await act(() => action(title).props.onClick());
+  }
+  it("starts with valid inherited settings without forcing setup steps", async () => {
+    await mountPalette();
+    expect(action("Start conversation").props.disabled).toBe(false);
+    expect(commands.create.run).not.toHaveBeenCalled();
+    await choose("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          modelSelection: {
+            instanceId,
+            model: "test-model",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        }),
+      }),
+    );
+  });
+  it("keeps the title and source options across settings drill-down and Back until Start", async () => {
+    await mountPalette();
+    await choose("Computer");
+    await choose("Computer");
+    await choose("Model");
+    await choose("Test model");
+    await choose("Conversation title");
+    await act(() =>
+      renderer!.root.findByType("input").props.onChange({ target: { value: "Inspect project" } }),
+    );
+    await choose("Back");
+    await choose("Permissions");
+    await choose("Full access");
+    await choose("Conversation title");
+    expect(renderer!.root.findByType("input").props.value).toBe("Inspect project");
+    await choose("Back");
+    expect(commands.create.run).not.toHaveBeenCalled();
+    await choose("Start conversation");
+    expect(commands.create.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          title: "Inspect project",
+          runtimeMode: "full-access",
+          interactionMode: "plan",
+          modelSelection: {
+            instanceId,
+            model: "test-model",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          },
+        }),
+      }),
+    );
   });
 });

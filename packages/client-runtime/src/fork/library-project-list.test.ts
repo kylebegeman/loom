@@ -95,6 +95,21 @@ describe("projectEntries", () => {
     expect(entry).toMatchObject({ conversations: 2, activeAt: "2026-10-12T00:00:00.000Z" });
   });
 
+  it("counts open conversations that are waiting, failed or working per project", () => {
+    const [entry, other] = projectEntries([loom, iris], [], {
+      nextOffset: null,
+      threads: [
+        thread({ id: "a", projectId: "loom", status: "waiting" }),
+        thread({ id: "b", projectId: "loom", status: "running" }),
+        thread({ id: "c", projectId: "loom", status: "failed", settled: true }),
+        thread({ id: "d", projectId: "loom", status: "waiting", archived: true }),
+        thread({ id: "e", projectId: "iris", status: "ready" }),
+      ],
+    });
+    expect(entry?.attention).toEqual({ waiting: 1, failed: 0, working: 1 });
+    expect(other?.attention).toEqual({ waiting: 0, failed: 0, working: 0 });
+  });
+
   it("does not classify a project as resting from an incomplete legacy index", () => {
     const [entry] = projectEntries([iris], [], { nextOffset: 100, threads: [] });
     expect(entry).toMatchObject({ conversations: null, activeAt: iris.updatedAt });

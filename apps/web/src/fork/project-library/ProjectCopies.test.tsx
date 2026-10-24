@@ -85,6 +85,7 @@ vi.mock("~/components/ui/menu", () => ({
 vi.mock("./LibraryControls", () => ({
   LibraryPanel: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   LibrarySection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  LibraryStateBadge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   LibraryErrorNotice: ({ error }: { error: string | null }) =>
     error ? <p role="alert">{error}</p> : null,
 }));

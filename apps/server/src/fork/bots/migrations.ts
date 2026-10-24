@@ -197,5 +197,15 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_batches ADD COLUMN trigger_id TEXT`;
       }),
     ],
+    [
+      14,
+      "TriggerFiringTargets",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // A firing that starts a pipeline or a batch has no bot run of its own to link.
+        yield* sql`ALTER TABLE fork_bots_trigger_firings ADD COLUMN pipeline_run_id TEXT`;
+        yield* sql`ALTER TABLE fork_bots_trigger_firings ADD COLUMN batch_id TEXT`;
+      }),
+    ],
   ],
 };

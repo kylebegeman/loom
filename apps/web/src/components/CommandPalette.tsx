@@ -1,6 +1,10 @@
 "use client";
 
 import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation"; // fork: library-palette
+import {
+  LibraryActionHost,
+  useLibraryPaletteSession,
+} from "~/fork/project-library/LibraryActionHost"; // fork: library-palette
 import { openLibraryAction } from "~/fork/project-library/actions"; // fork: library-palette
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -69,6 +73,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  GlobeIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -159,7 +164,14 @@ import {
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import {
+  isBotRunThreadId,
+  SITES_FEATURE, // fork: sites
+  SITES_MANAGEMENT_FEATURE, // fork: sites
+} from "@t3tools/contracts/fork";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: sites
+import { useLibraryAuthority, useLibraryPermission } from "~/fork/project-library/state"; // fork: sites
+import { sites } from "~/fork/sites/state"; // fork: sites
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
@@ -401,6 +413,19 @@ function useThemeCards() {
   ];
 }
 
+// fork: sites - Offered on the terms the Sites page's own Register site button needs.
+function useCanRegisterSite() {
+  const authority = useLibraryAuthority();
+  const capabilities = authority.environment?.serverConfig?.environment.capabilities;
+  const allowed = useLibraryPermission(sites.saveSite, authority.authorityId);
+  return (
+    authority.connected &&
+    allowed &&
+    supportsLoomFeature(capabilities, SITES_FEATURE) &&
+    supportsLoomFeature(capabilities, SITES_MANAGEMENT_FEATURE)
+  );
+}
+
 function useThreadSearchWithContentMatches(
   environmentIds: ReadonlyArray<EnvironmentId>,
   query: string,
@@ -494,6 +519,7 @@ function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId,
 
 export function CommandPalette({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const libraryPalette = useLibraryPaletteSession(); // fork: library-palette
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -503,7 +529,9 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const toggleMode = (mode: SearchOverlayMode) => dispatch({ _tag: "ToggleMode", mode });
   // fork: library-palette - The Library takes over adding folders and starting conversations.
   const openAddProject = (environmentId?: EnvironmentId) => {
-    if (openLibraryAction("import-folder")) {
+    if (
+      openLibraryAction("import-folder", undefined, environmentId ? { environmentId } : undefined)
+    ) {
       setOpen(false);
       return;
     }
@@ -541,7 +569,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (!state.open || state.mode === "command") return;
+    if (!state.open || state.mode === "command" || libraryPalette.isOpen) return; // fork: library-palette
     const onEscapeKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.isComposing || event.key !== "Escape") return;
       event.preventDefault();
@@ -550,7 +578,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onEscapeKeyDown, true);
     return () => window.removeEventListener("keydown", onEscapeKeyDown, true);
-  }, [state.mode, state.open]);
+  }, [state.mode, state.open, libraryPalette.isOpen]); // fork: library-palette
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -611,7 +639,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       }
       event.preventDefault();
       event.stopPropagation();
-      toggleMode(mode);
+      // fork: library-palette - The palette shortcut dismisses setup as one surface.
+      if (libraryPalette.isOpen) {
+        libraryPalette.close();
+        setOpen(false);
+      } else {
+        libraryPalette.finishClose();
+        toggleMode(mode);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -627,11 +662,17 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     theme,
     themeHalves,
     toggleMode,
+    libraryPalette, // fork: library-palette
   ]);
 
   useEffect(
     () =>
       onOpenCommandPalette((detail) => {
+        // fork: library-palette - An explicit command request can replace setup without another popup.
+        if (detail.open !== "new-thread-in" && detail.open !== "add-project") {
+          libraryPalette.close();
+          libraryPalette.finishClose();
+        }
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
@@ -648,27 +689,51 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [openAddProject, openNewThreadIn, setOpen, libraryPalette], // fork: library-palette
   );
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
       <CommandDialog
-        open={state.open}
+        open={state.open || libraryPalette.isOpen} // fork: library-palette
+        onOpenChangeComplete={(open) => {
+          if (!open) libraryPalette.finishClose();
+        }} // fork: library-palette
         onOpenChange={(open, eventDetails) => {
-          if (!open && eventDetails.reason === "escape-key" && state.mode !== "command") {
+          if (
+            !open &&
+            eventDetails.reason === "escape-key" &&
+            state.mode !== "command" &&
+            !libraryPalette.isOpen
+          ) {
             eventDetails.cancel();
             dispatch({ _tag: "BackToCommand" });
             return;
           }
+          if (!open) libraryPalette.close(); // fork: library-palette
           setOpen(open);
         }}
       >
-        <div className="contents" inert={state.open}>
+        <div className="contents" inert={state.open || libraryPalette.isOpen}>
+          {/* fork: library-palette */}
           {children}
         </div>
         <CommandPaletteDialog
-          mode={state.mode}
+          // fork: library-palette
+          libraryContent={
+            libraryPalette.session ? (
+              <LibraryActionHost
+                key={libraryPalette.session.id}
+                session={libraryPalette.session}
+                onClose={() => {
+                  libraryPalette.close();
+                  setOpen(false);
+                }}
+              />
+            ) : null
+          }
+          closeLibrary={libraryPalette.close} // fork: library-palette
+          mode={libraryPalette.session ? "command" : state.mode} // fork: library-palette
           openIntent={state.openIntent}
           setOpen={setOpen}
           openChildSearch={openChildSearch}
@@ -681,6 +746,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
 }
 
 function CommandPaletteDialog(props: {
+  readonly libraryContent: ReactNode; // fork: library-palette
+  readonly closeLibrary: () => void; // fork: library-palette
   readonly mode: SearchOverlayMode;
   readonly openIntent: CommandPaletteOpenIntent | null;
   readonly setOpen: (open: boolean) => void;
@@ -714,22 +781,25 @@ function CommandPaletteDialog(props: {
         return false;
       }}
       onBackdropPointerDown={() => {
+        props.closeLibrary(); // fork: library-palette
         props.setOpen(false);
       }}
     >
-      {props.mode === "files" ? (
-        <ProjectFilePicker setOpen={props.setOpen} />
-      ) : props.mode === "content" ? (
-        <ProjectContentSearchDialog onOpenChange={props.setOpen} />
-      ) : (
-        <OpenCommandPaletteDialog
-          openIntent={props.openIntent}
-          setOpen={props.setOpen}
-          openChildSearch={props.openChildSearch}
-          initialContext={props.initialContext}
-          clearOpenIntent={props.clearOpenIntent}
-        />
-      )}
+      {/* fork: library-palette */}
+      {props.libraryContent ??
+        (props.mode === "files" ? (
+          <ProjectFilePicker setOpen={props.setOpen} />
+        ) : props.mode === "content" ? (
+          <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+        ) : (
+          <OpenCommandPaletteDialog
+            openIntent={props.openIntent}
+            setOpen={props.setOpen}
+            openChildSearch={props.openChildSearch}
+            initialContext={props.initialContext}
+            clearOpenIntent={props.clearOpenIntent}
+          />
+        ))}
     </CommandDialogPopup>
   );
 }
@@ -798,6 +868,7 @@ function OpenCommandPaletteDialog(props: {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const forkPaletteItems = useForkCommandPaletteItems(); // fork: ext-palette
+  const canRegisterSite = useCanRegisterSite(); // fork: sites
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
@@ -1598,7 +1669,13 @@ function OpenCommandPaletteDialog(props: {
 
   // fork: fleet-connections - Adding a project names its computer and explains an unavailable one.
   const openAddProjectFlow = (requestedEnvironmentId?: EnvironmentId) => {
-    if (openLibraryAction("import-folder")) {
+    if (
+      openLibraryAction(
+        "import-folder",
+        undefined,
+        requestedEnvironmentId ? { environmentId: requestedEnvironmentId } : undefined,
+      )
+    ) {
       setOpen(false);
       return;
     }
@@ -1693,12 +1770,26 @@ function OpenCommandPaletteDialog(props: {
     value: "action:sites",
     title: "Sites",
     searchTerms: ["websites", "analytics", "monitoring", "personal api"],
-    icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+    icon: <GlobeIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       setOpen(false);
       await navigate({ to: "/sites" });
     },
   });
+
+  // fork: sites
+  if (canRegisterSite)
+    actionItems.push({
+      kind: "action",
+      value: "action:sites-register",
+      title: "Register site",
+      searchTerms: ["sites", "website", "new site", "add site", "register", "monitor"],
+      icon: <GlobeIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        setOpen(false);
+        await navigate({ to: "/sites", search: { edit: "new" } });
+      },
+    });
 
   if (projects.length > 0) {
     const activeProjectTitle =

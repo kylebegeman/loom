@@ -1,3 +1,4 @@
+import { ProjectWorkflowsRpcGroup, PROJECT_WORKFLOW_WS_METHODS } from "./project-workflows.ts";
 import { LibraryDecisionsRpcGroup } from "./project-library-decisions.ts";
 import { ProjectProfilesRpcGroup } from "./project-profiles.ts";
 import { VaultTestAccountRpcGroup } from "./vault-test-accounts.ts";
@@ -76,6 +77,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  ProjectWorkflowsRpcGroup,
   ProjectProfilesRpcGroup,
   VaultTestAccountRpcGroup,
   VaultMigrationInventoryRpcGroup,
@@ -131,6 +133,7 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
  */
 export type ForkSubscriptionRpcTag =
   | typeof LIBRARY_WS_METHODS.subscribeRefreshes
+  | typeof PROJECT_WORKFLOW_WS_METHODS.changes
   | typeof GITHUB_HOST_SETUP_WS_METHODS.watch
   | typeof PCB_PREVIEW_WS_METHODS.workspaceUpdates
   | typeof PCB_PREVIEW_WS_METHODS.panelEvents

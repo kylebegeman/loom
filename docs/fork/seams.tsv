@@ -247,7 +247,7 @@ apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	1
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	1
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	1
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
-apps/web/src/components/CommandPalette.tsx	library-palette	18
+apps/web/src/components/CommandPalette.tsx	library-palette	37
 scripts/build-cli-archive.ts	library-semantic-search	3
 apps/server/package.json	-	"onnxruntime-web": "1.30.0"
 pnpm-workspace.yaml	-	protobufjs: false
@@ -426,3 +426,5 @@ apps/mobile/src/features/settings/SettingsRouteScreen.tsx	bots	1
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	bots	3
 apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	bots	1
 apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	library	1
+apps/web/src/components/CommandPalette.focus.browser.test.tsx	library-palette	3
+apps/web/src/components/CommandPaletteContent.tsx	library-palette	3

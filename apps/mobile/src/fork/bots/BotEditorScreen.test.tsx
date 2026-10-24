@@ -2,6 +2,7 @@
 import { StrictMode, act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import type { BotDefinition, BotDraftResult } from "@t3tools/contracts/fork";
 
@@ -430,4 +431,28 @@ it("keeps changes made after drafting when the computer reconnects", async () =>
     "Kept after reconnect",
   );
   expect(harness.draft).toHaveBeenCalledOnce();
+});
+
+it("creates a new bot as version 0, so a taken id is refused instead of overwritten", async () => {
+  harness.bot = null;
+  harness.draft.mockResolvedValueOnce({
+    _tag: "Success",
+    value: { draft: fixture, sourceThreadId: "thread-a", notes: [] },
+  });
+  harness.save.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(
+      new Error("This bot changed since it was opened. Reload it and apply your edits again."),
+    ),
+  });
+  await act(async () =>
+    root.render(
+      <BotCreateRouteScreen route={{ params: { environmentId, sourceThreadId: "thread-a" } }} />,
+    ),
+  );
+  await act(async () => button("Save bot").click());
+  expect(harness.save.mock.calls[0]?.[0].input.expectedVersion).toBe(0);
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    `Another bot already uses the id ${fixture.id}. Choose another id.`,
+  );
 });

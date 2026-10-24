@@ -96,8 +96,25 @@ vi.mock("../../components/ui/RowPressable", () => ({
     </button>
   ),
 }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../library/libraryProjectColors", () => ({
+  useLibraryProjectColorValue: () => () => "#000000",
+}));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    onPress,
+  }: {
+    children: ReactNode;
+    accessibilityLabel?: string;
+    onPress: () => void;
+  }) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
   FlatList: ({
     data,
     renderItem,
@@ -119,7 +136,26 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("./BotControls", () => ({
-  BotPage: ({ children }: { children: ReactNode }) => <main>{children}</main>,
+  BotPage: ({
+    children,
+    menus,
+  }: {
+    children: ReactNode;
+    menus?: ReadonlyArray<{
+      items: ReadonlyArray<{ title: string; disabled?: boolean; onPress: () => void }>;
+    }>;
+  }) => (
+    <main>
+      {menus?.flatMap((menu) =>
+        menu.items.map((item) => (
+          <button key={item.title} disabled={item.disabled} onClick={item.onPress}>
+            {item.title}
+          </button>
+        )),
+      )}
+      {children}
+    </main>
+  ),
   BotSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   BotNotice: ({ detail, error }: { detail?: string; error?: string }) => (
     <div>

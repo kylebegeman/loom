@@ -151,5 +151,17 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         for (const statement of LIBRARY_DOCUMENT_DURABILITY_SCHEMA) yield* sql.unsafe(statement);
       }),
     ],
+    [
+      14,
+      "ProjectWorkflows",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_workstreams (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, revision INTEGER NOT NULL, payload_json TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX fork_library_workstreams_project ON fork_library_workstreams(project_id, id)`;
+        yield* sql`CREATE TABLE fork_library_operations (id TEXT PRIMARY KEY, subject TEXT NOT NULL, session_id TEXT NOT NULL, request_json TEXT NOT NULL, payload_json TEXT NOT NULL, state TEXT NOT NULL, project_id TEXT, created_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX fork_library_operations_project ON fork_library_operations(project_id, created_at DESC)`;
+        yield* sql`CREATE TABLE fork_library_workflow_receipts (id TEXT PRIMARY KEY, request_json TEXT NOT NULL, result_json TEXT NOT NULL)`;
+      }),
+    ],
   ],
 };

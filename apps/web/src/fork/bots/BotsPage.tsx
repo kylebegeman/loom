@@ -1,219 +1,152 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { BOTS_LIST_BATCHES_MAX_LIMIT, BOTS_LIST_RUNS_MAX_LIMIT } from "@t3tools/contracts/fork";
+import { botColor } from "@t3tools/client-runtime/fork";
 import {
-  BOTS_LIST_BATCHES_MAX_LIMIT,
-  BOTS_LIST_RUNS_MAX_LIMIT,
-  type BotDefinition,
-  type BotStarterState,
-  type BotStarterStatus,
-  type BotTrigger,
-  type BotVerdictValue,
-} from "@t3tools/contracts/fork";
-import {
-  applyBatchChanges,
-  applyRunChanges,
-  botVersionLabel,
-  botDraft,
-} from "@t3tools/client-runtime/fork";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
+  ActivityIcon,
+  ArrowLeftIcon,
+  BotIcon,
+  CloudOffIcon,
+  LockIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  WorkflowIcon,
+  ZapIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { SidebarInset } from "~/components/ui/sidebar";
-import { WorkspacePageContainer } from "~/components/WorkspacePageContainer";
-import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
-import { isElectron } from "~/env";
-import { ensureLocalApi } from "~/localApi";
-import { useProjects } from "~/state/entities";
-import { useEnvironmentQuery } from "~/state/query";
-import { useAtomCommand } from "~/state/use-atom-command";
-import { useLibraryPermission } from "../project-library/state";
-import { BotRemoteRunsSettings, BotSharingPanel, FromLibraryBadge } from "./BotAnywhere";
-import { BatchList, BatchView } from "./BotBatches";
-import { BotEditor, RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
-import { BotHistory } from "./BotHistory";
-import { BotPipelines } from "./BotPipelines";
-import { BotReplayDialog, type BotReplaySourceChoice } from "./BotReplay";
-import { BotRunForm } from "./BotRunForm";
-import { BotRuns, VerdictFilter } from "./BotRuns";
-import { BotTriggerEditor } from "./BotTriggerEditor";
-import { BotTriggers } from "./BotTriggers";
-import { BotsInbox } from "./BotsInbox";
-import { BotsUsage } from "./BotsUsage";
-import { BotFromThreadEditor } from "./fromThread/BotFromThreadEditor";
-import { BotSuggestions } from "./fromThread/BotSuggestions";
-
-import { PipelineRunForm } from "./PipelineRunView";
-import { RunOnManyDialog } from "./RunOnManyDialog";
+import { Skeleton } from "~/components/ui/skeleton";
+import { useEnvironmentQueryRefresh } from "~/state/query";
+import {
+  LibraryEmpty,
+  LibraryErrorNotice,
+  LibraryNotice,
+} from "../project-library/LibraryControls";
+import type { LibraryLayout } from "../project-library/LibraryCollection";
+import { LibraryPageFrame } from "../project-library/LibraryPageFrame";
+import { LibraryTabs, type LibraryTab } from "../project-library/LibraryTabs";
+import { projectColorStyle } from "../project-library/ProjectIdentity";
+import { ComputersButton, ComputersOverlay } from "./BotAnywhere";
+import { BatchPage } from "./BotBatches";
+import { BotPage } from "./BotDetail";
+import { BOTS_COLOR } from "./BotIdentity";
+import { BotEditorPage } from "./BotEditor";
+import { PipelinePage, PipelinesView } from "./BotPipelines";
+import { ReplayOverlays } from "./BotReplay";
+import { RunsView } from "./BotRuns";
+import { TriggersOverlays, TriggersView } from "./BotTriggers";
+import {
+  BotsCollection,
+  BotsCollectionSkeleton,
+  useBotsCollectionPreferences,
+} from "./BotsOverview";
+import { BotsUsageClause, useBotUsage, useBotUsageWindow } from "./BotsUsage";
+import {
+  botsRoute,
+  indexTabs,
+  routeFeature,
+  selectedTab,
+  type BotsFeature,
+  type BotsIndexTab,
+  type BotsRoute,
+} from "./botsRoute";
+import { BotFromThreadPage } from "./fromThread/BotFromThreadEditor";
+import { useBotsNavigation } from "./navigation";
+import { PipelineBuilderPage } from "./PipelineEditor";
+import { pipelineRunsInput } from "./pipelineDraft";
+import { PipelineRunPage, PipelinesOverlays } from "./PipelineRunView";
+import { BatchesOverlays } from "./RunOnManyDialog";
+import { RunsOverlays } from "./RunSheet";
 import {
   bots,
-  useBotBatchChanges,
+  inboxQueryInput,
   useBots,
-  useBotTriggerChanges,
+  useBotsAccess,
   useBotsAttentionCount,
   usePipelines,
-  useRefreshWhenBotsChangesPruned,
-  useWaitingBotRuns,
 } from "./state";
 
-type Editing = { readonly bot: BotDefinition | null } | null;
-type Replaying = { readonly bot: BotDefinition; readonly source: BotReplaySourceChoice } | null;
+/** The routes drawn from the bot list, which the shell holds back until the list arrives. */
+const usesBotList = (route: BotsRoute) =>
+  route.kind === "index" || route.kind === "bot" || route.kind === "editBot";
 
-const TAB_LABELS = {
-  runs: "Runs",
-  history: "History",
-  batches: "Batches",
-  pipelines: "Pipelines",
-  triggers: "Triggers",
-  inbox: "Inbox",
-  usage: "Usage",
-  computers: "Computers",
-} as const;
-
-const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
-  present: "Starter",
-  edited: "Starter, edited",
-  outdated: "Newer starter available",
-};
-
-function StarterBadge({ status }: { readonly status: BotStarterStatus | undefined }) {
-  if (status === undefined || status.state === "removed") return null;
-  return <Badge variant="secondary">{STARTER_LABELS[status.state]}</Badge>;
+function routeTitle(
+  route: BotsRoute,
+  botName: string | undefined,
+  pipelineName: string | undefined,
+): string | undefined {
+  switch (route.kind) {
+    case "fromThread":
+    case "newBot":
+      return "New bot";
+    case "editBot":
+    case "bot":
+      return botName;
+    case "newPipeline":
+      return "New pipeline";
+    case "editPipeline":
+    case "pipeline":
+      return pipelineName ?? "Pipeline";
+    case "pipelineRun":
+      return "Pipeline run";
+    case "batch":
+      return "Batch";
+    case "index":
+      return undefined;
+  }
 }
 
-function BotSummary({ bot }: { readonly bot: BotDefinition }) {
-  const projects = useProjects();
-  const projectTitle = (id: string | null) =>
-    id === null ? null : (projects.find((project) => project.id === id)?.title ?? id);
-  const draft = botDraft(bot);
-  const workspaceProject =
-    bot.workspace.type === "project" ? projectTitle(bot.workspace.projectId) : null;
-  const rows: ReadonlyArray<readonly [string, string]> = [
-    ["Model", bot.modelSelection.model],
-    ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
-    ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
-    [
-      "Runs in",
-      `${WORKSPACE_LABELS[draft.workspace]}${
-        bot.workspace.type === "project"
-          ? `${draft.workspace === "checkout" ? ", in" : " of"} ${
-              workspaceProject ?? "the project chosen at run time"
-            }`
-          : ""
-      }`,
-    ],
-    ["Time limit", `${bot.timeoutMinutes} minutes`],
-    ["Runs at once", String(bot.maxConcurrentRuns)],
-    ["Available in", projectTitle(bot.scopeProjectId) ?? "Every project"],
-    ["Inputs", bot.parameters.map((parameter) => parameter.label).join(", ") || "None"],
-  ];
-  return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd className="truncate">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
+/**
+ * The search names one page, and optionally one dialog or sheet over it. The shell decides which
+ * page that is, frames it once and hosts every overlay once; each page and overlay owns its layout
+ * and navigates itself.
+ */
 export function BotsPage() {
   const { host, live, changes, list, bots: allBots } = useBots();
-  const search = useSearch({ from: "/loom/bots" });
-  const navigate = useNavigate();
+  const access = useBotsAccess();
+  const nav = useBotsNavigation();
+  const route = botsRoute(nav.search);
   const environmentId = host.environmentId;
-  const selectedId = search.bot;
-  const [verdictFilter, setVerdictFilter] = useState<BotVerdictValue | null>(null);
-  const verdict = host.verdictsSupported ? (verdictFilter ?? undefined) : undefined;
-  const runsQuery = useEnvironmentQuery(
-    environmentId && live
-      ? bots.listRuns({
-          environmentId,
-          input: {
-            limit: BOTS_LIST_RUNS_MAX_LIMIT,
-            ...(selectedId === undefined ? {} : { botId: selectedId }),
-            ...(verdict === undefined ? {} : { verdict }),
-          },
-        })
-      : null,
+  const selectedId = route.kind === "bot" || route.kind === "editBot" ? route.botId : null;
+  const selected =
+    selectedId === null ? null : (allBots.find((bot) => bot.id === selectedId) ?? null);
+  const pipelineId =
+    route.kind === "pipeline" || route.kind === "editPipeline" ? route.pipelineId : null;
+  const { pipelines } = usePipelines(
+    environmentId,
+    live && host.pipelinesSupported && pipelineId !== null,
+    host.connected,
   );
-  const canSave = useLibraryPermission(bots.save, environmentId) && host.connected;
-  const canRun = useLibraryPermission(bots.run, environmentId) && host.connected;
-  const canCancel = useLibraryPermission(bots.cancel, environmentId) && host.connected;
-  const canRate = useLibraryPermission(bots.rateRun, environmentId) && host.connected;
-  const canReplay = useLibraryPermission(bots.replay, environmentId) && host.connected;
-  const canRunPipelines = useLibraryPermission(bots.runPipeline, environmentId) && host.connected;
-  const canShare = useLibraryPermission(bots.share, environmentId) && host.connected;
-  const versionsLive = live && host.versionsSupported;
-  const archive = useAtomCommand(bots.archive, { reportFailure: false });
-  const remove = useAtomCommand(bots.delete, { reportFailure: false });
-  const restoreStarter = useAtomCommand(bots.restoreStarter, { reportFailure: false });
-  const batchesLive = live && host.batchesSupported;
-  const inboxLive = live && host.inboxSupported;
-  const triggersLive = live && host.triggersSupported;
-  const pipelinesLive = live && host.pipelinesSupported;
-  const { pipelines } = usePipelines(environmentId, pipelinesLive, host.connected);
-  const triggerChanges = useBotTriggerChanges(environmentId, triggersLive && host.connected);
-  const canOperateTriggers =
-    useLibraryPermission(bots.saveTrigger, environmentId) && host.connected;
-  const [editingTrigger, setEditingTrigger] = useState<BotTrigger | null>(null);
-  const tabs = [
-    "runs" as const,
-    ...(versionsLive && selectedId !== undefined ? (["history"] as const) : []),
-    ...(batchesLive ? (["batches"] as const) : []),
-    ...(pipelinesLive ? (["pipelines"] as const) : []),
-    ...(triggersLive ? (["triggers"] as const) : []),
-    ...(inboxLive ? (["inbox"] as const) : []),
-    ...(live && host.budgetsSupported ? (["usage"] as const) : []),
-    ...(live && host.anywhereSupported ? (["computers"] as const) : []),
-  ];
-  const tab = tabs.find((value) => value === search.tab) ?? "runs";
-  const attention = useBotsAttentionCount();
-  const waiting = useWaitingBotRuns(inboxLive ? environmentId : null);
-  const canRetry = useLibraryPermission(bots.retry, environmentId) && host.connected;
-  const batchChanges = useBotBatchChanges(environmentId, batchesLive);
-  const batchesQuery = useEnvironmentQuery(
-    environmentId && batchesLive && tab === "batches"
-      ? bots.listBatches({
-          environmentId,
-          input: {
-            limit: BOTS_LIST_BATCHES_MAX_LIMIT,
-            ...(selectedId === undefined ? {} : { botId: selectedId }),
-          },
-        })
-      : null,
-  );
-  const startersQuery = useEnvironmentQuery(
-    environmentId && live && host.startersSupported
+  const listRoute = usesBotList(route);
+  // The same inputs the collection and the bot page read, so these refresh their atoms.
+  const starters = useEnvironmentQueryRefresh(
+    environmentId && live && listRoute && host.startersSupported
       ? bots.listStarters({ environmentId, input: {} })
       : null,
   );
-  const starters = startersQuery.data?.starters ?? [];
-  const starterOf = (bot: BotDefinition) =>
-    bot.origin === undefined
-      ? undefined
-      : starters.find((starter) => starter.starterId === bot.origin?.starterId);
-  const removedStarters = starters.filter((starter) => starter.state === "removed");
-  const [editing, setEditing] = useState<Editing>(null);
-  const [replaying, setReplaying] = useState<Replaying>(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const newestRuns = useEnvironmentQueryRefresh(
+    environmentId && live && listRoute
+      ? bots.listRuns({
+          environmentId,
+          input: { limit: BOTS_LIST_RUNS_MAX_LIMIT, ...(selectedId ? { botId: selectedId } : {}) },
+        })
+      : null,
+  );
 
-  // Changes missed while disconnected never arrive, so a reconnect refetches the lists.
+  // Changes missed while disconnected never arrive, so a reconnect refetches what the page holds.
+  const refreshList = list.refresh;
+  const refreshStarters = starters.refresh;
+  const refreshRuns = newestRuns.refresh;
   const wasConnected = useRef(host.connected);
   useEffect(() => {
     if (host.connected && !wasConnected.current) {
-      list.refresh();
-      runsQuery.refresh();
-      batchesQuery.refresh();
-      startersQuery.refresh();
+      refreshList();
+      refreshStarters();
+      refreshRuns();
     }
     wasConnected.current = host.connected;
-  }, [host.connected, list, runsQuery, batchesQuery, startersQuery]);
+  }, [host.connected, refreshList, refreshStarters, refreshRuns]);
 
   // Saving, deleting or restoring a bot can change its starter's state.
-  const refreshStarters = startersQuery.refresh;
   const botChanges = changes.bots;
   const seenBotChanges = useRef(botChanges);
   useEffect(() => {
@@ -222,572 +155,449 @@ export function BotsPage() {
     refreshStarters();
   }, [botChanges, refreshStarters]);
 
-  const visibleBots = allBots.filter((bot) => showArchived || bot.archivedAt === null);
-  const selected = selectedId === undefined ? null : allBots.find((bot) => bot.id === selectedId);
-  useRefreshWhenBotsChangesPruned(changes, runsQuery.refresh);
-  const runs = applyRunChanges(runsQuery.data?.runs ?? [], changes, {
-    botId: selectedId,
-    verdict,
-    includeNew: true,
-    limit: BOTS_LIST_RUNS_MAX_LIMIT,
-  });
-  const batches = applyBatchChanges(batchesQuery.data?.batches ?? [], batchChanges, {
-    botId: selectedId,
-    includeNew: true,
-  });
-  const runTarget =
-    search.run === undefined ? null : (allBots.find((bot) => bot.id === search.run) ?? null);
-  const manyTarget =
-    search.many === undefined || !host.batchesSupported
-      ? null
-      : (allBots.find((bot) => bot.id === search.many) ?? null);
-  const newTriggerBot =
-    search.newTrigger === undefined || !triggersLive
-      ? null
-      : (allBots.find((bot) => bot.id === search.newTrigger) ?? null);
-  const editingTriggerBot =
-    editingTrigger === null
-      ? null
-      : (allBots.find((bot) => bot.id === editingTrigger.botId) ?? null);
-  const runPipelineTarget =
-    search.runPipeline === undefined || !pipelinesLive
-      ? null
-      : (pipelines.find((pipeline) => pipeline.id === search.runPipeline) ?? null);
-  const pipelinesStartingWith = (botId: string) =>
-    pipelines.filter((pipeline) => pipeline.steps[0]?.botId === botId);
-  const latestVersionOf = (botId: string) =>
-    allBots.find((bot) => bot.id === botId && bot.archivedAt === null)?.version ?? null;
+  const hostLabel = host.environment?.label ?? "Your server";
+  const pipelineName =
+    pipelineId === null
+      ? undefined
+      : pipelines.find((pipeline) => pipeline.id === pipelineId)?.name;
+  const title = routeTitle(route, selected?.name, pipelineName);
+  const ready = Boolean(environmentId && live);
+  // A list route with nothing loaded says it is offline itself, in place of the page.
+  const offlineInPlace = listRoute && !list.data;
 
-  const go = (next: typeof search) =>
-    void navigate({ to: "/loom/bots", search: next, replace: true });
-
-  const act = async (work: () => Promise<void>) => {
-    setActionError(null);
-    try {
-      await work();
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Something went wrong.");
-    }
-  };
-
-  const setArchived = (bot: BotDefinition, archived: boolean) =>
-    act(async () => {
-      if (!environmentId) return;
-      const result = await archive({ environmentId, input: { botId: bot.id, archived } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    });
-
-  const deleteBot = (bot: BotDefinition) =>
-    act(async () => {
-      if (!environmentId) return;
-      const confirmed = await ensureLocalApi().dialogs.confirm(
-        `Delete ${bot.name}? Its triggers, with their webhook URLs and secrets, are deleted too. Its run history stays on the Bots page; the bot itself cannot be restored.`,
-      );
-      if (!confirmed) return;
-      const result = await remove({ environmentId, input: { botId: bot.id } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      go({});
-    });
-
-  const restoreRemoved = (starter: BotStarterStatus) =>
-    act(async () => {
-      if (!environmentId) return;
-      const result = await restoreStarter({
-        environmentId,
-        input: { starterId: starter.starterId },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      go({ bot: result.value.id });
-    });
+  const body = !environmentId ? (
+    <LibraryEmpty icon={BotIcon} title="Connect to a Loom server">
+      Bots run on the server this app connects to. Connect one to create bots and run them.
+    </LibraryEmpty>
+  ) : !host.environment?.serverConfig ? (
+    host.connected ? (
+      <RouteSkeleton route={route} />
+    ) : (
+      <OfflineEmpty hostLabel={hostLabel} />
+    )
+  ) : !host.supported ? (
+    <LibraryEmpty icon={CloudOffIcon} title="Bots need a newer server">
+      Update {hostLabel} to create and run bots here.
+    </LibraryEmpty>
+  ) : (
+    <RouteView route={route} hostLabel={hostLabel} />
+  );
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-      <WorkspacePageHeader electron={isElectron}>
-        <span className="text-sm font-medium">Bots</span>
-      </WorkspacePageHeader>
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <WorkspacePageContainer width="wide">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Bots</h1>
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                Reusable jobs with fixed instructions, inputs and settings. Every run gets the same
-                brief, whoever starts it.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              disabled={!canSave || !live}
-              onClick={() => setEditing({ bot: null })}
-            >
-              New bot
+    <LibraryPageFrame
+      section={{ label: "Bots", to: "/loom/bots" }}
+      libraryStatus={false}
+      style={projectColorStyle(selected ? botColor(selected) : BOTS_COLOR)}
+      {...(title ? { title } : {})}
+    >
+      {ready && !host.connected && !offlineInPlace ? (
+        <LibraryNotice icon={CloudOffIcon} tone="warning">
+          {hostLabel} is offline. What you see here may be out of date, and nothing can run or
+          change until it reconnects.
+        </LibraryNotice>
+      ) : null}
+      {ready && host.connected && list.data && !access.canSave && !access.canRun ? (
+        <LibraryNotice icon={LockIcon}>
+          This connection can look at bots but cannot run or change them.
+        </LibraryNotice>
+      ) : null}
+      {body}
+      {ready ? (
+        <>
+          <RunsOverlays />
+          <BatchesOverlays />
+          <PipelinesOverlays />
+          <TriggersOverlays />
+          <ComputersOverlay />
+          <ReplayOverlays />
+        </>
+      ) : null}
+    </LibraryPageFrame>
+  );
+}
+
+const FEATURE_COPY: Record<BotsFeature, { readonly title: string; readonly need: string }> = {
+  fromThread: {
+    title: "Saving a thread as a bot needs a newer server",
+    need: "to draft a bot from a thread. You can still write one from scratch.",
+  },
+  pipelines: {
+    title: "Pipelines need a newer server",
+    need: "to chain bots into pipelines.",
+  },
+  batches: {
+    title: "Running on many needs a newer server",
+    need: "to run a bot over many items at once.",
+  },
+};
+
+/** One page of the route, once the host is known to run bots. */
+function RouteView({
+  route,
+  hostLabel,
+}: {
+  readonly route: BotsRoute;
+  readonly hostLabel: string;
+}) {
+  const { host, list, bots: allBots } = useBots();
+  const nav = useBotsNavigation();
+  const feature = routeFeature(route);
+  const supported =
+    feature === null ||
+    (feature === "fromThread" && host.fromThreadSupported) ||
+    (feature === "pipelines" && host.pipelinesSupported) ||
+    (feature === "batches" && host.batchesSupported);
+  if (feature !== null && !supported)
+    return (
+      <LibraryEmpty
+        icon={CloudOffIcon}
+        title={FEATURE_COPY[feature].title}
+        action={
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button shape="pill" size="sm" variant="outline" onClick={() => nav.show({})}>
+              <ArrowLeftIcon />
+              Back to Bots
             </Button>
+            {feature === "fromThread" ? (
+              <Button shape="pill" size="sm" onClick={() => nav.show({ newBot: true })}>
+                <PlusIcon />
+                New bot
+              </Button>
+            ) : null}
           </div>
-          {!environmentId ? (
-            <p role="status">Connect to a Loom server to use bots.</p>
-          ) : !host.connected ? (
-            <p role="status">
-              {host.environment?.label ?? "Your server"} is offline. Bots and runs below may be out
-              of date.
-            </p>
-          ) : !host.supported ? (
-            <p role="status">Update {host.environment?.label ?? "your server"} to use bots.</p>
-          ) : null}
-          {list.error ? (
-            <p role="alert" className="text-sm text-destructive-foreground">
-              {list.error}
-            </p>
-          ) : null}
-          {actionError ? (
-            <p role="alert" className="text-sm text-destructive-foreground">
-              {actionError}
-            </p>
-          ) : null}
-          {live && environmentId && host.fromThreadSupported ? (
-            <BotSuggestions
-              environmentId={environmentId}
-              canChange={canSave}
-              botChanges={botChanges}
-              pendingSuggestionId={search.suggestion ?? null}
-              onCreate={(suggestion) =>
-                go({
-                  bot: search.bot,
-                  tab: search.tab,
-                  fromThread: suggestion.threadIds[0],
-                  suggestion: suggestion.id,
-                })
-              }
-            />
-          ) : null}
-          {live && environmentId ? (
-            <div className="grid gap-6 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-              <nav aria-label="Bots" className="flex flex-col gap-1">
-                <Button
-                  variant={selectedId === undefined ? "secondary" : "ghost"}
-                  aria-pressed={selectedId === undefined}
-                  onClick={() => go({ tab: search.tab })}
-                >
-                  {tab === "batches" ? "All batches" : "All runs"}
-                </Button>
-                {list.isPending && !list.data ? (
-                  <p role="status" className="px-2 text-sm text-muted-foreground">
-                    Loading bots…
-                  </p>
-                ) : null}
-                {visibleBots.map((bot) => (
-                  <Button
-                    key={bot.id}
-                    variant={bot.id === selectedId ? "secondary" : "ghost"}
-                    aria-pressed={bot.id === selectedId}
-                    onClick={() => go({ bot: bot.id, tab: search.tab })}
-                  >
-                    <span className="truncate">{bot.name}</span>
-                    {bot.archivedAt ? " (archived)" : ""}
-                    {bot.stableVersion != null && bot.stableVersion !== bot.version ? (
-                      <span className="text-xs text-muted-foreground">{botVersionLabel(bot)}</span>
-                    ) : null}
-                    <StarterBadge status={starterOf(bot)} />
-                    <FromLibraryBadge bot={bot} />
-                  </Button>
-                ))}
-                {list.data && allBots.some((bot) => bot.archivedAt !== null) ? (
-                  <Button size="xs" variant="ghost" onClick={() => setShowArchived((on) => !on)}>
-                    {showArchived ? "Hide archived" : "Show archived"}
-                  </Button>
-                ) : null}
-                {removedStarters.length > 0 ? (
-                  <section aria-label="Starters you removed" className="mt-4 space-y-2 px-2">
-                    <h3 className="text-xs font-medium text-muted-foreground">
-                      Starters you removed
-                    </h3>
-                    {removedStarters.map((starter) => (
-                      <div key={starter.starterId} className="flex items-start gap-2 text-sm">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate">{starter.name}</p>
-                          <p className="text-xs text-muted-foreground">{starter.description}</p>
-                        </div>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          disabled={!canSave}
-                          onClick={() => void restoreRemoved(starter)}
-                        >
-                          Restore
-                        </Button>
-                      </div>
-                    ))}
-                  </section>
-                ) : null}
-                {list.data && allBots.length === 0 ? (
-                  <p className="px-2 text-sm text-muted-foreground">
-                    No bots yet. Create one for a job you brief agents on again and again.
-                  </p>
-                ) : null}
-              </nav>
-              <section className="min-w-0 space-y-6" aria-label={selected?.name ?? "All runs"}>
-                {selectedId !== undefined && !selected && list.data ? (
-                  <p role="status">This bot no longer exists.</p>
-                ) : null}
-                {selected ? (
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-xl font-semibold">{selected.name}</h2>
-                          {selected.archivedAt ? <Badge variant="secondary">Archived</Badge> : null}
-                          <StarterBadge status={starterOf(selected)} />
-                          <FromLibraryBadge bot={selected} />
-                          <span className="text-xs text-muted-foreground">
-                            {botVersionLabel(selected)}
-                          </span>
-                        </div>
-                        {selected.description ? (
-                          <p className="text-sm text-muted-foreground">{selected.description}</p>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          disabled={!canRun || selected.archivedAt !== null}
-                          onClick={() => go({ bot: selected.id, run: selected.id })}
-                        >
-                          Run
-                        </Button>
-                        {host.batchesSupported ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={!canRun || selected.archivedAt !== null}
-                            onClick={() =>
-                              go({ bot: selected.id, tab: search.tab, many: selected.id })
-                            }
-                          >
-                            Run on many
-                          </Button>
-                        ) : null}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canSave}
-                          onClick={() => setEditing({ bot: selected })}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canSave}
-                          onClick={() => void setArchived(selected, selected.archivedAt === null)}
-                        >
-                          {selected.archivedAt ? "Restore" : "Archive"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive-outline"
-                          disabled={!canSave}
-                          onClick={() => void deleteBot(selected)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                    <BotSummary bot={selected} />
-                    {host.anywhereSupported ? (
-                      <BotSharingPanel
-                        key={selected.id}
-                        environmentId={environmentId}
-                        bot={selected}
-                        canChange={canShare}
-                      />
-                    ) : null}
-                    <details className="rounded-lg border border-border p-3 text-sm">
-                      <summary className="cursor-pointer font-medium">Instructions</summary>
-                      <pre className="mt-2 whitespace-pre-wrap font-sans">
-                        {selected.instructions}
-                      </pre>
-                    </details>
-                  </div>
-                ) : null}
-                {tabs.length > 1 ? (
-                  <div className="flex gap-1" role="group" aria-label="Show">
-                    {tabs.map((value) => (
-                      <Button
-                        key={value}
-                        size="sm"
-                        variant={tab === value ? "secondary" : "ghost"}
-                        aria-pressed={tab === value}
-                        onClick={() => go({ bot: search.bot, tab: value })}
-                      >
-                        {TAB_LABELS[value]}
-                        {value === "inbox" && attention > 0 ? (
-                          <Badge variant="warning">{attention}</Badge>
-                        ) : null}
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
-                {tab === "history" && selected ? (
-                  <BotHistory
-                    key={selected.id}
-                    environmentId={environmentId}
-                    bot={selected}
-                    connected={host.connected}
-                    canSave={canSave}
-                    canRun={canReplay}
-                    onReplay={(version) =>
-                      setReplaying({ bot: selected, source: { kind: "version", version } })
-                    }
-                  />
-                ) : tab === "computers" ? (
-                  <BotRemoteRunsSettings environmentId={environmentId} canChange={canShare} />
-                ) : tab === "usage" ? (
-                  <BotsUsage
-                    environmentId={environmentId}
-                    changes={changes}
-                    connected={host.connected}
-                  />
-                ) : tab === "inbox" ? (
-                  <BotsInbox
-                    environmentId={environmentId}
-                    changes={changes}
-                    waiting={waiting}
-                    connected={host.connected}
-                    canAct={canRetry}
-                  />
-                ) : tab === "triggers" ? (
-                  <BotTriggers
-                    environmentId={environmentId}
-                    allBots={allBots}
-                    selected={selected ?? null}
-                    changes={triggerChanges}
-                    connected={host.connected}
-                    canOperate={canOperateTriggers}
-                    onNew={(bot) => go({ bot: bot.id, tab: "triggers", newTrigger: bot.id })}
-                    onEdit={setEditingTrigger}
-                  />
-                ) : tab === "pipelines" ? (
-                  <BotPipelines
-                    environmentId={environmentId}
-                    allBots={allBots}
-                    connected={host.connected}
-                    selectedRunId={search.pipelineRun}
-                    onSelectRun={(pipelineRun) =>
-                      go({ bot: search.bot, tab: "pipelines", pipelineRun })
-                    }
-                    onRun={(pipeline) =>
-                      go({ bot: search.bot, tab: "pipelines", runPipeline: pipeline.id })
-                    }
-                    onOpenBatch={(batch) => go({ bot: search.bot, tab: "batches", batch })}
-                  />
-                ) : tab === "batches" ? (
-                  <section className="space-y-3" aria-label="Batches">
-                    {search.batch !== undefined ? (
-                      <BatchView
-                        key={search.batch}
-                        environmentId={environmentId}
-                        batchId={search.batch}
-                        changes={batchChanges}
-                        latestVersionOf={latestVersionOf}
-                        canRun={canRun}
-                        canCancel={canCancel}
-                        onClose={() => go({ bot: search.bot, tab: "batches" })}
-                      />
-                    ) : null}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-medium">{selected ? "Batches" : "Recent batches"}</h3>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        disabled={!host.connected || batchesQuery.isPending}
-                        onClick={batchesQuery.refresh}
-                      >
-                        Refresh
-                      </Button>
-                    </div>
-                    {batchesQuery.error ? (
-                      <p role="alert" className="text-sm text-destructive-foreground">
-                        {batchesQuery.error}
-                      </p>
-                    ) : batchesQuery.isPending && !batchesQuery.data ? (
-                      <p role="status" className="text-sm text-muted-foreground">
-                        Loading batches…
-                      </p>
-                    ) : (
-                      <BatchList
-                        batches={batches}
-                        selectedId={search.batch}
-                        showBot={selected === null || selected === undefined}
-                        onSelect={(batch) =>
-                          go({ bot: search.bot, tab: "batches", batch: batch.id })
-                        }
-                        emptyMessage={
-                          selected
-                            ? `${selected.name} has not run on many items yet.`
-                            : "No batch has run yet."
-                        }
-                      />
-                    )}
-                    {batchesQuery.data?.hasMore ? (
-                      <p className="text-xs text-muted-foreground">
-                        Showing the {BOTS_LIST_BATCHES_MAX_LIMIT} most recent batches.
-                      </p>
-                    ) : null}
-                  </section>
-                ) : (
-                  <section className="space-y-3" aria-label="Runs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-medium">{selected ? "Runs" : "Recent runs"}</h3>
-                      {host.verdictsSupported ? (
-                        <VerdictFilter value={verdictFilter} onChange={setVerdictFilter} />
-                      ) : null}
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        disabled={!host.connected || runsQuery.isPending}
-                        onClick={() => {
-                          list.refresh();
-                          runsQuery.refresh();
-                        }}
-                      >
-                        Refresh
-                      </Button>
-                    </div>
-                    {runsQuery.error ? (
-                      <p role="alert" className="text-sm text-destructive-foreground">
-                        {runsQuery.error}
-                      </p>
-                    ) : null}
-                    {runsQuery.isPending && !runsQuery.data ? (
-                      <p role="status" className="text-sm text-muted-foreground">
-                        Loading runs…
-                      </p>
-                    ) : (
-                      <BotRuns
-                        environmentId={environmentId}
-                        runs={runs}
-                        showBot={selected === null || selected === undefined}
-                        canCancel={canCancel}
-                        canRate={host.versionsSupported && canRate}
-                        emptyMessage={
-                          verdict !== undefined
-                            ? "No run matches this verdict."
-                            : selected
-                              ? `${selected.name} has not run yet.`
-                              : "No bot has run yet."
-                        }
-                      />
-                    )}
-                    {runsQuery.data?.hasMore || runs.length >= BOTS_LIST_RUNS_MAX_LIMIT ? (
-                      <p className="text-xs text-muted-foreground">
-                        Showing the {BOTS_LIST_RUNS_MAX_LIMIT} most recent runs.
-                      </p>
-                    ) : null}
-                  </section>
-                )}
-              </section>
+        }
+      >
+        Update {hostLabel} {FEATURE_COPY[feature].need}
+      </LibraryEmpty>
+    );
+
+  switch (route.kind) {
+    case "index":
+      return <BotsIndex hostLabel={hostLabel} />;
+    case "bot":
+    case "editBot": {
+      if (!list.data)
+        return list.error ? (
+          <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
+        ) : host.connected ? (
+          <BotPageSkeleton />
+        ) : (
+          <OfflineEmpty hostLabel={hostLabel} />
+        );
+      const bot = allBots.find((entry) => entry.id === route.botId);
+      if (!bot) return <MissingBot />;
+      return route.kind === "bot" ? (
+        <BotPage key={bot.id} bot={bot} />
+      ) : (
+        <BotEditorPage key={bot.id} bot={bot} />
+      );
+    }
+    case "newBot":
+      return <BotEditorPage key="new" bot={null} />;
+    case "fromThread":
+      return (
+        <BotFromThreadPage
+          key={`${route.threadId}:${route.suggestionId ?? ""}`}
+          threadId={route.threadId}
+          suggestionId={route.suggestionId}
+        />
+      );
+    case "newPipeline":
+      return <PipelineBuilderPage key="new" pipelineId={null} />;
+    case "editPipeline":
+      return <PipelineBuilderPage key={route.pipelineId} pipelineId={route.pipelineId} />;
+    case "pipelineRun":
+      return <PipelineRunPage key={route.runId} runId={route.runId} />;
+    case "pipeline":
+      return <PipelinePage key={route.pipelineId} pipelineId={route.pipelineId} />;
+    case "batch":
+      return <BatchPage key={route.batchId} batchId={route.batchId} />;
+  }
+}
+
+const INDEX_TABS: Record<BotsIndexTab, { readonly label: string; readonly icon: LucideIcon }> = {
+  bots: { label: "Bots", icon: BotIcon },
+  runs: { label: "Runs", icon: ActivityIcon },
+  pipelines: { label: "Pipelines", icon: WorkflowIcon },
+  triggers: { label: "Triggers", icon: ZapIcon },
+};
+
+/** The index: every bot, every run, every pipeline and every trigger, one view each. */
+function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
+  const { host, live, list, bots: allBots } = useBots();
+  const access = useBotsAccess();
+  const nav = useBotsNavigation();
+  const [preferences] = useBotsCollectionPreferences();
+  const [days] = useBotUsageWindow();
+  const attention = useBotsAttentionCount();
+  const environmentId = host.environmentId;
+  const pipelinesLive = live && host.pipelinesSupported;
+  const { list: pipelineList, pipelines } = usePipelines(
+    environmentId,
+    pipelinesLive,
+    host.connected,
+  );
+  const usage = useBotUsage(days);
+  const starters = useEnvironmentQueryRefresh(
+    environmentId && live && host.startersSupported
+      ? bots.listStarters({ environmentId, input: {} })
+      : null,
+  );
+  const newest = useEnvironmentQueryRefresh(
+    environmentId && live
+      ? bots.listRuns({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } })
+      : null,
+  );
+  const inbox = useEnvironmentQueryRefresh(
+    environmentId && live && host.inboxSupported
+      ? bots.inbox({ environmentId, input: inboxQueryInput(false) })
+      : null,
+  );
+  // The inputs the Triggers, Pipelines and Runs > Batches views and the suggestions ask with, so
+  // Refresh reloads whichever of them is open. A query no view shows is not fetched by a refresh.
+  const triggers = useEnvironmentQueryRefresh(
+    environmentId && live && host.triggersSupported
+      ? bots.listTriggers({ environmentId, input: {} })
+      : null,
+  );
+  const suggestions = useEnvironmentQueryRefresh(
+    environmentId && live && host.fromThreadSupported
+      ? bots.suggestions({ environmentId, input: {} })
+      : null,
+  );
+  const pipelineRuns = useEnvironmentQueryRefresh(
+    environmentId && pipelinesLive
+      ? bots.listPipelineRuns({ environmentId, input: pipelineRunsInput() })
+      : null,
+  );
+  const batches = useEnvironmentQueryRefresh(
+    environmentId && live && host.batchesSupported
+      ? bots.listBatches({ environmentId, input: { limit: BOTS_LIST_BATCHES_MAX_LIMIT } })
+      : null,
+  );
+  const tabs = indexTabs(host);
+  const tab = selectedTab(tabs, nav.search.tab);
+  const current = allBots.filter((bot) => bot.archivedAt === null).length;
+  const refresh = () => {
+    list.refresh();
+    starters.refresh();
+    newest.refresh();
+    inbox.refresh();
+    usage.refresh();
+    triggers.refresh();
+    suggestions.refresh();
+    pipelineRuns.refresh();
+    batches.refresh();
+    if (pipelinesLive) pipelineList.refresh();
+  };
+
+  return (
+    <>
+      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
+        <div className="min-w-0 space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Bots</h1>
+          <div className="flex min-h-5 max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            {host.budgetsSupported && allBots.length ? (
+              <BotsUsageClause days={days} />
+            ) : (
+              "Reusable jobs with a fixed brief. Every run starts from the same instructions, inputs and settings."
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ComputersButton />
+          <Button
+            shape="pill"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh bots"
+            disabled={!host.connected || list.isPending}
+            onClick={refresh}
+          >
+            <RefreshCwIcon />
+          </Button>
+          <Button
+            shape="pill"
+            size="sm"
+            disabled={!access.canSave}
+            onClick={() => nav.open({ newBot: true })}
+          >
+            <PlusIcon />
+            New bot
+          </Button>
+        </div>
+      </header>
+      {list.data ? (
+        <LibraryTabs
+          label="Bots views"
+          selected={tab}
+          onSelect={(value) => nav.show(value === "bots" ? {} : { tab: value })}
+          tabs={tabs.map((value): LibraryTab<BotsIndexTab> => ({
+            value,
+            ...INDEX_TABS[value],
+            ...(value === "bots" ? { count: current } : {}),
+            ...(value === "runs" ? { count: attention, urgent: true } : {}),
+            ...(value === "pipelines" ? { count: pipelines.length } : {}),
+          }))}
+        >
+          {tab === "runs" ? (
+            <RunsView bot={null} />
+          ) : tab === "pipelines" ? (
+            <PipelinesView />
+          ) : tab === "triggers" ? (
+            <TriggersView />
+          ) : (
+            <BotsCollection />
+          )}
+        </LibraryTabs>
+      ) : list.error ? (
+        <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
+      ) : host.connected ? (
+        <IndexSkeleton tab={tab} view={preferences.view} />
+      ) : (
+        <OfflineEmpty hostLabel={hostLabel} />
+      )}
+    </>
+  );
+}
+
+/** Nothing has loaded and the server is away: say so, rather than a skeleton that never resolves. */
+function OfflineEmpty({ hostLabel }: { readonly hostLabel: string }) {
+  return (
+    <LibraryEmpty icon={CloudOffIcon} title={`${hostLabel} is offline`}>
+      Bots load when it reconnects.
+    </LibraryEmpty>
+  );
+}
+
+function MissingBot() {
+  const nav = useBotsNavigation();
+  return (
+    <LibraryEmpty
+      icon={BotIcon}
+      title="This bot no longer exists"
+      action={
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button
+            shape="pill"
+            size="sm"
+            variant="outline"
+            onClick={() => nav.show({ tab: "runs" })}
+          >
+            <ActivityIcon />
+            Open Runs
+          </Button>
+          <Button shape="pill" size="sm" onClick={() => nav.show({})}>
+            <ArrowLeftIcon />
+            Back to Bots
+          </Button>
+        </div>
+      }
+    >
+      It was deleted, or the link points at another server. Its past runs stay under Runs.
+    </LibraryEmpty>
+  );
+}
+
+/** The skeleton for whichever page is on its way while the server describes itself. */
+function RouteSkeleton({ route }: { readonly route: BotsRoute }) {
+  const [preferences] = useBotsCollectionPreferences();
+  if (route.kind === "index")
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="space-y-2.5">
+            <Skeleton className="h-7 w-24" />
+            <Skeleton className="h-3.5 w-72 max-w-full" />
+          </div>
+          <Skeleton shape="pill" className="h-8 w-24" />
+        </div>
+        <IndexSkeleton tab="bots" view={preferences.view} />
+      </div>
+    );
+  if (route.kind === "bot") return <BotPageSkeleton />;
+  return (
+    <div role="status" aria-label="Loading" className="flex flex-col gap-6">
+      <div className="space-y-2.5">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-7 w-64 max-w-full" />
+      </div>
+      <Skeleton shape="card" className="h-64 w-full" />
+    </div>
+  );
+}
+
+const TAB_SKELETONS = ["first", "second", "third", "fourth"];
+const ROW_SKELETONS = ["first", "second", "third", "fourth", "fifth"];
+
+function TabsSkeleton() {
+  return (
+    <div className="flex w-fit items-center gap-1 rounded-full bg-muted p-1 dark:bg-accent">
+      {TAB_SKELETONS.map((key) => (
+        <Skeleton key={key} shape="pill" className="h-8 w-22" />
+      ))}
+    </div>
+  );
+}
+
+/** The index's own shape while the bot list loads, so nothing jumps when it arrives. */
+function IndexSkeleton({
+  tab,
+  view,
+}: {
+  readonly tab: BotsIndexTab;
+  readonly view: LibraryLayout;
+}) {
+  return (
+    <div role="status" aria-label="Loading bots" className="flex flex-col gap-6">
+      <TabsSkeleton />
+      {tab === "bots" ? (
+        <BotsCollectionSkeleton view={view} />
+      ) : (
+        <div className="divide-y divide-border rounded-xl border border-border">
+          {ROW_SKELETONS.map((row) => (
+            <div key={row} className="flex items-center gap-3 px-3.5 py-2.5">
+              <Skeleton shape="card" className="size-6" />
+              <Skeleton className="h-3.5 w-1/4" />
+              <Skeleton className="ms-auto h-3 w-1/5" />
             </div>
-          ) : null}
-        </WorkspacePageContainer>
-      </main>
-      {editing && environmentId ? (
-        <BotEditor
-          environmentId={environmentId}
-          bot={editing.bot}
-          canSave={canSave}
-          startersSupported={host.startersSupported}
-          verdictsSupported={host.verdictsSupported}
-          budgetsSupported={host.budgetsSupported}
-          versionsSupported={host.versionsSupported}
-          anywhereSupported={host.anywhereSupported}
-          canReplay={canReplay}
-          onReplay={(bot, draft) => setReplaying({ bot, source: { kind: "draft", draft } })}
-          onClose={() => setEditing(null)}
-          onSaved={(bot) => {
-            setEditing(null);
-            go({ bot: bot.id });
-          }}
-        />
-      ) : null}
-      {search.fromThread !== undefined && environmentId && live && host.fromThreadSupported ? (
-        <BotFromThreadEditor
-          key={search.fromThread}
-          environmentId={environmentId}
-          threadId={search.fromThread}
-          suggestionId={search.suggestion ?? null}
-          canSave={canSave}
-          startersSupported={host.startersSupported}
-          verdictsSupported={host.verdictsSupported}
-          budgetsSupported={host.budgetsSupported}
-          onClose={() => go({ bot: search.bot, tab: search.tab })}
-          onSaved={(bot) => go({ bot: bot.id })}
-        />
-      ) : null}
-      {runTarget && environmentId ? (
-        <BotRunForm
-          key={runTarget.id}
-          environmentId={environmentId}
-          bot={runTarget}
-          canRun={canRun}
-          onClose={() => go({ bot: search.bot })}
-          onStarted={(run) => go({ bot: run.botId })}
-        />
-      ) : null}
-      {newTriggerBot && environmentId ? (
-        <BotTriggerEditor
-          key={newTriggerBot.id}
-          environmentId={environmentId}
-          bot={newTriggerBot}
-          trigger={null}
-          canSave={canOperateTriggers}
-          stableSupported={host.versionsSupported}
-          pipelines={pipelinesStartingWith(newTriggerBot.id)}
-          onClose={() => go({ bot: search.bot, tab: search.tab })}
-          onSaved={(trigger) => go({ bot: trigger.botId, tab: "triggers" })}
-        />
-      ) : null}
-      {editingTrigger && editingTriggerBot && environmentId ? (
-        <BotTriggerEditor
-          key={editingTrigger.id}
-          environmentId={environmentId}
-          bot={editingTriggerBot}
-          trigger={editingTrigger}
-          canSave={canOperateTriggers}
-          stableSupported={host.versionsSupported}
-          pipelines={pipelinesStartingWith(editingTriggerBot.id)}
-          onClose={() => setEditingTrigger(null)}
-          onSaved={() => setEditingTrigger(null)}
-        />
-      ) : null}
-      {replaying && environmentId ? (
-        <BotReplayDialog
-          environmentId={environmentId}
-          bot={replaying.bot}
-          source={replaying.source}
-          canRun={canReplay}
-          onClose={() => setReplaying(null)}
-        />
-      ) : null}
-      {runPipelineTarget && environmentId ? (
-        <PipelineRunForm
-          key={runPipelineTarget.id}
-          environmentId={environmentId}
-          pipeline={runPipelineTarget}
-          allBots={allBots}
-          canRun={canRunPipelines}
-          onClose={() => go({ bot: search.bot, tab: search.tab })}
-          onStarted={(run) => go({ bot: search.bot, tab: "pipelines", pipelineRun: run.id })}
-        />
-      ) : null}
-      {manyTarget && environmentId ? (
-        <RunOnManyDialog
-          key={manyTarget.id}
-          environmentId={environmentId}
-          bot={manyTarget}
-          canRun={canRun}
-          onClose={() => go({ bot: search.bot, tab: search.tab })}
-          onStarted={(batch) => go({ bot: batch.botId, tab: "batches", batch: batch.id })}
-        />
-      ) : null}
-    </SidebarInset>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A bot page's shape: the hero with its vitals, the views, and the overview's two columns. */
+function BotPageSkeleton() {
+  return (
+    <div role="status" aria-label="Loading bot" className="flex flex-col gap-6">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-start gap-5">
+          <Skeleton shape="card" className="size-16" />
+          <div className="flex flex-1 flex-col gap-2.5 pt-1">
+            <Skeleton className="h-7 w-56 max-w-full" />
+            <Skeleton className="h-3 w-72 max-w-full" />
+          </div>
+          <div className="hidden items-center gap-1.5 sm:flex">
+            <Skeleton shape="pill" className="h-8 w-18" />
+            <Skeleton shape="pill" className="h-8 w-18" />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-8 border-t border-border pt-4">
+          {TAB_SKELETONS.map((key) => (
+            <div key={key} className="flex flex-col gap-1.5">
+              <Skeleton className="h-2.5 w-14" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <TabsSkeleton />
+      <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <Skeleton shape="card" className="h-48 w-full" />
+        <Skeleton shape="card" className="h-32 w-full" />
+      </div>
+    </div>
   );
 }

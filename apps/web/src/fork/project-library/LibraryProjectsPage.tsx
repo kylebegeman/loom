@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { ProjectPreservationCenter } from "./ProjectPreservation";
+import { useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -6,16 +7,18 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
-  LayoutGridIcon,
   ListFilterIcon,
-  ListIcon,
   MessageSquareIcon,
   PlusIcon,
+  ShieldCheckIcon,
   SlidersHorizontalIcon,
-  XIcon,
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { LIBRARY_PROJECT_COLORS, type LibraryProjectColor } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PROJECT_COLORS,
+  LIBRARY_SEARCH_FEATURE,
+  type LibraryProjectColor,
+} from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
   libraryHoldsLocalRefs,
@@ -29,6 +32,7 @@ import {
   projectEntries,
   projectSections,
   sortProjectEntries,
+  supportsLoomFeature,
   type ProjectEntry,
   type ProjectGroup,
 } from "@t3tools/client-runtime/fork";
@@ -59,9 +63,17 @@ import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
 import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
+import { LibraryLayoutToggle } from "./LibraryCollection";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch } from "./LibraryControls";
+import {
+  LIBRARY_ROW,
+  LibraryErrorNotice,
+  LibraryFilterChip,
+  LibraryGroupHeading,
+  LibrarySearch,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { TidyProjectDialog } from "./TidyProjectDialog";
@@ -112,8 +124,10 @@ export function LibraryProjectsPage() {
   const [now] = useState(() => Date.now());
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
+  const [preservationOpen, setPreservationOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [tidying, setTidying] = useState<ProjectEntry | null>(null);
   const [importing, setImporting] = useState<{
@@ -192,6 +206,10 @@ export function LibraryProjectsPage() {
     return count ? [{ color, count }] : [];
   });
   const usedComputers = [...new Set(activeCopies.map((copy) => copy.environmentId))];
+  const capabilities = catalog.environment?.serverConfig?.environment.capabilities;
+  // One field finds projects and, where the Library can search it, what was said in them.
+  const searchesHistory = supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE);
+  const waiting = liveEntries.reduce((sum, entry) => sum + entry.attention.waiting, 0);
   const narrowed = !!query.trim() || colors.size > 0 || computer !== null;
   const clearFilters = () => {
     setQuery("");
@@ -233,43 +251,39 @@ export function LibraryProjectsPage() {
   };
   return (
     <LibraryPageFrame>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-          <p className="max-w-xl text-xs text-muted-foreground tabular-nums">
-            {catalog.authorityId && liveEntries.length
-              ? [
+      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <p className="flex max-w-xl flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground tabular-nums">
+            {catalog.authorityId && liveEntries.length ? (
+              <>
+                {[
                   plural(liveEntries.length, "project"),
                   restingCount ? `${restingCount} resting` : null,
                   usedComputers.length ? `on ${plural(usedComputers.length, "computer")}` : null,
                 ]
                   .filter(Boolean)
-                  .join(" · ")
-              : "Your projects and conversations stay here. Files are ready when you need them."}
+                  .join(" · ")}
+                {waiting ? (
+                  <LibraryStateBadge tone="warning">{waiting} waiting for you</LibraryStateBadge>
+                ) : null}
+              </>
+            ) : (
+              "Your projects and conversations stay here. Files are ready when you need them."
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {catalog.authorityId && (archivedCount || showArchived) ? (
-            <ToggleGroup
+          {catalog.authorityId && catalog.info.data?.features?.includes("project-workflows") ? (
+            <Button
               shape="pill"
-              aria-label="Which projects"
-              variant="segmented"
-              className="me-1.5"
-              value={[showArchived ? "archived" : "current"]}
-              onValueChange={(value) => {
-                if (value[0] === "current" || value[0] === "archived")
-                  setShowArchived(value[0] === "archived");
-              }}
+              size="sm"
+              variant="ghost"
+              onClick={() => setPreservationOpen(true)}
             >
-              <ToggleGroupItem value="current">
-                Current
-                <span className="tabular-nums opacity-60">{liveEntries.length}</span>
-              </ToggleGroupItem>
-              <ToggleGroupItem value="archived">
-                Archived
-                <span className="tabular-nums opacity-60">{archivedCount}</span>
-              </ToggleGroupItem>
-            </ToggleGroup>
+              <ShieldCheckIcon />
+              Preservation
+            </Button>
           ) : null}
           <Button
             shape="pill"
@@ -292,6 +306,14 @@ export function LibraryProjectsPage() {
           </Button>
         </div>
       </header>
+      {preservationOpen && catalog.authorityId ? (
+        <ProjectPreservationCenter
+          key={catalog.authorityId}
+          authorityId={catalog.authorityId}
+          onClose={() => setPreservationOpen(false)}
+          onChanged={refresh}
+        />
+      ) : null}
       {!catalog.authorityId ? (
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <LibrarySetup />
@@ -301,22 +323,18 @@ export function LibraryProjectsPage() {
         </section>
       ) : (
         <>
-          <LibraryHistorySearch
-            authorityId={catalog.authorityId}
-            connected={catalog.connected}
-            capabilities={catalog.environment?.serverConfig?.environment.capabilities}
-            hostLabel={hostLabel}
-            projectTitle={(id) =>
-              catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"
-            }
-          />
           {entries.length ? (
             <div className="flex flex-wrap items-center gap-2">
               <LibrarySearch
                 value={query}
                 onChange={setQuery}
-                placeholder="Search names, repos, folders"
-                label="Search projects"
+                inputRef={searchRef}
+                placeholder={
+                  searchesHistory
+                    ? "Search projects and conversations"
+                    : "Search names, repos, folders"
+                }
+                label={searchesHistory ? "Search projects and conversations" : "Search projects"}
               />
               <FilterMenu
                 colorCounts={colorCounts}
@@ -328,58 +346,57 @@ export function LibraryProjectsPage() {
                 onComputer={setComputer}
               />
               {[...colors].map((color) => (
-                <Button
+                <LibraryFilterChip
                   key={color}
-                  shape="pill"
-                  size="xs"
-                  variant="secondary"
-                  aria-label={`Stop showing only ${PROJECT_COLOR_NAMES[color]} projects`}
-                  onClick={() => toggleColor(color)}
-                >
-                  <ProjectColorDot color={color} />
-                  {PROJECT_COLOR_NAMES[color]}
-                  <XIcon aria-hidden />
-                </Button>
+                  label={PROJECT_COLOR_NAMES[color]}
+                  removeLabel={`Stop showing only ${PROJECT_COLOR_NAMES[color]} projects`}
+                  marker={<ProjectColorDot color={color} />}
+                  onRemove={() => toggleColor(color)}
+                />
               ))}
               {computer ? (
-                <Button
-                  shape="pill"
-                  size="xs"
-                  variant="secondary"
-                  aria-label={`Stop showing only projects on ${hostLabel(computer)}`}
-                  onClick={() => setComputer(null)}
-                >
-                  <ComputerLabel
-                    environmentId={computer}
-                    label={hostLabel(computer)}
-                    className="text-foreground"
-                  />
-                  <XIcon aria-hidden />
-                </Button>
+                <LibraryFilterChip
+                  label={
+                    <ComputerLabel
+                      environmentId={computer}
+                      label={hostLabel(computer)}
+                      className="text-foreground"
+                    />
+                  }
+                  removeLabel={`Stop showing only projects on ${hostLabel(computer)}`}
+                  onRemove={() => setComputer(null)}
+                />
               ) : null}
               <div className="ms-auto flex items-center gap-1.5">
+                {archivedCount || showArchived ? (
+                  <ToggleGroup
+                    shape="pill"
+                    aria-label="Which projects"
+                    variant="segmented"
+                    value={[showArchived ? "archived" : "current"]}
+                    onValueChange={(value) => {
+                      if (value[0] === "current" || value[0] === "archived")
+                        setShowArchived(value[0] === "archived");
+                    }}
+                  >
+                    <ToggleGroupItem value="current">
+                      Current
+                      <span className="tabular-nums opacity-60">{liveEntries.length}</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="archived">
+                      Archived
+                      <span className="tabular-nums opacity-60">{archivedCount}</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                ) : null}
                 <DisplayMenu
                   preferences={{ ...preferences, group }}
                   onChange={(next) => setPreferences(next)}
                 />
-                <ToggleGroup
-                  shape="pill"
-                  aria-label="Layout"
-                  variant="segmented"
-                  value={[preferences.view]}
-                  onValueChange={(value) => {
-                    const view = value[0];
-                    if (view === "cards" || view === "list")
-                      setPreferences({ ...preferences, view });
-                  }}
-                >
-                  <ToggleGroupItem value="cards" aria-label="Cards">
-                    <LayoutGridIcon />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="list" aria-label="List">
-                    <ListIcon />
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                <LibraryLayoutToggle
+                  value={preferences.view}
+                  onChange={(view) => setPreferences({ ...preferences, view })}
+                />
               </div>
             </div>
           ) : null}
@@ -402,7 +419,7 @@ export function LibraryProjectsPage() {
                     className="space-y-2.5"
                   >
                     {section.kind === "all" ? null : (
-                      <SectionHeading
+                      <LibraryGroupHeading
                         title={
                           section.kind === "color"
                             ? PROJECT_COLOR_NAMES[section.color]
@@ -410,7 +427,11 @@ export function LibraryProjectsPage() {
                         }
                         count={section.entries.length}
                         hint={section.kind === "color" ? undefined : heading.hint}
-                        color={section.kind === "color" ? section.color : undefined}
+                        marker={
+                          section.kind === "color" ? (
+                            <ProjectColorDot color={section.color} />
+                          ) : undefined
+                        }
                       />
                     )}
                     {show(section.entries, showArchived || section.kind === "resting")}
@@ -424,7 +445,8 @@ export function LibraryProjectsPage() {
                 <EmptyHeader>
                   <EmptyTitle>No {showArchived ? "archived " : ""}projects match</EmptyTitle>
                   <EmptyDescription>
-                    Search looks at names, briefs, repositories, folders and computers.
+                    Search looks at names, briefs, repositories, folders and computers
+                    {searchesHistory && query.trim() ? ". Conversation matches appear below." : "."}
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent className="flex-row justify-center">
@@ -502,6 +524,17 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           )}
+          <LibraryHistorySearch
+            authorityId={catalog.authorityId}
+            connected={catalog.connected}
+            capabilities={capabilities}
+            hostLabel={hostLabel}
+            query={query}
+            inputRef={searchRef}
+            projectTitle={(id) =>
+              catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"
+            }
+          />
         </>
       )}
       {catalog.authorityId && looseFolders.length && !colors.size && !showArchived ? (
@@ -603,31 +636,6 @@ const SECTION_HEADINGS = {
   all: { title: "Projects", hint: undefined },
   color: { title: "", hint: undefined },
 } as const;
-
-function SectionHeading({
-  title,
-  count,
-  hint,
-  color,
-}: {
-  readonly title: string;
-  readonly count: number;
-  readonly hint?: string | undefined;
-  readonly color?: LibraryProjectColor | undefined;
-}) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      {color ? <ProjectColorDot color={color} className="self-center" /> : null}
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-      {hint ? (
-        <p className="ms-1 hidden min-w-0 truncate text-xs text-muted-foreground/75 sm:block">
-          {hint}
-        </p>
-      ) : null}
-    </div>
-  );
-}
 
 /** A section that stays out of the way until asked for, like folders not yet in a project. */
 function FoldedSection({

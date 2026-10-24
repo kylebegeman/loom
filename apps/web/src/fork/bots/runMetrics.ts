@@ -60,3 +60,17 @@ export const runTokensLabel = (run: Pick<BotRun, "usage">) => {
     ? "Tokens unavailable"
     : `${total.toLocaleString()} tokens${run.usage?.status === "partial" ? " (partial)" : ""}`;
 };
+
+/** How long a run waited for a slot before it started; null until it starts. */
+export const runQueuedMs = (run: Pick<BotRun, "createdAt" | "startedAt">): number | null => {
+  if (run.startedAt === null) return null;
+  const waited = Date.parse(run.startedAt) - Date.parse(run.createdAt);
+  return Number.isFinite(waited) && waited >= 0 ? waited : null;
+};
+
+/** Time since `since` to the minute, for a run still going, which only re-renders each minute. */
+export const elapsedLabel = (since: string, now: number) => {
+  const elapsed = now - Date.parse(since);
+  if (!Number.isFinite(elapsed)) return null;
+  return elapsed < 60_000 ? "<1m" : formatDuration(Math.floor(elapsed / 60_000) * 60_000);
+};

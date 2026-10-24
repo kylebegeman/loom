@@ -92,3 +92,8 @@ export * from "./botUsageWindow.ts";
 export * from "./botDraft.ts";
 export * from "./botTriggerDraft.ts";
 export * from "./botPipelineDraft.ts";
+export * from "./bots-presentation.ts";
+
+export * from "./library-start-intent.ts";
+export * from "./library-attention.ts";
+export * from "./library-workflows.ts";

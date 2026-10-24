@@ -3,11 +3,14 @@ import { StackActions, useNavigation, type StaticScreenProps } from "@react-navi
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   LIBRARY_PROJECT_COLORS,
+  LibraryBlueprint,
+  PROJECT_WORKFLOWS_FEATURE,
   LibraryError,
   type LibraryProject,
   type LibraryProjectColor,
   type LibraryResource,
 } from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
@@ -22,13 +25,19 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryProfileSection } from "./LibraryProfileSection";
 import { LibraryBriefSuggestionsSetting } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
-import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
+import {
+  library,
+  refreshLibraryProject,
+  useLibraryAuthority,
+  useLoomFeature,
+} from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
 import { LibraryExistingFolder, type ExistingLibraryFolder } from "./LibraryExistingFolder";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import {
   libraryActiveCopies,
+  libraryStartIntent,
   libraryProfileChange,
   libraryProfileProblem,
   libraryResourceFromInput,
@@ -36,6 +45,8 @@ import {
   validateResources,
   type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
+
+const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
 
 type ResourceDraft = {
   id: string;
@@ -45,8 +56,10 @@ type ResourceDraft = {
   relativePath: string;
   defaultBranch: string;
 };
-export function LibraryCreateRouteScreen() {
-  return <LibraryProjectForm />;
+export function LibraryCreateRouteScreen({
+  route,
+}: StaticScreenProps<{ readonly initialInput?: string } | undefined>) {
+  return <LibraryProjectForm initialInput={route.params?.initialInput} />;
 }
 export function LibraryEditRouteScreen({
   route,
@@ -72,7 +85,14 @@ export function LibraryEditRouteScreen({
     </LibraryPage>
   );
 }
-function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
+function LibraryProjectForm({
+  initial: seed,
+  initialInput,
+}: {
+  initial?: LibraryProject;
+  initialInput?: string | undefined;
+}) {
+  const intent = libraryStartIntent(initialInput ?? "");
   const [initial] = useState(seed);
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
@@ -84,7 +104,9 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       authority.environmentId,
     ),
   );
-  const [title, setTitle] = useState(initial?.title ?? ""),
+  const [title, setTitle] = useState(
+      initial?.title ?? (intent.kind !== "search" ? intent.title : ""),
+    ),
     [brief, setBrief] = useState(initial?.brief ?? "");
   // Null means automatic: the project keeps a stable color derived from its id.
   const [color, setColor] = useState<LibraryProjectColor | null>(initial?.color ?? null);
@@ -97,11 +119,32 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
         url: resource.kind === "link" ? (resource.url ?? "") : (resource.remoteUrl ?? ""),
         relativePath: resource.relativePath,
         defaultBranch: resource.defaultBranch ?? "",
-      })) ?? [],
+      })) ??
+      (() => {
+        const resource = intent.kind === "repository" ? libraryResourceFromInput(intent.url) : null;
+        return resource
+          ? [
+              {
+                id: uuidv4(),
+                kind: "repository" as const,
+                title: resource.title,
+                url: resource.remoteUrl ?? "",
+                relativePath: resource.relativePath,
+                defaultBranch: "",
+              },
+            ]
+          : [];
+      })(),
   );
   // The setup is edited with a saved project, and only once the Library says it keeps one.
   const editsProfile = Boolean(initial && authority.keepsProfile);
   const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({ ...initial?.profile }));
+  const supportsBlueprint = useLoomFeature(authority.environmentId, PROJECT_WORKFLOWS_FEATURE);
+  const [blueprintText, setBlueprintText] = useState<string | null>(null);
+  const [importedBlueprint, setImportedBlueprint] = useState(false);
+  const decodedBlueprint =
+    blueprintText === null ? null : Schema.decodeUnknownOption(blueprintCodec)(blueprintText);
+  const blueprint = decodedBlueprint?._tag === "Some" ? decodedBlueprint.value : null;
   const copies = useEnvironmentQuery(
     editsProfile && initial && authority.environmentId
       ? library.copies({
@@ -245,6 +288,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
               brief,
               resources: parsed,
               ...(color ? { color } : {}),
+              ...(importedBlueprint ? { profile } : {}),
             },
           });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
@@ -281,6 +325,73 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           ? "Update the brief, repositories and links together. Your conversations stay saved."
           : "Start with a name. Add a brief, repositories or links now or later. Files are prepared when you start work."}
       </Text>
+      {!initial && supportsBlueprint ? (
+        <SettingsSection title="Start from a blueprint">
+          <View className="gap-3 p-4">
+            <Button
+              label="Import blueprint"
+              tone="text"
+              disabled={pending || awaitingResult}
+              onPress={() => setBlueprintText("")}
+            />
+            {blueprintText !== null ? (
+              <>
+                <TextInput
+                  accessibilityLabel="Blueprint JSON"
+                  value={blueprintText}
+                  onChangeText={setBlueprintText}
+                  multiline
+                  maxLength={131072}
+                  editable={!pending && !awaitingResult}
+                  className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"
+                />
+                <Text className="text-sm text-foreground-muted">
+                  {blueprint
+                    ? `${blueprint.title}: ${blueprint.resources.length} repositories and links, ${blueprint.connections.length} named connections.`
+                    : "Paste a version 1 Loom blueprint. Computer preferences and credentials are refused."}
+                </Text>
+                {blueprint?.setup?.scripts?.map((script) => (
+                  <Text key={script.id} className="text-sm text-foreground-muted">
+                    {script.name}: {script.command}
+                  </Text>
+                ))}
+                <Text className="text-sm text-foreground-muted">
+                  Review scripts before importing. Importing does not run them or prepare files.
+                </Text>
+                <Button
+                  label="Use reviewed blueprint"
+                  disabled={!blueprint || pending || awaitingResult}
+                  onPress={() => {
+                    if (!blueprint) return;
+                    setTitle(blueprint.title);
+                    setBrief(blueprint.brief);
+                    setColor(blueprint.color ?? null);
+                    setResources(
+                      blueprint.resources.map((resource) => ({
+                        id: resource.id,
+                        kind: resource.kind === "link" ? "link" : "repository",
+                        title: resource.title,
+                        url: (resource.kind === "link" ? resource.url : resource.remoteUrl) ?? "",
+                        relativePath: resource.relativePath,
+                        defaultBranch: resource.defaultBranch ?? "",
+                      })),
+                    );
+                    setProfile({ ...blueprint.setup, connectionNames: blueprint.connections });
+                    setImportedBlueprint(true);
+                    setBlueprintText(null);
+                  }}
+                />
+                <Button
+                  label="Cancel import"
+                  tone="text"
+                  disabled={pending || awaitingResult}
+                  onPress={() => setBlueprintText(null)}
+                />
+              </>
+            ) : null}
+          </View>
+        </SettingsSection>
+      ) : null}
       <SettingsSection title="Project">
         <View className="gap-3 p-4">
           <TextInput
@@ -413,6 +524,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       ) : null}
       {!initial ? (
         <LibraryExistingFolder
+          initialRootPath={intent.kind === "folder" ? intent.path : undefined}
           disabled={pending || awaitingResult || !authority.ready || !canSave}
           folder={existingFolder}
           onPending={setInspectingFolder}

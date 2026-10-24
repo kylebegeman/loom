@@ -1,74 +1,82 @@
+import { useState } from "react";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
-import { SITES_FEATURE } from "@t3tools/contracts/fork";
-import { libraryProjectForLocalRefs, supportsLoomFeature } from "@t3tools/client-runtime/fork";
-import { Link } from "@tanstack/react-router";
-import { ArrowRightIcon, GlobeIcon } from "lucide-react";
+import { SITES_FEATURE, SITES_MANAGEMENT_FEATURE } from "@t3tools/contracts/fork";
+import {
+  SITE_HEALTH_STATES,
+  libraryProjectForLocalRefs,
+  siteHealth,
+  supportsLoomFeature,
+  type SiteHealthState,
+} from "@t3tools/client-runtime/fork";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { AppWindowIcon, ArrowRightIcon, GlobeIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { LibraryPanel } from "../project-library/LibraryControls";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useEnvironmentQuery } from "~/state/query";
-import { projectLibrary, useLibraryAuthority } from "../project-library/state";
+import {
+  LibraryPanel,
+  LibraryStateBadge,
+  LibraryStateDot,
+} from "../project-library/LibraryControls";
+import {
+  projectLibrary,
+  useLibraryAuthority,
+  useLibraryPermission,
+} from "../project-library/state";
+import { SiteEditor } from "./SiteEditor";
+import { SiteMark, siteHost } from "./SiteHealth";
 import { sites } from "./state";
+import { useSiteCheckClock } from "./use-site-check-clock";
+
+/** A project's place only says something when a site needs someone; quiet otherwise. */
+const NEWS_STATES: ReadonlySet<SiteHealthState> = new Set(["failing", "stale", "paused"]);
 
 function useProjectSites(projectId: string, environmentId: EnvironmentId) {
   const authority = useLibraryAuthority();
-  const supported = supportsLoomFeature(
-    authority.environment?.serverConfig?.environment.capabilities,
-    SITES_FEATURE,
-  );
+  const capabilities = authority.environment?.serverConfig?.environment.capabilities;
+  const supported = supportsLoomFeature(capabilities, SITES_FEATURE);
+  const manages = supportsLoomFeature(capabilities, SITES_MANAGEMENT_FEATURE);
+  const allowed = useLibraryPermission(sites.saveSite, environmentId);
   const query = useEnvironmentQuery(
     supported ? sites.snapshot({ environmentId, input: {} }) : null,
   );
-  const linked =
-    query.data?.snapshot?.sites.filter((site) => site.projectIds?.includes(projectId)) ?? [];
-  return { supported, query, linked };
+  const snapshot = query.data?.snapshot ?? null;
+  const now = useSiteCheckClock(snapshot);
+  const linked = snapshot
+    ? snapshot.sites
+        .filter((site) => site.projectIds?.includes(projectId))
+        .map((site) => ({ site, state: siteHealth(site, snapshot, now).state }))
+    : [];
+  const canManage = Boolean(
+    manages && query.data?.managementConfigured && allowed && authority.connected,
+  );
+  return { supported, canManage, query, snapshot, linked };
 }
 
-export function ProjectSites({
-  projectId,
-  environmentId,
-}: {
-  projectId: string;
-  environmentId: EnvironmentId;
-}) {
-  const { supported, query, linked } = useProjectSites(projectId, environmentId);
-  if (!supported) return null;
+/** Opens a site's Preview, the quickest way to see it without leaving the app. */
+function PreviewLink({ siteId, name }: { readonly siteId: string; readonly name: string }) {
   return (
-    <section className="space-y-3" aria-label="Project sites">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">Sites</h2>
-        <Button size="xs" variant="outline" render={<Link to="/sites" />}>
-          Open Sites
-        </Button>
-      </div>
-      {query.error ? (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {query.error}
-        </p>
-      ) : null}
-      {query.isPending && !query.data ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading sites…
-        </p>
-      ) : null}
-      {linked.map((site) => (
-        <div key={site.id}>
-          <Link to="/sites" search={{ siteId: site.id }} className="text-sm underline">
-            {site.name}
-            {!site.active ? " (paused)" : ""}
-          </Link>
-        </div>
-      ))}
-      {query.data && !linked.length ? (
-        <p className="text-sm text-muted-foreground">
-          No sites linked. Register a site or link an existing one in Sites.
-        </p>
-      ) : null}
-    </section>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            shape="pill"
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Preview ${name}`}
+            render={<Link to="/sites" search={{ siteId, tab: "preview" }} />}
+          />
+        }
+      >
+        <AppWindowIcon />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">Preview</TooltipPopup>
+    </Tooltip>
   );
 }
 
-/** The Library overview's glance at the sites this project serves. */
-export function SitesSummary({
+/** The sites a local project serves, as small links beside its other ways in. */
+export function ProjectSites({
   projectId,
   environmentId,
 }: {
@@ -77,59 +85,173 @@ export function SitesSummary({
 }) {
   const { supported, query, linked } = useProjectSites(projectId, environmentId);
   if (!supported) return null;
+  if (!linked.length) {
+    if (!query.error || query.data) return null;
+    return (
+      <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        This project&apos;s sites could not load.
+        <Button
+          shape="pill"
+          size="xs"
+          variant="ghost"
+          disabled={query.isPending}
+          onClick={query.refresh}
+        >
+          <RefreshCwIcon />
+          Try again
+        </Button>
+      </p>
+    );
+  }
+  return (
+    <ul aria-label="Sites this project serves" className="flex flex-wrap items-center gap-1.5">
+      {linked.map(({ site, state }) => (
+        <li key={site.id} className="flex min-w-0 items-center">
+          <Link
+            to="/sites"
+            search={{ siteId: site.id }}
+            className="inline-flex h-7 min-w-0 max-w-72 items-center gap-1.5 rounded-full border border-border ps-2 pe-2.5 text-xs outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <LibraryStateDot tone={SITE_HEALTH_STATES[state].tone} />
+            <span className="truncate font-medium">{site.name}</span>
+            <span className="truncate font-mono text-muted-foreground">{siteHost(site.url)}</span>
+            <span className="sr-only">, {SITE_HEALTH_STATES[state].label}</span>
+          </Link>
+          <PreviewLink siteId={site.id} name={site.name} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The Library overview's glance at the sites this project serves, and the way to add one. */
+export function SitesSummary({
+  projectId,
+  environmentId,
+}: {
+  readonly projectId: string;
+  readonly environmentId: EnvironmentId;
+}) {
+  const { supported, canManage, query, snapshot, linked } = useProjectSites(
+    projectId,
+    environmentId,
+  );
+  const navigate = useNavigate();
+  const [registering, setRegistering] = useState(false);
+  if (!supported) return null;
+  const openSites = (
+    <Button shape="pill" size="xs" variant="ghost" render={<Link to="/sites" />}>
+      Open Sites
+      <ArrowRightIcon />
+    </Button>
+  );
   return (
     <LibraryPanel
       title="Sites"
       icon={GlobeIcon}
       count={linked.length}
       action={
-        <Button shape="pill" size="xs" variant="ghost" render={<Link to="/sites" />}>
-          {linked.length ? "Open Sites" : "Link"}
-          <ArrowRightIcon />
-        </Button>
+        !linked.length && canManage && snapshot ? (
+          <Button shape="pill" size="xs" variant="ghost" onClick={() => setRegistering(true)}>
+            <PlusIcon />
+            Register site
+          </Button>
+        ) : (
+          openSites
+        )
       }
     >
       {linked.length ? (
         <ul className="divide-y divide-border border-t border-border">
-          {linked.map((site) => (
-            <li key={site.id}>
+          {linked.map(({ site, state }) => (
+            <li
+              key={site.id}
+              className="relative flex min-w-0 items-center gap-2.5 py-2 ps-3 pe-2 transition-colors duration-150 hover:bg-accent/50"
+            >
               <Link
                 to="/sites"
                 search={{ siteId: site.id }}
-                className="flex min-w-0 items-center gap-2.5 px-3 py-2 outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <GlobeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm">{site.name}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {site.active ? new URL(site.url).host : "Paused"}
+                aria-label={`Open ${site.name}`}
+                className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              />
+              <span className="pointer-events-none flex">
+                <SiteMark url={site.url} />
+              </span>
+              <span className="pointer-events-none min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{site.name}</span>
+                <span className="block truncate font-mono text-2xs text-muted-foreground">
+                  {siteHost(site.url)}
                 </span>
-              </Link>
+              </span>
+              {NEWS_STATES.has(state) ? (
+                <LibraryStateBadge tone={SITE_HEALTH_STATES[state].tone}>
+                  {SITE_HEALTH_STATES[state].label}
+                </LibraryStateBadge>
+              ) : null}
+              <span className="relative">
+                <PreviewLink siteId={site.id} name={site.name} />
+              </span>
             </li>
           ))}
         </ul>
+      ) : query.error && !query.data ? (
+        <div role="alert" className="flex flex-col items-start gap-2 px-3.5 pb-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">{query.error}</p>
+          <Button
+            shape="pill"
+            size="xs"
+            variant="outline"
+            disabled={query.isPending}
+            onClick={query.refresh}
+          >
+            <RefreshCwIcon />
+            Try again
+          </Button>
+        </div>
+      ) : !query.data ? (
+        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
+          Checking sites…
+        </p>
+      ) : query.data.configured === false ? (
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
+          Sites needs the personal API on your Library server. Open Sites to see what is missing.
+        </p>
       ) : (
-        <p
-          role={query.error ? "alert" : undefined}
-          className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground"
-        >
-          {query.error ??
-            (query.data ? "Sites this project serves, linked from Sites." : "Loading sites...")}
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
+          {canManage
+            ? "No site serves this project yet. Register one to watch whether it is up and count its visits."
+            : "No site serves this project yet. Sites linked to it in Sites appear here."}
         </p>
       )}
+      {registering && snapshot ? (
+        <SiteEditor
+          target={{ kind: "site", projectId }}
+          snapshot={snapshot}
+          environmentId={environmentId}
+          connected={canManage}
+          onClose={() => setRegistering(false)}
+          onSaved={(siteId) => {
+            setRegistering(false);
+            query.refresh();
+            void navigate({ to: "/sites", search: { siteId } });
+          }}
+        />
+      ) : null}
     </LibraryPanel>
   );
 }
 
-export function LocalProjectSites({ projectRefs }: { projectRefs: readonly ScopedProjectRef[] }) {
+/** A local project's sites, through the Library project its copies belong to. */
+export function LocalProjectSites({
+  projectRefs,
+}: {
+  readonly projectRefs: readonly ScopedProjectRef[];
+}) {
   const authority = useLibraryAuthority();
   const target = authority.authorityId ? { environmentId: authority.authorityId, input: {} } : null;
   const copies = useEnvironmentQuery(target ? projectLibrary.copies(target) : null);
   const projectId = libraryProjectForLocalRefs([], projectRefs, copies.data ?? []);
-  return authority.authorityId && projectId ? (
-    <ProjectSites environmentId={authority.authorityId} projectId={projectId} />
-  ) : (
-    <Button variant="outline" size="sm" render={<Link to="/sites" />}>
-      Sites
-    </Button>
-  );
+  // A project outside the Library has no sites to show, and Sites stays one click away in the nav.
+  if (!authority.authorityId || !projectId) return null;
+  return <ProjectSites environmentId={authority.authorityId} projectId={projectId} />;
 }

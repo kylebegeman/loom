@@ -32,14 +32,12 @@ import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotInput, BotNotice, BotPage, BotSection, BotToggle } from "./BotControls";
 import { BotModelField } from "./BotModelField";
+import { RUNTIME_MODE_LABELS } from "./runLogic";
 import { bots, useBotsCapabilities, useBotsCollection } from "./state";
 
-const RUNTIME_OPTIONS = [
-  { value: "approval-required", label: "Ask before actions" },
-  { value: "auto-accept-edits", label: "Accept edits" },
-  { value: "auto", label: "Auto" },
-  { value: "full-access", label: "Full access" },
-] as const;
+const RUNTIME_OPTIONS = (
+  ["approval-required", "auto-accept-edits", "auto", "full-access"] as const
+).map((value) => ({ value, label: RUNTIME_MODE_LABELS[value] }));
 const WORKSPACE_OPTIONS = [
   { value: "scratch", label: "Fresh scratch folder" },
   { value: "project", label: "Project checkout" },
@@ -304,7 +302,8 @@ function BotEditor({
   );
   const [baseline, setBaseline] = useState(initialDraft);
   const [draft, setDraft] = useState(initialDraft);
-  const [expectedVersion, setExpectedVersion] = useState(bot?.version);
+  // Version 0 tells the server this creates a bot, so a taken id fails instead of overwriting.
+  const [expectedVersion, setExpectedVersion] = useState(bot?.version ?? 0);
   const [idTouched, setIdTouched] = useState(bot !== null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -472,7 +471,13 @@ function BotEditor({
         if (!mounted.current) return;
         if (result._tag === "Failure") {
           const cause = squashAtomCommandFailure(result);
-          setError(cause instanceof Error ? cause.message : "Could not save the bot.");
+          const message = cause instanceof Error ? cause.message : "Could not save the bot.";
+          // Older servers word a taken id as a stale edit, which would confuse someone creating a bot.
+          setError(
+            bot === null && message.startsWith("This bot changed since")
+              ? `Another bot already uses the id ${checked.input.id}. Choose another id.`
+              : message,
+          );
           setBusy(false);
         } else {
           if (suggestionId)

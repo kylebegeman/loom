@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BotIcon } from "lucide-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { initialRunValues, runInputs } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition } from "@t3tools/contracts/fork";
@@ -9,8 +10,9 @@ import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerContext } from "../../composer/registry";
+import { LibraryErrorNotice } from "../../project-library/LibraryControls";
 import { ParameterField } from "../BotRunForm";
-import { initialRunValues, runInputs } from "@t3tools/client-runtime/fork";
+import { focusFirstInputError, runInputErrors, shortDescription } from "../runForm";
 import { bots, useBots } from "../state";
 import { useBotRunDrawerStore } from "./drawerStore";
 import { useComposerBotsAccess } from "./slashSource";
@@ -29,11 +31,16 @@ function BotRunDrawerForm({
   readonly onClose: () => void;
 }) {
   const [values, setValues] = useState(() => initialRunValues(bot));
+  const [attempted, setAttempted] = useState(false);
   const [notify, setNotify] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = useAtomCommand(bots.run, { reportFailure: false });
   const formRef = useRef<HTMLFormElement>(null);
+  const formId = useId();
+  const inputId = (name: string) => `${formId}-${name}`;
+  const errors = runInputErrors(bot.parameters, values);
+  const description = shortDescription(bot.description);
 
   useEffect(() => {
     formRef.current
@@ -43,6 +50,12 @@ function BotRunDrawerForm({
 
   const submit = async () => {
     if (busy || !canRun) return;
+    setAttempted(true);
+    if (Object.keys(errors).length > 0) {
+      setError(null);
+      focusFirstInputError(bot.parameters, errors, inputId);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -72,12 +85,23 @@ function BotRunDrawerForm({
         event.preventDefault();
         void submit();
       }}
+      onKeyDown={(event) => {
+        // Enter in a long text adds a line, so the shortcut that sends from anywhere is Mod+Enter.
+        // It stops here so the composer around the drawer does not send its message too.
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          void submit();
+        }
+      }}
     >
-      {bot.description ? <p className="text-xs text-muted-foreground">{bot.description}</p> : null}
+      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       {bot.parameters.map((parameter) => (
         <ParameterField
           key={parameter.name}
+          id={inputId(parameter.name)}
           parameter={parameter}
+          error={attempted ? errors[parameter.name] : null}
           value={values[parameter.name] ?? ""}
           onChange={(value) => setValues((current) => ({ ...current, [parameter.name]: value }))}
         />
@@ -86,21 +110,17 @@ function BotRunDrawerForm({
         <Switch checked={notify} onCheckedChange={setNotify} />
         Post the result to this thread
       </label>
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
+      <LibraryErrorNotice error={error} />
       {canRun ? null : (
         <p role="status" className="text-sm text-muted-foreground">
           This connection cannot run bots.
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+        <Button type="button" shape="pill" size="sm" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" size="sm" disabled={busy || !canRun}>
+        <Button type="submit" shape="pill" size="sm" disabled={busy || !canRun}>
           {busy ? "Starting…" : "Run"}
         </Button>
       </div>
@@ -154,9 +174,14 @@ function BotRunDrawer({
               canRun={canRun}
               onClose={onClose}
             />
+          ) : list.error && !list.data ? (
+            // A failed load says nothing about the bot, so it offers a retry, not a verdict.
+            <div className="pb-2">
+              <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
+            </div>
           ) : (
             <p role="status" className="pb-2 text-sm text-muted-foreground">
-              {list.isPending ? "Loading…" : "That bot no longer exists."}
+              {list.data && !bot ? "That bot no longer exists." : "Loading…"}
             </p>
           )}
         </ComposerBanner.Body>

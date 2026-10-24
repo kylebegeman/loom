@@ -1,13 +1,15 @@
 import { act, useImperativeHandle, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { DEFAULT_RESOLVED_KEYBINDINGS, isMacPlatform } from "@t3tools/shared/keybindings";
 import { CommandPalette } from "./CommandPalette";
 import { useComposerHandleContext } from "../composerHandleContext";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
-vi.mock("@tanstack/react-router", () => ({
+// fork: library-palette - Setup content also imports Library navigation.
+vi.mock("@tanstack/react-router", async (original) => ({
+  ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
   useParams: () => null,
   useLocation: () => "/settings",
@@ -20,6 +22,10 @@ vi.mock("@effect/atom-react", async (importOriginal) => {
       atom === primaryServerKeybindingsAtom ? DEFAULT_RESOLVED_KEYBINDINGS : [],
   };
 });
+// fork: library-palette - Focus tests do not need feature inventories or their RPC subscriptions.
+vi.mock("../fork/commandPalette/registry", () => ({
+  useForkCommandPaletteItems: () => ({ items: [], searchItems: [] }),
+}));
 vi.mock("../hooks/useTheme", () => ({
   useRenderedAppearance: () => "light",
   useTheme: () => ({ theme: "default", resolvedTheme: "light", appearanceMode: "light" }),
@@ -150,7 +156,8 @@ describe("command palette focus restoration", () => {
       field.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "p",
-          ctrlKey: true,
+          ctrlKey: !isMacPlatform(navigator.platform), // fork: library-palette
+          metaKey: isMacPlatform(navigator.platform),
           bubbles: true,
           cancelable: true,
         }),

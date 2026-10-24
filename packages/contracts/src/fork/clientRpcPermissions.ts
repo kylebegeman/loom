@@ -1,3 +1,4 @@
+import { PROJECT_WORKFLOW_WS_METHODS as WF } from "./project-workflows.ts";
 import { PROJECT_PROFILES_WS_METHODS as PP } from "./project-profiles.ts";
 import { VAULT_TEST_ACCOUNT_WS_METHODS as VT } from "./vault-test-accounts.ts";
 import { VAULT_MIGRATION_INVENTORY_WS_METHODS as VI } from "./vault-migration-inventory.ts";
@@ -44,6 +45,12 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [WF.saveWorkstream]: AuthSettingsWriteScope,
+  [WF.applyBlueprint]: AuthSettingsWriteScope,
+  [WF.run]: AuthTerminalOperateScope,
+  [WF.cancel]: AuthTerminalOperateScope,
+  [WF.execute]: AuthTerminalOperateScope,
+  [WF.resume]: AuthTerminalOperateScope,
   [PP.update]: AuthOrchestrationOperateScope,
   [PP.reset]: AuthOrchestrationOperateScope,
   [PP.updateSettings]: AuthOrchestrationOperateScope,

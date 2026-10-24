@@ -24,7 +24,10 @@ export function openLibraryAction(
 ) {
   window.dispatchEvent(
     new CustomEvent(EVENT, {
-      detail: projectId ? { action, projectId, ...(defaults ? { defaults } : {}) } : action,
+      detail:
+        projectId || defaults
+          ? { action, ...(projectId ? { projectId } : {}), ...(defaults ? { defaults } : {}) }
+          : action,
     }),
   );
   return true;
@@ -41,7 +44,7 @@ export function onLibraryAction(
     const detail = (
       event as CustomEvent<
         | LibraryAction
-        | { action: LibraryAction; projectId: string; defaults?: LibraryConversationDefaults }
+        | { action: LibraryAction; projectId?: string; defaults?: LibraryConversationDefaults }
       >
     ).detail;
     if (typeof detail === "string") listener(detail);

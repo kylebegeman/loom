@@ -67,10 +67,12 @@ export function BotNotice({
   error,
   detail,
   onRetry,
+  retryLabel = "Reload bots",
 }: {
   readonly error?: string | null;
   readonly detail?: string | null;
   readonly onRetry?: () => void;
+  readonly retryLabel?: string;
 }) {
   return (
     <View className="gap-2">
@@ -84,7 +86,7 @@ export function BotNotice({
           {error}
         </Text>
       ) : null}
-      {onRetry ? <Button label="Reload bots" tone="text" onPress={onRetry} /> : null}
+      {onRetry ? <Button label={retryLabel} tone="text" onPress={onRetry} /> : null}
     </View>
   );
 }

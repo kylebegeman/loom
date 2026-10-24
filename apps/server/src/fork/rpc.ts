@@ -1,3 +1,5 @@
+import { PROJECT_WORKFLOW_WS_METHODS, ProjectWorkflowsRpcGroup } from "@t3tools/contracts/fork";
+import { makeProjectWorkflowRpcHandlers } from "./project-library/workflow-rpc.ts";
 import { ProjectProfilesRpcGroup, PROJECT_PROFILES_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeProjectProfilesRpcHandlers } from "./project-profiles/rpc.ts";
 import { VAULT_TEST_ACCOUNT_WS_METHODS, VaultTestAccountRpcGroup } from "@t3tools/contracts/fork";
@@ -93,6 +95,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(PROJECT_WORKFLOW_WS_METHODS),
   ...Object.values(PROJECT_PROFILES_WS_METHODS),
   ...Object.values(VAULT_TEST_ACCOUNT_WS_METHODS),
   ...Object.values(VAULT_MIGRATION_INVENTORY_WS_METHODS),
@@ -119,6 +122,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
 export const makeForkRpcLayer = (
   session: AuthenticatedSession,
 ): Layer.Layer<
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectWorkflowsRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectProfilesRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationInventoryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationRpcGroup>>
@@ -142,6 +146,9 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsAnywhereRpcGroup>>
 > =>
   Layer.mergeAll(
+    ProjectWorkflowsRpcGroup.toLayer(
+      withForkRuntime(makeProjectWorkflowRpcHandlers(makeForkRpcAuth(session), session)),
+    ),
     VaultTestAccountRpcGroup.toLayer(
       withForkRuntime(
         makeVaultTestAccountRpcHandlers(makeForkRpcAuth(session), `client:${session.sessionId}`),

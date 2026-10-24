@@ -217,6 +217,12 @@ export const make = Effect.gen(function* () {
         "invalid",
         "A newer version of Loom saved this pipeline; update to edit it.",
       );
+    // Version 0 is how a client says it is creating the pipeline, so a clash is a taken id.
+    if (expectedVersion === 0 && existing !== null)
+      return yield* fail(
+        "invalid",
+        `Another pipeline already uses the id ${input.id}. Choose another id.`,
+      );
     if (expectedVersion !== undefined && (existing?.version ?? 0) !== expectedVersion)
       return yield* fail(
         "invalid",

@@ -1,3 +1,8 @@
+import { ProjectWorkstreams } from "./ProjectWorkstreams";
+import { ProjectBlueprint } from "./ProjectBlueprint";
+import { ProjectAttention } from "./ProjectAttention";
+import { ProjectOperationHistory } from "./ProjectOperations";
+import { ProjectPreservationCenter } from "./ProjectPreservation";
 import { SitesSummary } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState } from "react";
@@ -20,6 +25,7 @@ import {
   MoonIcon,
   PencilLineIcon,
   PlusIcon,
+  ShieldCheckIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -45,9 +51,14 @@ import {
   useLibraryPermission,
   useSelectedLibraryProject,
 } from "./state";
-import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
+import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LIBRARY_ROW, LibraryErrorNotice } from "./LibraryControls";
+import {
+  LIBRARY_ROW,
+  LibraryErrorNotice,
+  LibrarySection,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
@@ -55,7 +66,13 @@ import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
 import { CopiesSummary, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectGlow, ProjectTile, projectColorStyle } from "./ProjectIdentity";
+import {
+  HeroTexture,
+  ProjectColorPicker,
+  ProjectGlow,
+  ProjectTile,
+  projectColorStyle,
+} from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
 import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projectViews";
@@ -68,12 +85,6 @@ import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "
 const LONG_BRIEF_CHARACTERS = 320;
 const LONG_BRIEF_LINES = 4;
 /** A fine dot grid fading out from the hero's far corner, for texture behind the title. */
-const HERO_DOTS = {
-  backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
-  backgroundSize: "18px 18px",
-  maskImage: "radial-gradient(ellipse at 100% 0%, black, transparent 60%)",
-};
-
 type LibraryProjectView = ReturnType<typeof useLibraryProject>;
 type ConversationRequest = {
   readonly hostId?: EnvironmentId;
@@ -121,6 +132,7 @@ export function LibraryProjectPage({
   return (
     <LibraryPageFrame title={project.title}>
       <ProjectView
+        key={`${library.authorityId}:${project.id}`}
         library={library}
         authorityId={library.authorityId}
         project={project}
@@ -182,6 +194,7 @@ function ProjectView({
   // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
   // health look recent. Only copies read live from the connected Library may be aged by it, and
   // they stay trusted while a refresh is in flight so the age does not jump back and forth.
+  const [preservationOpen, setPreservationOpen] = useState(false);
   const [liveCopies, setLiveCopies] = useState<typeof library.copies.data>(null);
   const nextLiveCopies = !library.connected
     ? null
@@ -194,6 +207,7 @@ function ProjectView({
   const activeCopies = libraryActiveCopies(copies);
   const capabilities = library.environment?.serverConfig?.environment.capabilities;
   // An older Library would drop a saved profile, so the section waits until it says it keeps one.
+  const supportsWorkflows = supportsLoomFeature(capabilities, "project-workflows");
   const keepsProfile = supportsLoomFeature(capabilities, LIBRARY_PROJECT_PROFILE_FEATURE);
   // Suggested brief updates appear only once the Library says it keeps them.
   const proposesBrief = supportsLoomFeature(capabilities, LIBRARY_BRIEF_PROPOSALS_FEATURE);
@@ -212,8 +226,15 @@ function ProjectView({
       ? threads[0].updatedAt
       : project.updatedAt;
   const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
+  // Only a connected computer can say what it is doing, and each says it once.
+  const activityHosts = [...new Set(activeCopies.map((copy) => copy.environmentId))].filter(
+    hostConnected,
+  );
   const views = PROJECT_VIEWS.filter(
-    (entry) => entry !== "repositories" && (entry !== "setup" || keepsProfile),
+    (entry) =>
+      entry !== "repositories" &&
+      (entry !== "setup" || keepsProfile) &&
+      (entry !== "workstreams" || supportsWorkflows),
   );
   // A link to the setup view still lands somewhere on a Library that keeps no setup.
   const shown = view === "repositories" ? "computers" : views.includes(view) ? view : "overview";
@@ -255,9 +276,38 @@ function ProjectView({
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
+        {shown === "workstreams" && supportsWorkflows ? (
+          <ProjectWorkstreams
+            project={project}
+            authorityId={authorityId}
+            copies={copies}
+            threads={threads}
+          />
+        ) : null}
+        {shown === "setup" && supportsWorkflows ? (
+          <ProjectBlueprint
+            project={project}
+            authorityId={authorityId}
+            onChanged={library.refresh}
+          />
+        ) : null}
+        {preservationOpen ? (
+          <ProjectPreservationCenter
+            authorityId={authorityId}
+            projectId={project.id}
+            onClose={() => setPreservationOpen(false)}
+            onChanged={library.refresh}
+          />
+        ) : null}
         {shown === "overview" ? (
           <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="flex min-w-0 flex-col gap-10">
+              <ProjectAttention
+                threads={threads}
+                copies={copies}
+                hostLabel={hostLabel}
+                onFiles={() => show("computers")}
+              />
               {settingUp ? (
                 <ProjectSetup
                   project={project}
@@ -387,8 +437,40 @@ function ProjectView({
               onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
               onRemove={setReleasing}
             />
+            {supportsWorkflows ? (
+              <LibrarySection
+                title="Recovery and activity"
+                icon={ShieldCheckIcon}
+                action={
+                  <Button
+                    shape="pill"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPreservationOpen(true)}
+                  >
+                    Review preservation
+                  </Button>
+                }
+              >
+                {activityHosts.length ? (
+                  <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
+                    {activityHosts.map((environmentId) => (
+                      <ProjectOperationHistory
+                        key={environmentId}
+                        environmentId={environmentId}
+                        projectId={project.id}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    File activity shows here for each connected computer holding this project.
+                  </p>
+                )}
+              </LibrarySection>
+            ) : null}
           </div>
-        ) : (
+        ) : shown === "setup" ? (
           <ProjectProfile
             project={project}
             copies={activeCopies}
@@ -401,7 +483,7 @@ function ProjectView({
             onEdit={update.clearError}
             onSave={(profile) => update.save({ profile })}
           />
-        )}
+        ) : null}
       </ProjectTabs>
       {copyRequest ? (
         <CopyDialog
@@ -499,16 +581,9 @@ function ProjectHero({
   };
   return (
     <header className="flex flex-col gap-4">
-      <div>
-        <LibraryBackLink to="/projects">Projects</LibraryBackLink>
-      </div>
       <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-xs/5 sm:p-7">
         <ProjectGlow strength="strong" />
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 text-foreground/10"
-          style={HERO_DOTS}
-        />
+        <HeroTexture />
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           <Popover>
             <PopoverTrigger
@@ -654,21 +729,13 @@ function StatusPill({
   readonly archived: boolean;
   readonly resting: boolean;
 }) {
-  if (archived || resting) {
-    const Icon = archived ? ArchiveIcon : MoonIcon;
+  if (archived || resting)
     return (
-      <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
-        <Icon aria-hidden className="size-3" />
+      <LibraryStateBadge tone="neutral" icon={archived ? ArchiveIcon : MoonIcon}>
         {archived ? "Archived" : "Resting"}
-      </span>
+      </LibraryStateBadge>
     );
-  }
-  return (
-    <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-(--project-color)/12 px-2 text-2xs font-medium text-(--project-color) dark:bg-(--project-color)/16">
-      <span aria-hidden className="size-1.5 rounded-full bg-(--project-color)" />
-      Active
-    </span>
-  );
+  return <LibraryStateBadge tone="active">Active</LibraryStateBadge>;
 }
 
 function TitleEditor({

@@ -1,16 +1,25 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { BOTS_LIST_RUNS_MAX_LIMIT, type BotRun } from "@t3tools/contracts/fork";
 import { applyInboxChanges, dismissRunIdBatches } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { cn } from "../../lib/cn";
+import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage, BotNotice } from "./BotControls";
-import { BotRunSummary } from "./BotRunDetailScreen";
+import { BotRunRow } from "./BotRunDetailScreen";
+import {
+  BotRowsSkeleton,
+  BotStateDot,
+  BotsEmptyList,
+  BotsOutline,
+  BotsSection,
+} from "./BotIdentity";
 import {
   bots,
   useBotsCapabilities,
@@ -82,35 +91,56 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
     refresh();
     setBusy(false);
   };
+  const switchView = (next: boolean) => {
+    if (next === dismissed) return;
+    setDismissed(next);
+    setBefore(undefined);
+    setEarlier([]);
+  };
+  const canAct = allowed && capabilities.connected && !busy;
   return (
-    <BotPage title="Bots inbox">
-      <View className="flex-row flex-wrap gap-2">
-        <Button
-          label={dismissed ? "Show needs attention" : "Show dismissed"}
-          disabled={busy}
-          onPress={() => {
-            setDismissed((value) => !value);
-            setBefore(undefined);
-            setEarlier([]);
-          }}
-        />
-        <Button
-          label="Refresh inbox"
-          disabled={!capabilities.connected || query.isPending || busy}
-          onPress={refresh}
-        />
-        {!dismissed && page && page.runs.length > 1 ? (
-          <Button
-            label="Dismiss all shown"
-            disabled={!allowed || !capabilities.connected || busy}
-            onPress={() =>
-              void update(
-                page.runs.map((run) => run.id),
-                true,
-              )
-            }
-          />
-        ) : null}
+    <BotPage
+      title="Bots inbox"
+      actions={[
+        {
+          icon: "arrow.clockwise",
+          accessibilityLabel: "Refresh inbox",
+          disabled: !capabilities.connected || query.isPending || busy,
+          onPress: refresh,
+        },
+      ]}
+    >
+      <View accessibilityRole="tablist" className="flex-row gap-2">
+        {(
+          [
+            [false, "Needs you"],
+            [true, "Dismissed"],
+          ] as const
+        ).map(([value, label]) => {
+          const current = value === dismissed;
+          return (
+            <Pressable
+              key={label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: current, disabled: busy }}
+              disabled={busy}
+              onPress={() => switchView(value)}
+              className={cn(
+                "min-h-9 justify-center rounded-full border px-3.5 active:opacity-70",
+                current ? "border-foreground bg-foreground" : "border-border",
+              )}
+            >
+              <Text
+                className={cn(
+                  "text-sm font-t3-medium",
+                  current ? "text-screen" : "text-foreground",
+                )}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
       <BotNotice
         error={error ?? query.error}
@@ -125,80 +155,124 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
       {undoIds.length ? (
         <Button
           label={`Undo dismiss (${undoIds.length})`}
-          disabled={busy || !allowed || !capabilities.connected}
+          tone="text"
+          disabled={!canAct}
           onPress={() => void update(undoIds, false)}
         />
       ) : null}
       {!dismissed && waiting.length ? (
-        <View className="gap-3">
-          <Text className="text-lg font-t3-semibold">Waiting for you</Text>
-          {waiting.map((thread) => (
-            <View key={thread.id} className="gap-2 rounded-2xl bg-grouped-card p-4">
-              <Text className="font-t3-semibold">{thread.title}</Text>
-              <Text>{thread.hasPendingApprovals ? "Needs approval" : "Has a question"}</Text>
-              <Button
-                label="Answer in thread"
-                onPress={() =>
-                  navigation.navigate("Thread", {
-                    environmentId: thread.environmentId,
-                    threadId: thread.id,
-                  })
-                }
-              />
-            </View>
-          ))}
-        </View>
-      ) : null}
-      <Text className="text-lg font-t3-semibold">
-        {dismissed ? "Dismissed" : "Needs attention"}
-      </Text>
-      {!page ? (
-        query.isPending ? (
-          <Text>Loading inbox…</Text>
-        ) : null
-      ) : !page.runs.length ? (
-        <Text>
-          {dismissed
-            ? "No dismissed runs."
-            : "Nothing needs you. Failed, timed out and undecided runs land here."}
-        </Text>
-      ) : (
-        <>
-          {page.runs.map((run) => (
-            <View key={run.id} className="gap-3 rounded-2xl bg-grouped-card p-4">
-              <BotRunSummary run={run} />
-              <View className="flex-row flex-wrap gap-2">
-                <Button
-                  label="View run and actions"
-                  onPress={() =>
-                    navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })
-                  }
-                />
-                <Button
-                  label={dismissed ? "Restore" : "Dismiss"}
-                  disabled={busy || !allowed || !capabilities.connected}
-                  onPress={() => void update([run.id], !dismissed)}
-                />
+        <BotsSection title="Waiting for you" detail={String(waiting.length)}>
+          <BotsOutline>
+            {waiting.map((thread, index) => (
+              <View
+                key={thread.id}
+                className={cn(
+                  "gap-1 bg-adaptive-amber-500-a12-a16 py-3 ps-4 pe-1",
+                  index > 0 && "border-t border-border-subtle",
+                )}
+              >
+                <View className="flex-row items-center gap-2.5 pe-3">
+                  <BotStateDot tone="warning" />
+                  <Text
+                    numberOfLines={2}
+                    className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                  >
+                    {thread.title}
+                  </Text>
+                  <LibraryStateBadge
+                    tone="warning"
+                    label={thread.hasPendingApprovals ? "Needs approval" : "Has a question"}
+                  />
+                </View>
+                <View className="ps-3">
+                  <Button
+                    label="Answer in thread"
+                    tone="text"
+                    onPress={() =>
+                      navigation.navigate("Thread", {
+                        environmentId: thread.environmentId,
+                        threadId: thread.id,
+                      })
+                    }
+                  />
+                </View>
               </View>
-            </View>
-          ))}
-          <Text className="text-xs text-foreground-muted">
-            Showing {page.runs.length} of {page.total} runs.
-          </Text>
-          {query.data?.hasMore ? (
-            <Button
-              label="Older inbox runs"
-              disabled={query.isPending || !capabilities.connected}
-              onPress={() => {
-                const last = query.data?.runs.at(-1);
-                if (!last) return;
-                setEarlier(page.runs);
-                setBefore(last.createdAt);
-              }}
+            ))}
+          </BotsOutline>
+        </BotsSection>
+      ) : null}
+      {capabilities.inboxSupported ? (
+        <BotsSection
+          title={dismissed ? "Dismissed" : "Needs attention"}
+          detail={page?.runs.length ? `${page.runs.length} of ${page.total}` : undefined}
+        >
+          {!page ? (
+            query.isPending ? (
+              <BotRowsSkeleton label="Loading inbox" />
+            ) : null
+          ) : !page.runs.length ? (
+            <BotsEmptyList
+              message={
+                dismissed
+                  ? "No dismissed runs."
+                  : "Nothing needs you. Failed, timed out and undecided runs land here."
+              }
             />
-          ) : null}
-        </>
-      )}
+          ) : (
+            <>
+              <BotsOutline>
+                {page.runs.map((run, index) => (
+                  <BotRunRow
+                    key={run.id}
+                    run={run}
+                    separated={index > 0}
+                    onOpen={() =>
+                      navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })
+                    }
+                    actions={
+                      <Button
+                        label={dismissed ? "Restore" : "Dismiss"}
+                        accessibilityLabel={`${dismissed ? "Restore" : "Dismiss"} ${run.botName} run`}
+                        tone="text"
+                        disabled={!canAct}
+                        onPress={() => void update([run.id], !dismissed)}
+                      />
+                    }
+                  />
+                ))}
+              </BotsOutline>
+              <View className="flex-row flex-wrap gap-2">
+                {!dismissed && page.runs.length > 1 ? (
+                  <Button
+                    label="Dismiss all shown"
+                    tone="text"
+                    disabled={!canAct}
+                    onPress={() =>
+                      void update(
+                        page.runs.map((run) => run.id),
+                        true,
+                      )
+                    }
+                  />
+                ) : null}
+                {query.data?.hasMore ? (
+                  <Button
+                    label="Older inbox runs"
+                    tone="text"
+                    disabled={query.isPending || !capabilities.connected}
+                    onPress={() => {
+                      const last = query.data?.runs.at(-1);
+                      if (!last) return;
+                      setEarlier(page.runs);
+                      setBefore(last.createdAt);
+                    }}
+                  />
+                ) : null}
+              </View>
+            </>
+          )}
+        </BotsSection>
+      ) : null}
     </BotPage>
   );
 }

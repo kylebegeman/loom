@@ -1,3 +1,4 @@
+import { PROJECT_WORKFLOW_WS_METHODS as W } from "@t3tools/contracts/fork";
 import {
   LibraryInfo,
   LibraryProject,
@@ -15,7 +16,8 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
-import type { Atom } from "effect/reactivity";
+import { Atom } from "effect/reactivity";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
@@ -31,8 +33,62 @@ export function createProjectLibraryAtoms<R, E>(
     label: "loom:library:refreshes",
     tag: L.subscribeRefreshes,
   });
+  const workflowChanges = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "loom:workflows:changes",
+    tag: W.changes,
+  });
+  const catalogWorkflowChanges = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => [
+      get(refreshes({ environmentId, input: {} })),
+      get(workflowChanges({ environmentId, input: {} })),
+    ]),
+  );
   return {
     refreshes,
+    workstreams: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:workstreams",
+      tag: W.workstreams,
+      refreshTrigger: ({ environmentId }) => workflowChanges({ environmentId, input: {} }),
+    }),
+    saveWorkstream: createEnvironmentRpcCommand(runtime, {
+      label: "loom:workstreams:save",
+      tag: W.saveWorkstream,
+    }),
+    blueprint: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:blueprint",
+      tag: W.blueprint,
+      refreshTrigger: ({ environmentId }) => catalogWorkflowChanges(environmentId),
+    }),
+    applyBlueprint: createEnvironmentRpcCommand(runtime, {
+      label: "loom:blueprint:apply",
+      tag: W.applyBlueprint,
+    }),
+    preservation: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:preservation",
+      tag: W.preservation,
+      refreshTrigger: ({ environmentId }) => catalogWorkflowChanges(environmentId),
+    }),
+    operations: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:operations",
+      tag: W.operations,
+      refreshTrigger: ({ environmentId }) => workflowChanges({ environmentId, input: {} }),
+    }),
+    runOperation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:operations:run",
+      tag: W.run,
+    }),
+    executeOperation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:operations:execute",
+      tag: W.execute,
+    }),
+    resumeOperation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:operations:resume",
+      tag: W.resume,
+    }),
+    cancelOperation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:operations:cancel",
+      tag: W.cancel,
+    }),
     replicationStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:replication-status",
       tag: L.replicationStatus,

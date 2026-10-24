@@ -59,6 +59,8 @@ interface FiringRow {
   readonly fired_at: string;
   readonly outcome: string;
   readonly run_id: string | null;
+  readonly pipeline_run_id: string | null;
+  readonly batch_id: string | null;
   readonly reason: string | null;
 }
 
@@ -105,6 +107,8 @@ const toFiring = (row: FiringRow): BotTriggerFiring => ({
   firedAt: row.fired_at,
   outcome: row.outcome === "run" ? "run" : "skipped",
   runId: row.run_id,
+  ...(row.pipeline_run_id === null ? {} : { pipelineRunId: row.pipeline_run_id }),
+  ...(row.batch_id === null ? {} : { batchId: row.batch_id }),
   reason: row.reason,
 });
 
@@ -164,12 +168,12 @@ export const makeBotTriggersStore = Effect.gen(function* () {
     insertFiring: Effect.fn("BotTriggersStore.insertFiring")(function* (firing: BotTriggerFiring) {
       const rows = yield* sql<{
         id: string;
-      }>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, reason) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, ${firing.outcome}, ${firing.runId}, ${firing.reason}) ON CONFLICT(trigger_id, event_key) DO NOTHING RETURNING id`;
+      }>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, pipeline_run_id, batch_id, reason) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, ${firing.outcome}, ${firing.runId}, ${firing.pipelineRunId ?? null}, ${firing.batchId ?? null}, ${firing.reason}) ON CONFLICT(trigger_id, event_key) DO NOTHING RETURNING id`;
       return rows.length > 0;
     }),
 
     updateFiring: Effect.fn("BotTriggersStore.updateFiring")(function* (firing: BotTriggerFiring) {
-      yield* sql`UPDATE fork_bots_trigger_firings SET outcome = ${firing.outcome}, run_id = ${firing.runId}, reason = ${firing.reason} WHERE id = ${firing.id}`;
+      yield* sql`UPDATE fork_bots_trigger_firings SET outcome = ${firing.outcome}, run_id = ${firing.runId}, pipeline_run_id = ${firing.pipelineRunId ?? null}, batch_id = ${firing.batchId ?? null}, reason = ${firing.reason} WHERE id = ${firing.id}`;
     }),
 
     firings: Effect.fn("BotTriggersStore.firings")(function* (

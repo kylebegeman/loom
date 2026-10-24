@@ -45,6 +45,16 @@ describe("project actions before Library connection", () => {
     unsubscribe();
   });
 
+  it("preserves the explicitly chosen computer before a project exists", () => {
+    vi.stubGlobal("window", new EventTarget());
+    const listener = vi.fn();
+    const unsubscribe = onLibraryAction(listener);
+    const defaults = { environmentId: EnvironmentId.make("remote") };
+    openLibraryAction("import-folder", undefined, defaults);
+    expect(listener).toHaveBeenCalledExactlyOnceWith("import-folder", undefined, defaults);
+    unsubscribe();
+  });
+
   it("routes project, import and conversation intents through one host", () => {
     vi.stubGlobal("window", new EventTarget());
     const listener = vi.fn();

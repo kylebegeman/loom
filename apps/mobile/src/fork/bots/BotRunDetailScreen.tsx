@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
 import {
@@ -12,9 +12,20 @@ import {
   type BotRunRating,
   type BotVerdictValue,
 } from "@t3tools/contracts/fork";
-import { applyRunChanges } from "@t3tools/client-runtime/fork";
+import {
+  BOT_RUN_STATES,
+  BOT_VERDICT_STATES,
+  applyRunChanges,
+  canRetryBotRun,
+  isBotTriageRun,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { IconButton } from "../../components/ui/IconButton";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { cn } from "../../lib/cn";
+import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage, BotNotice } from "./BotControls";
@@ -25,42 +36,109 @@ import {
   useBotsReconnect,
   useRefreshWhenBotsChangesPruned,
 } from "./state";
-import { RunChoice } from "./BotRunScreen";
 import { BotModelField } from "./BotModelField";
-import { useBotActionLifetime } from "./useBotActionLifetime";
 import {
-  commandValue,
-  failureMessage,
-  RUN_STATUS,
-  VERDICT_LABELS,
-  runSummary,
-  runTime,
-} from "./runLogic";
+  BotRowsSkeleton,
+  BotRunStateBadge,
+  BotSpecGrid,
+  BotStateDot,
+  BotTile,
+  BotVerdictBadge,
+  BotsEmptyList,
+  BotsOutline,
+  BotsSection,
+} from "./BotIdentity";
+import { useBotActionLifetime } from "./useBotActionLifetime";
+import { commandValue, failureMessage, runMeta, runSummary, showsRunState } from "./runLogic";
 
-export function BotRunSummary({ run }: { readonly run: BotRun }) {
+const VERDICT_FILTERS = ["", "pass", "fail", "needs_attention"] as const;
+
+/**
+ * A run in one glance: whose it is, how it went, when and how long. Shared by every run list so
+ * history and the inbox read alike.
+ */
+function BotRunSummary({
+  run,
+  showBot = true,
+}: {
+  readonly run: BotRun;
+  /** Off inside one bot's own list, where the inputs tell its runs apart better than its name. */
+  readonly showBot?: boolean;
+}) {
+  const tone = BOT_RUN_STATES[run.status].tone;
+  const summary = runSummary(run);
   return (
-    <View className="gap-1">
-      <Text className="font-t3-semibold">
-        {run.botName} · {RUN_STATUS[run.status]}
-        {run.verdict ? ` · ${VERDICT_LABELS[run.verdict.verdict]}` : ""}
-      </Text>
-      <Text className="text-xs text-foreground-muted">
-        {runTime(run.finishedAt ?? run.startedAt ?? run.createdAt)} · v{run.botVersion}
-        {run.modelSelection ? ` · ${run.modelSelection.model}` : ""}
-      </Text>
-      {run.ranOn ? (
-        <Text className="text-sm text-foreground-muted">Ran on {run.ranOn.label}</Text>
-      ) : null}
-      {run.requestedBy ? (
-        <Text className="text-sm text-foreground-muted">Requested by {run.requestedBy.label}</Text>
-      ) : null}
-      {runSummary(run) ? (
-        <Text numberOfLines={2} className="text-sm text-foreground-muted">
-          {runSummary(run)}
+    <View className="flex-row items-start gap-3">
+      {showBot ? (
+        <BotTile botId={run.botId} status={<BotStateDot tone={tone} />} />
+      ) : (
+        <View className="px-1 pt-1.5">
+          <BotStateDot tone={tone} />
+        </View>
+      )}
+      <View className="min-w-0 flex-1 gap-1">
+        <View className="flex-row items-center gap-2">
+          <Text numberOfLines={1} className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
+            {showBot ? run.botName : summary || "No inputs"}
+          </Text>
+          {run.verdict ? <BotVerdictBadge verdict={run.verdict.verdict} /> : null}
+          {showsRunState(run) ? <BotRunStateBadge status={run.status} /> : null}
+        </View>
+        <Text numberOfLines={1} className="text-xs tabular-nums text-foreground-muted">
+          {runMeta(run)}
         </Text>
+        {showBot && summary ? (
+          <Text numberOfLines={1} className="text-xs text-foreground-muted">
+            {summary}
+          </Text>
+        ) : null}
+        {run.verdict ? (
+          <Text numberOfLines={2} className="text-sm text-foreground">
+            {run.verdict.summary}
+          </Text>
+        ) : null}
+        {run.error ? (
+          <Text numberOfLines={3} className="text-sm text-danger-foreground">
+            {run.error}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+/** A run row that opens the run; `actions` sit under it so a tap on them never opens the run. */
+export function BotRunRow({
+  run,
+  showBot = true,
+  separated,
+  onOpen,
+  actions,
+}: {
+  readonly run: BotRun;
+  readonly showBot?: boolean;
+  readonly separated: boolean;
+  readonly onOpen: () => void;
+  readonly actions?: ReactNode;
+}) {
+  const state = BOT_RUN_STATES[run.status].label;
+  const verdict = run.verdict ? `, ${BOT_VERDICT_STATES[run.verdict.verdict].label}` : "";
+  return (
+    <View className={cn(separated && "border-t border-border-subtle")}>
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel={`${run.botName}, ${state}${verdict}`}
+        accessibilityHint="Opens the run"
+        onPress={onOpen}
+        className="px-4 py-3 active:opacity-70"
+      >
+        <BotRunSummary run={run} showBot={showBot} />
+      </RowPressable>
+      {actions ? (
+        <View className={cn("flex-row flex-wrap gap-1 pe-2 pb-1", showBot ? "ps-14" : "ps-8")}>
+          {actions}
+        </View>
       ) : null}
-      {run.verdict ? <Text>{run.verdict.summary}</Text> : null}
-      {run.error ? <BotNotice error={run.error} /> : null}
     </View>
   );
 }
@@ -120,50 +198,88 @@ function RunHistory({
     includeNew: true,
   });
   return (
-    <View className="gap-3">
-      <Text className="text-lg font-t3-semibold">Run history</Text>
-      <RunChoice
-        label="Verdict"
-        value={verdict}
-        choices={[
-          { value: "", label: "All runs" },
-          ...Object.entries(VERDICT_LABELS).map(([value, label]) => ({ value, label })),
-        ]}
-        onChange={(value) => {
-          setVerdict(value as BotVerdictValue | "");
-          setBefore(undefined);
-          setEarlier([]);
-        }}
-      />
-      <Button
-        label="Refresh history"
-        disabled={!capabilities.connected || query.isPending}
-        onPress={refresh}
-      />
-      <BotNotice
-        error={query.error}
-        detail={
-          query.error
-            ? null
-            : query.isPending && !runs.length
-              ? "Loading runs…"
-              : !query.isPending && !runs.length
-                ? "No runs yet."
-                : null
-        }
-      />
-      {runs.map((run) => (
-        <View key={run.id} className="gap-3 rounded-2xl bg-grouped-card p-4">
-          <BotRunSummary run={run} />
-          <Button
-            label="View run"
-            onPress={() => navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })}
-          />
-        </View>
-      ))}
+    <BotsSection
+      title="Runs"
+      detail={runs.length ? `${runs.length}${query.data?.hasMore ? "+" : ""}` : undefined}
+      trailing={
+        <IconButton
+          icon="arrow.clockwise"
+          accessibilityLabel="Refresh runs"
+          tintColorClassName="accent-icon-muted"
+          disabled={!capabilities.connected || query.isPending}
+          onPress={refresh}
+        />
+      }
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        accessibilityLabel="Filter runs by verdict"
+        className="grow-0"
+        style={{ marginHorizontal: -16 }}
+        contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+      >
+        {VERDICT_FILTERS.map((value) => {
+          const current = value === verdict;
+          return (
+            <Pressable
+              key={value || "all"}
+              accessibilityRole="button"
+              accessibilityState={{ selected: current }}
+              onPress={() => {
+                setVerdict(value);
+                setBefore(undefined);
+                setEarlier([]);
+              }}
+              className={cn(
+                "min-h-9 justify-center rounded-full border px-3.5 active:opacity-70",
+                current ? "border-foreground bg-foreground" : "border-border",
+              )}
+            >
+              <Text
+                className={cn(
+                  "text-sm font-t3-medium",
+                  current ? "text-screen" : "text-foreground",
+                )}
+              >
+                {value ? BOT_VERDICT_STATES[value].label : "All runs"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      {query.error ? (
+        <BotNotice error={query.error} onRetry={refresh} retryLabel="Try again" />
+      ) : null}
+      {runs.length ? (
+        <BotsOutline>
+          {runs.map((run, index) => (
+            <BotRunRow
+              key={run.id}
+              run={run}
+              showBot={!botId}
+              separated={index > 0}
+              onOpen={() => navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })}
+            />
+          ))}
+        </BotsOutline>
+      ) : query.isPending ? (
+        <BotRowsSkeleton label="Loading runs" />
+      ) : query.error ? null : (
+        <BotsEmptyList
+          message={
+            verdict
+              ? `No runs with a ${BOT_VERDICT_STATES[verdict].label.toLowerCase()} verdict yet.`
+              : botId
+                ? "No runs yet. Run this bot and its results land here."
+                : "No runs yet. Every bot run lands here, newest first."
+          }
+        />
+      )}
       {query.data?.hasMore ? (
         <Button
           label="Older runs"
+          tone="text"
           disabled={query.isPending || !capabilities.connected}
           onPress={() => {
             const last = query.data?.runs.at(-1);
@@ -173,7 +289,7 @@ function RunHistory({
           }}
         />
       ) : null}
-    </View>
+    </BotsSection>
   );
 }
 
@@ -207,6 +323,12 @@ export function BotRunActions({
   const [model, setModel] = useState<ModelSelection | null>(run.modelSelection ?? null);
   const active = !isTerminalBotRunStatus(run.status);
   const disabled = busy || !capabilities.connected;
+  // Retry, continuing in a thread and dismissing arrived with the inbox; older servers have none.
+  const retryable = capabilities.inboxSupported && canRetryBotRun(run);
+  // The server forks the run's thread where it runs, which a remote run's is not.
+  const promotable = capabilities.inboxSupported && !active && !run.ranOn;
+  const dismissible = capabilities.inboxSupported && isBotTriageRun(run, false);
+  const restorable = capabilities.inboxSupported && isBotTriageRun(run, true);
   const act = async (work: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -241,7 +363,7 @@ export function BotRunActions({
       setMessage("Feedback saved.");
     });
   return (
-    <View className="gap-3">
+    <View className="gap-5">
       <View className="flex-row flex-wrap gap-2">
         {run.status !== "queued" ? (
           <Button
@@ -276,7 +398,7 @@ export function BotRunActions({
               })
             }
           />
-        ) : (
+        ) : retryable ? (
           <>
             <Button
               label="Retry"
@@ -289,43 +411,41 @@ export function BotRunActions({
               onPress={() => setChooseModel((shown) => !shown)}
             />
           </>
-        )}
-        {!active && capabilities.inboxSupported ? (
-          <>
-            <Button
-              label="Open as thread"
-              disabled={disabled || !promoteAllowed}
-              onPress={() =>
-                void act(async () => {
-                  const result = await promote({ environmentId, input: { runId: run.id } });
-                  const promoted = commandValue(result);
-                  if (!live.current) return;
-                  navigation.navigate("Thread", { environmentId, threadId: promoted.threadId });
-                })
-              }
-            />
-            <Button
-              label={run.dismissedAt ? "Restore to inbox" : "Dismiss from inbox"}
-              disabled={disabled || !dismissAllowed}
-              onPress={() =>
-                void act(async () => {
-                  const result = await dismiss({
-                    environmentId,
-                    input: { runIds: [run.id], dismissed: !run.dismissedAt },
-                  });
-                  commandValue(result);
-                  setMessage(
-                    run.dismissedAt
-                      ? "Restored to inbox."
-                      : "Dismissed. Use Restore to inbox to undo.",
-                  );
-                })
-              }
-            />
-          </>
+        ) : null}
+        {promotable ? (
+          <Button
+            label={run.promotedThreadId ? "Open continued thread" : "Open as thread"}
+            disabled={disabled || !promoteAllowed}
+            onPress={() =>
+              void act(async () => {
+                const result = await promote({ environmentId, input: { runId: run.id } });
+                const promoted = commandValue(result);
+                if (!live.current) return;
+                navigation.navigate("Thread", { environmentId, threadId: promoted.threadId });
+              })
+            }
+          />
+        ) : null}
+        {dismissible || restorable ? (
+          <Button
+            label={restorable ? "Restore to inbox" : "Dismiss from inbox"}
+            disabled={disabled || !dismissAllowed}
+            onPress={() =>
+              void act(async () => {
+                const result = await dismiss({
+                  environmentId,
+                  input: { runIds: [run.id], dismissed: !restorable },
+                });
+                commandValue(result);
+                setMessage(
+                  restorable ? "Restored to inbox." : "Dismissed. Use Restore to inbox to undo.",
+                );
+              })
+            }
+          />
         ) : null}
       </View>
-      {chooseModel ? (
+      {chooseModel && retryable ? (
         <View className="gap-3">
           <BotModelField
             environmentId={environmentId}
@@ -344,8 +464,7 @@ export function BotRunActions({
         </View>
       ) : null}
       {!active && capabilities.versionsSupported ? (
-        <View className="gap-3">
-          <Text className="font-t3-semibold">Feedback</Text>
+        <BotsSection title="Feedback">
           <TextInput
             accessibilityLabel="Run feedback note"
             value={note}
@@ -374,7 +493,7 @@ export function BotRunActions({
               onPress={() => void rateRun(run.rating ?? null)}
             />
           </View>
-        </View>
+        </BotsSection>
       ) : null}
       <BotNotice error={error} detail={message} />
     </View>
@@ -417,13 +536,21 @@ function RunDetail({
       setCopyError("Could not copy. Select the text to copy it manually.");
     }
   };
+  const location = (finding: { readonly path?: string | null; readonly line?: number | null }) =>
+    finding.path ? `${finding.path}${finding.line ? `:${finding.line}` : ""}` : null;
   return (
-    <BotPage title={run?.botName ?? "Bot run"} back>
-      <Button
-        label="Refresh run"
-        disabled={!capabilities.connected || query.isPending}
-        onPress={query.refresh}
-      />
+    <BotPage
+      title={run?.botName ?? "Bot run"}
+      back
+      actions={[
+        {
+          icon: "arrow.clockwise",
+          accessibilityLabel: "Refresh run",
+          disabled: !capabilities.connected || query.isPending,
+          onPress: query.refresh,
+        },
+      ]}
+    >
       <BotNotice
         error={query.error ?? copyError}
         detail={
@@ -433,95 +560,213 @@ function RunDetail({
         }
       />
       {!run ? (
-        <Text>
-          {query.isPending
-            ? "Loading run…"
-            : query.error
-              ? "Could not load this run. Try refreshing it."
-              : capabilities.runDetailsSupported
-                ? "This run is no longer available."
-                : "This run is outside this computer's recent history. Update the server to open older run details."}
-        </Text>
+        query.isPending ? (
+          <RunDetailSkeleton />
+        ) : (
+          <EmptyState
+            variant="plain"
+            title={query.error ? "Could not load this run" : "Run not available"}
+            detail={
+              query.error
+                ? "Try refreshing it."
+                : capabilities.runDetailsSupported
+                  ? "This run is no longer available."
+                  : "This run is outside this computer's recent history. Update the server to open older run details."
+            }
+            {...(query.error ? { actionLabel: "Try again", onAction: query.refresh } : {})}
+          />
+        )
       ) : (
         <>
-          <BotRunSummary run={run} />
+          <RunHeader run={run} />
           <BotRunActions environmentId={environmentId} run={run} refresh={query.refresh} />
           {run.verdict ? (
-            <View className="gap-3">
-              <Text className="text-lg font-t3-semibold">Findings</Text>
-              {run.verdict.findings.map((finding) => (
-                <View
-                  key={JSON.stringify(finding)}
-                  className="gap-2 rounded-2xl bg-grouped-card p-4"
-                >
-                  <Text className="font-t3-semibold">{finding.title}</Text>
-                  {finding.path ? (
-                    <Button
-                      label={`${finding.path}${finding.line ? `:${finding.line}` : ""}`}
-                      tone="text"
-                      accessibilityLabel={`Copy location ${finding.path}${finding.line ? `:${finding.line}` : ""}`}
-                      onPress={() =>
-                        void copy(`${finding.path}${finding.line ? `:${finding.line}` : ""}`)
-                      }
-                    />
-                  ) : null}
-                  <Text selectable>{finding.detail}</Text>
-                </View>
-              ))}
+            <BotsSection
+              title="Findings"
+              detail={
+                run.verdict.findings.length
+                  ? `${run.verdict.findings.length}${run.verdict.findingsTruncated ? "+" : ""}`
+                  : undefined
+              }
+            >
+              {run.verdict.findings.length ? (
+                <BotsOutline>
+                  {run.verdict.findings.map((finding, index) => {
+                    const at = location(finding);
+                    return (
+                      <View
+                        key={JSON.stringify(finding)}
+                        className={cn(
+                          "gap-1 px-4 py-3",
+                          index > 0 && "border-t border-border-subtle",
+                        )}
+                      >
+                        <Text className="text-sm font-t3-medium text-foreground">
+                          {finding.title}
+                        </Text>
+                        {at ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Copy location ${at}`}
+                            onPress={() => void copy(at)}
+                            className="min-h-8 justify-center self-start active:opacity-70"
+                          >
+                            <Text numberOfLines={1} className="font-mono text-xs text-primary-text">
+                              {at}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                        <Text selectable className="text-sm text-foreground-muted">
+                          {finding.detail}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </BotsOutline>
+              ) : (
+                <BotsEmptyList message="No findings. The verdict summary says it all." />
+              )}
               {run.verdict.findingsTruncated ? (
-                <Text>More findings are available in the thread.</Text>
+                <Text className="px-1 text-xs text-foreground-muted">
+                  More findings are available in the thread.
+                </Text>
               ) : null}
-            </View>
+            </BotsSection>
           ) : null}
           {run.result ? (
-            <View className="gap-3">
-              <Button
-                label={rawShown ? "Hide raw reply" : "Show raw reply"}
-                onPress={() => setRaw(!rawShown)}
-              />
+            <BotsSection
+              title="Reply"
+              trailing={
+                <Button
+                  label={rawShown ? "Hide raw reply" : "Show raw reply"}
+                  tone="text"
+                  onPress={() => setRaw(!rawShown)}
+                />
+              }
+            >
               {rawShown ? (
-                <>
-                  <Text selectable>{run.result}</Text>
-                  {run.resultTruncated ? (
-                    <Text>Reply shortened. Open the thread for the full text.</Text>
-                  ) : null}
-                  <Button label="Copy reply" onPress={() => void copy(run.result ?? "")} />
-                </>
+                <BotsOutline>
+                  <Text selectable className="px-4 py-3 text-sm text-foreground">
+                    {run.result}
+                  </Text>
+                  <View className="flex-row flex-wrap items-center gap-2 border-t border-border-subtle px-1">
+                    <Button
+                      label="Copy reply"
+                      tone="text"
+                      icon="doc.on.doc"
+                      onPress={() => void copy(run.result ?? "")}
+                    />
+                    {run.resultTruncated ? (
+                      <Text className="flex-1 pe-3 text-xs text-foreground-muted">
+                        Reply shortened. Open the thread for the full text.
+                      </Text>
+                    ) : null}
+                  </View>
+                </BotsOutline>
               ) : null}
-            </View>
+            </BotsSection>
           ) : null}
           {run.usage ? (
-            <Text className="text-xs text-foreground-muted">
+            <Text className="px-1 text-xs tabular-nums text-foreground-muted">
               {run.usage.inputTokens.toLocaleString()} input tokens ·{" "}
               {run.usage.outputTokens.toLocaleString()} output tokens · Usage {run.usage.status}
             </Text>
           ) : null}
-          {run.batchId ? (
-            <Button
-              label="Open batch"
-              onPress={() =>
-                navigation.navigate("BotsBatches", {
-                  environmentId,
-                  batchId: run.batchId ?? undefined,
-                })
-              }
-            />
-          ) : null}
-          {run.replayId ? (
-            <Button
-              label="View replay"
-              onPress={() =>
-                navigation.navigate("BotsReplay", {
-                  environmentId,
-                  botId: run.botId,
-                  replayId: run.replayId ?? "",
-                })
-              }
-            />
+          {run.batchId || run.replayId ? (
+            <View className="flex-row flex-wrap gap-2">
+              {run.batchId ? (
+                <Button
+                  label="Open batch"
+                  tone="text"
+                  onPress={() =>
+                    navigation.navigate("BotsBatches", {
+                      environmentId,
+                      batchId: run.batchId ?? undefined,
+                    })
+                  }
+                />
+              ) : null}
+              {run.replayId ? (
+                <Button
+                  label="View replay"
+                  tone="text"
+                  onPress={() =>
+                    navigation.navigate("BotsReplay", {
+                      environmentId,
+                      botId: run.botId,
+                      replayId: run.replayId ?? "",
+                    })
+                  }
+                />
+              ) : null}
+            </View>
           ) : null}
         </>
       )}
     </BotPage>
+  );
+}
+
+/** The run's identity and settings, unboxed, so the findings below carry the weight. */
+function RunHeader({ run }: { readonly run: BotRun }) {
+  const rows: Array<readonly [string, string]> = [
+    ...(run.modelSelection ? [["Model", run.modelSelection.model] as const] : []),
+    ...(run.ranOn ? [["Ran on", run.ranOn.label] as const] : []),
+    ...(run.requestedBy ? [["Requested by", run.requestedBy.label] as const] : []),
+    ...Object.entries(run.inputs).map(([name, value]) => [name, String(value)] as const),
+  ];
+  return (
+    <View className="gap-4">
+      <View className="flex-row items-start gap-4">
+        <BotTile botId={run.botId} size="xl" />
+        <View className="min-w-0 flex-1 gap-1.5">
+          <Text accessibilityRole="header" className="text-2xl font-t3-semibold text-foreground">
+            {run.botName}
+          </Text>
+          <View className="flex-row flex-wrap items-center gap-1.5">
+            {run.verdict ? <BotVerdictBadge verdict={run.verdict.verdict} /> : null}
+            {showsRunState(run) ? <BotRunStateBadge status={run.status} /> : null}
+            {run.replayId ? <LibraryStateBadge tone="neutral" label="Replay" /> : null}
+          </View>
+          <Text className="text-xs tabular-nums text-foreground-muted">{runMeta(run)}</Text>
+        </View>
+      </View>
+      {run.verdict ? (
+        <Text selectable className="text-base text-foreground">
+          {run.verdict.summary}
+        </Text>
+      ) : null}
+      {run.error ? (
+        <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">
+          {run.error}
+        </Text>
+      ) : null}
+      {rows.length ? (
+        <View className="border-t border-border-subtle pt-4">
+          <BotSpecGrid rows={rows} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function RunDetailSkeleton() {
+  return (
+    <View accessible accessibilityLabel="Loading run" className="gap-6">
+      <View className="flex-row items-center gap-4">
+        <View className="size-14 rounded-2xl bg-row-hover" />
+        <View className="flex-1 gap-2">
+          <View className="h-6 w-40 rounded-md bg-row-hover" />
+          <View className="h-5 w-24 rounded-full bg-row-hover" />
+          <View className="h-3 w-48 rounded-md bg-row-hover" />
+        </View>
+      </View>
+      <View className="flex-row gap-2">
+        <View className="h-12 w-32 rounded-full bg-row-hover" />
+        <View className="h-12 w-24 rounded-full bg-row-hover" />
+      </View>
+      <BotRowsSkeleton label="Loading findings" rows={2} />
+    </View>
   );
 }
 

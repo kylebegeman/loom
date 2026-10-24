@@ -8,7 +8,6 @@ import {
   BOTS_FROM_THREAD_FEATURE,
   isBotRunThreadId,
   type BotDefinitionInput,
-  type BotSuggestion,
 } from "@t3tools/contracts/fork";
 
 /**
@@ -33,7 +32,3 @@ export const refineInputFromDraft = (
   const checked = saveInputFromDraft(draft, undefined);
   return checked.ok ? { ok: true, draft: checked.input } : checked;
 };
-
-/** "You started 4 threads like ..." for a suggestion on the Bots page. */
-export const suggestionText = (suggestion: BotSuggestion) =>
-  `${suggestion.startedBy === "agent" ? "Agents started" : "You started"} ${suggestion.count} threads like "${suggestion.shape}" in the last two weeks.`;

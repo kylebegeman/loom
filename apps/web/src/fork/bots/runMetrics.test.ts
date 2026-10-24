@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  elapsedLabel,
   runDurationLabel,
   runDurationMs,
+  runQueuedMs,
   runTokensLabel,
   runTotalTokens,
   waitingAgeLabel,
@@ -50,5 +52,16 @@ describe("bot run metrics", () => {
     expect(waitingAgeLabel(since, Date.parse("2026-10-20T10:09:00Z"))).toBe("8m");
     expect(waitingAgeLabel(since, Date.parse("2026-10-20T11:30:30Z"))).toBe("1h 30m");
     expect(waitingAgeLabel("invalid", Date.now())).toBeNull();
+  });
+
+  it("counts a live run's elapsed time to the minute and its wait before starting", () => {
+    const since = "2026-10-20T10:00:00.000Z";
+    expect(elapsedLabel(since, Date.parse("2026-10-20T10:00:59Z"))).toBe("<1m");
+    expect(elapsedLabel(since, Date.parse("2026-10-20T10:07:59Z"))).toBe("7m");
+    expect(elapsedLabel(since, Date.parse("2026-10-20T12:05:00Z"))).toBe("2h 5m");
+    expect(elapsedLabel("invalid", Date.now())).toBeNull();
+    expect(runQueuedMs(makeBotRun("one"))).toBe(10_000);
+    expect(runQueuedMs(makeBotRun("queued", { startedAt: null }))).toBeNull();
+    expect(runQueuedMs(makeBotRun("skewed", { startedAt: "2026-10-20T09:59:00.000Z" }))).toBeNull();
   });
 });

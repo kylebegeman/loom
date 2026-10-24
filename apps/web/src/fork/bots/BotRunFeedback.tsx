@@ -2,11 +2,21 @@ import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { BOTS_RUN_NOTE_MAX, type BotRun, type BotRunRating } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { NotebookPenIcon, ThumbsDownIcon, ThumbsUpIcon, type LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryField } from "../project-library/LibraryControls";
 import { bots } from "./state";
+
+const RATINGS = [
+  { rating: "up", label: "Good", icon: ThumbsUpIcon },
+  { rating: "down", label: "Bad", icon: ThumbsDownIcon },
+] as const satisfies ReadonlyArray<{
+  readonly rating: BotRunRating;
+  readonly label: string;
+  readonly icon: LucideIcon;
+}>;
 
 /** Rating and note share one mutation, so each edit preserves the other saved value. */
 export function BotRunFeedback({
@@ -42,43 +52,52 @@ export function BotRunFeedback({
   };
 
   return (
-    <div className="grid gap-2">
-      <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Run feedback">
-        {(["up", "down"] as const).map((rating) => (
-          <Button
-            key={rating}
-            size="xs"
-            variant={current.rating === rating ? "secondary" : "ghost"}
-            aria-pressed={current.rating === rating}
-            disabled={!canRate || busy}
-            onClick={() =>
-              void persist(current.rating === rating ? null : rating, current.note ?? null)
-            }
-          >
-            {rating === "up" ? "Good" : "Bad"}
-          </Button>
-        ))}
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1">
+        <div className="flex items-center gap-0.5" role="group" aria-label="Run feedback">
+          {RATINGS.map(({ rating, label, icon: Icon }) => {
+            const pressed = current.rating === rating;
+            return (
+              <Button
+                key={rating}
+                shape="pill"
+                size="xs"
+                variant={pressed ? "secondary" : "ghost-muted"}
+                aria-pressed={pressed}
+                disabled={!canRate || busy}
+                onClick={() => void persist(pressed ? null : rating, current.note ?? null)}
+              >
+                <Icon />
+                {label}
+              </Button>
+            );
+          })}
+        </div>
         {draft === null ? (
           <Button
+            shape="pill"
             size="xs"
-            variant="ghost"
+            variant="ghost-muted"
             disabled={!canRate || busy}
             onClick={() => {
               setError(null);
               setDraft(current.note ?? "");
             }}
           >
+            <NotebookPenIcon />
             {current.note ? "Edit note" : "Add note"}
           </Button>
         ) : null}
       </div>
       {draft === null ? (
         current.note ? (
-          <p className="whitespace-pre-wrap text-sm">{current.note}</p>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground wrap-anywhere">
+            {current.note}
+          </p>
         ) : null
       ) : (
         <form
-          className="grid gap-2"
+          className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (draft.length <= BOTS_RUN_NOTE_MAX)
@@ -96,10 +115,11 @@ export function BotRunFeedback({
             />
           </LibraryField>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="me-auto text-xs text-muted-foreground">
+            <span className="me-auto text-xs tabular-nums text-muted-foreground">
               {draft.length}/{BOTS_RUN_NOTE_MAX}
             </span>
             <Button
+              shape="pill"
               size="xs"
               variant="ghost"
               disabled={busy}
@@ -111,6 +131,7 @@ export function BotRunFeedback({
               Cancel
             </Button>
             <Button
+              shape="pill"
               type="submit"
               size="xs"
               disabled={!canRate || busy || draft.length > BOTS_RUN_NOTE_MAX}

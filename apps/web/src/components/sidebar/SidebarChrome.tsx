@@ -1,4 +1,10 @@
-import { ChartNoAxesColumnIcon, FolderKanbanIcon, GlobeIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
+  FolderKanbanIcon,
+  GlobeIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -25,6 +31,7 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
+import { useNavigateToMainApp } from "./mainAppLocation";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -159,6 +166,7 @@ function SidebarUtilityItem({
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
+  const navigateToMainApp = useNavigateToMainApp();
   const pathname = useLocation({ select: (location) => location.pathname }); // fork: sites-navigation
   const { isMobile, setOpenMobile } = useSidebar();
   const pullRequestsSupported = usePullRequestsSupported();
@@ -192,7 +200,25 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   };
 
-  // fork: bots - Top-level destinations stay available while another section is open.
+  if (/^\/(?:settings|pull-requests|usage)(?:\/|$)/.test(pathname))
+    return (
+      <SidebarMenu className="flex-row items-center">
+        <SidebarMenuItem className="min-w-0 flex-1">
+          <SidebarMenuButton
+            onClick={() => {
+              closeMobileSidebar();
+              void navigateToMainApp();
+            }}
+          >
+            <ArrowLeftIcon />
+            <span>Back</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarUpdatePill />
+      </SidebarMenu>
+    );
+
+  // fork: bots - Projects, Sites and Bots keep the destination row visible.
   return (
     <SidebarMenu className="flex-row items-center">
       <SidebarUtilityItem

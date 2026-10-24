@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
-import { BOTS_REPLAY_MAX_RUNS, type BotRun, type BotVerdictValue } from "@t3tools/contracts/fork";
 import {
+  BOTS_REPLAY_MAX_RUNS,
+  type BotReplay,
+  type BotRun,
+  type BotVerdictValue,
+} from "@t3tools/contracts/fork";
+import {
+  currentReplay,
   defaultReplaySelection,
+  replayHeadline,
+  replayInputSummary,
+  replayRest,
+  replayTally,
   replayCandidates,
   replayRunsById,
   filterReplayCandidates,
@@ -170,5 +180,86 @@ describe("replay metric comparisons", () => {
     expect(replayMetricChanges({ ...before, usage: usage(0, 0) }, before).tokens).toBe(
       "1,000 more tokens",
     );
+  });
+});
+
+describe("replay results", () => {
+  const replay = (patch: Partial<BotReplay> = {}): BotReplay => ({
+    id: "replay-1",
+    botId: "reviewer",
+    source: { kind: "version", version: 2 },
+    baseVersion: 3,
+    createdAt: "2026-10-22T17:00:00Z",
+    finishedAt: null,
+    status: "running",
+    items: [
+      { originalRunId: "a", replayRunId: "ra", comparison: "pending", reason: null },
+      { originalRunId: "b", replayRunId: "rb", comparison: "fixed", reason: null },
+    ],
+    summary: { fixed: 1, broke: 0, same: 0, changed: 0, failed: 0 },
+    ...patch,
+  });
+
+  it("keeps a cancel's answer over a fetch that still says running, but not over a finished one", () => {
+    const started = replay();
+    const cancelled = replay({ status: "cancelled" });
+    expect(currentReplay(started, null, null)).toBe(started);
+    expect(currentReplay(started, replay(), cancelled)).toBe(cancelled);
+    const done = replay({ status: "done" });
+    expect(currentReplay(started, done, cancelled)).toBe(done);
+  });
+
+  it("says whether the replayed definition did better or worse", () => {
+    expect(replayHeadline(replay())).toBe("Replaying. 1 of 2 runs done.");
+    const settled = (summary: BotReplay["summary"], status: BotReplay["status"] = "done") =>
+      replayHeadline(
+        replay({
+          status,
+          summary,
+          items: [{ originalRunId: "a", replayRunId: "ra", comparison: "same", reason: null }],
+        }),
+      );
+    expect(settled({ fixed: 2, broke: 1, same: 0, changed: 0, failed: 0 })).toBe(
+      "Done. Better on 2 runs, worse on 1 run.",
+    );
+    expect(settled({ fixed: 0, broke: 1, same: 3, changed: 0, failed: 0 })).toBe(
+      "Done. Worse on 1 run, better on none.",
+    );
+    expect(settled({ fixed: 0, broke: 0, same: 1, changed: 2, failed: 0 }, "cancelled")).toBe(
+      "Cancelled. No better or worse; 2 runs answered differently.",
+    );
+    expect(settled({ fixed: 0, broke: 0, same: 0, changed: 0, failed: 1 })).toBe(
+      "Done. 1 run could not be replayed.",
+    );
+    expect(
+      replayHeadline(replay({ status: "cancelled", items: [], summary: replay().summary })),
+    ).toBe("Cancelled. No run finished.");
+  });
+
+  it("adds only the counts the headline leaves out, in the badges' words", () => {
+    const done = (summary: BotReplay["summary"]) =>
+      replay({
+        status: "done",
+        summary,
+        items: [{ originalRunId: "a", replayRunId: "ra", comparison: "same", reason: null }],
+      });
+    const mixed = done({ fixed: 2, broke: 0, same: 8, changed: 1, failed: 1 });
+    expect(replayTally(mixed.summary)).toBe("2 better, 1 changed, 8 same, 1 failed");
+    // The headline already says better on 2 and worse on none.
+    expect(replayRest(mixed)).toBe("1 changed, 8 same, 1 failed");
+    // "No better or worse; 2 runs answered differently" covers changed.
+    expect(replayRest(done({ fixed: 0, broke: 0, same: 3, changed: 2, failed: 0 }))).toBe("3 same");
+    // "1 run could not be replayed" is the whole story.
+    expect(replayRest(done({ fixed: 0, broke: 0, same: 0, changed: 0, failed: 1 }))).toBe("");
+    // While running, the headline gives only progress, so every settled count follows it.
+    expect(replayRest(replay())).toBe("1 better");
+    expect(replayRest(replay({ status: "cancelled", items: [] }))).toBe("");
+  });
+
+  it("names each input once, in the order the run recorded them", () => {
+    expect(replayInputSummary(run("x", { inputs: { pr: "94", draft: true } }))).toBe(
+      "pr: 94, draft: true",
+    );
+    expect(replayInputSummary(run("y"))).toBe("");
   });
 });

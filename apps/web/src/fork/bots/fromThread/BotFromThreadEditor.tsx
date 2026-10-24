@@ -1,115 +1,175 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { CircleAlertIcon, SparklesIcon } from "lucide-react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { BotDefinition, BotDraftResult } from "@t3tools/contracts/fork";
+import type { BotDraftResult } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
+import { useThreadShell } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog } from "../../project-library/LibraryControls";
-import { BotEditor } from "../BotEditor";
-import { bots } from "../state";
+import { LibraryNotice } from "../../project-library/LibraryControls";
+import { LibraryBackLink } from "../../project-library/LibraryPageFrame";
+import { BotEditorForm, BotEditorSkeleton } from "../BotEditor";
+import { BotTile } from "../BotIdentity";
+import { bots, useBots } from "../state";
 
 type Loaded =
   | { readonly _tag: "loading" }
   | { readonly _tag: "ready"; readonly result: BotDraftResult }
   | { readonly _tag: "failed"; readonly message: string };
 
-/**
- * The bot editor opened with a draft of a thread, fetched fresh so the id is still free. Key it by
- * thread, since it drafts once.
- */
-export function BotFromThreadEditor({
+/** The editor's title block while there is no draft to edit yet, so the page keeps its shape. */
+function DraftHeader({
   environmentId,
   threadId,
-  suggestionId,
-  canSave,
-  startersSupported,
-  verdictsSupported,
-  budgetsSupported,
-  onSaved,
-  onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  /** The suggestion this draft answers; saving the bot dismisses it. */
+}) {
+  const thread = useThreadShell({ environmentId, threadId });
+  return (
+    <>
+      <LibraryBackLink to="/loom/bots" search={{}}>
+        Bots
+      </LibraryBackLink>
+      <header className="flex min-w-0 items-start gap-4">
+        <BotTile bot={{ id: "new-bot" }} size="lg" />
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-semibold tracking-tight">New bot from a thread</h1>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            From{" "}
+            <Link
+              to="/$environmentId/$threadId"
+              params={{ environmentId, threadId }}
+              className="rounded-sm text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              {thread?.title ?? "its thread"}
+            </Link>
+          </p>
+        </div>
+      </header>
+    </>
+  );
+}
+
+/**
+ * Drafts once per thread, fresh each time the page opens, so the drafted id is still free when
+ * it is saved.
+ */
+function FromThreadDraft({
+  environmentId,
+  threadId,
+  suggestionId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly suggestionId: string | null;
-  readonly canSave: boolean;
-  readonly startersSupported: boolean;
-  readonly verdictsSupported: boolean;
-  readonly budgetsSupported: boolean;
-  readonly onSaved: (bot: BotDefinition) => void;
-  readonly onClose: () => void;
 }) {
   const draftFromThread = useAtomCommand(bots.draftFromThread, { reportFailure: false });
-  const dismissSuggestion = useAtomCommand(bots.dismissSuggestion, { reportFailure: false });
   const [loaded, setLoaded] = useState<Loaded>({ _tag: "loading" });
-  const load = useEffectEvent(
-    (environmentId: EnvironmentId, threadId: ThreadId, isCurrent: () => boolean) => {
-      void draftFromThread({ environmentId, input: { threadId } }).then((result) => {
-        if (!isCurrent()) return;
-        if (result._tag === "Success") setLoaded({ _tag: "ready", result: result.value });
-        else {
-          const cause = squashAtomCommandFailure(result);
-          setLoaded({
-            _tag: "failed",
-            message:
-              cause instanceof Error ? cause.message : "Could not draft a bot from this thread.",
-          });
-        }
-      });
-    },
-  );
-  useEffect(() => {
-    let current = true;
-    load(environmentId, threadId, () => current);
-    return () => {
-      current = false;
-    };
-  }, [environmentId, threadId]);
+  // Only the newest request may settle the page, so a draft for an abandoned visit is dropped.
+  const request = useRef(0);
 
-  const saved = async (bot: BotDefinition) => {
-    // The bot is saved either way; a suggestion left open is only a stale prompt.
-    if (suggestionId !== null)
-      await dismissSuggestion({ environmentId, input: { suggestionId, dismissed: true } });
-    onSaved(bot);
+  const fetchDraft = () => {
+    const attempt = ++request.current;
+    void draftFromThread({ environmentId, input: { threadId } }).then(
+      (result) => {
+        if (attempt !== request.current) return;
+        if (result._tag === "Success") return setLoaded({ _tag: "ready", result: result.value });
+        const cause = squashAtomCommandFailure(result);
+        setLoaded({
+          _tag: "failed",
+          message:
+            cause instanceof Error && cause.message
+              ? cause.message
+              : "Could not draft a bot from this thread.",
+        });
+      },
+      () => {
+        if (attempt === request.current)
+          setLoaded({ _tag: "failed", message: "Could not draft a bot from this thread." });
+      },
+    );
   };
+  const draftOnOpen = useEffectEvent(fetchDraft);
+  useEffect(() => {
+    draftOnOpen();
+    return () => {
+      request.current += 1;
+    };
+  }, []);
 
   if (loaded._tag === "ready")
     return (
-      <BotEditor
+      <BotEditorForm
         environmentId={environmentId}
         bot={null}
         fromThread={loaded.result}
-        canSave={canSave}
-        startersSupported={startersSupported}
-        verdictsSupported={verdictsSupported}
-        budgetsSupported={budgetsSupported}
-        onSaved={(bot) => void saved(bot)}
-        onClose={onClose}
+        suggestionId={suggestionId}
       />
     );
   return (
-    <LibraryDialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title="Save as bot"
-      description="The thread's first message becomes the bot's instructions."
-      actions={
-        <Button variant="ghost" onClick={onClose}>
-          {loaded._tag === "failed" ? "Close" : "Cancel"}
-        </Button>
-      }
-    >
-      {loaded._tag === "failed" ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {loaded.message}
-        </p>
-      ) : (
-        <p role="status" className="text-sm text-muted-foreground">
-          Drafting a bot from the thread…
-        </p>
-      )}
-    </LibraryDialog>
+    <div className="flex min-w-0 flex-col">
+      <DraftHeader environmentId={environmentId} threadId={threadId} />
+      <div className="mt-5">
+        {loaded._tag === "failed" ? (
+          <LibraryNotice
+            icon={CircleAlertIcon}
+            tone="danger"
+            action={
+              <Button
+                shape="pill"
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  setLoaded({ _tag: "loading" });
+                  fetchDraft();
+                }}
+              >
+                Try again
+              </Button>
+            }
+          >
+            {loaded.message}
+          </LibraryNotice>
+        ) : (
+          <LibraryNotice icon={SparklesIcon}>
+            Drafting a bot from the thread's first message…
+          </LibraryNotice>
+        )}
+      </div>
+      {loaded._tag === "loading" ? <BotEditorSkeleton /> : null}
+    </div>
+  );
+}
+
+/** The bot editor as a full page, opened on a draft made from a thread. */
+export function BotFromThreadPage({
+  threadId,
+  suggestionId,
+}: {
+  readonly threadId: ThreadId;
+  readonly suggestionId: string | null;
+}) {
+  const { host } = useBots();
+  if (host.environmentId === null) return null;
+  if (!host.fromThreadSupported)
+    return (
+      <div className="flex min-w-0 flex-col">
+        <DraftHeader environmentId={host.environmentId} threadId={threadId} />
+        <div className="mt-5">
+          <LibraryNotice icon={CircleAlertIcon}>
+            This server cannot draft bots from threads. Update it, or start a new bot from Bots.
+          </LibraryNotice>
+        </div>
+      </div>
+    );
+  return (
+    <FromThreadDraft
+      key={`${host.environmentId}:${threadId}`}
+      environmentId={host.environmentId}
+      threadId={threadId}
+      suggestionId={suggestionId}
+    />
   );
 }

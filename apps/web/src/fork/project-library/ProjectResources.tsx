@@ -292,14 +292,18 @@ export function ResourceAdder({
   resources,
   busy,
   autoFocus = false,
+  draft,
   onAdd,
 }: {
   readonly resources: readonly LibraryResource[];
   readonly busy: boolean;
   readonly autoFocus?: boolean;
+  readonly draft?: { readonly value: string; readonly onChange: (value: string) => void };
   readonly onAdd: (resource: LibraryResource) => Promise<boolean>;
 }) {
-  const [value, setValue] = useState("");
+  const [localValue, setLocalValue] = useState("");
+  const value = draft?.value ?? localValue;
+  const setValue = draft?.onChange ?? setLocalValue;
   const [problem, setProblem] = useState<string | null>(null);
   const parsed = libraryResourceFromInput(value, resources);
   const submit = async () => {

@@ -264,10 +264,12 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
     "not-managed",
     "io",
   ]),
+  detail: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
   /** For `invalid`, a string is what to fix, written for the person or agent who asked. */
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
+    if (this.detail) return this.detail;
     // A string cause never comes from a caught error, so it is safe to show as written.
     if (this.reason === "invalid" && typeof this.cause === "string") return this.cause;
     switch (this.reason) {
@@ -310,6 +312,7 @@ export const LibraryCreateProjectRequest = Schema.Struct({
   brief: Schema.optional(Schema.String.check(Schema.isMaxLength(65536))),
   resources: Schema.optional(Schema.Array(LibraryResource)),
   color: Schema.optional(LibraryProjectColor),
+  profile: Schema.optional(LibraryProjectProfileInput),
 });
 export type LibraryCreateProjectRequest = typeof LibraryCreateProjectRequest.Type;
 export const LibraryUpdateProjectRequest = Schema.Struct({

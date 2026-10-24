@@ -30,11 +30,15 @@ import {
   BOTS_TRIGGERS_FEATURE,
   BOTS_VERDICTS_FEATURE,
   BOTS_VERSIONS_FEATURE,
+  type BotDefinition,
+  type BotRun,
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { environmentThreadShells } from "~/state/threads";
+import { useLibraryPermission } from "../project-library/state";
+import { triageItems, type TriageItem } from "./inboxWaiting";
 
 export const bots = createBotsAtoms(connectionAtomRuntime);
 const waitingBotRunsAtom = makeWaitingBotRunsAtom(environmentThreadShells.threadShellsAtom);
@@ -59,6 +63,38 @@ export function useBotsHost() {
     versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
     pipelinesSupported: supportsLoomFeature(capabilities, BOTS_PIPELINES_FEATURE),
     anywhereSupported: supportsLoomFeature(capabilities, BOTS_ANYWHERE_FEATURE),
+  };
+}
+
+/**
+ * What this client may do with the host's bots. Each is false while the host is away, so a control
+ * never offers an action the server cannot take; the server still checks every call.
+ */
+export function useBotsAccess() {
+  const { environmentId, connected } = useBotsHost();
+  const canSave = useLibraryPermission(bots.save, environmentId);
+  const canRun = useLibraryPermission(bots.run, environmentId);
+  const canCancel = useLibraryPermission(bots.cancel, environmentId);
+  const canRate = useLibraryPermission(bots.rateRun, environmentId);
+  const canRetry = useLibraryPermission(bots.retry, environmentId);
+  const canDismiss = useLibraryPermission(bots.dismiss, environmentId);
+  const canReplay = useLibraryPermission(bots.replay, environmentId);
+  const canRunPipelines = useLibraryPermission(bots.runPipeline, environmentId);
+  const canSavePipelines = useLibraryPermission(bots.savePipeline, environmentId);
+  const canOperateTriggers = useLibraryPermission(bots.saveTrigger, environmentId);
+  const canShare = useLibraryPermission(bots.share, environmentId);
+  return {
+    canSave: canSave && connected,
+    canRun: canRun && connected,
+    canCancel: canCancel && connected,
+    canRate: canRate && connected,
+    canRetry: canRetry && connected,
+    canDismiss: canDismiss && connected,
+    canReplay: canReplay && connected,
+    canRunPipelines: canRunPipelines && connected,
+    canSavePipelines: canSavePipelines && connected,
+    canOperateTriggers: canOperateTriggers && connected,
+    canShare: canShare && connected,
   };
 }
 
@@ -90,6 +126,15 @@ export function useBotDefinitionChanges(environmentId: EnvironmentId | null, ena
       environmentId && enabled ? botDefinitionChanges(environmentId) : NO_DEFINITION_CHANGES,
     ),
   };
+}
+
+/** Refetches a list fetched once when its host comes back, since the watch missed what changed meanwhile. */
+export function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    if (connected && !wasConnected.current) refresh();
+    wasConnected.current = connected;
+  }, [connected, refresh]);
 }
 
 /** Refetches a list overlaid with watched changes once the watch dropped some of them. */
@@ -153,6 +198,41 @@ export function usePipelines(
   return { changes, list, pipelines: applyPipelineChanges(list.data?.pipelines ?? [], changes) };
 }
 
+/**
+ * Bots this client just saved, until the list or the watch catches up. A save's reply can beat
+ * its change event, and the page it opens would otherwise say the bot does not exist.
+ */
+const savedBots = new Map<string, BotDefinition>();
+
+export function rememberSavedBot(bot: BotDefinition) {
+  savedBots.set(bot.id, bot);
+}
+
+function withSavedBots(
+  known: ReadonlyArray<BotDefinition>,
+  changes: Pick<BotsChanges, "bots">,
+): ReadonlyArray<BotDefinition> {
+  if (savedBots.size === 0) return known;
+  const byId = new Map(known.map((bot) => [bot.id, bot]));
+  let added = false;
+  for (const [id, saved] of savedBots) {
+    const current = byId.get(id);
+    // A delete the watch saw, or a version at least as new, supersedes the remembered save.
+    if (
+      changes.bots.get(id) === null ||
+      (current !== undefined && current.version >= saved.version)
+    ) {
+      savedBots.delete(id);
+      continue;
+    }
+    byId.set(id, saved);
+    added = true;
+  }
+  return added
+    ? [...byId.values()].sort((left, right) => left.name.localeCompare(right.name))
+    : known;
+}
+
 /** The host, its watched changes, and its bots with those changes applied. */
 export function useBots() {
   const host = useBotsHost();
@@ -166,7 +246,7 @@ export function useBots() {
     live,
     changes,
     list,
-    bots: applyBotChanges(list.data?.bots ?? [], changes),
+    bots: withSavedBots(applyBotChanges(list.data?.bots ?? [], changes), changes),
   };
 }
 
@@ -184,24 +264,56 @@ export function useWaitingBotRuns(environmentId: EnvironmentId | null) {
     : waiting.filter((thread) => thread.environmentId === environmentId);
 }
 
-/** Runs that need a person: the inbox total plus runs waiting on an answer. */
-export function useBotsAttentionCount() {
-  const host = useBotsHost();
-  const live = Boolean(host.environmentId && host.supported && host.inboxSupported);
-  const changes = useBotsChanges(host.environmentId, live && host.connected);
+/**
+ * The Needs you queue as the band lists it: inbox runs plus runs paused on an approval or a
+ * question, across every bot or for one. `runs` are runs the caller already holds, which name a
+ * waiting run's bot without a request of their own.
+ */
+export function useNeedsYouItems(
+  bot: Pick<BotDefinition, "id" | "name"> | null,
+  runs: readonly BotRun[],
+): TriageItem[] {
+  const { host, live, changes } = useBots();
   const inbox = useEnvironmentQuery(
-    host.environmentId && live
+    host.environmentId && live && host.inboxSupported
       ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
       : null,
   );
   const waiting = useWaitingBotRuns(live ? host.environmentId : null);
+  const page = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }) : null;
+  return triageItems({
+    runs: page?.runs ?? [],
+    waiting,
+    findRun: (runId) => changes.runs.get(runId) ?? runs.find((run) => run.id === runId),
+    bot,
+  });
+}
+
+const noRun = () => undefined;
+
+/** Runs that need a person: the inbox total plus runs waiting on an answer. */
+export function useBotsAttentionCount() {
+  const host = useBotsHost();
+  const live = Boolean(host.environmentId && host.supported);
+  const inboxLive = live && host.inboxSupported;
+  const changes = useBotsChanges(host.environmentId, inboxLive && host.connected);
+  const inbox = useEnvironmentQuery(
+    host.environmentId && inboxLive
+      ? bots.inbox({ environmentId: host.environmentId, input: inboxQueryInput(false) })
+      : null,
+  );
+  // Waiting runs come from this client's thread shells, so no server feature gates them.
+  const waiting = useWaitingBotRuns(live ? host.environmentId : null);
   const refresh = inbox.refresh;
-  const wasConnected = useRef(host.connected);
-  useEffect(() => {
-    if (host.connected && !wasConnected.current) refresh();
-    wasConnected.current = host.connected;
-  }, [host.connected, refresh]);
+  useRefreshOnReconnect(host.connected, refresh);
   useRefreshWhenBotsChangesPruned(changes, refresh);
-  const total = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }).total : 0;
-  return total + waiting.length;
+  const page = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }) : null;
+  // A waiting run already in the inbox counts once; the total covers inbox runs not loaded yet.
+  const waitingOnly = triageItems({
+    runs: page?.runs ?? [],
+    waiting,
+    findRun: noRun,
+    bot: null,
+  }).filter((item) => item.kind === "waiting").length;
+  return (page?.total ?? 0) + waitingOnly;
 }

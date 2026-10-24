@@ -16,7 +16,8 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type RefObject } from "react";
+import { MessagesSquareIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
@@ -31,6 +32,8 @@ type Capabilities = Parameters<typeof supportsLoomFeature>[0];
 /**
  * Searches what was said in saved conversations, from every computer, as the Library keeps them.
  * Scoped to one project when `projectId` is set. Renders nothing until the Library can search.
+ * With `query`, the page owns the field and this shows only the conversation matches, so one
+ * search box can find projects and what was said in them.
  */
 export function LibraryHistorySearch({
   authorityId,
@@ -39,6 +42,8 @@ export function LibraryHistorySearch({
   projectId,
   hostLabel,
   projectTitle,
+  query,
+  inputRef: sharedInputRef,
 }: {
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
@@ -47,10 +52,15 @@ export function LibraryHistorySearch({
   readonly hostLabel: (id: EnvironmentId) => string;
   /** Names each hit's project. Omit when every hit is in the page's own project. */
   readonly projectTitle?: (id: string) => string;
+  readonly query?: string;
+  /** The page's own field, focused by the command palette's Search project history. */
+  readonly inputRef?: RefObject<HTMLInputElement | null>;
 }) {
-  const [text, setText] = useState("");
+  const [ownText, setText] = useState("");
+  const text = query ?? ownText;
   const sent = useDebouncedValue(text, LIBRARY_SEARCH_DEBOUNCE_MS);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const ownInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = sharedInputRef ?? ownInputRef;
   const supported = supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE);
   // The command palette's Search project history lands here, whether or not this page was open.
   useEffect(() => {
@@ -60,12 +70,37 @@ export function LibraryHistorySearch({
     };
     focus();
     return onLibraryHistorySearch(focus);
-  }, [supported, projectId]);
+  }, [supported, projectId, inputRef]);
   if (!supported) return null;
   const scope = projectId ? { projectId } : {};
   // Clearing the field hides results at once; new words wait for typing to pause.
   const typed = librarySearchRequest(text, scope);
   const request = typed ? librarySearchRequest(sent, scope) : null;
+  const results = request ? (
+    // A cursor belongs to one search, so each new search starts its results over.
+    <SearchResults
+      key={librarySearchKey(request)}
+      request={request}
+      authorityId={authorityId}
+      connected={connected}
+      hostLabel={hostLabel}
+      projectTitle={projectTitle}
+    />
+  ) : typed ? (
+    <p role="status" className="py-2 text-xs text-muted-foreground">
+      Searching saved history...
+    </p>
+  ) : null;
+  if (query !== undefined)
+    return results ? (
+      <section aria-label="Mentioned in conversations" className="flex min-w-0 flex-col gap-2.5">
+        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <MessagesSquareIcon aria-hidden className="size-3.5 text-muted-foreground" />
+          Mentioned in conversations
+        </h2>
+        {results}
+      </section>
+    ) : null;
   return (
     <section aria-label="Search history" className="flex min-w-0 flex-col gap-2">
       <LibrarySearch
@@ -79,21 +114,7 @@ export function LibraryHistorySearch({
         }
         label={projectId ? "Search this project's history" : "Search project history"}
       />
-      {request ? (
-        // A cursor belongs to one search, so each new search starts its results over.
-        <SearchResults
-          key={librarySearchKey(request)}
-          request={request}
-          authorityId={authorityId}
-          connected={connected}
-          hostLabel={hostLabel}
-          projectTitle={projectTitle}
-        />
-      ) : typed ? (
-        <p role="status" className="py-2 text-xs text-muted-foreground">
-          Searching saved history...
-        </p>
-      ) : null}
+      {results}
     </section>
   );
 }
@@ -177,6 +198,7 @@ function SearchResults({
       ) : (
         <div>
           <Button
+            shape="pill"
             size="xs"
             variant="ghost"
             disabled={loadingMore}

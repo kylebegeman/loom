@@ -1137,6 +1137,9 @@ export const BotTriggerFiring = Schema.Struct({
   firedAt: Schema.String,
   outcome: Schema.Literals(["run", "skipped"]),
   runId: Schema.NullOr(BotRunId),
+  /** What a firing started when that was a pipeline or a batch; older servers omit these. */
+  pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
+  batchId: Schema.optionalKey(Schema.NullOr(BotBatchId)),
   reason: Schema.NullOr(Schema.String),
 });
 export type BotTriggerFiring = typeof BotTriggerFiring.Type;

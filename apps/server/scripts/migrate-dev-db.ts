@@ -6,6 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as Console from "effect/Console";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -17,7 +18,11 @@ import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 // fork: dev-db
-import { FORK_LIVE_RESOURCE_TABLES, createDevDbFullTextTables } from "../src/fork/devDb.ts";
+import {
+  FORK_LIVE_RESOURCE_TABLES,
+  createDevDbFullTextTables,
+  stopCopiedBotWork,
+} from "../src/fork/devDb.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -388,6 +393,7 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
       for (const table of CLEARED_TABLES) {
         yield* sql`DELETE FROM ${sql(table)}`;
       }
+      yield* stopCopiedBotWork(DateTime.formatIso(yield* DateTime.now)); // fork: dev-db
     }),
   );
 

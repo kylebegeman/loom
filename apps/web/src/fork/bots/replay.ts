@@ -2,6 +2,7 @@ import {
   BOTS_REPLAY_MAX_RUNS,
   isTerminalBotRunStatus,
   type BotDefinitionInput,
+  type BotReplay,
   type BotRun,
   type BotRunRating,
   type BotVerdictValue,
@@ -119,4 +120,73 @@ export const replayMetricChanges = (before: BotRun | undefined, after: BotRun | 
           ? "Same token use"
           : `${Math.abs(tokens).toLocaleString()} ${tokens > 0 ? "more" : "fewer"} tokens${percentChange(beforeTokens!, afterTokens!)}`,
   };
+};
+
+/** A run's inputs on one line, such as "pr: 94, depth: 2"; empty without inputs. */
+export const replayInputSummary = (run: Pick<BotRun, "inputs">) =>
+  Object.entries(run.inputs)
+    .map(([name, value]) => `${name}: ${String(value)}`)
+    .join(", ");
+
+/**
+ * The replay to show. A finished fetch wins; while the fetch still says running, the answer to a
+ * cancel is newer, and before any fetch the replay as started stands in.
+ */
+export const currentReplay = (
+  started: BotReplay | null,
+  fetched: BotReplay | null,
+  cancelled: BotReplay | null,
+): BotReplay | null =>
+  fetched !== null && fetched.status !== "running" ? fetched : (cancelled ?? fetched ?? started);
+
+const runCount = (count: number) => (count === 1 ? "1 run" : `${count} runs`);
+
+/** Whether the replayed definition did better or worse, in one sentence. */
+export const replayHeadline = (replay: Pick<BotReplay, "status" | "items" | "summary">) => {
+  const total = replay.items.length;
+  const settled = replay.items.filter((item) => item.comparison !== "pending").length;
+  if (replay.status === "running") return `Replaying. ${settled} of ${runCount(total)} done.`;
+  const { fixed, broke, same, changed, failed } = replay.summary;
+  const prefix = replay.status === "cancelled" ? "Cancelled. " : "Done. ";
+  if (settled === 0) return `${prefix}No run finished.`;
+  if (broke > 0 && fixed > 0)
+    return `${prefix}Better on ${runCount(fixed)}, worse on ${runCount(broke)}.`;
+  if (broke > 0) return `${prefix}Worse on ${runCount(broke)}, better on none.`;
+  if (fixed > 0) return `${prefix}Better on ${runCount(fixed)}, worse on none.`;
+  if (same + changed > 0)
+    return `${prefix}No better or worse${changed > 0 ? `; ${runCount(changed)} answered differently` : ""}.`;
+  return `${prefix}${runCount(failed)} could not be replayed.`;
+};
+
+type ReplayCount = keyof BotReplay["summary"];
+
+/** Each count in the words of the comparison badges, in the order the badges rank them. */
+const TALLY_WORDS: ReadonlyArray<readonly [ReplayCount, string]> = [
+  ["fixed", "better"],
+  ["broke", "worse"],
+  ["changed", "changed"],
+  ["same", "same"],
+  ["failed", "failed"],
+];
+
+/** Every count above zero, such as "2 better, 8 same"; empty while nothing has settled. */
+export const replayTally = (
+  summary: BotReplay["summary"],
+  omit: ReadonlySet<ReplayCount> = new Set(),
+) =>
+  TALLY_WORDS.filter(([key]) => summary[key] > 0 && !omit.has(key))
+    .map(([key, word]) => `${summary[key]} ${word}`)
+    .join(", ");
+
+/**
+ * The counts {@link replayHeadline} leaves out, so the status line never names a count twice
+ * under two words. Empty when the headline already says everything.
+ */
+export const replayRest = (replay: Pick<BotReplay, "status" | "items" | "summary">) => {
+  if (replay.status === "running") return replayTally(replay.summary);
+  if (replay.items.every((item) => item.comparison === "pending")) return "";
+  const { fixed, broke, same, changed } = replay.summary;
+  if (fixed > 0 || broke > 0) return replayTally(replay.summary, new Set(["fixed", "broke"]));
+  if (same + changed > 0) return replayTally(replay.summary, new Set(["changed"]));
+  return "";
 };

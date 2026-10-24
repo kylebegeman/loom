@@ -1,3 +1,7 @@
+import { LibraryTextPalette } from "./LibraryTextPalette";
+import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
+import { LibraryFolderPalette } from "./LibraryFolderPalette";
+import { MonitorIcon, FolderPlusIcon } from "lucide-react";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -10,23 +14,16 @@ import {
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Textarea } from "~/components/ui/textarea";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectPopup,
-  SelectItem,
-} from "~/components/ui/select";
+
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
-import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+
 import { usePrimaryEnvironmentId } from "~/state/environments";
+import { libraryStartFolderProjects } from "@t3tools/client-runtime/fork";
 import { folderProjectMatches } from "./folderProjectMatches";
+
 import { projectLibrary, useLibraryProjects, useLibraryPermission } from "./state";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -44,16 +41,22 @@ const ImportAttempt = Schema.NullOr(
 
 /** Import metadata separately from folder ownership; existing Library projects remain an explicit choice. */
 export function ImportProjectDialog({
+  open = true,
+  embedded = false,
+  onBack,
   onSaved,
   onClose,
   initialHostId,
   initialRootPath,
   initialTitle,
 }: {
+  readonly open?: boolean;
+  readonly embedded?: boolean;
+  readonly onBack?: (() => void) | undefined;
   readonly initialHostId?: EnvironmentId | undefined;
   readonly initialRootPath?: string | undefined;
   readonly initialTitle?: string | undefined;
-  readonly onSaved: (project: LibraryProject) => void;
+  readonly onSaved: (project: LibraryProject, copy?: LibraryWorkingCopy) => void;
   readonly onClose: () => void;
 }) {
   const library = useLibraryProjects();
@@ -75,6 +78,16 @@ export function ImportProjectDialog({
   const [hostId, setHostId] = useState<EnvironmentId | null>(
     attempt?.environmentId ?? initialHostId ?? defaultHostId,
   );
+  const [page, setPage] = useState<
+    "computers" | "folders" | "project" | "choose-project" | "name" | "brief"
+  >(
+    attempt || initialRootPath
+      ? "project"
+      : defaultHostId || initialHostId
+        ? "folders"
+        : "computers",
+  );
+  const [search, setSearch] = useState("");
   const [rootPath, setRootPath] = useState(attempt?.rootPath ?? initialRootPath ?? "");
   const [title, setTitle] = useState(attempt?.createInput?.title ?? initialTitle ?? "");
   const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
@@ -86,6 +99,23 @@ export function ImportProjectDialog({
     refresh: true,
     reportFailure: false,
   });
+  const readCopies = useAtomQueryRunner(projectLibrary.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
+  const [registeredCopies, setRegisteredCopies] = useState<readonly LibraryWorkingCopy[]>([]);
+  const matchingProjects = (
+    inspection: LibraryFolderInspection,
+    copies: readonly LibraryWorkingCopy[],
+  ) => {
+    const exact = libraryStartFolderProjects(
+      library.query.data ?? [],
+      copies,
+      hostId ?? "",
+      inspection.rootPath,
+    );
+    return exact.length ? exact : folderProjectMatches(library.query.data ?? [], inspection);
+  };
   const [error, setError] = useState<string | null>(null);
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -96,29 +126,42 @@ export function ImportProjectDialog({
   const canCreate = useLibraryPermission(projectLibrary.createProject, library.authorityId);
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, library.authorityId);
   const host = library.environments.find((entry) => entry.environmentId === hostId);
-  const inspectFolder = async () => {
-    if (!hostId || !rootPath.trim()) return;
+  const inspectFolder = async (path = rootPath) => {
+    if (!hostId || !path.trim()) return;
     setBusy(true);
     setError(null);
-    const loadInspection = async () => {
-      const result = await inspect({ environmentId: hostId, input: { rootPath: rootPath.trim() } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    const result = await inspect({ environmentId: hostId, input: { rootPath: path.trim() } });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : "Could not check this folder.");
+    } else {
       setInspection(result.value);
-      const matches = folderProjectMatches(library.query.data ?? [], result.value);
+      if (!result.value.exists)
+        setError("This folder no longer exists on this computer. Choose another folder.");
+      const copies = library.authorityId
+        ? await readCopies({ environmentId: library.authorityId, input: {} })
+        : null;
+      if (!copies || copies._tag === "Failure") {
+        setError(
+          "Could not check the Library's existing folder associations. Reconnect it and check this folder again.",
+        );
+        setProjectId("choose");
+        setBusy(false);
+        return null;
+      }
+      setRegisteredCopies(copies.value);
+      const matches = matchingProjects(result.value, copies.value);
       setProjectId(matches.length === 1 ? matches[0]!.id : matches.length > 1 ? "choose" : "new");
       if (!title)
-        setTitle(result.value.rootPath.replace(/\/+$/, "").split("/").at(-1) ?? "Project");
-    };
-    try {
-      await loadInspection();
-    } catch (cause) {
-      const handleFailure = async () => {
-        setError(cause instanceof Error ? cause.message : "Could not inspect this folder.");
-      };
-      await handleFailure().finally(() => setBusy(false));
-      return;
+        setTitle(
+          result.value.rootPath
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .at(-1) ?? "Project",
+        );
     }
     setBusy(false);
+    return result._tag === "Success" ? result.value : null;
   };
   const inspectedInitial = useRef(false);
   const inspectInitial = useEffectEvent(() => {
@@ -127,6 +170,7 @@ export function ImportProjectDialog({
   useEffect(() => {
     if (
       !inspectedInitial.current &&
+      open &&
       initialRootPath &&
       hostId &&
       canInspect &&
@@ -138,6 +182,7 @@ export function ImportProjectDialog({
       inspectInitial();
     }
   }, [
+    open,
     initialRootPath,
     hostId,
     canInspect,
@@ -145,10 +190,7 @@ export function ImportProjectDialog({
     library.query.isPending,
     attempt,
   ]);
-  const matches = inspection ? folderProjectMatches(library.query.data ?? [], inspection) : [];
-  const sameName = (library.query.data ?? []).filter(
-    (project) => project.title.trim().toLowerCase() === title.trim().toLowerCase(),
-  );
+  const matches = inspection ? matchingProjects(inspection, registeredCopies) : [];
   const submit = async () => {
     const authorityId = library.authorityId;
     if (!hostId || !authorityId || busy || (!attempt && !inspection?.exists)) return;
@@ -217,7 +259,7 @@ export function ImportProjectDialog({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       saveAttempt(null);
-      onSaved(next.project!);
+      onSaved(next.project!, result.value);
     };
     try {
       await importFolder();
@@ -279,185 +321,238 @@ export function ImportProjectDialog({
         }}
       />
     );
-  return (
-    <LibraryDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-      title="Add existing folder"
-      description="Choose an existing folder. Loom finds its repositories and suggests the matching project. Your files stay where they are."
-      actions={
-        <>
-          <Button variant="outline" disabled={busy} onClick={onClose}>
-            Close
-          </Button>
-          {attempt?.copy?.state === "failed" ? (
-            <Button
-              variant="outline"
-              disabled={busy || !canRegister || !library.connected}
-              onClick={() => void reviewCleanup()}
-            >
-              Review failed copy
-            </Button>
-          ) : null}
-          <Button
-            disabled={
-              busy ||
-              !canPrepare ||
-              !canRegister ||
-              (projectId === "new" && !canCreate) ||
-              !library.connected ||
-              host?.connection.phase !== "connected" ||
-              (!attempt &&
-                (!inspection?.exists ||
-                  projectId === "choose" ||
-                  (projectId === "new" && !title.trim())))
+  if (!open) return null;
+  const locked = attempt !== null;
+  const canImport =
+    canPrepare &&
+    canRegister &&
+    (projectId !== "new" || canCreate) &&
+    library.connected &&
+    host?.connection.phase === "connected" &&
+    (!!attempt ||
+      (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
+  const back = () => {
+    setSearch("");
+    if (page === "choose-project" || page === "name" || page === "brief") setPage("project");
+    else if (page === "project") setPage("folders");
+    else if (page === "folders") setPage("computers");
+    else onBack?.();
+  };
+  const close = () => {
+    if (!busy) onClose();
+  };
+  const selectedProject = library.query.data?.find((project) => project.id === projectId);
+  const content =
+    page === "brief" ? (
+      <LibraryTextPalette
+        title="Project brief"
+        value={brief}
+        onChange={setBrief}
+        onBack={back}
+        onClose={close}
+      />
+    ) : page === "folders" &&
+      hostId &&
+      host &&
+      host.entry.enabled &&
+      host.connection.phase === "connected" ? (
+      <LibraryFolderPalette
+        key={hostId}
+        environmentId={hostId}
+        computerName={host.label}
+        initialPath={rootPath || "~/"}
+        onBack={back}
+        onClose={close}
+        busy={busy}
+        error={error}
+        onSelect={(path) => {
+          setRootPath(path);
+          setInspection(null);
+          void inspectFolder(path).then((report) => {
+            if (report?.exists) {
+              setSearch("");
+              setPage("project");
             }
-            onClick={() => void submit()}
-          >
-            {busy ? "Adding..." : attempt ? "Retry import" : "Add folder"}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <LibraryField label="Computer">
-          <Select
-            disabled={busy || attempt !== null}
-            value={hostId}
-            items={executionHosts.map((entry) => ({
-              value: entry.environmentId,
-              label: entry.label,
-            }))}
-            onValueChange={(value) => {
-              setHostId(value);
-              setInspection(null);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose a computer" />
-            </SelectTrigger>
-            <SelectPopup>
-              {executionHosts.map((entry) => (
-                <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                  {entry.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LibraryField>
-        <LibraryField label="Existing folder">
-          <Input
-            font="mono"
-            value={rootPath}
-            disabled={busy || attempt !== null}
-            onChange={(event) => {
-              setRootPath(event.target.value);
-              setInspection(null);
-            }}
-          />
-        </LibraryField>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={
-            busy ||
-            attempt !== null ||
-            !canInspect ||
-            !rootPath.trim() ||
-            host?.connection.phase !== "connected"
-          }
-          onClick={() => void inspectFolder()}
-        >
-          Inspect folder
-        </Button>
-        {inspection ? (
-          <div className="space-y-1 text-xs text-muted-foreground">
-            {!inspection.exists ? (
-              <p>The folder does not exist.</p>
-            ) : inspection.repositories.length ? (
-              inspection.repositories.map((repository) => (
-                <p key={repository.path} className="break-words">
-                  {repository.relativePath}: {repository.remoteUrl ?? "local repository"}
-                </p>
-              ))
-            ) : (
-              <p>No repositories found. You can use this folder as a project workspace.</p>
-            )}
-          </div>
-        ) : null}
-        {matches.length ? (
-          <p className="text-xs text-muted-foreground">
-            {matches.length === 1
-              ? `Matches ${matches[0]!.title}: same repositories and folder layout.`
-              : "Several projects have these repositories. Choose which project this folder belongs to."}
-          </p>
-        ) : null}
-        <LibraryField label="Project">
-          <Select
-            disabled={busy || attempt !== null}
-            value={projectId}
-            onValueChange={(value) => setProjectId(value ?? "new")}
-            items={[
-              { value: "choose", label: "Choose a project" },
-              { value: "new", label: "Create a new project" },
-              ...(library.query.data ?? []).map((project) => ({
-                value: project.id,
-                label: project.title,
-              })),
-            ]}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="choose">Choose a project</SelectItem>
-              <SelectItem value="new">Create a new project</SelectItem>
-              {library.query.data?.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.title}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LibraryField>
-        {projectId === "new" ? (
-          <>
-            <LibraryField label="Project name">
-              <Input
-                value={title}
-                maxLength={160}
-                disabled={busy || attempt !== null}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            </LibraryField>
-            {sameName.length ? (
-              <p className="text-xs text-warning-foreground">
-                A project with this name already exists. Choose it above to keep your work together,
-                or use a different name.
-              </p>
-            ) : null}
-            <LibraryField label="Brief (optional)">
-              <Textarea
-                value={brief}
-                disabled={busy || attempt !== null}
-                onChange={(event) => setBrief(event.target.value)}
-              />
-            </LibraryField>
-          </>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            The folder must contain the selected project repositories at their saved relative paths.
-          </p>
-        )}
-        {attempt ? (
-          <p className="text-xs text-muted-foreground">
-            A previous import is waiting for confirmation. Retry to recover it.
-          </p>
-        ) : null}
-        <LibraryErrorNotice error={error} />
-      </div>
-    </LibraryDialog>
+          });
+        }}
+      />
+    ) : (
+      <LibraryPaletteView
+        key={page}
+        title={
+          page === "computers" || page === "folders"
+            ? "Choose a computer"
+            : page === "choose-project"
+              ? "Choose a project for this folder"
+              : page === "name"
+                ? "Project name"
+                : "Add existing folder"
+        }
+        placeholder={
+          page === "computers" || page === "folders"
+            ? "Search computers..."
+            : page === "choose-project"
+              ? "Search projects..."
+              : page === "name"
+                ? "Name your project..."
+                : "Search folder actions..."
+        }
+        query={page === "name" ? title : search}
+        onQueryChange={page === "name" ? setTitle : setSearch}
+        onBack={!locked && (page !== "computers" || onBack) ? back : undefined}
+        onClose={close}
+        busy={busy}
+        readOnly={locked}
+        filter={page !== "name"}
+        error={error ?? library.query.error}
+        message={
+          attempt
+            ? "An import is waiting for confirmation. Retry to finish the same import."
+            : inspection
+              ? `${inspection.rootPath} on ${host?.label ?? "the selected computer"}. Your files stay here.`
+              : initialRootPath
+                ? "Checking this folder..."
+                : "Choose the computer whose folders you want to browse."
+        }
+        items={
+          page === "computers" || page === "folders"
+            ? executionHosts.map((entry) => ({
+                id: entry.environmentId,
+                title: entry.label,
+                description:
+                  entry.connection.phase === "connected"
+                    ? "Browse folders on this computer"
+                    : "Reconnect this computer first",
+                disabled: !entry.entry.enabled || entry.connection.phase !== "connected",
+                next: true,
+                icon: <MonitorIcon className="size-4" />,
+                select: () => {
+                  setHostId(entry.environmentId);
+                  setInspection(null);
+                  setSearch("");
+                  setPage("folders");
+                },
+              }))
+            : page === "choose-project"
+              ? [
+                  {
+                    id: "new",
+                    title: "Create a new project",
+                    next: true,
+                    select: () => {
+                      setProjectId("new");
+                      setPage("name");
+                    },
+                  },
+                  ...(library.query.data ?? [])
+                    .filter((project) => !project.archived)
+                    .map((project) => ({
+                      id: project.id,
+                      title: project.title,
+                      description: matches.some((match) => match.id === project.id)
+                        ? "Matching repositories and folder layout"
+                        : project.brief,
+                      select: () => {
+                        setProjectId(project.id);
+                        setSearch("");
+                        setPage("project");
+                      },
+                    })),
+                ]
+              : page === "name"
+                ? [
+                    {
+                      id: "keep",
+                      title: "Keep this name",
+                      disabled: !title.trim(),
+                      select: () => setPage("project"),
+                    },
+                  ]
+                : [
+                    {
+                      id: "import",
+                      title: attempt
+                        ? "Retry import"
+                        : `Add folder to ${selectedProject?.title ?? (title || "a project")}`,
+                      description: selectedProject
+                        ? "Use the existing Library project"
+                        : "Create a Library project for these files",
+                      disabled: !canImport,
+                      icon: <FolderPlusIcon className="size-4" />,
+                      select: () => void submit(),
+                    },
+                    ...(!inspection && rootPath && !attempt
+                      ? [
+                          {
+                            id: "inspect-again",
+                            title: "Check this folder again",
+                            disabled: !canInspect || host?.connection.phase !== "connected",
+                            select: () => {
+                              void inspectFolder();
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      id: "project",
+                      title: "Project",
+                      description:
+                        selectedProject?.title ??
+                        (projectId === "new" ? `New project: ${title}` : "Choose a project"),
+                      next: true,
+                      disabled: locked,
+                      select: () => {
+                        setSearch("");
+                        setPage("choose-project");
+                      },
+                    },
+                    ...(projectId === "new"
+                      ? [
+                          {
+                            id: "name",
+                            title: "Project name",
+                            description: title,
+                            next: true,
+                            disabled: locked,
+                            select: () => setPage("name"),
+                          },
+                          {
+                            id: "brief",
+                            title: "Project brief",
+                            description: brief || "Optional",
+                            next: true,
+                            disabled: locked,
+                            select: () => setPage("brief"),
+                          },
+                        ]
+                      : []),
+                    {
+                      id: "folder",
+                      title: "Choose another folder",
+                      description: inspection?.rootPath,
+                      next: true,
+                      disabled: locked,
+                      select: () => setPage("folders"),
+                    },
+                    ...(attempt?.copy?.state === "failed"
+                      ? [
+                          {
+                            id: "review",
+                            title: "Review failed copy",
+                            disabled: !canRegister || !library.connected,
+                            select: () => void reviewCleanup(),
+                          },
+                        ]
+                      : []),
+                  ]
+        }
+      />
+    );
+  return embedded ? (
+    content
+  ) : (
+    <LibraryPaletteDialog title="Add existing folder" onClose={close}>
+      {content}
+    </LibraryPaletteDialog>
   );
 }
