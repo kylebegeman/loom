@@ -144,18 +144,22 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "schedule-delete",
   ),
   request_secret: tool(["Ask for", "Asking for", "Asked for", "a secret"], "secret-request"),
-  create_threads: tool(["Create", "Creating", "Created", "T3 threads"], "thread-create"),
-  t3_thread_start: tool(["Start", "Starting", "Started", "a T3 thread"], "thread-create"),
-  t3_thread_list: tool(["List", "Listing", "Listed", "T3 threads"], "thread-list"),
-  t3_thread_read: tool(["Read", "Reading", "Read", "a T3 thread"], "thread-read"),
-  t3_thread_send: tool(["Send", "Sending", "Sent", "to a T3 thread"], "thread-send"),
-  t3_thread_wait: tool(["Wait", "Waiting", "Waited", "for a T3 thread"], "thread-wait"),
+  // fork: brand
+  create_threads: tool(["Create", "Creating", "Created", "Loom threads"], "thread-create"),
+  // fork: brand
+  t3_thread_start: tool(["Start", "Starting", "Started", "a Loom thread"], "thread-create"),
+  t3_thread_list: tool(["List", "Listing", "Listed", "Loom threads"], "thread-list"), // fork: brand
+  t3_thread_read: tool(["Read", "Reading", "Read", "a Loom thread"], "thread-read"), // fork: brand
+  // fork: brand
+  t3_thread_send: tool(["Send", "Sending", "Sent", "to a Loom thread"], "thread-send"),
+  // fork: brand
+  t3_thread_wait: tool(["Wait", "Waiting", "Waited", "for a Loom thread"], "thread-wait"),
   t3_workflow_stop: tool(
     ["Stop", "Stopping", "Requested a stop for", "a workflow"],
     "workflow-stop",
   ),
   t3_thread_interrupt: tool(
-    ["Interrupt", "Interrupting", "Requested an interrupt of", "a T3 thread"],
+    ["Interrupt", "Interrupting", "Requested an interrupt of", "a Loom thread"], // fork: brand
     "thread-interrupt",
   ),
   t3_worktree_handoff: tool(
@@ -301,7 +305,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_thread_search: tool(["Search", "Searching", "Searched", "thread content"], "thread-search"),
   t3_thread_transfers: tool(["Read", "Reading", "Read", "thread transfers"], "thread-transfers"),
   t3_thread_organize: tool(["Organize", "Organizing", "Organized", "a thread"], "thread-organize"),
-  t3_thread_update: tool(["Update", "Updating", "Updated", "T3 thread metadata"], "thread-update"),
+  // fork: brand
+  t3_thread_update: tool(
+    ["Update", "Updating", "Updated", "Loom thread metadata"],
+    "thread-update",
+  ),
   t3_worktree_list: tool(["List", "Listing", "Listed", "workspace branches"], "worktree-list"),
   t3_preview_list: tool(["List", "Listing", "Listed", "preview tabs"], "browser", "browser"),
   t3_preview_close: tool(["Close", "Closing", "Closed", "a preview tab"], "browser", "browser"),

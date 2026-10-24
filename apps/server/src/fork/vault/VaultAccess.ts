@@ -2053,7 +2053,7 @@ const make = Effect.gen(function* () {
           state: workload.thread.activeRunId !== null ? "passed" : "blocked",
           reason:
             workload.thread.activeRunId !== null
-              ? "Authenticated active T3 thread."
+              ? "Authenticated active Loom thread."
               : "Thread has no active run.",
           repair: "Check the intended runner's live thread, not a terminal login.",
         },

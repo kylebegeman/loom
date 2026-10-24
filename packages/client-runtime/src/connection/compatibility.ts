@@ -24,7 +24,8 @@ export function orchestrationProtocolCompatibilityError(
         reason: "unsupported",
         detail: runtimeManagedByOperatingSystem(descriptor.capabilities) // fork: runtime-owner
           ? `This client requires a newer server. Update ${descriptor.label} through its operating system to connect.` // fork: runtime-owner
-          : `This client requires a newer server. Update T3 Code on ${descriptor.label} to connect.`,
+          : // fork: brand
+            `This client requires a newer server. Update Loom on ${descriptor.label} to connect.`,
         ...(canSelfUpdate(descriptor) ? { serverUpdateRequired: true } : {}),
       });
 }

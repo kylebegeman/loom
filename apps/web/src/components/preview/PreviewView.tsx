@@ -1043,7 +1043,8 @@ export function PreviewView({
           ) : (
             <div className="flex h-full items-center justify-center p-8 text-center">
               <p className="max-w-sm text-sm text-muted-foreground">
-                This tab is open in the T3 Code desktop app.
+                {/* fork: brand */}
+                This tab is open in the Loom desktop app.
               </p>
             </div>
           )

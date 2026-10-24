@@ -148,7 +148,8 @@ export const resolveProjectId = (context: Caller, projectId: ProjectId | undefin
       : Effect.fail(
           new OrchestratorMcpFailure({
             code: "target_required",
-            message: "Pass projectId: this MCP client is not running inside a T3 thread.",
+            // fork: brand
+            message: "Pass projectId: this MCP client is not running inside a Loom thread.",
           }),
         );
 
@@ -160,7 +161,8 @@ const resolveThreadId = (context: Caller, threadId: ThreadId | undefined) =>
       : Effect.fail(
           new OrchestratorMcpFailure({
             code: "target_required",
-            message: "Pass threadId: this MCP client is not running inside a T3 thread.",
+            // fork: brand
+            message: "Pass threadId: this MCP client is not running inside a Loom thread.",
           }),
         );
 

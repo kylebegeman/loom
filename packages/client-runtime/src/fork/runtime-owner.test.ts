@@ -50,7 +50,7 @@ describe("an older server whose operating system owns the runtime", () => {
 
   it("keeps the usual guidance for a server without an owner", () => {
     expect(orchestrationProtocolCompatibilityError(olderMini({}))?.message).toBe(
-      "This client requires a newer server. Update T3 Code on Mini to connect.",
+      "This client requires a newer server. Update Loom on Mini to connect.",
     );
   });
 });

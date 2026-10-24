@@ -117,4 +117,5 @@ export function deviceToolUpdatePolicy(tools: DeviceToolVersions | undefined) {
     : "Required tools are installed automatically when needed. Checking versions does not install or start anything.";
 }
 export const deviceToolUpdateOwnership =
-  "This environment's T3 server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.";
+  // fork: brand
+  "This environment's Loom server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.";

@@ -1296,7 +1296,8 @@ it.layer(
         checkedAt: "2026-10-03T00:02:00.000Z",
         status: "ready",
         version: "1.0.0",
-        message: "Pi is available, but T3 Code could not refresh its models and commands.",
+        // fork: brand
+        message: "Pi is available, but Loom could not refresh its models and commands.",
       } satisfies ServerProvider;
 
       it("drops disconnected Pi upstream models after successful discovery", () => {
@@ -3975,7 +3976,8 @@ it.layer(
             ]);
             assert.strictEqual(cursorProvider?.enabled, false);
             assert.strictEqual(cursorProvider?.status, "disabled");
-            assert.strictEqual(cursorProvider?.message, "Cursor is disabled in T3 Code settings.");
+            // fork: brand
+            assert.strictEqual(cursorProvider?.message, "Cursor is disabled in Loom settings.");
             const museProvider = providers.find((provider) => provider.driver === "muse");
             assert.strictEqual(museProvider?.enabled, false);
             assert.strictEqual(museProvider?.status, "disabled");
@@ -3992,7 +3994,7 @@ it.layer(
         assert.strictEqual(status.enabled, false);
         assert.strictEqual(status.status, "disabled");
         assert.strictEqual(status.installed, false);
-        assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+        assert.strictEqual(status.message, "Codex is disabled in Loom settings."); // fork: brand
       }),
     );
   });

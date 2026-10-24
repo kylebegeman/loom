@@ -44,7 +44,8 @@ export class DesktopAppActivationBroker {
   request(request: DesktopAppActivationRequest): Promise<DesktopAppActivationResponse> {
     if (this.#closed) {
       return Promise.resolve(
-        failure(request.requestId, "renderer-unavailable", "T3 Code is shutting down."),
+        // fork: brand
+        failure(request.requestId, "renderer-unavailable", "Loom is shutting down."),
       );
     }
     if (this.#pending.has(request.requestId)) {
@@ -89,7 +90,7 @@ export class DesktopAppActivationBroker {
           failure(
             pending.request.requestId,
             "renderer-unavailable",
-            "The T3 Code window closed before it opened the project.",
+            "The Loom window closed before it opened the project.", // fork: brand
           ),
         );
       }
@@ -102,7 +103,8 @@ export class DesktopAppActivationBroker {
 
   cancel(requestId: string): void {
     this.#settle(
-      failure(requestId, "renderer-unavailable", "The command closed before T3 Code was ready."),
+      // fork: brand
+      failure(requestId, "renderer-unavailable", "The command closed before Loom was ready."),
     );
   }
 
@@ -111,7 +113,8 @@ export class DesktopAppActivationBroker {
     this.#renderer = null;
     for (const pending of this.#pending.values()) {
       this.#settle(
-        failure(pending.request.requestId, "renderer-unavailable", "T3 Code is shutting down."),
+        // fork: brand
+        failure(pending.request.requestId, "renderer-unavailable", "Loom is shutting down."),
       );
     }
   }

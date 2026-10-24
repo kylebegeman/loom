@@ -54,7 +54,8 @@ export async function startNiriCaptureShortcut(
       }),
     ]);
     if (result !== RequestNameReply.PRIMARY_OWNER)
-      throw new Error("Another T3 Code instance already owns the capture shortcut.");
+      // fork: brand
+      throw new Error("Another Loom instance already owns the capture shortcut.");
     return close;
   } catch (error) {
     close();

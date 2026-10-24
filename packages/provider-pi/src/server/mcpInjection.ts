@@ -114,7 +114,8 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
     if (reserved !== undefined) {
       return {
         ok: false,
-        message: `Pi launch argument '${reserved}' is controlled by T3 Code and cannot be overridden.`,
+        // fork: brand
+        message: `Pi launch argument '${reserved}' is controlled by Loom and cannot be overridden.`,
       };
     }
     if (arg === "--") {
@@ -149,7 +150,8 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
       continue;
     }
     if (arg.startsWith("-")) {
-      return { ok: false, message: `Pi launch argument '${arg}' is not supported by T3 Code.` };
+      // fork: brand
+      return { ok: false, message: `Pi launch argument '${arg}' is not supported by Loom.` };
     }
     return {
       ok: false,

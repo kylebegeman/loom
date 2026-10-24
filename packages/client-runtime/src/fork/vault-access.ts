@@ -150,7 +150,7 @@ const decisionMessages: Readonly<Record<string, string>> = {
   "invalid-lineage": "The inherited grant is missing, cyclic or broader than its parent.",
   "item-unavailable": "This item is missing, archived or deleted.",
   "caller-permission":
-    "The runner mode does not permit this action. A Vault grant cannot increase T3 permissions.",
+    "The runner mode does not permit this action. A Vault grant cannot increase Loom permissions.",
   "classification-required": "This credential needs an explicit access classification before use.",
   "approval-required":
     "This credential requires an exact one-time approval. Protected execution is disabled.",

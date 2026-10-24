@@ -56,8 +56,8 @@ function SubscriptionUsage(
   const primary = palette?.foreground ?? "primary";
   const secondary = palette?.secondary ?? "secondary";
   const providers = props.providers ?? [
-    { name: "Codex", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
-    { name: "Claude", detail: "Open T3 to connect", windows: [], expiresAt: 0 },
+    { name: "Codex", detail: "Open Loom to connect", windows: [], expiresAt: 0 }, // fork: brand
+    { name: "Claude", detail: "Open Loom to connect", windows: [], expiresAt: 0 }, // fork: brand
   ];
   const columns = providers.map((provider) => {
     const stale = provider.windows.length > 0 && now >= provider.expiresAt;
@@ -90,7 +90,7 @@ function SubscriptionUsage(
               ].slice(0, limit)
             : windows.slice(0, limit);
     const detail = stale
-      ? "Open T3 to refresh"
+      ? "Open Loom to refresh" // fork: brand
       : period !== "auto" && windows.length === 0 && provider.windows.length > 0
         ? `No ${period} limit reported`
         : provider.detail;
@@ -138,7 +138,8 @@ function SubscriptionUsage(
                 ? `${tightest.remaining}% left`
                 : period !== "auto" && !stale && provider.windows.length > 0
                   ? "N/A"
-                  : "Open T3"}
+                  : // fork: brand
+                    "Open Loom"}
             </Text>
           </HStack>
           {tightest ? (
@@ -231,7 +232,8 @@ function SubscriptionUsage(
           >
             {(period === "auto" ? (provider.totalWindows ?? windows.length) : windows.length) -
               limit}{" "}
-            more in T3
+            {/* fork: brand */}
+            more in Loom
           </Text>
         ) : null}
       </VStack>
@@ -271,7 +273,8 @@ function SubscriptionUsage(
         >
           {props.checkedAt
             ? `As of ${new Date(props.checkedAt).toLocaleString(undefined, { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}`
-            : "Tap to connect in T3"}
+            : // fork: brand
+              "Tap to connect in Loom"}
         </Text>
       ) : null}
     </VStack>
