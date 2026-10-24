@@ -192,6 +192,20 @@ describe("run presentation", () => {
     expect(runOutcome(makeBotRun("broke", { status: "failed" })).emphasis).toBe("pill");
   });
 
+  it("names a completed run by its verdict and any other run by its status", () => {
+    const attention = makeBotRun("a", {
+      verdict: {
+        verdict: "needs_attention",
+        summary: "",
+        findings: [],
+        findingsTruncated: false,
+        source: "decoded",
+      },
+    });
+    expect(runOutcome(attention)).toMatchObject({ label: "Needs attention", tone: "warning" });
+    expect(runOutcome(makeBotRun("b", { status: "timed_out" })).label).toBe("Timed out");
+  });
+
   it("names the most specific origin", () => {
     expect(runOrigin(makeBotRun("a", { batchId: "batch", triggerId: "t" })).kind).toBe("batch");
     expect(runOrigin(makeBotRun("b", { triggerId: "t", retryOf: "x" })).kind).toBe("trigger");

@@ -10,7 +10,6 @@ import type {
   BotId,
   BotUsageRow,
   BotsUsageResult,
-  LibraryProjectColor,
 } from "@t3tools/contracts/fork";
 import { rollingBotsUsageWindow, type BotsUsageWindow } from "@t3tools/client-runtime/fork";
 import { formatCount, formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
@@ -30,6 +29,7 @@ import {
 } from "../project-library/LibraryControls";
 import { LibraryBar, LibraryMeter } from "../project-library/LibraryData";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
+import { BOTS_COLOR } from "./BotIdentity";
 import { useBotsNavigation } from "./navigation";
 import { formatDuration } from "./runMetrics";
 import { bots, useBotsAccess, useBotsHost } from "./state";
@@ -62,9 +62,6 @@ import {
 } from "./usageWindow";
 
 export type { BotUsageDays };
-
-/** The Bots page's own ink, so a token bar reads the same inside any bot's colour scope. */
-const BOTS_COLOR: LibraryProjectColor = "plum";
 
 /** As long as a query lingers once nothing shows it, so a quick return reuses it. */
 const USAGE_IDLE_TTL_MS = 5 * 60_000;

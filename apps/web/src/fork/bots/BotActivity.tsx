@@ -1,10 +1,6 @@
 import { useState } from "react";
 import { isTerminalBotRunStatus, type BotRun } from "@t3tools/contracts/fork";
-import {
-  BOT_RUN_STATES,
-  BOT_VERDICT_STATES,
-  type LibraryWorkflowTone,
-} from "@t3tools/client-runtime/fork";
+import type { LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
 import { cn } from "~/lib/utils";
 import { LibraryStateDot } from "../project-library/LibraryControls";
 import { TickStrip } from "../project-library/LibraryData";
@@ -12,11 +8,7 @@ import { formatSpan, runDuration, runTime } from "./BotIdentity";
 import { runOutcome } from "./runLog";
 
 /** A run's outcome as one tone: its verdict once it has one, else where the run stands. */
-export function runTone(run: BotRun): LibraryWorkflowTone {
-  return run.verdict && run.status === "completed"
-    ? BOT_VERDICT_STATES[run.verdict.verdict].tone
-    : BOT_RUN_STATES[run.status].tone;
-}
+export const runTone = (run: BotRun): LibraryWorkflowTone => runOutcome(run).tone;
 
 /** Oldest first, so the strip reads left to right like time. Lists arrive newest first. */
 export const chronological = (runs: readonly BotRun[], limit: number) =>
@@ -33,11 +25,11 @@ const LEGEND: readonly { tone: LibraryWorkflowTone; label: string }[] = [
 const ACTIVITY_SLOTS = 50;
 const EMPTY_SLOTS = Array.from({ length: ACTIVITY_SLOTS }, (_, index) => `empty-${index}`);
 
-const runReadout = (run: BotRun) =>
+const runReadout = (run: BotRun, now: number) =>
   [
     runOutcome(run).label,
-    runTime(run.finishedAt ?? run.startedAt ?? run.createdAt),
-    isTerminalBotRunStatus(run.status) ? runDuration(run.startedAt, run.finishedAt) : null,
+    runTime(run.finishedAt ?? run.startedAt ?? run.createdAt, now),
+    isTerminalBotRunStatus(run.status) ? runDuration(run.startedAt, run.finishedAt, now) : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -49,9 +41,11 @@ const runReadout = (run: BotRun) =>
  */
 export function ActivityStrip({
   runs,
+  now,
   onSelectRun,
 }: {
   readonly runs: readonly BotRun[];
+  readonly now: number;
   readonly onSelectRun?: (run: BotRun) => void;
 }) {
   const [focused, setFocused] = useState<number | null>(null);
@@ -76,7 +70,7 @@ export function ActivityStrip({
           {current ? (
             <>
               <span className="font-medium text-foreground">{current.botName}</span>
-              {` · ${runReadout(current)}`}
+              {` · ${runReadout(current, now)}`}
             </>
           ) : (
             <>
@@ -110,7 +104,7 @@ export function ActivityStrip({
           ...ticks.map((run) => ({
             key: run.id,
             tone: runTone(run),
-            label: `${run.botName}, ${runReadout(run)}`,
+            label: `${run.botName}, ${runReadout(run, now)}`,
           })),
         ]}
         focused={focused}

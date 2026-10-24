@@ -1,9 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  BOTS_LIST_BATCHES_MAX_LIMIT,
-  BOTS_LIST_RUNS_MAX_LIMIT,
-  type LibraryProjectColor,
-} from "@t3tools/contracts/fork";
+import { BOTS_LIST_BATCHES_MAX_LIMIT, BOTS_LIST_RUNS_MAX_LIMIT } from "@t3tools/contracts/fork";
 import { botColor } from "@t3tools/client-runtime/fork";
 import {
   ActivityIcon,
@@ -32,6 +28,7 @@ import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { ComputersButton, ComputersOverlay } from "./BotAnywhere";
 import { BatchPage } from "./BotBatches";
 import { BotPage } from "./BotDetail";
+import { BOTS_COLOR } from "./BotIdentity";
 import { BotEditorPage } from "./BotEditor";
 import { PipelinePage, PipelinesView } from "./BotPipelines";
 import { ReplayOverlays } from "./BotReplay";
@@ -67,9 +64,6 @@ import {
   useBotsAttentionCount,
   usePipelines,
 } from "./state";
-
-/** The page's own ink while no bot is open; each bot then wears its own color. */
-const BOTS_COLOR: LibraryProjectColor = "plum";
 
 /** The routes drawn from the bot list, which the shell holds back until the list arrives. */
 const usesBotList = (route: BotsRoute) =>

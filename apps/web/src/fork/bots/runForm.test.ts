@@ -29,6 +29,17 @@ describe("run input validation", () => {
     expect(runInputErrors(parameters, { pr: "12", mode: "fast" })).toEqual({});
   });
 
+  it("lets a required input with a default stay blank, since the server fills the default", () => {
+    const branch: BotParameter = {
+      name: "branch",
+      label: "Branch",
+      type: "string",
+      required: true,
+    };
+    expect(runInputErrors([{ ...branch, default: "main" }], { branch: "" })).toEqual({});
+    expect(runInputErrors([branch], { branch: "" })).toEqual({ branch: "Fill this in to run." });
+  });
+
   it("rejects a number the server would read as NaN or infinity", () => {
     expect(runInputErrors(parameters, { pr: "1", mode: "fast", depth: "1e999" })).toHaveProperty(
       "depth",

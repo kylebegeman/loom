@@ -15,7 +15,10 @@ export function runInputErrors(
     if (parameter.type === "boolean") continue;
     const raw = values[parameter.name] ?? "";
     if (raw.trim() === "") {
-      if (parameter.required) errors[parameter.name] = "Fill this in to run.";
+      // A blank input is left out and the server fills in the default, so only one without a
+      // default must be filled in.
+      if (parameter.required && (parameter.default ?? "").trim() === "")
+        errors[parameter.name] = "Fill this in to run.";
       continue;
     }
     if (parameter.type === "number" && !Number.isFinite(Number(raw.trim())))
@@ -24,6 +27,16 @@ export function runInputErrors(
       errors[parameter.name] = "Choose one of the options.";
   }
   return errors;
+}
+
+/** Takes the person to the first input, in form order, that stops the run. */
+export function focusFirstInputError(
+  parameters: readonly BotParameter[],
+  errors: Readonly<Record<string, string>>,
+  idOf: (name: string) => string,
+) {
+  const first = parameters.find((parameter) => errors[parameter.name] !== undefined);
+  if (first) document.getElementById(idOf(first.name))?.focus();
 }
 
 /**

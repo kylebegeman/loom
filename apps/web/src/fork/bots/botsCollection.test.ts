@@ -7,7 +7,6 @@ import {
   matchesBotFilters,
   matchesBotSearch,
   needsYouByBot,
-  runOutcomeLabel,
   runsByBot,
   sortBots,
   successFigure,
@@ -252,15 +251,6 @@ describe("lastRunState", () => {
   it("only claims no runs when the newest runs are every run", () => {
     expect(lastRunState([], false)).toEqual({ kind: "none" });
     expect(lastRunState([], true)).toEqual({ kind: "older" });
-  });
-});
-
-describe("runOutcomeLabel", () => {
-  it("prefers a completed run's verdict to its status", () => {
-    expect(runOutcomeLabel(makeBotRun("a", { verdict: verdict("needs_attention") }))).toBe(
-      "Needs attention",
-    );
-    expect(runOutcomeLabel(makeBotRun("b", { status: "timed_out" }))).toBe("Timed out");
   });
 });
 

@@ -128,6 +128,15 @@ export function useBotDefinitionChanges(environmentId: EnvironmentId | null, ena
   };
 }
 
+/** Refetches a list fetched once when its host comes back, since the watch missed what changed meanwhile. */
+export function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    if (connected && !wasConnected.current) refresh();
+    wasConnected.current = connected;
+  }, [connected, refresh]);
+}
+
 /** Refetches a list overlaid with watched changes once the watch dropped some of them. */
 export function useRefreshWhenBotsChangesPruned(
   changes: Pick<BotsChanges, "pruned">,
@@ -189,6 +198,41 @@ export function usePipelines(
   return { changes, list, pipelines: applyPipelineChanges(list.data?.pipelines ?? [], changes) };
 }
 
+/**
+ * Bots this client just saved, until the list or the watch catches up. A save's reply can beat
+ * its change event, and the page it opens would otherwise say the bot does not exist.
+ */
+const savedBots = new Map<string, BotDefinition>();
+
+export function rememberSavedBot(bot: BotDefinition) {
+  savedBots.set(bot.id, bot);
+}
+
+function withSavedBots(
+  known: ReadonlyArray<BotDefinition>,
+  changes: Pick<BotsChanges, "bots">,
+): ReadonlyArray<BotDefinition> {
+  if (savedBots.size === 0) return known;
+  const byId = new Map(known.map((bot) => [bot.id, bot]));
+  let added = false;
+  for (const [id, saved] of savedBots) {
+    const current = byId.get(id);
+    // A delete the watch saw, or a version at least as new, supersedes the remembered save.
+    if (
+      changes.bots.get(id) === null ||
+      (current !== undefined && current.version >= saved.version)
+    ) {
+      savedBots.delete(id);
+      continue;
+    }
+    byId.set(id, saved);
+    added = true;
+  }
+  return added
+    ? [...byId.values()].sort((left, right) => left.name.localeCompare(right.name))
+    : known;
+}
+
 /** The host, its watched changes, and its bots with those changes applied. */
 export function useBots() {
   const host = useBotsHost();
@@ -202,7 +246,7 @@ export function useBots() {
     live,
     changes,
     list,
-    bots: applyBotChanges(list.data?.bots ?? [], changes),
+    bots: withSavedBots(applyBotChanges(list.data?.bots ?? [], changes), changes),
   };
 }
 
@@ -261,11 +305,7 @@ export function useBotsAttentionCount() {
   // Waiting runs come from this client's thread shells, so no server feature gates them.
   const waiting = useWaitingBotRuns(live ? host.environmentId : null);
   const refresh = inbox.refresh;
-  const wasConnected = useRef(host.connected);
-  useEffect(() => {
-    if (host.connected && !wasConnected.current) refresh();
-    wasConnected.current = host.connected;
-  }, [host.connected, refresh]);
+  useRefreshOnReconnect(host.connected, refresh);
   useRefreshWhenBotsChangesPruned(changes, refresh);
   const page = inbox.data ? applyInboxChanges(inbox.data, changes, { dismissed: false }) : null;
   // A waiting run already in the inbox counts once; the total covers inbox runs not loaded yet.

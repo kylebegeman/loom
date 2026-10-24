@@ -184,6 +184,17 @@ describe("editing pipeline steps", () => {
     expect(stepOf(draft, "verify").goTo).toBe("");
   });
 
+  it("keeps a loop's target when another step still holds the removed step's id", () => {
+    const saved = pipelineDraft(reviewFixVerify);
+    const duplicate = {
+      ...saved,
+      steps: saved.steps.map((step) => (step.id === "fix" ? { ...step, id: "review" } : step)),
+    };
+    const draft = removeStep(duplicate, stepOf(saved, "review").key);
+    expect(ids(draft)).toEqual(["review", "verify"]);
+    expect(stepOf(draft, "verify").goTo).toBe("review");
+  });
+
   it("follows a renamed step in every template, item source and loop", () => {
     const draft = renameReferences(pipelineDraft(reviewFixVerify), "review", "audit");
     expect(stepOf(draft, "fix").forEachFrom).toBe("{{steps.audit.findings}}");

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotParameter, BotRun, BotTarget } from "@t3tools/contracts/fork";
@@ -34,8 +34,8 @@ import {
   LibraryNotice,
 } from "../project-library/LibraryControls";
 import { BotTargetField } from "./BotAnywhere";
-import { RUNTIME_MODE_LABELS } from "./BotEditor";
-import { runInputErrors, runValuesFrom, shortDescription } from "./runForm";
+import { RUNTIME_MODE_LABELS } from "./editorLogic";
+import { focusFirstInputError, runInputErrors, runValuesFrom, shortDescription } from "./runForm";
 import { bots, useBotsAccess, useBotsHost } from "./state";
 
 function FieldError({ error }: { readonly error: string | null | undefined }) {
@@ -49,11 +49,14 @@ function FieldError({ error }: { readonly error: string | null | undefined }) {
  * plain switch row and a long text grows with what is typed instead of opening tall.
  */
 export function ParameterField({
+  id,
   parameter,
   value,
   onChange,
   error,
 }: {
+  /** The control's id, so a form can take the person to the first input to fix. */
+  readonly id?: string;
   readonly parameter: BotParameter;
   readonly value: string;
   readonly onChange: (value: string) => void;
@@ -74,6 +77,7 @@ export function ParameterField({
             {hint}
           </span>
           <Switch
+            id={id}
             checked={value === "true"}
             onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
           />
@@ -83,7 +87,7 @@ export function ParameterField({
       return (
         <LibraryField label={label}>
           <Select value={value} onValueChange={(next) => onChange(next ?? "")}>
-            <SelectTrigger size="sm" aria-invalid={invalid}>
+            <SelectTrigger id={id} size="sm" aria-invalid={invalid}>
               <SelectValue>{value === "" ? "Choose…" : value}</SelectValue>
             </SelectTrigger>
             <SelectPopup>
@@ -102,6 +106,7 @@ export function ParameterField({
       return (
         <LibraryField label={label}>
           <Textarea
+            id={id}
             size="sm"
             value={value}
             aria-invalid={invalid}
@@ -115,6 +120,7 @@ export function ParameterField({
       return (
         <LibraryField label={label}>
           <Input
+            id={id}
             size="sm"
             inputMode="decimal"
             value={value}
@@ -129,6 +135,7 @@ export function ParameterField({
       return (
         <LibraryField label={label}>
           <Input
+            id={id}
             size="sm"
             value={value}
             aria-invalid={invalid}
@@ -176,6 +183,8 @@ export function BotRunForm({
 }) {
   const host = useBotsHost();
   const { canRun, canSave } = useBotsAccess();
+  const formId = useId();
+  const inputId = (name: string) => `${formId}-${name}`;
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
@@ -257,10 +266,15 @@ export function BotRunForm({
     setAttempted(true);
     if (invalid) {
       setError(null);
+      focusFirstInputError(bot.parameters, errors, inputId);
       return;
     }
     if (pickProject && projectId === "") {
-      setError(`Choose a project to run ${bot.name} in.`);
+      setError(
+        projects.length === 0
+          ? `${bot.name} runs in a project you choose, and this computer has none yet. Add a project first.`
+          : `Choose a project to run ${bot.name} in.`,
+      );
       return;
     }
     setBusy(true);
@@ -325,7 +339,8 @@ export function BotRunForm({
           <Button shape="pill" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button shape="pill" disabled={busy || blocked !== null} onClick={() => void submit()}>
+          {/* Tied to the form, so Enter in any short field runs it as well. */}
+          <Button shape="pill" type="submit" form={formId} disabled={busy || blocked !== null}>
             <PlayIcon />
             {busy ? "Starting…" : "Run"}
           </Button>
@@ -333,6 +348,7 @@ export function BotRunForm({
       }
     >
       <form
+        id={formId}
         className="flex flex-col gap-4"
         onSubmit={(event) => {
           event.preventDefault();
@@ -356,6 +372,7 @@ export function BotRunForm({
                 className={cn("min-w-0", spansRow(parameter) && "sm:col-span-2")}
               >
                 <ParameterField
+                  id={inputId(parameter.name)}
                   parameter={parameter}
                   value={values[parameter.name] ?? ""}
                   error={attempted ? errors[parameter.name] : null}

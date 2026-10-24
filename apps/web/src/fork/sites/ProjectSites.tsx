@@ -210,7 +210,7 @@ export function SitesSummary({
         </div>
       ) : !query.data ? (
         <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
-          Checking sites...
+          Checking sites…
         </p>
       ) : query.data.configured === false ? (
         <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">

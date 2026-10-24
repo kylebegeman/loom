@@ -360,6 +360,8 @@ export const fieldIds = {
   description: "bot-description",
   instructions: "bot-instructions",
   model: "bot-model",
+  project: "bot-project",
+  scope: "bot-scope",
   baseRef: "bot-base-ref",
   timeoutMinutes: "bot-timeout",
   maxConcurrentRuns: "bot-concurrency",
@@ -516,7 +518,7 @@ const slotProblems = (slot: BotVaultSlotDraft, repeat: boolean): ReadonlyArray<D
 
 /**
  * Every problem in the draft, in page order, each tied to the field that fixes it. Mirrors the
- * save schema's rules, so a draft without problems saves.
+ * save schema's rules and the server's checks on top of them, so a draft without problems saves.
  */
 export const draftProblems = (draft: BotDraft): ReadonlyArray<DraftProblem> => {
   const problems: Array<DraftProblem> = [];
@@ -561,6 +563,19 @@ export const draftProblems = (draft: BotDraft): ReadonlyArray<DraftProblem> => {
     add("bot-inputs", "inputs", "invalid", `A bot takes ${BOTS_MAX_PARAMETERS} inputs at most.`);
 
   if (draft.modelSelection === null) add(fieldIds.model, "runtime", "missing", "Choose a model.");
+  // The server refuses this pairing; the save schema alone cannot see it.
+  if (
+    draft.workspace !== "scratch" &&
+    draft.projectId !== "" &&
+    draft.scopeProjectId !== "" &&
+    draft.projectId !== draft.scopeProjectId
+  )
+    add(
+      fieldIds.project,
+      "runtime",
+      "invalid",
+      "A bot available in one project can only run in that project.",
+    );
   if (draft.workspace === "worktree" && draft.baseRef.trim().length > 500)
     add(fieldIds.baseRef, "runtime", "invalid", "Keep the base to 500 characters.");
   if (!wholeBetween(numberValue(draft.timeoutMinutes), 1, 120))

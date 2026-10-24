@@ -183,7 +183,7 @@ export function SiteDetail({
   const editSite = () => onEdit({ kind: "site", row: site });
   const editServes = () => onEdit({ kind: "site", row: site, step: "serves" });
   const editMonitoring = () => onEdit({ kind: "site", row: site, step: "monitoring" });
-  const toggling = activeToggle?.pending === `site:${site.id}`;
+  const toggling = activeToggle?.pending.has(`site:${site.id}`) ?? false;
   const editCheck = (check: Check) => onEdit({ kind: "check", row: check });
   const addCheck = (service: Service) => onEdit({ kind: "check", serviceId: service.id });
 
@@ -309,20 +309,14 @@ export function SiteDetail({
         selected={tab}
         onSelect={showTab}
         actions={
-          tab === "checks" ? (
+          tab === "checks" && services.length ? (
             <ChecksActions
               services={services}
               canManage={canManage}
               blocked={blocked}
-              running={running}
-              onRunChecks={onRunChecks}
               onAddCheck={addCheck}
               onLinkServices={editMonitoring}
             />
-          ) : tab === "traffic" && analytics.data ? (
-            <span className="text-xs tabular-nums text-muted-foreground">
-              Last {analytics.data.days} days
-            </span>
           ) : null
         }
       >
@@ -484,39 +478,26 @@ function SiteVitals({
 const byName = (a: Service, b: Service) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
 
-/** The Checks view's own controls, on the tab row so the view never stacks a second bar. */
+/**
+ * The Checks view's own controls, on the tab row so the view never stacks a second bar. Running
+ * checks stays in the hero, which is on screen above every view.
+ */
 function ChecksActions({
   services,
   canManage,
   blocked,
-  running,
-  onRunChecks,
   onAddCheck,
   onLinkServices,
 }: {
   readonly services: readonly Service[];
   readonly canManage: boolean;
   readonly blocked: string | null;
-  readonly running: boolean;
-  readonly onRunChecks: () => void;
   readonly onAddCheck: (service: Service) => void;
   readonly onLinkServices: () => void;
 }) {
   const only = services.length === 1 ? services[0] : undefined;
   return (
     <>
-      <ActionHint hint={blocked ?? RUN_ALL_HINT}>
-        <Button
-          shape="pill"
-          size="xs"
-          variant="outline"
-          disabled={!canManage || running}
-          onClick={onRunChecks}
-        >
-          <PlayIcon />
-          {running ? "Running checks…" : "Run all checks"}
-        </Button>
-      </ActionHint>
       {only ? (
         <ActionHint hint={blocked}>
           <Button
@@ -530,7 +511,7 @@ function ChecksActions({
             Add check
           </Button>
         </ActionHint>
-      ) : services.length > 1 ? (
+      ) : (
         <ActionHint hint={blocked}>
           <Menu>
             <MenuTrigger
@@ -557,21 +538,19 @@ function ChecksActions({
             </MenuPopup>
           </Menu>
         </ActionHint>
-      ) : null}
-      {services.length ? (
-        <ActionHint hint={blocked}>
-          <Button
-            shape="pill"
-            size="xs"
-            variant="ghost"
-            disabled={!canManage}
-            onClick={onLinkServices}
-          >
-            <LinkIcon />
-            Link services
-          </Button>
-        </ActionHint>
-      ) : null}
+      )}
+      <ActionHint hint={blocked}>
+        <Button
+          shape="pill"
+          size="xs"
+          variant="ghost"
+          disabled={!canManage}
+          onClick={onLinkServices}
+        >
+          <LinkIcon />
+          Link services
+        </Button>
+      </ActionHint>
     </>
   );
 }
@@ -1049,7 +1028,7 @@ function DetailsPanel({
                         shape="pill"
                         size="xs"
                         variant="ghost"
-                        disabled={!canManage || activeToggle.pending === `site:${site.id}`}
+                        disabled={!canManage || activeToggle.pending.has(`site:${site.id}`)}
                         onClick={() => activeToggle.toggle({ kind: "site", row: site })}
                       >
                         <PauseIcon />

@@ -299,7 +299,7 @@ it("waits for the selected historical definition and warns for its checkout even
   render(source);
   expect(submit().disabled).toBe(true);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(state.versionError);
-  act(() => button("Reload version").click());
+  act(() => button("Try again").click());
   expect(state.refresh).toHaveBeenCalled();
   state.versionError = null;
   state.version = {

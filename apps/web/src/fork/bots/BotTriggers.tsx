@@ -78,7 +78,6 @@ import { toastManager } from "~/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { WizardHeader, WizardPanel, WizardPopup } from "~/components/ui/wizard";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
@@ -105,16 +104,24 @@ import {
   type LibraryTick,
 } from "../project-library/LibraryData";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
-import { BotTile, runTime } from "./BotIdentity";
+import { BotTile, runTime, useMinuteNow } from "./BotIdentity";
+import { WithReason } from "./BotPipelines";
 import {
-  ReasonTooltip,
+  errorText,
   TRIGGER_KIND_ICONS,
   TriggerKindTile,
   TriggerWizard,
   triggerOperateReason,
 } from "./BotTriggerEditor";
 import { botsPageOf, useBotsNavigation, type BotsPageSearch } from "./navigation";
-import { bots, useBots, useBotsAccess, useBotTriggerChanges, usePipelines } from "./state";
+import {
+  bots,
+  useBots,
+  useBotsAccess,
+  useBotTriggerChanges,
+  usePipelines,
+  useRefreshOnReconnect,
+} from "./state";
 import {
   filterTriggers,
   firingActivity,
@@ -141,24 +148,8 @@ const SHEET_TICKS = 30;
 const EMPTY_TICK_KEYS = Array.from({ length: SHEET_TICKS }, (_, slot) => `empty-${slot}`);
 const SKELETON_ROWS = ["first", "second", "third"];
 
-const errorText = (cause: unknown, fallback: string) =>
-  cause instanceof Error ? cause.message : fallback;
-
 const byName = (left: { readonly name: string }, right: { readonly name: string }) =>
   left.name.localeCompare(right.name);
-
-function useNowMs() {
-  return Date.parse(`${useNowMinute()}:00Z`);
-}
-
-/** Changes missed while the host was away never arrive, so a reconnect refetches. */
-function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
-  const wasConnected = useRef(connected);
-  useEffect(() => {
-    if (connected && !wasConnected.current) refresh();
-    wasConnected.current = connected;
-  }, [connected, refresh]);
-}
 
 /**
  * Every trigger on the host, with watched changes applied. The index, the aside, the sheet and the
@@ -179,6 +170,8 @@ function useTriggerData() {
     host.connected,
   );
   useRefreshOnReconnect(host.connected, list.refresh);
+  // Trigger rows name the pipeline they start, which a missed rename or delete would leave stale.
+  useRefreshOnReconnect(host.connected, pipelineList.refresh);
   const projects = useProjects();
   const hostLabel = host.environment?.label ?? "The bots computer";
   return {
@@ -311,14 +304,14 @@ function TriggerEnabledSwitch({
     });
   };
   return (
-    <ReasonTooltip reason={reason}>
+    <WithReason reason={reason}>
       <Switch
-        aria-label={`${trigger.name} is on`}
+        aria-label={`Run ${trigger.name} automatically`}
         checked={checked}
         disabled={reason !== null || pending}
         onCheckedChange={(enabled) => void toggle(enabled)}
       />
-    </ReasonTooltip>
+    </WithReason>
   );
 }
 
@@ -349,9 +342,15 @@ function NewTriggerMenu({ data }: { readonly data: TriggerData }) {
     : [];
   const reason =
     data.operateReason ??
-    (runnable.length === 0 ? "Add a bot first. A trigger starts a bot or a pipeline." : null);
+    (runnable.length > 0
+      ? null
+      : data.botsLoading
+        ? "Loading bots…"
+        : !data.botsLoaded
+          ? "The bots did not load."
+          : "Add a bot first. A trigger starts a bot or a pipeline.");
   return (
-    <ReasonTooltip reason={reason}>
+    <WithReason reason={reason}>
       <Menu>
         <MenuTrigger disabled={reason !== null} render={<Button shape="pill" size="sm" />}>
           <PlusIcon />
@@ -392,7 +391,7 @@ function NewTriggerMenu({ data }: { readonly data: TriggerData }) {
           ) : null}
         </MenuPopup>
       </Menu>
-    </ReasonTooltip>
+    </WithReason>
   );
 }
 
@@ -617,7 +616,7 @@ function ReadOnlyNotice({ data }: { readonly data: TriggerData }) {
 export function TriggersView() {
   const data = useTriggerData();
   const nav = useBotsNavigation();
-  const now = useNowMs();
+  const now = useMinuteNow();
   const [search, setSearch] = useState("");
   // Kind and state filters live in the URL, so a narrowed agenda survives a reload and Back.
   const kinds: ReadonlySet<BotTriggerEventKind> = new Set(nav.search.triggerKinds ?? []);
@@ -823,7 +822,7 @@ function AsideRow({
 export function BotTriggersAside({ bot }: { readonly bot: BotDefinition }) {
   const data = useTriggerData();
   const nav = useBotsNavigation();
-  const now = useNowMs();
+  const now = useMinuteNow();
   if (!data.enabled) return null;
   const { nextUp, onDemand } = triggerAgenda(
     data.triggers.filter((trigger) => trigger.botId === bot.id),
@@ -843,7 +842,7 @@ export function BotTriggersAside({ bot }: { readonly bot: BotDefinition }) {
             </span>
           ) : null}
         </h2>
-        <ReasonTooltip reason={reason}>
+        <WithReason reason={reason}>
           <Button
             shape="pill"
             size="xs"
@@ -854,7 +853,7 @@ export function BotTriggersAside({ bot }: { readonly bot: BotDefinition }) {
             <PlusIcon />
             Add trigger
           </Button>
-        </ReasonTooltip>
+        </WithReason>
       </div>
       <LibraryErrorNotice error={data.list.error} onRetry={data.list.refresh} />
       {data.loading && !data.host.connected ? (
@@ -975,7 +974,7 @@ function WebhookAddressSection({
               <CopyIcon />
               {isCopied ? "Copied" : "Copy"}
             </Button>
-            <ReasonTooltip reason={data.operateReason}>
+            <WithReason reason={data.operateReason}>
               <Button
                 shape="pill"
                 size="xs"
@@ -986,7 +985,7 @@ function WebhookAddressSection({
                 <RotateCwIcon />
                 {busy ? "Changing…" : "New address"}
               </Button>
-            </ReasonTooltip>
+            </WithReason>
           </div>
           <p className="text-xs text-muted-foreground">
             {address.note ??
@@ -1383,7 +1382,7 @@ function TestFiringSection({
               <PlusIcon />
               Add field
             </Button>
-            <ReasonTooltip reason={reason}>
+            <WithReason reason={reason}>
               <Button
                 shape="pill"
                 size="sm"
@@ -1393,7 +1392,7 @@ function TestFiringSection({
                 <ZapIcon />
                 {busy ? "Firing…" : "Fire once"}
               </Button>
-            </ReasonTooltip>
+            </WithReason>
           </div>
           {error ? (
             <p role="alert" className="text-xs text-destructive-foreground">
@@ -1419,7 +1418,7 @@ function TriggerSheet({
   readonly trigger: BotTrigger;
 }) {
   const nav = useBotsNavigation();
-  const now = useNowMs();
+  const now = useMinuteNow();
   const remove = useAtomCommand(bots.deleteTrigger, { reportFailure: false });
   const repin = useAtomCommand(bots.repinTrigger, { reportFailure: false });
   const [repinning, setRepinning] = useState(false);
@@ -1605,7 +1604,7 @@ function TriggerSheet({
                   reason={data.operateReason}
                 />
               ) : null}
-              <ReasonTooltip reason={editReason}>
+              <WithReason reason={editReason}>
                 <Button
                   shape="pill"
                   size="sm"
@@ -1616,8 +1615,8 @@ function TriggerSheet({
                   <PencilIcon />
                   Edit
                 </Button>
-              </ReasonTooltip>
-              <ReasonTooltip reason={data.operateReason}>
+              </WithReason>
+              <WithReason reason={data.operateReason}>
                 <Button
                   shape="pill"
                   size="sm"
@@ -1628,7 +1627,7 @@ function TriggerSheet({
                   <Trash2Icon />
                   Delete
                 </Button>
-              </ReasonTooltip>
+              </WithReason>
             </div>
           </div>
         </SheetHeader>
@@ -1659,7 +1658,7 @@ function TriggerSheet({
               <LibraryNotice
                 icon={TriangleAlertIcon}
                 action={
-                  <ReasonTooltip reason={data.operateReason}>
+                  <WithReason reason={data.operateReason}>
                     <Button
                       shape="pill"
                       size="xs"
@@ -1669,7 +1668,7 @@ function TriggerSheet({
                     >
                       {repinning ? "Changing…" : `Use version ${bot.version}`}
                     </Button>
-                  </ReasonTooltip>
+                  </WithReason>
                 }
               >
                 It runs version {trigger.pinnedVersion}. {bot.name} has been saved since, as version{" "}

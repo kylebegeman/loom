@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type {
@@ -81,6 +81,7 @@ import { BotTargetField } from "./BotAnywhere";
 import { BotTile } from "./BotIdentity";
 import { ParameterField } from "./BotRunForm";
 import { useBotsNavigation } from "./navigation";
+import { focusFirstInputError } from "./runForm";
 import { bots, useBots, useBotsAccess, useBotsHost } from "./state";
 
 const PREVIEW_DEBOUNCE_MS = 400;
@@ -136,7 +137,7 @@ const GLOB_EXAMPLES = ["src/**/*.ts", "**/*.test.ts", "docs/**/*.md"] as const;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-function Choice<T extends string>({
+function SelectField<T extends string>({
   label,
   value,
   options,
@@ -323,6 +324,8 @@ function RunOnManyWizard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runBatch = useAtomCommand(bots.runBatch, { reportFailure: false });
+  const formId = useId();
+  const inputId = (name: string) => `${formId}-${name}`;
 
   const fixedProjectId =
     (bot.workspace.type === "project" ? bot.workspace.projectId : null) ?? bot.scopeProjectId;
@@ -358,6 +361,7 @@ function RunOnManyWizard({
     bot,
     Object.fromEntries(Object.entries(values).filter(([name]) => name !== itemParameter)),
   );
+  const shareable = bot.parameters.filter((parameter) => parameter.name !== itemParameter);
   const sharedErrors = sharedInputErrors(bot.parameters, itemParameter, values);
   const sharedErrorCount = Object.keys(sharedErrors).length;
   const input: BotsBatchInput | null =
@@ -403,6 +407,7 @@ function RunOnManyWizard({
 
   const submit = async () => {
     setAttempted(true);
+    if (sharedErrorCount > 0) focusFirstInputError(shareable, sharedErrors, inputId);
     if (!canSubmit || input === null || sharedErrorCount > 0 || invalidItems.length > 0) return;
     setBusy(true);
     setError(null);
@@ -434,7 +439,6 @@ function RunOnManyWizard({
   ) : null;
   const sourceInfo = SOURCES.find((candidate) => candidate.type === draft.type);
   const itemParam = bot.parameters.find((parameter) => parameter.name === itemParameter);
-  const shareable = bot.parameters.filter((parameter) => parameter.name !== itemParameter);
   const firstItem = previewed?.items[0];
   const firstValue = firstItem?.inputs[itemParameter];
 
@@ -455,6 +459,13 @@ function RunOnManyWizard({
               if (step === 0) {
                 if (itemsReady) setStep(1);
               } else void submit();
+            }}
+            onKeyDown={(event) => {
+              // Enter in the pasted lines adds a line, so the shortcut that moves on is Mod+Enter.
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                event.currentTarget.requestSubmit();
+              }
             }}
           >
             <WizardHeader
@@ -533,7 +544,7 @@ function RunOnManyWizard({
                         (fileSource && projectId !== null) ? (
                           <div className="grid gap-4 sm:grid-cols-2">
                             {pickProject && projects.length > 0 ? (
-                              <Choice
+                              <SelectField
                                 label="Project"
                                 value={chosenProject?.id ?? ""}
                                 options={projects.map(
@@ -548,7 +559,7 @@ function RunOnManyWizard({
                               />
                             ) : null}
                             {fileSource && projectId !== null ? (
-                              <Choice
+                              <SelectField
                                 label="Checkout"
                                 value={checkoutGone ? "" : draft.checkoutThreadId}
                                 options={[
@@ -597,7 +608,7 @@ function RunOnManyWizard({
                   <>
                     <div className="grid gap-2">
                       {bot.parameters.length > 1 ? (
-                        <Choice
+                        <SelectField
                           label="Each item fills"
                           value={itemParameter}
                           options={bot.parameters.map(
@@ -633,6 +644,7 @@ function RunOnManyWizard({
                             className={parameter.type === "text" ? "sm:col-span-2" : undefined}
                           >
                             <ParameterField
+                              id={inputId(parameter.name)}
                               parameter={parameter}
                               value={values[parameter.name] ?? ""}
                               onChange={(value) =>

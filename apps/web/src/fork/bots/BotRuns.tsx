@@ -36,7 +36,6 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { toastManager } from "~/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -52,7 +51,7 @@ import {
 import { useLibraryPermission } from "../project-library/state";
 import { ActivityStrip } from "./BotActivity";
 import { BatchesView } from "./BotBatches";
-import { BotTile, runTime } from "./BotIdentity";
+import { BotTile, runTime, useMinuteNow } from "./BotIdentity";
 import { NeedsYouView } from "./BotsInbox";
 import { botsPageOf, useBotsNavigation, type BotsPageSearch } from "./navigation";
 import { elapsedLabel, formatDuration, runDurationMs } from "./runMetrics";
@@ -83,10 +82,6 @@ import {
   useRefreshWhenBotsChangesPruned,
   useWaitingBotRuns,
 } from "./state";
-
-export { runInputSummary } from "./runLog";
-
-const nowFromMinute = (minute: string) => Date.parse(`${minute}:00Z`);
 
 /** The Runs view: every run on the index, or one bot's on its page, in the scope the search names. */
 export function RunsView({ bot }: { readonly bot: BotDefinition | null }) {
@@ -180,7 +175,7 @@ function RunLog({
   const nav = useBotsNavigation();
   const { host, live, changes, bots: definitions } = useBots();
   const access = useBotsAccess();
-  const now = nowFromMinute(useNowMinute());
+  const now = useMinuteNow();
   const environmentId = live ? host.environmentId : null;
   // Filters live in the URL, so a narrowed log survives a reload, a shared link and Back.
   const verdict = nav.search.verdict ?? null;
@@ -299,7 +294,11 @@ function RunLog({
         <div className="ms-auto flex items-center gap-1.5">{toolbarEnd}</div>
       </div>
       {bot === null && activity.length ? (
-        <ActivityStrip runs={activity} onSelectRun={(run) => nav.overlay({ runId: run.id })} />
+        <ActivityStrip
+          runs={activity}
+          now={now}
+          onSelectRun={(run) => nav.overlay({ runId: run.id })}
+        />
       ) : null}
       {first.data === null ? (
         first.error ? (
@@ -581,7 +580,7 @@ export function RunRows({
   const nav = useBotsNavigation();
   const { environmentId, connected } = useBotsHost();
   const canCancel = useLibraryPermission(bots.cancel, environmentId) && connected;
-  const now = nowFromMinute(useNowMinute());
+  const now = useMinuteNow();
   if (runs.length === 0) return null;
   const page = botsPageOf(nav.search);
   const cancellable =

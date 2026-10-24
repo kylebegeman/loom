@@ -85,7 +85,7 @@ import {
 import { ProjectWash } from "../project-library/ProjectCollection";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { botRecord, chronological, runTone } from "./BotActivity";
-import { BotTile, StarterBadge, runTime } from "./BotIdentity";
+import { BotTile, StarterBadge, runTime, useMinuteNow } from "./BotIdentity";
 import { NeedsYouBand } from "./BotsInbox";
 import { BotBudgetMeter, BotTokensCell, useBotUsage, useBotUsageWindow } from "./BotsUsage";
 import {
@@ -100,7 +100,6 @@ import {
   lastRunState,
   matchesBotFilters,
   needsYouByBot,
-  runOutcomeLabel,
   runsByBot,
   sortBots,
   successFigure,
@@ -111,8 +110,10 @@ import {
 } from "./botsCollection";
 import { BotSuggestionsSection } from "./fromThread/BotSuggestions";
 import { useBotsNavigation } from "./navigation";
+import { runOutcome } from "./runLog";
 import {
   bots,
+  rememberSavedBot,
   useBots,
   useBotsAccess,
   useBotsHost,
@@ -275,6 +276,7 @@ export function useBotLifecycle() {
       });
       return null;
     }
+    rememberSavedBot(result.value);
     return result.value;
   };
 
@@ -283,11 +285,6 @@ export function useBotLifecycle() {
 
 /** The quick moves on a bot that don't need its page. */
 export function BotActionsMenu({ bot }: { readonly bot: BotDefinition }) {
-  const host = useBotsHost();
-  const access = useBotsAccess();
-  const nav = useBotsNavigation();
-  const lifecycle = useBotLifecycle();
-  const archived = bot.archivedAt !== null;
   return (
     <Menu>
       <MenuTrigger
@@ -304,62 +301,74 @@ export function BotActionsMenu({ bot }: { readonly bot: BotDefinition }) {
         <EllipsisIcon />
       </MenuTrigger>
       <MenuPopup side="bottom" align="end">
-        {archived ? (
-          <MenuItem
-            disabled={!access.canSave}
-            onClick={() => void lifecycle.setArchived(bot, false)}
-          >
-            <ArchiveRestoreIcon />
-            Restore
-          </MenuItem>
-        ) : (
-          <>
-            <MenuItem disabled={!access.canRun} onClick={() => nav.overlay({ run: bot.id })}>
-              <PlayIcon />
-              Run
-            </MenuItem>
-            {host.batchesSupported && bot.parameters.length ? (
-              <MenuItem disabled={!access.canRun} onClick={() => nav.overlay({ many: bot.id })}>
-                <LayersIcon />
-                Run on many
-              </MenuItem>
-            ) : null}
-          </>
-        )}
-        <MenuItem disabled={!access.canSave} onClick={() => nav.open({ bot: bot.id, edit: true })}>
-          <PencilIcon />
-          Edit
-        </MenuItem>
-        {host.triggersSupported && !archived ? (
-          <MenuItem
-            disabled={!access.canOperateTriggers}
-            onClick={() => nav.overlay({ newTrigger: bot.id })}
-          >
-            <ZapIcon />
-            Add trigger
-          </MenuItem>
-        ) : null}
-        <MenuSeparator />
-        {archived ? (
-          <MenuItem
-            variant="destructive"
-            disabled={!access.canSave}
-            onClick={() => void lifecycle.deleteBot(bot)}
-          >
-            <Trash2Icon />
-            Delete
-          </MenuItem>
-        ) : (
-          <MenuItem
-            disabled={!access.canSave}
-            onClick={() => void lifecycle.setArchived(bot, true)}
-          >
-            <ArchiveIcon />
-            Archive
-          </MenuItem>
-        )}
+        <BotActionsMenuItems bot={bot} />
       </MenuPopup>
     </Menu>
+  );
+}
+
+/**
+ * The menu's items, apart so their search, permission and host subscriptions mount only while the
+ * menu is open. Every card and row carries a menu, so holding them in the trigger multiplied those
+ * subscriptions, and the re-renders each search change caused, by every bot shown.
+ */
+function BotActionsMenuItems({ bot }: { readonly bot: BotDefinition }) {
+  const host = useBotsHost();
+  const access = useBotsAccess();
+  const nav = useBotsNavigation();
+  const lifecycle = useBotLifecycle();
+  const archived = bot.archivedAt !== null;
+  return (
+    <>
+      {archived ? (
+        <MenuItem disabled={!access.canSave} onClick={() => void lifecycle.setArchived(bot, false)}>
+          <ArchiveRestoreIcon />
+          Restore
+        </MenuItem>
+      ) : (
+        <>
+          <MenuItem disabled={!access.canRun} onClick={() => nav.overlay({ run: bot.id })}>
+            <PlayIcon />
+            Run
+          </MenuItem>
+          {host.batchesSupported && bot.parameters.length ? (
+            <MenuItem disabled={!access.canRun} onClick={() => nav.overlay({ many: bot.id })}>
+              <LayersIcon />
+              Run on many
+            </MenuItem>
+          ) : null}
+        </>
+      )}
+      <MenuItem disabled={!access.canSave} onClick={() => nav.open({ bot: bot.id, edit: true })}>
+        <PencilIcon />
+        Edit
+      </MenuItem>
+      {host.triggersSupported && !archived ? (
+        <MenuItem
+          disabled={!access.canOperateTriggers}
+          onClick={() => nav.overlay({ newTrigger: bot.id })}
+        >
+          <ZapIcon />
+          Add trigger
+        </MenuItem>
+      ) : null}
+      <MenuSeparator />
+      {archived ? (
+        <MenuItem
+          variant="destructive"
+          disabled={!access.canSave}
+          onClick={() => void lifecycle.deleteBot(bot)}
+        >
+          <Trash2Icon />
+          Delete
+        </MenuItem>
+      ) : (
+        <MenuItem disabled={!access.canSave} onClick={() => void lifecycle.setArchived(bot, true)}>
+          <ArchiveIcon />
+          Archive
+        </MenuItem>
+      )}
+    </>
   );
 }
 
@@ -369,20 +378,20 @@ const EMPTY_TICKS: readonly LibraryTick[] = Array.from({ length: MAX_TICKS }, (_
   tone: null,
 }));
 
+const runAt = (run: BotRun) => run.finishedAt ?? run.startedAt ?? run.createdAt;
+
 /** A bot's latest runs as ticks, oldest first, padded so a short history reads as a full track. */
-export function runTicks(runs: readonly BotRun[], slots: number): LibraryTick[] {
+export function runTicks(runs: readonly BotRun[], slots: number, now: number): LibraryTick[] {
   const shown = chronological(runs, Math.min(slots, MAX_TICKS));
   return [
     ...EMPTY_TICKS.slice(0, Math.min(slots, MAX_TICKS) - shown.length),
     ...shown.map((run) => ({
       key: run.id,
       tone: runTone(run),
-      label: `${runOutcomeLabel(run)}, ${runTime(run.finishedAt ?? run.startedAt ?? run.createdAt) ?? "time unknown"}`,
+      label: `${runOutcome(run).label}, ${runTime(runAt(run), now) ?? "time unknown"}`,
     })),
   ];
 }
-
-const runAt = (run: BotRun) => run.finishedAt ?? run.startedAt ?? run.createdAt;
 
 /** The newest runs are a window; what a bot's last run was depends on whether it fits in it. */
 function BotLastRun({
@@ -390,11 +399,13 @@ function BotLastRun({
   full,
   loading,
   unavailable,
+  now,
 }: {
   readonly recent: readonly BotRun[];
   readonly full: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;
+  readonly now: number;
 }) {
   if (loading) return <Skeleton className="h-3 w-14" />;
   if (unavailable) return <span className="text-muted-foreground/70">Unavailable</span>;
@@ -403,7 +414,7 @@ function BotLastRun({
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
         <LibraryStateDot tone={runTone(state.run)} className="size-1.5" />
-        {runTime(runAt(state.run))}
+        {runTime(runAt(state.run), now)}
       </span>
     );
   if (state.kind === "none") return <span className="text-muted-foreground/70">No runs yet</span>;
@@ -554,6 +565,7 @@ type CollectionContext = {
     readonly full: boolean;
     readonly loading: boolean;
     readonly unavailable: boolean;
+    readonly now: number;
   };
 };
 
@@ -593,7 +605,7 @@ function BotCard({
         ) : (
           <TickStrip
             label={`${bot.name}'s latest runs`}
-            ticks={runTicks(facts.recent, CARD_TICKS)}
+            ticks={runTicks(facts.recent, CARD_TICKS, context.runs.now)}
           />
         )}
         <div className="ms-auto flex min-w-0 items-center gap-2.5 text-xs tabular-nums text-muted-foreground">
@@ -606,7 +618,7 @@ function BotCard({
 }
 
 /** Archived bots keep a face, a smaller one, so they stay easy to find without crowding. */
-function ArchivedBotCard({ bot }: { readonly bot: BotDefinition }) {
+function ArchivedBotCard({ bot, now }: { readonly bot: BotDefinition; readonly now: number }) {
   return (
     <li
       style={projectColorStyle(botColor(bot))}
@@ -620,7 +632,7 @@ function ArchivedBotCard({ bot }: { readonly bot: BotDefinition }) {
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-medium leading-5">{bot.name}</h3>
         <p className="truncate text-xs tabular-nums text-muted-foreground">
-          Archived {bot.archivedAt ? formatRelativeTimeLabel(bot.archivedAt) : ""}
+          Archived {bot.archivedAt ? formatRelativeTimeLabel(bot.archivedAt, now) : ""}
         </p>
       </div>
       <BotActionsMenu bot={bot} />
@@ -709,7 +721,7 @@ function BotRows({
               ) : (
                 <TickStrip
                   label={`${bot.name}'s latest runs`}
-                  ticks={runTicks(facts.recent, ROW_TICKS)}
+                  ticks={runTicks(facts.recent, ROW_TICKS, context.runs.now)}
                 />
               )}
             </td>
@@ -791,13 +803,21 @@ export function BotsCollection() {
   const starters = useBotStarters();
   const lifecycle = useBotLifecycle();
   const needsYou = needsYouByBot(useNeedsYouItems(null, newest.runs), allBots);
+  const now = useMinuteNow();
   const recentByBot = runsByBot(newest.runs);
-  const factsOf = (bot: BotDefinition): BotFacts => ({
-    recent: recentByBot.get(bot.id) ?? [],
-    row: usage.rowOf(bot.id),
-    budget: usage.budgetOf(bot.id),
-    needsYou: needsYou.get(bot.id) ?? 0,
-  });
+  // Sorting, filtering and every filter count read these, so each bot's are gathered once.
+  const facts = new Map(
+    allBots.map((bot): [string, BotFacts] => [
+      bot.id,
+      {
+        recent: recentByBot.get(bot.id) ?? [],
+        row: usage.rowOf(bot.id),
+        budget: usage.budgetOf(bot.id),
+        needsYou: needsYou.get(bot.id) ?? 0,
+      },
+    ]),
+  );
+  const factsOf = (bot: BotDefinition) => facts.get(bot.id)!;
   const usageSupported = host.budgetsSupported;
   const sort: BotSort =
     preferences.sort === "tokens" && !usageSupported ? "activity" : preferences.sort;
@@ -827,7 +847,7 @@ export function BotsCollection() {
       unavailable: usageSupported && usage.error !== null && !usage.usage,
       days,
     },
-    runs: { full: newest.full, loading: newest.loading, unavailable: newest.unavailable },
+    runs: { full: newest.full, loading: newest.loading, unavailable: newest.unavailable, now },
   };
   const stateOptions = BOT_STATE_FILTERS.filter((state) => state !== "budget" || usageSupported);
   // Each option counts the bots in view it would keep alongside the search and other filters.
@@ -950,7 +970,7 @@ export function BotsCollection() {
             aria-label="Archived bots"
           >
             {shown.map((bot) => (
-              <ArchivedBotCard key={bot.id} bot={bot} />
+              <ArchivedBotCard key={bot.id} bot={bot} now={context.runs.now} />
             ))}
           </ul>
         ) : (

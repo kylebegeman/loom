@@ -50,9 +50,9 @@ import { TickStrip } from "../project-library/LibraryData";
 import { LibraryTabs, type LibraryTab } from "../project-library/LibraryTabs";
 import { BotSharingAside } from "./BotAnywhere";
 import { botRecord, runTone } from "./BotActivity";
-import { RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./BotEditor";
+import { RUNTIME_MODE_LABELS, WORKSPACE_LABELS } from "./editorLogic";
 import { BotVersionsView } from "./BotHistory";
-import { BotTile, StarterBadge, formatSpan, runTime } from "./BotIdentity";
+import { BotTile, StarterBadge, formatSpan, runTime, useMinuteNow } from "./BotIdentity";
 import { BotPipelinesAside } from "./BotPipelines";
 import { RunRows, RunsView } from "./BotRuns";
 import { BotTriggersAside } from "./BotTriggers";
@@ -329,8 +329,9 @@ function BotVitals({ bot, newest }: { readonly bot: BotDefinition; readonly newe
   const nav = useBotsNavigation();
   const [days] = useBotUsageWindow();
   const usage = useBotUsage(days);
+  const now = useMinuteNow();
   const last = newest.runs[0];
-  const ticks = runTicks(newest.runs, HERO_TICKS);
+  const ticks = runTicks(newest.runs, HERO_TICKS, now);
   const runsShown = Math.min(newest.runs.length, HERO_TICKS);
   return (
     <LibraryVitals>
@@ -352,7 +353,7 @@ function BotVitals({ bot, newest }: { readonly bot: BotDefinition; readonly newe
         ) : last ? (
           <span className="inline-flex items-center gap-1.5">
             <LibraryStateDot tone={runTone(last)} className="size-1.5" />
-            {runTime(last.finishedAt ?? last.startedAt ?? last.createdAt)}
+            {runTime(last.finishedAt ?? last.startedAt ?? last.createdAt, now)}
           </span>
         ) : (
           <Muted>Never</Muted>

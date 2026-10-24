@@ -302,7 +302,8 @@ function BotEditor({
   );
   const [baseline, setBaseline] = useState(initialDraft);
   const [draft, setDraft] = useState(initialDraft);
-  const [expectedVersion, setExpectedVersion] = useState(bot?.version);
+  // Version 0 tells the server this creates a bot, so a taken id fails instead of overwriting.
+  const [expectedVersion, setExpectedVersion] = useState(bot?.version ?? 0);
   const [idTouched, setIdTouched] = useState(bot !== null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -470,7 +471,13 @@ function BotEditor({
         if (!mounted.current) return;
         if (result._tag === "Failure") {
           const cause = squashAtomCommandFailure(result);
-          setError(cause instanceof Error ? cause.message : "Could not save the bot.");
+          const message = cause instanceof Error ? cause.message : "Could not save the bot.";
+          // Older servers word a taken id as a stale edit, which would confuse someone creating a bot.
+          setError(
+            bot === null && message.startsWith("This bot changed since")
+              ? `Another bot already uses the id ${checked.input.id}. Choose another id.`
+              : message,
+          );
           setBusy(false);
         } else {
           if (suggestionId)

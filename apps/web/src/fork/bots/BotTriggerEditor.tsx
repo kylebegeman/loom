@@ -1,4 +1,4 @@
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   BadgeXIcon,
   ChevronDownIcon,
@@ -47,7 +47,6 @@ import {
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   WizardFooter,
   WizardHeader,
@@ -113,7 +112,7 @@ export const TRIGGER_KIND_HINTS: Record<BotTriggerEventKind, string> = {
 
 const STEP_LABELS = ["Kind", "When", "What it runs", "Review"] as const;
 
-const errorText = (cause: unknown, fallback: string) =>
+export const errorText = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
 
 /** Why trigger actions are off, or null when they are on. */
@@ -150,23 +149,6 @@ export function TriggerKindTile({
     >
       <Icon className={size === "sm" ? "size-3.5" : "size-4"} />
     </span>
-  );
-}
-
-/** Says why a control is off. A disabled button takes no pointer events, so the span holds them. */
-export function ReasonTooltip({
-  reason,
-  children,
-}: {
-  readonly reason: string | null;
-  readonly children: ReactElement;
-}) {
-  if (reason === null) return children;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>{children}</TooltipTrigger>
-      <TooltipPopup side="top">{reason}</TooltipPopup>
-    </Tooltip>
   );
 }
 
@@ -494,6 +476,7 @@ function WebhookFields({
                     font="mono"
                     autoComplete="off"
                     spellCheck={false}
+                    maxLength={500}
                     placeholder={
                       hasSecret ? "Stored secret kept" : "The secret the sender signs with"
                     }
@@ -626,6 +609,7 @@ function WhenStep({
               <LibraryField label="Repository">
                 <Input
                   placeholder="Any, or owner/name"
+                  maxLength={200}
                   value={draft.repository}
                   onChange={(event) => update({ repository: event.target.value })}
                 />
@@ -633,6 +617,7 @@ function WhenStep({
               <LibraryField label="Branch">
                 <Input
                   placeholder="Any, or release/*"
+                  maxLength={200}
                   value={draft.branchPattern}
                   onChange={(event) => update({ branchPattern: event.target.value })}
                 />
@@ -763,6 +748,7 @@ function MappingRow({
               aria-label={`${parameter.label} request field`}
               font="mono"
               placeholder="body.pull_request.number"
+              maxLength={200}
               value={entry.field}
               onChange={(event) => onChange({ field: event.target.value })}
             />
@@ -1048,7 +1034,9 @@ function ReviewStep({
       <label className="flex items-start gap-3">
         <Switch checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} />
         <span className="grid gap-0.5">
-          <span className="text-sm font-medium">{existing ? "On" : "Turn on when saved"}</span>
+          <span className="text-sm font-medium">
+            {existing ? "Run automatically" : "Run automatically once saved"}
+          </span>
           <span className="text-xs text-muted-foreground">
             {draft.enabled
               ? "It fires as soon as it is saved."

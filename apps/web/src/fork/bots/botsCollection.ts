@@ -1,5 +1,4 @@
 import type { BotBudgetState, BotDefinition, BotRun, BotUsageRow } from "@t3tools/contracts/fork";
-import { BOT_RUN_STATES, BOT_VERDICT_STATES } from "@t3tools/client-runtime/fork";
 
 export const BOT_SORTS = ["activity", "name", "tokens"] as const;
 export type BotSort = (typeof BOT_SORTS)[number];
@@ -183,12 +182,6 @@ export function successFigure(row: BotUsageRow | undefined) {
     detail: `${row.completed} of ${finished}`,
   };
 }
-
-/** A run's outcome in a word or two: its verdict once it has one, else its status. */
-export const runOutcomeLabel = (run: BotRun) =>
-  run.status === "completed" && run.verdict
-    ? BOT_VERDICT_STATES[run.verdict.verdict].label
-    : BOT_RUN_STATES[run.status].label;
 
 /**
  * What the collection can truthfully say about a bot's last run from the newest runs across every

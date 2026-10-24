@@ -100,17 +100,21 @@ export const moveStep = (draft: PipelineDraft, key: string, by: -1 | 1): Pipelin
   return { ...draft, steps };
 };
 
-/** Removes a step. A loop that went back to it loses its target, so the builder asks for another. */
+/**
+ * Removes a step. A loop that went back to it loses its target, so the builder asks for another,
+ * unless another step still holds the id, as a half-typed duplicate can.
+ */
 export const removeStep = (draft: PipelineDraft, key: string): PipelineDraft => {
   const removed = draft.steps.find((step) => step.key === key);
   if (removed === undefined) return draft;
+  const id = removed.id.trim();
+  const steps = draft.steps.filter((step) => step.key !== key);
+  if (steps.some((step) => step.id.trim() === id)) return { ...draft, steps };
   return {
     ...draft,
-    steps: draft.steps
-      .filter((step) => step.key !== key)
-      .map((step) =>
-        step.onFail === "loop" && step.goTo === removed.id ? { ...step, goTo: "" } : step,
-      ),
+    steps: steps.map((step) =>
+      step.onFail === "loop" && step.goTo === id ? { ...step, goTo: "" } : step,
+    ),
   };
 };
 

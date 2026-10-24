@@ -226,6 +226,20 @@ describe("draftProblems", () => {
     for (const draft of drafts)
       expect(draftProblems(draft).length === 0).toBe(saveInputFromDraft(draft, 1).ok);
   });
+
+  it("refuses a run project other than the one project it is available in, as the server does", () => {
+    const valid = botDraft(base);
+    const fields = (draft: BotDraft) => draftProblems(draft).map((problem) => problem.field);
+    const scoped = { ...valid, scopeProjectId: "loom" };
+    expect(fields({ ...scoped, workspace: "project", projectId: "site" })).toEqual(["bot-project"]);
+    expect(fields({ ...scoped, workspace: "checkout", projectId: "site" })).toEqual([
+      "bot-project",
+    ]);
+    expect(fields({ ...scoped, workspace: "project", projectId: "loom" })).toEqual([]);
+    expect(fields({ ...scoped, workspace: "project", projectId: "" })).toEqual([]);
+    expect(fields({ ...scoped, workspace: "scratch", projectId: "site" })).toEqual([]);
+    expect(fields({ ...valid, scopeProjectId: "", projectId: "site" })).toEqual([]);
+  });
 });
 
 describe("withParameterType", () => {

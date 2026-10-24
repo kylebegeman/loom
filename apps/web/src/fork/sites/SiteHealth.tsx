@@ -79,28 +79,14 @@ export function sitePath(url: string) {
 export const formatDuration = (ms: number) =>
   ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 
-const TILE_SIZES = {
-  sm: "size-7 rounded-lg [&>svg]:size-3.5",
-  lg: "size-11 rounded-xl [&>svg]:size-5",
-} as const;
-
-/** A site's mark: the globe in the color it takes from its project. */
-export function SiteTile({
-  icon: Icon = GlobeIcon,
-  size = "sm",
-}: {
-  readonly icon?: LucideIcon;
-  readonly size?: keyof typeof TILE_SIZES;
-}) {
+/** A service's kind on its project's tint, heading its group of checks. */
+function ServiceTile({ icon: Icon }: { readonly icon: LucideIcon }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
-        TILE_SIZES[size],
-      )}
+      className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
     >
-      <Icon />
+      <Icon className="size-3.5" />
     </span>
   );
 }
@@ -399,6 +385,12 @@ export function ActionHint({
   );
 }
 
+/** Why a menu's changes are off, said inside the menu since a disabled item takes no tooltip. */
+export function MenuBlockedNote({ hint }: { readonly hint: string | null | undefined }) {
+  if (!hint) return null;
+  return <p className="max-w-60 px-2 py-1.5 text-xs text-muted-foreground">{hint}</p>;
+}
+
 /** A site, service or check to pause or resume in place, without opening its editor. */
 export type ActiveToggleTarget =
   | { readonly kind: "site"; readonly row: Site }
@@ -407,8 +399,8 @@ export type ActiveToggleTarget =
 
 /** The shape of the editor's `useSiteActiveToggle`, so its result passes straight through. */
 export type ActiveToggle = {
-  /** The `kind:id` of the entry being saved, so its control can say so. */
-  readonly pending: string | null;
+  /** The `kind:id` of each entry being saved, so its control can say so. */
+  readonly pending: ReadonlySet<string>;
   readonly toggle: (target: ActiveToggleTarget) => void;
 };
 
@@ -471,7 +463,7 @@ export function EndpointsTable({
             <tr className="bg-muted/25 dark:bg-accent/15">
               <td colSpan={ENDPOINT_COLUMNS.length} className="py-1.5 ps-3 pe-1.5">
                 <div className="flex min-w-0 items-center gap-x-3 gap-y-1">
-                  <SiteTile icon={kind.icon} />
+                  <ServiceTile icon={kind.icon} />
                   <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
                     <span
                       className={cn(
@@ -524,13 +516,14 @@ export function EndpointsTable({
                       </MenuItem>
                       {activeToggle ? (
                         <MenuItem
-                          disabled={!canManage || activeToggle.pending === `service:${service.id}`}
+                          disabled={!canManage || activeToggle.pending.has(`service:${service.id}`)}
                           onClick={() => activeToggle.toggle({ kind: "service", row: service })}
                         >
                           {paused ? <PlayIcon /> : <PauseIcon />}
                           {paused ? "Resume service" : "Pause service"}
                         </MenuItem>
                       ) : null}
+                      <MenuBlockedNote hint={canManage ? null : manageHint} />
                     </MenuPopup>
                   </Menu>
                 </div>
@@ -723,12 +716,13 @@ function CheckRow({
                 Edit check
               </MenuItem>
               <MenuItem
-                disabled={!canManage || activeToggle.pending === `check:${check.id}`}
+                disabled={!canManage || activeToggle.pending.has(`check:${check.id}`)}
                 onClick={() => activeToggle.toggle({ kind: "check", row: check })}
               >
                 {check.active ? <PauseIcon /> : <PlayIcon />}
                 {check.active ? "Pause check" : "Resume check"}
               </MenuItem>
+              <MenuBlockedNote hint={canManage ? null : manageHint} />
             </MenuPopup>
           </Menu>
         ) : (

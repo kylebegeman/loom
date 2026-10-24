@@ -3,6 +3,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { BotRun, BotsInboxPage } from "@t3tools/contracts/fork";
 import {
+  applyInboxChanges,
   makeWaitingBotRunsAtom,
   waitingBotRunThreads,
   type WaitingBotRunThread,
@@ -11,11 +12,12 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import {
   TRIAGE_REPEAT_MIN,
   combineTriagePages,
-  dismissibleRunIds,
+  dismissibleRuns,
   foldRepeats,
   groupTriage,
   olderCursor,
   orderTriage,
+  outsideInboxWindow,
   triageBotCounts,
   triageBotState,
   triageEvidence,
@@ -139,6 +141,33 @@ describe("combineTriagePages", () => {
     expect(combined.runs.map((run) => run.id)).toEqual(["a", "b", "c", "d"]);
     expect(combined.hasMore).toBe(true);
     expect(olderCursor(combined.runs)).toBe(at(6));
+  });
+});
+
+describe("outsideInboxWindow", () => {
+  const first = page(
+    [
+      makeBotRun("a", { status: "failed", createdAt: at(9) }),
+      makeBotRun("b", { status: "failed", createdAt: at(8) }),
+    ],
+    { total: 5, hasMore: true },
+  );
+  const watchedTotal = (run: BotRun) =>
+    applyInboxChanges(first, { runs: new Map([[run.id, run]]) }, { dismissed: false }).total;
+
+  it("flags exactly the dismissals the watch cannot count", () => {
+    const inside = makeBotRun("b", { status: "failed", createdAt: at(8), dismissedAt: at(20) });
+    const older = makeBotRun("c", { status: "failed", createdAt: at(7), dismissedAt: at(20) });
+    expect(watchedTotal(inside)).toBe(4);
+    expect(outsideInboxWindow(first, [inside.createdAt])).toBe(false);
+    expect(watchedTotal(older)).toBe(5);
+    expect(outsideInboxWindow(first, [older.createdAt])).toBe(true);
+  });
+
+  it("trusts a complete page and doubts a run it cannot date", () => {
+    expect(outsideInboxWindow({ ...first, hasMore: false }, [at(1)])).toBe(false);
+    expect(outsideInboxWindow(first, [null])).toBe(true);
+    expect(outsideInboxWindow(null, [null])).toBe(false);
   });
 });
 
@@ -291,7 +320,7 @@ describe("triage summaries", () => {
       findRun: (runId) => makeBotRun(runId, { status: "running" }),
       bot: null,
     });
-    expect(dismissibleRunIds(items)).toEqual(["done"]);
+    expect(dismissibleRuns(items).map((run) => run.id)).toEqual(["done"]);
   });
 
   it("gives one verb for what to do next", () => {

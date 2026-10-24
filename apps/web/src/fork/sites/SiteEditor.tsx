@@ -40,7 +40,7 @@ import { LibraryDialog } from "../project-library/LibraryControls";
 import { useUnsavedChangesGuard } from "../project-library/LibraryEditor";
 import { ProjectTile } from "../project-library/ProjectIdentity";
 import { useLibraryPermission, useLibraryProjects } from "../project-library/state";
-import { SERVICE_KINDS, SiteMark, siteHost, sitePath } from "./SiteHealth";
+import { SERVICE_KINDS, SiteMark, siteHost, sitePath, type ActiveToggleTarget } from "./SiteHealth";
 import { sites } from "./state";
 
 type Site = SitesSnapshot["sites"][number];
@@ -302,6 +302,15 @@ export function servicesForOrigin(services: readonly Service[], origin: string) 
   return services.filter((service) => originOf(service.url) === origin);
 }
 
+/**
+ * A request's identity for a save that may be retried, and the request itself unless that exact
+ * one already went through. A retry after an edit sends the edited entry rather than skipping it.
+ */
+export function unsentRequest<T>(request: T, sent: string | null | undefined) {
+  const key = JSON.stringify(request);
+  return { key, request: key === sent ? null : request };
+}
+
 function sitesStage(cause: unknown) {
   return typeof cause === "object" &&
     cause !== null &&
@@ -405,8 +414,14 @@ function SiteWizard({
   const [markOrigin, setMarkOrigin] = useState(row ? originOf(row.url) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // What a partly failed save already registered, so trying again finishes rather than repeats.
-  const [saved, setSaved] = useState<{ serviceId: string; checkId: string | null } | null>(null);
+  // What a partly failed save already sent, so trying again sends only what is missing or edited.
+  // The IDs stay fixed across tries, so a retry updates those entries instead of adding more.
+  const [sent, setSent] = useState<{
+    readonly serviceId: string;
+    readonly checkId: string;
+    readonly service: string | null;
+    readonly check: string | null;
+  } | null>(null);
   const [dirty, setDirty] = useState(false);
   const formId = useId();
   const catalog = useLibraryProjects(true);
@@ -480,56 +495,61 @@ function SiteWizard({
     }
     setBusy(true);
     setError(null);
-    let parts = saved;
+    let progress = sent;
     try {
       if (draft.watch) {
         const serviceId =
-          parts?.serviceId ??
+          progress?.serviceId ??
           uniqueId(
             idFromName(suggestedName(origin)),
             new Set(snapshot.services.map((service) => service.id)),
           );
-        if (!parts) {
-          const result = await saveService({
-            environmentId,
-            input: decodeSaveSiteServiceRequest({
-              id: serviceId,
-              name: name.trim(),
-              url: origin,
-              active: true,
-              kind: "website",
-            }),
-          });
-          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-          parts = { serviceId, checkId: null };
-          setSaved(parts);
-        }
-        if (!parts.checkId) {
-          const checkId = uniqueId(
+        const checkId =
+          progress?.checkId ??
+          uniqueId(
             `${serviceId}-home`.slice(0, MAX_ID_LENGTH),
             new Set(snapshot.checks.map((check) => check.id)),
           );
-          const result = await saveCheck({
-            environmentId,
-            input: decodeSaveSiteCheckRequest({
-              id: checkId,
-              name: "Home",
-              url: `${origin}/`,
-              active: true,
-              service_id: serviceId,
-              expected_status: 200,
-              content: "",
-            }),
-          });
+        progress ??= { serviceId, checkId, service: null, check: null };
+        const service = unsentRequest(
+          decodeSaveSiteServiceRequest({
+            id: serviceId,
+            name: name.trim(),
+            url: origin,
+            active: true,
+            kind: "website",
+          }),
+          progress.service,
+        );
+        if (service.request) {
+          const result = await saveService({ environmentId, input: service.request });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-          parts = { serviceId, checkId };
-          setSaved(parts);
+          progress = { ...progress, service: service.key };
+          setSent(progress);
+        }
+        const check = unsentRequest(
+          decodeSaveSiteCheckRequest({
+            id: checkId,
+            name: "Home",
+            url: `${origin}/`,
+            active: true,
+            service_id: serviceId,
+            expected_status: 200,
+            content: "",
+          }),
+          progress.check,
+        );
+        if (check.request) {
+          const result = await saveCheck({ environmentId, input: check.request });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          progress = { ...progress, check: check.key };
+          setSent(progress);
         }
       }
       const result = await saveSite({
         environmentId,
         input: decodeSaveSiteRequest(
-          siteSaveRequest(draft, origin, draft.watch ? (parts?.serviceId ?? null) : null),
+          siteSaveRequest(draft, origin, draft.watch ? (progress?.serviceId ?? null) : null),
         ),
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -537,8 +557,8 @@ function SiteWizard({
     } catch (cause) {
       const text = failureText(cause);
       setError(
-        parts
-          ? `The ${siteHost(origin)} service${parts.checkId ? " and its home page check are" : " is"} registered, but the site is not yet. ${text}`
+        progress?.service
+          ? `The ${siteHost(origin)} service${progress.check ? " and its home page check are" : " is"} registered, but the site is not yet. ${text}`
           : text,
       );
       if (sitesStage(cause) === "project") setStep(SITE_WIZARD_STEPS.indexOf("serves"));
@@ -666,6 +686,8 @@ function SiteWizard({
               Back
             </Button>
           ) : null}
+          {/* One button for Next and Register, so pressing Next into the last step keeps focus
+              on it instead of dropping it with a swapped element. */}
           {editing || last ? (
             <SaveButton
               form={formId}
@@ -677,9 +699,9 @@ function SiteWizard({
               {busy ? "Saving…" : editing ? "Save changes" : "Register site"}
             </SaveButton>
           ) : (
-            <Button shape="pill" type="submit" form={formId}>
+            <SaveButton form={formId} canSave connected allowed reason={null}>
               Next
-            </Button>
+            </SaveButton>
           )}
         </WizardFooter>
       </WizardPopup>
@@ -1154,7 +1176,8 @@ function ServiceDialog({
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedService, setSavedService] = useState<string | null>(null);
+  // The service request a partly failed save already sent, so a retry skips it only if unedited.
+  const [sentService, setSentService] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const formId = useId();
   const allowed = useLibraryPermission(sites.saveService, environmentId);
@@ -1192,17 +1215,20 @@ function ServiceDialog({
     if (!canSave || !origin || issues.name || issues.id) return;
     setBusy(true);
     setError(null);
-    let serviceSaved = savedService;
+    let serviceSaved = false;
     try {
-      if (!serviceSaved) {
-        const result = await saveService({
-          environmentId,
-          input: decodeSaveSiteServiceRequest({ id, name: name.trim(), url: origin, active, kind }),
-        });
+      const service = unsentRequest(
+        decodeSaveSiteServiceRequest({ id, name: name.trim(), url: origin, active, kind }),
+        sentService,
+      );
+      if (service.request) {
+        const result = await saveService({ environmentId, input: service.request });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        serviceSaved = id;
-        setSavedService(id);
+        setSentService(service.key);
+        // Pinned, so a name edited before the retry updates this service rather than adding one.
+        setIdOverride(id);
       }
+      serviceSaved = true;
       if (addCheck) {
         const result = await saveCheck({
           environmentId,
@@ -1343,7 +1369,8 @@ function ServiceDialog({
                   value={id}
                   font="mono"
                   maxLength={MAX_ID_LENGTH}
-                  readOnly={editing}
+                  // Once the service is registered, a new ID would register a second one.
+                  readOnly={editing || sentService !== null}
                   onChange={(event) => edited(setIdOverride)(event.target.value)}
                   aria-invalid={shownIssues?.id ? true : undefined}
                   aria-describedby={describedBy}
@@ -1819,13 +1846,8 @@ function Choice({
   );
 }
 
-export type SiteToggleTarget =
-  | { readonly kind: "site"; readonly row: Site }
-  | { readonly kind: "service"; readonly row: Service }
-  | { readonly kind: "check"; readonly row: Check };
-
 /** The save request that replays an entry exactly as it is, apart from whether it is watched. */
-export function activeToggleRequest(target: SiteToggleTarget, active: boolean) {
+export function activeToggleRequest(target: ActiveToggleTarget, active: boolean) {
   switch (target.kind) {
     case "site": {
       const { row } = target;
@@ -1887,15 +1909,16 @@ export function useSiteActiveToggle({
   readonly connected: boolean;
   readonly onChanged: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
+  // Per entry, so a second quick toggle never clears the first one's "Saving…".
+  const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const saveSite = useAtomCommand(sites.saveSite, { reportFailure: false });
   const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
   const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
-  const apply = async (target: SiteToggleTarget, active: boolean): Promise<void> => {
+  const apply = async (target: ActiveToggleTarget, active: boolean): Promise<void> => {
     if (!environmentId || !connected) return;
     const key = `${target.kind}:${target.row.id}`;
     const name = target.row.name;
-    setPending(key);
+    setPending((keys) => new Set(keys).add(key));
     try {
       const request = activeToggleRequest(target, active);
       const result =
@@ -1929,12 +1952,16 @@ export function useSiteActiveToggle({
           : failureText(cause),
       });
     } finally {
-      setPending(null);
+      setPending((keys) => {
+        const next = new Set(keys);
+        next.delete(key);
+        return next;
+      });
     }
   };
   return {
-    /** The `kind:id` of the entry being saved, so its control can say so. */
+    /** The `kind:id` of each entry being saved, so its control can say so. */
     pending,
-    toggle: (target: SiteToggleTarget) => void apply(target, !target.row.active),
+    toggle: (target: ActiveToggleTarget) => void apply(target, !target.row.active),
   };
 }

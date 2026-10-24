@@ -5,9 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 import { SITES_FEATURE, type SitesSnapshot } from "@t3tools/contracts/fork";
 
-const harness = vi.hoisted(() => ({ authorityId: "first", run: vi.fn() }));
+const harness = vi.hoisted(() => ({
+  authorityId: "first",
+  run: vi.fn(),
+  search: {} as Record<string, string>,
+  snapshotPending: false,
+}));
 vi.mock("@tanstack/react-router", () => ({
-  useSearch: () => ({}),
+  useSearch: () => harness.search,
   useNavigate: () => vi.fn(),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
@@ -47,7 +52,7 @@ vi.mock("~/state/query", () => ({
             },
           },
           error: null,
-          isPending: false,
+          isPending: harness.snapshotPending,
           refresh: vi.fn(),
         }
       : { data: null, error: null, isPending: false, refresh: vi.fn() },
@@ -56,7 +61,7 @@ vi.mock("./SiteEditor", () => ({
   SiteEditor: ({ environmentId }: { environmentId: string }) => (
     <span role="dialog">Editing on {environmentId}</span>
   ),
-  useSiteActiveToggle: () => ({ pending: null, toggle: vi.fn() }),
+  useSiteActiveToggle: () => ({ pending: new Set(), toggle: vi.fn() }),
 }));
 vi.mock("~/env", () => ({ isElectron: false }));
 vi.mock("~/components/ui/button", () => ({
@@ -104,6 +109,8 @@ let container: HTMLDivElement;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   harness.authorityId = "first";
+  harness.search = {};
+  harness.snapshotPending = false;
   harness.run.mockReset();
   harness.run.mockResolvedValue({ _tag: "Success", value: {} });
   container = document.createElement("div");
@@ -138,6 +145,17 @@ it("can run checks on registered services before the first site exists", async (
     environmentId: EnvironmentId.make("first"),
     input: {},
   });
+});
+
+it("waits for a just-registered site while the list refreshes instead of calling it gone", () => {
+  harness.search = { siteId: "new-site" };
+  harness.snapshotPending = true;
+  act(() => root.render(<SitesPage />));
+  expect(container.querySelector('[aria-label="Loading site"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("no longer registered");
+  harness.snapshotPending = false;
+  act(() => root.render(<SitesPage />));
+  expect(container.textContent).toContain("This site is no longer registered");
 });
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
@@ -529,6 +547,15 @@ describe("site editor helpers", () => {
       serviceIds: ["shop", "api"],
       projectIds: ["project-a"],
     });
+  });
+
+  it("lets a retry skip only a request that already went through unedited", () => {
+    const first = { id: "shop", name: "Shop", url: "https://shop.example.com" };
+    const sent = editor.unsentRequest(first, null);
+    expect(sent.request).toBe(first);
+    expect(editor.unsentRequest({ ...first }, sent.key).request).toBeNull();
+    const renamed = { ...first, name: "Store" };
+    expect(editor.unsentRequest(renamed, sent.key).request).toBe(renamed);
   });
 
   it("replays an entry unchanged apart from whether it is watched", () => {

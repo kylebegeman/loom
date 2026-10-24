@@ -149,7 +149,16 @@ describe("BotsService", () => {
         });
         expect(
           yield* Effect.flip(bots.save(reviewer({ expectedVersion: 0 }), USER_CALLER)),
-        ).toMatchObject({ reason: "invalid" });
+        ).toMatchObject({
+          reason: "invalid",
+          message: "Another bot already uses the id reviewer. Choose another id.",
+        });
+        expect(
+          yield* Effect.flip(bots.save(reviewer({ expectedVersion: 2 }), USER_CALLER)),
+        ).toMatchObject({
+          reason: "invalid",
+          message: "This bot changed since it was opened. Reload it and apply your edits again.",
+        });
         expect(yield* bots.save(reviewer({ expectedVersion: 1 }), USER_CALLER)).toMatchObject({
           version: 2,
         });

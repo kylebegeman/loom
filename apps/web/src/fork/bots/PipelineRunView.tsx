@@ -69,14 +69,15 @@ import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { useLibraryPermission } from "../project-library/state";
 import { BotTile, VerdictChip, runDuration, runTime } from "./BotIdentity";
 import {
+  PIPELINES_TAB,
   PipelineChain,
   PipelineRunStateBadge,
   PipelineTile,
   WithReason,
   actionReason,
   pipelineColorStyle,
+  plural,
   usePipelineRuns,
-  useRefreshOnReconnect,
 } from "./BotPipelines";
 import { ParameterField } from "./BotRunForm";
 import { useBotsNavigation } from "./navigation";
@@ -95,14 +96,11 @@ import {
   useBotsAccess,
   useBotsHost,
   usePipelines,
+  useRefreshOnReconnect,
 } from "./state";
-
-const PIPELINES_TAB = { tab: "pipelines" } as const;
 
 const tickTone = (tone: AttemptTone): LibraryWorkflowTone =>
   tone === "waiting" ? "neutral" : tone;
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const failureText = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
@@ -272,7 +270,11 @@ function RunOverview({
   const canResume = useLibraryPermission(bots.resumePipelineRun, environmentId) && host.connected;
   const cancel = useAtomCommand(bots.cancelPipelineRun, { reportFailure: false });
   const resume = useAtomCommand(bots.resumePipelineRun, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
+  // The status an action was taken from. The watch can bring the new status after the reply, so
+  // the buttons stay off until the status moves, rather than offering the same action twice.
+  const [actedFrom, setActedFrom] = useState<BotPipelineRun["status"] | null>(null);
+  if (actedFrom !== null && actedFrom !== run.status) setActedFrom(null);
+  const busy = actedFrom !== null;
   const [error, setError] = useState<string | null>(null);
   const project = useProjects().find(
     (candidate) => candidate.environmentId === environmentId && candidate.id === run.projectId,
@@ -293,23 +295,26 @@ function RunOverview({
     if (
       !(await ensureLocalApi().dialogs.confirm(
         `Cancel this run of ${run.pipelineName}? The step running now is cancelled too.`,
+        { variant: "destructive" },
       ))
     )
       return;
-    setBusy(true);
+    setActedFrom(run.status);
     setError(null);
     const result = await cancel({ environmentId, input: { pipelineRunId: run.id } });
-    setBusy(false);
-    if (result._tag === "Failure")
+    if (result._tag === "Failure") {
+      setActedFrom(null);
       setError(failureText(squashAtomCommandFailure(result), "Could not cancel the run."));
+    }
   };
   const pickUp = async () => {
-    setBusy(true);
+    setActedFrom(run.status);
     setError(null);
     const result = await resume({ environmentId, input: { pipelineRunId: run.id } });
-    setBusy(false);
-    if (result._tag === "Failure")
+    if (result._tag === "Failure") {
+      setActedFrom(null);
       setError(failureText(squashAtomCommandFailure(result), "Could not resume the run."));
+    }
   };
   const runAgain = (target: BotPipeline) => {
     rerunSeeds.set(target.id, {

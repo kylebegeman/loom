@@ -112,6 +112,7 @@ import {
   ActionHint,
   CheckTicks,
   EndpointsTable,
+  MenuBlockedNote,
   SITES_COLOR,
   SiteMark,
   checkVitals,
@@ -197,9 +198,6 @@ export type SiteFilters = {
 };
 
 const NO_FILTERS: SiteFilters = { query: "", states: new Set(), projects: new Set() };
-
-export const hasSiteFilters = (filters: SiteFilters) =>
-  Boolean(filters.query.trim() || filters.states.size || filters.projects.size);
 
 /** The sites matching every active filter. Search reads names, addresses, IDs and project titles. */
 export function filterSites(
@@ -686,17 +684,20 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
         </LibraryPageFrame>
       );
     }
-    // A link to one site waits in that site's shape and never flashes the index on the way.
+    // A link to one site waits in that site's shape and never flashes the index on the way. A
+    // site just registered is missing until the refresh after its save lands, so a read still in
+    // flight waits too rather than calling it gone.
+    const missing = snapshot !== null && !query.isPending;
     return (
       <LibraryPageFrame
-        title={snapshot ? "Not found" : "Site"}
+        title={missing ? "Not found" : "Site"}
         section={{ label: "Sites", to: "/sites" }}
         offlineNotice={OFFLINE_NOTICE}
         style={projectColorStyle(SITES_COLOR)}
         width={SITE_PAGE_WIDTH}
       >
         {blocker ??
-          (snapshot ? (
+          (missing ? (
             <LibraryEmpty
               icon={GlobeIcon}
               title="This site is no longer registered"
@@ -1261,8 +1262,8 @@ type CollectionProps = {
   readonly projects: ReadonlyMap<string, LibraryProject>;
   readonly canManage: boolean;
   readonly manageReason: string | null;
-  /** The `kind:id` of the entry being paused or resumed. */
-  readonly pending: string | null;
+  /** The `kind:id` of each entry being paused or resumed. */
+  readonly pending: ReadonlySet<string>;
   readonly onEdit: (target: SiteEditTarget) => void;
   readonly onToggleActive: (site: Site) => void;
 };
@@ -1378,10 +1379,12 @@ function SiteCard({
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <SiteState state={health.state} />
-          <ServedProjects site={site} projects={projects} max={MAX_CARD_PROJECTS} />
+          <ServedProjects site={site} projects={projects} max={MAX_CARD_PROJECTS} inline />
         </div>
-        <div className="mt-auto flex min-w-0 items-center justify-between gap-3 border-t border-border/70 pt-2.5">
-          <div className="flex min-w-0 items-center gap-3">
+        {/* Wraps instead of shrinking: on a narrow card the traffic drops to its own line rather
+            than painting over the checks. */}
+        <div className="mt-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border/70 pt-2.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <CheckTicks checks={checks} staleAfterSeconds={snapshot.staleAfterSeconds} now={now} />
             <CertificateWarning days={site.active ? certificate : null} />
           </div>
@@ -1420,13 +1423,24 @@ function ServedProjects({
   site,
   projects,
   max,
+  inline = false,
 }: {
   readonly site: Site;
   readonly projects: ReadonlyMap<string, LibraryProject>;
   readonly max: number;
+  /** Set where the projects follow other text on a line, rather than under a Serves heading. */
+  readonly inline?: boolean;
 }) {
   const served = site.projectIds ?? [];
-  if (!served.length) return <span className="text-muted-foreground/75">Not linked</span>;
+  const lead = inline ? <span aria-hidden>·</span> : null;
+  if (!served.length) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground/75">
+        {lead}
+        Not linked
+      </span>
+    );
+  }
   const known = served.flatMap((projectId) => {
     const project = projects.get(projectId);
     return project ? [project] : [];
@@ -1435,8 +1449,8 @@ function ServedProjects({
   const more = served.length - shown.length;
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <span aria-hidden>·</span>
-      <span className="shrink-0">Serves</span>
+      {lead}
+      {inline ? <span className="shrink-0">Serves</span> : null}
       {shown.map((project) => (
         <span key={project.id} className="inline-flex min-w-0 items-center gap-1">
           <ProjectColorDot color={libraryProjectColor(project)} />
@@ -1459,11 +1473,9 @@ function ServedProjects({
 function SiteVisits({
   environmentId,
   siteId,
-  align = "end",
 }: {
   readonly environmentId: EnvironmentId;
   readonly siteId: string;
-  readonly align?: "end" | "start";
 }) {
   const [ref, seen] = useSeen();
   const analytics = useEnvironmentQuery(
@@ -1471,13 +1483,7 @@ function SiteVisits({
   );
   const data = analytics.data;
   return (
-    <span
-      ref={ref}
-      className={cn(
-        "flex shrink-0 items-center gap-2",
-        align === "end" ? "justify-end" : "justify-start",
-      )}
-    >
+    <span ref={ref} className="ms-auto flex shrink-0 items-center justify-end gap-2">
       {data ? (
         <>
           <Sparkline
@@ -1504,7 +1510,7 @@ function SiteMenu({
   onEdit,
   onToggleActive,
 }: CollectionProps & { readonly site: Site }) {
-  const pausing = pending === `site:${site.id}`;
+  const pausing = pending.has(`site:${site.id}`);
   return (
     <Menu>
       <MenuTrigger
@@ -1545,9 +1551,7 @@ function SiteMenu({
           {site.active ? <PauseIcon /> : <PlayIcon />}
           {pausing ? "Saving…" : site.active ? "Pause monitoring" : "Resume monitoring"}
         </MenuItem>
-        {manageReason ? (
-          <p className="max-w-60 px-2 py-1.5 text-xs text-muted-foreground">{manageReason}</p>
-        ) : null}
+        <MenuBlockedNote hint={canManage ? null : manageReason} />
       </MenuPopup>
     </Menu>
   );
@@ -1738,12 +1742,9 @@ function SitesSkeleton({ view }: { readonly view: "cards" | "list" }) {
             <div key={key} className="overflow-hidden rounded-xl border border-border">
               <Skeleton className="aspect-16/10 w-full" />
               <div className="flex flex-col gap-2.5 p-3.5">
-                <div className="flex items-center gap-2.5">
-                  <Skeleton shape="card" className="size-7" />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-3.5 w-2/5" />
-                    <Skeleton className="h-2.5 w-1/3" />
-                  </div>
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton className="h-3.5 w-2/5" />
+                  <Skeleton className="h-2.5 w-1/3" />
                 </div>
                 <Skeleton className="h-3 w-1/2" />
                 <div className="flex items-center justify-between border-t border-border/70 pt-2.5">

@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
-  BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT,
   isActiveBotPipelineRunStatus,
   type BotDefinition,
   type BotPipeline,
@@ -92,6 +91,7 @@ import {
   useBotsHost,
   useBotTriggerChanges,
   usePipelines,
+  useRefreshOnReconnect,
 } from "./state";
 
 /** Above this many pipelines the index offers a search. */
@@ -100,6 +100,10 @@ const CARD_TICKS = 12;
 const PAGE_TICKS = 20;
 const RECENT_RUNS_SHOWN = 8;
 const USAGE_DAYS = 7;
+
+export const PIPELINES_TAB = { tab: "pipelines" } as const;
+
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** A pipeline's stable color, from its id like a bot's, so its tile, page and runs match. */
 export const pipelineColorStyle = (pipelineId: string) =>
@@ -218,15 +222,6 @@ export function WithReason({
       <TooltipPopup>{reason}</TooltipPopup>
     </Tooltip>
   );
-}
-
-/** Changes missed while the host was away never arrive, so coming back refetches. */
-export function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
-  const wasConnected = useRef(connected);
-  useEffect(() => {
-    if (connected && !wasConnected.current) refresh();
-    wasConnected.current = connected;
-  }, [connected, refresh]);
 }
 
 /** A pipeline's newest runs, watched, from the request every view shares. */
@@ -375,11 +370,7 @@ function OlderPipelineRuns({
   const query = useEnvironmentQuery(
     bots.listPipelineRuns({
       environmentId,
-      input: {
-        limit: BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT,
-        before,
-        ...(pipelineId === undefined ? {} : { pipelineId }),
-      },
+      input: { ...pipelineRunsInput(pipelineId), before },
     }),
   );
   const [next, setNext] = useState<string | null>(null);
@@ -482,7 +473,8 @@ function useDeletePipeline(environmentId: EnvironmentId) {
   const remove = useAtomCommand(bots.deletePipeline, { reportFailure: false });
   return async (pipeline: Pick<BotPipeline, "id" | "name">) => {
     const confirmed = await ensureLocalApi().dialogs.confirm(
-      `Delete ${pipeline.name}? Triggers that start it are deleted too, with their webhook URLs. Its past runs stay listed. This cannot be undone.`,
+      `Delete ${pipeline.name}? Triggers that start it are deleted too, with their webhook addresses. Its past runs stay listed. This cannot be undone.`,
+      { variant: "destructive" },
     );
     if (!confirmed) return false;
     const result = await remove({ environmentId, input: { pipelineId: pipeline.id } });
@@ -594,8 +586,6 @@ function pipelineAttention(
     return BOT_PIPELINE_RUN_STATES[last.status];
   return null;
 }
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const usageText = (row: BotPipelineUsageRow | undefined) =>
   row === undefined || row.runs === 0
@@ -714,9 +704,12 @@ function PipelinesIndex({ environmentId }: { readonly environmentId: Environment
         </div>
         <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
         {shown.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No pipeline matches “{search.trim()}”.
-          </p>
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <p className="text-sm text-muted-foreground">No pipeline matches “{search.trim()}”.</p>
+            <Button shape="pill" size="sm" variant="outline" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+          </div>
         ) : (
           <ul aria-label="Pipelines" className={LIBRARY_CARD_GRID}>
             {shown.map((pipeline) => (
@@ -897,8 +890,6 @@ export function PipelinePage({ pipelineId }: { readonly pipelineId: BotPipelineI
     <PipelineDetail environmentId={host.environmentId} pipelineId={pipelineId} />
   ) : null;
 }
-
-const PIPELINES_TAB = { tab: "pipelines" } as const;
 
 function PipelineDetail({
   environmentId,
@@ -1326,7 +1317,7 @@ function PipelineTriggers({
                   <span className="block truncate text-xs text-muted-foreground">
                     {[
                       TRIGGER_KIND_LABELS[trigger.event.kind],
-                      trigger.enabled ? null : "Off",
+                      trigger.enabled ? null : "Paused",
                       trigger.lastFiredAt ? `fired ${runTime(trigger.lastFiredAt)}` : null,
                     ]
                       .filter(Boolean)

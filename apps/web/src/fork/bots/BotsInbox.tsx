@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -62,7 +62,6 @@ import { toastManager } from "~/components/ui/toast";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -81,10 +80,11 @@ import { TickStrip } from "../project-library/LibraryData";
 import { ProjectColorDot } from "../project-library/ProjectIdentity";
 import { useLibraryPermission } from "../project-library/state";
 import { BotFindings, RawReply } from "./BotFindings";
-import { BotTile, runTime } from "./BotIdentity";
+import { BotTile, runTime, useMinuteNow } from "./BotIdentity";
 import {
   combineTriagePages,
-  dismissibleRunIds,
+  DISMISSED_COUNT_INPUT,
+  dismissibleRuns,
   foldRepeats,
   groupTriage,
   olderCursor,
@@ -92,7 +92,6 @@ import {
   triageBotCounts,
   triageBotState,
   triageEvidence,
-  triageInputSummary,
   triageItems,
   triageReasonLabel,
   triageRunId,
@@ -108,21 +107,20 @@ import {
   type TriageVerb,
 } from "./inboxWaiting";
 import { botsPageOf, useBotsNavigation, type BotsNavigation } from "./navigation";
-import { rememberRuns } from "./runLog";
+import { rememberRuns, runInputSummary } from "./runLog";
 import { runDurationLabel, runTokensLabel, waitingAgeLabel } from "./runMetrics";
-import { RetryOnModelDialog } from "./RunSheet";
+import { RetryOnModelDialog, useInboxTotalsRefresh } from "./RunSheet";
 import {
   bots,
   inboxQueryInput,
   useBots,
   useBotsAccess,
+  useRefreshOnReconnect,
   useRefreshWhenBotsChangesPruned,
   useWaitingBotRuns,
 } from "./state";
 
 const BAND_ROWS = 4;
-/** Only the total is read; one run is the smallest page the server returns it with. */
-const DISMISSED_COUNT_INPUT = { limit: 1, dismissed: true } as const;
 const OFFLINE_REASON = "Reconnect to act on runs.";
 const READ_ONLY_REASON = "This device can view bot runs but not act on them.";
 const ABSOLUTE_TIME = new Intl.DateTimeFormat(undefined, {
@@ -245,52 +243,42 @@ interface TriageContext {
   readonly dismissed: boolean;
   /** On a bot's own page every row is that bot, so its inputs lead instead of its name. */
   readonly showBot: boolean;
-  /** After runs are dismissed or restored, for counts the watch cannot keep current. */
-  readonly onSettled: () => void;
+  /** After runs are dismissed or restored, for totals the watch cannot keep current. */
+  readonly onSettled: (createdAt: readonly (string | null)[]) => void;
 }
 
-/** Changes missed while disconnected never arrive, so a reconnect refetches. */
-function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
-  const wasConnected = useRef(connected);
-  useEffect(() => {
-    if (connected && !wasConnected.current) refresh();
-    wasConnected.current = connected;
-  }, [connected, refresh]);
-}
+/** A run to dismiss or restore; `createdAt` is null for a waiting run not loaded yet. */
+type DismissTarget = { readonly id: string; readonly createdAt: string | null };
 
-function useDismissal(environmentId: EnvironmentId, onSettled: () => void) {
+function useDismissal(environmentId: EnvironmentId, onSettled: TriageContext["onSettled"]) {
   const command = useAtomCommand(bots.dismiss, { reportFailure: false });
-  const update = async (ids: readonly string[], dismissed: boolean) => {
-    const done: string[] = [];
-    for (const runIds of dismissRunIdBatches(ids.map((id) => ({ id })))) {
+  const update = async (targets: readonly DismissTarget[], dismissed: boolean) => {
+    const done: DismissTarget[] = [];
+    let error: string | null = null;
+    for (const runIds of dismissRunIdBatches(targets)) {
       const result = await command({ environmentId, input: { runIds, dismissed } });
-      if (result._tag === "Failure")
-        return {
-          done,
-          error: failureMessage(
-            squashAtomCommandFailure(result),
-            dismissed ? "Could not dismiss these runs." : "Could not restore these runs.",
-          ),
-        };
-      done.push(...runIds);
+      if (result._tag === "Failure") {
+        error = failureMessage(
+          squashAtomCommandFailure(result),
+          dismissed ? "Could not dismiss these runs." : "Could not restore these runs.",
+        );
+        break;
+      }
+      done.push(...targets.filter((target) => runIds.includes(target.id)));
     }
-    return { done, error: null };
+    onSettled(done.map((target) => target.createdAt));
+    return { done, error };
   };
-  const restore = async (ids: readonly string[]) => {
-    const { error } = await update(ids, false);
-    onSettled();
-    return error;
-  };
+  const restore = async (targets: readonly DismissTarget[]) => (await update(targets, false)).error;
   /** The toast's Undo restores exactly the runs this dismissed, even when a later batch failed. */
-  const dismiss = async (ids: readonly string[], what: string) => {
-    const { done, error } = await update(ids, true);
-    onSettled();
+  const dismiss = async (targets: readonly DismissTarget[], what: string) => {
+    const { done, error } = await update(targets, true);
     if (done.length > 0)
       toastManager.add({
         type: "success",
         title:
-          done.length < ids.length
-            ? `Dismissed ${done.length} of ${ids.length} runs`
+          done.length < targets.length
+            ? `Dismissed ${done.length} of ${targets.length} runs`
             : done.length === 1
               ? `Dismissed ${what}`
               : `Dismissed ${done.length} runs`,
@@ -685,7 +673,7 @@ function TriageRow({
   const tone = triageTone(item);
   const ReasonIcon = REASON_ICONS[item.reason];
   const full = density === "full";
-  const inputs = run ? triageInputSummary(run.inputs) : "";
+  const inputs = run ? runInputSummary(run) : "";
   const title = ctx.showBot || run === null ? item.botName : inputs || "No inputs";
   const subtitle = ctx.showBot ? inputs : "";
   const evidence =
@@ -755,12 +743,13 @@ function TriageRow({
       return null;
     });
 
+  const target = runId ? { id: runId, createdAt: run?.createdAt ?? null } : null;
   const doRestore = () =>
-    void perform("restore", async () => (runId ? dismissal.restore([runId]) : null));
+    void perform("restore", async () => (target ? dismissal.restore([target]) : null));
 
   const doDismiss = () =>
     void perform("dismiss", async () =>
-      runId ? dismissal.dismiss([runId], `the ${item.botName} run`) : null,
+      target ? dismissal.dismiss([target], `the ${item.botName} run`) : null,
     );
 
   const doPromote = () =>
@@ -959,12 +948,12 @@ function TriageGroupSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const copy = GROUPS[section.group];
-  const ids = ctx.dismissed ? [] : dismissibleRunIds(section.items);
+  const runs = ctx.dismissed ? [] : dismissibleRuns(section.items);
   const reason = blockedReason(ctx.access.canDismiss, ctx.access.connected);
   const dismissAll = async () => {
     setBusy(true);
     setError(null);
-    setError(await dismissal.dismiss(ids, "these runs"));
+    setError(await dismissal.dismiss(runs, "these runs"));
     setBusy(false);
   };
   return (
@@ -975,18 +964,18 @@ function TriageGroupSection({
         hint={ctx.dismissed ? DISMISSED_HINT : copy.hint}
         marker={<LibraryStateDot tone={copy.tone} />}
         action={
-          ids.length > 1 ? (
+          runs.length > 1 ? (
             <Guard reason={reason}>
               <Button
                 shape="pill"
                 size="xs"
                 variant="ghost"
-                aria-label={`Dismiss these ${ids.length} runs`}
+                aria-label={`Dismiss these ${runs.length} runs`}
                 disabled={reason !== null || busy}
                 onClick={() => void dismissAll()}
               >
                 <CheckCheckIcon />
-                {busy ? "Dismissing…" : `Dismiss ${ids.length}`}
+                {busy ? "Dismissing…" : `Dismiss ${runs.length}`}
               </Button>
             </Guard>
           ) : null
@@ -1141,10 +1130,11 @@ export function NeedsYouView({
   readonly toolbarEnd?: ReactNode | undefined;
 }) {
   const nav = useBotsNavigation();
-  const minute = useNowMinute();
+  const now = useMinuteNow();
   const sources = useTriageSources(bot, dismissed);
   const { host, environmentId, inboxLive, changes, first } = sources;
   const access = useTriageAccess(environmentId, host.connected);
+  const refreshInboxTotals = useInboxTotalsRefresh();
   const [paging, setPaging] = useState<Paging>(NO_PAGING);
   // The Runs log's bot filter, so narrowing to a bot holds across scopes, reloads and Back.
   const botFilter = bot === null ? (nav.search.runBot ?? null) : null;
@@ -1221,10 +1211,10 @@ export function NeedsYouView({
     environmentId,
     access,
     definitions: sources.definitions,
-    now: Date.parse(`${minute}:00Z`),
+    now,
     dismissed,
     showBot: bot === null,
-    onSettled: countQuery.refresh,
+    onSettled: refreshInboxTotals,
   };
 
   const loadMore = () => {
@@ -1356,10 +1346,11 @@ export function NeedsYouView({
  * when the inbox arrives.
  */
 export function NeedsYouBand({ bot }: { readonly bot: BotDefinition | null }) {
-  const minute = useNowMinute();
+  const now = useMinuteNow();
   const sources = useTriageSources(bot, false);
   const { environmentId, first, changes } = sources;
   const access = useTriageAccess(environmentId, sources.host.connected);
+  const refreshInboxTotals = useInboxTotalsRefresh();
   const page = first.data ? applyInboxChanges(first.data, changes, { dismissed: false }) : null;
   const items = orderTriage(
     triageItems({
@@ -1376,10 +1367,10 @@ export function NeedsYouBand({ bot }: { readonly bot: BotDefinition | null }) {
     environmentId,
     access,
     definitions: sources.definitions,
-    now: Date.parse(`${minute}:00Z`),
+    now,
     dismissed: false,
     showBot: bot === null,
-    onSettled: () => {},
+    onSettled: refreshInboxTotals,
   };
   return (
     <LibrarySection

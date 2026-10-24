@@ -5,6 +5,7 @@ import type {
   BotStarterState,
   BotStarterStatus,
   BotVerdictValue,
+  LibraryProjectColor,
 } from "@t3tools/contracts/fork";
 import { BOT_RUN_STATES, BOT_VERDICT_STATES, botColor } from "@t3tools/client-runtime/fork";
 import {
@@ -15,10 +16,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryStateBadge } from "../project-library/LibraryControls";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
+
+/**
+ * The Bots page's own ink: what the page wears while no bot is open, and what a magnitude reads in
+ * so a bar means the same inside any one bot's color.
+ */
+export const BOTS_COLOR: LibraryProjectColor = "plum";
 
 // The large sizes match the project tiles, so a bot's hero lines up with a project's.
 const TILE_SIZES = {
@@ -109,6 +117,12 @@ export function StarterBadge({ status }: { readonly status: BotStarterStatus | u
 }
 
 const DAY_MS = 86_400_000;
+
+/**
+ * Now, for relative times like "5m ago". It moves once a minute on the app's one shared timer, so
+ * a label left on screen stays true without each row running its own clock.
+ */
+export const useMinuteNow = () => Date.parse(`${useNowMinute()}:00Z`);
 const SHORT_DATE = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const SHORT_TIME = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 

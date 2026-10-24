@@ -49,10 +49,9 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { toastManager } from "~/components/ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { useProjects, useThreadShells } from "~/state/entities";
-import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentQuery, useEnvironmentQueryRefresh } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   LIBRARY_OUTLINE,
@@ -65,7 +64,7 @@ import {
 } from "../project-library/LibraryControls";
 import { useLibraryPermission } from "../project-library/state";
 import { BotFindings, RunReply } from "./BotFindings";
-import { BotTile } from "./BotIdentity";
+import { BotTile, useMinuteNow } from "./BotIdentity";
 import { BotModelPicker } from "./BotModelPicker";
 import { BotRunFeedback } from "./BotRunFeedback";
 import { BotRunForm } from "./BotRunForm";
@@ -85,7 +84,33 @@ import {
   runQueuedMs,
   runTokensLabel,
 } from "./runMetrics";
-import { bots, useBots, useBotsAccess, useBotsHost } from "./state";
+import { DISMISSED_COUNT_INPUT, outsideInboxWindow } from "./inboxWaiting";
+import { bots, inboxQueryInput, useBots, useBotsAccess, useBotsHost } from "./state";
+
+/**
+ * After runs are dismissed or restored, refetches the inbox totals the watch cannot keep current:
+ * the dismissed count reads a one-run page, and the Needs you total misses runs older than its
+ * page. That page is also the queue on screen, and refetching it folds away older pages loaded
+ * under it, so it refetches only when its total would be wrong.
+ */
+export function useInboxTotalsRefresh() {
+  const host = useBotsHost();
+  const environmentId =
+    host.environmentId !== null && host.supported && host.inboxSupported
+      ? host.environmentId
+      : null;
+  const attention = useEnvironmentQuery(
+    environmentId ? bots.inbox({ environmentId, input: inboxQueryInput(false) }) : null,
+  );
+  const dismissedCount = useEnvironmentQueryRefresh(
+    environmentId ? bots.inbox({ environmentId, input: DISMISSED_COUNT_INPUT }) : null,
+  );
+  /** `createdAt` of each run changed, or null for a run not loaded. */
+  return (createdAt: readonly (string | null)[]) => {
+    dismissedCount.refresh();
+    if (outsideInboxWindow(attention.data, createdAt)) attention.refresh();
+  };
+}
 
 /** The run sheet (`runId`) and the Run dialog (`run`), over whichever page is open. */
 export function RunsOverlays() {
@@ -330,7 +355,7 @@ function RunDetail({
   const host = useBotsHost();
   const access = useBotsAccess();
   const canPromote = useLibraryPermission(bots.promote, environmentId) && host.connected;
-  const now = Date.parse(`${useNowMinute()}:00Z`);
+  const now = useMinuteNow();
   const projects = useProjects();
   const threads = useThreadShells(
     Boolean(run.callerThreadId || run.checkoutThreadId || run.promotedThreadId),
@@ -339,6 +364,7 @@ function RunDetail({
   const retry = useAtomCommand(bots.retry, { reportFailure: false });
   const promote = useAtomCommand(bots.promote, { reportFailure: false });
   const dismiss = useAtomCommand(bots.dismiss, { reportFailure: false });
+  const refreshInboxTotals = useInboxTotalsRefresh();
   const [pending, setPending] = useState<RunAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [choosingModel, setChoosingModel] = useState(false);
@@ -421,6 +447,7 @@ function RunDetail({
           result,
           dismissed ? "Could not dismiss the run." : "Could not restore the run.",
         );
+      refreshInboxTotals([run.createdAt]);
       toastManager.add({
         type: "success",
         title: dismissed ? `Dismissed the ${run.botName} run` : `Back in Needs you`,

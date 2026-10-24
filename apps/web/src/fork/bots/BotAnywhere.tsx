@@ -22,7 +22,6 @@ import {
   type BotTargetReadiness,
   type BotVaultBinding,
   type BotVaultSlot,
-  type LibraryProjectColor,
 } from "@t3tools/contracts/fork";
 import { applyBotChanges, applyRunChanges } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -64,8 +63,8 @@ import {
 import { ComputerIcon, projectColorStyle } from "../project-library/ProjectIdentity";
 import { useLibraryAuthority } from "../project-library/state";
 import { VaultReferencePicker } from "../vault/ReferencePicker";
-import { BotRunStatusBadge, BotTile, runTime } from "./BotIdentity";
-import { RUNTIME_MODE_LABELS } from "./BotEditor";
+import { BOTS_COLOR, BotRunStatusBadge, BotTile, runTime } from "./BotIdentity";
+import { RUNTIME_MODE_LABELS } from "./editorLogic";
 import { botsPageOf, useBotsNavigation } from "./navigation";
 import { bots, useBotDefinitionChanges, useBotsAccess, useBotsChanges, useBotsHost } from "./state";
 import {
@@ -78,7 +77,6 @@ import {
 } from "./usageWindow";
 
 /** The Bots page's own ink; the sheet is portaled out of the page's colour scope. */
-const BOTS_COLOR: LibraryProjectColor = "plum";
 
 const HERE = "here";
 const BEST = "best";
@@ -98,7 +96,7 @@ const targetFromValue = (value: string): BotTarget =>
       : { type: "here" };
 
 /** "Busy", or "Not ready. Remote runs are off." when there is a why. */
-const readinessText = (target: BotTargetReadiness) => {
+export const readinessText = (target: BotTargetReadiness) => {
   const { label } = targetAvailability(target);
   const reasons = target.ready ? "" : reasonsText(target.reasons);
   return reasons ? `${label}. ${reasons}` : label;

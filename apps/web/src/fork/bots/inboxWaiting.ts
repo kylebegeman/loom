@@ -7,6 +7,7 @@ import {
   type BotsInboxPage,
 } from "@t3tools/contracts/fork";
 import type { LibraryWorkflowTone, WaitingBotRunThread } from "@t3tools/client-runtime/fork";
+import { firstLine } from "./runLog";
 
 /**
  * The first page joined with older pages loaded since. `earlier` holds pages already behind the
@@ -237,28 +238,30 @@ export function triageBotCounts(items: readonly TriageItem[]): TriageBotCount[] 
 }
 
 /** The runs a person can dismiss: finished ones. A paused run is still going. */
-export const dismissibleRunIds = (items: readonly TriageItem[]): string[] =>
+export const dismissibleRuns = (items: readonly TriageItem[]): BotRun[] =>
   items.flatMap((item) =>
-    item.kind === "run" && isTerminalBotRunStatus(item.run.status) ? [item.run.id] : [],
+    item.kind === "run" && isTerminalBotRunStatus(item.run.status) ? [item.run] : [],
   );
+
+/** The one-run inbox page the dismissed total is read from. */
+export const DISMISSED_COUNT_INPUT = { limit: 1, dismissed: true } as const;
+
+/**
+ * Whether the watch leaves `page`'s total wrong once these runs are dismissed or restored. It
+ * adjusts a total only for runs inside the page's window, so an older run, or one it cannot date,
+ * needs the page refetched.
+ */
+export const outsideInboxWindow = (
+  page: BotsInboxPage | null,
+  createdAt: readonly (string | null)[],
+) => {
+  const oldest = page?.hasMore ? page.runs.at(-1)?.createdAt : undefined;
+  return oldest !== undefined && createdAt.some((at) => at === null || at < oldest);
+};
 
 /** Where the next page starts: the server lists runs created strictly before it. */
 export const olderCursor = (runs: readonly BotRun[]): string | null =>
   runs.at(-1)?.createdAt ?? null;
-
-export const firstLine = (text: string | null | undefined): string | null => {
-  if (!text) return null;
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-};
-
-export const triageInputSummary = (inputs: BotRun["inputs"]): string =>
-  Object.entries(inputs)
-    .map(([name, value]) => `${name}: ${String(value)}`)
-    .join(", ");
 
 const REASON_LABELS: Record<TriageReason, string> = {
   approval: "Needs approval",

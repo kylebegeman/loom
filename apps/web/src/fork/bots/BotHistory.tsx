@@ -45,7 +45,7 @@ import {
   LibraryStateBadge,
 } from "../project-library/LibraryControls";
 import { LibraryBar, Sparkline } from "../project-library/LibraryData";
-import { runTime } from "./BotIdentity";
+import { runTime, useMinuteNow } from "./BotIdentity";
 import { ConfirmDialog, ReplayLaunchDialog, useLatestReplayId } from "./BotReplay";
 import {
   botDefinitionDiff,
@@ -492,7 +492,7 @@ export function BotVersionsView({ bot }: { readonly bot: BotDefinition }) {
     refresh();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A save or restore adds a version, and versions are not watched.
   }, [bot.version, refresh]);
-  const [now] = useState(() => Date.now());
+  const now = useMinuteNow();
   const [action, setAction] = useState<VersionAction | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);

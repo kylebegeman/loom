@@ -76,11 +76,12 @@ export function intervalPhrase(minutes: number): string {
   return count === 1 ? noun : `${count} ${noun}s`;
 }
 
+/** Chips beside the "Every" field, so each reads on from it: every 15 minutes, every 1 hour. */
 export const INTERVAL_PRESETS: readonly { readonly label: string; readonly minutes: number }[] = [
   { label: "15 minutes", minutes: 15 },
-  { label: "Hourly", minutes: 60 },
-  { label: "Every 6 hours", minutes: 360 },
-  { label: "Daily", minutes: 1440 },
+  { label: "1 hour", minutes: 60 },
+  { label: "6 hours", minutes: 360 },
+  { label: "1 day", minutes: 1440 },
 ];
 
 export const DAY_PRESETS: readonly { readonly label: string; readonly days: readonly number[] }[] =

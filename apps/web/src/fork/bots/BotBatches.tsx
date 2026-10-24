@@ -61,7 +61,6 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { useProjects } from "~/state/entities";
@@ -71,6 +70,7 @@ import { LibraryHero, LibraryVital, LibraryVitals } from "../project-library/Lib
 import {
   LibraryEmpty,
   LibraryErrorNotice,
+  LibraryFilterChip,
   LibraryGroupHeading,
   LibraryNotice,
   LibraryPanel,
@@ -120,11 +120,18 @@ import {
   type ProgressTone,
   type RetryPlan,
 } from "./batches";
-import { BotTile, formatSpan, runDuration, runTime } from "./BotIdentity";
+import { BotTile, formatSpan, runDuration, runTime, useMinuteNow } from "./BotIdentity";
 import { botsPageOf, useBotsNavigation, type BotsPageSearch } from "./navigation";
-import { rememberRuns } from "./runLog";
+import { rememberRuns, runHeadline } from "./runLog";
 import { elapsedLabel } from "./runMetrics";
-import { bots, useBotBatchChanges, useBots, useBotsAccess, useBotsHost } from "./state";
+import {
+  bots,
+  useBotBatchChanges,
+  useBots,
+  useBotsAccess,
+  useBotsHost,
+  useRefreshOnReconnect,
+} from "./state";
 
 export type { ProgressSegment, ProgressTone } from "./batches";
 
@@ -173,17 +180,6 @@ const errorText = (cause: unknown, fallback: string) =>
 const INLINE_LINK =
   "rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
-/** Refetches a query fetched once when the host comes back, since its watch missed the gap. */
-function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
-  const wasConnected = useRef(connected);
-  useEffect(() => {
-    if (connected && !wasConnected.current) refresh();
-    wasConnected.current = connected;
-  }, [connected, refresh]);
-}
-
-const useMinute = () => Date.parse(`${useNowMinute()}:00Z`);
-
 // The index
 
 const BATCH_COLUMNS = [
@@ -205,8 +201,9 @@ export function BatchesView({
   /** The Runs scope switch, kept at the end of this view's one toolbar row. */
   readonly toolbarEnd?: ReactNode;
 }) {
-  // Keyed so filters and loaded pages start over on another bot's page.
-  return <BatchesList key={bot?.id ?? "all"} bot={bot} toolbarEnd={toolbarEnd} />;
+  const runBot = useBotsNavigation().search.runBot;
+  // Keyed so filters and loaded pages start over on another bot's page, or another bot filter.
+  return <BatchesList key={bot?.id ?? `all:${runBot ?? ""}`} bot={bot} toolbarEnd={toolbarEnd} />;
 }
 
 function BatchesList({
@@ -219,7 +216,7 @@ function BatchesList({
   const { host, bots: allBots, list: botList } = useBots();
   const { canSave } = useBotsAccess();
   const environmentId = host.environmentId;
-  const now = useMinute();
+  const now = useMinuteNow();
   const canStart = useLibraryPermission(bots.runBatch, environmentId) && host.connected;
   const nav = useBotsNavigation();
   const [query, setQuery] = useState("");
@@ -227,6 +224,10 @@ function BatchesList({
   const status: BatchStatusFilter = nav.search.batchStatus ?? "all";
   const setStatus = (next: BatchStatusFilter) =>
     nav.show({ ...botsPageOf(nav.search), batchStatus: next === "all" ? undefined : next });
+  // The Runs log's bot filter, so narrowing to a bot holds when switching to Batches.
+  const pickedBot = bot === null ? (nav.search.runBot ?? null) : null;
+  const botId = bot?.id ?? pickedBot ?? undefined;
+  const clearPickedBot = () => nav.show({ ...botsPageOf(nav.search), runBot: undefined });
   const [showOlder, setShowOlder] = useState(false);
   const live = environmentId !== null && host.batchesSupported;
   const changes = useBotBatchChanges(environmentId, live && host.connected);
@@ -234,7 +235,7 @@ function BatchesList({
     environmentId !== null && live
       ? bots.listBatches({
           environmentId,
-          input: { limit: BOTS_LIST_BATCHES_MAX_LIMIT, ...(bot ? { botId: bot.id } : {}) },
+          input: { limit: BOTS_LIST_BATCHES_MAX_LIMIT, ...(botId ? { botId } : {}) },
         })
       : null,
   );
@@ -270,21 +271,25 @@ function BatchesList({
 
   const listed = list.data;
   const batches = listed
-    ? applyBatchChanges(listed.batches, changes, { botId: bot?.id, includeNew: true })
+    ? applyBatchChanges(listed.batches, changes, { botId, includeNew: true })
     : [];
   const counts = batchStatusCounts(batches);
-  const narrowed = status !== "all" || query.trim() !== "";
+  const narrowed = status !== "all" || query.trim() !== "" || pickedBot !== null;
   const { running, earlier } = groupBatches(filterBatches(batches, { status, query }));
   // Nothing older is still running, so the Running filter never pages back.
   const canPageBack = (listed?.hasMore ?? false) && status !== "running";
   const cursor = listed?.batches.at(-1)?.createdAt ?? null;
   const showEarlier = earlier.length > 0 || canPageBack;
   const headed = running.length > 0 && showEarlier;
-  const emptyList = listed !== null && batches.length === 0;
+  const emptyList = listed !== null && batches.length === 0 && pickedBot === null;
   const clearFilters = () => {
     setQuery("");
-    setStatus("all");
+    nav.show({ ...botsPageOf(nav.search), batchStatus: undefined, runBot: undefined });
   };
+  const pickedName =
+    pickedBot === null
+      ? null
+      : (allBots.find((candidate) => candidate.id === pickedBot)?.name ?? "Deleted bot");
   const botsById = new Map(allBots.map((candidate) => [candidate.id, candidate]));
   const rowProps = { showBot: bot === null, botsById, botSearch: bot?.id, now };
 
@@ -308,7 +313,9 @@ function BatchesList({
                 ? "No settled batch has failed items or items needing attention."
                 : status === "running"
                   ? "Nothing is running right now."
-                  : "Search looks at each batch's source and bot."}
+                  : pickedName !== null && query.trim() === ""
+                    ? `${pickedName} has not run on many items.`
+                    : "Search looks at each batch's source and bot."}
               {canPageBack ? " Older batches are searched once you load them." : ""}
             </EmptyDescription>
           </EmptyHeader>
@@ -356,7 +363,7 @@ function BatchesList({
                 showOlder ? (
                   <OlderBatches
                     environmentId={environmentId}
-                    botId={bot?.id}
+                    botId={botId}
                     before={cursor}
                     status={status}
                     query={query}
@@ -406,6 +413,14 @@ function BatchesList({
                 </ToggleGroupItem>
               </ToggleGroup>
             </>
+          ) : null}
+          {pickedBot !== null && pickedName !== null ? (
+            <LibraryFilterChip
+              label={pickedName}
+              marker={<BotTile bot={{ id: pickedBot }} size="sm" />}
+              removeLabel="Show batches of every bot"
+              onRemove={clearPickedBot}
+            />
           ) : null}
           {/* The empty state carries the one way to start, so the toolbar does not repeat it. */}
           {emptyList ? null : runOnMany("toolbar")}
@@ -948,7 +963,7 @@ function BatchDetail({
 }) {
   const { host, bots: allBots, list: botList } = useBots();
   const nav = useBotsNavigation();
-  const now = useMinute();
+  const now = useMinuteNow();
   const canCancel = useLibraryPermission(bots.cancelBatch, environmentId) && host.connected;
   const canRetry = useLibraryPermission(bots.retryBatch, environmentId) && host.connected;
   const canStart = useLibraryPermission(bots.runBatch, environmentId) && host.connected;
@@ -1464,11 +1479,6 @@ const ITEM_COLUMNS = [
 /** Enough rows to scan without making a 200-item batch one long scroll by default. */
 const ITEMS_PAGE = 50;
 
-const firstLine = (text: string | null) => {
-  const line = text?.trim().split("\n", 1)[0]?.trim();
-  return line ? line : null;
-};
-
 function BatchItems({
   batch,
   items,
@@ -1582,7 +1592,7 @@ function ItemRow({
 }) {
   const outcome = itemOutcome(item);
   const run = item.run;
-  const summary = run ? (run.verdict?.summary ?? run.error ?? firstLine(run.result)) : null;
+  const summary = run ? runHeadline(run) : null;
   const time =
     run === null || run.startedAt === null
       ? null

@@ -382,11 +382,7 @@ export function ReplayLaunchDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
+        <LibraryErrorNotice error={error} />
         {!canReplay ? (
           <p className="text-sm text-muted-foreground">
             This connection cannot replay runs. Reconnect, or use a connection that can.
@@ -394,15 +390,7 @@ export function ReplayLaunchDialog({
         ) : null}
         {source.kind === "version" && !definition ? (
           versionQuery.error ? (
-            <div
-              role="alert"
-              className="flex flex-wrap items-center gap-3 text-sm text-destructive-foreground"
-            >
-              <p>{versionQuery.error}</p>
-              <Button shape="pill" size="xs" variant="outline" onClick={versionQuery.refresh}>
-                Reload version
-              </Button>
-            </div>
+            <LibraryErrorNotice error={versionQuery.error} onRetry={versionQuery.refresh} />
           ) : (
             <div role="status" className="flex items-center gap-2">
               <span className="sr-only">Loading v{source.version}…</span>
@@ -499,23 +487,7 @@ export function ReplayLaunchDialog({
             </ul>
           </div>
         ) : null}
-        {runsQuery.error ? (
-          <div
-            role="alert"
-            className="flex flex-wrap items-center gap-3 text-sm text-destructive-foreground"
-          >
-            <p>{runsQuery.error}</p>
-            <Button
-              shape="pill"
-              size="xs"
-              variant="outline"
-              disabled={runsQuery.isPending}
-              onClick={runsQuery.refresh}
-            >
-              Reload runs
-            </Button>
-          </div>
-        ) : null}
+        <LibraryErrorNotice error={runsQuery.error} onRetry={runsQuery.refresh} />
         {runsQuery.isPending && !runsQuery.data ? (
           <div
             role="status"
@@ -532,7 +504,7 @@ export function ReplayLaunchDialog({
               </div>
             ))}
           </div>
-        ) : visible.length === 0 ? (
+        ) : runsQuery.error && !runsQuery.data ? null : visible.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
             {candidates.length === 0
               ? "No finished runs on this page. Try an older page, or run the bot first."
@@ -1058,11 +1030,7 @@ function ReplaySheet({
                     : `Better means it passed where the original did not; worse, the reverse. The bot is on v${bot?.version ?? replay.baseVersion}.`}
                 </p>
               </div>
-              {error || runsQuery.error ? (
-                <p role="alert" className="text-sm text-destructive-foreground">
-                  {error ?? runsQuery.error}
-                </p>
-              ) : null}
+              <LibraryErrorNotice error={error ?? runsQuery.error} />
               {replay.items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">This replay has no runs.</p>
               ) : (

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useCanGoBack } from "@tanstack/react-router";
 import {
   ArchiveIcon,
@@ -23,7 +23,6 @@ import {
   type BotDefinitionInput,
   type BotDraftResult,
   type BotStarterStatus,
-  type BotTargetReadiness,
 } from "@t3tools/contracts/fork";
 import {
   botDraft,
@@ -68,6 +67,7 @@ import {
 } from "../project-library/LibraryControls";
 import { LibraryEditorBar, useUnsavedChangesGuard } from "../project-library/LibraryEditor";
 import { LibraryBackLink } from "../project-library/LibraryPageFrame";
+import { readinessText } from "./BotAnywhere";
 import { BotTile, StarterBadge } from "./BotIdentity";
 import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
 import { ConfirmDialog, ReplayLaunchDialog, useLatestReplayId } from "./BotReplay";
@@ -96,9 +96,7 @@ import {
 } from "./editorLogic";
 import { refineInputFromDraft } from "./fromThread/logic";
 import { useBotsNavigation, type BotsPageSearch } from "./navigation";
-import { bots, useBots, useBotsAccess } from "./state";
-
-export { RUNTIME_MODE_LABELS, WORKSPACE_LABELS };
+import { bots, rememberSavedBot, useBots, useBotsAccess } from "./state";
 
 const WORKSPACE_CHOICES = Object.keys(WORKSPACE_LABELS) as BotWorkspaceChoice[];
 const INSTRUCTIONS_MAX = 20_000;
@@ -701,23 +699,6 @@ function InstructionsEditor({
   );
 }
 
-const AVAILABILITY_TEXT: Record<NonNullable<BotTargetReadiness["availability"]>, string> = {
-  ready: "Ready",
-  busy: "Busy",
-  offline: "Offline",
-  blocked: "Cannot run it",
-  unknown: "Not reported",
-};
-
-const readinessText = (target: BotTargetReadiness) => {
-  const state =
-    target.availability ?? (target.online ? (target.ready ? "ready" : "blocked") : "offline");
-  if (state === "ready")
-    return target.freeSlots === 1 ? "Ready, 1 free slot" : `Ready, ${target.freeSlots} free slots`;
-  const reason = target.reasons[0];
-  return reason ? `${AVAILABILITY_TEXT[state]}: ${reason}` : AVAILABILITY_TEXT[state];
-};
-
 /** Which computers run the bot, and what saving does to its shared copy. */
 function SharingSection({
   environmentId,
@@ -913,7 +894,8 @@ export function BotEditorForm({
       else nav.show({ bot: botId });
     });
   const archived = base?.archivedAt != null;
-  const conflict = bot !== null && base !== null && bot.version !== base.version ? bot : null;
+  // Only a newer save conflicts; right after this editor saves, its own version is ahead of `bot`.
+  const conflict = bot !== null && base !== null && bot.version > base.version ? bot : null;
   const locked = refining !== null || busy;
   const readOnly = host.connected && !access.canSave;
 
@@ -979,7 +961,8 @@ export function BotEditorForm({
   const submit = async () => {
     if (locked || !access.canSave || (!isNew && !dirty)) return;
     if (problems.length > 0) return showProblems(problems);
-    const checked = saveInputFromDraft(current, base?.version);
+    // A new bot expects nothing under its id, so a taken id is refused instead of overwritten.
+    const checked = saveInputFromDraft(current, base?.version ?? 0);
     if (!checked.ok) {
       setAttempted(true);
       setError(checked.message);
@@ -992,6 +975,7 @@ export function BotEditorForm({
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       const saved = result.value;
       setBase(saved);
+      rememberSavedBot(saved);
       // The bot is saved either way; a suggestion left open is only a stale prompt.
       if (suggestionId !== null) {
         await dismissSuggestion({ environmentId, input: { suggestionId, dismissed: true } });
@@ -999,7 +983,16 @@ export function BotEditorForm({
       }
       leaveFor(saved.id);
     } catch (cause) {
-      setError(failureText(cause, "Could not save the bot."));
+      const message = failureText(cause, "Could not save the bot.");
+      // Creating over a taken id fails; older servers word that as a stale edit, which would
+      // confuse someone who never opened a bot.
+      const takenId =
+        base === null &&
+        (message.startsWith("This bot changed since") || message.startsWith("Another bot already"));
+      if (takenId) {
+        setError(`Another bot already uses the id ${checked.input.id}. Choose another id.`);
+        focusField(fieldIds.id);
+      } else setError(message);
       setBusy(false);
     }
   };
@@ -1101,7 +1094,7 @@ export function BotEditorForm({
     onChange: (projectId: string) => void,
   ) => (
     <Select value={value} onValueChange={(next) => onChange(next ?? ANY_PROJECT)}>
-      <SelectTrigger size="sm" id={id}>
+      <SelectTrigger size="sm" id={id} {...invalidProps(problemFor(id))}>
         <SelectValue>{value === ANY_PROJECT ? anyLabel : projectTitle(value)}</SelectValue>
       </SelectTrigger>
       <SelectPopup>
@@ -1149,12 +1142,20 @@ export function BotEditorForm({
       `Creates ${current.name.trim() || "the bot"} as v1.`
     );
 
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+    // Dialogs portal out of the page but still bubble here; a save belongs to the page itself.
+    if (!event.currentTarget.contains(event.target as Node)) return;
+    event.preventDefault();
+    void submit();
+  };
+
   const rowProblems = (key: string) =>
     shown.filter((problem) => problem.field.startsWith(`${key}-`));
   const modelWork: ModelWork = confirming === "refine" ? "refine" : "suggest";
 
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="flex min-w-0 flex-col" onKeyDown={onKeyDown}>
       <LibraryBackLink to="/loom/bots" search={back}>
         {bot ? bot.name : "Bots"}
       </LibraryBackLink>
@@ -1334,6 +1335,7 @@ export function BotEditorForm({
             >
               <Input
                 id={fieldIds.name}
+                autoFocus={isNew && fromThread === undefined}
                 value={current.name}
                 placeholder="Reviewer"
                 onChange={(event) => {
@@ -1536,7 +1538,8 @@ export function BotEditorForm({
             {current.workspace === "scratch" ? null : (
               <EditorField
                 label="Project"
-                htmlFor="bot-project"
+                htmlFor={fieldIds.project}
+                problem={problemFor(fieldIds.project)}
                 hint={
                   current.projectId === ANY_PROJECT
                     ? "Whoever runs it picks the project."
@@ -1544,7 +1547,7 @@ export function BotEditorForm({
                 }
               >
                 {projectPicker(
-                  "bot-project",
+                  fieldIds.project,
                   current.projectId,
                   "Chosen at run time",
                   (projectId) => update({ projectId }),
@@ -1571,11 +1574,11 @@ export function BotEditorForm({
             ) : null}
             <EditorField
               label="Available in"
-              htmlFor="bot-scope"
+              htmlFor={fieldIds.scope}
               hint="Where the bot is offered, in menus and to agents."
             >
               {projectPicker(
-                "bot-scope",
+                fieldIds.scope,
                 current.scopeProjectId,
                 "Every project",
                 (scopeProjectId) => update({ scopeProjectId }),

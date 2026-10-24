@@ -417,6 +417,12 @@ export const make = Effect.gen(function* () {
       (yield* store.hasDefinition(definition.id).pipe(Effect.catch(storageError)))
     )
       return yield* fail("invalid", "A newer version of Loom saved this bot; update to edit it.");
+    // Version 0 is how a client says it is creating the bot, so a clash is a taken id.
+    if (options.expectedVersion === 0 && existing !== null)
+      return yield* fail(
+        "invalid",
+        `Another bot already uses the id ${definition.id}. Choose another id.`,
+      );
     if (
       options.expectedVersion !== undefined &&
       (existing?.version ?? 0) !== options.expectedVersion

@@ -1,5 +1,5 @@
 import type { LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 
 /**
@@ -71,7 +71,8 @@ const SPARKLINE_SIZE = {
 
 /**
  * One series as a line over a soft area, for trends inside a table cell or along a panel. Too
- * small for axes, so the caller states the total beside it and `label` carries the reading.
+ * small for axes, so the caller states the total beside it and `label` carries the reading. The
+ * area fades out toward the baseline: a flat fill reads as a solid box when a series stays high.
  */
 export function Sparkline({
   values,
@@ -85,6 +86,7 @@ export function Sparkline({
   const top = Math.max(1, ...values);
   const step = values.length > 1 ? 100 / (values.length - 1) : 100;
   const points = values.map((value, index) => `${index * step},${22 - (value / top) * 20}`);
+  const fadeId = `${useId().replaceAll(":", "")}-fade`;
   return (
     <svg
       role="img"
@@ -95,7 +97,13 @@ export function Sparkline({
     >
       {values.length > 1 ? (
         <>
-          <polygon points={`0,24 ${points.join(" ")} 100,24`} fill="currentColor" opacity={0.12} />
+          <defs>
+            <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="currentColor" stopOpacity={0.2} />
+              <stop offset="1" stopColor="currentColor" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <polygon points={`0,24 ${points.join(" ")} 100,24`} fill={`url(#${fadeId})`} />
           <polyline
             points={points.join(" ")}
             fill="none"

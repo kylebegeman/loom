@@ -5,6 +5,7 @@ import {
   BOTS_MAX_PARAMETERS,
   BOTS_PIPELINE_MAX_ROUNDS,
   BOTS_PIPELINE_MAX_STEPS,
+  BOTS_PIPELINE_TEMPLATE_MAX,
   BOTS_VERSIONS_MAX_LIMIT,
   slugFromName,
   type BotDefinition,
@@ -85,7 +86,14 @@ import { BotTargetField } from "./BotAnywhere";
 import { Choice, ParameterRow } from "./BotEditor";
 import { BotTile, runTime } from "./BotIdentity";
 import { BotModelPicker } from "./BotModelPicker";
-import { PipelineTile, WithReason, actionReason, pipelineColorStyle } from "./BotPipelines";
+import {
+  PIPELINES_TAB,
+  PipelineTile,
+  WithReason,
+  actionReason,
+  pipelineColorStyle,
+  plural,
+} from "./BotPipelines";
 import { useBotsNavigation } from "./navigation";
 import {
   builderProblems,
@@ -111,12 +119,18 @@ import {
   type BuilderProblem,
   type StepSource,
 } from "./pipelineDraft";
-import { bots, useBots, useBotsAccess, useBotsHost, usePipelines } from "./state";
+import {
+  bots,
+  useBots,
+  useBotsAccess,
+  useBotsHost,
+  usePipelines,
+  useRefreshOnReconnect,
+} from "./state";
 
 const CHECK_DEBOUNCE_MS = 400;
 /** The open-card key of the pipeline's inputs, which sit first in the flow like a step. */
 const INPUTS_KEY = "inputs";
-const PIPELINES_TAB = { tab: "pipelines" } as const;
 
 const FAIL_LABELS: Record<PipelineFailChoice, string> = {
   stop: "Stop the pipeline",
@@ -138,8 +152,6 @@ const CUSTOM = "custom";
 const FIXED_PREFIX = "fixed:";
 const VERSION_PREFIX = "v:";
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-
 /** A pipeline's builder as its own page; a null id builds a new pipeline. */
 export function PipelineBuilderPage({ pipelineId }: { readonly pipelineId: BotPipelineId | null }) {
   const { environmentId } = useBotsHost();
@@ -157,6 +169,9 @@ function BuilderLoader({
 }) {
   const host = useBotsHost();
   const { list, pipelines } = usePipelines(environmentId, true, host.connected);
+  // A save elsewhere while the host was away never arrives by the watch, and spotting it is how
+  // the builder warns before saving over it.
+  useRefreshOnReconnect(host.connected, list.refresh);
   const found =
     pipelineId === null ? undefined : pipelines.find((pipeline) => pipeline.id === pipelineId);
   // Holds the version the builder opened, so a delete or save elsewhere never unmounts the edits.
@@ -446,10 +461,11 @@ function PipelineBuilder({
     setError(null);
   };
 
-  const blocked = !access.canSavePipelines || saving || checking || errors.length > 0 || !changed;
+  // The server checks again on save, so a check still out never holds Save back; waiting on it
+  // would make the button flicker with every keystroke and swallow a quick Cmd+S.
+  const blocked = !access.canSavePipelines || saving || errors.length > 0 || !changed;
   // With problems, Save stays pressable and leads to the first one instead of doing nothing.
-  const saveDisabled =
-    !access.canSavePipelines || saving || checking || (errors.length === 0 && !changed);
+  const saveDisabled = !access.canSavePipelines || saving || (errors.length === 0 && !changed);
 
   const showFirstProblem = () => {
     setRevealed(true);
@@ -523,42 +539,46 @@ function PipelineBuilder({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      void submit();
-    }
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+    // Dialogs portal out of the page but still bubble here; a save belongs to the page itself.
+    if (!event.currentTarget.contains(event.target as Node)) return;
+    event.preventDefault();
+    void submit();
   };
 
   // The bar says what is most pressing first.
   const firstError = errors[0];
-  const status: ReactNode = saving ? (
-    "Saving…"
-  ) : !host.connected ? (
-    "Offline. Reconnect to check and save this pipeline."
-  ) : !access.canSavePipelines ? (
-    "This connection can look at pipelines but not save them."
-  ) : isNew && !dirty ? (
-    "Name the pipeline and add its first step."
-  ) : checking ? (
-    "Checking the pipeline…"
-  ) : firstError !== undefined ? (
-    <ProblemLink tone="error" onClick={showFirstProblem}>
-      {firstError.message}
-      {errors.length > 1 ? ` ${plural(errors.length - 1, "more problem")} to fix.` : ""}
-    </ProblemLink>
-  ) : warnings.length > 0 ? (
-    <ProblemLink tone="warning" onClick={showFirstProblem}>
-      Ready to save, with {plural(warnings.length, "warning")}: {warnings[0]?.message}
-    </ProblemLink>
-  ) : check.error ? (
-    `Could not check the pipeline: ${check.error} Saving checks it again.`
-  ) : !changed ? (
-    "No changes yet."
-  ) : baseVersion === 0 ? (
-    `Ready to save as ${draft.id.trim()}.`
-  ) : (
-    `Ready to save as v${baseVersion + 1}.`
-  );
+  const statusTone = checking
+    ? null
+    : firstError !== undefined
+      ? ("error" as const)
+      : warnings.length > 0
+        ? ("warning" as const)
+        : null;
+  const statusText = saving
+    ? "Saving…"
+    : !host.connected
+      ? "Offline. Reconnect to check and save this pipeline."
+      : !access.canSavePipelines
+        ? "This connection can look at pipelines but not save them."
+        : isNew && !dirty
+          ? "Name the pipeline and add its first step."
+          : checking
+            ? "Checking the pipeline…"
+            : firstError !== undefined
+              ? `${firstError.message}${errors.length > 1 ? ` ${plural(errors.length - 1, "more problem")} to fix.` : ""}`
+              : warnings.length > 0
+                ? `Ready to save, with ${plural(warnings.length, "warning")}: ${warnings[0]?.message ?? ""}`
+                : check.error
+                  ? `Could not check the pipeline: ${check.error} Saving checks it again.`
+                  : !changed
+                    ? "No changes yet."
+                    : baseVersion === 0
+                      ? `Ready to save as ${draft.id.trim()}.`
+                      : `Ready to save as v${baseVersion + 1}.`;
+  // Typing restarts the check, so only where it settles is announced, and only once per message.
+  const [spokenStatus, setSpokenStatus] = useState("");
+  if (!checking && statusText !== spokenStatus) setSpokenStatus(statusText);
 
   const id = draft.id.trim();
   const nameProblems = revealed || nameTouched ? pipelineProblems("name") : [];
@@ -606,6 +626,7 @@ function PipelineBuilder({
               placeholder="Name this pipeline"
               value={draft.name}
               maxLength={120}
+              autoFocus={isNew}
               onChange={(event) => changeName(event.target.value)}
               onBlur={() => setNameTouched(true)}
               className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-md bg-transparent px-1.5 text-2xl leading-tight font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
@@ -767,7 +788,20 @@ function PipelineBuilder({
 
       <div className="mt-auto flex flex-col gap-3">
         <LibraryErrorNotice error={error} />
-        <LibraryEditorBar status={<span role="status">{status}</span>}>
+        <p role="status" className="sr-only">
+          {spokenStatus}
+        </p>
+        <LibraryEditorBar
+          status={
+            statusTone === null ? (
+              statusText
+            ) : (
+              <ProblemLink tone={statusTone} onClick={showFirstProblem}>
+                {statusText}
+              </ProblemLink>
+            )
+          }
+        >
           <Button shape="pill" size="sm" variant="ghost" onClick={() => void cancel()}>
             Cancel
           </Button>
@@ -896,8 +930,9 @@ function PipelineIdLine({
 
 /** The rule between two cards of the flow, with a way to add a step there. */
 function Connector({ children }: { readonly children?: ReactNode }) {
+  // Not a list item of its own, so the steps list counts only the cards.
   return (
-    <li className="group/insert relative flex h-8 items-center">
+    <li role="none" className="group/insert relative flex h-8 items-center">
       <span aria-hidden className="absolute inset-y-0 start-7 w-px bg-border" />
       {children ? (
         <span className="relative ms-4 flex opacity-0 transition-opacity duration-150 group-focus-within/insert:opacity-100 group-hover/insert:opacity-100 pointer-coarse:opacity-100">
@@ -1828,6 +1863,7 @@ function TemplateEditor({
         aria-label={`${label}, own text`}
         aria-invalid={invalid || undefined}
         value={value}
+        maxLength={BOTS_PIPELINE_TEMPLATE_MAX}
         placeholder="Text, with references such as {{input.target}}"
         onChange={(event) => onChange(event.target.value)}
       />

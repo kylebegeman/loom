@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, UsageSummaryInput } from "@t3tools/contracts";
-import type { LibraryProjectColor } from "@t3tools/contracts/fork";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import { ArrowUpRightIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -10,14 +9,11 @@ import { useEnvironmentQuery } from "~/state/query";
 import { LIBRARY_ROW, LibraryErrorNotice } from "../project-library/LibraryControls";
 import { LibraryBar } from "../project-library/LibraryData";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
-import { BotTile } from "./BotIdentity";
+import { BOTS_COLOR, BotTile } from "./BotIdentity";
 import { bots, useBotsHost } from "./state";
 import { busiestTokens, tokenShare, usagePageWindow } from "./usageWindow";
 
 const TOP_BOTS = 3;
-
-/** One hue for a magnitude ranking; each bot's own colour stays on its tile. */
-const BOTS_COLOR: LibraryProjectColor = "plum";
 
 const SKELETON_ROWS = ["first", "second", "third"];
 

@@ -53,16 +53,20 @@ const quietWindow = (analytics: SiteAnalytics) => !analytics.pageviews && !analy
  */
 export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }) {
   const days = siteTrafficDays(analytics);
-  const [focused, setFocused] = useState<number | null>(null);
+  const [focus, setFocus] = useState<TrafficFocus | null>(null);
+  const focused = focus?.index ?? null;
   const current = focused === null ? null : (days[focused] ?? null);
   const quiet = quietWindow(analytics) || !days.length;
+  // Only a day picked with the keys is read out. Hover changes the figures many times a second,
+  // and the chart's label and table already give screen readers every day.
+  const announced = focus?.byKeyboard && current ? current : null;
   return (
     <section
       aria-label="Traffic over time"
       className="flex min-w-0 flex-col rounded-xl border border-border"
     >
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-4 pt-4">
-        <dl aria-live="polite" className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
+        <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
           <LibraryFigure
             label="Page views"
             value={formatCount(current ? current.pageviews : analytics.pageviews)}
@@ -92,9 +96,14 @@ export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }
           days={days}
           windowDays={analytics.days}
           focused={focused}
-          onFocus={setFocused}
+          onFocus={setFocus}
         />
       )}
+      <p aria-live="polite" className="sr-only">
+        {announced
+          ? `${dayLabel(announced.day)}: ${formatCount(announced.pageviews)} page views, ${formatCount(announced.visitors)} visitors`
+          : ""}
+      </p>
       <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
         Visitors are counted once per day
         {analytics.lastEventAt
@@ -106,6 +115,7 @@ export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }
 }
 
 type TrafficDay = ReturnType<typeof siteTrafficDays>[number];
+type TrafficFocus = { readonly index: number; readonly byKeyboard: boolean };
 
 /** Daily page views as the Library's sparkline, made readable a day at a time. */
 function TrafficChart({
@@ -117,13 +127,14 @@ function TrafficChart({
   readonly days: readonly TrafficDay[];
   readonly windowDays: number;
   readonly focused: number | null;
-  readonly onFocus: (index: number | null) => void;
+  readonly onFocus: (focus: TrafficFocus | null) => void;
 }) {
   const values = days.map((day) => day.pageviews);
   const point = focused === null ? null : sparklinePoint(values, focused);
   const peak = days.reduce((best, day) => (day.pageviews > best.pageviews ? day : best), days[0]!);
+  const pick = (index: number) => onFocus({ index, byKeyboard: true });
   const move = (delta: number) =>
-    onFocus(Math.min(days.length - 1, Math.max(0, (focused ?? days.length) + delta)));
+    pick(Math.min(days.length - 1, Math.max(0, (focused ?? days.length) + delta)));
   return (
     <figure className="flex flex-col gap-1.5 px-4 pt-5 pb-3">
       <div
@@ -133,14 +144,16 @@ function TrafficChart({
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft") move(-1);
           else if (event.key === "ArrowRight") move(1);
-          else if (event.key === "Home") onFocus(0);
-          else if (event.key === "End") onFocus(days.length - 1);
+          else if (event.key === "Home") pick(0);
+          else if (event.key === "End") pick(days.length - 1);
           else return;
           event.preventDefault();
         }}
         onPointerMove={(event) => {
           const box = event.currentTarget.getBoundingClientRect();
-          onFocus(trafficDayAt(event.clientX - box.left, box.width, days.length));
+          const index = trafficDayAt(event.clientX - box.left, box.width, days.length);
+          // Unchanged days keep the same object, so moving within one day re-renders nothing.
+          if (index !== focused) onFocus({ index, byKeyboard: false });
         }}
         onPointerLeave={() => onFocus(null)}
         onBlur={() => onFocus(null)}
