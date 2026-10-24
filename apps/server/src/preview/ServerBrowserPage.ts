@@ -469,6 +469,14 @@ export const readPageMetrics = async (cdp: CDPSession) => {
   );
 };
 
+/**
+ * Chromium emulates a clip's view for a scaled capture, then restores the emulation it found.
+ * Every session on a desktop tab shares one Electron debugger, so a capture that began during
+ * another restores that one's view: the page stays locked to it, pinned to the panel's corner,
+ * with clicks landing short of the pointer.
+ */
+const scaledCaptures = new WeakMap<Page, Promise<unknown>>();
+
 // Scaled captures repaint live screencasts, so callers pause them. Clips use document offsets.
 export const captureViewport = async (
   page: Page,
@@ -481,27 +489,23 @@ export const captureViewport = async (
     readonly offset?: { readonly x: number; readonly y: number } | undefined;
   },
 ) => {
-  let clip;
-  if (options.scale < 1) {
-    const viewport = options.viewport ?? page.viewportSize() ?? { width: 1280, height: 800 };
-    let offset = options.offset;
-    if (!offset) {
-      const { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
-      const zoom = cssVisualViewport.zoom ?? 1;
-      offset = { x: cssVisualViewport.pageX * zoom, y: cssVisualViewport.pageY * zoom };
-    }
-    clip = {
-      ...offset,
-      ...viewport,
-      scale: options.scale,
-    };
-  }
-  const { data } = await cdp.send("Page.captureScreenshot", {
+  const screenshot = {
     format: options.format,
     ...(options.quality === undefined ? {} : { quality: options.quality }),
-    ...(clip ? { clip } : {}),
-  });
-  return data;
+  };
+  if (options.scale >= 1) return (await cdp.send("Page.captureScreenshot", screenshot)).data;
+  const viewport = options.viewport ?? page.viewportSize() ?? { width: 1280, height: 800 };
+  let offset = options.offset;
+  if (!offset) {
+    const { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
+    const zoom = cssVisualViewport.zoom ?? 1;
+    offset = { x: cssVisualViewport.pageX * zoom, y: cssVisualViewport.pageY * zoom };
+  }
+  const clip = { ...offset, ...viewport, scale: options.scale };
+  const send = () => cdp.send("Page.captureScreenshot", { ...screenshot, clip });
+  const captured = (scaledCaptures.get(page) ?? Promise.resolve()).then(send);
+  scaledCaptures.set(page, captured.catch(constVoid));
+  return (await captured).data;
 };
 
 type SnapshotInput = {
