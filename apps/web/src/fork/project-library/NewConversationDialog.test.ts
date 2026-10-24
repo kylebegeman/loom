@@ -29,6 +29,8 @@ vi.mock("~/modelSelection", () => ({}));
 vi.mock("./ProfileReadiness", () => ({}));
 vi.mock("./ReleaseCopyDialog", () => ({}));
 vi.mock("./useLibraryLaunchRanking", () => ({}));
+vi.mock("./ConversationPalette", () => ({}));
+vi.mock("./LibraryPalette", () => ({}));
 import { libraryConversationDefaults, reopenLibraryLaunchCopy } from "./NewConversationDialog";
 
 const instanceId = ProviderInstanceId.make("codex");
