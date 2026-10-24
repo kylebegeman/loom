@@ -24,6 +24,25 @@ export type SiteEditTarget =
   | { kind: "site"; row?: SitesSnapshot["sites"][number] }
   | { kind: "service"; row?: SitesSnapshot["services"][number] }
   | { kind: "check"; row?: SitesSnapshot["checks"][number]; serviceId?: string };
+
+/** The ID a new entry would get from its name; the person can still change it before saving. */
+function idFromName(name: string) {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+/** The scheme and host of a URL, or nothing while it is still being typed. */
+function originOf(url: string) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
 export function SiteEditor({
   target,
   snapshot,
@@ -41,6 +60,8 @@ export function SiteEditor({
 }) {
   const row = target.row;
   const [id, setId] = useState(row?.id ?? "");
+  // A new entry's ID follows its name until someone types an ID of their own.
+  const [idEdited, setIdEdited] = useState(Boolean(row));
   const [name, setName] = useState(row?.name ?? "");
   const [url, setUrl] = useState(row?.url ?? "");
   const [active, setActive] = useState(row ? Boolean(row.active) : true);
@@ -78,6 +99,22 @@ export function SiteEditor({
   const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
   const toggle = (values: readonly string[], value: string) =>
     values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
+  const changeName = (next: string) => {
+    setName(next);
+    if (!idEdited) setId(idFromName(next));
+  };
+  // The site's own origin must be among its analytics origins; keep it there as the URL changes.
+  const changeUrl = (next: string) => {
+    if (target.kind === "site") {
+      const before = originOf(url);
+      const after = originOf(next);
+      const lines = origins.split(/\r?\n/).filter((line) => line.trim() && line.trim() !== before);
+      setOrigins(
+        (after ? [after, ...lines.filter((line) => line.trim() !== after)] : lines).join("\n"),
+      );
+    }
+    setUrl(next);
+  };
   const submit = async () => {
     if (busy || !allowed || !connected) return;
     setError(null);
@@ -144,7 +181,7 @@ export function SiteEditor({
             maxLength={120}
             editable={!busy}
             value={name}
-            onChangeText={setName}
+            onChangeText={changeName}
           />
           <TextInput
             accessibilityLabel="Stable ID"
@@ -154,7 +191,10 @@ export function SiteEditor({
             autoCorrect={false}
             editable={!row && !busy}
             value={id}
-            onChangeText={setId}
+            onChangeText={(next) => {
+              setIdEdited(true);
+              setId(next);
+            }}
           />
           <TextInput
             accessibilityLabel={target.kind === "check" ? "Check URL" : "HTTPS origin"}
@@ -163,7 +203,7 @@ export function SiteEditor({
             autoCorrect={false}
             editable={!busy}
             value={url}
-            onChangeText={setUrl}
+            onChangeText={changeUrl}
           />
           {target.kind === "site" ? (
             <>

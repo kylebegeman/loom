@@ -31,7 +31,6 @@ import {
   workstreamReferenceDoneState,
   workstreamReferenceKey,
   workstreamReferenceThread,
-  type LibraryWorkflowTone,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -41,7 +40,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { uuidv4 } from "../../lib/uuid";
 import { relativeTime } from "../../lib/time";
-import { cn } from "../../lib/cn";
 import {
   library,
   refreshLibraryProject,
@@ -49,41 +47,11 @@ import {
   useLoomFeature,
 } from "./libraryState";
 import { LibraryCopySection } from "./LibraryCopySection";
+import { LibraryStateBadge } from "./LibraryStateBadge";
 
 const inputStyle = "min-h-12 rounded-xl bg-field px-4 text-base text-foreground";
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
 const decodeBlueprint = Schema.decodeOption(blueprintCodec);
-
-const BADGE_FILL: Record<LibraryWorkflowTone, string> = {
-  neutral: "bg-subtle",
-  active: "bg-adaptive-blue-50-blue-400-a14",
-  success: "bg-adaptive-emerald-500-a12-a16",
-  warning: "bg-adaptive-amber-500-a12-a16",
-  danger: "bg-adaptive-red-50-950-a80",
-};
-
-const BADGE_INK: Record<LibraryWorkflowTone, string> = {
-  neutral: "text-foreground-muted",
-  active: "text-adaptive-blue-600-400",
-  success: "text-adaptive-emerald-700-300",
-  warning: "text-adaptive-amber-700-300",
-  danger: "text-adaptive-red-700-300",
-};
-
-/** The same state pill the web Library uses, so Active, Done and Failed read alike on both. */
-function StateBadge({
-  tone,
-  label,
-}: {
-  readonly tone: LibraryWorkflowTone;
-  readonly label: string;
-}) {
-  return (
-    <View className={cn("self-start rounded-full px-2.5 py-0.5", BADGE_FILL[tone])}>
-      <Text className={cn("font-t3-medium text-xs", BADGE_INK[tone])}>{label}</Text>
-    </View>
-  );
-}
 
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
 export function LibraryWorkflows({
@@ -216,7 +184,7 @@ export function LibraryWorkflows({
                   <Text className="flex-1 font-t3-medium text-foreground" numberOfLines={2}>
                     {stream.title}
                   </Text>
-                  <StateBadge tone={state.tone} label={state.label} />
+                  <LibraryStateBadge tone={state.tone} label={state.label} />
                 </View>
                 {stream.goal ? (
                   <Text className="text-sm text-foreground-muted" numberOfLines={4}>
@@ -238,7 +206,7 @@ export function LibraryWorkflows({
                         <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                           {LIBRARY_WORKSTREAM_REFERENCE_KINDS[ref.kind]} · {ref.label}
                         </Text>
-                        <StateBadge tone={refState.tone} label={refState.label} />
+                        <LibraryStateBadge tone={refState.tone} label={refState.label} />
                       </View>
                       {thread ? (
                         <Button
@@ -351,7 +319,7 @@ export function LibraryWorkflows({
                     <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                       {LIBRARY_WORKSTREAM_REFERENCE_KINDS[ref.kind]} · {ref.label}
                     </Text>
-                    <StateBadge
+                    <LibraryStateBadge
                       tone={LIBRARY_WORKSTREAM_REFERENCE_STATES[ref.state].tone}
                       label={LIBRARY_WORKSTREAM_REFERENCE_STATES[ref.state].label}
                     />
@@ -553,7 +521,7 @@ export function LibraryPreservationCenter({
                 <Text className="flex-1 font-t3-medium text-foreground" numberOfLines={1}>
                   {entry.project.title}
                 </Text>
-                <StateBadge
+                <LibraryStateBadge
                   tone={LIBRARY_RESTORE_PATHS[entry.restore].tone}
                   label={LIBRARY_RESTORE_PATHS[entry.restore].label}
                 />
@@ -671,7 +639,7 @@ export function LibraryOperationHistory({
                       .join(" · ")}
                   </Text>
                 </View>
-                <StateBadge
+                <LibraryStateBadge
                   tone={LIBRARY_OPERATION_STATES[operation.state].tone}
                   label={LIBRARY_OPERATION_STATES[operation.state].label}
                 />

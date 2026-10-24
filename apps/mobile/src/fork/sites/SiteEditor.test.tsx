@@ -27,19 +27,29 @@ vi.mock("../../components/ui/AppText", () => ({
     onChangeText,
     accessibilityLabel,
     editable,
+    multiline,
   }: {
     value: string;
     onChangeText: (value: string) => void;
     accessibilityLabel: string;
     editable: boolean;
-  }) => (
-    <input
-      aria-label={accessibilityLabel}
-      value={value}
-      disabled={!editable}
-      onInput={(event) => onChangeText(event.currentTarget.value)}
-    />
-  ),
+    multiline?: boolean;
+  }) =>
+    multiline ? (
+      <textarea
+        aria-label={accessibilityLabel}
+        value={value}
+        disabled={!editable}
+        onInput={(event) => onChangeText(event.currentTarget.value)}
+      />
+    ) : (
+      <input
+        aria-label={accessibilityLabel}
+        value={value}
+        disabled={!editable}
+        onInput={(event) => onChangeText(event.currentTarget.value)}
+      />
+    ),
 }));
 vi.mock("../../components/ui/Button", () => ({
   Button: ({
@@ -256,4 +266,27 @@ it("describes service-kind and endpoint-service selection using the existing sel
   act(() => root.render(null));
   render({ kind: "check", serviceId: "api" });
   expect(container.textContent).toContain("Selected: API");
+});
+
+it("derives a new site's ID from its name and keeps its origin among the analytics origins", () => {
+  harness.platform = "ios";
+  render({ kind: "site" });
+  const field = (label: string) =>
+    container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)!;
+  const type = (label: string, value: string) =>
+    act(() => {
+      field(label).value = value;
+      field(label).dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  type("Name", "My Site!");
+  expect(field("Stable ID").value).toBe("my-site");
+  type("HTTPS origin", "https://one.example.test");
+  type("Analytics origins", "https://one.example.test\nhttps://www.example.test");
+  type("HTTPS origin", "https://two.example.test");
+  expect(field("Analytics origins").value).toBe(
+    "https://two.example.test\nhttps://www.example.test",
+  );
+  type("Stable ID", "custom");
+  type("Name", "Renamed");
+  expect(field("Stable ID").value).toBe("custom");
 });
