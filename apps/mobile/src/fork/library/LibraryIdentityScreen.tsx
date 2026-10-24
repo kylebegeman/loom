@@ -1,11 +1,5 @@
 // @effect-diagnostics globalDate:off globalTimers:off -- Expo OAuth is an imperative native boundary with a bounded cancellation timer.
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import {
-  BearerConnectionCredential,
-  BearerConnectionProfile,
-  BearerConnectionRegistration,
-  BearerConnectionTarget,
-} from "@t3tools/client-runtime/connection";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
@@ -17,16 +11,18 @@ import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { environmentCatalog } from "../../connection/catalog";
+import { identityGrantStore } from "../identity-renewal/mobileIdentityRenewal";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import {
-  assertNativeIdentityUnchanged,
-  exchangeLibraryIdentityToken,
+  completeNativeIdentitySignIn,
   libraryIdentityAddress,
   libraryIdentityResourceParameters,
   loadLibraryIdentity,
   loadNativeIdentityDiscovery,
+  nativeIdentityAuthorizationParameters,
+  nativeIdentityScopes,
 } from "./libraryIdentity";
 import { useLibraryAuthority } from "./libraryState";
 
@@ -141,10 +137,8 @@ function IdentityContent({
         redirectUri,
         responseType: ResponseType.Code,
         usePKCE: true,
-        scopes: [
-          ...new Set(["openid", ...metadata.scopes.filter((scope) => scope !== "offline_access")]),
-        ],
-        extraParams: libraryIdentityResourceParameters(metadata),
+        scopes: [...nativeIdentityScopes(metadata)],
+        extraParams: nativeIdentityAuthorizationParameters(metadata),
       });
       setPending("Sign in with your account...");
       const result = await auth.promptAsync(discovery);
@@ -166,60 +160,30 @@ function IdentityContent({
         discovery,
       );
       if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-      if (account.tokenType.toLowerCase() !== "bearer")
-        throw new Error("The Identity provider returned an unsupported token type.");
-      const current = await loadLibraryIdentity(
-        destination.httpBaseUrl,
-        metadata.environmentId,
-        fetch,
+      const signedIn = await completeNativeIdentitySignIn({
+        destination,
+        metadata,
+        discovery,
+        tokens: account,
+        label: connection?.environmentLabel ?? new URL(destination.httpBaseUrl).hostname,
         options,
-      );
-      assertNativeIdentityUnchanged(metadata, current);
-      const session = await exchangeLibraryIdentityToken(
-        destination.httpBaseUrl,
-        account.accessToken,
-        fetch,
-        { ...options, metadata },
-      );
-      if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-      if (!session.identity || session.environmentId !== metadata.environmentId)
-        throw new Error(
-          "The computer did not return verified Identity access. Update it or use pairing.",
-        );
-      const connectionId = `bearer:${metadata.environmentId}:${destination.httpBaseUrl}`;
-      const label = connection?.environmentLabel ?? new URL(destination.httpBaseUrl).hostname;
-      const expiresAt = Math.min(
-        Date.now() + session.expires_in * 1000,
-        account.expiresIn === undefined
-          ? Number.MAX_SAFE_INTEGER
-          : (account.issuedAt + account.expiresIn) * 1000,
-      );
-      if (expiresAt <= Date.now()) throw new Error("Identity access expired. Sign in again.");
+        request: fetch,
+        now: Date.now,
+      });
       clearTimeout(timer);
       setPending("Saving computer access...");
-      const registration = await register(
-        new BearerConnectionRegistration({
-          target: new BearerConnectionTarget({
-            environmentId: metadata.environmentId,
-            label,
-            connectionId,
-          }),
-          profile: new BearerConnectionProfile({
-            connectionId,
-            environmentId: metadata.environmentId,
-            label,
-            ...destination,
-            identity: session.identity,
-          }),
-          credential: new BearerConnectionCredential({
-            token: session.access_token,
-            identity: { ...session.identity, environmentId: metadata.environmentId, expiresAt },
-          }),
-        }),
-      );
+      const registration = await register(signedIn.registration);
       if (AsyncResult.isFailure(registration)) throw squashAtomCommandFailure(registration);
       if (!registration.value)
         throw new Error("This computer is managed by this app and cannot be added here.");
+      // Without a new grant, an older one would keep renewing a sign-in the user just replaced.
+      await (
+        signedIn.grant
+          ? identityGrantStore.put(signedIn.grant)
+          : identityGrantStore.remove(signedIn.grantKey)
+      ).catch(() => {
+        // The session still works until it ends; Loom then asks to sign in again.
+      });
       const enabled = await enable({ environmentId: metadata.environmentId, enabled: true });
       if (AsyncResult.isFailure(enabled)) throw squashAtomCommandFailure(enabled);
       if (purpose === "library") {
@@ -293,8 +257,9 @@ function IdentityContent({
         ) : null}
         {error ? <LibraryNotice error={error} /> : null}
         <Text className="text-xs text-foreground-muted">
-          Access lasts up to one hour. Sign in again when it expires. Removing this computer from
-          Connections revokes this device's current Identity session. Pairing remains available.
+          Each sign-in lasts up to an hour. If this computer sets a sign-in limit, Loom renews it on
+          its own until then. Removing this computer from Connections ends this device's sign-in.
+          Pairing remains available.
         </Text>
       </View>
     </LibraryPage>

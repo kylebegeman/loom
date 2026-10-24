@@ -8,6 +8,7 @@ import { Button } from "~/components/ui/button";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
 import { identityProfile } from "./identityProfile";
+import { identityRenewalAvailable } from "./renewal";
 import { useEnvironmentSessionState } from "~/state/session";
 
 /**
@@ -71,7 +72,9 @@ export function SavedComputerIdentity({
         {profile.identity!.issuer}.{" "}
         {expired
           ? "Access expired. Sign in again from the notice above."
-          : "Each sign-in lasts up to an hour. Removing this connection revokes this device's active Identity session."}
+          : identityRenewalAvailable()
+            ? "Each sign-in lasts up to an hour. If this computer sets a sign-in limit, Loom renews it on its own until then. Removing this connection signs this device out."
+            : "Each sign-in lasts up to an hour. Removing this connection revokes this device's active Identity session."}
       </p>
       {expired ? null : (
         <LoomSignIn

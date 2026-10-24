@@ -343,9 +343,19 @@ Library and local projects, shows it whenever a computer can run it, and names t
 filter the scratch draft's computer list and prompt-link candidates through
 `noProjectWorkspaceRoot`, so neither offers a Library. `createWorkspaceStackNavigator.ios.tsx`
 (1 marker line) sends the iOS compose button to the New task picker unless a Library project
-is on screen. Keep `no-project-target.ts` free of runtime imports: `capabilities.ts`
-re-exports it, and `connection/compatibility.ts` imports `capabilities.ts`, so a runtime
-import there closes a cycle through the RPC client.
+is on screen.
+
+L112 `identity-renewal` seams let desktop and iPhone renew Identity sessions on their own. On the
+server, `SessionStore.ts` (17 marker lines) links a renewed session to the one it replaces and
+revokes the whole chain, and `ws.ts` (11) moves an open socket to the successor at expiry. In
+client-runtime, `registry.ts` (13), `resolver.ts` (6) and `layer.ts` (2) renew expired or
+rejected Identity credentials and forget a computer's grant on removal. Desktop adds the renew
+and forget bridge in `main.ts`, `preload.ts`, `channels.ts` and `DesktopIpcHandlers.ts` (2 to 3
+each) and `packages/contracts/src/ipc.ts` (3); `apps/web/src/connection/platform.ts` (3) and
+`apps/mobile/src/connection/platform.ts` (2) provide each client's renewal. Mobile Settings
+(`SettingsEnvironmentDetailRouteScreen.tsx`, 1) shows the renewal copy, and
+`packages/shared/package.json` exports `./fork/identity-grant` (no marker). See the
+[L112 packet](docs/fork/packets/L112-identity-renewal/SEAMS.md).
 
 ## Loom CLI and pairing copy
 

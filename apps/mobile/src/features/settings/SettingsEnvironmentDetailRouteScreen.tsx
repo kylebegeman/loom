@@ -228,9 +228,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             </SettingsSection>
             {savedConnection?.identity ? (
               <SettingsSection title="Identity access">
+                {/* fork: identity-renewal */}
                 <Text className="px-4 py-3 text-sm text-foreground-muted">
-                  {savedConnection.identity.issuer}. Access lasts up to one hour. Sign in with the
-                  same account to reconnect.
+                  {savedConnection.identity.issuer}. Each sign-in lasts up to an hour. If this
+                  computer sets a sign-in limit, Loom renews it on its own until then. Sign in with
+                  the same account to reconnect.
                 </Text>
                 <SettingsActionRow
                   icon="person.crop.circle"

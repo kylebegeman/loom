@@ -52,9 +52,11 @@ Shared projects keep their brief, components and saved conversation history inde
 of their execution computers. Configure the Library connection in **Settings → Connections**.
 If that server has Identity configured, **Sign in with Identity** opens its account sign-in.
 You can enter a Library address on web, desktop, or mobile before saving its connection.
-Sign-in opens your browser and returns to Loom after verification. Identity access lasts
-up to one hour; sign in again when it expires. Existing pairing and T3 Connect remain
-available. Changing your Library selection does not move records from the previous Library.
+Sign-in opens your browser and returns to Loom after verification. Each Identity sign-in
+lasts up to an hour, and the desktop and iPhone apps renew it on their own when the Library
+sets a sign-in limit; otherwise, sign in again when it expires. Existing pairing and T3
+Connect remain available. Changing your Library selection does not move records from the
+previous Library.
 
 **New project** needs only a name. Add repositories, reference links or a brief whenever
 useful. **Add existing folder** finds repositories in a folder and suggests an existing

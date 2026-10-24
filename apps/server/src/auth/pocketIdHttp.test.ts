@@ -51,18 +51,41 @@ const pocket = Layer.mock(PocketId.PocketId)({
         expiresAt: DateTime.add(now, { minutes: 5 }),
       })),
     ),
-  createSession: (input, _client, origin) =>
-    origin === "https://app.example.test" && input.type === "browser"
-      ? Effect.succeed({
-          access_token: "host-bearer",
-          issued_token_type: AuthAccessTokenType,
-          token_type: "Bearer" as const,
-          expires_in: 600,
-          scope: "orchestration:read",
-          environmentId: metadata.environmentId,
-          identity: { issuer: metadata.issuer, subject: "owner-id" },
-        })
-      : Effect.fail(new PocketId.PocketIdError({ reason: "state" })),
+  createSession: (input, _client, origin, currentToken) =>
+    input.type === "native"
+      ? input.accessToken === "renewed-access-jwt" && currentToken === "current-host-bearer"
+        ? Effect.succeed({
+            access_token: "renewed-host-bearer",
+            issued_token_type: AuthAccessTokenType,
+            token_type: "Bearer" as const,
+            expires_in: 3600,
+            scope: "orchestration:read",
+            environmentId: metadata.environmentId,
+            identity: { issuer: metadata.issuer, subject: "owner-id" },
+          })
+        : Effect.fail(
+            new PocketId.PocketIdError({
+              reason:
+                input.accessToken === "old-sign-in"
+                  ? "expired"
+                  : input.accessToken === "issuer-unreachable"
+                    ? "discovery"
+                    : input.accessToken === "host-misconfigured"
+                      ? "configuration"
+                      : "token",
+            }),
+          )
+      : origin === "https://app.example.test" && input.type === "browser"
+        ? Effect.succeed({
+            access_token: "host-bearer",
+            issued_token_type: AuthAccessTokenType,
+            token_type: "Bearer" as const,
+            expires_in: 600,
+            scope: "orchestration:read",
+            environmentId: metadata.environmentId,
+            identity: { issuer: metadata.issuer, subject: "owner-id" },
+          })
+        : Effect.fail(new PocketId.PocketIdError({ reason: "state" })),
   logout: (input) =>
     input.bearerToken === "host-bearer" ||
     (input.cookieToken === "host-browser-token" && input.origin === "https://host.example.test")
@@ -297,6 +320,50 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
                 environmentId: "host",
               });
               expect((await exchange("https://attacker.test")).status).toBe(401);
+            }),
+          (web) => Effect.promise(() => web.dispose()),
+        );
+      }),
+  );
+  it.effect(
+    "renews native sessions with the current session and tells renewal apart from retryable failures",
+    () =>
+      Effect.gen(function* () {
+        const crypto = yield* Crypto.Crypto;
+        const context = Context.make(Crypto.Crypto, crypto);
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
+          (web) =>
+            Effect.tryPromise(async () => {
+              const renew = (accessToken: string, currentToken = "current-host-bearer") =>
+                web.handler(
+                  new Request("https://host.example.test/api/loom/identity/session", {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      authorization: `Bearer ${currentToken}`,
+                    },
+                    body: encodeJson({
+                      type: "native",
+                      accessToken,
+                      idToken: "id-token",
+                      environmentId: "host",
+                    }),
+                  }),
+                  context,
+                );
+              const renewed = await renew("renewed-access-jwt");
+              expect(renewed.status).toBe(200);
+              expect(await renewed.json()).toMatchObject({ access_token: "renewed-host-bearer" });
+              const expired = await renew("old-sign-in");
+              expect(expired.status).toBe(401);
+              expect(await expired.json()).toMatchObject({ error: "sign_in_expired" });
+              expect((await renew("issuer-unreachable")).status).toBe(503);
+              // A mistyped host setting must not make every renewing device drop its grant.
+              expect((await renew("host-misconfigured")).status).toBe(503);
+              const rejected = await renew("renewed-access-jwt", "another-host-bearer");
+              expect(rejected.status).toBe(401);
+              expect(await rejected.json()).toMatchObject({ error: "sign_in_failed" });
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

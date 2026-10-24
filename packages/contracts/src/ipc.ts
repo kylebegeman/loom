@@ -1,4 +1,10 @@
 import type { LoomDesktopSignInRequest, LoomDesktopSignInResult } from "./fork/identity.ts";
+// fork: identity-renewal
+import type {
+  LoomDesktopForgetRequest,
+  LoomDesktopRenewRequest,
+  LoomDesktopRenewResult,
+} from "./fork/identity.ts";
 import * as Schema from "effect/Schema";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
@@ -1030,6 +1036,9 @@ export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 export interface DesktopBridge {
   cancelLoomSignIn?: (input: LoomDesktopSignInRequest) => Promise<void>;
   signInToLoom?: (input: LoomDesktopSignInRequest) => Promise<LoomDesktopSignInResult>;
+  // fork: identity-renewal: a rejected promise is a transient failure, so the caller retries.
+  renewLoomIdentity?: (input: LoomDesktopRenewRequest) => Promise<LoomDesktopRenewResult>;
+  forgetLoomIdentity?: (input: LoomDesktopForgetRequest) => Promise<void>; // fork: identity-renewal
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled?: () => boolean;
   getPathForFile?: (file: File) => string;

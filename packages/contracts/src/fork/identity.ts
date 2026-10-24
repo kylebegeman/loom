@@ -18,6 +18,8 @@ export const LoomIdentityMetadata = Schema.Struct({
   environmentId: EnvironmentId,
   sessionExchangeEnabled: Schema.optional(Schema.Boolean),
   browserOrigins: Schema.optional(Schema.Array(Schema.String)),
+  /** Present when the host caps how long a renewable sign-in lasts, counted from `auth_time`. */
+  maxSessionAgeSeconds: Schema.optional(Schema.Number),
 });
 export type LoomIdentityMetadata = typeof LoomIdentityMetadata.Type;
 export const LOOM_IDENTITY_METADATA_PATH = "/api/loom/identity";
@@ -26,6 +28,8 @@ export const LOOM_IDENTITY_CALLBACK_PATH = "/api/loom/identity/callback";
 
 export const LOOM_IDENTITY_SESSION_PATH = "/api/loom/identity/session";
 export const LOOM_IDENTITY_LOGOUT_PATH = "/api/loom/identity/logout";
+/** The session endpoint's 401 `error` when a sign-in is older than the host's maximum age. */
+export const LOOM_IDENTITY_SIGN_IN_EXPIRED = "sign_in_expired";
 
 export const LoomIdentityAccount = Schema.Struct({
   issuer: Schema.String,
@@ -57,6 +61,8 @@ export const LoomIdentitySessionRequest = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("native"),
     accessToken: Schema.String,
+    /** Carries `auth_time`, which access tokens lack, so the host can cap a renewed sign-in. */
+    idToken: Schema.optional(Schema.String),
     environmentId: EnvironmentId,
     expectedIdentity: Schema.optional(LoomIdentityAccount),
   }),
@@ -76,3 +82,23 @@ export const LoomDesktopSignInResult = Schema.Struct({
   expiresAt: Schema.optional(Schema.Number),
 });
 export type LoomDesktopSignInResult = typeof LoomDesktopSignInResult.Type;
+
+export const LoomDesktopRenewRequest = Schema.Struct({
+  httpBaseUrl: Schema.String,
+  environmentId: EnvironmentId,
+  identity: LoomIdentityAccount,
+  /** Lets the computer carry the open WebSocket over to the renewed session. */
+  currentToken: Schema.optional(Schema.String),
+});
+export type LoomDesktopRenewRequest = typeof LoomDesktopRenewRequest.Type;
+export const LoomDesktopRenewResult = Schema.Union([
+  Schema.TaggedStruct("Renewed", { session: LoomDesktopSignInResult }),
+  Schema.TaggedStruct("SignInRequired", { reason: Schema.String }),
+]);
+export type LoomDesktopRenewResult = typeof LoomDesktopRenewResult.Type;
+export const LoomDesktopForgetRequest = Schema.Struct({
+  httpBaseUrl: Schema.String,
+  environmentId: EnvironmentId,
+  identity: LoomIdentityAccount,
+});
+export type LoomDesktopForgetRequest = typeof LoomDesktopForgetRequest.Type;

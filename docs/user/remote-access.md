@@ -40,12 +40,13 @@ or over a tailnet. In **Settings → Connections**, add the computer's address a
 You can use this without a pairing code once that computer has authorized your account.
 A computer appearing in your Library does not itself grant access.
 
-Identity access lasts up to one hour. Open the saved computer's connection details and
-sign in again to reconnect. Removing the connection revokes this device's active
-Identity access; if the computer is unreachable, retry when it is available or remove
-the connection after access expires. When using a computer's own web address, **Sign
-out of this computer** revokes the browser session. These actions affect that computer's
-session; your Identity provider and T3 Connect account have their own sign-in state.
+Each Identity sign-in lasts up to an hour. When the computer sets a sign-in limit, the
+desktop and iPhone apps renew it on their own until that limit; otherwise, open the
+saved computer's connection details and sign in again to reconnect. Removing the
+connection signs this device out of that computer, and finishes even while the computer
+is offline. When using a computer's own web address, **Sign out of this computer**
+revokes the browser session. These actions affect that computer's session; your Identity
+provider and T3 Connect account have their own sign-in state.
 
 T3 Connect continues to use its own account. Pairing links remain available for local
 and remote recovery, including **Use a pairing link instead** on the browser sign-in page.

@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref"; // fork: identity-renewal
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -118,6 +119,127 @@ const layerFailingSessionLookupCredential = Layer.effect(
 );
 
 it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+  // fork: identity-renewal
+  it.effect("carries a socket over to its renewal and closes it once the renewal is revoked", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const renewable = { subject: "owner", method: "bearer-access-token" } as const;
+      const first = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+      yield* sessions.markConnected(first.sessionId);
+      const held = yield* Ref.make(first.sessionId);
+      const socket = yield* sessions
+        .awaitSessionChain(held)
+        .pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* TestClock.adjust(Duration.minutes(50));
+      const renewal = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+      expect(
+        yield* sessions.linkSuccessor({
+          currentToken: first.token,
+          successor: { ...renewal, subject: renewable.subject },
+        }),
+      ).toBe(true);
+      const firstReleased = yield* sessions.streamChanges.pipe(
+        Stream.filter(
+          (change) => change.type === "clientRemoved" && change.sessionId === first.sessionId,
+        ),
+        Stream.runHead,
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* TestClock.adjust(Duration.minutes(10));
+      yield* Fiber.join(firstReleased);
+      expect(socket.pollUnsafe()).toBeUndefined();
+      expect(yield* Ref.get(held)).toBe(renewal.sessionId);
+      expect((yield* sessions.verify(first.token).pipe(Effect.flip))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+      expect(
+        (yield* sessions.listActive()).map(({ sessionId, connected }) => ({
+          sessionId,
+          connected,
+        })),
+      ).toEqual([{ sessionId: renewal.sessionId, connected: true }]);
+
+      yield* sessions.revoke(renewal.sessionId);
+      yield* Fiber.join(socket);
+      expect(yield* Ref.get(held)).toBe(renewal.sessionId);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  // fork: identity-renewal
+  it.effect("links nothing for a foreign, expired or invalid current token", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const renewable = { subject: "owner", method: "bearer-access-token" } as const;
+      const first = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+      const foreign = yield* sessions.issue({ subject: "someone-else", method: renewable.method });
+      const cookie = yield* sessions.issue({ subject: renewable.subject });
+      yield* sessions.markConnected(first.sessionId);
+      const held = yield* Ref.make(first.sessionId);
+      const socket = yield* sessions
+        .awaitSessionChain(held)
+        .pipe(Effect.forkScoped({ startImmediately: true }));
+      const renewal = yield* sessions.issue(renewable);
+      const successor = { ...renewal, subject: renewable.subject };
+      for (const currentToken of [foreign.token, cookie.token, "not-a-session"])
+        expect(yield* sessions.linkSuccessor({ currentToken, successor })).toBe(false);
+      yield* TestClock.adjust(Duration.hours(1));
+      yield* Fiber.join(socket);
+      expect(yield* Ref.get(held)).toBe(first.sessionId);
+      expect(yield* sessions.linkSuccessor({ currentToken: first.token, successor })).toBe(false);
+      yield* sessions.revoke(first.sessionId);
+      yield* sessions.verify(renewal.token);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  // fork: identity-renewal
+  it.effect("revokes every unexpired session of a renewal chain", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const renewable = { subject: "owner", method: "bearer-access-token" } as const;
+      const chain = [yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) })];
+      for (let index = 0; index < 3; index += 1) {
+        yield* TestClock.adjust(Duration.minutes(20));
+        const renewal = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+        yield* sessions.linkSuccessor({
+          currentToken: chain.at(-1)!.token,
+          successor: { ...renewal, subject: renewable.subject },
+        });
+        chain.push(renewal);
+      }
+      const [expired, older, previous, latest] = chain;
+      expect(yield* sessions.renewalsOf(older!.sessionId)).toEqual(
+        new Set([older!.sessionId, previous!.sessionId, latest!.sessionId]),
+      );
+      // Revoking any one session of a device ends the renewals it already holds.
+      expect(yield* sessions.revoke(previous!.sessionId)).toBe(true);
+      for (const session of [older!, latest!])
+        expect((yield* sessions.verify(session.token).pipe(Effect.flip))._tag).toBe(
+          "SessionTokenRevokedError",
+        );
+      expect((yield* sessions.verify(expired!.token).pipe(Effect.flip))._tag).toBe(
+        "SessionTokenExpiredError",
+      );
+      expect(yield* sessions.renewalsOf(older!.sessionId)).toEqual(new Set([older!.sessionId]));
+    }).pipe(Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  // fork: identity-renewal
+  it.effect("reports a revoked session token as revoked even after it expires", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const live = yield* sessions.issue({ ttl: Duration.hours(1) });
+      const revoked = yield* sessions.issue({ ttl: Duration.hours(1) });
+      const lapsed = yield* sessions.issue({ ttl: Duration.minutes(5) });
+      yield* sessions.revoke(revoked.sessionId);
+      for (const token of [live.token, lapsed.token, "not-a-session"])
+        expect(yield* sessions.isRevokedSessionToken(token)).toBe(false);
+      expect(yield* sessions.isRevokedSessionToken(revoked.token)).toBe(true);
+      yield* TestClock.adjust(Duration.hours(2));
+      expect(yield* sessions.isRevokedSessionToken(lapsed.token)).toBe(false);
+      expect(yield* sessions.isRevokedSessionToken(revoked.token)).toBe(true);
+    }).pipe(Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
   it.effect("binds an explicit credential deadline within its allowed lifetime", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;

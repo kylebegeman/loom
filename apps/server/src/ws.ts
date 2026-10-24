@@ -558,7 +558,7 @@ const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 function toAuthAccessStreamEvent(
   change: PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange,
   revision: number,
-  currentSessionId: AuthSessionId,
+  currentSessionIds: ReadonlySet<AuthSessionId>, // fork: identity-renewal
 ): AuthAccessStreamEvent {
   switch (change.type) {
     case "pairingLinkUpserted":
@@ -583,7 +583,7 @@ function toAuthAccessStreamEvent(
         payload: {
           ...change.clientSession,
           ...authScopeResponse(change.clientSession.scopes),
-          current: change.clientSession.sessionId === currentSessionId,
+          current: currentSessionIds.has(change.clientSession.sessionId), // fork: identity-renewal
         },
       };
     case "clientRemoved":
@@ -1209,6 +1209,7 @@ export const layerWsRpc = (
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
+  heldSession?: Ref.Ref<AuthSessionId>, // fork: identity-renewal
 ) =>
   ServerWsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1677,10 +1678,21 @@ export const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
+      // fork: identity-renewal
+      // A socket moves on to its session's renewals, and those belong to this client too.
+      const currentSessionIds = (
+        heldSession === undefined ? Effect.succeed(currentSessionId) : Ref.get(heldSession)
+      ).pipe(Effect.flatMap(sessions.renewalsOf));
       const loadAuthAccessSnapshot = () =>
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks(),
-          clientSessions: serverAuth.listClientSessions(currentSessionId),
+          // fork: identity-renewal
+          clientSessions: Effect.zipWith(
+            serverAuth.listClientSessions(currentSessionId),
+            currentSessionIds,
+            (clients, current) =>
+              clients.map((client) => ({ ...client, current: current.has(client.sessionId) })),
+          ),
         }).pipe(
           Effect.mapError(
             (error) =>
@@ -3111,8 +3123,11 @@ export const layerWsRpc = (
               const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
                 Stream.mapEffect((change) =>
                   Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
-                    Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
+                    // fork: identity-renewal
+                    Effect.zip(currentSessionIds),
+                    // fork: identity-renewal
+                    Effect.map(([revision, current]) =>
+                      toAuthAccessStreamEvent(change, revision, current),
                     ),
                   ),
                 ),
@@ -3198,6 +3213,7 @@ export const layer = Layer.unwrap(
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
         yield* analytics.recordOwners(readClientOwners(request), "client");
+        const heldSession = yield* Ref.make(session.sessionId); // fork: identity-renewal
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           // fork: ext-core
@@ -3238,6 +3254,7 @@ export const layer = Layer.unwrap(
               clientAnalyticsProps,
               previewAutomationBroker,
               serverBrowser,
+              heldSession, // fork: identity-renewal
             ).pipe(
               Layer.merge(makeForkRpcLayer(session)), // fork: ext-core
               Layer.provideMerge(RpcSerialization.layerJson),
@@ -3279,7 +3296,8 @@ export const layer = Layer.unwrap(
           () =>
             Effect.raceFirst(
               rpcWebSocketHttpEffect,
-              sessions.awaitInvalidation(session.sessionId).pipe(
+              // fork: identity-renewal
+              sessions.awaitSessionChain(heldSession).pipe(
                 Effect.as(HttpServerResponse.empty()),
                 Effect.catchTags({
                   SessionCredentialVerificationError: (error) =>
@@ -3287,7 +3305,8 @@ export const layer = Layer.unwrap(
                 }),
               ),
             ),
-          () => sessions.markDisconnected(session.sessionId),
+          // fork: identity-renewal
+          () => Ref.get(heldSession).pipe(Effect.flatMap(sessions.markDisconnected)),
         );
       }).pipe(
         Effect.catchTags({

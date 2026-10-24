@@ -20,6 +20,8 @@ import Constants from "expo-constants";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
+// fork: identity-renewal
+import { addIdentityRenewal } from "../fork/identity-renewal/mobileIdentityRenewal";
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
 import * as MobileStorage from "../persistence/mobile-storage";
@@ -190,6 +192,7 @@ const layerCapabilities = Layer.effectContext(
         }),
       }),
     ).pipe(
+      addIdentityRenewal, // fork: identity-renewal
       Context.add(
         ClientCapabilities.PrimaryEnvironmentAuth,
         ClientCapabilities.PrimaryEnvironmentAuth.of({

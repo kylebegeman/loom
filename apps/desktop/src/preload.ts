@@ -203,6 +203,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL, url),
   signInToLoom: (input) => ipcRenderer.invoke(IpcChannels.LOOM_SIGN_IN_CHANNEL, input),
   cancelLoomSignIn: (input) => ipcRenderer.invoke(IpcChannels.LOOM_CANCEL_SIGN_IN_CHANNEL, input),
+  // fork: identity-renewal
+  renewLoomIdentity: (input) => ipcRenderer.invoke(IpcChannels.LOOM_IDENTITY_RENEW_CHANNEL, input),
+  // fork: identity-renewal
+  forgetLoomIdentity: (input) =>
+    ipcRenderer.invoke(IpcChannels.LOOM_IDENTITY_FORGET_CHANNEL, input),
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
   checkSystemPermission: (pane: string) =>
     ipcRenderer.invoke(IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL, pane),

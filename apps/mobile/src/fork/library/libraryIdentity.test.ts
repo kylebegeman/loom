@@ -1,13 +1,17 @@
 import { AuthAccessTokenType, AuthTokenExchangeGrantType, EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { identityGrantKey } from "@t3tools/shared/fork/identity-grant";
 import {
+  completeNativeIdentitySignIn,
   exchangeLibraryIdentityToken,
   libraryIdentityAddress,
   libraryIdentityResourceParameters,
   loadLibraryIdentity,
   loadNativeIdentityDiscovery,
   assertNativeIdentityUnchanged,
+  nativeIdentityAuthorizationParameters,
+  nativeIdentityScopes,
 } from "./libraryIdentity";
 const environmentId = EnvironmentId.make("selected-library");
 const metadata: LoomIdentityMetadata = {
@@ -242,5 +246,159 @@ describe("ordinary computer Identity", () => {
         signal: abort.signal,
       }),
     ).rejects.toThrow("cancelled");
+  });
+});
+
+describe("renewable native sign-in", () => {
+  const modern = {
+    ...metadata,
+    sessionExchangeEnabled: true,
+    resource: "https://computer.test",
+    maxSessionAgeSeconds: 7 * 86_400,
+  };
+  const identity = { issuer: metadata.issuer!, subject: "owner" };
+  const NOW = 1_800_000_000_000;
+  const discovery = {
+    authorizationEndpoint: metadata.authorizationEndpoint!,
+    tokenEndpoint: metadata.tokenEndpoint!,
+    endSessionEndpoint: "https://identity.example/end-session",
+  };
+  const tokens = {
+    tokenType: "bearer",
+    accessToken: "provider-access",
+    idToken: "provider-id",
+    refreshToken: "provider-refresh",
+    issuedAt: NOW / 1000,
+    expiresIn: 600,
+  };
+  const computer = vi.fn<typeof fetch>(async (url) =>
+    String(url).endsWith("/api/loom/identity/session")
+      ? response({
+          access_token: "computer-session",
+          issued_token_type: AuthAccessTokenType,
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "orchestration:read",
+          environmentId,
+          identity,
+        })
+      : response(modern),
+  );
+  const { maxSessionAgeSeconds: _limit, ...unlimited } = modern;
+  const signIn = (
+    overrides: Partial<typeof tokens> = {},
+    computerMetadata: LoomIdentityMetadata = modern,
+  ) =>
+    completeNativeIdentitySignIn({
+      destination: libraryIdentityAddress("https://computer.example"),
+      metadata: {
+        ...computerMetadata,
+        nativeClientId: "native-client",
+        issuer: identity.issuer,
+        authorizationEndpoint: discovery.authorizationEndpoint,
+        tokenEndpoint: discovery.tokenEndpoint,
+      },
+      discovery,
+      tokens: { ...tokens, ...overrides },
+      label: "computer.example",
+      options: { requireSessionExchange: true },
+      request: computer,
+      now: () => NOW,
+    });
+
+  it("asks for a refresh grant and a fresh sign-in only where the computer caps sign-in age", () => {
+    expect(nativeIdentityScopes(modern)).toEqual(["openid", "profile", "offline_access"]);
+    expect(nativeIdentityAuthorizationParameters(modern)).toEqual({
+      resource: "https://computer.test",
+      max_age: String(7 * 86_400 - 3600),
+    });
+    expect(
+      nativeIdentityScopes({ ...unlimited, scopes: ["openid", "profile", "offline_access"] }),
+    ).toEqual(["openid", "profile"]);
+    expect(nativeIdentityAuthorizationParameters(unlimited)).toEqual({
+      resource: "https://computer.test",
+    });
+  });
+
+  it("keeps a secure end-session endpoint from discovery and drops an insecure one", async () => {
+    const reply = {
+      issuer: metadata.issuer,
+      authorization_endpoint: metadata.authorizationEndpoint,
+      token_endpoint: metadata.tokenEndpoint,
+    };
+    const request = vi.fn<typeof fetch>(async () =>
+      response({ ...reply, end_session_endpoint: "https://identity.example/end-session" }),
+    );
+    await expect(loadNativeIdentityDiscovery(modern, request)).resolves.toMatchObject({
+      endSessionEndpoint: "https://identity.example/end-session",
+    });
+    request.mockResolvedValueOnce(
+      response({ ...reply, end_session_endpoint: "http://identity.example/end-session" }),
+    );
+    expect(await loadNativeIdentityDiscovery(modern, request)).not.toHaveProperty(
+      "endSessionEndpoint",
+    );
+  });
+
+  it("sends the ID token to the computer and keeps the refresh grant on the device", async () => {
+    computer.mockClear();
+    const signedIn = await signIn();
+    const exchange = computer.mock.calls.find(([url]) =>
+      String(url).endsWith("/api/loom/identity/session"),
+    );
+    expect(JSON.parse(String(exchange?.[1]?.body))).toMatchObject({
+      type: "native",
+      accessToken: "provider-access",
+      idToken: "provider-id",
+    });
+    for (const [, init] of computer.mock.calls)
+      expect(String(init?.body ?? "")).not.toContain("provider-refresh");
+    expect(signedIn.grant).toEqual({
+      version: 1,
+      ...identity,
+      environmentId,
+      httpBaseUrl: "https://computer.example",
+      clientId: "native-client",
+      tokenEndpoint: discovery.tokenEndpoint,
+      endSessionEndpoint: discovery.endSessionEndpoint,
+      resource: "https://computer.test",
+      refreshToken: "provider-refresh",
+      idToken: "provider-id",
+      grantedAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(signedIn.grantKey).toBe(identityGrantKey(signedIn.grant!));
+    expect(signedIn.registration.credential).toMatchObject({
+      token: "computer-session",
+      identity: { ...identity, environmentId, expiresAt: NOW + 600_000 },
+    });
+  });
+
+  it("keeps no refresh grant where the computer sets no sign-in limit", async () => {
+    const signedIn = await signIn({}, unlimited);
+    expect(signedIn.grant).toBeNull();
+    expect(signedIn.registration.credential).toMatchObject({ token: "computer-session" });
+  });
+
+  it("explains a sign-in the computer refuses for its age", async () => {
+    const refusing = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ error: "sign_in_expired" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "access", refusing, {
+        metadata: modern,
+      }),
+    ).rejects.toThrow("This computer needs a fresh Loom sign-in.");
+  });
+
+  it("still signs in when the provider issues no refresh grant", async () => {
+    const signedIn = await signIn({ refreshToken: undefined });
+    expect(signedIn.grant).toBeNull();
+    expect(signedIn.grantKey).toBe(identityGrantKey({ ...identity, environmentId }));
+    expect(signedIn.registration.profile).toMatchObject({ identity, environmentId });
   });
 });
