@@ -263,6 +263,7 @@ export function validateFeedConfig(raw: string) {
   }
 }
 
+/** `undefined` when connect.json is missing, `null` when it says `"enabled": false`. */
 function publisherConnectConfig() {
   const connectPath = NodePath.join(STATE_DIR, "connect.json");
   return NodeFS.existsSync(connectPath)
@@ -270,19 +271,45 @@ function publisherConnectConfig() {
     : undefined;
 }
 
+/** The Connect decision one prepared source was built with, replayed by every later step. */
+export type PreparedConnect = {
+  readonly connectConfig: LoomConnectConfig | null;
+  /**
+   * A retired server clears a computer's Connect link, so only connect.json's explicit
+   * `"enabled": false` retires. A missing file leaves Connect unconfigured but intact.
+   */
+  readonly connectRetired: boolean;
+};
+
+// Relay and mobile tracing send diagnostics to T3's trace collector. They leave with the relay,
+// so no Loom build carries their credentials, even from a shell that exports them.
+const T3_TRACING_PREFIXES = [
+  "T3CODE_RELAY_CLIENT_OTLP_",
+  "VITE_RELAY_OTLP_",
+  "T3CODE_MOBILE_OTLP_",
+  "EXPO_PUBLIC_OTLP_",
+];
+
 export function buildEnvironment(
   sourceDir: string,
   env: NodeJS.ProcessEnv,
   connect?: LoomConnectConfig | null,
+  connectRetired = false,
 ) {
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
   delete result.CLERK_SECRET_KEY;
   delete result.VITE_HTTP_URL;
   delete result.VITE_WS_URL;
+  // Only the publisher's own decision may retire Connect in a build.
+  delete result.LOOM_CONNECT_RETIRED;
   // Do not inherit build overrides or a mock feed from a running dev instance.
   for (const key of Object.keys(result)) {
-    if (key.startsWith("T3CODE_DESKTOP_")) delete result[key];
+    if (
+      key.startsWith("T3CODE_DESKTOP_") ||
+      T3_TRACING_PREFIXES.some((prefix) => key.startsWith(prefix))
+    )
+      delete result[key];
   }
   if (connect !== undefined) {
     for (const key of [
@@ -304,6 +331,7 @@ export function buildEnvironment(
   return {
     ...result,
     ...(connect !== undefined ? loomConnectBuildEnvironment(connect) : {}),
+    ...(connect === null && connectRetired ? { LOOM_CONNECT_RETIRED: "1" } : {}),
     PATH: [
       NodePath.join(sourceDir, "node_modules/.bin"),
       NodePath.dirname(NodeProcess.execPath),
@@ -328,15 +356,16 @@ export function buildEnvironment(
 function run(
   command: string,
   args: string[],
-  options: { cwd?: string; stream?: boolean; connect?: LoomConnectConfig | null } = {},
+  options: { cwd?: string; stream?: boolean; connect?: PreparedConnect } = {},
 ) {
+  const sourceDir = options.cwd ?? SOURCE_DIR;
+  const { connect } = options;
   const result = NodeChildProcess.spawnSync(command, args, {
     cwd: options.cwd,
-    env: buildEnvironment(
-      options.cwd ?? SOURCE_DIR,
-      NodeProcess.env,
-      options.connect !== undefined ? options.connect : publisherConnectConfig(),
-    ),
+    // Retirement reaches only builds, and only from the decision their record froze.
+    env: connect
+      ? buildEnvironment(sourceDir, NodeProcess.env, connect.connectConfig, connect.connectRetired)
+      : buildEnvironment(sourceDir, NodeProcess.env, publisherConnectConfig()),
     encoding: "utf8",
     stdio: options.stream ? "inherit" : "pipe",
     maxBuffer: 8 * 1024 * 1024,
@@ -528,10 +557,16 @@ export function restoreBuildInputs(sourceDir: string) {
   );
 }
 
+// Retirement joined schema 1 as an optional field so that older publisher tool copies, which
+// ignore it, can still replay records prepared by newer ones.
+export function connectReceipt(sourceSha: string, connect: PreparedConnect) {
+  return `${JSON.stringify({ schemaVersion: 1, sourceSha, ...connect }, null, 2)}\n`;
+}
+
 /** Old records predate public configuration receipts and retain disabled Connect on replay. */
-export async function preparedConnectConfig(record: string, sourceSha: string) {
+export async function preparedConnect(record: string, sourceSha: string): Promise<PreparedConnect> {
   const path = NodePath.join(record, "connect-config.json");
-  if (!(await exists(path))) return null;
+  if (!(await exists(path))) return { connectConfig: null, connectRetired: false };
   const value: unknown = JSON.parse(await NodeFSP.readFile(path, "utf8"));
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Prepared Connect configuration must be an object.");
@@ -540,7 +575,14 @@ export async function preparedConnectConfig(record: string, sourceSha: string) {
   if (receipt.schemaVersion !== 1 || receipt.sourceSha !== sourceSha) {
     throw new Error("Prepared Connect configuration belongs to a different source.");
   }
-  return receipt.connectConfig === null ? null : parseLoomConnectConfig(receipt.connectConfig);
+  const connectConfig =
+    receipt.connectConfig === null ? null : parseLoomConnectConfig(receipt.connectConfig);
+  // Receipts written before retirement existed were never built retired.
+  const connectRetired = receipt.connectRetired ?? false;
+  if (typeof connectRetired !== "boolean" || (connectRetired && connectConfig !== null)) {
+    throw new Error("Prepared Connect retirement must be a boolean set only while Connect is off.");
+  }
+  return { connectConfig, connectRetired };
 }
 
 async function prepare(release: Release) {
@@ -550,14 +592,13 @@ async function prepare(release: Release) {
   const manifest = NodePath.join(artifacts, `${release.channel}-mac.yml`);
   if (await exists(NodePath.join(artifacts, "ready"))) {
     if (!(await exists(`${zip}.blockmap`))) ensureBlockmap(zip);
-    return {
-      record,
-      zip,
-      manifest,
-      connectConfig: await preparedConnectConfig(record, release.commit),
-    };
+    return { record, zip, manifest, ...(await preparedConnect(record, release.commit)) };
   }
-  const connectConfig = publisherConnectConfig() ?? null;
+  const configured = publisherConnectConfig();
+  const connect: PreparedConnect = {
+    connectConfig: configured ?? null,
+    connectRetired: configured === null,
+  };
 
   const identities = run("security", [
     "find-identity",
@@ -579,11 +620,7 @@ async function prepare(release: Release) {
   const staging = await NodeFSP.mkdtemp(NodePath.join(STATE_DIR, "build-"));
   try {
     console.log(`Building Loom ${release.version} (${release.commit.slice(0, 10)}).`);
-    run("pnpm", ["install", "--frozen-lockfile"], {
-      cwd: SOURCE_DIR,
-      stream: true,
-      connect: connectConfig,
-    });
+    run("pnpm", ["install", "--frozen-lockfile"], { cwd: SOURCE_DIR, stream: true, connect });
     run(NodeProcess.execPath, ["scripts/update-release-package-versions.ts", release.version], {
       cwd: SOURCE_DIR,
       stream: true,
@@ -603,7 +640,7 @@ async function prepare(release: Release) {
         "--output-dir",
         staging,
       ],
-      { cwd: SOURCE_DIR, stream: true, connect: connectConfig },
+      { cwd: SOURCE_DIR, stream: true, connect },
     );
     const zipNames = (await NodeFSP.readdir(staging)).filter((filename) =>
       filename.endsWith("-arm64.zip"),
@@ -644,7 +681,7 @@ async function prepare(release: Release) {
     await NodeFSP.writeFile(NodePath.join(stagedRecord, "build.env"), buildRecord);
     await NodeFSP.writeFile(
       NodePath.join(stagedRecord, "connect-config.json"),
-      `${JSON.stringify({ schemaVersion: 1, sourceSha: release.commit, connectConfig }, null, 2)}\n`,
+      connectReceipt(release.commit, connect),
       { mode: 0o600 },
     );
     const stagedZip = NodePath.join(stagedRecord, "updates", release.filename);
@@ -664,7 +701,7 @@ async function prepare(release: Release) {
     await NodeFSP.writeFile(NodePath.join(stagedRecord, "updates", "ready"), `${release.commit}\n`);
     await NodeFSP.mkdir(BUILDS_DIR, { recursive: true });
     await NodeFSP.rename(stagedRecord, record);
-    return { record, zip, manifest, connectConfig };
+    return { record, zip, manifest, ...connect };
   } finally {
     try {
       restoreBuildInputs(SOURCE_DIR);
@@ -805,7 +842,12 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
   await ensureRuntimeReleaseAssets({
     version: release.version,
     sourceSha: release.commit,
-    env: buildEnvironment(SOURCE_DIR, NodeProcess.env, prepared.connectConfig),
+    env: buildEnvironment(
+      SOURCE_DIR,
+      NodeProcess.env,
+      prepared.connectConfig,
+      prepared.connectRetired,
+    ),
     log: (message) => console.log(message),
   });
   run(
@@ -1092,7 +1134,7 @@ async function publishIos(release: Release) {
   }
   if (config.signingKeychain && config.signingKeychainPasswordFile)
     unlockIosSigningKeychain(config.signingKeychain, config.signingKeychainPasswordFile);
-  const connectConfig = await preparedConnectConfig(
+  const { connectConfig, connectRetired } = await preparedConnect(
     NodePath.join(BUILDS_DIR, release.recordName),
     release.commit,
   );
@@ -1109,7 +1151,9 @@ async function publishIos(release: Release) {
     {
       cwd: SOURCE_DIR,
       env: {
-        ...automaticIosEnvironment(buildEnvironment(SOURCE_DIR, NodeProcess.env, connectConfig)),
+        ...automaticIosEnvironment(
+          buildEnvironment(SOURCE_DIR, NodeProcess.env, connectConfig, connectRetired),
+        ),
         ASC_PROFILE: config.profile,
         ASC_STRICT_AUTH: "true",
         LOOM_IOS_TEAM_ID: config.teamId,

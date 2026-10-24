@@ -15,10 +15,11 @@ import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
   assertReleasePin,
   buildEnvironment,
+  connectReceipt,
   main,
   parseUpdateArgs,
   installedUpdateRequirement,
-  preparedConnectConfig,
+  preparedConnect,
   launchAgent,
   nextLoomVersion,
   iosPublishConfig,
@@ -43,13 +44,18 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+  return {
+    ...actual,
+    existsSync: vi.fn(actual.existsSync),
+    readFileSync: vi.fn(actual.readFileSync),
+  };
 });
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
     mkdir: vi.fn(actual.mkdir),
+    mkdtemp: vi.fn(actual.mkdtemp),
     stat: vi.fn(actual.stat),
     writeFile: vi.fn(actual.writeFile),
     rm: vi.fn(actual.rm),
@@ -66,6 +72,30 @@ vi.mock("node:process", async (importOriginal) => {
 });
 
 const COMMIT = "cdbf78ca63edbd1289a81deecba28c2bcfcf73fd";
+const CONNECT_FILE = {
+  enabled: true,
+  mobileEnabled: true,
+  clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+  clerkJwtTemplate: "relay",
+  clerkCliOAuthClientId: "public-oauth-id",
+  relayUrl: "https://relay.example.test",
+  accountPortalUrl: "https://accounts.example.test",
+};
+const CONNECT_CONFIG = parseLoomConnectConfig(CONNECT_FILE)!;
+const T3_TRACING_KEYS = [
+  "T3CODE_RELAY_CLIENT_OTLP_TRACES_URL",
+  "T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET",
+  "T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN",
+  "VITE_RELAY_OTLP_TRACES_URL",
+  "VITE_RELAY_OTLP_TRACES_DATASET",
+  "VITE_RELAY_OTLP_TRACES_TOKEN",
+  "T3CODE_MOBILE_OTLP_TRACES_URL",
+  "T3CODE_MOBILE_OTLP_TRACES_DATASET",
+  "T3CODE_MOBILE_OTLP_TRACES_TOKEN",
+  "EXPO_PUBLIC_OTLP_TRACES_URL",
+  "EXPO_PUBLIC_OTLP_TRACES_DATASET",
+  "EXPO_PUBLIC_OTLP_TRACES_TOKEN",
+];
 
 async function publicationFixture() {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-publication-tags-"));
@@ -311,6 +341,72 @@ describe("published release history lookup", () => {
   );
 });
 
+describe("prepared Connect decision", () => {
+  const tag = "loom-v0.0.48-nightly.20261013.3044";
+
+  it.each([
+    ["is missing", undefined, undefined],
+    ['says "enabled": false', { enabled: false }, "1"],
+    ["enables Connect", CONNECT_FILE, undefined],
+  ] as const)(
+    "builds from a connect.json that %s with only its own retirement and no tracing credentials",
+    async (_, file, retired) => {
+      const stats = await NodeFSP.stat(import.meta.filename);
+      vi.resetAllMocks();
+      for (const key of [...T3_TRACING_KEYS, "LOOM_CONNECT_RETIRED", "T3CODE_RELAY_URL"])
+        vi.stubEnv(key, "inherited");
+      let installEnv: NodeJS.ProcessEnv | undefined;
+      vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command, rawArgs, options) => {
+        const args = [...rawArgs!];
+        let stdout = "";
+        if (command === "pnpm") {
+          installEnv = options?.env;
+          throw new Error("Build boundary reached");
+        }
+        if (command === "security") stdout = '1) 0123456789 "Loom Local Code Signing"';
+        else if (command === "gh") {
+          if (args[0] !== "release" || args[1] !== "list")
+            throw new Error(`Unexpected release command: ${args.join(" ")}`);
+        } else if (command !== "git") throw new Error(`Unexpected command: ${command}`);
+        else if (args[0] === "remote") stdout = "https://github.com/kylebegeman/loom.git";
+        else if (args[0] === "for-each-ref")
+          stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
+        else if (args[0] === "rev-parse") stdout = COMMIT;
+        else if (args[0] === "cat-file") stdout = "commit";
+        else if (!["fetch", "tag", "checkout", "status", "restore"].includes(args[0]!))
+          throw new Error(`Unexpected Git command: ${args.join(" ")}`);
+        return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
+      });
+      try {
+        vi.mocked(NodeFS.existsSync).mockImplementation(
+          (path) => file !== undefined && String(path).endsWith("/connect.json"),
+        );
+        if (file) vi.mocked(NodeFS.readFileSync).mockReturnValue(JSON.stringify(file));
+        vi.mocked(NodeFSP.mkdir).mockResolvedValue(undefined);
+        vi.mocked(NodeFSP.mkdtemp).mockResolvedValue("/nonexistent/loom-build-staging");
+        vi.mocked(NodeFSP.stat).mockImplementation(async (path) => {
+          // No prepared record exists, so this run builds afresh.
+          if (String(path).includes("Loom Builds"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return stats;
+        });
+        vi.mocked(NodeFSP.writeFile).mockResolvedValue();
+        vi.mocked(NodeFSP.rm).mockResolvedValue();
+        await expect(main("prepare")).rejects.toThrow("Build boundary reached");
+        expect(installEnv).toBeDefined();
+        for (const key of T3_TRACING_KEYS) expect(installEnv).not.toHaveProperty(key);
+        expect(installEnv?.LOOM_CONNECT_RETIRED).toBe(retired);
+        expect(installEnv?.T3CODE_RELAY_URL).toBe(
+          file === CONNECT_FILE ? CONNECT_CONFIG.relayUrl : undefined,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+        vi.resetAllMocks();
+      }
+    },
+  );
+});
+
 describe("Loom update publishing", () => {
   it("distinguishes an ad hoc installed app from an update-compatible signing requirement", () => {
     expect(
@@ -342,15 +438,7 @@ describe("Loom update publishing", () => {
   });
 
   it("uses only the explicitly prepared public config for desktop and runtime builds", () => {
-    const config = parseLoomConnectConfig({
-      enabled: true,
-      mobileEnabled: true,
-      clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
-      clerkJwtTemplate: "relay",
-      clerkCliOAuthClientId: "public-oauth-id",
-      relayUrl: "https://relay.example.test",
-      accountPortalUrl: "https://accounts.example.test",
-    })!;
+    const config = CONNECT_CONFIG;
     const inherited = {
       T3CODE_RELAY_URL: "https://wrong.example.test",
       EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "unqualified",
@@ -369,33 +457,70 @@ describe("Loom update publishing", () => {
     expect(buildEnvironment("/source", inherited, null)).not.toHaveProperty("T3CODE_RELAY_URL");
   });
 
+  it.each([
+    ["Connect on", CONNECT_CONFIG, false],
+    ["Connect off", null, false],
+    ["Connect retired", null, true],
+    ["a command outside a prepared build", undefined, false],
+  ] as const)("never bakes relay or mobile tracing credentials for %s", (_, connect, retired) => {
+    const inherited = Object.fromEntries(T3_TRACING_KEYS.map((key) => [key, "inherited"]));
+    const built = buildEnvironment("/source", inherited, connect, retired);
+    for (const key of T3_TRACING_KEYS) expect(built).not.toHaveProperty(key);
+  });
+
+  it("retires Connect only for an explicit retirement without a config", () => {
+    const inherited = { LOOM_CONNECT_RETIRED: "1" };
+    expect(buildEnvironment("/source", inherited, null, true).LOOM_CONNECT_RETIRED).toBe("1");
+    for (const [connect, retired] of [
+      [null, false],
+      [CONNECT_CONFIG, true],
+      [CONNECT_CONFIG, false],
+      [undefined, true],
+      [undefined, false],
+    ] as const)
+      expect(buildEnvironment("/source", inherited, connect, retired)).not.toHaveProperty(
+        "LOOM_CONNECT_RETIRED",
+      );
+  });
+
   it("freezes Connect configuration per prepared source and preserves old disabled releases", async () => {
     const directory = await NodeFSP.mkdtemp(
       NodePath.join(NodeOS.tmpdir(), "loom-connect-receipt-"),
     );
+    const receipt = NodePath.join(directory, "connect-config.json");
     try {
-      expect(await preparedConnectConfig(directory, COMMIT)).toBeNull();
-      const config = parseLoomConnectConfig({
-        enabled: true,
-        mobileEnabled: true,
-        clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
-        clerkJwtTemplate: "relay",
-        clerkCliOAuthClientId: "public-oauth-id",
-        relayUrl: "https://relay.example.test",
-        accountPortalUrl: "https://accounts.example.test",
-      })!;
+      expect(await preparedConnect(directory, COMMIT)).toEqual({
+        connectConfig: null,
+        connectRetired: false,
+      });
+      // Receipts written before retirement existed have no connectRetired field.
       await NodeFSP.writeFile(
-        NodePath.join(directory, "connect-config.json"),
-        JSON.stringify({
-          schemaVersion: 1,
-          sourceSha: COMMIT,
-          connectConfig: config,
-        }),
+        receipt,
+        JSON.stringify({ schemaVersion: 1, sourceSha: COMMIT, connectConfig: CONNECT_CONFIG }),
       );
-      expect(await preparedConnectConfig(directory, COMMIT)).toEqual(config);
-      await expect(preparedConnectConfig(directory, "0".repeat(40))).rejects.toThrow(
-        "different source",
-      );
+      expect(await preparedConnect(directory, COMMIT)).toEqual({
+        connectConfig: CONNECT_CONFIG,
+        connectRetired: false,
+      });
+      await expect(preparedConnect(directory, "0".repeat(40))).rejects.toThrow("different source");
+      for (const connect of [
+        { connectConfig: null, connectRetired: true },
+        { connectConfig: null, connectRetired: false },
+        { connectConfig: CONNECT_CONFIG, connectRetired: false },
+      ]) {
+        await NodeFSP.writeFile(receipt, connectReceipt(COMMIT, connect));
+        expect(await preparedConnect(directory, COMMIT)).toEqual(connect);
+      }
+      for (const contradiction of [
+        { connectConfig: CONNECT_CONFIG, connectRetired: true },
+        { connectConfig: null, connectRetired: "1" },
+      ]) {
+        await NodeFSP.writeFile(
+          receipt,
+          JSON.stringify({ schemaVersion: 1, sourceSha: COMMIT, ...contradiction }),
+        );
+        await expect(preparedConnect(directory, COMMIT)).rejects.toThrow("retirement");
+      }
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });
     }

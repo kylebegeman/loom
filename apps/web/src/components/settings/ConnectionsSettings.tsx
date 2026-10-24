@@ -3623,10 +3623,10 @@ export function ConnectionsSettings() {
                     : "Disable network access?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
+                  {/* fork: brand */}
                   {pendingDesktopServerExposureMode === "network-accessible"
-                    ? // fork: brand
-                      "Let your other devices connect to Loom over the network. Pair devices to give them access. Loom will restart."
-                    : "Devices connected over your local network will disconnect. Existing tunnels, such as T3 Connect or Tailscale HTTPS, keep working. T3 Code will restart."}
+                    ? "Let your other devices connect to Loom over the network. Pair devices to give them access. Loom will restart."
+                    : "Devices connected over your local network will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Loom will restart."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

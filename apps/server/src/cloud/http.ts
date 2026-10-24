@@ -16,6 +16,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import { requireEnvironmentScope } from "../auth/http.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { refuseRetiredLink } from "../fork/connect-off/connectRetired.ts"; // fork: connect-off
 import * as CloudLink from "./CloudLink.ts";
 import * as ConnectReachability from "./ConnectReachability.ts";
 import type { RelayRequestError } from "./relayResponse.ts";
@@ -113,6 +114,7 @@ export const layer = HttpApiBuilder.group(
       .handle("linkProof", ({ payload }) =>
         Effect.gen(function* () {
           yield* requireEnvironmentScope(AuthRelayWriteScope);
+          yield* refuseRetiredLink; // fork: connect-off
           const request = yield* HttpServerRequest.HttpServerRequest;
           const proof = yield* toHttpError(cloudLink.linkProof(payload, request));
           yield* appendCloudCredentialResponseHeaders;
@@ -121,6 +123,7 @@ export const layer = HttpApiBuilder.group(
       )
       .handle("relayConfig", ({ payload }) =>
         requireEnvironmentScope(AuthRelayWriteScope).pipe(
+          Effect.andThen(refuseRetiredLink), // fork: connect-off
           Effect.andThen(toHttpErrorOrUnavailable(cloudLink.applyRelayConfig(payload))),
         ),
       )

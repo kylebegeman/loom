@@ -53,6 +53,7 @@ import * as LibraryActivityPublication from "./project-library/LibraryActivityPu
 import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHealthPublication.ts";
 import { LibraryHttpRoutes } from "./project-library/http.ts";
 import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
+import * as StaleConnectLink from "./connect-off/staleConnectLink.ts";
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
@@ -278,6 +279,8 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
+  StaleConnectLink.layer,
   ProjectProfiles.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
