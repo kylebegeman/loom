@@ -392,9 +392,28 @@ sign-in for that row, and clears the row's address when the form closes. iPhone'
 `libraryComputer` route param. See the
 [L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
 
+L115 `library-push` seams let a Loom iPhone build carry the push entitlement for Library
+notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
+`aps-environment` when `LOOM_MOBILE_LIBRARY_PUSH_ENABLED=1` and exposes `extra.loomLibraryPush`,
+while upstream's relay and widget push paths stay off. See the
+[L115 packet](docs/fork/packets/L115-push/SEAMS.md).
+
 L116 `telemetry-off` seams stop Loom sending product analytics to T3. `AnalyticsService.ts` (1)
 defaults `T3CODE_TELEMETRY_ENABLED` to off, so the server sends PostHog events only when it is
 set to `true`, and `docs/user/telemetry.md` says so. See the
+[L116 packet](docs/fork/packets/L116-connect-off/SEAMS.md).
+
+L116 `connect-off` seams retire T3 Connect on builds the publisher makes with
+`LOOM_CONNECT_RETIRED=1`, which it sets only when `connect.json` says `"enabled": false`.
+`apps/server/vite.config.ts` (1) bakes it as `__LOOM_CONNECT_RETIRED__`; dev runs, tests and
+builds made without the variable never retire. On a retired build the fork-owned
+`apps/server/src/fork/connect-off/` layer runs when ForkLayer builds. It clears every stored
+Connect secret and the T3 CLI sign-in and keeps the key pair and replay markers.
+`apps/server/src/cloud/http.ts` (3) refuses `link-proof` and `relay-config` with a 403, so a
+client that still has Connect cannot re-link the computer; unlink still works. The cleanup runs
+before an update trial activates, so a retired trial that rolls back leaves the restored
+Connect-on runtime unlinked until it is linked again. CLI runtime archives do not get the
+variable yet, so CLI-hosted computers keep Connect until the flip work passes it through. See the
 [L116 packet](docs/fork/packets/L116-connect-off/SEAMS.md).
 
 ## Loom CLI and pairing copy

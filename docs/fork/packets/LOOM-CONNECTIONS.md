@@ -1,6 +1,6 @@
 # Loom-owned connections: replacing T3 Connect
 
-Status: **In progress** (C01 and C02 done, C03 next). Kyle chose this direction on 2026-10-24: Loom Identity and
+Status: **In progress** (C01 and C02 done, C03 next, C05 phase 1 landed). Kyle chose this direction on 2026-10-24: Loom Identity and
 the Library replace the T3 Connect account, the phone reaches computers from anywhere without
 Tailscale, and push notifications get their infrastructure now but are switched on last, after
 Kyle decides. Connect is turned off in Loom builds only after C01 to C03 work on desktop and
@@ -50,18 +50,19 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
 - **Upstream code stays.** Turning Connect off means not publishing its Clerk and relay
   config in Loom releases. Upstream already hides Connect surfaces when that config is absent,
   so no upstream Connect code is deleted and merges stay easy. Computers linked earlier keep
-  their relay secrets and keep running T3's tunnel and activity publishing, so C05 also unlinks
-  them and clears that state.
+  their relay secrets and keep running T3's tunnel and activity publishing, so Kyle unlinks them
+  before the flip, and a server built with Connect retired clears that state at startup and
+  refuses new relay links.
 
 ## Packets
 
-| ID  | Packet                                     | Status   | Scope                                                                                                                                                                                                                                                                                                            |
-| --- | ------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C01 | L112 Identity renewal                      | Done     | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d.                  |
-| C02 | L113 Library computer list on every client | Done     | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes. Sign-ins are pinned to the Library's issuer. The list lives in Connections settings only, not the command palette or settings search. |
-| C03 | L114 Reach from anywhere                   | Selected | Per-computer Cloudflare tunnel on Kyle's account at `<computer>-loom.begam.in`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off and removing the tunnel.                                   |
-| C04 | L115 Push infrastructure                   | Selected | Library device registry and APNs sender with Kyle's team key, behind an off switch. The iPhone registers with the Library only when enabled. Integration waits for Kyle.                                                                                                                                         |
-| C05 | L116 Connect off in Loom builds            | Selected | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text.                                                          |
+| ID  | Packet                                     | Status         | Scope                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --- | ------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C01 | L112 Identity renewal                      | Done           | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d.                                                                                                                     |
+| C02 | L113 Library computer list on every client | Done           | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes. Sign-ins are pinned to the Library's issuer. The list lives in Connections settings only, not the command palette or settings search.                                                                                                    |
+| C03 | L114 Reach from anywhere                   | Selected       | Per-computer Cloudflare tunnel on Kyle's account at `<computer>-loom.begam.in`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off and removing the tunnel.                                                                                                                                      |
+| C04 | L115 Push infrastructure                   | Selected       | Library device registry and APNs sender with Kyle's team key, behind an off switch. The iPhone registers with the Library only when enabled. Integration waits for Kyle.                                                                                                                                                                                                                                            |
+| C05 | L116 Connect off in Loom builds            | Phase 1 landed | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text. Phase 1: the server cleanup behind an explicit retired flag, the relay and mobile tracing strip, and two copy fixes. The rest is the [C05 flip](#c05-flip). |
 
 ## Decisions
 
@@ -83,10 +84,12 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
   WebSockets. If Access cannot work cleanly, routes stay on step one and the refresh token
   lifetime stays at 7 days.
 - **Pocket ID resources (2026-10-24).** The Library holds a Pocket ID admin API key and creates
-  one API resource per computer, granted to the native client. Computers refuse Identity
-  sessions whose ID token `amr` lacks a passkey (`phr`), so a leaked key cannot mint a sign-in
-  that reaches them. The key has full admin rights and is renewed by hand in Pocket ID when it
-  expires.
+  one API resource per computer, granted to the native client. Computers can refuse Identity
+  sessions whose ID token `amr` lacks a passkey (`phr`). That is a speed bump, not a wall: the
+  key has full admin rights, so its holder can enroll a passkey or rewrite the native client's
+  callback URLs, and one click by the account owner on a genuine authorize link then yields a
+  passkey sign-in to any computer. Keep the key off the Library except while provisioning, and
+  rotate it in Pocket ID on any suspected leak.
 - **Identity stays the computer's setting.** The Library provisions the Pocket ID resource
   and hands back its values; the computer's own admin turns Loom Identity on, as
   [environment-auth](../../internals/environment-auth.md) requires.
@@ -127,3 +130,95 @@ Found while researching the Cloudflare and Pocket ID APIs; each one changes the 
 - Access step two needs a live test before any build work: Managed OAuth is Cloudflare's only
   per-user native flow, and the test must cover WebSocket upgrades, its header against Loom's
   `Authorization`, a 720 hour grant and one app reused across the wildcard hostnames.
+
+## C05 flip
+
+Phase 1 is safe while Connect is on. The publisher sets `LOOM_CONNECT_RETIRED=1` only when
+`connect.json` says `"enabled": false`, and prepared records freeze it with the Connect config.
+A missing `connect.json` does not retire, and dev runs, LoomOS custom builds, CLI runtime
+archives (until the flip work below) and other builds without the flag never clean up. At
+startup, before anything reads them, a retired server clears every Connect secret except its key
+pair and replay markers and logs one warning. It also refuses new relay links. The flip waits
+until C01 to C03 work on desktop and iPhone.
+
+Flip work, built when Kyle schedules the flip and merged in one go:
+
+- **Fork Connect UI (no seams).** Web `ComputerConnectionsHome.tsx` says shared computers come
+  from the Library and drops `<ConnectAccount />` and the Connect-only search targets
+  (`t3-connect`, `publish-agent-activity`, `hold-webhooks-while-offline`); delete
+  `ConnectAccount.tsx`. Drop the Connect account wording from `LoomSignIn.tsx` and iPhone
+  `LibraryIdentityScreen.tsx`, and the T3 Connect account button from `LibraryScreens.tsx`.
+- **iPhone Connect retirement.** Delete `apps/mobile/src/fork/connect/` and revert the fork
+  Connect hunks in `SettingsAuthRouteScreen.tsx`, `SettingsEnvironmentDetailRouteScreen.tsx`,
+  mobile `cloud/publicConfig.ts` and `cloud/linkEnvironment.ts` (with their tests) and
+  `reactCompilerBailouts.ts`. The same change drops the enabled Connect config check and the
+  `fork/connect` tests from `loom-ios-testflight.yml`, so code and workflow roll back together.
+  Decide what saved relay computers offer on iPhone: `use-remote-environment-registry.ts` shows
+  "Open T3 Account" and `platform.ts` says "Sign in to T3 Connect to connect this environment."
+  Remove the action or route it to the Library sign-in.
+- **Seams.** Retire `fleet-connect` and `connect-compat`, matching manifest rows by file, not
+  row number; `GitHubRoutingSettings.tsx` (`fleet-connections`) stays. The release delivery
+  seams in `cliRelease.ts`, ssh `tunnel.ts` and `public-config.ts` (with their tests) and
+  `environment-maintenance.test.ts` move unchanged to a new `loom-releases` marker, and
+  `environment-maintenance.test.ts` gets the FORK.md row it lacks.
+  `ConnectOnboardingRouteScreen.tsx` drops its stale marker and marks `replace("Library")` with
+  `library`. The `app.config.ts` Connect line becomes `mobile-identity`; recount, since the file
+  already has 3 such lines. Revert web `cloud/publicConfig.ts` to upstream and delete
+  `connectAuthSurface.ts` and its test. Markers and manifest change in one commit.
+- **CLI runtimes.** `loom-cli-archives.yml` gets only the four Connect fields listed in
+  `scripts/fork/runtime-release.ts`, so CLI runtime archives are built without
+  `LOOM_CONNECT_RETIRED` and never clean up. Pass it as a workflow input beside those fields, so
+  CLI service hosts and pinned runtimes retire too.
+- **Webhook notes.** `packages/client-runtime/src/webhookAddress.ts` and its test drop the "Link
+  ... T3 Connect for a public URL" clauses, marked `fork: connect-off`.
+- **FORK.md and help.** Rewrite the brand note, the L116 paragraph and the "Shared computer
+  connections" intro, and update the L116 `SEAMS.md`. `docs/fork/user/connections.md` replaces
+  the Connect account text with the Library and pairing (and reach as far as C03 has shipped);
+  `preview-links.md` drops its T3 Connect sentence. Upstream `docs/user` Connect pages stay
+  unless Kyle decides otherwise.
+
+Kyle's steps, in order:
+
+1. **Move relay webhook callers.** Scheduled tasks and bot triggers whose address is on the
+   relay (`https://<relay>/v1/hooks/...`) stop working once the link clears. Point their
+   callers at a direct or C03 address.
+2. **Unlink while Connect is on.** On each desktop, signed in to Connect, turn off
+   **Settings > Connections > T3 Connect**, which deletes T3's record. On headless hosts run
+   `loom connect logout`. Remote computers can also be unlinked from their iPhone details or
+   **Manage account > Linked computers**. Nothing in Loom can delete T3's record after the flip.
+3. **Sign out of T3 Connect** on desktop, every browser and iPhone. Sign-out removes saved
+   relay-only computers, and on iPhone it also tries to unregister agent awareness.
+4. **Inventory host binaries.** For every host (desktops, CLI service hosts, SSH remotes,
+   LoomOS custom `t3`, the Library), note where its server binary comes from and whether it is
+   linked. Builds without the retired flag never clean up, so unlink those by hand. Confirm no
+   shell profile or launchd env exports `T3CODE_RELAY_URL`, `T3CODE_CLERK_*` or relay tracing
+   values, because runtime env outranks build config.
+5. **Check T3's account.** It lists no linked computers and no agent-awareness devices.
+6. **Pause the publisher:** `node scripts/fork/updates.ts disable`.
+7. **Retire Connect:** set `"enabled": false` in
+   `~/Library/Application Support/Loom Updates/connect.json`.
+8. **Merge the flip work.**
+9. **Resume the publisher:** `node scripts/fork/updates.ts enable`, which also refreshes its
+   copied tools.
+10. **Publish a newly prepared version.** Records already marked ready replay their old config.
+11. **Check the publish.** The record has no Connect config and carries the retired flag, the
+    CLI archive run has empty Clerk and relay inputs and the retired input set, and the iOS
+    release config check passes.
+12. **Update every computer.** One that was linked logs one warning that it cleared its Connect
+    link and no "T3 Connect managed tunnel" lines after it. No relay `cloudflared` from the old
+    link keeps running; C03's connector is separate.
+13. **Real-client pass.** Desktop and web: Connections has no T3 Connect or account row and no
+    relay computers, `/connect` redirects home, settings search finds nothing about Connect,
+    and the disable-network dialog says Loom. iPhone: Settings shows Computers only, computer
+    details and the Library page have no Connect section or button, and the
+    `connect-onboarding` deep link returns. The `notifications` deep link still shows
+    upstream's Connect notice, which C04 owns.
+14. **Tidy up.** Optionally revoke "T3 Connect connect" sessions under **Connections >
+    Authorized clients**, remove any computer still on T3's account page, and mark C05 Done.
+
+**Rollback.** Pause the publisher, revert the flip merge, set `"enabled": true`, resume the
+publisher and publish a new version, then re-link computers and sign in again. A retired build
+clears link state on its first start, so a computer that ran one, including an update trial
+that rolled back, returns unlinked. iPhone Connect returns only with the iPhone retirement and
+its workflow change reverted together. The publisher's Connect switch stays for at least one
+release cycle after the flip so this path exists, unless Kyle decides otherwise.

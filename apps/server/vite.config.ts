@@ -109,6 +109,8 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
+        // fork: connect-off
+        __LOOM_CONNECT_RETIRED__: JSON.stringify(process.env.LOOM_CONNECT_RETIRED === "1"),
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __T3CODE_TELEMETRY_CHANNEL__: JSON.stringify(telemetryChannel),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),

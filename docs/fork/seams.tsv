@@ -142,6 +142,7 @@ packages/contracts/src/settings.test.ts	project-lifecycle	1
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	1
 apps/mobile/app.config.ts	fleet-connect	1
+apps/mobile/app.config.ts	library-push	2
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
@@ -715,3 +716,5 @@ packages/shared/src/observability.test.ts	server-weight	2
 apps/web/src/components/settings/ConnectionsSettings.tsx	directory-computers	7
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	directory-computers	4
 apps/server/src/telemetry/AnalyticsService.ts	telemetry-off	1
+apps/server/src/cloud/http.ts	connect-off	3
+apps/server/vite.config.ts	connect-off	1

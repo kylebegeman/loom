@@ -21,12 +21,13 @@ const connect: LoomConnectConfig = {
   accountPortalUrl: "https://accounts.example.test",
 };
 
-function publicExpoConfig(config: LoomConnectConfig | null): unknown {
+function publicExpoConfig(config: LoomConnectConfig | null, libraryPush = false): unknown {
   const env = iosBuildEnvironment(
     {
       PATH: NodeProcess.env.PATH,
       LOOM_IOS_TEAM_ID: TEAM,
       ...loomConnectBuildEnvironment(config),
+      ...(libraryPush ? { LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" } : {}),
     },
     "1",
   );
@@ -49,8 +50,21 @@ describe("iOS release public Expo configuration", () => {
     expect(config).not.toHaveProperty("extra.clerk.nativeAuthDomain");
     expect(config).not.toHaveProperty("extra.clerk.accountPortalUrl");
     expect(config).not.toHaveProperty("extra.relay.url");
+    expect(config).toMatchObject({ extra: { iosPushEnabled: false, loomLibraryPush: false } });
     expect(() => validateIosReleaseConfig(config, TEAM, "1", connect)).toThrow(
       "Connect configuration",
+    );
+    expect(() => validateIosReleaseConfig(config, TEAM, "1", null, true)).toThrow(
+      "push configuration",
+    );
+  });
+
+  it("serializes Library push without turning on the relay push path", () => {
+    const config = publicExpoConfig(connect, true);
+    expect(() => validateIosReleaseConfig(config, TEAM, "1", connect, true)).not.toThrow();
+    expect(config).toMatchObject({ extra: { iosPushEnabled: false, loomLibraryPush: true } });
+    expect(() => validateIosReleaseConfig(config, TEAM, "1", connect)).toThrow(
+      "push configuration",
     );
   });
 

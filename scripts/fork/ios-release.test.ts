@@ -252,6 +252,111 @@ describe("Loom iOS release boundaries", () => {
     );
   });
 
+  it("passes Library push through the release environment only when explicitly requested", () => {
+    expect(iosBuildEnvironment({}, "42", SHA)).toMatchObject({
+      LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "0",
+      LOOM_MOBILE_PUSH_ENABLED: "0",
+    });
+    const requested = iosBuildEnvironment(
+      {
+        LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+        LOOM_MOBILE_PUSH_ENABLED: "1",
+        LOOM_MOBILE_EXPO_PROJECT_ID: "inherited",
+      },
+      "42",
+      SHA,
+    );
+    expect(requested).toMatchObject({
+      LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+      LOOM_MOBILE_PUSH_ENABLED: "0",
+      LOOM_MOBILE_CONNECT_ENABLED: "0",
+    });
+    expect(requested).not.toHaveProperty("LOOM_MOBILE_EXPO_PROJECT_ID");
+    expect(() => iosBuildEnvironment({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "true" })).toThrow(
+      "0 or 1",
+    );
+  });
+
+  it("freezes Library push in receipts and refuses a later request that contradicts it", () => {
+    const prepared = parseReceipt({ ...receipt, libraryPush: true });
+    expect(prepared.libraryPush).toBe(true);
+    expect(parseReceipt({ ...receipt, libraryPush: false })).not.toHaveProperty("libraryPush");
+    expect(() => parseReceipt({ ...receipt, libraryPush: "1" })).toThrow("Library push");
+    expect(iosBuildEnvironment({}, "1", SHA, null, true)).toMatchObject({
+      LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+    });
+    expect(
+      iosBuildEnvironment({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" }, "1", SHA, null, true),
+    ).toMatchObject({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" });
+    expect(() =>
+      iosBuildEnvironment({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" }, "1", SHA, null, false),
+    ).toThrow("differs from the prepared release");
+    expect(() =>
+      iosBuildEnvironment({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "0" }, "1", SHA, null, true),
+    ).toThrow("differs from the prepared release");
+  });
+
+  it("verifies Expo's Library push flag against the release and never ships relay push", () => {
+    const libraryPush = { ...config, extra: { ...config.extra, loomLibraryPush: true } };
+    const pushOff = { ...config, extra: { ...config.extra, loomLibraryPush: false } };
+    expect(() => validateIosReleaseConfig(pushOff, TEAM, "1")).not.toThrow();
+    expect(() => validateIosReleaseConfig(libraryPush, TEAM, "1", null, true)).not.toThrow();
+    expect(() => validateIosReleaseConfig(libraryPush, TEAM, "1")).toThrow("push configuration");
+    expect(() => validateIosReleaseConfig(pushOff, TEAM, "1", null, true)).toThrow(
+      "push configuration",
+    );
+    expect(() =>
+      validateIosReleaseConfig(
+        { ...config, extra: { ...libraryPush.extra, iosPushEnabled: true } },
+        TEAM,
+        "1",
+        null,
+        true,
+      ),
+    ).toThrow("push configuration");
+  });
+
+  it("requires the production push entitlement on the app only when Library push is on", () => {
+    const app = {
+      "application-identifier": `${TEAM}.com.kylebegeman.loom`,
+      "com.apple.developer.team-identifier": TEAM,
+      "com.apple.security.application-groups": ["group.com.kylebegeman.loom"],
+    };
+    const pushed = { ...app, "aps-environment": "production" };
+    const pushReceipt = { ...receipt, libraryPush: true };
+    const bundle = "com.kylebegeman.loom";
+
+    expect(() => validateSigningEntitlements(pushed, pushReceipt, bundle)).not.toThrow();
+    expect(() => validateSigningEntitlements(pushed, pushReceipt, bundle, true)).not.toThrow();
+    expect(() => validateSigningEntitlements(app, pushReceipt, bundle)).toThrow("push entitlement");
+    expect(() => validateSigningEntitlements(app, pushReceipt, bundle, true)).toThrow(
+      "push entitlement",
+    );
+    expect(() =>
+      validateSigningEntitlements(
+        { ...app, "aps-environment": "development" },
+        pushReceipt,
+        bundle,
+      ),
+    ).toThrow("push entitlement");
+
+    expect(() => validateSigningEntitlements(pushed, receipt, bundle)).toThrow("push entitlement");
+    // A Push-enabled App ID puts aps-environment in every profile, even for push-off builds.
+    expect(() => validateSigningEntitlements(pushed, receipt, bundle, true)).not.toThrow();
+
+    for (const extension of ["com.kylebegeman.loom.sharing", "com.kylebegeman.loom.widgets"]) {
+      const target = { ...app, "application-identifier": `${TEAM}.${extension}` };
+      expect(() => validateSigningEntitlements(target, pushReceipt, extension)).not.toThrow();
+      expect(() =>
+        validateSigningEntitlements(
+          { ...target, "aps-environment": "production" },
+          receipt,
+          extension,
+        ),
+      ).not.toThrow();
+    }
+  });
+
   it("only permits associated domains for the explicitly qualified native app", () => {
     const connectConfig = parseLoomConnectConfig({
       enabled: true,

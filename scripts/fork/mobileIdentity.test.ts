@@ -135,6 +135,48 @@ describe("Loom mobile identity", () => {
     });
   });
 
+  it("enables Library push for an eligible team without Connect or the cloud push path", () => {
+    expect(resolveLoomMobileIdentity({ LOOM_IOS_TEAM_ID: "ABC1234567" })).toMatchObject({
+      libraryPushEnabled: false,
+    });
+    expect(
+      resolveLoomMobileIdentity({
+        LOOM_IOS_TEAM_ID: "ABC1234567",
+        LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+      }),
+    ).toMatchObject({ connectEnabled: false, pushEnabled: false, libraryPushEnabled: true });
+    expect(
+      resolveLoomMobileIdentity({ ...cloud, LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" }),
+    ).toMatchObject({ connectEnabled: true, pushEnabled: false, libraryPushEnabled: true });
+  });
+
+  it("requires an eligible Apple team for Library push and keeps cloud push tied to Connect", () => {
+    expect(() => resolveLoomMobileIdentity({ LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1" })).toThrow(
+      "eligible Apple team",
+    );
+    expect(() =>
+      resolveLoomMobileIdentity({
+        LOOM_IOS_TEAM_ID: "ABC1234567",
+        T3CODE_IOS_PERSONAL_TEAM: "1",
+        T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID: "com.example.loom",
+        LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+      }),
+    ).toThrow("eligible Apple team");
+    expect(() =>
+      resolveLoomMobileIdentity({
+        LOOM_IOS_TEAM_ID: "ABC1234567",
+        LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "true",
+      }),
+    ).toThrow("0 or 1");
+    expect(() =>
+      resolveLoomMobileIdentity({
+        LOOM_IOS_TEAM_ID: "ABC1234567",
+        LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1",
+        LOOM_MOBILE_PUSH_ENABLED: "1",
+      }),
+    ).toThrow("configured Connect");
+  });
+
   it("rejects an upstream authentication domain instead of assuming its allowlist", () => {
     expect(() =>
       resolveLoomMobileIdentity({ ...cloud, LOOM_MOBILE_AUTH_DOMAIN: "clerk.t3.codes" }),
@@ -151,6 +193,7 @@ describe("Loom mobile identity", () => {
       personalTeam: true,
       iosBundleIdentifier: "com.example.loom.dev",
       pushEnabled: false,
+      libraryPushEnabled: false,
       appleSignInEnabled: false,
     });
     expect(() => resolveLoomMobileIdentity({ T3CODE_IOS_PERSONAL_TEAM: "1" })).toThrow(
