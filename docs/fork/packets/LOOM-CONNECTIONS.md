@@ -1,6 +1,6 @@
 # Loom-owned connections: replacing T3 Connect
 
-Status: **Selected, not started.** Kyle chose this direction on 2026-10-24: Loom Identity and
+Status: **In progress** (C01 first). Kyle chose this direction on 2026-10-24: Loom Identity and
 the Library replace the T3 Connect account, the phone reaches computers from anywhere without
 Tailscale, and push notifications get their infrastructure now but are switched on last, after
 Kyle decides. Connect is turned off in Loom builds only after C01 to C03 work on desktop and
@@ -28,11 +28,18 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
 
 ## Shared design
 
-- **One sign-in per device, every computer.** A native client keeps one Identity refresh token
-  per issuer and subject, stored with the platform's secret storage (desktop `safeStorage`,
-  iOS Keychain). It exchanges a fresh Pocket ID access token at each computer's existing
-  native session endpoint. The server rule stays: a computer session never outlives the
-  access token it was issued for. Renewal happens on the client, before expiry.
+- **One grant per computer, renewed silently.** A Pocket ID refresh keeps the audience it was
+  issued for, and every computer keeps its own audience (see
+  [environment-auth](../../internals/environment-auth.md)), so a native client holds one
+  refresh grant per account and computer, in platform secret storage (desktop `safeStorage`,
+  iOS Keychain). Connecting a computer takes one short browser authorization, which completes
+  on its own while the Pocket ID browser session is fresh. Before each hour-long computer
+  session ends, the client refreshes the grant and exchanges the new tokens at the computer;
+  the open socket carries over to the new session. Pocket ID rotates refresh tokens and
+  revokes a grant whose old token is reused, so refreshes are single-flight per grant.
+- **The sign-in limit lives on the computer.** Pocket ID's refresh lifetime slides with use,
+  so it cannot cap a sign-in. The computer reads `auth_time` from the ID token sent with each
+  exchange and refuses sessions past `LOOM_IDENTITY_MAX_SESSION_AGE`.
 - **The directory is the computer list.** Clients read computers and routes from the Library
   directory. Routes come from the signed descriptor, so a client never trusts a route the
   computer did not publish.
@@ -42,24 +49,29 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
   request. Pairing remains the fallback for clients without Identity.
 - **Upstream code stays.** Turning Connect off means not publishing its Clerk and relay
   config in Loom releases. Upstream already hides Connect surfaces when that config is absent,
-  so no upstream Connect code is deleted and merges stay easy.
+  so no upstream Connect code is deleted and merges stay easy. Computers linked earlier keep
+  their relay secrets and keep running T3's tunnel and activity publishing, so C05 also unlinks
+  them and clears that state.
 
 ## Packets
 
-| ID  | Packet                                     | Status   | Scope                                                                                                                                                                                                                                                                 |
-| --- | ------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C01 | L112 Identity renewal                      | Selected | Desktop and iPhone request `offline_access`, store the refresh token, and renew each computer session before it expires. Removing a connection or signing out revokes the refresh token. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d. |
-| C02 | L113 Library computer list on every client | Selected | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes.                                                                                            |
-| C03 | L114 Reach from anywhere                   | Selected | Per-computer Cloudflare tunnel on Kyle's account, provisioned from the Library with a Vault-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off and removing the tunnel.                        |
-| C04 | L115 Push infrastructure                   | Selected | Library device registry and APNs sender with Kyle's team key, behind an off switch. The iPhone registers with the Library only when enabled. Integration waits for Kyle.                                                                                              |
-| C05 | L116 Connect off in Loom builds            | Selected | Stop publishing Clerk and relay config, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the fork's `fleet-connect` seams and Connect help text.                                                                                     |
+| ID  | Packet                                     | Status      | Scope                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C01 | L112 Identity renewal                      | In progress | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d. |
+| C02 | L113 Library computer list on every client | Selected    | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes.                                                                                                                      |
+| C03 | L114 Reach from anywhere                   | Selected    | Per-computer Cloudflare tunnel on Kyle's account at `<computer>-loom.begam.in`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off and removing the tunnel.                  |
+| C04 | L115 Push infrastructure                   | Selected    | Library device registry and APNs sender with Kyle's team key, behind an off switch. The iPhone registers with the Library only when enabled. Integration waits for Kyle.                                                                                                                        |
+| C05 | L116 Connect off in Loom builds            | Selected    | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text.                                         |
 
 ## Decisions
 
-- **Route domain (2026-10-24).** Computer hostnames live under `loom.begam.in`. `bagels.top`
+- **Route domain (2026-10-24).** Computer hostnames are `<computer>-loom.begam.in`, one level
+  under `begam.in` so Cloudflare's free Universal SSL certificate covers them. `bagels.top`
   stays reserved for preview pages.
-- **Refresh token lifetime (2026-10-24).** 30 days with Cloudflare Access in front of computer
-  routes, 7 days without it.
+- **Telemetry (2026-10-24).** Loom builds send no product telemetry to T3; it stays available
+  through `T3CODE_TELEMETRY_ENABLED`.
+- **Sign-in lifetime (2026-10-24).** 30 days with Cloudflare Access in front of computer
+  routes, 7 days without it, enforced by each computer's maximum sign-in age.
 - **Exposure policy (2026-10-24).** Kyle chose more security over the lightest setup, in two
   steps. First, computer routes ship with edge hardening: only the paths a Loom client needs
   are forwarded, with rate limits, and the computer's server still requires Identity. Second,
@@ -68,8 +80,37 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
   until Cloudflare's native-app token flow is verified on desktop and iPhone, including
   WebSockets. If Access cannot work cleanly, routes stay on step one and the refresh token
   lifetime stays at 7 days.
+- **Pocket ID resources (2026-10-24).** The Library holds a Pocket ID admin API key and creates
+  one API resource per computer, granted to the native client. Computers refuse Identity
+  sessions whose ID token `amr` lacks a passkey (`phr`), so a leaked key cannot mint a sign-in
+  that reaches them. The key has full admin rights and is renewed by hand in Pocket ID when it
+  expires.
+- **Identity stays the computer's setting.** The Library provisions the Pocket ID resource
+  and hands back its values; the computer's own admin turns Loom Identity on, as
+  [environment-auth](../../internals/environment-auth.md) requires.
 
-## Decisions still open
+## C03 constraints
 
-- **Pocket ID client settings.** Confirm the desktop and iPhone clients may receive refresh
-  tokens.
+Found while researching the Cloudflare and Pocket ID APIs; each one changes the build.
+
+- `cloudflared` ingress path rules are unanchored regexes on the raw path, so they cannot be an
+  allowlist. The allowlist is one zone WAF custom rule that blocks
+  `ends_with(http.host, "-loom.begam.in")` requests outside the client path prefixes. The free
+  plan allows 5 custom rules without regex and one rate limit rule (path match, per IP, 10
+  second window), so the Library manages both once for the zone. `/mcp` stays off the list.
+- The Library's Cloudflare token needs Account Cloudflare Tunnel Write and, on `begam.in`, Zone
+  DNS Write, Zone WAF Write and Zone Read. The account ID comes from `GET /zones?name=begam.in`.
+- A computer's port can change across restarts, so turning reach on is an idempotent ensure
+  that runs on every start and updates the tunnel's ingress.
+- Removal order matters: stop the `cloudflared` child, clear the tunnel's connections, delete
+  the tunnel, then delete the CNAME. Cloudflare refuses to delete a tunnel with live
+  connectors.
+- Pocket ID `PUT` on an OIDC client replaces the whole client, so provisioning only creates
+  API resources and grants (`POST /api/apis`, `PUT /api/apis/{id}/clients/{clientId}`). A 409
+  means the resource exists and is found by search. Each authorization carries exactly one
+  resource.
+- Native renewal needs the `loom-library-native` client's refresh lifetime raised from 60
+  minutes to 7 days (10080) through the identity reconciler in loom-platform.
+- Access step two needs a live test before any build work: Managed OAuth is Cloudflare's only
+  per-user native flow, and the test must cover WebSocket upgrades, its header against Loom's
+  `Authorization`, a 720 hour grant and one app reused across the wildcard hostnames.
