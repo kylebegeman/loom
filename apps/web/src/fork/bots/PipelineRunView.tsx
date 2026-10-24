@@ -252,7 +252,7 @@ export function PipelineRunList({
               aria-pressed={selected}
               onClick={() => onSelect(run)}
               className={cn(
-                "flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-start outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                "flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 text-start outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 selected ? "bg-accent/70" : "hover:bg-accent/40",
               )}
             >

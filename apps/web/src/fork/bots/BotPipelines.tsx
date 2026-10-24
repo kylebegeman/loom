@@ -139,7 +139,7 @@ export function BotPipelines({
             {pipelines.map((pipeline) => (
               <li
                 key={pipeline.id}
-                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3"
+                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 px-3 py-2.5"
               >
                 <div className="flex min-w-0 flex-1 basis-72 flex-col gap-2">
                   <div className="min-w-0">

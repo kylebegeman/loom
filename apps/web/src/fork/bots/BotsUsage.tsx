@@ -91,7 +91,7 @@ function UsageRow({
         aria-expanded={open}
         aria-controls={detailId}
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <BotTile bot={{ id: row.botId }} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -134,7 +134,7 @@ function UsageRow({
         />
       </button>
       {open ? (
-        <div id={detailId} className="flex flex-col gap-3 px-4 pb-4 sm:ps-16">
+        <div id={detailId} className="flex flex-col gap-3 px-3 pb-3 sm:ps-14">
           <p className="text-sm text-muted-foreground">
             {formatCount(row.completed)} completed, {formatCount(row.failed)} failed,{" "}
             {formatCount(row.timedOut)} timed out, {formatCount(row.cancelled)} cancelled.

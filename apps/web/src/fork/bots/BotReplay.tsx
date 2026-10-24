@@ -240,7 +240,7 @@ function ReplayResults({
           const comparison = COMPARISONS[item.comparison];
           const metrics = replayMetricChanges(original, after);
           return (
-            <li key={item.originalRunId} className="flex min-w-0 flex-col gap-3 px-4 py-3">
+            <li key={item.originalRunId} className="flex min-w-0 flex-col gap-2 px-3 py-2.5">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <LibraryStateBadge
                   tone={comparison.tone === "waiting" ? "neutral" : comparison.tone}

@@ -15,11 +15,11 @@ import { projectColorStyle } from "../project-library/ProjectIdentity";
 
 const TILE_SIZES = {
   sm: "size-6 rounded-md",
-  md: "size-9 rounded-xl",
-  xl: "size-16 rounded-2xl",
+  md: "size-8 rounded-lg",
+  lg: "size-11 rounded-xl",
 } as const;
 
-const TILE_ICON_SIZES = { sm: "size-3.5", md: "size-4", xl: "size-7" } as const;
+const TILE_ICON_SIZES = { sm: "size-3.5", md: "size-4", lg: "size-5" } as const;
 
 /**
  * A bot's mark: its stable color around the bot glyph. Scopes `--project-color` itself so a run
@@ -110,7 +110,12 @@ export function runDuration(startedAt: string | null, finishedAt: string | null,
   const start = Date.parse(startedAt);
   const end = finishedAt ? Date.parse(finishedAt) : now;
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  return formatSpan(end - start);
+}
+
+/** A span of time in its two largest units. */
+export function formatSpan(ms: number) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;

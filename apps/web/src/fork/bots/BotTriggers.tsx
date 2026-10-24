@@ -379,12 +379,12 @@ function TriggerRow({
     .filter(Boolean)
     .join(" · ");
   return (
-    <li className="flex min-w-0 flex-col gap-3 px-4 py-3">
+    <li className="flex min-w-0 flex-col gap-2 px-3 py-2.5">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <span
           aria-hidden
           className={cn(
-            "inline-flex size-9 shrink-0 items-center justify-center rounded-xl",
+            "inline-flex size-8 shrink-0 items-center justify-center rounded-lg",
             trigger.enabled
               ? "bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
               : "bg-muted text-muted-foreground dark:bg-accent",
@@ -490,7 +490,7 @@ function TriggerRow({
         </div>
       </div>
       {outdated || trigger.webhook !== undefined || testing || showFirings || error ? (
-        <div className="flex min-w-0 flex-col gap-3 ps-12">
+        <div className="flex min-w-0 flex-col gap-3 ps-11">
           {outdated ? (
             <div
               role="status"

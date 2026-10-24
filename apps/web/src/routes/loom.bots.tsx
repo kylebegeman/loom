@@ -11,6 +11,7 @@ const BotsSearch = Schema.Struct({
   many: Schema.optional(BotId),
   tab: Schema.optional(
     Schema.Literals([
+      "bots",
       "runs",
       "history",
       "batches",

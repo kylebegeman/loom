@@ -198,7 +198,7 @@ function VersionRow({
     }, "Could not restore the version.");
 
   return (
-    <li className="relative flex min-w-0 gap-3 px-4 py-3">
+    <li className="relative flex min-w-0 gap-3 px-3 py-2.5">
       {/* The rail joins each version to the one it came from; the oldest has nothing below. */}
       {previous !== null ? (
         <span aria-hidden className="absolute start-6 top-6 -bottom-6 border-s border-border" />
@@ -393,7 +393,7 @@ function HistorySkeleton() {
       className={cn(LIBRARY_OUTLINE, "flex flex-col py-1")}
     >
       {SKELETON_VERSIONS.map((row) => (
-        <div key={row} className="flex items-start gap-3 px-4 py-3">
+        <div key={row} className="flex items-start gap-3 px-3 py-2.5">
           <Skeleton shape="pill" className="mt-1 size-4" />
           <div className="flex flex-1 flex-col gap-1.5">
             <Skeleton className="h-3.5 w-1/4" />

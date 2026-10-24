@@ -4,16 +4,20 @@ import type { LibraryWorkflowTone } from "./library-workflows.ts";
 
 type SiteCheck = SitesSnapshot["checks"][number];
 
+export type SiteCheckState = SiteCheck["state"];
+
 /** A previously healthy observation must not stay green while a client is offline. */
-export function siteCheckState(check: SiteCheck, staleAfterSeconds: number, now: number) {
+export function siteCheckState(
+  check: SiteCheck,
+  staleAfterSeconds: number,
+  now: number,
+): SiteCheckState {
   if (check.state === "disabled") return "disabled";
   if (!check.last) return "unknown";
   const checkedAt = Date.parse(check.last.checked_at);
   if (!Number.isFinite(checkedAt) || now - checkedAt > staleAfterSeconds * 1000) return "stale";
   return check.state;
 }
-
-export type SiteCheckState = ReturnType<typeof siteCheckState>;
 
 export const SITE_CHECK_STATES: Record<
   SiteCheckState,

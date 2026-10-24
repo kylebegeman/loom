@@ -5,8 +5,6 @@ import { FileTextIcon, MousePointerClickIcon } from "lucide-react";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LIBRARY_OUTLINE, LibraryFigure } from "../project-library/LibraryControls";
-import { siteHost } from "./SiteHealth";
 
 const COMPACT = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
 const WHOLE = new Intl.NumberFormat();
@@ -31,18 +29,24 @@ function niceCeiling(value: number) {
   return step * power;
 }
 
+const PANEL = "flex min-w-0 flex-col gap-5 rounded-xl border border-border p-4";
+
+/** One figure in the traffic readout; a hairline, not a box, sets it apart from its neighbor. */
+function Readout({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 border-border not-first:border-s not-first:ps-4">
+      <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-lg leading-tight font-semibold tracking-tight tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
 /**
  * A site's traffic in one outlined panel. The figures double as the chart's readout: they show
  * the window's totals, and the day under the pointer or keyboard while one is focused. One
  * series, so no legend; every value is also in the table screen readers get.
  */
-export function SiteTraffic({
-  analytics,
-  origins,
-}: {
-  readonly analytics: SiteAnalytics;
-  readonly origins: readonly string[];
-}) {
+export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }) {
   const days = siteTrafficDays(analytics);
   const [focused, setFocused] = useState<number | null>(null);
   const top = niceCeiling(Math.max(0, ...days.map((day) => day.pageviews)));
@@ -51,18 +55,18 @@ export function SiteTraffic({
     setFocused((index) => Math.min(days.length - 1, Math.max(0, (index ?? days.length) + delta)));
   const quiet = !analytics.pageviews && !analytics.events;
   return (
-    <div className={cn(LIBRARY_OUTLINE, "flex min-w-0 flex-col gap-6 p-4 sm:p-5")}>
+    <div className={PANEL}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <dl aria-live="polite" className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
-          <LibraryFigure
+        <dl aria-live="polite" className="flex min-w-0 flex-wrap gap-x-4 gap-y-3">
+          <Readout
             label="Page views"
             value={formatCount(current ? current.pageviews : analytics.pageviews)}
           />
-          <LibraryFigure
+          <Readout
             label="Visitors"
             value={formatCount(current ? current.visitors : analytics.visitors)}
           />
-          <LibraryFigure
+          <Readout
             label={current ? `Events, all ${analytics.days} days` : "Events"}
             value={formatCount(analytics.events)}
           />
@@ -72,7 +76,7 @@ export function SiteTraffic({
         </p>
       </div>
       {quiet || !days.length ? (
-        <div className="flex h-36 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 text-center">
+        <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border px-4 text-center">
           <p className="text-sm font-medium">No visits in the last {analytics.days} days</p>
           <p className="max-w-sm text-xs text-muted-foreground">
             Visits from this site's analytics origins appear here as they arrive.
@@ -83,7 +87,7 @@ export function SiteTraffic({
           <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2">
             <div
               aria-hidden
-              className="flex h-36 flex-col justify-between text-end text-2xs tabular-nums text-muted-foreground/80"
+              className="flex h-40 flex-col justify-between text-end text-2xs tabular-nums text-muted-foreground/80"
             >
               <span className="-translate-y-1/2">{formatCount(top)}</span>
               <span className="translate-y-1/2">0</span>
@@ -102,7 +106,7 @@ export function SiteTraffic({
               }}
               onPointerLeave={() => setFocused(null)}
               onBlur={() => setFocused(null)}
-              className="relative flex h-36 items-end gap-0.5 rounded-md border-y border-border/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="relative flex h-40 items-end gap-0.5 rounded-md border-y border-border/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               {days.map((day, index) => (
                 <div
@@ -156,16 +160,8 @@ export function SiteTraffic({
       <p className="border-t border-border pt-3 text-xs text-muted-foreground">
         Visitors are counted once per day
         {analytics.lastEventAt
-          ? `, and the latest visit arrived ${formatRelativeTimeLabel(analytics.lastEventAt)}`
-          : ""}
-        . Counting visits from{" "}
-        {origins.map((origin, index) => (
-          <span key={origin}>
-            {index ? ", " : null}
-            <span className="font-mono text-foreground/80">{siteHost(origin)}</span>
-          </span>
-        ))}
-        .
+          ? `. The latest visit arrived ${formatRelativeTimeLabel(analytics.lastEventAt)}.`
+          : "."}
       </p>
     </div>
   );
@@ -180,20 +176,16 @@ const SKELETON_COLUMNS = Array.from({ length: 30 }, (_, index) => ({
 /** The traffic panel's shape while its numbers load, so nothing jumps when they arrive. */
 export function SiteTrafficSkeleton() {
   return (
-    <div
-      role="status"
-      aria-label="Loading traffic"
-      className={cn(LIBRARY_OUTLINE, "flex flex-col gap-6 p-4 sm:p-5")}
-    >
-      <div className="flex gap-5">
+    <div role="status" aria-label="Loading traffic" className={PANEL}>
+      <div className="flex gap-4">
         {[0, 1, 2].map((index) => (
-          <div key={index} className="flex flex-col gap-2">
+          <div key={index} className="flex flex-col gap-1.5">
             <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-7 w-20" />
+            <Skeleton className="h-5 w-14" />
           </div>
         ))}
       </div>
-      <div aria-hidden className="flex h-36 items-end gap-0.5 ps-8">
+      <div aria-hidden className="flex h-40 items-end gap-0.5 ps-8">
         {SKELETON_COLUMNS.map((column) => (
           <Skeleton
             key={column.id}
@@ -236,11 +228,11 @@ function RankedList({
         {title}
       </h3>
       {rows.length ? (
-        <ol className="flex flex-col gap-1">
+        <ol className="flex flex-col gap-0.5">
           {rows.map((row) => (
             <li
               key={row.key}
-              className="relative isolate flex min-w-0 items-center gap-3 overflow-hidden rounded-md px-2.5 py-1.5 text-sm"
+              className="relative isolate flex min-w-0 items-center gap-3 overflow-hidden rounded-md px-2 py-1 text-sm"
             >
               <span
                 aria-hidden

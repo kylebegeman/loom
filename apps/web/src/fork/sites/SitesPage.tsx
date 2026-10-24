@@ -1,28 +1,34 @@
 import { useSiteCheckClock } from "./use-site-check-clock";
 import { useMemo, useState } from "react";
 import { Link, useSearch, useNavigate } from "@tanstack/react-router";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  SITE_CHECK_STATES,
   SITE_HEALTH_STATES,
-  libraryProjectColor,
   siteCheckState,
   siteHealth,
+  siteTrafficDays,
   supportsLoomFeature,
+  type LibraryWorkflowTone,
 } from "@t3tools/client-runtime/fork";
 import {
   SITES_FEATURE,
   SITES_MANAGEMENT_FEATURE,
   type LibraryProject,
-  type LibraryProjectColor,
   type SitesSnapshot,
 } from "@t3tools/contracts/fork";
 import {
   ArrowUpRightIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleDashedIcon,
   CloudOffIcon,
   GlobeIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
   ServerIcon,
+  TriangleAlertIcon,
   WrenchIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -40,24 +46,38 @@ import {
   useLibraryPermission,
 } from "../project-library/state";
 import {
-  LIBRARY_OUTLINE,
   LibraryEmpty,
   LibraryErrorNotice,
   LibraryNotice,
   LibraryStateBadge,
-  LibraryStateDot,
 } from "../project-library/LibraryControls";
+import {
+  LIBRARY_CELL,
+  LIBRARY_ROW_TARGET,
+  LIBRARY_TABLE_ROW,
+  LibraryTable,
+  Sparkline,
+  TickStrip,
+} from "../project-library/LibraryData";
 import { LibraryPageFrame } from "../project-library/LibraryPageFrame";
 import { LibraryTabs } from "../project-library/LibraryTabs";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { SiteDetail } from "./SiteDetail";
-import { SiteServiceCard, siteHost } from "./SiteHealth";
-import { SiteTrafficSkeleton } from "./SiteTraffic";
+import {
+  CertificateLabel,
+  CheckTicks,
+  EndpointsTable,
+  SITES_COLOR,
+  SiteTile,
+  checkVitals,
+  formatDuration,
+  siteChecks,
+  siteColor,
+  siteHost,
+} from "./SiteHealth";
+import { formatCount } from "./SiteTraffic";
 
 export type SitesView = "sites" | "services";
-
-/** Sites are about the web, not one project, until a site names the project it serves. */
-const SITES_COLOR: LibraryProjectColor = "blue";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -86,10 +106,11 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
   );
   const snapshot = query.data?.snapshot;
   const now = useSiteCheckClock(snapshot);
-  const selected = snapshot?.sites.find((site) => site.id === search.siteId) ?? snapshot?.sites[0];
+  // A link to a site that has since been removed lands on the index rather than an empty page.
+  const opened = search.siteId ? snapshot?.sites.find((site) => site.id === search.siteId) : null;
   const analytics = useEnvironmentQuery(
-    authority.authorityId && supported && selected
-      ? sites.analytics({ environmentId: authority.authorityId, input: { siteId: selected.id } })
+    authority.authorityId && supported && opened
+      ? sites.analytics({ environmentId: authority.authorityId, input: { siteId: opened.id } })
       : null,
   );
   const canManage = Boolean(
@@ -100,13 +121,11 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
     [projects.query.data],
   );
   const view: SitesView = search.view ?? "sites";
-  const go = (next: { siteId?: string | undefined; view?: SitesView | undefined }) =>
+  const openSite = (siteId: string) => void navigate({ to: "/sites", search: { siteId } });
+  const showView = (next: SitesView) =>
     void navigate({
       to: "/sites",
-      search: {
-        siteId: next.siteId ?? selected?.id,
-        view: (next.view ?? view) === "services" ? "services" : undefined,
-      },
+      search: { view: next === "services" ? "services" : undefined },
       replace: true,
     });
   const refresh = () => {
@@ -127,22 +146,77 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
       setRunning(false);
     }
   };
+  const notices = (
+    <>
+      {actionError ? <LibraryErrorNotice error={actionError} /> : null}
+      {authority.authorityId &&
+      supported &&
+      query.data?.configured &&
+      !query.data.managementConfigured ? (
+        <LibraryNotice icon={WrenchIcon}>
+          {manages
+            ? "Viewing only. Site management needs a manager connection on your Library server."
+            : "Viewing only. Update your Library server to manage sites here."}
+        </LibraryNotice>
+      ) : null}
+      <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
+    </>
+  );
+  const editor =
+    snapshot && authority.authorityId && editing ? (
+      <SiteEditor
+        key={`${editing.kind}:${editing.row?.id ?? "new"}`}
+        target={editing}
+        snapshot={snapshot}
+        environmentId={authority.authorityId}
+        connected={canManage}
+        onClose={() => setEditing(null)}
+        onSaved={(id) => {
+          if (editing.kind === "site" && !editing.row) openSite(id);
+          setEditing(null);
+          refresh();
+        }}
+      />
+    ) : null;
+
+  if (opened && snapshot) {
+    return (
+      <LibraryPageFrame
+        title={opened.name}
+        section={{ label: "Sites", to: "/sites" }}
+        offlineNotice="Saved check results and traffic below may be out of date."
+        style={projectColorStyle(siteColor(opened, projectsById))}
+      >
+        {notices}
+        <SiteDetail
+          key={opened.id}
+          site={opened}
+          snapshot={snapshot}
+          now={now}
+          projects={projectsById}
+          analytics={analytics}
+          canManage={canManage}
+          running={running}
+          onRunChecks={() => void run()}
+          onEdit={setEditing}
+        />
+        {editor}
+      </LibraryPageFrame>
+    );
+  }
+
   return (
     <LibraryPageFrame
       section={{ label: "Sites", to: "/sites" }}
       offlineNotice="Saved check results and traffic below may be out of date."
       style={projectColorStyle(SITES_COLOR)}
     >
-      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
-        <div className="space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
-          {snapshot ? (
-            <SitesSummaryLine snapshot={snapshot} now={now} />
-          ) : (
-            <p className="max-w-xl text-xs text-muted-foreground">
-              Your websites, whether they are up, and the visits they receive.
-            </p>
-          )}
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <h1 className="text-xl font-semibold tracking-tight">Sites</h1>
+          <p className="text-sm text-muted-foreground">
+            Your websites, whether they are up, and the visits they receive.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Button
@@ -177,18 +251,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
         </div>
       </header>
 
-      {actionError ? <LibraryErrorNotice error={actionError} /> : null}
-      {authority.authorityId &&
-      supported &&
-      query.data?.configured &&
-      !query.data.managementConfigured ? (
-        <LibraryNotice icon={WrenchIcon}>
-          {manages
-            ? "Viewing only. Site management needs a manager connection on your Library server."
-            : "Viewing only. Update your Library server to manage sites here."}
-        </LibraryNotice>
-      ) : null}
-      <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
+      {notices}
 
       {!authority.authorityId ? (
         <LibraryEmpty
@@ -217,87 +280,77 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
           <SitesSkeleton />
         ) : null
       ) : (
-        <LibraryTabs
-          label="Sites views"
-          selected={view}
-          onSelect={(next) => go({ view: next })}
-          tabs={[
-            { value: "sites", label: "Sites", icon: GlobeIcon, count: snapshot.sites.length },
-            {
-              value: "services",
-              label: "Services",
-              icon: ServerIcon,
-              count: snapshot.services.length,
-            },
-          ]}
-        >
-          {view === "services" ? (
-            <ServicesRegistry
-              snapshot={snapshot}
-              now={now}
-              canManage={canManage}
-              onEdit={setEditing}
-              onOpenSite={(siteId) => go({ siteId, view: "sites" })}
-            />
-          ) : selected ? (
-            <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-              <SiteRail
-                snapshot={snapshot}
-                now={now}
-                selectedId={selected.id}
-                projects={projectsById}
-                onSelect={(siteId) => go({ siteId })}
-              />
-              <div style={projectColorStyle(siteColor(selected, projectsById))} className="min-w-0">
-                <SiteDetail
-                  key={selected.id}
-                  site={selected}
-                  snapshot={snapshot}
-                  now={now}
-                  projects={projectsById}
-                  analytics={analytics}
-                  canManage={canManage}
-                  onEdit={setEditing}
-                />
-              </div>
-            </div>
-          ) : (
-            <LibraryEmpty
-              icon={GlobeIcon}
-              title="Register your first site"
-              action={
+        <>
+          <SitesStatus snapshot={snapshot} now={now} onOpenSite={openSite} />
+          <LibraryTabs
+            label="Sites views"
+            variant="underline"
+            selected={view}
+            onSelect={showView}
+            tabs={[
+              { value: "sites", label: "Sites", icon: GlobeIcon, count: snapshot.sites.length },
+              {
+                value: "services",
+                label: "Services",
+                icon: ServerIcon,
+                count: snapshot.services.length,
+              },
+            ]}
+            actions={
+              view === "services" && snapshot.services.length ? (
                 <Button
                   shape="pill"
+                  size="xs"
+                  variant="outline"
                   disabled={!canManage}
-                  onClick={() => setEditing({ kind: "site" })}
+                  onClick={() => setEditing({ kind: "service" })}
                 >
                   <PlusIcon />
-                  Register a site
+                  Register service
                 </Button>
-              }
-            >
-              Link a site to the projects it serves. Loom watches its endpoints and counts its
-              visits, so you know it is up without opening it.
-            </LibraryEmpty>
-          )}
-        </LibraryTabs>
+              ) : null
+            }
+          >
+            {view === "services" ? (
+              <ServicesRegistry
+                snapshot={snapshot}
+                now={now}
+                canManage={canManage}
+                onEdit={setEditing}
+                onOpenSite={openSite}
+              />
+            ) : snapshot.sites.length ? (
+              <SitesTable
+                environmentId={authority.authorityId}
+                snapshot={snapshot}
+                now={now}
+                projects={projectsById}
+                onOpenSite={openSite}
+              />
+            ) : (
+              <LibraryEmpty
+                icon={GlobeIcon}
+                title="Register your first site"
+                action={
+                  <Button
+                    shape="pill"
+                    disabled={!canManage}
+                    onClick={() => setEditing({ kind: "site" })}
+                  >
+                    <PlusIcon />
+                    Register a site
+                  </Button>
+                }
+              >
+                Link a site to the projects it serves. Loom watches its endpoints and counts its
+                visits, so you know it is up without opening it.
+              </LibraryEmpty>
+            )}
+          </LibraryTabs>
+        </>
       )}
 
-      {snapshot && authority.authorityId && editing ? (
-        <SiteEditor
-          key={`${editing.kind}:${editing.row?.id ?? "new"}`}
-          target={editing}
-          snapshot={snapshot}
-          environmentId={authority.authorityId}
-          connected={canManage}
-          onClose={() => setEditing(null)}
-          onSaved={(id) => {
-            if (editing.kind === "site") go({ siteId: id, view: "sites" });
-            setEditing(null);
-            refresh();
-          }}
-        />
-      ) : null}
+      {editor}
       <p className="text-xs text-muted-foreground">
         Building something new?{" "}
         <a
@@ -314,98 +367,225 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
   );
 }
 
-/** A site takes the color of the first project it serves, so it reads as part of that project. */
-function siteColor(
-  site: SitesSnapshot["sites"][number],
-  projects: ReadonlyMap<string, LibraryProject>,
-): LibraryProjectColor {
-  const project = site.projectIds?.map((id) => projects.get(id)).find(Boolean);
-  return project ? libraryProjectColor(project) : SITES_COLOR;
-}
+const STATUS_TONES: Record<
+  LibraryWorkflowTone,
+  { readonly surface: string; readonly icon: string; readonly glyph: typeof CircleCheckIcon }
+> = {
+  success: { surface: "bg-success/8", icon: "text-success", glyph: CircleCheckIcon },
+  danger: {
+    surface: "bg-destructive/8 dark:bg-destructive/12",
+    icon: "text-destructive",
+    glyph: CircleAlertIcon,
+  },
+  warning: { surface: "bg-warning/10", icon: "text-warning", glyph: TriangleAlertIcon },
+  neutral: {
+    surface: "bg-muted/50 dark:bg-accent/40",
+    icon: "text-muted-foreground",
+    glyph: CircleDashedIcon,
+  },
+  active: { surface: "bg-(--project-color)/8", icon: "text-(--project-color)", glyph: GlobeIcon },
+};
 
-function SitesSummaryLine({ snapshot, now }: { snapshot: SitesSnapshot; now: number }) {
-  let failing = 0;
-  let stale = 0;
-  let watched = 0;
-  for (const check of snapshot.checks) {
-    const state = siteCheckState(check, snapshot.staleAfterSeconds, now);
-    if (state === "disabled") continue;
-    watched += 1;
-    if (state === "failing") failing += 1;
-    else if (state === "stale") stale += 1;
-  }
-  return (
-    <p className="flex max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
-      {[
-        plural(snapshot.sites.length, "site"),
-        plural(snapshot.services.length, "service"),
-        plural(watched, "check"),
-      ].join(" · ")}
-      {failing ? (
-        <LibraryStateBadge tone="danger">{failing} failing</LibraryStateBadge>
-      ) : stale ? (
-        <LibraryStateBadge tone="warning">{stale} out of date</LibraryStateBadge>
-      ) : watched ? (
-        <LibraryStateBadge tone="success">All passing</LibraryStateBadge>
-      ) : null}
-      {snapshot.observedAt ? (
-        <span>Updated {formatRelativeTimeLabel(snapshot.observedAt)}</span>
-      ) : null}
-    </p>
-  );
-}
-
-function SiteRail({
+/**
+ * The status-page answer first: is everything up? One tinted line says so, names what is not,
+ * and shows every check as a tick, so a failure is visible before any row is read.
+ */
+function SitesStatus({
   snapshot,
   now,
-  selectedId,
-  projects,
-  onSelect,
+  onOpenSite,
 }: {
   readonly snapshot: SitesSnapshot;
   readonly now: number;
-  readonly selectedId: string;
+  readonly onOpenSite: (siteId: string) => void;
+}) {
+  const states = snapshot.checks.map((check) => ({
+    check,
+    state: siteCheckState(check, snapshot.staleAfterSeconds, now),
+  }));
+  const watched = states.filter(({ state }) => state !== "disabled");
+  const failing = watched.filter(({ state }) => state === "failing").length;
+  const stale = watched.filter(({ state }) => state === "stale").length;
+  const tone: LibraryWorkflowTone = failing
+    ? "danger"
+    : stale
+      ? "warning"
+      : watched.length
+        ? "success"
+        : "neutral";
+  const headline = failing
+    ? `${plural(failing, "check")} failing`
+    : stale
+      ? `${plural(stale, "check")} out of date`
+      : watched.length
+        ? "All systems normal"
+        : "Nothing is watched yet";
+  const troubled = snapshot.sites.filter((site) => {
+    const state = siteHealth(site, snapshot, now).state;
+    return state === "failing" || state === "stale";
+  });
+  const presentation = STATUS_TONES[tone];
+  return (
+    <section
+      aria-label="Status"
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-4 py-3",
+        presentation.surface,
+      )}
+    >
+      <presentation.glyph aria-hidden className={cn("size-5 shrink-0", presentation.icon)} />
+      <div className="min-w-0 flex-1 basis-56">
+        <p className="text-sm font-semibold">{headline}</p>
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          {troubled.length ? (
+            <>
+              Affects
+              {troubled.map((site, index) => (
+                <span key={site.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenSite(site.id)}
+                    className="rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    {site.name}
+                  </button>
+                  {index < troubled.length - 1 ? "," : null}
+                </span>
+              ))}
+            </>
+          ) : (
+            <span className="tabular-nums">
+              {plural(watched.length, "check")} across {plural(snapshot.services.length, "service")}
+            </span>
+          )}
+          {snapshot.observedAt ? (
+            <span>· Updated {formatRelativeTimeLabel(snapshot.observedAt)}</span>
+          ) : null}
+        </p>
+      </div>
+      {states.length ? (
+        <TickStrip
+          size="lg"
+          label={`${watched.length - failing - stale} of ${watched.length} checks passing`}
+          ticks={states.map(({ check, state }) => ({
+            key: check.id,
+            tone: SITE_CHECK_STATES[state].tone,
+          }))}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+const SITE_COLUMNS = [
+  { key: "site", label: "Site" },
+  { key: "state", label: "State", className: "w-32" },
+  { key: "checks", label: "Checks", className: "hidden w-36 sm:table-cell" },
+  { key: "response", label: "Slowest", className: "hidden w-24 lg:table-cell" },
+  { key: "certificate", label: "Certificate", className: "hidden w-28 lg:table-cell" },
+  { key: "traffic", label: "Page views", className: "hidden w-44 md:table-cell", align: "end" },
+] as const;
+
+function SitesTable({
+  environmentId,
+  snapshot,
+  now,
+  projects,
+  onOpenSite,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly snapshot: SitesSnapshot;
+  readonly now: number;
   readonly projects: ReadonlyMap<string, LibraryProject>;
-  readonly onSelect: (siteId: string) => void;
+  readonly onOpenSite: (siteId: string) => void;
 }) {
   return (
-    <nav aria-label="Registered sites" className="lg:sticky lg:top-4">
-      <ul className="flex flex-col gap-1">
-        {snapshot.sites.map((site) => {
-          const health = SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state];
-          const current = site.id === selectedId;
-          return (
-            <li key={site.id} style={projectColorStyle(siteColor(site, projects))}>
-              <button
-                type="button"
-                aria-current={current ? "page" : undefined}
-                onClick={() => onSelect(site.id)}
-                className={cn(
-                  "flex w-full min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 text-start outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  current ? "bg-accent/70" : "hover:bg-accent/50",
-                )}
-              >
-                <span
-                  aria-hidden
-                  className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
-                >
-                  <GlobeIcon className="size-4" />
-                  <span className="absolute -end-0.5 -bottom-0.5 inline-flex rounded-full bg-background p-0.5">
-                    <LibraryStateDot tone={health.tone} />
-                  </span>
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{site.name}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {health.label} · {siteHost(site.url)}
-                  </span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <LibraryTable label="Registered sites" columns={SITE_COLUMNS}>
+      {snapshot.sites.map((site) => {
+        const state = SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state];
+        const checks = siteChecks(site, snapshot);
+        const vitals = checkVitals(checks, now);
+        return (
+          <tr
+            key={site.id}
+            style={projectColorStyle(siteColor(site, projects))}
+            className={LIBRARY_TABLE_ROW}
+          >
+            <td className={LIBRARY_CELL}>
+              <div className="flex min-w-0 items-center gap-3">
+                <SiteTile />
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => onOpenSite(site.id)}
+                    className={cn(LIBRARY_ROW_TARGET, "block max-w-full truncate font-medium")}
+                  >
+                    {site.name}
+                  </button>
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {siteHost(site.url)}
+                  </p>
+                </div>
+              </div>
+            </td>
+            <td className={LIBRARY_CELL}>
+              <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
+            </td>
+            <td className={cn(LIBRARY_CELL, "hidden sm:table-cell")}>
+              <CheckTicks
+                checks={checks}
+                staleAfterSeconds={snapshot.staleAfterSeconds}
+                now={now}
+              />
+            </td>
+            <td className={cn(LIBRARY_CELL, "hidden text-xs tabular-nums lg:table-cell")}>
+              {vitals.slowest === null ? (
+                <span className="text-muted-foreground">None</span>
+              ) : (
+                formatDuration(vitals.slowest)
+              )}
+            </td>
+            <td className={cn(LIBRARY_CELL, "hidden text-xs lg:table-cell")}>
+              <CertificateLabel days={vitals.certificate} />
+            </td>
+            <td className={cn(LIBRARY_CELL, "hidden md:table-cell")}>
+              <SiteTrafficCell environmentId={environmentId} siteId={site.id} />
+            </td>
+          </tr>
+        );
+      })}
+    </LibraryTable>
+  );
+}
+
+/** Each row reads its own site's traffic; the query is shared with the site's page. */
+function SiteTrafficCell({
+  environmentId,
+  siteId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly siteId: string;
+}) {
+  const analytics = useEnvironmentQuery(sites.analytics({ environmentId, input: { siteId } }));
+  const data = analytics.data;
+  if (!data) {
+    return analytics.isPending ? (
+      <Skeleton className="ms-auto h-6 w-36" />
+    ) : (
+      <p className="text-end text-xs text-muted-foreground">Unavailable</p>
+    );
+  }
+  const days = siteTrafficDays(data);
+  return (
+    <div className="flex items-center justify-end gap-3">
+      <Sparkline
+        values={days.map((day) => day.pageviews)}
+        label={`Daily page views over the last ${data.days} days`}
+      />
+      <span className="w-10 text-end text-sm font-medium tabular-nums">
+        {formatCount(data.pageviews)}
+      </span>
+    </div>
   );
 }
 
@@ -441,102 +621,43 @@ function ServicesRegistry({
     );
   }
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-sm text-muted-foreground">
-          Services can back several sites. Register one here, then link it from each site that uses
-          it.
-        </p>
-        <Button
-          shape="pill"
-          size="sm"
-          variant="outline"
-          disabled={!canManage}
-          onClick={() => onEdit({ kind: "service" })}
-        >
-          <PlusIcon />
-          Register service
-        </Button>
-      </div>
-      {snapshot.services.map((service) => {
-        const users = snapshot.sites.filter((site) => site.serviceIds.includes(service.id));
-        return (
-          <SiteServiceCard
-            key={service.id}
-            service={service}
-            checks={snapshot.checks.filter((check) => check.service_id === service.id)}
-            staleAfterSeconds={snapshot.staleAfterSeconds}
-            now={now}
-            canManage={canManage}
-            usedBy={
-              <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                {users.length ? (
-                  <>
-                    Used by
-                    {users.map((site) => (
-                      <Button
-                        key={site.id}
-                        shape="pill"
-                        size="xs"
-                        variant="secondary"
-                        onClick={() => onOpenSite(site.id)}
-                      >
-                        <GlobeIcon />
-                        {site.name}
-                      </Button>
-                    ))}
-                  </>
-                ) : (
-                  "Not used by any site yet."
-                )}
-              </p>
-            }
-            onEditService={() => onEdit({ kind: "service", row: service })}
-            onAddCheck={() => onEdit({ kind: "check", serviceId: service.id })}
-            onEditCheck={(check) => onEdit({ kind: "check", row: check })}
-          />
-        );
-      })}
-    </div>
+    <EndpointsTable
+      label="Services and their checks"
+      services={snapshot.services}
+      snapshot={snapshot}
+      now={now}
+      canManage={canManage}
+      usedBy={{ sites: snapshot.sites, onOpenSite }}
+      onEditService={(service) => onEdit({ kind: "service", row: service })}
+      onAddCheck={(service) => onEdit({ kind: "check", serviceId: service.id })}
+      onEditCheck={(check) => onEdit({ kind: "check", row: check })}
+    />
   );
 }
+
+const SKELETON_ROWS = ["first", "second", "third", "fourth"];
 
 /** The page's own shape while the first snapshot loads, so the layout holds when it arrives. */
 function SitesSkeleton() {
   return (
-    <div role="status" aria-label="Loading sites" className="flex flex-col gap-8">
-      <Skeleton shape="pill" className="h-10 w-56" />
-      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1">
-          {["first", "second", "third"].map((row) => (
-            <div key={row} className="flex items-center gap-3 px-2.5 py-2">
-              <Skeleton shape="card" className="size-9" />
-              <div className="flex flex-1 flex-col gap-1.5">
-                <Skeleton className="h-3.5 w-3/4" />
-                <Skeleton className="h-2.5 w-1/2" />
-              </div>
+    <div role="status" aria-label="Loading sites" className="flex flex-col gap-5">
+      <Skeleton shape="card" className="h-15 w-full" />
+      <div className="flex h-10 items-end gap-5 border-b border-border pb-3">
+        <Skeleton className="h-3.5 w-14" />
+        <Skeleton className="h-3.5 w-18" />
+      </div>
+      <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
+        {SKELETON_ROWS.map((row) => (
+          <div key={row} className="flex items-center gap-3 px-3 py-2.5">
+            <Skeleton shape="card" className="size-7" />
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Skeleton className="h-3.5 w-40 max-w-full" />
+              <Skeleton className="h-2.5 w-28 max-w-full" />
             </div>
-          ))}
-        </div>
-        <div className="flex min-w-0 flex-col gap-8">
-          <div className="flex items-start gap-5 rounded-3xl border border-border p-5 sm:p-7">
-            <Skeleton shape="card" className="size-16" />
-            <div className="flex flex-1 flex-col gap-3 pt-1">
-              <Skeleton className="h-8 w-48 max-w-full" />
-              <Skeleton className="h-3 w-72 max-w-full" />
-            </div>
+            <Skeleton shape="pill" className="h-5 w-16" />
+            <Skeleton className="hidden h-6 w-36 md:block" />
           </div>
-          <div className={cn(LIBRARY_OUTLINE, "flex flex-col gap-4 p-4")}>
-            {["first", "second", "third"].map((row) => (
-              <div key={row} className="flex items-center gap-3">
-                <Skeleton shape="pill" className="size-2" />
-                <Skeleton className="h-3.5 flex-1" />
-                <Skeleton shape="pill" className="h-5 w-16" />
-              </div>
-            ))}
-          </div>
-          <SiteTrafficSkeleton />
-        </div>
+        ))}
       </div>
     </div>
   );

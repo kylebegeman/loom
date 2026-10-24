@@ -4,10 +4,16 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { isTerminalBotRunStatus, type BotRun, type BotVerdictValue } from "@t3tools/contracts/fork";
 import { BOT_RUN_STATES, BOT_VERDICT_STATES } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { ArrowUpRightIcon, ChevronDownIcon, PlayIcon, SquareIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+  ListFilterIcon,
+  PlayIcon,
+  SquareIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "~/components/ui/menu";
 import { cn } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
@@ -16,7 +22,7 @@ import {
   LibraryStateDot,
 } from "../project-library/LibraryControls";
 import { BotFindings, RawReply } from "./BotFindings";
-import { BotTile, BotRunStatusBadge, VerdictChip, runDuration, runTime } from "./BotIdentity";
+import { BotRunStatusBadge, BotTile, VerdictChip, runDuration, runTime } from "./BotIdentity";
 import { BotRunFeedback } from "./BotRunFeedback";
 import { bots } from "./state";
 
@@ -77,15 +83,18 @@ function RunRow({
     setBusy(false);
   };
 
+  const feedback = !active && (canRate || run.rating != null || run.note);
+  const expandable = detail !== null || feedback;
+
   return (
-    <li className="flex min-w-0 flex-col gap-2 px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+    <li className="flex min-w-0 flex-col gap-1.5 px-3 py-2.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
         {showBot ? (
-          <BotTile bot={{ id: run.botId }} status={<LibraryStateDot tone={tone} />} />
+          <BotTile bot={{ id: run.botId }} size="sm" />
         ) : (
-          <LibraryStateDot tone={tone} className="mx-1" />
+          <LibraryStateDot tone={tone} className="mx-2" />
         )}
-        <div className="min-w-0 flex-1 basis-48">
+        <div className="flex min-w-0 flex-1 basis-56 flex-col">
           <p className="truncate text-sm font-medium">
             {showBot ? run.botName : summary || "No inputs"}
           </p>
@@ -112,8 +121,9 @@ function RunRow({
           {run.status === "queued" ? null : (
             <Button
               shape="pill"
-              size="xs"
+              size="icon-xs"
               variant="ghost"
+              aria-label="Open thread"
               render={
                 <Link
                   to="/$environmentId/$threadId"
@@ -126,16 +136,15 @@ function RunRow({
               }
             >
               <ArrowUpRightIcon />
-              Open thread
             </Button>
           )}
-          {detail ? (
+          {expandable ? (
             <Button
               shape="pill"
               size="icon-xs"
               variant="ghost"
               aria-expanded={expanded}
-              aria-label={`${expanded ? "Hide" : "Show"} ${detail}`}
+              aria-label={`${expanded ? "Hide" : "Show"} ${detail ?? "feedback"}`}
               onClick={() => setExpanded((open) => !open)}
             >
               <ChevronDownIcon
@@ -145,37 +154,46 @@ function RunRow({
           ) : null}
         </div>
       </div>
-      <div className={cn("flex min-w-0 flex-col gap-2", showBot ? "ps-12" : "ps-7")}>
-        {showBot && summary ? (
-          <p className="truncate text-xs text-muted-foreground">{summary}</p>
-        ) : null}
-        {verdict && !expanded ? (
-          <p className="line-clamp-2 text-sm text-foreground/90">{verdict.summary}</p>
-        ) : null}
-        {run.error ? (
-          <p className="text-sm text-destructive-foreground wrap-anywhere">{run.error}</p>
-        ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
-        {expanded && verdict ? (
-          <BotFindings run={run} verdict={verdict} />
-        ) : expanded && run.result ? (
-          <RawReply run={run} />
-        ) : null}
-        {!active && (canRate || run.rating != null || run.note) ? (
-          <BotRunFeedback environmentId={environmentId} run={run} canRate={canRate} />
-        ) : null}
-      </div>
+      {(showBot && summary) ||
+      (verdict && !expanded) ||
+      run.error ||
+      error ||
+      (expanded && (detail || feedback)) ? (
+        <div className={cn("flex min-w-0 flex-col gap-2", showBot ? "ps-9" : "ps-7")}>
+          {showBot && summary ? (
+            <p className="truncate text-xs text-muted-foreground">{summary}</p>
+          ) : null}
+          {verdict && !expanded ? (
+            <p className="line-clamp-1 text-sm text-foreground/90">{verdict.summary}</p>
+          ) : null}
+          {run.error ? (
+            <p className="text-sm text-destructive-foreground wrap-anywhere">{run.error}</p>
+          ) : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive-foreground">
+              {error}
+            </p>
+          ) : null}
+          {expanded && verdict ? (
+            <BotFindings run={run} verdict={verdict} />
+          ) : expanded && run.result ? (
+            <RawReply run={run} />
+          ) : null}
+          {expanded && feedback ? (
+            <BotRunFeedback environmentId={environmentId} run={run} canRate={canRate} />
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }
 
 const FILTERS = ["all", "pass", "fail", "needs_attention"] as const;
 
-/** Narrows the run list to one verdict; runs without a verdict only show under All. */
+/**
+ * Narrows the run list to one verdict; runs without a verdict only show under All. A menu, so it
+ * sits in the tab strip's toolbar instead of stacking a second row of tabs under it.
+ */
 export function VerdictFilter({
   value,
   onChange,
@@ -184,22 +202,30 @@ export function VerdictFilter({
   readonly onChange: (value: BotVerdictValue | null) => void;
 }) {
   return (
-    <ToggleGroup
-      shape="pill"
-      variant="segmented"
-      aria-label="Filter runs by verdict"
-      value={[value ?? "all"]}
-      onValueChange={(next) => {
-        const filter = FILTERS.find((entry) => entry === next[0]);
-        if (filter) onChange(filter === "all" ? null : filter);
-      }}
-    >
-      {FILTERS.map((filter) => (
-        <ToggleGroupItem key={filter} value={filter}>
-          {filter === "all" ? "All" : BOT_VERDICT_STATES[filter].label}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    <Menu>
+      <MenuTrigger
+        render={<Button shape="pill" size="xs" variant={value ? "secondary" : "ghost"} />}
+      >
+        <ListFilterIcon />
+        {value ? BOT_VERDICT_STATES[value].label : "All verdicts"}
+        <ChevronDownIcon />
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="end">
+        <MenuRadioGroup
+          value={value ?? "all"}
+          onValueChange={(next) => {
+            const filter = FILTERS.find((entry) => entry === next);
+            if (filter) onChange(filter === "all" ? null : filter);
+          }}
+        >
+          {FILTERS.map((filter) => (
+            <MenuRadioItem key={filter} value={filter}>
+              {filter === "all" ? "All verdicts" : BOT_VERDICT_STATES[filter].label}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -251,10 +277,10 @@ export function BotsEmptyList({
   readonly action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border px-4 py-4">
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3">
       <span
         aria-hidden
-        className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
       >
         <Icon className="size-4" />
       </span>
@@ -275,8 +301,8 @@ export function BotRowsSkeleton({ label = "Loading runs" }: { readonly label?: s
       className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
     >
       {SKELETON_ROWS.map((row) => (
-        <div key={row} className="flex items-center gap-3 px-4 py-3">
-          <Skeleton shape="card" className="size-9" />
+        <div key={row} className="flex items-center gap-3 px-3 py-2.5">
+          <Skeleton shape="card" className="size-6" />
           <div className="flex flex-1 flex-col gap-1.5">
             <Skeleton className="h-3.5 w-1/3" />
             <Skeleton className="h-2.5 w-1/2" />

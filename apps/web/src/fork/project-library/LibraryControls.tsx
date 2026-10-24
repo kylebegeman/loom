@@ -286,7 +286,7 @@ export function LibraryStateDot({
  * A surface drawn with its outline alone, for grouping that should not compete with the page's
  * one filled hero.
  */
-export const LIBRARY_OUTLINE = "rounded-2xl border border-border";
+export const LIBRARY_OUTLINE = "rounded-xl border border-border";
 
 /**
  * One headline number in a row of figures, divided by hairlines rather than boxed. Large values
@@ -355,16 +355,16 @@ export function LibraryEmpty({
   return (
     <section
       aria-label={title}
-      className="relative isolate flex flex-col items-center gap-4 overflow-hidden rounded-3xl border border-dashed border-border px-6 py-12 text-center"
+      className="relative isolate flex flex-col items-center gap-3.5 overflow-hidden rounded-xl border border-dashed border-border px-6 py-10 text-center"
     >
       <span
         aria-hidden
-        className="inline-flex size-14 items-center justify-center rounded-2xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+        className="inline-flex size-10 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
       >
-        <Icon className="size-6" />
+        <Icon className="size-5" />
       </span>
-      <div className="max-w-md space-y-1.5">
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <div className="max-w-md space-y-1">
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
         <div className="text-sm text-muted-foreground">{children}</div>
       </div>
       {action}
