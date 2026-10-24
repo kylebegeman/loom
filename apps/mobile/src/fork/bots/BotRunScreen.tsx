@@ -6,11 +6,13 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotParameter, BotTarget } from "@t3tools/contracts/fork";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage, BotNotice } from "./BotControls";
+import { BotTile, BotsSection } from "./BotIdentity";
 import { bots, useBotsCapabilities, useBotsCollection } from "./state";
 import { useBotActionLifetime } from "./useBotActionLifetime";
 import {
@@ -46,7 +48,7 @@ export function RunChoice({
   const selected = choices.find((choice) => choice.value === value);
   return (
     <View className="gap-2">
-      <Text className="font-t3-semibold">{label}</Text>
+      <Text className="text-sm font-t3-medium text-foreground">{label}</Text>
       <Button
         label={selected?.label ?? "Choose…"}
         accessibilityLabel={`${label}: ${selected?.label ?? "Choose"}`}
@@ -57,13 +59,14 @@ export function RunChoice({
         <Text className="text-sm text-foreground-muted">{selected.detail}</Text>
       ) : null}
       {expanded ? (
-        <View className="overflow-hidden rounded-2xl">
-          {choices.map((choice) => (
+        <View className="overflow-hidden rounded-2xl border border-border-subtle">
+          {choices.map((choice, index) => (
             <ListChoiceRow
               key={choice.value}
               label={choice.label}
               description={choice.detail}
               selected={choice.value === value}
+              separated={index > 0}
               disabled={disabled || choice.disabled}
               onPress={() => {
                 onChange(choice.value);
@@ -105,7 +108,9 @@ export function BotParameterFields({
             />
           ) : parameter.type === "boolean" ? (
             <View className="flex-row items-center justify-between gap-3">
-              <Text className="flex-1 font-t3-semibold">{parameter.label}</Text>
+              <Text className="flex-1 text-sm font-t3-medium text-foreground">
+                {parameter.label}
+              </Text>
               <Switch
                 accessibilityLabel={parameter.label}
                 disabled={disabled}
@@ -115,7 +120,7 @@ export function BotParameterFields({
             </View>
           ) : (
             <>
-              <Text className="font-t3-semibold">
+              <Text className="text-sm font-t3-medium text-foreground">
                 {parameter.label}
                 {parameter.required ? "" : " (optional)"}
               </Text>
@@ -131,7 +136,7 @@ export function BotParameterFields({
             </>
           )}
           {parameter.description ? (
-            <Text className="text-sm text-foreground-muted">{parameter.description}</Text>
+            <Text className="text-xs text-foreground-muted">{parameter.description}</Text>
           ) : null}
         </View>
       ))}
@@ -206,7 +211,7 @@ export function BotRunDestinationFields({
   return (
     <>
       {fixedProjectId ? (
-        <Text>
+        <Text className="text-sm text-foreground">
           Project:{" "}
           {destination.projects.find((project) => project.id === fixedProjectId)?.title ??
             fixedProjectId}
@@ -225,7 +230,9 @@ export function BotRunDestinationFields({
         />
       ) : null}
       {destination.projectRequired && destination.projects.length === 0 ? (
-        <Text>No projects on this computer. Add a project before running this bot.</Text>
+        <Text className="text-sm text-warning-foreground">
+          No projects on this computer. Add a project before running this bot.
+        </Text>
       ) : null}
       {targets.data?.library === "available" && targets.data.targets.length > 1 ? (
         <RunChoice
@@ -281,7 +288,7 @@ export function BotRunDestinationFields({
         />
       ) : null}
       {destination.checkoutId && !destination.checkoutThreadId && destination.usesCheckout ? (
-        <Text>
+        <Text className="text-sm text-warning-foreground">
           The selected checkout is no longer available. Choose another checkout or Project root
           before continuing.
         </Text>
@@ -356,24 +363,33 @@ function BotRunForm({
   };
   return (
     <>
-      <Text className="text-foreground-muted">
-        {bot.description || "Fill in the inputs, then run."}
-      </Text>
-      {bot.parameters.length ? (
-        <BotParameterFields
-          parameters={bot.parameters}
-          values={values}
-          onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
-          disabled={busy}
-        />
-      ) : (
-        <Text>This bot takes no inputs.</Text>
-      )}
+      <View className="flex-row items-center gap-3">
+        <BotTile botId={bot.id} />
+        <Text className="min-w-0 flex-1 text-sm text-foreground-muted">
+          {bot.description || "Fill in the inputs, then run."}
+        </Text>
+      </View>
+      <BotsSection title="Inputs">
+        {bot.parameters.length ? (
+          <View className="gap-4">
+            <BotParameterFields
+              parameters={bot.parameters}
+              values={values}
+              onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
+              disabled={busy}
+            />
+          </View>
+        ) : (
+          <Text className="px-1 text-sm text-foreground-muted">This bot takes no inputs.</Text>
+        )}
+      </BotsSection>
       {callerThreadId ? (
-        <>
-          <Text>Uses the project and checkout from the calling thread.</Text>
+        <View className="gap-3">
+          <Text className="text-sm text-foreground-muted">
+            Uses the project and checkout from the calling thread.
+          </Text>
           <View className="flex-row items-center justify-between gap-3">
-            <Text className="flex-1">Post the result to this thread</Text>
+            <Text className="flex-1 text-sm text-foreground">Post the result to this thread</Text>
             <Switch
               accessibilityLabel="Post the result to this thread"
               disabled={busy}
@@ -381,7 +397,7 @@ function BotRunForm({
               onValueChange={setNotify}
             />
           </View>
-        </>
+        </View>
       ) : (
         <BotRunDestinationFields
           environmentId={environmentId}
@@ -406,6 +422,8 @@ function BotRunForm({
         label={busy ? "Starting…" : `Run ${bot.name}`}
         loading={busy}
         tone="primary"
+        icon="play"
+        fullWidth
         disabled={!canRun || checkoutMissing}
         onPress={() => void submit()}
       />
@@ -429,14 +447,26 @@ export function BotRunRouteScreen({
           bot={bot}
           callerThreadId={route.params.callerThreadId}
         />
+      ) : collection.query.isPending ? (
+        <View accessible accessibilityLabel="Loading bot" className="gap-5">
+          <View className="flex-row items-center gap-3">
+            <View className="size-10 rounded-xl bg-row-hover" />
+            <View className="h-3.5 flex-1 rounded-md bg-row-hover" />
+          </View>
+          <View className="h-11 w-full rounded-xl bg-row-hover" />
+          <View className="h-11 w-full rounded-xl bg-row-hover" />
+          <View className="h-12 w-full rounded-full bg-row-hover" />
+        </View>
       ) : (
-        <Text>
-          {collection.query.isPending
-            ? "Loading bot…"
-            : collection.query.error
-              ? "Could not load this bot. Reconnect and try again."
-              : "This bot is no longer available on this computer."}
-        </Text>
+        <EmptyState
+          variant="plain"
+          title={collection.query.error ? "Could not load this bot" : "Bot not available"}
+          detail={
+            collection.query.error
+              ? "Reconnect and try again."
+              : "This bot is no longer available on this computer."
+          }
+        />
       )}
     </BotPage>
   );

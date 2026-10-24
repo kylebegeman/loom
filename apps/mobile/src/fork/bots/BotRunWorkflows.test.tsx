@@ -116,6 +116,13 @@ vi.mock("../../state/query", () => ({
 }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+    <button onClick={onPress}>{children}</button>
+  ),
+}));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../library/libraryProjectColors", () => ({
+  useLibraryProjectColorValue: () => () => "#000000",
 }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -214,7 +221,12 @@ vi.mock("./BotRunScreen", () => ({
   ),
 }));
 vi.mock("./BotRunDetailScreen", () => ({
-  BotRunSummary: ({ run }: { run: BotRun }) => <span>{run.id}</span>,
+  BotRunRow: ({ run, actions }: { run: BotRun; actions?: ReactNode }) => (
+    <div>
+      <span>{run.id}</span>
+      {actions}
+    </div>
+  ),
 }));
 
 import { BotBatchesRouteScreen } from "./BotBatchesScreen";

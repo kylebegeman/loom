@@ -32,14 +32,12 @@ import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotInput, BotNotice, BotPage, BotSection, BotToggle } from "./BotControls";
 import { BotModelField } from "./BotModelField";
+import { RUNTIME_MODE_LABELS } from "./runLogic";
 import { bots, useBotsCapabilities, useBotsCollection } from "./state";
 
-const RUNTIME_OPTIONS = [
-  { value: "approval-required", label: "Ask before actions" },
-  { value: "auto-accept-edits", label: "Accept edits" },
-  { value: "auto", label: "Auto" },
-  { value: "full-access", label: "Full access" },
-] as const;
+const RUNTIME_OPTIONS = (
+  ["approval-required", "auto-accept-edits", "auto", "full-access"] as const
+).map((value) => ({ value, label: RUNTIME_MODE_LABELS[value] }));
 const WORKSPACE_OPTIONS = [
   { value: "scratch", label: "Fresh scratch folder" },
   { value: "project", label: "Project checkout" },

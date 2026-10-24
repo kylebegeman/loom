@@ -142,6 +142,10 @@ vi.mock("../../components/ui/ListChoiceRow", () => ({
     </button>
   ),
 }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../library/libraryProjectColors", () => ({
+  useLibraryProjectColorValue: () => () => "#000000",
+}));
 vi.mock("./BotControls", () => ({
   BotPage: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   BotNotice: ({ error, detail }: { error?: string; detail?: string }) => (

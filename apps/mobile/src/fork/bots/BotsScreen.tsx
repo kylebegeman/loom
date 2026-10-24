@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
-import { FlatList, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_FEATURE,
@@ -15,10 +15,14 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { RowPressable } from "../../components/ui/RowPressable";
 import * as Dialog from "../../components/ui/Dialog";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
+import { cn } from "../../lib/cn";
+import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -26,6 +30,8 @@ import { BotChoice, BotInput, BotNotice, BotPage, BotSection, BotToggle } from "
 import { useBotActionLifetime } from "./useBotActionLifetime";
 import { BotSuggestions } from "./BotSuggestions";
 import { BotRunHistory } from "./BotRunDetailScreen";
+import { BotRowsSkeleton, BotSpecGrid, BotTile, BotsOutline, BotsSection } from "./BotIdentity";
+import { RUNTIME_MODE_LABELS, botDetail, workspaceLabel } from "./runLogic";
 import {
   bots,
   useBotsCapabilities,
@@ -75,6 +81,8 @@ export function BotsRouteScreen({
     />
   );
 }
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 function useBotsMenu(environmentId: EnvironmentId | null) {
   const navigation = useNavigation();
@@ -173,11 +181,35 @@ function BotsCatalog({
   );
   const missingStarters =
     starters.data?.starters.filter((starter) => starter.state === "removed") ?? [];
+  const activeCount = collection.bots.filter((bot) => bot.archivedAt === null).length;
+  const archivedCount = collection.bots.length - activeCount;
+  const offline = environmentId !== null && !capabilities.connected;
+  const showList =
+    environmentId !== null && capabilities.supported && !(offline && !collection.bots.length);
+  const createDisabled = !canCreate || !capabilities.connected;
+  const newBot = (
+    <Button
+      label="New bot"
+      tone="primary"
+      icon="plus"
+      disabled={createDisabled}
+      onPress={() => {
+        if (environmentId) navigation.navigate("BotsCreate", { environmentId });
+      }}
+    />
+  );
+  const fromThread =
+    environmentId && callerThreadId && capabilities.fromThreadSupported ? (
+      <Button
+        label="Create from this thread"
+        disabled={createDisabled}
+        onPress={() =>
+          navigation.navigate("BotsCreate", { environmentId, sourceThreadId: callerThreadId })
+        }
+      />
+    ) : null;
   const header = (
-    <View className="gap-4 pb-4">
-      <Text className="text-sm text-foreground-muted">
-        Reusable jobs with their own instructions, inputs and model.
-      </Text>
+    <View className="gap-5 pb-4">
       {computers.length > 1 || (computers.length === 1 && computers[0]?.value !== environmentId) ? (
         <BotChoice
           label="Computer"
@@ -185,78 +217,114 @@ function BotsCatalog({
           options={computers}
           onChange={onComputer}
         />
-      ) : environmentId ? (
-        <Text className="font-t3-medium">{capabilities.label}</Text>
       ) : null}
       {!environmentId ? (
-        <>
-          <BotNotice detail="Connect a computer to create and run bots." />
-          <Button label="Connect computer" onPress={() => navigation.navigate("Connections")} />
-        </>
-      ) : !capabilities.connected ? (
-        <View className="gap-2">
+        <EmptyState
+          variant="plain"
+          title="Connect a computer"
+          detail="Bots run on a computer running Loom. Connect one to create bots and run them."
+          actionLabel="Connect computer"
+          onAction={() => navigation.navigate("Connections")}
+        />
+      ) : offline && !collection.bots.length ? (
+        <EmptyState
+          variant="plain"
+          title={`${capabilities.label} is offline`}
+          detail={`Reconnect ${capabilities.label} to see, update and run its bots.`}
+          actionLabel="Manage connections"
+          onAction={() => navigation.navigate("Connections")}
+        />
+      ) : offline ? (
+        <View className="gap-1">
           <BotNotice
             detail={`Reconnect ${capabilities.label} to update or run bots. Saved information may be out of date.`}
           />
-          <Button label="Manage connections" onPress={() => navigation.navigate("Connections")} />
+          <Button
+            label="Manage connections"
+            tone="text"
+            onPress={() => navigation.navigate("Connections")}
+          />
         </View>
       ) : !capabilities.supported ? (
-        <BotNotice detail="Update this computer's Loom server to use Bots." />
+        <EmptyState
+          variant="plain"
+          title="Bots need a newer server"
+          detail={`Update ${capabilities.label}'s Loom server to create and run bots here.`}
+        />
       ) : null}
-      {environmentId && capabilities.supported ? (
-        <>
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              label="New bot"
-              tone="primary"
-              disabled={!canCreate || !capabilities.connected}
-              onPress={() => navigation.navigate("BotsCreate", { environmentId })}
+      {showList ? (
+        !collection.bots.length ? (
+          collection.query.isPending ? (
+            <CatalogSkeleton />
+          ) : collection.query.error ? (
+            <BotNotice error={collection.query.error} onRetry={collection.refresh} />
+          ) : (
+            <EmptyState
+              variant="plain"
+              title="Create your first bot"
+              detail="A bot is a job you brief agents on again and again, such as a review or a release check. Its instructions, inputs and settings stay fixed, so every run starts from the same brief."
+              action={
+                <View className="items-center gap-2">
+                  {newBot}
+                  {fromThread}
+                </View>
+              }
             />
-            {callerThreadId && capabilities.fromThreadSupported ? (
-              <Button
-                label="Create from this thread"
-                disabled={!canCreate || !capabilities.connected}
-                onPress={() =>
-                  navigation.navigate("BotsCreate", {
-                    environmentId,
-                    sourceThreadId: callerThreadId,
-                  })
-                }
-              />
-            ) : null}
-            {capabilities.inboxSupported ? (
-              <Button
-                label={attention > 0 ? `Inbox (${attention})` : "Inbox"}
-                onPress={() => navigation.navigate("BotsInbox", { environmentId })}
-              />
-            ) : null}
-            <Button
-              label="Run history"
-              onPress={() => navigation.navigate("BotsRuns", { environmentId })}
+          )
+        ) : (
+          <>
+            <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+              <Text className="text-xs tabular-nums text-foreground-muted">
+                {[
+                  plural(activeCount, "bot"),
+                  archivedCount ? `${archivedCount} archived` : null,
+                  `on ${capabilities.label}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+              {capabilities.inboxSupported && attention > 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open inbox, ${attention} ${attention === 1 ? "needs" : "need"} you`}
+                  onPress={() => {
+                    if (environmentId) navigation.navigate("BotsInbox", { environmentId });
+                  }}
+                  className="active:opacity-70"
+                >
+                  <LibraryStateBadge
+                    tone="warning"
+                    label={`${attention} ${attention === 1 ? "needs" : "need"} you`}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
+            <View className="flex-row flex-wrap gap-2">
+              {newBot}
+              {fromThread}
+            </View>
+            <BotInput
+              label="Find a bot"
+              value={filter}
+              onChangeText={setFilter}
+              placeholder="Name or description"
             />
-          </View>
-          <BotInput
-            label="Find a bot"
-            value={filter}
-            onChangeText={setFilter}
-            placeholder="Name or description"
-          />
-          <BotToggle label="Show archived bots" value={archived} onChange={setArchived} />
-          <BotNotice
-            error={error ?? collection.query.error}
-            onRetry={collection.refresh}
-            detail={collection.query.isPending && !collection.bots.length ? "Loading bots…" : null}
-          />
-          {!collection.query.isPending && !collection.query.error && !filtered.length ? (
-            <Text className="text-sm text-foreground-muted">
-              {filter
-                ? "No bots match this search."
-                : archived
-                  ? "No saved bots. Create one or restore a starter."
-                  : "No active bots. Create one, restore a starter or show archived bots."}
-            </Text>
-          ) : null}
-        </>
+            {archivedCount ? (
+              <BotToggle label="Show archived bots" value={archived} onChange={setArchived} />
+            ) : null}
+            <BotNotice
+              error={error ?? collection.query.error}
+              onRetry={collection.query.error ? collection.refresh : undefined}
+            />
+            {!filtered.length ? (
+              <Text className="px-1 text-sm text-foreground-muted">
+                {filter
+                  ? "No bots match this search."
+                  : "Every bot is archived. Show archived bots or create a new one."}
+              </Text>
+            ) : null}
+          </>
+        )
       ) : null}
     </View>
   );
@@ -269,15 +337,22 @@ function BotsCatalog({
       }
     >
       <FlatList
-        data={filtered}
+        data={showList ? filtered : []}
         keyExtractor={(bot) => bot.id}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
         ListHeaderComponent={header}
-        renderItem={({ item: bot }) => (
-          <View className="mb-3 overflow-hidden rounded-2xl bg-grouped-card">
+        renderItem={({ item: bot, index }) => (
+          <View
+            className={cn(
+              "overflow-hidden border-x border-border",
+              index === 0 && "rounded-t-2xl border-t",
+              index === filtered.length - 1 && "rounded-b-2xl border-b",
+            )}
+          >
+            {index > 0 ? <View className="ms-16 h-px bg-border-subtle" /> : null}
             <RowPressable
               accessibilityRole="button"
               accessibilityLabel={`${bot.name}, ${botVersionLabel(bot)}${bot.archivedAt ? ", archived" : ""}`}
@@ -289,28 +364,27 @@ function BotsCatalog({
                     ...(callerThreadId ? { callerThreadId } : {}),
                   });
               }}
-              className="gap-2 p-4 active:opacity-70"
+              className={cn(
+                "min-h-16 flex-row items-center gap-3 px-4 py-3 active:opacity-70",
+                bot.archivedAt && "opacity-70",
+              )}
             >
-              <View className="flex-row items-center justify-between gap-2">
-                <Text className="flex-1 text-base font-t3-semibold">{bot.name}</Text>
-                <Text className="text-xs text-foreground-muted">{botVersionLabel(bot)}</Text>
-              </View>
-              {bot.description ? (
-                <Text numberOfLines={2} className="text-sm text-foreground-muted">
-                  {bot.description}
+              <BotTile botId={bot.id} />
+              <View className="min-w-0 flex-1 gap-0.5">
+                <Text numberOfLines={1} className="text-base font-t3-medium text-foreground">
+                  {bot.name}
                 </Text>
-              ) : null}
-              <Text className="text-xs text-foreground-muted">
-                {bot.modelSelection.model}
-                {bot.archivedAt ? " · Archived" : ""}
-                {bot.library ? " · Shared" : ""}
-              </Text>
+                <Text numberOfLines={1} className="text-xs text-foreground-muted">
+                  {botDetail(bot)}
+                </Text>
+              </View>
+              <SymbolView name="chevron.right" size={14} tintColorClassName="accent-icon-muted" />
             </RowPressable>
           </View>
         )}
         ListFooterComponent={
-          <View className="gap-6">
-            {missingStarters.length && environmentId ? (
+          <View className="gap-6 pt-6">
+            {missingStarters.length && environmentId && capabilities.supported ? (
               <BotSection
                 title="Starter bots"
                 description="Restore a built-in job, then edit its instructions and model."
@@ -443,8 +517,52 @@ function BotDetail({
       },
     });
   };
+  const runDisabled = !bot || disabled || !canRun || bot.archivedAt !== null;
+  const manage = [
+    capabilities.versionsSupported
+      ? { label: "Versions and replay", route: "BotsHistory" as const }
+      : null,
+    capabilities.pipelinesSupported
+      ? { label: "Pipelines", route: "BotsPipelines" as const }
+      : null,
+    capabilities.triggersSupported ? { label: "Triggers", route: "BotsTriggers" as const } : null,
+    capabilities.budgetsSupported
+      ? { label: "Usage and budgets", route: "BotsUsage" as const }
+      : null,
+    capabilities.anywhereSupported
+      ? { label: "Computers, sharing and Vault", route: "BotsComputers" as const }
+      : null,
+  ].filter((entry) => entry !== null);
   return (
-    <BotPage title={bot?.name ?? "Bot"}>
+    <BotPage
+      title={bot?.name ?? "Bot"}
+      menus={
+        bot
+          ? [
+              {
+                title: `More actions for ${bot.name}`,
+                icon: "ellipsis.circle",
+                items: [
+                  {
+                    id: "archive",
+                    title: bot.archivedAt ? "Unarchive bot" : "Archive bot",
+                    icon: "archivebox",
+                    disabled: disabled || !canArchive,
+                    onPress: () => void updateArchive(bot),
+                  },
+                  {
+                    id: "delete",
+                    title: "Delete bot",
+                    icon: "trash",
+                    disabled: disabled || !canDelete,
+                    onPress: deleteBot,
+                  },
+                ],
+              },
+            ]
+          : undefined
+      }
+    >
       <BotNotice
         error={error ?? collection.query.error}
         detail={
@@ -452,126 +570,212 @@ function BotDetail({
         }
       />
       {!bot ? (
-        <BotNotice
-          detail={
-            collection.query.isPending
-              ? "Loading bot…"
-              : collection.query.error
-                ? "Could not load this bot. Try reloading it."
+        collection.query.isPending ? (
+          <BotDetailSkeleton />
+        ) : (
+          <EmptyState
+            variant="plain"
+            title={collection.query.error ? "Could not load this bot" : "Bot not found"}
+            detail={
+              collection.query.error
+                ? "Try reloading it."
                 : "This bot was removed or is not available on this computer."
-          }
-          onRetry={collection.refresh}
-        />
+            }
+            actionLabel="Reload bots"
+            onAction={collection.refresh}
+          />
+        )
       ) : (
         <>
-          <Text className="text-sm text-foreground-muted">
-            {bot.description || "A reusable job."}
-          </Text>
-          <Text className="text-xs text-foreground-muted">
-            {capabilities.label} · {botVersionLabel(bot)}
-            {bot.archivedAt ? " · Archived" : ""}
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              label="Run bot"
-              tone="primary"
-              disabled={disabled || !canRun || bot.archivedAt !== null}
-              onPress={() =>
-                navigation.navigate("BotsRun", {
-                  environmentId,
-                  botId,
-                  ...(callerThreadId ? { callerThreadId } : {}),
-                })
-              }
-            />
-            <Button
-              label="Edit bot"
-              disabled={disabled || !canEdit}
-              onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
-            />
+          <View className="gap-4 rounded-3xl border border-border bg-card p-5">
+            <View className="flex-row items-start gap-4">
+              <BotTile botId={bot.id} size="xl" />
+              <View className="min-w-0 flex-1 gap-1.5">
+                <Text
+                  accessibilityRole="header"
+                  className="text-2xl font-t3-semibold text-foreground"
+                >
+                  {bot.name}
+                </Text>
+                <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+                  {bot.archivedAt ? <LibraryStateBadge tone="neutral" label="Archived" /> : null}
+                  {bot.origin?.kind === "starter" ? (
+                    <LibraryStateBadge tone="neutral" label="Starter" />
+                  ) : null}
+                  {bot.library == null ? null : (
+                    <LibraryStateBadge tone="neutral" label="From the Library" />
+                  )}
+                  <Text className="text-xs tabular-nums text-foreground-muted">
+                    {botVersionLabel(bot)} · {capabilities.label}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            {bot.description ? (
+              <Text className="text-sm text-foreground-muted">{bot.description}</Text>
+            ) : null}
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                label="Run bot"
+                tone="primary"
+                icon="play"
+                disabled={runDisabled}
+                onPress={() =>
+                  navigation.navigate("BotsRun", {
+                    environmentId,
+                    botId,
+                    ...(callerThreadId ? { callerThreadId } : {}),
+                  })
+                }
+              />
+              {capabilities.batchesSupported ? (
+                <Button
+                  label="Run on many"
+                  icon="square.on.square"
+                  disabled={runDisabled}
+                  onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
+                />
+              ) : null}
+              <Button
+                label="Edit bot"
+                icon="pencil"
+                disabled={disabled || !canEdit}
+                onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
+              />
+            </View>
+            <View className="border-t border-border-subtle pt-4">
+              <BotSpecGrid
+                rows={[
+                  ["Model", bot.modelSelection.model],
+                  ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
+                  ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
+                  ["Runs in", workspaceLabel(bot.workspace)],
+                  ["Time limit", `${bot.timeoutMinutes} minutes`],
+                  ["Runs at once", String(bot.maxConcurrentRuns)],
+                  ["Output", bot.output === "verdict" ? "Structured verdict" : "Text"],
+                  [
+                    "Inputs",
+                    bot.parameters
+                      .map(
+                        (parameter) =>
+                          `${parameter.label}${parameter.required ? "" : " (optional)"}`,
+                      )
+                      .join(", ") || "None",
+                  ],
+                ]}
+              />
+            </View>
           </View>
-          <BotSection title="Instructions">
-            <Text selectable className="text-sm text-foreground">
-              {bot.instructions}
-            </Text>
-          </BotSection>
-          <BotSection title="Run settings">
-            <Text>Model: {bot.modelSelection.model}</Text>
-            <Text>Permissions: {bot.runtimeMode.replaceAll("-", " ")}</Text>
-            <Text>Mode: {bot.interactionMode === "plan" ? "Plan only" : "Do the work"}</Text>
-            <Text>
-              Workspace:{" "}
-              {bot.workspace.type === "scratch"
-                ? "Fresh scratch folder"
-                : bot.workspace.checkout === "caller"
-                  ? "Selected thread's checkout"
-                  : bot.workspace.worktree
-                    ? "New worktree"
-                    : "Project checkout"}
-            </Text>
-            <Text>Time limit: {bot.timeoutMinutes} minutes</Text>
-            <Text>Concurrent runs: {bot.maxConcurrentRuns}</Text>
-            <Text>Output: {bot.output === "verdict" ? "Structured verdict" : "Text"}</Text>
-            {bot.parameters.map((parameter) => (
-              <Text key={parameter.name}>
-                {parameter.label}: {parameter.type}
-                {parameter.required ? ", required" : ", optional"}
-              </Text>
-            ))}
-          </BotSection>
-          <BotSection title="Manage">
-            {capabilities.versionsSupported ? (
-              <Button
-                label="Versions and replay"
-                onPress={() => navigation.navigate("BotsHistory", { environmentId, botId })}
-              />
-            ) : null}
-            {capabilities.pipelinesSupported ? (
-              <Button
-                label="Pipelines"
-                onPress={() => navigation.navigate("BotsPipelines", { environmentId, botId })}
-              />
-            ) : null}
-            {capabilities.batchesSupported ? (
-              <Button
-                label="Batches"
-                onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
-              />
-            ) : null}
-            {capabilities.triggersSupported ? (
-              <Button
-                label="Triggers"
-                onPress={() => navigation.navigate("BotsTriggers", { environmentId, botId })}
-              />
-            ) : null}
-            {capabilities.budgetsSupported ? (
-              <Button
-                label="Usage and budgets"
-                onPress={() => navigation.navigate("BotsUsage", { environmentId, botId })}
-              />
-            ) : null}
-            {capabilities.anywhereSupported ? (
-              <Button
-                label="Computers, sharing and Vault"
-                onPress={() => navigation.navigate("BotsComputers", { environmentId, botId })}
-              />
-            ) : null}
-            <Button
-              label={bot.archivedAt ? "Unarchive bot" : "Archive bot"}
-              disabled={disabled || !canArchive}
-              onPress={() => void updateArchive(bot)}
-            />
-            <Button
-              label="Delete bot"
-              tone="danger"
-              disabled={disabled || !canDelete}
-              onPress={deleteBot}
-            />
-          </BotSection>
+          <BotInstructions instructions={bot.instructions} />
+          {manage.length ? (
+            <BotsSection title="Manage">
+              <BotsOutline>
+                {manage.map((entry, index) => (
+                  <RowPressable
+                    key={entry.route}
+                    accessibilityRole="button"
+                    accessibilityLabel={entry.label}
+                    onPress={() => navigation.navigate(entry.route, { environmentId, botId })}
+                    className={cn(
+                      "min-h-12 flex-row items-center gap-3 px-4 py-3 active:opacity-70",
+                      index > 0 && "border-t border-border-subtle",
+                    )}
+                  >
+                    <Text className="min-w-0 flex-1 text-sm text-foreground">{entry.label}</Text>
+                    <SymbolView
+                      name="chevron.right"
+                      size={14}
+                      tintColorClassName="accent-icon-muted"
+                    />
+                  </RowPressable>
+                ))}
+              </BotsOutline>
+            </BotsSection>
+          ) : null}
           <BotRunHistory environmentId={environmentId} botId={botId} />
         </>
       )}
     </BotPage>
+  );
+}
+
+/** Lines shown before the brief folds; enough to recognize it, short enough to reach the runs. */
+const INSTRUCTION_PREVIEW_LINES = 4;
+
+/** The brief every run receives, folded to a preview since it can run to pages. */
+function BotInstructions({ instructions }: { readonly instructions: string }) {
+  const [open, setOpen] = useState(false);
+  const lines = instructions.split("\n").length;
+  return (
+    <BotsOutline>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={open ? "Fold instructions" : "Show all instructions"}
+        onPress={() => setOpen((value) => !value)}
+        className="min-h-12 flex-row items-center gap-3 px-4 py-3 active:opacity-70"
+      >
+        <View className="min-w-0 flex-1">
+          <Text className="text-sm font-t3-semibold text-foreground">Instructions</Text>
+          <Text className="text-xs text-foreground-muted">
+            The brief every run receives · {plural(lines, "line")}
+          </Text>
+        </View>
+        <SymbolView
+          name={open ? "chevron.up" : "chevron.down"}
+          size={14}
+          tintColorClassName="accent-icon-muted"
+        />
+      </Pressable>
+      <Text
+        selectable
+        numberOfLines={open ? undefined : INSTRUCTION_PREVIEW_LINES}
+        className="border-t border-border-subtle px-4 py-3 text-sm leading-relaxed text-foreground"
+      >
+        {instructions}
+      </Text>
+    </BotsOutline>
+  );
+}
+
+function CatalogSkeleton() {
+  return (
+    <View accessible accessibilityLabel="Loading bots" className="gap-5">
+      <View className="h-3.5 w-48 rounded-md bg-row-hover" />
+      <View className="h-12 w-32 rounded-full bg-row-hover" />
+      <View className="h-11 w-full rounded-xl bg-row-hover" />
+      <BotRowsSkeleton label="Loading bots" rows={4} />
+    </View>
+  );
+}
+
+function BotDetailSkeleton() {
+  return (
+    <View accessible accessibilityLabel="Loading bot" className="gap-6">
+      <View className="gap-4 rounded-3xl border border-border p-5">
+        <View className="flex-row items-center gap-4">
+          <View className="size-14 rounded-2xl bg-row-hover" />
+          <View className="flex-1 gap-2">
+            <View className="h-6 w-40 rounded-md bg-row-hover" />
+            <View className="h-3 w-32 rounded-md bg-row-hover" />
+          </View>
+        </View>
+        <View className="flex-row gap-2">
+          <View className="h-12 w-28 rounded-full bg-row-hover" />
+          <View className="h-12 w-24 rounded-full bg-row-hover" />
+        </View>
+        <View className="flex-row flex-wrap gap-y-4 border-t border-border-subtle pt-4">
+          {["model", "mode", "workspace", "limit"].map((cell) => (
+            <View key={cell} className="w-1/2 gap-1.5 pe-3">
+              <View className="h-3 w-16 rounded-md bg-row-hover" />
+              <View className="h-3.5 w-24 rounded-md bg-row-hover" />
+            </View>
+          ))}
+        </View>
+      </View>
+      <View className="h-16 w-full rounded-2xl border border-border" />
+      <BotRowsSkeleton label="Loading runs" />
+    </View>
   );
 }
 
