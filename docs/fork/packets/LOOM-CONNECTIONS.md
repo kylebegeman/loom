@@ -1,6 +1,6 @@
 # Loom-owned connections: replacing T3 Connect
 
-Status: **In progress** (C01 first). Kyle chose this direction on 2026-10-24: Loom Identity and
+Status: **In progress** (C01 done, C02 next). Kyle chose this direction on 2026-10-24: Loom Identity and
 the Library replace the T3 Connect account, the phone reaches computers from anywhere without
 Tailscale, and push notifications get their infrastructure now but are switched on last, after
 Kyle decides. Connect is turned off in Loom builds only after C01 to C03 work on desktop and
@@ -57,8 +57,8 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
 
 | ID  | Packet                                     | Status      | Scope                                                                                                                                                                                                                                                                                           |
 | --- | ------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C01 | L112 Identity renewal                      | In progress | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d. |
-| C02 | L113 Library computer list on every client | Selected    | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes.                                                                                                                      |
+| C01 | L112 Identity renewal                      | Done        | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d. |
+| C02 | L113 Library computer list on every client | In progress | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes.                                                                                                                      |
 | C03 | L114 Reach from anywhere                   | Selected    | Per-computer Cloudflare tunnel on Kyle's account at `<computer>-loom.begam.in`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off and removing the tunnel.                  |
 | C04 | L115 Push infrastructure                   | Selected    | Library device registry and APNs sender with Kyle's team key, behind an off switch. The iPhone registers with the Library only when enabled. Integration waits for Kyle.                                                                                                                        |
 | C05 | L116 Connect off in Loom builds            | Selected    | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text.                                         |
@@ -88,6 +88,14 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
 - **Identity stays the computer's setting.** The Library provisions the Pocket ID resource
   and hands back its values; the computer's own admin turns Loom Identity on, as
   [environment-auth](../../internals/environment-auth.md) requires.
+
+- **C01 rollout (2026-10-24).** Renewal starts only on a computer that sets
+  `LOOM_IDENTITY_MAX_SESSION_AGE`, and clients older than C01 cannot sign in once it is set, so
+  update the desktop and iPhone apps first, then raise the native client's refresh lifetime,
+  then set `7d` on the Library and each computer. Two review findings wait for the directory:
+  clients take the issuer and the grant's `resource` from the computer they sign in to, so a
+  hostile computer could point a client at another issuer. C02 pins directory computers to the
+  Library's issuer, and C03 records each computer's Pocket ID resource in the Library.
 
 ## C03 constraints
 
