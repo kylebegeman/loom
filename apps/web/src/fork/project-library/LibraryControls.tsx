@@ -269,6 +269,109 @@ export function LibraryStateBadge({
   );
 }
 
+/** The state's color alone, for rows and tiles too small for a pill. Always paired with a label. */
+export function LibraryStateDot({
+  tone,
+  className,
+}: {
+  readonly tone: LibraryWorkflowTone;
+  readonly className?: string;
+}) {
+  return (
+    <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATE_DOT[tone], className)} />
+  );
+}
+
+/**
+ * A surface drawn with its outline alone, for grouping that should not compete with the page's
+ * one filled hero.
+ */
+export const LIBRARY_OUTLINE = "rounded-2xl border border-border";
+
+/**
+ * One headline number in a row of figures, divided by hairlines rather than boxed. Large values
+ * keep proportional figures, which read tighter at this size; the detail says what it covers.
+ * Place inside a `dl`.
+ */
+export function LibraryFigure({
+  label,
+  value,
+  detail,
+}: {
+  readonly label: string;
+  readonly value: ReactNode;
+  readonly detail?: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 border-border not-first:border-s not-first:ps-5">
+      <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-2xl leading-tight font-semibold tracking-tight">{value}</dd>
+      {detail ? <dd className="truncate text-xs text-muted-foreground">{detail}</dd> : null}
+    </div>
+  );
+}
+
+/** A quiet line about the page's circumstances, such as an offline server or a missing update. */
+export function LibraryNotice({
+  icon: Icon,
+  tone = "neutral",
+  action,
+  children,
+}: {
+  readonly icon: LucideIcon;
+  readonly tone?: "neutral" | "warning" | "danger";
+  readonly action?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div
+      role={tone === "danger" ? "alert" : "status"}
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-4 py-3 text-sm",
+        tone === "neutral" && "bg-muted/50 text-muted-foreground dark:bg-accent/50",
+        tone === "warning" && "bg-warning/10 text-warning-foreground",
+        tone === "danger" && "bg-destructive/8 text-destructive-foreground",
+      )}
+    >
+      <Icon aria-hidden className="size-4 shrink-0" />
+      <div className="min-w-0 flex-1">{children}</div>
+      {action}
+    </div>
+  );
+}
+
+/** What an empty Library page shows: what will live here, and the one way to start. */
+export function LibraryEmpty({
+  icon: Icon,
+  title,
+  children,
+  action,
+}: {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly children: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className="relative isolate flex flex-col items-center gap-4 overflow-hidden rounded-3xl border border-dashed border-border px-6 py-12 text-center"
+    >
+      <span
+        aria-hidden
+        className="inline-flex size-14 items-center justify-center rounded-2xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
+      >
+        <Icon className="size-6" />
+      </span>
+      <div className="max-w-md space-y-1.5">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <div className="text-sm text-muted-foreground">{children}</div>
+      </div>
+      {action}
+    </section>
+  );
+}
+
 /** A row inside a section: no rule between rows, a soft fill on hover that bleeds past the text. */
 export const LIBRARY_ROW =
   "-mx-2.5 rounded-lg px-2.5 transition-colors duration-150 hover:bg-accent/50";

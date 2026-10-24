@@ -1,13 +1,20 @@
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { SITES_FEATURE } from "@t3tools/contracts/fork";
-import { libraryProjectForLocalRefs, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  SITE_HEALTH_STATES,
+  libraryProjectForLocalRefs,
+  siteHealth,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
 import { ArrowRightIcon, GlobeIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { LibraryPanel } from "../project-library/LibraryControls";
+import { LibraryPanel, LibraryStateDot } from "../project-library/LibraryControls";
 import { useEnvironmentQuery } from "~/state/query";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
 import { sites } from "./state";
+import { siteHost } from "./SiteHealth";
+import { useSiteCheckClock } from "./use-site-check-clock";
 
 function useProjectSites(projectId: string, environmentId: EnvironmentId) {
   const authority = useLibraryAuthority();
@@ -18,8 +25,16 @@ function useProjectSites(projectId: string, environmentId: EnvironmentId) {
   const query = useEnvironmentQuery(
     supported ? sites.snapshot({ environmentId, input: {} }) : null,
   );
-  const linked =
-    query.data?.snapshot?.sites.filter((site) => site.projectIds?.includes(projectId)) ?? [];
+  const snapshot = query.data?.snapshot;
+  const now = useSiteCheckClock(snapshot);
+  const linked = snapshot
+    ? snapshot.sites
+        .filter((site) => site.projectIds?.includes(projectId))
+        .map((site) => ({
+          site,
+          health: SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state],
+        }))
+    : [];
   return { supported, query, linked };
 }
 
@@ -50,12 +65,13 @@ export function ProjectSites({
           Loading sites…
         </p>
       ) : null}
-      {linked.map((site) => (
-        <div key={site.id}>
+      {linked.map(({ site, health }) => (
+        <div key={site.id} className="flex items-center gap-2">
+          <LibraryStateDot tone={health.tone} />
           <Link to="/sites" search={{ siteId: site.id }} className="text-sm underline">
             {site.name}
-            {!site.active ? " (paused)" : ""}
           </Link>
+          <span className="text-xs text-muted-foreground">{health.label}</span>
         </div>
       ))}
       {query.data && !linked.length ? (
@@ -91,7 +107,7 @@ export function SitesSummary({
     >
       {linked.length ? (
         <ul className="divide-y divide-border border-t border-border">
-          {linked.map((site) => (
+          {linked.map(({ site, health }) => (
             <li key={site.id}>
               <Link
                 to="/sites"
@@ -99,9 +115,15 @@ export function SitesSummary({
                 className="flex min-w-0 items-center gap-2.5 px-3 py-2 outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <GlobeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm">{site.name}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {site.active ? new URL(site.url).host : "Paused"}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm">{site.name}</span>
+                  <span className="block truncate font-mono text-2xs text-muted-foreground">
+                    {siteHost(site.url)}
+                  </span>
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <LibraryStateDot tone={health.tone} />
+                  {health.label}
                 </span>
               </Link>
             </li>

@@ -1,5 +1,10 @@
 import { expect, it } from "vite-plus/test";
-import { siteCheckState } from "./sites-presentation.ts";
+import {
+  siteCheckState,
+  siteChecksHealth,
+  siteTlsDaysLeft,
+  siteTrafficDays,
+} from "./sites-presentation.ts";
 const check = {
   id: "check",
   service_id: "api",
@@ -25,4 +30,41 @@ it("ages cached healthy checks without showing offline data as current", () => {
   expect(siteCheckState({ ...check, last: null }, 900, Date.parse("2026-10-18T00:00:00Z"))).toBe(
     "unknown",
   );
+});
+
+it("reports the worst live state across checks and leaves paused checks out", () => {
+  const now = Date.parse("2026-10-17T00:05:00Z");
+  const failing = { ...check, id: "down", state: "failing" as const };
+  const paused = { ...check, id: "off", state: "disabled" as const };
+  expect(siteChecksHealth([check, paused], 900, now)).toEqual({
+    state: "healthy",
+    total: 1,
+    passing: 1,
+    failing: 0,
+  });
+  expect(siteChecksHealth([check, failing], 900, now).state).toBe("failing");
+  expect(siteChecksHealth([check], 900, Date.parse("2026-10-18T00:00:00Z")).state).toBe("stale");
+  expect(siteChecksHealth([{ ...check, last: null }], 900, now).state).toBe("unchecked");
+  expect(siteChecksHealth([paused], 900, now).state).toBe("unmonitored");
+  expect(siteChecksHealth([failing], 900, now, true).state).toBe("paused");
+});
+
+it("fills quiet days across the whole analytics window", () => {
+  const days = siteTrafficDays({
+    since: "2026-10-01",
+    days: 3,
+    byDay: [{ day: "2026-10-02", pageviews: 4, visitors: 2 }],
+  });
+  expect(days).toEqual([
+    { day: "2026-10-01", pageviews: 0, visitors: 0 },
+    { day: "2026-10-02", pageviews: 4, visitors: 2 },
+    { day: "2026-10-03", pageviews: 0, visitors: 0 },
+  ]);
+});
+
+it("counts whole days left on a certificate", () => {
+  const now = Date.parse("2026-10-17T00:00:00Z");
+  expect(siteTlsDaysLeft("2026-10-27T12:00:00Z", now)).toBe(10);
+  expect(siteTlsDaysLeft("2026-10-16T00:00:00Z", now)).toBe(-1);
+  expect(siteTlsDaysLeft(null, now)).toBeNull();
 });

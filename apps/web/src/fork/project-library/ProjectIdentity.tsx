@@ -129,6 +129,23 @@ export function ProjectGlow({ strength = "soft" }: { readonly strength?: "soft" 
   );
 }
 
+const HERO_DOTS = {
+  backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
+  backgroundSize: "18px 18px",
+  maskImage: "radial-gradient(ellipse at 100% 0%, black, transparent 60%)",
+};
+
+/** A faint dot grid fading out of a hero card's far corner, opposite its glow. */
+export function HeroTexture() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit] text-foreground/10"
+      style={HERO_DOTS}
+    />
+  );
+}
+
 const tint = (percent: number) =>
   `color-mix(in oklab, var(--project-color) ${percent}%, transparent)`;
 

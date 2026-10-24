@@ -1,6 +1,6 @@
 import { Link, type LinkProps } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
@@ -11,25 +11,36 @@ import {
 import { isElectron } from "~/env";
 import { useLibraryAuthority } from "./state";
 
+const PROJECTS_SECTION = { label: "Projects", to: "/projects" } as const;
+
 export function LibraryPageFrame({
   title,
+  section = PROJECTS_SECTION,
+  offlineNotice,
   width = "wide",
+  style,
   children,
 }: {
   readonly title?: string;
+  /** The page's place in the Library, first in the breadcrumb. */
+  readonly section?: { readonly label: string; readonly to: "/projects" | "/sites" | "/loom/bots" };
+  /** What still works while the Library server is away. */
+  readonly offlineNotice?: string;
   readonly width?: WorkspacePageWidth;
+  /** Scopes `--project-color` for pages that are not about one project. */
+  readonly style?: CSSProperties;
   readonly children: ReactNode;
 }) {
   const authority = useLibraryAuthority();
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
+    <SidebarInset style={style} className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
         {title ? (
-          <Button size="xs" variant="link" render={<Link to="/projects" />}>
-            Projects
+          <Button size="xs" variant="link" render={<Link to={section.to} />}>
+            {section.label}
           </Button>
         ) : (
-          <span className="text-sm font-medium">Projects</span>
+          <span className="text-sm font-medium">{section.label}</span>
         )}
         {title ? (
           <>
@@ -44,8 +55,8 @@ export function LibraryPageFrame({
         <WorkspacePageContainer width={width}>
           {authority.authorityId && !authority.connected ? (
             <p role="status" className="text-xs text-muted-foreground">
-              Library offline. Saved projects and history remain available. Reconnect{" "}
-              {authority.environment?.label ?? "your Library server"} to save changes.
+              Library offline. {offlineNotice ?? "Saved projects and history remain available."}{" "}
+              Reconnect {authority.environment?.label ?? "your Library server"} to save changes.
             </p>
           ) : null}
           {children}

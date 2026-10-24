@@ -19,9 +19,9 @@ vi.mock("../project-library/state", () => ({
   useLibraryProjects: () => ({ query: { data: [] } }),
   useLibraryPermission: () => true,
 }));
-vi.mock("@t3tools/client-runtime/fork", () => ({
+vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/fork")>()),
   supportsLoomFeature: () => true,
-  siteCheckState: () => "healthy",
 }));
 vi.mock("./state", () => ({
   sites: { snapshot: () => "snapshot", analytics: () => "analytics", runChecks: {} },
@@ -54,7 +54,6 @@ vi.mock("~/components/ui/button", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("~/components/ui/badge", () => ({ Badge: () => null }));
 vi.mock("~/components/ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));

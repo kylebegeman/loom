@@ -66,7 +66,13 @@ import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
 import { CopiesSummary, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectGlow, ProjectTile, projectColorStyle } from "./ProjectIdentity";
+import {
+  HeroTexture,
+  ProjectColorPicker,
+  ProjectGlow,
+  ProjectTile,
+  projectColorStyle,
+} from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
 import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projectViews";
@@ -79,12 +85,6 @@ import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "
 const LONG_BRIEF_CHARACTERS = 320;
 const LONG_BRIEF_LINES = 4;
 /** A fine dot grid fading out from the hero's far corner, for texture behind the title. */
-const HERO_DOTS = {
-  backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)",
-  backgroundSize: "18px 18px",
-  maskImage: "radial-gradient(ellipse at 100% 0%, black, transparent 60%)",
-};
-
 type LibraryProjectView = ReturnType<typeof useLibraryProject>;
 type ConversationRequest = {
   readonly hostId?: EnvironmentId;
@@ -583,11 +583,7 @@ function ProjectHero({
     <header className="flex flex-col gap-4">
       <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-xs/5 sm:p-7">
         <ProjectGlow strength="strong" />
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 text-foreground/10"
-          style={HERO_DOTS}
-        />
+        <HeroTexture />
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           <Popover>
             <PopoverTrigger
