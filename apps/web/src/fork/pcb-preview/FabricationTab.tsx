@@ -132,32 +132,34 @@ export function FabricationTab({
     const serial = generation.current,
       controller = new AbortController();
     downloadController.current = controller;
-    try {
-      const result = await getZip({ ...target, input: { ...target.input, packageId: detail.id } });
-      if (result._tag !== "Success")
-        throw new Error("The package download is unavailable. Reload the list.");
-      if (controller.signal.aborted) return;
-      const response = await fetch(
-        modelUrl(threadRef.environmentId, result.value.zip.relativeUrl),
-        { signal: controller.signal },
-      );
-      if (!response.ok) throw new Error("The package zip could not be downloaded.");
-      const blob = await response.blob();
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob),
-        link = document.createElement("a");
-      link.href = url;
-      link.download = detail.outputs.find((o) => o.kind === "zip")?.path ?? "gerbers.zip";
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (cause) {
-      if (!controller.signal.aborted && serial === generation.current)
-        setError(cause instanceof Error ? cause.message : "Download failed.");
-    } finally {
-      if (serial === generation.current) setBusy(false);
-    }
+    await getZip({ ...target, input: { ...target.input, packageId: detail.id } })
+      .then(async (result) => {
+        if (result._tag !== "Success")
+          throw new Error("The package download is unavailable. Reload the list.");
+        if (controller.signal.aborted) return;
+        const response = await fetch(
+          modelUrl(threadRef.environmentId, result.value.zip.relativeUrl),
+          { signal: controller.signal },
+        );
+        if (!response.ok) throw new Error("The package zip could not be downloaded.");
+        const blob = await response.blob();
+        if (controller.signal.aborted) return;
+        const url = URL.createObjectURL(blob),
+          link = document.createElement("a");
+        link.href = url;
+        link.download = detail.outputs.find((o) => o.kind === "zip")?.path ?? "gerbers.zip";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted && serial === generation.current)
+          setError(cause instanceof Error ? cause.message : "Download failed.");
+      })
+      .finally(() => {
+        if (serial === generation.current) setBusy(false);
+      });
   };
   const deletePackage = async () => {
     if (!active || !window.confirm(`Delete ${active} and all its outputs?`)) return;

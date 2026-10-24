@@ -36,13 +36,13 @@ export function PrintInspector({
     if (!result?.key) return;
     setOpening(true);
     setFailure(null);
-    try {
-      await runModelCommand(models.openSlice, { environmentId, input: { key: result.key } });
-    } catch (cause) {
-      setFailure(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setOpening(false);
-    }
+    await runModelCommand(models.openSlice, { environmentId, input: { key: result.key } })
+      .catch((cause: unknown) => {
+        setFailure(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        setOpening(false);
+      });
   };
   return (
     <section data-stale={stale}>

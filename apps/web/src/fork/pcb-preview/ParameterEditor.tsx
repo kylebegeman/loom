@@ -41,6 +41,11 @@ import k from "./inspector.module.css";
 type Value = string | number | boolean;
 const SEARCH_AFTER = 8;
 
+function withoutKey(values: Record<string, Value>, key: string) {
+  const { [key]: _, ...rest } = values;
+  return rest;
+}
+
 export function ParameterEditor({
   threadRef,
   designId,
@@ -121,7 +126,8 @@ export function ParameterEditor({
     if (busy || !canSave) return;
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper routes a throw while building the command input to the catch handler.
+    await (async () => {
       const output = await runPcbCommand(pcb.applyParameters, {
         ...target,
         input: {
@@ -134,11 +140,11 @@ export function ParameterEditor({
       });
       setReview({ ...output, expectedSourceHash: schema.sourceHash });
       if (output.applied) appAtomRegistry.refresh(pcb.parameters(target));
-    } catch (e) {
-      setError(errorText(e, "Parameters could not apply."));
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((e: unknown) => {
+        setError(errorText(e, "Parameters could not apply."));
+      })
+      .finally(() => setBusy(false));
   };
   const snapshot = () => Object.fromEntries(schema.parameters.map((p) => [p.key, current(p)]));
   const needle = query.trim().toLowerCase();
@@ -190,10 +196,7 @@ export function ParameterEditor({
                 value={current(p)}
                 modified={current(p) !== baseline(p)}
                 onChange={(value) => edit({ ...values, [p.key]: value })}
-                onReset={() => {
-                  const { [p.key]: _, ...rest } = values;
-                  edit(rest);
-                }}
+                onReset={() => edit(withoutKey(values, p.key))}
               />
             ))}
             {!shown.length && <p className={k.hint}>No parameter matches “{query}”.</p>}

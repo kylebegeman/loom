@@ -263,21 +263,23 @@ function VersionRow({
   const toggleStable = async () => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await setStable({
-        environmentId,
-        input: { botId: bot.id, version: stable ? null : version.version },
+    await setStable({
+      environmentId,
+      input: { botId: bot.id, version: stable ? null : version.version },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error && cause.message
+            ? cause.message
+            : "Could not change the stable version.",
+        );
+      })
+      .finally(() => {
+        setBusy(false);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
-      setError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "Could not change the stable version.",
-      );
-    } finally {
-      setBusy(false);
-    }
   };
 
   return (
@@ -517,21 +519,25 @@ export function BotVersionsView({ bot }: { readonly bot: BotDefinition }) {
   const restore = async (version: number) => {
     setRestoring(true);
     setRestoreError(null);
-    try {
-      const result = await restoreVersion({
-        environmentId,
-        input: { botId: bot.id, version, expectedVersion: bot.version },
+    await restoreVersion({
+      environmentId,
+      input: { botId: bot.id, version, expectedVersion: bot.version },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setAction(null);
+        setCursors([]);
+      })
+      .catch((cause: unknown) => {
+        setRestoreError(
+          cause instanceof Error && cause.message
+            ? cause.message
+            : "Could not restore the version.",
+        );
+      })
+      .finally(() => {
+        setRestoring(false);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setAction(null);
-      setCursors([]);
-    } catch (cause) {
-      setRestoreError(
-        cause instanceof Error && cause.message ? cause.message : "Could not restore the version.",
-      );
-    } finally {
-      setRestoring(false);
-    }
   };
 
   return (

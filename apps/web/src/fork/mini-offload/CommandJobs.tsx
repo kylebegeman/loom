@@ -59,7 +59,8 @@ function Job({
   const downloadOutputs = () =>
     action.act(async () => {
       setCollecting(true);
-      try {
+      // The async wrapper keeps a decode or save failure inside the promise that clears the flag.
+      await (async () => {
         const bundle = await runMini(mini.artifacts, { environmentId, input });
         setOutputs({
           bytes: bundle.bytes,
@@ -74,9 +75,7 @@ function Job({
         link.download = `${input.requestId}-outputs.tar`;
         link.click();
         URL.revokeObjectURL(url);
-      } finally {
-        setCollecting(false);
-      }
+      })().finally(() => setCollecting(false));
     });
   const download = () =>
     action.act(async () => {
@@ -324,7 +323,9 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
             )
               return;
             void action.act(async () => {
-              try {
+              // The async wrapper keeps a synchronous throw while building the request on the
+              // refresh path.
+              await (async () => {
                 const receipt = await runMini(mini.submit, {
                   environmentId,
                   input: {
@@ -350,9 +351,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
                 setCommand("");
                 setLabel("");
                 setOutputText("");
-              } finally {
-                refresh();
-              }
+              })().finally(() => refresh());
             });
           }}
         >

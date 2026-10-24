@@ -89,6 +89,16 @@ export function SavedComputerIdentity({
   );
 }
 
+/** The computer's Identity base URL, or null when the address is not a usable HTTP(S) URL. */
+function computerIdentityUrl(address: string) {
+  try {
+    const value = address.trim();
+    return loomIdentityUrl(value.includes("://") ? value : `https://${value}`, "/");
+  } catch {
+    return null;
+  }
+}
+
 export function ComputerIdentityConnect({
   address,
   entry,
@@ -112,15 +122,13 @@ export function ComputerIdentityConnect({
         variant="outline"
         disabled={!address.trim()}
         onClick={() => {
-          try {
-            const value = address.trim();
-            const url = loomIdentityUrl(value.includes("://") ? value : `https://${value}`, "/");
-            if (!url) throw new Error("Enter an HTTP or HTTPS computer address.");
-            setChecked({ address, url });
-            setError(null);
-          } catch {
+          const url = computerIdentityUrl(address);
+          if (!url) {
             setError("Enter an HTTP or HTTPS computer address.");
+            return;
           }
+          setChecked({ address, url });
+          setError(null);
         }}
       >
         Check Identity sign-in

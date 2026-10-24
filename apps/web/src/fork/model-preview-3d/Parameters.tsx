@@ -240,14 +240,17 @@ export function Parameters({
     if (!trimmedName || saving) return;
     setSaving(true);
     setSaveError(null);
-    try {
+    // The async wrapper routes a synchronous throw from onSave into the catch.
+    await (async () => {
       await onSave(trimmedName);
       setSaveOpen(false);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSaving(false);
-    }
+    })()
+      .catch((error: unknown) => {
+        setSaveError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setSaving(false);
+      });
   };
   const shownHistory = history.entries
     .map((entry, index) => ({ entry, index }))

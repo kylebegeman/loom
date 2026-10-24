@@ -34,17 +34,16 @@ export function FleetUpdatesSection() {
   const updateFleet = async () => {
     setConfirming(false);
     setPending(true);
-    try {
-      await updates.run({});
-    } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: "Could not update fleet",
-        description: error instanceof Error ? error.message : "An unexpected error occurred.",
-      });
-    } finally {
-      setPending(false);
-    }
+    await updates
+      .run({})
+      .catch((error: unknown) => {
+        toastManager.add({
+          type: "error",
+          title: "Could not update fleet",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      })
+      .finally(() => setPending(false));
   };
 
   return (

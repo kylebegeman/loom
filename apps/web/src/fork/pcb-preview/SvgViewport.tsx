@@ -175,9 +175,11 @@ export function SvgViewport({
     [paint, remember],
   );
   const zoomBy = useCallback(
-    (factor: number, x = size.current.width / 2, y = size.current.height / 2) => {
+    (factor: number, x?: number, y?: number) => {
+      const centerX = x ?? size.current.width / 2,
+        centerY = y ?? size.current.height / 2;
       fitted.current = false;
-      view.current = zoomAround(view.current, factor, x, y);
+      view.current = zoomAround(view.current, factor, centerX, centerY);
       paint();
     },
     [paint],
@@ -309,14 +311,13 @@ export function SvgViewport({
       const objectUrl = URL.createObjectURL(
         new Blob([serializeOverlay(overlay)], { type: "image/svg+xml" }),
       );
-      try {
+      // The async wrapper releases the URL even when building the image throws synchronously.
+      await (async () => {
         const img = new Image();
         img.src = objectUrl;
         await img.decode();
         context.drawImage(img, 0, 0, drawing.current.width, drawing.current.height);
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
+      })().finally(() => URL.revokeObjectURL(objectUrl));
     }
     return new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
@@ -390,21 +391,19 @@ export function SvgViewport({
     }),
     [navigate, restore, fit, focus, zoomBy, remember, loadError, physical, label],
   );
-  const pointAt = (
-    event: React.PointerEvent<HTMLDivElement>,
-    x = event.clientX,
-    y = event.clientY,
-  ) => {
+  const pointAt = (event: React.PointerEvent<HTMLDivElement>, x?: number, y?: number) => {
+    const clientX = x ?? event.clientX,
+      clientY = y ?? event.clientY;
     if (!physical) return null;
     const rect = event.currentTarget.getBoundingClientRect();
     return {
       x:
         physical.x +
-        (((x - rect.left - view.current.x) / view.current.scale) * physical.width) /
+        (((clientX - rect.left - view.current.x) / view.current.scale) * physical.width) /
           drawing.current.width,
       y:
         physical.y +
-        (((y - rect.top - view.current.y) / view.current.scale) * physical.height) /
+        (((clientY - rect.top - view.current.y) / view.current.scale) * physical.height) /
           drawing.current.height,
     };
   };

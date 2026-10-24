@@ -68,25 +68,23 @@ export function RestoreDesignDialog({
   const restore = async () => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await runModelCommand(pcb.historyRestore, {
-        environmentId: threadRef.environmentId,
-        input: {
-          threadId: threadRef.threadId,
-          designId,
-          checkpointId: version.checkpointId,
-          expectedContentKey: contentKey,
-          includeSupporting: supporting,
-          removeAdded: remove,
-        },
-      });
-      onRestored(result);
-    } catch (error) {
-      setError(errorMessage(error));
-      onConflict();
-    } finally {
-      setBusy(false);
-    }
+    await runModelCommand(pcb.historyRestore, {
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        designId,
+        checkpointId: version.checkpointId,
+        expectedContentKey: contentKey,
+        includeSupporting: supporting,
+        removeAdded: remove,
+      },
+    })
+      .then((result) => onRestored(result))
+      .catch((error: unknown) => {
+        setError(errorMessage(error));
+        onConflict();
+      })
+      .finally(() => setBusy(false));
   };
   return (
     <Dialog

@@ -411,21 +411,23 @@ function RunOnManyWizard({
     if (!canSubmit || input === null || sharedErrorCount > 0 || invalidItems.length > 0) return;
     setBusy(true);
     setError(null);
-    try {
-      // Items are found on this computer; only their runs go where the target says.
-      const result = await runBatch({
-        environmentId,
-        input: target.type === "here" ? input : { ...input, target },
+    // Items are found on this computer; only their runs go where the target says.
+    await runBatch({
+      environmentId,
+      input: target.type === "here" ? input : { ...input, target },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        onStarted(result.value);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error && cause.message ? cause.message : `Could not run ${bot.name}.`,
+        );
+      })
+      .finally(() => {
+        setBusy(false);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      onStarted(result.value);
-    } catch (cause) {
-      setError(
-        cause instanceof Error && cause.message ? cause.message : `Could not run ${bot.name}.`,
-      );
-    } finally {
-      setBusy(false);
-    }
   };
 
   const accessNotice = !host.connected ? (

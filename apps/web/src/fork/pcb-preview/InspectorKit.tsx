@@ -24,15 +24,16 @@ export function useWrite(fallback = "The change could not be saved.") {
     if (busy) return false;
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper turns a synchronous throw from `write` into a handled rejection.
+    return (async () => {
       await write();
       return true;
-    } catch (cause) {
-      setError(errorText(cause, fallback));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(errorText(cause, fallback));
+        return false;
+      })
+      .finally(() => setBusy(false));
   };
   return { busy, error, run, setError };
 }

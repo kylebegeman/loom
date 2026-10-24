@@ -5,6 +5,15 @@ import { Input } from "~/components/ui/input";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
 
+/** The Library's Identity base URL, or null when the address is not a usable HTTP(S) URL. */
+function libraryIdentityUrl(address: string) {
+  try {
+    return loomIdentityUrl(address.trim(), "/");
+  } catch {
+    return null;
+  }
+}
+
 /** Native clients can enroll a Library account before they have a saved computer connection. */
 export function LoomLibraryAddress({
   onConnected,
@@ -23,14 +32,13 @@ export function LoomLibraryAddress({
         className="mt-3 space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
-          try {
-            const url = loomIdentityUrl(address.trim(), "/");
-            if (!url) throw new Error();
-            setTarget(url);
-            setError(null);
-          } catch {
+          const url = libraryIdentityUrl(address);
+          if (!url) {
             setError("Enter an http or https Library address.");
+            return;
           }
+          setTarget(url);
+          setError(null);
         }}
       >
         <label className="grid gap-2">

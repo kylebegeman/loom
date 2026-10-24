@@ -325,23 +325,24 @@ export function ReplayLaunchDialog({
     if (!ready || !checkoutConfirmed) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await replay({
-        environmentId,
-        input: {
-          botId: bot.id,
-          runIds: chosen.map((run) => run.id),
-          ...(source.kind === "draft" ? { draft: source.draft } : { version: source.version }),
-        },
+    await replay({
+      environmentId,
+      input: {
+        botId: bot.id,
+        runIds: chosen.map((run) => run.id),
+        ...(source.kind === "draft" ? { draft: source.draft } : { version: source.version }),
+      },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        rememberReplay({ replay: result.value, originals: chosen });
+        onClose();
+        nav.overlay({ replay: result.value.id });
+      })
+      .catch((cause: unknown) => {
+        setError(failureText(cause, "Could not start the replay."));
+        setBusy(false);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      rememberReplay({ replay: result.value, originals: chosen });
-      onClose();
-      nav.overlay({ replay: result.value.id });
-    } catch (cause) {
-      setError(failureText(cause, "Could not start the replay."));
-      setBusy(false);
-    }
   };
 
   const keepChoice = () => setSelected(chosen);
@@ -822,13 +823,13 @@ function ReplayDecision({
   const act = async (work: () => Promise<unknown>, failure: string) => {
     setBusy(true);
     setError(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(failureText(cause, failure));
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => {
+        setError(failureText(cause, failure));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   const markStable = () =>
     act(async () => {
@@ -944,16 +945,18 @@ function ReplaySheet({
     if (!replay || busy || !access.canReplay) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await cancel({ environmentId, input: { replayId: replay.id } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setCancelled(result.value);
-      refreshReplay();
-    } catch (cause) {
-      setError(failureText(cause, "Could not cancel the replay."));
-    } finally {
-      setBusy(false);
-    }
+    await cancel({ environmentId, input: { replayId: replay.id } })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setCancelled(result.value);
+        refreshReplay();
+      })
+      .catch((cause: unknown) => {
+        setError(failureText(cause, "Could not cancel the replay."));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   const title = !replay

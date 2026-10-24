@@ -405,11 +405,13 @@ function RunDetail({
     if (pending) return;
     setPending(action);
     setError(null);
-    try {
-      setError(await work());
-    } finally {
-      setPending(null);
-    }
+    await work()
+      .then((message) => {
+        setError(message);
+      })
+      .finally(() => {
+        setPending(null);
+      });
   };
   const failure = (result: Parameters<typeof squashAtomCommandFailure>[0], fallback: string) => {
     const cause = squashAtomCommandFailure(result);

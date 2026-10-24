@@ -58,7 +58,8 @@ function BotRunDrawerForm({
     }
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper lets a throw while building the input reach the same handler.
+    await (async () => {
       // The server takes the project and checkout from the calling thread.
       const result = await run({
         environmentId,
@@ -71,10 +72,10 @@ function BotRunDrawerForm({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onClose();
-    } catch (cause) {
+    })().catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : `Could not run ${bot.name}.`);
       setBusy(false);
-    }
+    });
   };
 
   return (

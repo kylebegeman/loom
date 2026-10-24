@@ -266,11 +266,13 @@ export function AssemblyCanvas(props: {
       }
       stats[part.id] = { triangles: null, loading: true };
       sync();
-      try {
-        const file = { threadId: props.threadRef.threadId, path: info.path };
+      const file = { threadId: props.threadRef.threadId, path: info.path },
+        sourceFormat = info.format;
+      // The async wrapper turns the permission and render throws into rejections for the catch.
+      await (async () => {
         let url: string,
           geometryRevision: string,
-          format: ModelFormat = info.format;
+          format: ModelFormat = sourceFormat;
         if (format === "scad" || format === "build123d" || format === "step") {
           if (format !== "build123d" && !canScad)
             throw new Error("This connection does not permit rendering this part.");
@@ -322,17 +324,18 @@ export function AssemblyCanvas(props: {
         stats[part.id] = { triangles, loading: false };
         delete errors[part.id];
         sync();
-      } catch (cause) {
+      })().catch((cause: unknown) => {
         if (!abort.signal.aborted) {
           errors[part.id] = failure(cause);
           stats[part.id] = { triangles: null, loading: false };
           sync();
         }
-      }
+      });
     };
     const worker = async () => {
       while (index < snapshot.assembly.parts.length && !abort.signal.aborted) {
-        const part = snapshot.assembly.parts[index++]!;
+        const part = snapshot.assembly.parts[index]!;
+        index = index + 1;
         await load(part);
       }
     };

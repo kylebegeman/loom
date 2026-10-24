@@ -126,7 +126,8 @@ export function useChangeHighlights({
   const resolved = raster?.key === rasterKey ? raster : undefined;
   const regions = resolved?.result?.regions ?? [];
   const drawing = resolved ? (resolved.result ? "ready" : "unavailable") : "pending";
-  const state = (result = resolved?.result): PcbChangeState | null =>
+  const resolvedResult = resolved?.result;
+  const state = (result = resolvedResult): PcbChangeState | null =>
     pair
       ? {
           shown: shown && !suspended,

@@ -392,6 +392,11 @@ sign-in for that row, and clears the row's address when the form closes. iPhone'
 `libraryComputer` route param. See the
 [L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
 
+L116 `telemetry-off` seams stop Loom sending product analytics to T3. `AnalyticsService.ts` (1)
+defaults `T3CODE_TELEMETRY_ENABLED` to off, so the server sends PostHog events only when it is
+set to `true`, and `docs/user/telemetry.md` says so. See the
+[L116 packet](docs/fork/packets/L116-connect-off/SEAMS.md).
+
 ## Loom CLI and pairing copy
 
 User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`

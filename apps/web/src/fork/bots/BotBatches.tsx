@@ -993,13 +993,16 @@ function BatchDetail({
     setBusy(true);
     setError(null);
     setMessage(null);
-    try {
-      setMessage(await work());
-    } catch (cause) {
-      setError(errorText(cause, fallback));
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .then((next) => {
+        setMessage(next);
+      })
+      .catch((cause: unknown) => {
+        setError(errorText(cause, fallback));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   const cancel = () =>
     act(async () => {

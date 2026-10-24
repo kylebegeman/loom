@@ -109,6 +109,45 @@ export function modelLinkRender(threadRef: ScopedThreadRef, path: string): LinkR
   };
 }
 
+/** Resolves null when the signal aborts mid-parameter; other failures reject. */
+async function analyzeLinks(
+  render: LinkRender,
+  values: Readonly<Record<string, string>>,
+  plans: readonly { name: string; nudges: ReturnType<typeof linkNudges> }[],
+  signal: AbortSignal,
+  progress: (done: number) => void,
+): Promise<Linking | null> {
+  let done = 0;
+  const positions = await render(values, signal);
+  signal.throwIfAborted();
+  if (positions.length / 9 > LINK_TRIANGLE_LIMIT)
+    throw new Error(
+      `Parameter analysis works on parts up to ${LINK_TRIANGLE_LIMIT.toLocaleString("en-US")} triangles.`,
+    );
+  const base = buildTopology(positions, null),
+    parameters: LinkResult[] = [];
+  progress(++done);
+  for (const plan of plans) {
+    const perturbations: Perturbation[] = [];
+    try {
+      if (!plan.nudges.length) throw new Error(NO_ROOM);
+      for (const nudge of plan.nudges) {
+        const moved = await render(nudge.values, signal);
+        signal.throwIfAborted();
+        perturbations.push({ delta: nudge.delta, positions: moved });
+        progress(++done);
+      }
+      parameters.push({ name: plan.name, ...linkParameter(base, perturbations) });
+    } catch (cause) {
+      if (signal.aborted) return null;
+      done += plan.nudges.length - perturbations.length;
+      progress(done);
+      parameters.push({ name: plan.name, status: "failed", error: message(cause) });
+    }
+  }
+  return { base, parameters };
+}
+
 /**
  * Renders the part at the analyzed values, then each chosen parameter one step either side, and
  * attributes the part's faces to the parameters that move them. A finished analysis is kept for
@@ -141,52 +180,35 @@ export function useParameterLinks(render: LinkRender) {
           return parameter ? [{ name, nudges: linkNudges(parameter, input.values) }] : [];
         }),
         total = 1 + plans.reduce((sum, plan) => sum + plan.nudges.length, 0);
-      let done = 0;
       setError(null);
-      setJob({ done, total });
-      try {
-        const positions = await latestRender.current(input.values, own.signal);
-        own.signal.throwIfAborted();
-        if (positions.length / 9 > LINK_TRIANGLE_LIMIT)
-          throw new Error(
-            `Parameter analysis works on parts up to ${LINK_TRIANGLE_LIMIT.toLocaleString("en-US")} triangles.`,
-          );
-        const base = buildTopology(positions, null),
-          parameters: LinkResult[] = [];
-        setJob({ done: ++done, total });
-        for (const plan of plans) {
-          const perturbations: Perturbation[] = [];
-          try {
-            if (!plan.nudges.length) throw new Error(NO_ROOM);
-            for (const nudge of plan.nudges) {
-              const moved = await latestRender.current(nudge.values, own.signal);
-              own.signal.throwIfAborted();
-              perturbations.push({ delta: nudge.delta, positions: moved });
-              setJob({ done: ++done, total });
-            }
-            parameters.push({ name: plan.name, ...linkParameter(base, perturbations) });
-          } catch (cause) {
-            if (own.signal.aborted) return;
-            done += plan.nudges.length - perturbations.length;
-            setJob({ done, total });
-            parameters.push({ name: plan.name, status: "failed", error: message(cause) });
+      setJob({ done: 0, total });
+      await analyzeLinks(
+        // Each render reads the latest renderer, as the panel can swap it mid-analysis.
+        (values, signal) => latestRender.current(values, signal),
+        input.values,
+        plans,
+        own.signal,
+        (done) => setJob({ done, total }),
+      )
+        .then((linking) => {
+          if (!linking) return;
+          setLinkings((old) => {
+            const next = new Map(old);
+            next.delete(input.key);
+            next.set(input.key, linking);
+            for (const key of next.keys()) if (next.size > LINK_CACHE) next.delete(key);
+            return next;
+          });
+        })
+        .catch((cause: unknown) => {
+          if (!own.signal.aborted) setError({ key: input.key, message: message(cause) });
+        })
+        .finally(() => {
+          if (control.current === own) {
+            control.current = null;
+            setJob(null);
           }
-        }
-        setLinkings((old) => {
-          const next = new Map(old);
-          next.delete(input.key);
-          next.set(input.key, { base, parameters });
-          for (const key of next.keys()) if (next.size > LINK_CACHE) next.delete(key);
-          return next;
         });
-      } catch (cause) {
-        if (!own.signal.aborted) setError({ key: input.key, message: message(cause) });
-      } finally {
-        if (control.current === own) {
-          control.current = null;
-          setJob(null);
-        }
-      }
     },
     [],
   );

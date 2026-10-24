@@ -41,13 +41,14 @@ function AttachedRun({
   const stop = async () => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await cancel({ environmentId, input: { runId: run.id } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not cancel the run.");
-      setBusy(false);
-    }
+    await cancel({ environmentId, input: { runId: run.id } })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "Could not cancel the run.");
+        setBusy(false);
+      });
   };
 
   return (

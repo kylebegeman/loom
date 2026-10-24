@@ -30,14 +30,17 @@ export function RestoreVersionDialog({
   const restore = async () => {
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper routes a synchronous throw from onRestore or onClose into the catch.
+    await (async () => {
       await onRestore(includeDependencies);
       onClose();
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "Could not restore this version.");
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "Could not restore this version.");
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
   return (
     <Dialog

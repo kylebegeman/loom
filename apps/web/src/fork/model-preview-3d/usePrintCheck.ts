@@ -133,36 +133,38 @@ export function usePrintCheck(input: PrintCheckInput) {
       request.current = { threadRef: current.threadRef, path: current.path, id };
       setOperation({ key: leaseKey(current), startedAt: Date.now() });
       setFailure(null);
-      try {
-        const response = await runModelCommand(models.checkPrint, {
-          environmentId: current.threadRef.environmentId,
-          input: {
-            file: { threadId: current.threadRef.threadId, path: current.path },
-            requestId: id,
-            force,
-            allowLarge: current.allowLarge,
-            ...(current.format === "scad"
-              ? {
-                  overrides: current.session?.applied ?? {},
-                  parameterSet: current.session?.setName ?? null,
-                }
-              : {}),
-          },
+      await runModelCommand(models.checkPrint, {
+        environmentId: current.threadRef.environmentId,
+        input: {
+          file: { threadId: current.threadRef.threadId, path: current.path },
+          requestId: id,
+          force,
+          allowLarge: current.allowLarge,
+          ...(current.format === "scad"
+            ? {
+                overrides: current.session?.applied ?? {},
+                parameterSet: current.session?.setName ?? null,
+              }
+            : {}),
+        },
+      })
+        .then((response) => {
+          if (generation.current === ownGeneration && response.report)
+            setResult({ scope: ownScope, key: ownKey, report: response.report });
+        })
+        .catch((cause: unknown) => {
+          if (generation.current === ownGeneration)
+            setFailure({
+              scope: ownScope,
+              message: cause instanceof Error ? cause.message : String(cause),
+            });
+        })
+        .finally(() => {
+          if (generation.current === ownGeneration) {
+            request.current = null;
+            setOperation(null);
+          }
         });
-        if (generation.current === ownGeneration && response.report)
-          setResult({ scope: ownScope, key: ownKey, report: response.report });
-      } catch (cause) {
-        if (generation.current === ownGeneration)
-          setFailure({
-            scope: ownScope,
-            message: cause instanceof Error ? cause.message : String(cause),
-          });
-      } finally {
-        if (generation.current === ownGeneration) {
-          request.current = null;
-          setOperation(null);
-        }
-      }
     },
     [stopRequest],
   );

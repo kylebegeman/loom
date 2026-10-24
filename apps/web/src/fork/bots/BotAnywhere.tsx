@@ -281,15 +281,17 @@ function RemoteRunSettings({
     if (settings === null) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await save({ environmentId, input: { ...settings, ...patch } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      query.refresh();
-    } catch (cause) {
-      setError(errorText(cause, "Could not save the remote run settings."));
-    } finally {
-      setBusy(false);
-    }
+    await save({ environmentId, input: { ...settings, ...patch } })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        query.refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(errorText(cause, "Could not save the remote run settings."));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   return (
@@ -476,16 +478,18 @@ function SharedBotsSync({
     setBusy(true);
     setError(null);
     setResult(null);
-    try {
-      const outcome = await sync({ environmentId, input: {} });
-      if (outcome._tag === "Failure") throw squashAtomCommandFailure(outcome);
-      setResult(outcome.value);
-      list.refresh();
-    } catch (cause) {
-      setError(errorText(cause, "Could not sync shared bots."));
-    } finally {
-      setBusy(false);
-    }
+    await sync({ environmentId, input: {} })
+      .then((outcome) => {
+        if (outcome._tag === "Failure") throw squashAtomCommandFailure(outcome);
+        setResult(outcome.value);
+        list.refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(errorText(cause, "Could not sync shared bots."));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   return (
@@ -711,22 +715,24 @@ function BotCredentials({
   const setItem = async (slot: BotVaultSlot, itemId: string | null) => {
     setBusy(slot.name);
     setError(null);
-    try {
-      const result = await bind({
-        environmentId,
-        input: { botId: bot.id, slot: slot.name, itemId },
+    await bind({
+      environmentId,
+      input: { botId: bot.id, slot: slot.name, itemId },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setPicking(null);
+        query.refresh();
+        onChanged();
+      })
+      .catch((cause: unknown) => {
+        setError(
+          errorText(cause, itemId === null ? "Could not clear the binding." : "Could not bind it."),
+        );
+      })
+      .finally(() => {
+        setBusy(null);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setPicking(null);
-      query.refresh();
-      onChanged();
-    } catch (cause) {
-      setError(
-        errorText(cause, itemId === null ? "Could not clear the binding." : "Could not bind it."),
-      );
-    } finally {
-      setBusy(null);
-    }
   };
 
   const bindings = query.data?.bindings;
@@ -882,16 +888,18 @@ function SharingAside({
       return;
     setBusy(true);
     setError(null);
-    try {
-      const command = next ? share : unshare;
-      const result = await command({ environmentId, input: { botId: bot.id } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      targets.refresh();
-    } catch (cause) {
-      setError(errorText(cause, next ? "Could not share the bot." : "Could not stop sharing."));
-    } finally {
-      setBusy(false);
-    }
+    const command = next ? share : unshare;
+    await command({ environmentId, input: { botId: bot.id } })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        targets.refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(errorText(cause, next ? "Could not share the bot." : "Could not stop sharing."));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   const action =

@@ -105,11 +105,9 @@ export function useScaleReference(
         }
       })();
       pendingSave.current = operation;
-      try {
-        await operation;
-      } finally {
+      await operation.finally(() => {
         if (pendingSave.current === operation) pendingSave.current = null;
-      }
+      });
     },
     [canSave, environmentId],
   );

@@ -46,6 +46,44 @@ function trackSave<T>(
   });
 }
 
+// The two capture helpers live at module level because React Compiler cannot lower try/finally.
+function captureAnnotation(
+  viewer: ModelViewer,
+  annotation: ModelAnnotation,
+  number: number,
+  sourceRevision: string,
+  restoreOverlays: () => void,
+) {
+  const original = viewer.snapshot();
+  try {
+    viewer.restore(annotation.camera);
+    if (annotation.sourceRevision !== sourceRevision) viewer.refit();
+    viewer.setOverlays(
+      [],
+      annotation.sourceRevision === sourceRevision ? [{ ...annotation, number }] : [],
+      null,
+    );
+    return viewer.capture(false);
+  } finally {
+    viewer.restore(original);
+    restoreOverlays();
+  }
+}
+
+function captureViewSheet(
+  viewer: ModelViewer,
+  views: Parameters<typeof captureNamedViews>[1],
+  footer: string,
+  revision: string,
+  restoreOverlays: () => void,
+) {
+  try {
+    return captureNamedViews(viewer, views, footer, revision);
+  } finally {
+    restoreOverlays();
+  }
+}
+
 /**
  * Drops saves the stream now shows. A save confirmed earlier is dropped on the stream's next
  * update even when the item differs, since that update already carries any later change.
@@ -144,15 +182,16 @@ export function useModelEditing(
     operationActive.current = true;
     setOperation(label);
     setError(null);
-    try {
-      return await task();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      return undefined;
-    } finally {
-      operationActive.current = false;
-      setOperation(null);
-    }
+    // The async wrapper routes a synchronous throw from task into the catch.
+    return (async () => task())()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return undefined;
+      })
+      .finally(() => {
+        operationActive.current = false;
+        setOperation(null);
+      });
   }, []);
   const measurements = useMemo(
     () => workspace.data.measurements.filter((item) => item.sourceRevision === sourceRevision),
@@ -429,23 +468,13 @@ export function useModelEditing(
     [sourceRevision, workspace.canEdit, mutate, wallCount],
   );
   const markedCapture = async (annotation: ModelAnnotation) => {
-    if (!viewer.current) throw new Error("Load the model before capturing it.");
-    const original = viewer.current.snapshot();
+    const current = viewer.current;
+    if (!current) throw new Error("Load the model before capturing it.");
     const position = workspace.data.annotations.findIndex((item) => item.id === annotation.id);
     const number = position < 0 ? workspace.data.annotations.length + 1 : position + 1;
-    try {
-      viewer.current.restore(annotation.camera);
-      if (annotation.sourceRevision !== sourceRevision) viewer.current.refit();
-      viewer.current.setOverlays(
-        [],
-        annotation.sourceRevision === sourceRevision ? [{ ...annotation, number }] : [],
-        null,
-      );
-      return viewer.current.capture(false);
-    } finally {
-      viewer.current.restore(original);
-      viewer.current.setOverlays(measurements, annotations, pendingPoint);
-    }
+    return captureAnnotation(current, annotation, number, sourceRevision, () =>
+      current.setOverlays(measurements, annotations, pendingPoint),
+    );
   };
   /** Saves the pending region and resolves with the saved annotation, or null. */
   const addAnnotation = async (name: string, request: string) =>
@@ -493,20 +522,18 @@ export function useModelEditing(
     });
   };
   const renderViews = (ids: readonly string[], includeMeasurements: boolean): Promise<Blob> => {
-    if (!viewer.current) throw new Error("Load the model before capturing it.");
+    const current = viewer.current;
+    if (!current) throw new Error("Load the model before capturing it.");
     const views = ids.flatMap((id) => workspace.data.views.filter((view) => view.id === id));
     if (!views.length) throw new Error("Save a view before capturing a sheet.");
-    viewer.current.setOverlays(includeMeasurements ? measurements : [], annotations, null);
-    try {
-      return captureNamedViews(
-        viewer.current,
-        views,
-        `${path} · ${sourceRevision.slice(0, 12)}`,
-        sourceRevision,
-      );
-    } finally {
-      viewer.current.setOverlays(measurements, annotations, pendingPoint);
-    }
+    current.setOverlays(includeMeasurements ? measurements : [], annotations, null);
+    return captureViewSheet(
+      current,
+      views,
+      `${path} · ${sourceRevision.slice(0, 12)}`,
+      sourceRevision,
+      () => current.setOverlays(measurements, annotations, pendingPoint),
+    );
   };
   const captureViews = async (
     ids: readonly string[],
@@ -597,7 +624,7 @@ export function useModelEditing(
             null,
             saveQuietly({ kind: "remove", collection: "measurements", id }),
           );
-        applied ||= patch.upserts.length + patch.removes.length + patch.settled > 0;
+        applied = applied || patch.upserts.length + patch.removes.length + patch.settled > 0;
       }
       if (fields.annotations && from.annotations) {
         const patch = listPatch(
@@ -615,7 +642,7 @@ export function useModelEditing(
             null,
             saveQuietly({ kind: "remove", collection: "annotations", id }),
           );
-        applied ||= patch.upserts.length + patch.removes.length + patch.settled > 0;
+        applied = applied || patch.upserts.length + patch.removes.length + patch.settled > 0;
       }
       if (fields.section) {
         setSection(fields.section);

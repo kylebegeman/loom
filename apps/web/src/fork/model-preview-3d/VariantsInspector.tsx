@@ -112,6 +112,9 @@ import {
 import styles from "./workspace.module.css";
 
 const ViewerCanvas = lazy(() => import("./viewer/ViewerCanvas"));
+// Batch thumbnails load the viewer on demand; React Compiler cannot lower import() in a component.
+const loadViewerModule = () => import("./viewer/createViewer");
+const loadMeshModule = () => import("./viewer/load");
 type Mutation = (operation: ModelWorkspaceOperation) => Promise<unknown>;
 function ComparePane({
   variant,
@@ -649,7 +652,8 @@ export function VariantsInspector({
       if (!slicingEnabled || !canSlice || !session) return;
       cancelSlicing();
       const token = sliceGeneration.current;
-      try {
+      // The async wrapper turns the failed-estimate throw into a rejection for the catch.
+      await (async () => {
         for (const [index, variant] of (cachedOnly
           ? candidates
           : candidates.slice(0, 12)
@@ -680,15 +684,17 @@ export function VariantsInspector({
               `${variant.name}: ${result.warnings[0] ?? "Slicing did not produce an estimate."}`,
             );
         }
-      } catch (cause) {
-        if (token === sliceGeneration.current && !cachedOnly)
-          setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        if (token === sliceGeneration.current) {
-          sliceLease.current = null;
-          setSliceBatch(null);
-        }
-      }
+      })()
+        .catch((cause: unknown) => {
+          if (token === sliceGeneration.current && !cachedOnly)
+            setError(cause instanceof Error ? cause.message : String(cause));
+        })
+        .finally(() => {
+          if (token === sliceGeneration.current) {
+            sliceLease.current = null;
+            setSliceBatch(null);
+          }
+        });
     },
   );
   const variantsKey = JSON.stringify(data.variants.map(printKey));
@@ -790,7 +796,8 @@ export function VariantsInspector({
     if (!session || adding) return null;
     setAdding(true);
     setError(null);
-    try {
+    // The async wrapper turns the variant-limit throw into a rejection for the catch.
+    return (async () => {
       if (data.variants.length + candidates.length > VARIANT_LIMIT)
         throw new Error(
           `Keep up to ${VARIANT_LIMIT} variants. Delete some before adding ${candidates.length === 1 ? "another" : "more"}.`,
@@ -813,12 +820,14 @@ export function VariantsInspector({
         added.push(item);
       }
       return added.length ? added : null;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      return null;
-    } finally {
-      setAdding(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      })
+      .finally(() => {
+        setAdding(false);
+      });
   };
   /**
    * Renders the given variants one at a time and stores a thumbnail for each. Variants saved
@@ -839,10 +848,11 @@ export function VariantsInspector({
     });
     setQueue(candidates.map((variant) => variant.id));
     setBatchProgress({ completed: 0, total: candidates.length, detail: "Loading render tools" });
-    try {
+    // The async wrapper turns a failed render's throw into a rejection for the catch.
+    await (async () => {
       const [{ createViewer }, { loadModel }] = await Promise.all([
-        import("./viewer/createViewer"),
-        import("./viewer/load"),
+        loadViewerModule(),
+        loadMeshModule(),
       ]);
       for (const [index, candidate] of candidates.entries()) {
         if (token !== generation.current) break;
@@ -880,16 +890,19 @@ export function VariantsInspector({
           host.remove();
         };
         activeThumbnail.current = releaseThumbnail;
-        const abort = new AbortController();
-        try {
+        const abort = new AbortController(),
+          mesh = result.mesh,
+          meshFormat = result.meshFormat;
+        // Resolves true when the batch should stop; the wrapper keeps the cleanup on every path.
+        const stopBatch = await (async () => {
           viewer = createViewer(host);
           viewer.setVisible(false);
           viewer.setOrientation(data.orientation?.quaternion ?? null);
           viewer.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
           loadAbort.current = abort;
           const model = await loadModel(
-            modelUrl(threadRef.environmentId, result.mesh.relativeUrl),
-            result.meshFormat,
+            modelUrl(threadRef.environmentId, mesh.relativeUrl),
+            meshFormat,
             abort.signal,
             (bytes, total) => {
               if (token === generation.current)
@@ -903,9 +916,9 @@ export function VariantsInspector({
             },
           );
           if (token !== generation.current) {
-            const { disposeModel } = await import("./viewer/load");
+            const { disposeModel } = await loadMeshModule();
             disposeModel(model);
-            break;
+            return true;
           }
           const stats = viewer.setModel(model, false);
           setRunning(`Capturing ${candidate.name}`);
@@ -934,27 +947,31 @@ export function VariantsInspector({
                 },
               }))
             )
-              break;
+              return true;
           if (token === generation.current) {
             setBatchProgress((current) => ({ ...current, completed: index + 1 }));
             setQueue((current) => current.filter((id) => id !== candidate.id));
           }
-        } finally {
+          return false;
+        })().finally(() => {
           releaseThumbnail();
           if (activeThumbnail.current === releaseThumbnail) activeThumbnail.current = null;
           if (loadAbort.current === abort) loadAbort.current = null;
+        });
+        if (stopBatch) break;
+      }
+    })()
+      .catch((cause: unknown) => {
+        if (token === generation.current)
+          setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (token === generation.current) {
+          setRunning(null);
+          setQueue([]);
+          activeVariant.current = null;
         }
-      }
-    } catch (cause) {
-      if (token === generation.current)
-        setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      if (token === generation.current) {
-        setRunning(null);
-        setQueue([]);
-        activeVariant.current = null;
-      }
-    }
+      });
   };
 
   if (!session)

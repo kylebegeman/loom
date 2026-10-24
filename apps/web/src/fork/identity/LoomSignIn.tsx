@@ -59,7 +59,7 @@ function LoomSignInTarget({
   useEffect(() => {
     let target = baseUrl;
     try {
-      target ??= resolvePrimaryEnvironmentHttpUrl("/");
+      target = target ?? resolvePrimaryEnvironmentHttpUrl("/");
     } catch {
       return;
     }
