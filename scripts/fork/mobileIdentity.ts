@@ -131,6 +131,12 @@ export function resolveLoomMobileIdentity(env: Environment) {
       "Loom cloud push and Apple sign-in require configured Connect and an eligible Apple team.",
     );
   }
+  // Library push keeps aps-environment without enabling the relay or widget push paths, which
+  // would hand the native and Live Activity tokens to a relay Loom does not run.
+  const libraryPushEnabled = flag(env, "LOOM_MOBILE_LIBRARY_PUSH_ENABLED");
+  if (libraryPushEnabled && (!teamId || personalTeam)) {
+    throw new Error("Loom Library push requires an eligible Apple team.");
+  }
   return {
     ...variant,
     appVariant,
@@ -144,6 +150,7 @@ export function resolveLoomMobileIdentity(env: Environment) {
     updatesEnabled,
     connectEnabled,
     pushEnabled,
+    libraryPushEnabled,
     appleSignInEnabled,
     associatedDomains:
       connectEnabled && authDomain

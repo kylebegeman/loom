@@ -142,6 +142,7 @@ packages/contracts/src/settings.test.ts	project-lifecycle	1
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	1
 apps/mobile/app.config.ts	fleet-connect	1
+apps/mobile/app.config.ts	library-push	2
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3

@@ -66,6 +66,10 @@ jobs:
           T3CODE_RELAY_URL: https://relay.example.test
           LOOM_MOBILE_ACCOUNT_PORTAL_URL: https://accounts.example.test
         run: node scripts/fork/ios-release.ts verify-config
+      - name: Check Library push public configuration
+        env:
+          LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1"
+        run: node scripts/fork/ios-release.ts verify-config
       - name: Check affected packages
         run: |
           vp run --filter @t3tools/mobile --filter @t3tools/contracts --filter @t3tools/client-runtime --filter @t3tools/scripts typecheck

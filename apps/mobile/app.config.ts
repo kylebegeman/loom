@@ -278,7 +278,10 @@ const config: ExpoConfig = {
     // Runs after native plugins' entitlement mods while keeping local widgets and sharing.
     [
       "./plugins/withLoomIosCloudCapabilities.cjs",
-      { pushEnabled: identity.pushEnabled, appleSignInEnabled: identity.appleSignInEnabled },
+      {
+        pushEnabled: identity.pushEnabled || identity.libraryPushEnabled, // fork: library-push
+        appleSignInEnabled: identity.appleSignInEnabled,
+      },
     ],
     "expo-asset",
     "react-native-pdf-jsi",
@@ -430,6 +433,7 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     iosPushEnabled: identity.pushEnabled,
+    loomLibraryPush: identity.libraryPushEnabled, // fork: library-push
     // fork: fleet-connect - Expo public serialization turns null into objects, so omit unset values.
     relay: {
       url: identity.relayUrl,

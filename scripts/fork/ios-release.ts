@@ -21,6 +21,7 @@ import {
 const BUNDLE_ID = "com.kylebegeman.loom";
 const BUNDLE_IDS = [BUNDLE_ID, `${BUNDLE_ID}.sharing`, `${BUNDLE_ID}.widgets`] as const;
 const ASSOCIATED_DOMAINS_ENTITLEMENT = "com.apple.developer.associated-domains";
+const APS_ENVIRONMENT_ENTITLEMENT = "aps-environment";
 const UPSTREAM_APP_ID = "6787819824";
 const UPSTREAM_TEAM_ID = "ARK85ZXQ4Z";
 const SOURCE_ROOT = NodePath.resolve(NodeURL.fileURLToPath(new URL("../..", import.meta.url)));
@@ -121,13 +122,32 @@ export function releaseSettings(env: Environment) {
   return { teamId, appId, groups: [...new Set(groups)] };
 }
 
+/** Library push is the only LOOM_MOBILE_* opt-in a release takes from the publisher's environment. */
+function requestedLibraryPush(env: Environment): boolean | undefined {
+  const value = env.LOOM_MOBILE_LIBRARY_PUSH_ENABLED?.trim();
+  if (!value) return undefined;
+  if (value !== "0" && value !== "1")
+    throw new Error("LOOM_MOBILE_LIBRARY_PUSH_ENABLED must be 0 or 1.");
+  return value === "1";
+}
+
 export function iosBuildEnvironment(
   env: Environment,
   buildNumber?: string,
   sourceSha?: string,
   preparedConnect?: LoomConnectConfig | null,
+  preparedLibraryPush?: boolean,
 ): NodeJS.ProcessEnv {
   const connect = preparedConnect === undefined ? loomMobileConnectConfig(env) : preparedConnect;
+  const requested = requestedLibraryPush(env);
+  // Otherwise a later command run with the flag would silently follow a receipt prepared without it.
+  if (
+    preparedLibraryPush !== undefined &&
+    requested !== undefined &&
+    requested !== preparedLibraryPush
+  )
+    throw new Error("LOOM_MOBILE_LIBRARY_PUSH_ENABLED differs from the prepared release.");
+  const libraryPush = preparedLibraryPush ?? requested ?? false;
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
   delete result.CLERK_SECRET_KEY;
@@ -151,6 +171,7 @@ export function iosBuildEnvironment(
     ...loomConnectBuildEnvironment(connect),
     LOOM_MOBILE_UPDATES_ENABLED: "0",
     LOOM_MOBILE_PUSH_ENABLED: "0",
+    LOOM_MOBILE_LIBRARY_PUSH_ENABLED: libraryPush ? "1" : "0",
     LOOM_MOBILE_APPLE_SIGN_IN_ENABLED: "0",
     T3CODE_IOS_PERSONAL_TEAM: "0",
     ...(buildNumber ? { LOOM_IOS_BUILD_NUMBER: buildNumber } : {}),
@@ -163,6 +184,7 @@ export function validateIosReleaseConfig(
   teamId: string,
   buildNumber?: string,
   connect: LoomConnectConfig | null = null,
+  libraryPush = false,
 ) {
   const config = record(input, "Expo config");
   const ios = record(config.ios, "Expo iOS config");
@@ -215,6 +237,10 @@ export function validateIosReleaseConfig(
   ) {
     throw new Error("Expo Connect configuration differs from the explicitly prepared release.");
   }
+  // iosPushEnabled turns on upstream's relay registration, which would hand the native token to
+  // T3's relay, so a release carries push only through the Library flag.
+  if ((extra.loomLibraryPush === true) !== libraryPush || extra.iosPushEnabled === true)
+    throw new Error("Expo push configuration differs from the prepared release.");
   if (extra.appVariant !== "production" || extra.iosPersonalTeamBuild === true)
     throw new Error("TestFlight requires a production Apple Developer build.");
   if (buildNumber && ios.buildNumber !== buildNumber)
@@ -250,7 +276,7 @@ export function validateArtifactInfo(
 
 export function validateSigningEntitlements(
   input: unknown,
-  expected: { teamId: string; connectConfig?: LoomConnectConfig },
+  expected: { teamId: string; connectConfig?: LoomConnectConfig; libraryPush?: boolean },
   bundleId: string,
   provisioningProfile = false,
 ) {
@@ -274,6 +300,17 @@ export function validateSigningEntitlements(
       : Object.hasOwn(entitlements, ASSOCIATED_DOMAINS_ENTITLEMENT)
   ) {
     throw new Error(`Unexpected associated domains in ${bundleId}.`);
+  }
+  // Only the main app's entitlement lets iOS issue the device token Library push uses. Once the
+  // App ID has Push, its profiles carry aps-environment whatever the build asked for, so a
+  // push-off build is proven by the signed app alone.
+  if (
+    bundleId === BUNDLE_ID &&
+    (expected.libraryPush
+      ? entitlements[APS_ENVIRONMENT_ENTITLEMENT] !== "production"
+      : !provisioningProfile && Object.hasOwn(entitlements, APS_ENVIRONMENT_ENTITLEMENT))
+  ) {
+    throw new Error(`Unexpected push entitlement in ${bundleId}.`);
   }
   const appGroups = entitlements["com.apple.security.application-groups"] ?? [];
   if (!Array.isArray(appGroups)) throw new Error("Invalid signing app groups.");
@@ -468,6 +505,7 @@ export type IosReleaseReceipt = {
   groups: string[];
   preparedAt: string;
   connectConfig?: LoomConnectConfig;
+  libraryPush?: boolean;
   artifactSha256?: string;
   buildId?: string;
 };
@@ -516,6 +554,8 @@ export function parseReceipt(input: unknown): IosReleaseReceipt {
   if (value.connectConfig !== undefined && !connectConfig?.mobileEnabled) {
     throw new Error("Prepared mobile Connect configuration must be enabled.");
   }
+  if (value.libraryPush !== undefined && typeof value.libraryPush !== "boolean")
+    throw new Error("Invalid Library push setting in release receipt.");
   return {
     schemaVersion: 1,
     sourceRoot,
@@ -526,6 +566,7 @@ export function parseReceipt(input: unknown): IosReleaseReceipt {
     groups: value.groups as string[],
     preparedAt: text(value.preparedAt, "Preparation time"),
     ...(connectConfig ? { connectConfig } : {}),
+    ...(value.libraryPush === true ? { libraryPush: true } : {}),
     ...(artifactSha256 ? { artifactSha256 } : {}),
     ...(typeof value.buildId === "string" ? { buildId: value.buildId } : {}),
   };
@@ -725,14 +766,17 @@ function configFor(
   teamId: string,
   buildNumber?: string,
   preparedConnect?: LoomConnectConfig | null,
+  preparedLibraryPush?: boolean,
 ) {
   const env = iosBuildEnvironment(
     { ...NodeProcess.env, LOOM_IOS_TEAM_ID: teamId },
     buildNumber,
     undefined,
     preparedConnect,
+    preparedLibraryPush,
   );
   const connectConfig = loomMobileConnectConfig(env);
+  const libraryPush = env.LOOM_MOBILE_LIBRARY_PUSH_ENABLED === "1";
   const config = json(
     NodePath.join(sourceRoot, "apps/mobile/node_modules/.bin/expo"),
     ["config", "--json", "--type", "public"],
@@ -740,8 +784,9 @@ function configFor(
     env,
   );
   return {
-    ...validateIosReleaseConfig(config, teamId, buildNumber, connectConfig),
+    ...validateIosReleaseConfig(config, teamId, buildNumber, connectConfig, libraryPush),
     ...(connectConfig ? { connectConfig } : {}),
+    ...(libraryPush ? { libraryPush } : {}),
   };
 }
 
@@ -801,6 +846,7 @@ function assertReceiptContext(receipt: IosReleaseReceipt, requestedSha?: string)
     receipt.teamId,
     receipt.buildNumber,
     receipt.connectConfig ?? null,
+    receipt.libraryPush === true,
   );
   if (config.version !== receipt.version)
     throw new Error("Prepared release app version no longer matches source.");
@@ -822,7 +868,11 @@ async function prepare(outputDir: string, sourceSha?: string): Promise<IosReleas
     buildList(settings.appId).map((build) => build.buildNumber),
     NodeProcess.env.LOOM_IOS_BUILD_NUMBER,
   );
-  const { version, connectConfig } = configFor(SOURCE_ROOT, settings.teamId, buildNumber);
+  const { version, connectConfig, libraryPush } = configFor(
+    SOURCE_ROOT,
+    settings.teamId,
+    buildNumber,
+  );
   const receipt: IosReleaseReceipt = {
     schemaVersion: 1,
     sourceRoot: SOURCE_ROOT,
@@ -832,6 +882,7 @@ async function prepare(outputDir: string, sourceSha?: string): Promise<IosReleas
     buildNumber,
     preparedAt: new Date().toISOString(),
     ...(connectConfig ? { connectConfig } : {}),
+    ...(libraryPush ? { libraryPush } : {}),
   };
   await writeReceipt(outputDir, receipt);
   return receipt;
@@ -851,6 +902,7 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
     receipt.buildNumber,
     receipt.sourceSha,
     receipt.connectConfig ?? null,
+    receipt.libraryPush === true,
   );
   const exportOptions = NodeProcess.env.LOOM_IOS_EXPORT_OPTIONS?.trim();
   let signingManifest: ReturnType<typeof manualSigningManifest> | undefined;
