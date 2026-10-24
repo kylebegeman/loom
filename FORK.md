@@ -357,6 +357,17 @@ each) and `packages/contracts/src/ipc.ts` (3); `apps/web/src/connection/platform
 `packages/shared/package.json` exports `./fork/identity-grant` (no marker). See the
 [L112 packet](docs/fork/packets/L112-identity-renewal/SEAMS.md).
 
+The `retention-defaults` seams bound storage that otherwise grows without limit. Browser
+captures default to 14 days in `packages/contracts/src/settings.ts` (1 marker line), and
+`EventNdjsonLogger.ts` (1) halves the provider log cap to 256 MiB. `LocalDeviceHost.ts` (2)
+prunes device QA session folders idle for 14 days before it starts the device daemon, and
+`UsageService.ts` (3) deletes usage scan caches from older versions a week after their last
+write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
+`apps/server/src/fork/retention/`. Tests carry the rest: `settings.test.ts` (3),
+`LocalDeviceHost.test.ts` (3), and one each in `EventNdjsonLogger.test.ts`,
+`UsageService.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts` and
+`packages/shared/src/serverSettings.test.ts`.
+
 ## Loom CLI and pairing copy
 
 User-facing pairing instructions and CLI help use Loom. The server package exposes `loom`

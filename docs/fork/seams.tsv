@@ -687,3 +687,15 @@ packages/client-runtime/src/connection/resolver.ts	identity-renewal	6
 packages/client-runtime/src/connection/resolver.test.ts	identity-renewal	4
 packages/contracts/src/ipc.ts	identity-renewal	3
 packages/shared/package.json	-	"./fork/identity-grant"
+apps/server/src/device/LocalDeviceHost.ts	retention-defaults	2
+apps/server/src/device/LocalDeviceHost.test.ts	retention-defaults	3
+apps/server/src/provider/EventNdjsonLogger.ts	retention-defaults	1
+apps/server/src/provider/EventNdjsonLogger.test.ts	retention-defaults	1
+apps/server/src/serverSettings.test.ts	retention-defaults	1
+apps/server/src/storageCleanup.test.ts	retention-defaults	1
+apps/server/src/usage/UsageService.ts	retention-defaults	3
+apps/server/src/usage/UsageService.test.ts	retention-defaults	1
+apps/server/src/usage/usageScanCache.ts	retention-defaults	1
+packages/contracts/src/settings.ts	retention-defaults	1
+packages/contracts/src/settings.test.ts	retention-defaults	3
+packages/shared/src/serverSettings.test.ts	retention-defaults	1

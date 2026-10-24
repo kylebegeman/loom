@@ -1093,7 +1093,8 @@ export const StorageCleanupSettings = Schema.Struct({
   projectOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   scratchAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   browserArtifactsAfterDays: StorageRetentionDays.pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+    // fork: retention-defaults: screenshots and recordings otherwise grow without limit.
+    Schema.withDecodingDefault(Effect.succeed(14)),
   ),
   logsAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });

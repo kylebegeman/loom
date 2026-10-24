@@ -273,6 +273,8 @@ const cleanupFixture = (
     ...DEFAULT_SERVER_SETTINGS.storageCleanup,
     worktreeAfterDays: 8,
     worktreeOnDelete: true,
+    // fork: retention-defaults: keep the artifact rule out of worktree reports.
+    browserArtifactsAfterDays: null,
   },
 ) =>
   Effect.gen(function* () {

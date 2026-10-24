@@ -41,6 +41,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
+import { pruneIdleAgentDeviceSessions } from "../fork/retention/agentDeviceSessions.ts"; // fork: retention-defaults
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import {
   agentDeviceStateDir,
@@ -577,6 +578,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       if (alive) return toEndpoint(existing.value);
       yield* fs.remove(daemonFilePath(), { force: true }).pipe(Effect.ignore);
     }
+    yield* pruneIdleAgentDeviceSessions(fs, path, stateDir); // fork: retention-defaults
     // There is no `daemon start`; the first command in a state dir spawns the
     // daemon and blocks until it answers. `devices` is the cheapest one.
     const runResult = yield* runner
