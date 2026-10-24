@@ -83,10 +83,12 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
   WebSockets. If Access cannot work cleanly, routes stay on step one and the refresh token
   lifetime stays at 7 days.
 - **Pocket ID resources (2026-10-24).** The Library holds a Pocket ID admin API key and creates
-  one API resource per computer, granted to the native client. Computers refuse Identity
-  sessions whose ID token `amr` lacks a passkey (`phr`), so a leaked key cannot mint a sign-in
-  that reaches them. The key has full admin rights and is renewed by hand in Pocket ID when it
-  expires.
+  one API resource per computer, granted to the native client. Computers can refuse Identity
+  sessions whose ID token `amr` lacks a passkey (`phr`). That is a speed bump, not a wall: the
+  key has full admin rights, so its holder can enroll a passkey or rewrite the native client's
+  callback URLs, and one click by the account owner on a genuine authorize link then yields a
+  passkey sign-in to any computer. Keep the key off the Library except while provisioning, and
+  rotate it in Pocket ID on any suspected leak.
 - **Identity stays the computer's setting.** The Library provisions the Pocket ID resource
   and hands back its values; the computer's own admin turns Loom Identity on, as
   [environment-auth](../../internals/environment-auth.md) requires.
