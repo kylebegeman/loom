@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type AuthEnvironmentScope } from "@t3tools/contracts";
 import { LibraryId, PROJECT_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
@@ -9,6 +9,9 @@ import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useEffect } from "react";
 import { usePrimaryEnvironmentId, useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentSessionState } from "~/state/session";
+import { identityProfile } from "~/fork/identity/identityProfile";
+import { accessBlock } from "./accessBlock";
 
 export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
 const AUTHORITY_KEY = "loom:project-library:authority:v1";
@@ -115,4 +118,24 @@ export function useLibraryPermission(
   environmentId: EnvironmentId | null,
 ) {
   return useAtomValue(environmentId ? command.permissionAtom(environmentId) : DENIED);
+}
+
+/** Why this device cannot run `commands` on a computer, or null when it can. */
+export function useAccessBlock(
+  environmentId: EnvironmentId | null,
+  commands: ReadonlyArray<{ readonly requiredScopes: () => ReadonlyArray<AuthEnvironmentScope> }>,
+) {
+  const { environments } = useEnvironments();
+  const session = useEnvironmentSessionState(environmentId);
+  const environment = environments.find((entry) => entry.environmentId === environmentId);
+  if (!environment) return null;
+  return accessBlock({
+    label: environment.label,
+    phase: environment.entry.enabled ? environment.connection.phase : null,
+    connectionError: environment.connection.error,
+    identity: identityProfile(environment.entry) !== undefined,
+    session: session.data,
+    sessionFailed: session.hasError,
+    requiredScopes: commands.flatMap((command) => command.requiredScopes()),
+  });
 }

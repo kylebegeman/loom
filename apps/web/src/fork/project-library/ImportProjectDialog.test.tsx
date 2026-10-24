@@ -18,10 +18,14 @@ const state = vi.hoisted(() => ({
   online: true,
   browseError: null as string | null,
   pending: false,
+  block: null as { label: string; message: string; repair: "sign-in" | null } | null,
+  navigate: vi.fn(),
 }));
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => state.navigate }));
 vi.mock("./state", () => ({
   projectLibrary: { inspectFolder: "inspect", createProject: "create", copies: "copies" },
   useLibraryPermission: () => state.allowed,
+  useAccessBlock: () => state.block,
   useLibraryProjects: () => ({
     authorityId: "library",
     connected: true,
@@ -118,6 +122,7 @@ beforeEach(() => {
   state.online = true;
   state.browseError = null;
   state.pending = false;
+  state.block = null;
   state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
     AsyncResult.success({
       rootPath: input.rootPath,
@@ -306,4 +311,21 @@ it("does not silently create a project when existing folder associations cannot 
   await act(async () => button("Use this folder").click());
   expect(button("Add folder to kyle")).toBeDefined();
   expect(state.create).not.toHaveBeenCalled();
+});
+it("offers to sign in again when an expired Library sign-in blocks the import", async () => {
+  const onClose = vi.fn();
+  await mount({ onClose });
+  await act(async () => button("Use this folder").click());
+  expect(button("Add folder to kyle").disabled).toBe(false);
+  state.allowed = false;
+  state.block = {
+    label: "Library",
+    message: "Your sign-in to Library expired.",
+    repair: "sign-in",
+  };
+  await mount({ onClose });
+  expect(button("Add folder to kyle").disabled).toBe(true);
+  await act(async () => button("Sign in to Library again").click());
+  expect(onClose).toHaveBeenCalled();
+  expect(state.navigate).toHaveBeenCalledWith({ to: "/settings/connections" });
 });

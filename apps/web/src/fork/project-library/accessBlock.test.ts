@@ -1,0 +1,70 @@
+import { AuthOrchestrationOperateScope, AuthSettingsWriteScope } from "@t3tools/contracts";
+import { expect, it } from "vite-plus/test";
+import { accessBlock, type AccessTarget } from "./accessBlock";
+
+// The decision reads only grant fields; the rest of the session shape is irrelevant here.
+const session = (fields: {
+  readonly authenticated: boolean;
+  readonly scopes?: ReadonlyArray<string>;
+  readonly permissions?: ReadonlyArray<string>;
+}) => fields as unknown as AccessTarget["session"];
+
+const library: AccessTarget = {
+  label: "Library",
+  phase: "connected",
+  connectionError: null,
+  identity: true,
+  session: session({
+    authenticated: true,
+    scopes: [AuthOrchestrationOperateScope, AuthSettingsWriteScope],
+  }),
+  sessionFailed: false,
+  requiredScopes: [AuthOrchestrationOperateScope, AuthSettingsWriteScope],
+};
+
+it("allows a connected session holding every required scope", () => {
+  expect(accessBlock(library)).toBeNull();
+});
+
+it("asks for a new sign-in when expired Identity access leaves the socket connected", () => {
+  expect(accessBlock({ ...library, session: session({ authenticated: false }) })).toMatchObject({
+    repair: "sign-in",
+    message: expect.stringContaining("expired"),
+  });
+});
+
+it("asks a paired connection to pair again instead of signing in", () => {
+  expect(
+    accessBlock({
+      ...library,
+      identity: false,
+      session: session({ authenticated: false }),
+    }),
+  ).toMatchObject({ repair: "connection", message: expect.stringContaining("Pair it again") });
+});
+
+it("names the missing permission", () => {
+  expect(
+    accessBlock({
+      ...library,
+      session: session({
+        authenticated: true,
+        scopes: [AuthOrchestrationOperateScope],
+        permissions: [AuthOrchestrationOperateScope],
+      }),
+    })?.message,
+  ).toContain("Change environment settings");
+});
+
+it("treats a blocked Identity connection as an expired sign-in", () => {
+  expect(
+    accessBlock({ ...library, phase: "error", connectionError: "Identity access expired." }),
+  ).toMatchObject({ repair: "sign-in" });
+  expect(
+    accessBlock({ ...library, phase: "reconnecting", connectionError: "Network down." }),
+  ).toMatchObject({ repair: "connection", message: "Library is not connected. Network down." });
+});
+
+it("does not offer a repair while permissions are still loading", () => {
+  expect(accessBlock({ ...library, session: null })).toMatchObject({ repair: null });
+});

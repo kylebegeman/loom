@@ -1,5 +1,6 @@
 import {
   ComputerIdentityConnect,
+  ExpiredComputerIdentity,
   SavedComputerIdentity,
 } from "~/fork/identity/ComputerIdentityAccess";
 import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession";
@@ -1648,6 +1649,11 @@ function SavedBackendListRow({
               onToggle={() => setDiagnosisOpen((open) => !open)}
             />
           ) : null}
+          <ExpiredComputerIdentity
+            entry={environment.entry}
+            label={environment.label}
+            phase={environment.connection.phase}
+          />
           {serverUpdateState.status !== "idle" ? (
             <div className="mt-1 max-w-md">
               <ServerUpdateProgress state={serverUpdateState} />
@@ -1679,7 +1685,7 @@ function SavedBackendListRow({
                 onAddRoute={() => onAddRoute(environment)}
               />
             </section>
-            <SavedComputerIdentity entry={environment.entry} />
+            <SavedComputerIdentity entry={environment.entry} phase={environment.connection.phase} />
             <RemoteComputerAccess environmentId={environmentId} connected={isConnected} />
             <section aria-label="Connection permissions">
               <h3 className="text-xs font-medium">This device's permissions</h3>

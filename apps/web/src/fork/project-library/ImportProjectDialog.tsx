@@ -1,7 +1,8 @@
 import { LibraryTextPalette } from "./LibraryTextPalette";
 import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
 import { LibraryFolderPalette } from "./LibraryFolderPalette";
-import { MonitorIcon, FolderPlusIcon } from "lucide-react";
+import { MonitorIcon, FolderPlusIcon, KeyRoundIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -24,7 +25,7 @@ import { usePrimaryEnvironmentId } from "~/state/environments";
 import { libraryStartFolderProjects } from "@t3tools/client-runtime/fork";
 import { folderProjectMatches } from "./folderProjectMatches";
 
-import { projectLibrary, useLibraryProjects, useLibraryPermission } from "./state";
+import { projectLibrary, useAccessBlock, useLibraryProjects, useLibraryPermission } from "./state";
 
 const isLibraryError = Schema.is(LibraryError);
 const ImportAttempt = Schema.NullOr(
@@ -126,6 +127,14 @@ export function ImportProjectDialog({
   const canCreate = useLibraryPermission(projectLibrary.createProject, library.authorityId);
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, library.authorityId);
   const host = library.environments.find((entry) => entry.environmentId === hostId);
+  const hostBlock = useAccessBlock(hostId, [projectLibrary.prepareCopy]);
+  const libraryBlock = useAccessBlock(
+    library.authorityId,
+    projectId === "new"
+      ? [projectLibrary.registerCopy, projectLibrary.createProject]
+      : [projectLibrary.registerCopy],
+  );
+  const navigate = useNavigate();
   const inspectFolder = async (path = rootPath) => {
     if (!hostId || !path.trim()) return;
     setBusy(true);
@@ -323,6 +332,7 @@ export function ImportProjectDialog({
     );
   if (!open) return null;
   const locked = attempt !== null;
+  const selectedProject = library.query.data?.find((project) => project.id === projectId);
   const canImport =
     canPrepare &&
     canRegister &&
@@ -331,6 +341,28 @@ export function ImportProjectDialog({
     host?.connection.phase === "connected" &&
     (!!attempt ||
       (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
+  const accessIssue = canImport ? null : (hostBlock ?? libraryBlock);
+  const formIssue = attempt
+    ? null
+    : !inspection
+      ? busy
+        ? "Checking this folder..."
+        : "Choose a folder first."
+      : !inspection.exists
+        ? "This folder no longer exists on this computer. Choose another folder."
+        : projectId === "choose"
+          ? "Choose which project this folder belongs to."
+          : projectId === "new" && !title.trim()
+            ? "Name the project first."
+            : null;
+  const repositories = inspection?.repositories ?? [];
+  const importDescription = canImport
+    ? selectedProject
+      ? "Use the existing Library project"
+      : repositories.length > 1
+        ? `One Library project for ${repositories.length} repositories: ${repositories.map((repository) => repository.relativePath).join(", ")}`
+        : "Create a Library project for these files"
+    : (accessIssue?.message ?? formIssue ?? "Checking this device's access...");
   const back = () => {
     setSearch("");
     if (page === "choose-project" || page === "name" || page === "brief") setPage("project");
@@ -341,7 +373,6 @@ export function ImportProjectDialog({
   const close = () => {
     if (!busy) onClose();
   };
-  const selectedProject = library.query.data?.find((project) => project.id === projectId);
   const content =
     page === "brief" ? (
       <LibraryTextPalette
@@ -474,13 +505,29 @@ export function ImportProjectDialog({
                       title: attempt
                         ? "Retry import"
                         : `Add folder to ${selectedProject?.title ?? (title || "a project")}`,
-                      description: selectedProject
-                        ? "Use the existing Library project"
-                        : "Create a Library project for these files",
+                      description: importDescription,
                       disabled: !canImport,
                       icon: <FolderPlusIcon className="size-4" />,
                       select: () => void submit(),
                     },
+                    ...(accessIssue?.repair
+                      ? [
+                          {
+                            id: "repair-access",
+                            title:
+                              accessIssue.repair === "sign-in"
+                                ? `Sign in to ${accessIssue.label} again`
+                                : `Review ${accessIssue.label} connection`,
+                            description: "Opens Settings > Connections",
+                            next: true,
+                            icon: <KeyRoundIcon className="size-4" />,
+                            select: () => {
+                              onClose();
+                              void navigate({ to: "/settings/connections" });
+                            },
+                          },
+                        ]
+                      : []),
                     ...(!inspection && rootPath && !attempt
                       ? [
                           {
