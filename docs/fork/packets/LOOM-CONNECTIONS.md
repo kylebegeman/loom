@@ -69,7 +69,9 @@ pushes to the Loom app very likely do not arrive today. C04 should confirm this 
   under `begam.in` so Cloudflare's free Universal SSL certificate covers them. `bagels.top`
   stays reserved for preview pages.
 - **Telemetry (2026-10-24).** Loom builds send no product telemetry to T3; it stays available
-  through `T3CODE_TELEMETRY_ENABLED`.
+  through `T3CODE_TELEMETRY_ENABLED=true`. Product analytics default off already
+  (`fork: telemetry-off`). Relay tracing needs relay credentials baked into the build, so it
+  leaves with the relay config in C05.
 - **Sign-in lifetime (2026-10-24).** 30 days with Cloudflare Access in front of computer
   routes, 7 days without it, enforced by each computer's maximum sign-in age.
 - **Exposure policy (2026-10-24).** Kyle chose more security over the lightest setup, in two

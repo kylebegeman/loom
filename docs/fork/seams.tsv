@@ -714,3 +714,4 @@ packages/shared/src/observability.ts	server-weight	3
 packages/shared/src/observability.test.ts	server-weight	2
 apps/web/src/components/settings/ConnectionsSettings.tsx	directory-computers	7
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	directory-computers	4
+apps/server/src/telemetry/AnalyticsService.ts	telemetry-off	1
