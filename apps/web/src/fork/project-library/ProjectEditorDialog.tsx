@@ -1,6 +1,15 @@
 import { LibraryTextPalette } from "./LibraryTextPalette";
 import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
-import { FolderPlusIcon } from "lucide-react";
+import {
+  FileJsonIcon,
+  FolderGit2Icon,
+  FolderOpenIcon,
+  LinkIcon,
+  PaletteIcon,
+  PencilLineIcon,
+  PlusIcon,
+} from "lucide-react";
+import { ProjectColorDot, ProjectTile } from "./ProjectIdentity";
 import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
 import {
@@ -230,6 +239,14 @@ export function ProjectEditorDialog({
                   id: "add-repository",
                   title: parsed ? `Add ${parsed.title}` : "Paste a repository URL or link",
                   disabled: locked || !parsed || !!resourceError,
+                  icon:
+                    parsed?.kind === "link" ? (
+                      <LinkIcon className="size-4" />
+                    ) : parsed ? (
+                      <FolderGit2Icon className="size-4" />
+                    ) : (
+                      <PlusIcon className="size-4" />
+                    ),
                   select: () => {
                     if (parsed && !resourceError) {
                       setResources((current) => [...current, { id: randomUUID(), ...parsed }]);
@@ -244,6 +261,9 @@ export function ProjectEditorDialog({
                   {
                     id: "automatic",
                     title: "Automatic",
+                    description: "Loom picks one once the project exists",
+                    icon: <PaletteIcon className="size-4" />,
+                    selected: color === undefined,
                     select: () => {
                       setColor(undefined);
                       setPage("name");
@@ -252,6 +272,8 @@ export function ProjectEditorDialog({
                   ...LIBRARY_PROJECT_COLORS.map((choice) => ({
                     id: choice,
                     title: PROJECT_COLOR_NAMES[choice],
+                    icon: <ProjectColorDot color={choice} className="size-3" />,
+                    selected: color === choice,
                     select: () => {
                       setColor(choice);
                       setPage("name");
@@ -272,7 +294,14 @@ export function ProjectEditorDialog({
                       ? "Continue to your conversation"
                       : "Open project",
                     disabled: !allowed || !title.trim(),
-                    icon: <FolderPlusIcon className="size-4" />,
+                    // The draft's mark previews name and color; an automatic color waits for an id.
+                    icon: (
+                      <ProjectTile
+                        project={{ id: "draft", title: title.trim() || "?", color }}
+                        neutral={!color}
+                        size="sm"
+                      />
+                    ),
                     select: () => void save(),
                   },
                   ...(existing
@@ -282,6 +311,7 @@ export function ProjectEditorDialog({
                           title: `Use existing ${existing.title}`,
                           description: "Keep work in the project already in your Library",
                           disabled: locked,
+                          icon: <FolderOpenIcon className="size-4" />,
                           select: () => onSaved(existing),
                         },
                       ]
@@ -295,6 +325,7 @@ export function ProjectEditorDialog({
                             ? `${resources.length} repositories and links. Review shared scripts in Preferences before running them.`
                             : "Paste portable repository layout and setup",
                           disabled: locked,
+                          icon: <FileJsonIcon className="size-4" />,
                           select: () => {
                             setError(null);
                             setPage("blueprint");
@@ -310,6 +341,7 @@ export function ProjectEditorDialog({
                       : "Optional. You can also add these later.",
                     next: true,
                     disabled: locked || resources.length >= 64,
+                    icon: <FolderGit2Icon className="size-4" />,
                     select: () => setPage("repository"),
                   },
                   {
@@ -318,6 +350,7 @@ export function ProjectEditorDialog({
                     description: brief || "Optional",
                     next: true,
                     disabled: locked,
+                    icon: <PencilLineIcon className="size-4" />,
                     select: () => setPage("brief"),
                   },
                   {
@@ -326,6 +359,11 @@ export function ProjectEditorDialog({
                     description: color ? PROJECT_COLOR_NAMES[color] : "Automatic",
                     next: true,
                     disabled: locked,
+                    icon: color ? (
+                      <ProjectColorDot color={color} className="size-3" />
+                    ) : (
+                      <PaletteIcon className="size-4" />
+                    ),
                     select: () => setPage("color"),
                   },
                   ...resources.map((resource) => ({
@@ -333,6 +371,12 @@ export function ProjectEditorDialog({
                     title: resource.title,
                     description: "Remove from this project",
                     disabled: locked,
+                    icon:
+                      resource.kind === "link" ? (
+                        <LinkIcon className="size-4" />
+                      ) : (
+                        <FolderGit2Icon className="size-4" />
+                      ),
                     select: () =>
                       setResources((current) =>
                         current.filter((entry) => entry.id !== resource.id),

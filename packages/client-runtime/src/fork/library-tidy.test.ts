@@ -78,6 +78,7 @@ const entry = (copies: readonly LibraryWorkingCopy[], patch: Partial<ProjectEntr
     copies,
     localIcon: null,
     conversations: 0,
+    attention: { waiting: 0, failed: 0, working: 0 },
     // Nearly four weeks before `now`, past the two-week resting threshold.
     activeAt: "2026-09-20T00:00:00.000Z",
     ...patch,

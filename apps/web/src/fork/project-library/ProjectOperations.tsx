@@ -1,16 +1,55 @@
 import { useState } from "react";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
-import { PROJECT_WORKFLOWS_FEATURE } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_OPERATION_LABELS,
+  LIBRARY_OPERATION_STATES,
+  libraryOperationNeedsAction,
+  sortLibraryOperations,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
+import { PROJECT_WORKFLOWS_FEATURE, type LibraryOperation } from "@t3tools/contracts/fork";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  FolderXIcon,
+  HardDriveDownloadIcon,
+  MessageSquarePlusIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  type LucideIcon,
+} from "lucide-react";
 import { useEnvironments } from "~/state/environments";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { openLibraryAction } from "./actions";
-import { LibraryErrorNotice } from "./LibraryControls";
+import { LIBRARY_ROW, LibraryErrorNotice, LibraryStateBadge } from "./LibraryControls";
+import { ComputerLabel } from "./ProjectIdentity";
 
+const OPERATION_ICONS: Record<LibraryOperation["kind"], LucideIcon> = {
+  create: FolderPlusIcon,
+  prepare: HardDriveDownloadIcon,
+  restore: ArchiveRestoreIcon,
+  reopen: FolderOpenIcon,
+  snapshot: ArchiveIcon,
+  release: Trash2Icon,
+  unregister: FolderXIcon,
+  launch: MessageSquarePlusIcon,
+};
+
+/** Finished history beyond this folds behind Show all, so unfinished work stays in view. */
+const SHOWN_OPERATIONS = 4;
+
+/**
+ * File work Loom ran on one computer, unfinished first. Work survives closing the window, so
+ * anything that stopped partway can be resumed or cancelled here.
+ */
 export function ProjectOperationHistory({
   environmentId,
   projectId,
@@ -19,9 +58,10 @@ export function ProjectOperationHistory({
   readonly projectId?: string;
 }) {
   const { environments } = useEnvironments();
+  const environment = environments.find((entry) => entry.environmentId === environmentId);
+  const label = environment?.label ?? "This computer";
   const supported = supportsLoomFeature(
-    environments.find((entry) => entry.environmentId === environmentId)?.serverConfig?.environment
-      .capabilities,
+    environment?.serverConfig?.environment.capabilities,
     PROJECT_WORKFLOWS_FEATURE,
   );
   const query = useEnvironmentQuery(
@@ -34,6 +74,7 @@ export function ProjectOperationHistory({
   const allowed = useLibraryPermission(projectLibrary.resumeOperation, environmentId);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const act = async (id: string, kind: "resume" | "cancel") => {
     setBusy(true);
     setError(null);
@@ -48,74 +89,141 @@ export function ProjectOperationHistory({
     query.refresh();
     setBusy(false);
   };
-  if (!supported)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Connect an updated computer to view its operations.
-      </p>
-    );
+  const operations = sortLibraryOperations(query.data ?? []);
+  const shown = showAll ? operations : operations.slice(0, SHOWN_OPERATIONS);
+  const unfinished = operations.some(
+    (operation) => libraryOperationNeedsAction(operation) || operation.state === "running",
+  );
   return (
-    <section aria-label="Project operations" className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">Operations on this computer</h2>
-        <Button size="xs" variant="ghost" onClick={query.refresh}>
-          Refresh
-        </Button>
+    <section aria-label={`Activity on ${label}`} className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <ComputerLabel
+          environmentId={environmentId}
+          label={label}
+          className="text-sm font-medium text-foreground"
+        />
+        {supported ? (
+          <Button
+            shape="pill"
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Refresh activity on ${label}`}
+            disabled={query.isPending}
+            onClick={query.refresh}
+          >
+            <RefreshCwIcon />
+          </Button>
+        ) : null}
       </div>
-      <p className="text-sm text-muted-foreground">
-        Work continues when the window closes. After a restart, Loom resumes safe steps using a
-        current authorized session. Running file changes must finish before cancellation.
-      </p>
-      <LibraryErrorNotice error={error ?? query.error} onRetry={query.refresh} />
-      {!query.data?.length ? (
-        <p className="text-sm text-muted-foreground">
-          {query.isPending ? "Loading operations..." : "No operations recorded here yet."}
+      {!supported ? (
+        <p className="text-xs text-muted-foreground">
+          Update Loom on {label} to see its file activity here.
         </p>
-      ) : null}
-      {query.data?.map((operation) => (
-        <div key={operation.id} className="space-y-1 py-2">
-          <div className="flex items-center gap-2">
-            <p className="flex-1 text-sm font-medium">
-              {operation.kind}: {operation.phase}
+      ) : (
+        <>
+          <LibraryErrorNotice error={error ?? query.error} onRetry={query.refresh} />
+          {!operations.length ? (
+            <p className="text-xs text-muted-foreground">
+              {query.isPending ? "Loading activity..." : `No file activity on ${label} yet.`}
             </p>
-            <span className="text-xs text-muted-foreground">{operation.state}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Updated {new Date(operation.updatedAt).toLocaleString()}
-          </p>
-          {operation.error ? (
-            <p role="status" className="text-sm text-destructive">
-              {operation.error}
-            </p>
-          ) : null}
-          {["failed", "needs-input", "queued"].includes(operation.state) ? (
-            <div className="flex gap-2">
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {shown.map((operation) => (
+                <OperationRow
+                  key={operation.id}
+                  operation={operation}
+                  disabled={!allowed || busy}
+                  onResume={() =>
+                    operation.kind === "restore"
+                      ? openLibraryAction("new-conversation", operation.projectId ?? undefined, {
+                          environmentId,
+                        })
+                      : void act(operation.id, "resume")
+                  }
+                  onCancel={() => void act(operation.id, "cancel")}
+                />
+              ))}
+            </ul>
+          )}
+          {operations.length > SHOWN_OPERATIONS ? (
+            <div>
               <Button
-                size="xs"
-                variant="outline"
-                disabled={!allowed || busy}
-                onClick={() =>
-                  operation.kind === "restore"
-                    ? openLibraryAction("new-conversation", operation.projectId ?? undefined, {
-                        environmentId,
-                      })
-                    : void act(operation.id, "resume")
-                }
-              >
-                {operation.kind === "restore" ? "Open Start to restore" : "Resume"}
-              </Button>
-              <Button
+                shape="pill"
                 size="xs"
                 variant="ghost"
-                disabled={!allowed || busy}
-                onClick={() => void act(operation.id, "cancel")}
+                onClick={() => setShowAll((value) => !value)}
               >
-                Cancel remaining steps
+                {showAll ? "Show fewer" : `Show all ${operations.length}`}
               </Button>
             </div>
           ) : null}
-        </div>
-      ))}
+          {unfinished ? (
+            <p className="text-xs text-muted-foreground">
+              Work keeps going when the window closes. After a restart, Loom resumes safe steps on
+              its own; file changes already running finish before they can be cancelled.
+            </p>
+          ) : null}
+        </>
+      )}
     </section>
+  );
+}
+
+function OperationRow({
+  operation,
+  disabled,
+  onResume,
+  onCancel,
+}: {
+  readonly operation: LibraryOperation;
+  readonly disabled: boolean;
+  readonly onResume: () => void;
+  readonly onCancel: () => void;
+}) {
+  const Icon = OPERATION_ICONS[operation.kind];
+  const state = LIBRARY_OPERATION_STATES[operation.state];
+  const actionable = libraryOperationNeedsAction(operation);
+  // The phase repeats the state once work ends; it only adds something while work is underway.
+  const phase =
+    operation.state === "succeeded" || operation.state === "cancelled" ? null : operation.phase;
+  return (
+    <li className={cn(LIBRARY_ROW, "flex min-w-0 flex-col gap-1.5 py-2")}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          aria-hidden
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent"
+        >
+          <Icon className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{LIBRARY_OPERATION_LABELS[operation.kind]}</p>
+          <p className="truncate text-xs tabular-nums text-muted-foreground">
+            {[
+              phase,
+              formatRelativeTimeLabel(operation.updatedAt),
+              operation.attempt > 1 ? `attempt ${operation.attempt}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+        <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
+      </div>
+      {operation.error ? (
+        <p role="status" className="ps-10 text-xs text-destructive-foreground">
+          {operation.error}
+        </p>
+      ) : null}
+      {actionable ? (
+        <div className="flex gap-1.5 ps-10">
+          <Button shape="pill" size="xs" variant="outline" disabled={disabled} onClick={onResume}>
+            {operation.kind === "restore" ? "Restore from Start" : "Resume"}
+          </Button>
+          <Button shape="pill" size="xs" variant="ghost" disabled={disabled} onClick={onCancel}>
+            Cancel remaining steps
+          </Button>
+        </div>
+      ) : null}
+    </li>
   );
 }

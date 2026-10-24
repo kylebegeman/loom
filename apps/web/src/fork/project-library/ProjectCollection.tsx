@@ -8,8 +8,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { LIBRARY_PROJECT_COLORS, type LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
+  CircleAlertIcon,
   EllipsisIcon,
   FolderGit2Icon,
+  HandIcon,
   HardDriveDownloadIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -39,6 +41,7 @@ import {
   ProjectTile,
   projectColorStyle,
 } from "./ProjectIdentity";
+import { LibraryStateBadge } from "./LibraryControls";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { TidyChip } from "./TidyProjectDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
@@ -92,12 +95,14 @@ function ProjectCard({
       <ProjectWash />
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
       <div className="flex items-start gap-3">
-        <ProjectTile project={project} local={entry.localIcon} />
+        <ProjectTile project={project} local={entry.localIcon} size="lg" />
         <div className="min-w-0 flex-1 pt-0.5">
           <h3 className="truncate text-sm font-semibold leading-5 tracking-tight">
             {project.title}
           </h3>
-          <ProjectActivity entry={entry} />
+          <p className="flex min-w-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+            <span className="truncate">Active {formatRelativeTimeLabel(entry.activeAt)}</span>
+          </p>
         </div>
         <ProjectTidy entry={entry} tidy={tidy} />
         <ProjectMenu
@@ -112,8 +117,13 @@ function ProjectCard({
       ) : (
         <p className="text-xs leading-4.5 text-muted-foreground/60">No brief yet</p>
       )}
-      {shownResources.length ? (
-        <ul className="flex flex-wrap gap-1.5" aria-label="Repositories and links">
+      {shownResources.length || hasAttention(entry) ? (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Status, repositories and links">
+          {hasAttention(entry) ? (
+            <li>
+              <ProjectAttentionBadge entry={entry} />
+            </li>
+          ) : null}
           {shownResources.map((resource) => {
             const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
             return (
@@ -133,30 +143,65 @@ function ProjectCard({
           ) : null}
         </ul>
       ) : null}
-      <div className="mt-auto space-y-1 border-t border-border/70 pt-3">
-        {copies.length ? (
-          <>
-            {copies.slice(0, MAX_CARD_COPIES).map((copy) => (
-              <CopyLine key={copy.id} copy={copy} hostLabel={hostLabel} />
-            ))}
-            {copies.length > MAX_CARD_COPIES ? (
-              <p className="text-xs tabular-nums text-muted-foreground">
-                +{copies.length - MAX_CARD_COPIES} more{" "}
-                {copies.length - MAX_CARD_COPIES === 1 ? "copy" : "copies"}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <p className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
-            <HardDriveDownloadIcon aria-hidden className="size-3.5" />
-            {repositories.length
-              ? "Not on a computer yet. Start a conversation to clone it."
-              : "Not on a computer yet"}
-          </p>
-        )}
+      <div className="mt-auto flex items-end gap-3 border-t border-border/70 pt-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          {copies.length ? (
+            <>
+              {copies.slice(0, MAX_CARD_COPIES).map((copy) => (
+                <CopyLine key={copy.id} copy={copy} hostLabel={hostLabel} />
+              ))}
+              {copies.length > MAX_CARD_COPIES ? (
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  +{copies.length - MAX_CARD_COPIES} more{" "}
+                  {copies.length - MAX_CARD_COPIES === 1 ? "copy" : "copies"}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
+              <HardDriveDownloadIcon aria-hidden className="size-3.5" />
+              {repositories.length
+                ? "Not on a computer yet. Start a conversation to clone it."
+                : "Not on a computer yet"}
+            </p>
+          )}
+        </div>
+        {entry.conversations ? (
+          <span className="flex h-5 shrink-0 items-center text-xs tabular-nums text-muted-foreground">
+            <Count icon={MessageSquareIcon} value={entry.conversations} label="conversations" />
+          </span>
+        ) : null}
       </div>
     </li>
   );
+}
+
+const hasAttention = ({ attention }: ProjectEntry) =>
+  attention.waiting + attention.failed + attention.working > 0;
+
+/**
+ * The one thing a project most needs, from its conversations' last sync: a decision first, then a
+ * failed run, then work still going.
+ */
+function ProjectAttentionBadge({ entry }: { readonly entry: ProjectEntry }) {
+  const { waiting, failed, working } = entry.attention;
+  if (waiting)
+    return (
+      <LibraryStateBadge tone="warning" icon={HandIcon}>
+        {waiting} waiting
+      </LibraryStateBadge>
+    );
+  if (failed)
+    return (
+      <LibraryStateBadge tone="danger" icon={CircleAlertIcon}>
+        {failed} failed
+      </LibraryStateBadge>
+    );
+  return working ? (
+    <LibraryStateBadge tone="active">
+      {working === 1 ? "Working" : `${working} working`}
+    </LibraryStateBadge>
+  ) : null;
 }
 
 /**
@@ -189,6 +234,7 @@ export function ProjectCompactCards(props: CollectionProps) {
               Last active {formatRelativeTimeLabel(entry.activeAt)}
             </p>
           </div>
+          {hasAttention(entry) ? <ProjectAttentionBadge entry={entry} /> : null}
           <ProjectTidy entry={entry} tidy={props.tidy} />
           <ProjectMenu
             entry={entry}
@@ -267,6 +313,7 @@ function ProjectRow({
             {project.brief.trim() || <span className="text-muted-foreground/60">No brief yet</span>}
           </p>
         </div>
+        {hasAttention(entry) ? <ProjectAttentionBadge entry={entry} /> : null}
         <ProjectTidy entry={entry} tidy={tidy} />
       </div>
       <div className="hidden min-w-0 items-center gap-2 md:flex">
@@ -332,16 +379,6 @@ function ProjectOpenLink({
       className="absolute inset-0 rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     />
   );
-}
-
-function ProjectActivity({ entry }: { readonly entry: ProjectEntry }) {
-  const parts = [
-    entry.conversations
-      ? `${entry.conversations} ${entry.conversations === 1 ? "conversation" : "conversations"}`
-      : null,
-    `Active ${formatRelativeTimeLabel(entry.activeAt)}`,
-  ].filter(Boolean);
-  return <p className="truncate text-xs tabular-nums text-muted-foreground">{parts.join(" · ")}</p>;
 }
 
 function CopyLine({
@@ -508,7 +545,7 @@ export function ProjectCollectionSkeleton({ view }: { readonly view: "cards" | "
           className="flex min-h-44 flex-col gap-3 rounded-xl border border-border p-3.5"
         >
           <div className="flex items-center gap-3">
-            <Skeleton shape="card" className="size-8" />
+            <Skeleton shape="card" className="size-11" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-3.5 w-2/5" />
               <Skeleton className="h-3 w-1/4" />

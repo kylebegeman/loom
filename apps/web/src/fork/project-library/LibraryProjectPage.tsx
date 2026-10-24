@@ -25,6 +25,7 @@ import {
   MoonIcon,
   PencilLineIcon,
   PlusIcon,
+  ShieldCheckIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -50,9 +51,14 @@ import {
   useLibraryPermission,
   useSelectedLibraryProject,
 } from "./state";
-import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
+import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LIBRARY_ROW, LibraryErrorNotice } from "./LibraryControls";
+import {
+  LIBRARY_ROW,
+  LibraryErrorNotice,
+  LibrarySection,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
@@ -220,6 +226,10 @@ function ProjectView({
       ? threads[0].updatedAt
       : project.updatedAt;
   const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
+  // Only a connected computer can say what it is doing, and each says it once.
+  const activityHosts = [...new Set(activeCopies.map((copy) => copy.environmentId))].filter(
+    hostConnected,
+  );
   const views = PROJECT_VIEWS.filter(
     (entry) =>
       entry !== "repositories" &&
@@ -281,26 +291,6 @@ function ProjectView({
             onChanged={library.refresh}
           />
         ) : null}
-        {shown === "computers" && supportsWorkflows ? (
-          <div className="space-y-6">
-            <Button size="sm" variant="outline" onClick={() => setPreservationOpen(true)}>
-              Preservation and cleanup
-            </Button>
-            {activeCopies
-              .filter(
-                (copy, index) =>
-                  activeCopies.findIndex((entry) => entry.environmentId === copy.environmentId) ===
-                    index && hostConnected(copy.environmentId),
-              )
-              .map((copy) => (
-                <ProjectOperationHistory
-                  key={copy.environmentId}
-                  environmentId={copy.environmentId}
-                  projectId={project.id}
-                />
-              ))}
-          </div>
-        ) : null}
         {preservationOpen ? (
           <ProjectPreservationCenter
             authorityId={authorityId}
@@ -315,6 +305,7 @@ function ProjectView({
               <ProjectAttention
                 threads={threads}
                 copies={copies}
+                hostLabel={hostLabel}
                 onFiles={() => show("computers")}
               />
               {settingUp ? (
@@ -446,6 +437,38 @@ function ProjectView({
               onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
               onRemove={setReleasing}
             />
+            {supportsWorkflows ? (
+              <LibrarySection
+                title="Recovery and activity"
+                icon={ShieldCheckIcon}
+                action={
+                  <Button
+                    shape="pill"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPreservationOpen(true)}
+                  >
+                    Review preservation
+                  </Button>
+                }
+              >
+                {activityHosts.length ? (
+                  <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
+                    {activityHosts.map((environmentId) => (
+                      <ProjectOperationHistory
+                        key={environmentId}
+                        environmentId={environmentId}
+                        projectId={project.id}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    File activity shows here for each connected computer holding this project.
+                  </p>
+                )}
+              </LibrarySection>
+            ) : null}
           </div>
         ) : shown === "setup" ? (
           <ProjectProfile
@@ -558,9 +581,6 @@ function ProjectHero({
   };
   return (
     <header className="flex flex-col gap-4">
-      <div>
-        <LibraryBackLink to="/projects">Projects</LibraryBackLink>
-      </div>
       <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-xs/5 sm:p-7">
         <ProjectGlow strength="strong" />
         <span
@@ -713,21 +733,13 @@ function StatusPill({
   readonly archived: boolean;
   readonly resting: boolean;
 }) {
-  if (archived || resting) {
-    const Icon = archived ? ArchiveIcon : MoonIcon;
+  if (archived || resting)
     return (
-      <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
-        <Icon aria-hidden className="size-3" />
+      <LibraryStateBadge tone="neutral" icon={archived ? ArchiveIcon : MoonIcon}>
         {archived ? "Archived" : "Resting"}
-      </span>
+      </LibraryStateBadge>
     );
-  }
-  return (
-    <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-(--project-color)/12 px-2 text-2xs font-medium text-(--project-color) dark:bg-(--project-color)/16">
-      <span aria-hidden className="size-1.5 rounded-full bg-(--project-color)" />
-      Active
-    </span>
-  );
+  return <LibraryStateBadge tone="active">Active</LibraryStateBadge>;
 }
 
 function TitleEditor({

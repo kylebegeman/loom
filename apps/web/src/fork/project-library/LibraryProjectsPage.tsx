@@ -1,5 +1,5 @@
 import { ProjectPreservationCenter } from "./ProjectPreservation";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -12,11 +12,16 @@ import {
   ListIcon,
   MessageSquareIcon,
   PlusIcon,
+  ShieldCheckIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { LIBRARY_PROJECT_COLORS, type LibraryProjectColor } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PROJECT_COLORS,
+  LIBRARY_SEARCH_FEATURE,
+  type LibraryProjectColor,
+} from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
   libraryHoldsLocalRefs,
@@ -30,6 +35,7 @@ import {
   projectEntries,
   projectSections,
   sortProjectEntries,
+  supportsLoomFeature,
   type ProjectEntry,
   type ProjectGroup,
 } from "@t3tools/client-runtime/fork";
@@ -62,7 +68,12 @@ import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch } from "./LibraryControls";
+import {
+  LIBRARY_ROW,
+  LibraryErrorNotice,
+  LibrarySearch,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { TidyProjectDialog } from "./TidyProjectDialog";
@@ -113,6 +124,7 @@ export function LibraryProjectsPage() {
   const [now] = useState(() => Date.now());
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
   const [preservationOpen, setPreservationOpen] = useState(false);
@@ -194,6 +206,10 @@ export function LibraryProjectsPage() {
     return count ? [{ color, count }] : [];
   });
   const usedComputers = [...new Set(activeCopies.map((copy) => copy.environmentId))];
+  const capabilities = catalog.environment?.serverConfig?.environment.capabilities;
+  // One field finds projects and, where the Library can search it, what was said in them.
+  const searchesHistory = supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE);
+  const waiting = liveEntries.reduce((sum, entry) => sum + entry.attention.waiting, 0);
   const narrowed = !!query.trim() || colors.size > 0 || computer !== null;
   const clearFilters = () => {
     setQuery("");
@@ -235,19 +251,26 @@ export function LibraryProjectsPage() {
   };
   return (
     <LibraryPageFrame>
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-          <p className="max-w-xl text-xs text-muted-foreground tabular-nums">
-            {catalog.authorityId && liveEntries.length
-              ? [
+      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <p className="flex max-w-xl flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground tabular-nums">
+            {catalog.authorityId && liveEntries.length ? (
+              <>
+                {[
                   plural(liveEntries.length, "project"),
                   restingCount ? `${restingCount} resting` : null,
                   usedComputers.length ? `on ${plural(usedComputers.length, "computer")}` : null,
                 ]
                   .filter(Boolean)
-                  .join(" · ")
-              : "Your projects and conversations stay here. Files are ready when you need them."}
+                  .join(" · ")}
+                {waiting ? (
+                  <LibraryStateBadge tone="warning">{waiting} waiting for you</LibraryStateBadge>
+                ) : null}
+              </>
+            ) : (
+              "Your projects and conversations stay here. Files are ready when you need them."
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -255,33 +278,12 @@ export function LibraryProjectsPage() {
             <Button
               shape="pill"
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={() => setPreservationOpen(true)}
             >
-              Preservation and cleanup
+              <ShieldCheckIcon />
+              Preservation
             </Button>
-          ) : null}
-          {catalog.authorityId && (archivedCount || showArchived) ? (
-            <ToggleGroup
-              shape="pill"
-              aria-label="Which projects"
-              variant="segmented"
-              className="me-1.5"
-              value={[showArchived ? "archived" : "current"]}
-              onValueChange={(value) => {
-                if (value[0] === "current" || value[0] === "archived")
-                  setShowArchived(value[0] === "archived");
-              }}
-            >
-              <ToggleGroupItem value="current">
-                Current
-                <span className="tabular-nums opacity-60">{liveEntries.length}</span>
-              </ToggleGroupItem>
-              <ToggleGroupItem value="archived">
-                Archived
-                <span className="tabular-nums opacity-60">{archivedCount}</span>
-              </ToggleGroupItem>
-            </ToggleGroup>
           ) : null}
           <Button
             shape="pill"
@@ -321,22 +323,18 @@ export function LibraryProjectsPage() {
         </section>
       ) : (
         <>
-          <LibraryHistorySearch
-            authorityId={catalog.authorityId}
-            connected={catalog.connected}
-            capabilities={catalog.environment?.serverConfig?.environment.capabilities}
-            hostLabel={hostLabel}
-            projectTitle={(id) =>
-              catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"
-            }
-          />
           {entries.length ? (
             <div className="flex flex-wrap items-center gap-2">
               <LibrarySearch
                 value={query}
                 onChange={setQuery}
-                placeholder="Search names, repos, folders"
-                label="Search projects"
+                inputRef={searchRef}
+                placeholder={
+                  searchesHistory
+                    ? "Search projects and conversations"
+                    : "Search names, repos, folders"
+                }
+                label={searchesHistory ? "Search projects and conversations" : "Search projects"}
               />
               <FilterMenu
                 colorCounts={colorCounts}
@@ -378,6 +376,27 @@ export function LibraryProjectsPage() {
                 </Button>
               ) : null}
               <div className="ms-auto flex items-center gap-1.5">
+                {archivedCount || showArchived ? (
+                  <ToggleGroup
+                    shape="pill"
+                    aria-label="Which projects"
+                    variant="segmented"
+                    value={[showArchived ? "archived" : "current"]}
+                    onValueChange={(value) => {
+                      if (value[0] === "current" || value[0] === "archived")
+                        setShowArchived(value[0] === "archived");
+                    }}
+                  >
+                    <ToggleGroupItem value="current">
+                      Current
+                      <span className="tabular-nums opacity-60">{liveEntries.length}</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="archived">
+                      Archived
+                      <span className="tabular-nums opacity-60">{archivedCount}</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                ) : null}
                 <DisplayMenu
                   preferences={{ ...preferences, group }}
                   onChange={(next) => setPreferences(next)}
@@ -444,7 +463,8 @@ export function LibraryProjectsPage() {
                 <EmptyHeader>
                   <EmptyTitle>No {showArchived ? "archived " : ""}projects match</EmptyTitle>
                   <EmptyDescription>
-                    Search looks at names, briefs, repositories, folders and computers.
+                    Search looks at names, briefs, repositories, folders and computers
+                    {searchesHistory && query.trim() ? ". Conversation matches appear below." : "."}
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent className="flex-row justify-center">
@@ -522,6 +542,17 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           )}
+          <LibraryHistorySearch
+            authorityId={catalog.authorityId}
+            connected={catalog.connected}
+            capabilities={capabilities}
+            hostLabel={hostLabel}
+            query={query}
+            inputRef={searchRef}
+            projectTitle={(id) =>
+              catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"
+            }
+          />
         </>
       )}
       {catalog.authorityId && looseFolders.length && !colors.size && !showArchived ? (

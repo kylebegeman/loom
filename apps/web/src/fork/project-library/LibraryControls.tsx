@@ -1,6 +1,7 @@
 import type { ReactNode, Ref } from "react";
 import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import type { LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
 import { cn } from "~/lib/utils";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
@@ -118,7 +119,7 @@ export function LibraryErrorNotice({
     <div role="alert" className="flex flex-wrap items-center gap-3 py-2 text-sm text-destructive">
       <p>{error}</p>
       {onRetry ? (
-        <Button size="xs" variant="outline" onClick={onRetry}>
+        <Button shape="pill" size="xs" variant="outline" onClick={onRetry}>
           Try again
         </Button>
       ) : null}
@@ -222,6 +223,49 @@ export function LibraryPanel({
       </div>
       {children}
     </section>
+  );
+}
+
+const STATE_PILL: Record<LibraryWorkflowTone, string> = {
+  neutral: "bg-muted text-muted-foreground dark:bg-accent",
+  active: "bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
+  success: "bg-success/12 text-success-foreground",
+  warning: "bg-warning/14 text-warning-foreground",
+  danger: "bg-destructive/10 text-destructive-foreground dark:bg-destructive/16",
+};
+
+const STATE_DOT: Record<LibraryWorkflowTone, string> = {
+  neutral: "bg-muted-foreground/45",
+  active: "bg-(--project-color)",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+};
+
+/** The one pill every Library state uses, so Ready, Active and Failed read alike everywhere. */
+export function LibraryStateBadge({
+  tone,
+  icon: Icon,
+  children,
+}: {
+  readonly tone: LibraryWorkflowTone;
+  readonly icon?: LucideIcon | undefined;
+  readonly children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-2xs font-medium",
+        STATE_PILL[tone],
+      )}
+    >
+      {Icon ? (
+        <Icon aria-hidden className="-ms-0.5 size-3" />
+      ) : (
+        <span aria-hidden className={cn("size-1.5 rounded-full", STATE_DOT[tone])} />
+      )}
+      {children}
+    </span>
   );
 }
 

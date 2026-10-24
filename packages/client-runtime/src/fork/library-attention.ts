@@ -1,12 +1,40 @@
 import type { LibraryThreadSummary, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import type { LibraryWorkflowTone } from "./library-workflows.ts";
 
 export interface LibraryAttentionItem {
   readonly id: string;
-  readonly kind: "conversation" | "files";
+  /** `resume` is a suggestion, not a problem: the latest open conversation when nothing else is. */
+  readonly kind: "conversation" | "files" | "resume";
+  /** Where the observation came from: a conversation's computer, or the computer holding files. */
+  readonly environmentId: LibraryThreadSummary["environmentId"];
   readonly title: string;
   readonly detail: string;
   readonly checkedAt: string;
   readonly priority: number;
+}
+
+/** How loudly a client should show an item, read from its priority. */
+export function libraryAttentionTone(
+  item: Pick<LibraryAttentionItem, "priority">,
+): LibraryWorkflowTone {
+  if (item.priority === 0 || item.priority === 2) return "warning";
+  if (item.priority === 1) return "danger";
+  if (item.priority === 3) return "active";
+  return "neutral";
+}
+
+export type LibraryConversationAttention = "waiting" | "failed" | "working";
+
+const WORKING_STATUSES = new Set(["preparing", "queued", "starting", "running"]);
+
+/** What a saved conversation asks of a person, as of its last sync. Null when nothing. */
+export function libraryConversationAttention(
+  thread: Pick<LibraryThreadSummary, "status" | "archived" | "deleted" | "settled">,
+): LibraryConversationAttention | null {
+  if (thread.archived || thread.deleted || thread.settled) return null;
+  if (thread.status === "waiting") return "waiting";
+  if (thread.status === "failed") return "failed";
+  return WORKING_STATUSES.has(thread.status) ? "working" : null;
 }
 
 /** Saved observations stay labelled as observations; disconnected computers cannot imply live status. */
@@ -19,22 +47,21 @@ export function libraryProjectAttention(
     (thread) => !thread.archived && !thread.deleted && !thread.settled,
   );
   for (const thread of available) {
-    if (
-      !["preparing", "queued", "starting", "running", "waiting", "failed"].includes(thread.status)
-    )
-      continue;
+    const attention = libraryConversationAttention(thread);
+    if (!attention) continue;
     items.push({
       id: thread.id,
       kind: "conversation",
+      environmentId: thread.environmentId,
       title: thread.title,
       detail:
-        thread.status === "waiting"
+        attention === "waiting"
           ? "Waiting for a decision"
-          : thread.status === "failed"
+          : attention === "failed"
             ? "Last run needs attention"
             : "Work was running at the last sync",
       checkedAt: thread.syncedAt,
-      priority: thread.status === "waiting" ? 0 : thread.status === "failed" ? 1 : 3,
+      priority: attention === "waiting" ? 0 : attention === "failed" ? 1 : 3,
     });
   }
   for (const copy of copies) {
@@ -43,6 +70,7 @@ export function libraryProjectAttention(
       items.push({
         id: copy.id,
         kind: "files",
+        environmentId: copy.environmentId,
         title: copy.rootPath,
         detail:
           copy.state === "missing"
@@ -58,6 +86,7 @@ export function libraryProjectAttention(
       items.push({
         id: copy.id,
         kind: "files",
+        environmentId: copy.environmentId,
         title: copy.rootPath,
         detail: "File and remote status have not been checked",
         checkedAt: copy.updatedAt,
@@ -80,6 +109,7 @@ export function libraryProjectAttention(
       items.push({
         id: copy.id,
         kind: "files",
+        environmentId: copy.environmentId,
         title: copy.rootPath,
         detail: [
           dirty ? `${dirty} changed ${dirty === 1 ? "file" : "files"}` : "",
@@ -104,7 +134,8 @@ export function libraryProjectAttention(
   if (resume)
     items.push({
       id: resume.id,
-      kind: "conversation",
+      kind: "resume",
+      environmentId: resume.environmentId,
       title: resume.title,
       detail: "Continue your most recent conversation",
       checkedAt: resume.syncedAt,

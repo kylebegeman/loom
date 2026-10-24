@@ -30,6 +30,7 @@ vi.mock("./state", () => ({
   useLibraryPermission: () => state.allowed,
   useLibraryAuthority: () => ({
     environments: [{ environmentId: "computer", connection: { phase: "connected" } }],
+    computers: [],
   }),
 }));
 vi.mock("~/state/query", () => ({
@@ -57,7 +58,8 @@ vi.mock("~/state/use-atom-command", () => ({
 }));
 vi.mock("./ProjectOperations", () => ({ ProjectOperationHistory: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
-vi.mock("./LibraryControls", () => ({
+vi.mock("./LibraryControls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./LibraryControls")>()),
   LibraryDialog: ({ children, actions }: { children: ReactNode; actions: ReactNode }) => (
     <div>
       {children}
@@ -67,6 +69,28 @@ vi.mock("./LibraryControls", () => ({
   LibraryErrorNotice: ({ error }: { error: string | null }) =>
     error ? <p role="alert">{error}</p> : null,
 }));
+vi.mock("./ProjectIdentity", () => ({
+  PathLabel: ({ path }: { path: string }) => <span>{path}</span>,
+  ComputerLabel: ({ label }: { label: string }) => <span>{label}</span>,
+}));
+// Menus open in a portal on pointer events; rendering their items inline keeps choices clickable.
+vi.mock("~/components/ui/menu", () => {
+  const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return {
+    Menu: Pass,
+    MenuTrigger: Pass,
+    MenuPopup: Pass,
+    MenuGroup: Pass,
+    MenuGroupLabel: Pass,
+    MenuRadioGroup: Pass,
+    MenuRadioItem: Pass,
+    MenuItem: ({ children, ...props }: ComponentProps<"button">) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+  };
+});
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }));
@@ -240,7 +264,7 @@ it("retries a reviewed blueprint with the same request after a lost response", a
   expect(state.apply.mock.calls[1]![0]).toEqual(state.apply.mock.calls[0]![0]);
 });
 
-it("offers repository resources for workstreams without turning ordinary links or the placeholder into references", async () => {
+it("offers repository resources for workstreams without turning ordinary links into references", async () => {
   state.save.mockResolvedValue(AsyncResult.success({}));
   const resource = { remoteUrl: null, relativePath: "", defaultBranch: null };
   await act(async () =>
@@ -271,9 +295,10 @@ it("offers repository resources for workstreams without turning ordinary links o
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Ship");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const select = container.querySelector<HTMLSelectElement>('[aria-label="Link existing work"]')!;
-  expect(select.textContent).not.toContain("Documentation");
-  await act(async () => select.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(button("Documentation")).toBeUndefined();
+  await act(async () => button("Source repository").click());
   await act(async () => button("Save active").click());
-  expect(state.save.mock.calls[0]![0].input.references).toEqual([]);
+  expect(state.save.mock.calls[0]![0].input.references).toEqual([
+    { kind: "repository", id: "repo", label: "Source repository", state: "open" },
+  ]);
 });

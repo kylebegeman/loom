@@ -13,7 +13,26 @@ import {
   type LibraryThreadSummary,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { libraryProjectAttention } from "@t3tools/client-runtime/fork";
+import {
+  LIBRARY_OPERATION_LABELS,
+  LIBRARY_OPERATION_STATES,
+  LIBRARY_RESTORE_PATHS,
+  LIBRARY_WORKSTREAM_REFERENCE_KINDS,
+  LIBRARY_WORKSTREAM_REFERENCE_STATES,
+  LIBRARY_WORKSTREAM_STATES,
+  LIBRARY_WORKSTREAM_TYPED_KINDS,
+  isWorkstreamReferenceDone,
+  libraryOperationNeedsAction,
+  libraryProjectAttention,
+  sortLibraryOperations,
+  sortWorkstreams,
+  workstreamLinkOptions,
+  workstreamProgress,
+  workstreamReferenceDoneState,
+  workstreamReferenceKey,
+  workstreamReferenceThread,
+  type LibraryWorkflowTone,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -21,6 +40,8 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { uuidv4 } from "../../lib/uuid";
+import { relativeTime } from "../../lib/time";
+import { cn } from "../../lib/cn";
 import {
   library,
   refreshLibraryProject,
@@ -32,6 +53,39 @@ import { LibraryCopySection } from "./LibraryCopySection";
 const inputStyle = "min-h-12 rounded-xl bg-field px-4 text-base text-foreground";
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
 const decodeBlueprint = Schema.decodeOption(blueprintCodec);
+
+const BADGE_FILL: Record<LibraryWorkflowTone, string> = {
+  neutral: "bg-subtle",
+  active: "bg-adaptive-blue-50-blue-400-a14",
+  success: "bg-adaptive-emerald-500-a12-a16",
+  warning: "bg-adaptive-amber-500-a12-a16",
+  danger: "bg-adaptive-red-50-950-a80",
+};
+
+const BADGE_INK: Record<LibraryWorkflowTone, string> = {
+  neutral: "text-foreground-muted",
+  active: "text-adaptive-blue-600-400",
+  success: "text-adaptive-emerald-700-300",
+  warning: "text-adaptive-amber-700-300",
+  danger: "text-adaptive-red-700-300",
+};
+
+/** The same state pill the web Library uses, so Active, Done and Failed read alike on both. */
+function StateBadge({
+  tone,
+  label,
+}: {
+  readonly tone: LibraryWorkflowTone;
+  readonly label: string;
+}) {
+  return (
+    <View className={cn("self-start rounded-full px-2.5 py-0.5", BADGE_FILL[tone])}>
+      <Text className={cn("font-t3-medium text-xs", BADGE_INK[tone])}>{label}</Text>
+    </View>
+  );
+}
+
+const ago = (iso: string) => `${relativeTime(iso)} ago`;
 export function LibraryWorkflows({
   environmentId,
   project,
@@ -65,7 +119,10 @@ export function LibraryWorkflows({
   const [busy, setBusy] = useState(false);
   const parsed = blueprintText === null ? null : decodeBlueprint(blueprintText);
   const preview = parsed?._tag === "Some" ? parsed.value : null;
-  const attention = libraryProjectAttention(threads, copies);
+  // The latest conversation already leads the project screen, so a resume suggestion would repeat it.
+  const attention = libraryProjectAttention(threads, copies).filter(
+    (item) => item.kind !== "resume",
+  );
   const draftId = useRef("");
   const pendingSave = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const edit = (value: LibraryWorkstream | "new") => {
@@ -106,45 +163,22 @@ export function LibraryWorkflows({
     }
     setBusy(false);
   };
-  const options: LibraryWorkstreamReference[] = [
-    ...threads
-      .filter((thread) => !thread.deleted)
-      .map((thread) => ({
-        kind: "thread" as const,
-        id: thread.threadId,
-        label: thread.title,
-        environmentId: thread.environmentId,
-        state: thread.settled ? ("completed" as const) : ("open" as const),
-      })),
-    ...copies.map((copy) => ({
-      kind: "copy" as const,
-      id: copy.id,
-      label: copy.rootPath.slice(-160),
-      environmentId: copy.environmentId,
-      state: "open" as const,
-    })),
-    ...project.resources
-      .filter((resource) => resource.kind !== "link")
-      .map((resource) => ({
-        kind: "repository" as const,
-        id: resource.id,
-        label: resource.title,
-        state: "open" as const,
-      })),
-  ];
+  const options = workstreamLinkOptions(project, threads, copies);
   return (
     <View className="gap-5">
-      <SettingsSection title="Needs attention">
-        {attention.length ? (
-          attention.slice(0, 8).map((item) => (
+      {attention.length ? (
+        <SettingsSection title="Needs attention">
+          {attention.slice(0, 8).map((item) => (
             <View key={`${item.kind}:${item.id}`} className="gap-1 px-4 py-3">
-              <Text className="font-t3-medium text-foreground">{item.title}</Text>
+              <Text className="font-t3-medium text-foreground" numberOfLines={1}>
+                {item.title.trim() || "Untitled conversation"}
+              </Text>
               <Text className="text-sm text-foreground-muted">
-                {item.detail}. Observed {new Date(item.checkedAt).toLocaleString()}
+                {item.detail} · seen {ago(item.checkedAt)}
               </Text>
               {item.kind === "conversation" ? (
                 <Button
-                  label="Resume conversation"
+                  label="Open conversation"
                   tone="text"
                   onPress={() =>
                     navigation.navigate("LibraryHistory", {
@@ -154,18 +188,12 @@ export function LibraryWorkflows({
                   }
                 />
               ) : (
-                <Text className="text-sm text-foreground-muted">
-                  Review this copy in Files on this page.
-                </Text>
+                <Text className="text-sm text-foreground-muted">Review these files below.</Text>
               )}
             </View>
-          ))
-        ) : (
-          <Text className="px-4 py-3 text-sm text-foreground-muted">
-            No problems in saved observations. Check connected computers for current file status.
-          </Text>
-        )}
-      </SettingsSection>
+          ))}
+        </SettingsSection>
+      ) : null}
       <SettingsSection title="Workstreams">
         <View className="gap-3 p-4">
           <Text className="text-sm text-foreground-muted">
@@ -179,59 +207,73 @@ export function LibraryWorkflows({
               No workstreams yet. Start a conversation as usual, or group a larger goal here.
             </Text>
           ) : null}
-          {streams.data?.map((stream) => (
-            <View key={stream.id} className="gap-2">
-              <Text className="font-t3-medium text-foreground">
-                {stream.title}: {stream.state}
-              </Text>
-              <Text className="text-sm text-foreground-muted">{stream.goal}</Text>
-              {stream.references.map((ref) => {
-                const thread =
-                  ref.kind === "thread"
-                    ? threads.find(
-                        (thread) =>
-                          (thread.threadId === ref.id || thread.id === ref.id) &&
-                          (!ref.environmentId || ref.environmentId === thread.environmentId),
-                      )
-                    : undefined;
-                return (
-                  <View key={`${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`} className="gap-1">
-                    <Text className="text-sm text-foreground-muted">
-                      {ref.label}: {ref.state}
-                    </Text>
-                    {thread ? (
-                      <Button
-                        label={`Open ${ref.label}`}
-                        tone="text"
-                        onPress={() =>
-                          navigation.navigate("LibraryHistory", {
-                            projectId: project.id,
-                            archiveId: thread.id,
-                          })
-                        }
-                      />
-                    ) : ref.url ? (
-                      <Button
-                        label={`Open ${ref.label}`}
-                        tone="text"
-                        onPress={() =>
-                          void Linking.openURL(ref.url!).catch(() =>
-                            setError("Could not open this reference link."),
-                          )
-                        }
-                      />
-                    ) : null}
-                  </View>
-                );
-              })}
-              <Button
-                label="Review workstream"
-                tone="text"
-                disabled={!canSave || busy || editor !== null}
-                onPress={() => edit(stream)}
-              />
-            </View>
-          ))}
+          {sortWorkstreams(streams.data ?? []).map((stream) => {
+            const state = LIBRARY_WORKSTREAM_STATES[stream.state];
+            const progress = workstreamProgress(stream);
+            return (
+              <View key={stream.id} className="gap-2 rounded-xl bg-subtle p-3">
+                <View className="flex-row items-center gap-2">
+                  <Text className="flex-1 font-t3-medium text-foreground" numberOfLines={2}>
+                    {stream.title}
+                  </Text>
+                  <StateBadge tone={state.tone} label={state.label} />
+                </View>
+                {stream.goal ? (
+                  <Text className="text-sm text-foreground-muted" numberOfLines={4}>
+                    {stream.goal}
+                  </Text>
+                ) : null}
+                <Text className="text-xs text-foreground-muted">
+                  {progress.total
+                    ? `${progress.done} of ${progress.total} done${progress.blocked ? ` · ${progress.blocked} blocked` : ""} · `
+                    : ""}
+                  Updated {ago(stream.updatedAt)}
+                </Text>
+                {stream.references.map((ref) => {
+                  const thread = workstreamReferenceThread(ref, threads);
+                  const refState = LIBRARY_WORKSTREAM_REFERENCE_STATES[ref.state];
+                  return (
+                    <View key={workstreamReferenceKey(ref)} className="gap-1">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+                          {LIBRARY_WORKSTREAM_REFERENCE_KINDS[ref.kind]} · {ref.label}
+                        </Text>
+                        <StateBadge tone={refState.tone} label={refState.label} />
+                      </View>
+                      {thread ? (
+                        <Button
+                          label="Open conversation"
+                          tone="text"
+                          onPress={() =>
+                            navigation.navigate("LibraryHistory", {
+                              projectId: project.id,
+                              archiveId: thread.id,
+                            })
+                          }
+                        />
+                      ) : ref.url ? (
+                        <Button
+                          label="Open link"
+                          tone="text"
+                          onPress={() =>
+                            void Linking.openURL(ref.url!).catch(() =>
+                              setError("Could not open this reference link."),
+                            )
+                          }
+                        />
+                      ) : null}
+                    </View>
+                  );
+                })}
+                <Button
+                  label="Review workstream"
+                  tone="text"
+                  disabled={!canSave || busy || editor !== null}
+                  onPress={() => edit(stream)}
+                />
+              </View>
+            );
+          })}
           <Button
             label="New workstream"
             disabled={!canSave || busy || editor !== null}
@@ -260,16 +302,13 @@ export function LibraryWorkflows({
                 .filter(
                   (option) =>
                     !references.some(
-                      (ref) =>
-                        ref.kind === option.kind &&
-                        ref.id === option.id &&
-                        ref.environmentId === option.environmentId,
+                      (ref) => workstreamReferenceKey(ref) === workstreamReferenceKey(option),
                     ),
                 )
                 .map((option) => (
                   <Button
-                    key={`${option.kind}:${option.environmentId ?? ""}:${option.id}`}
-                    label={`Link ${option.kind}: ${option.label}`}
+                    key={workstreamReferenceKey(option)}
+                    label={`Link ${LIBRARY_WORKSTREAM_REFERENCE_KINDS[option.kind].toLowerCase()}: ${option.label.trim() || "Untitled"}`}
                     tone="text"
                     disabled={busy}
                     onPress={() => setReferences((previous) => [...previous, option])}
@@ -284,22 +323,17 @@ export function LibraryWorkflows({
                 className={inputStyle}
               />
               <View className="flex-row flex-wrap gap-2">
-                {["verification", "branch", "pull-request"].map((kind) => (
+                {LIBRARY_WORKSTREAM_TYPED_KINDS.map((kind) => (
                   <Button
                     key={kind}
-                    label={`Add ${kind === "verification" ? "check" : kind === "branch" ? "branch" : "PR"}`}
+                    label={`Add ${LIBRARY_WORKSTREAM_REFERENCE_KINDS[kind].toLowerCase()}`}
                     disabled={!reference.trim() || busy}
                     onPress={() => {
                       const label = reference.trim();
                       setReferences((previous) => [
                         ...previous,
                         {
-                          kind:
-                            kind === "branch"
-                              ? "branch"
-                              : kind === "pull-request"
-                                ? "pull-request"
-                                : "verification",
+                          kind,
                           id: uuidv4(),
                           label,
                           state: "open",
@@ -312,14 +346,20 @@ export function LibraryWorkflows({
                 ))}
               </View>
               {references.map((ref, index) => (
-                <View key={`${ref.kind}:${ref.environmentId ?? ""}:${ref.id}`} className="gap-2">
-                  <Text className="text-sm text-foreground">
-                    {ref.label}: {ref.state}
-                  </Text>
+                <View key={workstreamReferenceKey(ref)} className="gap-2">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+                      {LIBRARY_WORKSTREAM_REFERENCE_KINDS[ref.kind]} · {ref.label}
+                    </Text>
+                    <StateBadge
+                      tone={LIBRARY_WORKSTREAM_REFERENCE_STATES[ref.state].tone}
+                      label={LIBRARY_WORKSTREAM_REFERENCE_STATES[ref.state].label}
+                    />
+                  </View>
                   <View className="flex-row flex-wrap gap-2">
                     <Button
                       label={
-                        ref.state === "completed" || ref.state === "passed"
+                        isWorkstreamReferenceDone(ref)
                           ? "Reopen link"
                           : ref.kind === "verification"
                             ? "Record pass"
@@ -333,12 +373,9 @@ export function LibraryWorkflows({
                             position === index
                               ? {
                                   ...item,
-                                  state:
-                                    item.state === "passed" || item.state === "completed"
-                                      ? "open"
-                                      : item.kind === "verification"
-                                        ? "passed"
-                                        : "completed",
+                                  state: isWorkstreamReferenceDone(item)
+                                    ? "open"
+                                    : workstreamReferenceDoneState(item),
                                 }
                               : item,
                           ),
@@ -512,24 +549,28 @@ export function LibraryPreservationCenter({
           <Button label="Refresh observations" tone="text" onPress={query.refresh} />
           {query.data?.map((entry) => (
             <View key={entry.copy.id} className="gap-3">
-              <Text className="font-t3-medium text-foreground">{entry.project.title}</Text>
-              <Text className="text-sm text-foreground-muted">
-                Restore:{" "}
-                {entry.restore === "verified-archive"
-                  ? "Saved recovery archive"
-                  : entry.restore === "repository"
-                    ? "Repository clone; local-only files are not covered"
-                    : "No verified restore path"}
-                .{" "}
-                {entry.checkedAt
-                  ? `Last checked ${new Date(entry.checkedAt).toLocaleString()}`
-                  : "Not yet checked"}
-              </Text>
-              {entry.blockers.map((blocker) => (
-                <Text key={blocker} className="text-sm text-foreground-muted">
-                  {blocker}
+              <View className="flex-row items-center gap-2">
+                <Text className="flex-1 font-t3-medium text-foreground" numberOfLines={1}>
+                  {entry.project.title}
                 </Text>
-              ))}
+                <StateBadge
+                  tone={LIBRARY_RESTORE_PATHS[entry.restore].tone}
+                  label={LIBRARY_RESTORE_PATHS[entry.restore].label}
+                />
+              </View>
+              <Text className="text-sm text-foreground-muted">
+                {LIBRARY_RESTORE_PATHS[entry.restore].detail}{" "}
+                {entry.checkedAt ? `Checked ${ago(entry.checkedAt)}.` : "Not checked yet."}
+              </Text>
+              {entry.blockers.length ? (
+                <View className="gap-1 rounded-xl bg-adaptive-amber-500-a12-a16 p-3">
+                  {entry.blockers.map((blocker) => (
+                    <Text key={blocker} className="text-sm text-adaptive-amber-700-300">
+                      {blocker}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
               <LibraryCopySection
                 project={entry.project}
                 copy={entry.copy}
@@ -592,31 +633,53 @@ export function LibraryOperationHistory({
   if (!supported)
     return (
       <Text className="text-sm text-foreground-muted">
-        Connect an updated computer to view its operations.
+        Update Loom on this computer to see its file activity.
       </Text>
     );
   return (
     <View className="gap-2">
       <Button
-        label={open ? "Hide operations" : "Operations on this computer"}
+        label={open ? "Hide activity" : "File activity on this computer"}
         tone="text"
         onPress={() => setOpen((previous) => !previous)}
       />
       {open ? (
         <>
-          <Button label="Refresh operations" tone="text" onPress={query.refresh} />
+          <Button label="Refresh activity" tone="text" onPress={query.refresh} />
           {error || query.error ? (
             <Text accessibilityRole="alert">{error ?? query.error}</Text>
           ) : null}
-          {query.data?.map((operation) => (
+          {!query.isPending && !query.data?.length ? (
+            <Text className="text-sm text-foreground-muted">No file activity yet.</Text>
+          ) : null}
+          {sortLibraryOperations(query.data ?? []).map((operation) => (
             <View key={operation.id} className="gap-2">
-              <Text className="text-sm text-foreground">
-                {operation.kind}: {operation.phase} ({operation.state})
-              </Text>
+              <View className="flex-row items-center gap-2">
+                <View className="flex-1 gap-0.5">
+                  <Text className="text-sm text-foreground">
+                    {LIBRARY_OPERATION_LABELS[operation.kind]}
+                  </Text>
+                  <Text className="text-xs text-foreground-muted">
+                    {[
+                      operation.state === "succeeded" || operation.state === "cancelled"
+                        ? null
+                        : operation.phase,
+                      ago(operation.updatedAt),
+                      operation.attempt > 1 ? `attempt ${operation.attempt}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </Text>
+                </View>
+                <StateBadge
+                  tone={LIBRARY_OPERATION_STATES[operation.state].tone}
+                  label={LIBRARY_OPERATION_STATES[operation.state].label}
+                />
+              </View>
               {operation.error ? (
                 <Text className="text-sm text-danger">{operation.error}</Text>
               ) : null}
-              {["queued", "failed", "needs-input"].includes(operation.state) ? (
+              {libraryOperationNeedsAction(operation) ? (
                 <>
                   <Button
                     label={operation.kind === "restore" ? "Open Start to restore" : "Resume"}

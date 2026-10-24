@@ -37,7 +37,12 @@ import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryControls";
+import {
+  LibraryErrorNotice,
+  LibraryPanel,
+  LibrarySection,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { useLibraryAttempt } from "./attempts";
 import { ExistingFolderStorage } from "./ExistingFolderStorage";
@@ -70,30 +75,10 @@ function copyStatus(copy: LibraryWorkingCopy, online: boolean): CopyStatus {
   }
 }
 
-const STATUS_PILL: Record<CopyStatus["tone"], string> = {
-  ready: "bg-success/12 text-success-foreground",
-  quiet: "bg-muted text-muted-foreground dark:bg-accent",
-  warning: "bg-warning/14 text-warning-foreground",
-};
-
-const STATUS_DOT: Record<CopyStatus["tone"], string> = {
-  ready: "bg-success",
-  quiet: "bg-muted-foreground/45",
-  warning: "bg-warning",
-};
+const STATUS_TONES = { ready: "success", quiet: "neutral", warning: "warning" } as const;
 
 function CopyStatusLabel({ status }: { readonly status: CopyStatus }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-full px-2 text-2xs font-medium",
-        STATUS_PILL[status.tone],
-      )}
-    >
-      <span aria-hidden className={cn("size-1.5 rounded-full", STATUS_DOT[status.tone])} />
-      {status.label}
-    </span>
-  );
+  return <LibraryStateBadge tone={STATUS_TONES[status.tone]}>{status.label}</LibraryStateBadge>;
 }
 
 const repositoryTitle = (project: LibraryProject, resourceId: string) =>

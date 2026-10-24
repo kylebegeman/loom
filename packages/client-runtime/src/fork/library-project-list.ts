@@ -8,6 +8,10 @@ import type {
 } from "@t3tools/contracts/fork";
 import { LIBRARY_PROJECT_COLORS } from "@t3tools/contracts/fork";
 import { libraryProjectColor } from "./library-project.ts";
+import {
+  libraryConversationAttention,
+  type LibraryConversationAttention,
+} from "./library-attention.ts";
 
 export const PROJECT_SORTS = ["activity", "name", "created"] as const;
 export type ProjectSort = (typeof PROJECT_SORTS)[number];
@@ -82,7 +86,12 @@ export type ProjectEntry = {
   readonly conversations: number | null;
   /** The later of the last edit and the last conversation update. */
   readonly activeAt: string;
+  /** Conversations asking for something, as of their last sync. Read from the loaded index only. */
+  readonly attention: ProjectAttentionCounts;
 };
+
+export type ProjectAttentionCounts = Readonly<Record<LibraryConversationAttention, number>>;
+const NO_ATTENTION: ProjectAttentionCounts = { waiting: 0, failed: 0, working: 0 };
 
 export function projectEntries(
   projects: readonly LibraryProject[],
@@ -91,7 +100,14 @@ export function projectEntries(
   localProjects: readonly LocalProjectIcon[] = [],
 ): ProjectEntry[] {
   const threads = new Map<string, { count: number; latest: string }>();
+  const attention = new Map<string, Record<LibraryConversationAttention, number>>();
   for (const thread of index?.threads ?? []) {
+    const need = libraryConversationAttention(thread);
+    if (need) {
+      const counts = attention.get(thread.projectId) ?? { ...NO_ATTENTION };
+      counts[need] += 1;
+      attention.set(thread.projectId, counts);
+    }
     if (thread.deleted || thread.archived) continue;
     const current = threads.get(thread.projectId);
     threads.set(thread.projectId, {
@@ -120,6 +136,7 @@ export function projectEntries(
       conversations: complete ? (activity?.count ?? 0) : null,
       activeAt:
         activity && activity.latest > project.updatedAt ? activity.latest : project.updatedAt,
+      attention: attention.get(project.id) ?? NO_ATTENTION,
     };
   });
 }

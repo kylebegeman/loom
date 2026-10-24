@@ -2,7 +2,16 @@ import { useRef, useState } from "react";
 import * as Schema from "effect/Schema";
 import { LibraryBlueprint, type LibraryProject } from "@t3tools/contracts/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { DownloadIcon, UploadIcon } from "lucide-react";
+import {
+  DownloadIcon,
+  FileJsonIcon,
+  FileUpIcon,
+  FolderGit2Icon,
+  KeyRoundIcon,
+  TerminalIcon,
+  UploadIcon,
+  WrenchIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 import { useEnvironmentQuery } from "~/state/query";
@@ -10,10 +19,13 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { randomUUID } from "~/lib/utils";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { projectLibrary, useLibraryPermission } from "./state";
-import { LibraryErrorNotice } from "./LibraryControls";
+import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 
 const codec = Schema.fromJsonString(LibraryBlueprint);
 const decodeBlueprint = Schema.decodeOption(codec);
+/** The Library refuses larger blueprints, so the file chooser says so before reading one. */
+const BLUEPRINT_LIMIT = 131072;
+
 export function ProjectBlueprint({
   project,
   authorityId,
@@ -28,6 +40,7 @@ export function ProjectBlueprint({
   );
   const apply = useAtomCommand(projectLibrary.applyBlueprint, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.applyBlueprint, authorityId);
+  const fileInput = useRef<HTMLInputElement>(null);
   const pendingImport = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,106 +79,198 @@ export function ProjectBlueprint({
     }
     setBusy(false);
   };
+  const readFile = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > BLUEPRINT_LIMIT) {
+      setError("Choose a blueprint smaller than 128 KB.");
+      return;
+    }
+    setError(null);
+    void file
+      .text()
+      .then(setText)
+      .catch(() => setError("Could not read that file."));
+  };
   return (
-    <section aria-label="Project blueprint" className="space-y-3">
-      <h2 className="text-base font-semibold">Project blueprint</h2>
-      <p className="max-w-2xl text-sm text-muted-foreground">
+    <LibrarySection
+      title="Project blueprint"
+      icon={FileJsonIcon}
+      action={
+        <div className="flex gap-1.5">
+          <Button
+            shape="pill"
+            size="sm"
+            variant="ghost"
+            disabled={!query.data || query.isPending}
+            onClick={download}
+          >
+            <DownloadIcon />
+            Export blueprint
+          </Button>
+          <Button
+            shape="pill"
+            size="sm"
+            variant="outline"
+            disabled={!allowed || busy || text !== null}
+            onClick={() => setText(query.data ? Schema.encodeSync(codec)(query.data) : "")}
+          >
+            <UploadIcon />
+            Import or edit blueprint
+          </Button>
+        </div>
+      }
+    >
+      <p className="-mt-1 max-w-2xl text-sm text-muted-foreground">
         Carry repository layout, tools, scripts and connection names to another computer. Save the
-        exported file as <code>.loom/project.json</code> in your repository. Computer paths and
-        provider selections stay local. Credentials stay in Vault.
+        export as{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+          .loom/project.json
+        </code>{" "}
+        in your repository. Computer paths and provider choices stay local; credentials stay in
+        Vault.
       </p>
       <LibraryErrorNotice error={error ?? query.error} onRetry={query.refresh} />
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!query.data || query.isPending}
-          onClick={download}
-        >
-          <DownloadIcon />
-          Export blueprint
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!allowed || busy}
-          onClick={() => setText(query.data ? Schema.encodeSync(codec)(query.data) : "")}
-        >
-          <UploadIcon />
-          Import or edit blueprint
-        </Button>
-      </div>
-      {text !== null ? (
-        <div className="space-y-3">
-          <label className="grid gap-2 text-sm">
-            Choose a blueprint file
+      {text === null ? (
+        query.data ? (
+          <BlueprintSummary blueprint={query.data} />
+        ) : query.isPending ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading blueprint...
+          </p>
+        ) : null
+      ) : (
+        <div className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">Review before applying</p>
             <input
+              ref={fileInput}
+              hidden
               type="file"
               accept=".json,application/json"
+              aria-label="Choose a blueprint file"
               disabled={busy}
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                if (file.size > 131072) {
-                  setError("Choose a blueprint smaller than 128 KB.");
-                  return;
-                }
-                void file
-                  .text()
-                  .then(setText)
-                  .catch(() => setError("Could not read that file."));
+                readFile(event.target.files?.[0]);
+                event.target.value = "";
               }}
             />
-          </label>
+            <Button
+              shape="pill"
+              size="xs"
+              variant="outline"
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
+            >
+              <FileUpIcon />
+              Choose file
+            </Button>
+          </div>
           <Textarea
             aria-label="Blueprint JSON"
+            size="sm"
             value={text}
             onChange={(event) => setText(event.target.value)}
             rows={12}
-            maxLength={131072}
+            maxLength={BLUEPRINT_LIMIT}
             disabled={busy}
           />
           {preview ? (
-            <div className="space-y-1 text-sm">
-              <p>
-                Apply to {project.title}: {preview.resources.length} repositories and links,{" "}
-                {preview.setup?.requiredTools?.length ?? 0} required tools,{" "}
-                {preview.connections.length} named connections.
-              </p>
-              {preview.setup?.scripts?.length ? (
-                <>
-                  <p>Review these scripts before applying. Importing does not execute them.</p>
-                  <ul className="space-y-1">
-                    {preview.setup.scripts.map((script) => (
-                      <li key={script.id}>
-                        <strong>{script.name}</strong>:{" "}
-                        <code className="break-all">{script.command}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-              <p className="text-muted-foreground">
-                This replaces shared project details and setup. Existing copies and conversation
-                pins stay intact.
+            <div className="flex flex-col gap-3">
+              <BlueprintSummary blueprint={preview} />
+              <p className="text-xs text-muted-foreground">
+                Applying replaces {project.title}&apos;s shared details and setup. Existing copies
+                and conversation pins stay intact.
               </p>
             </div>
           ) : (
             <p role="status" className="text-sm text-muted-foreground">
-              Enter a version 1 Loom project blueprint. Computer IDs, unsafe layouts and secret
-              values are refused.
+              {text.trim()
+                ? "This is not a valid version 1 Loom project blueprint yet. Computer IDs, unsafe layouts and secret values are refused."
+                : "Paste a blueprint or choose a file."}
             </p>
           )}
-          <div className="flex gap-2">
-            <Button size="sm" disabled={!preview || !allowed || busy} onClick={() => void submit()}>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              shape="pill"
+              size="sm"
+              disabled={!preview || !allowed || busy}
+              onClick={() => void submit()}
+            >
               {busy ? "Applying..." : "Apply reviewed blueprint"}
             </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setText(null)}>
+            <Button
+              shape="pill"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setText(null)}
+            >
               Cancel
             </Button>
           </div>
         </div>
+      )}
+    </LibrarySection>
+  );
+}
+
+/** What a blueprint carries, with its scripts spelled out since a person runs them later. */
+function BlueprintSummary({ blueprint }: { readonly blueprint: LibraryBlueprint }) {
+  const scripts = blueprint.setup?.scripts ?? [];
+  const tools = blueprint.setup?.requiredTools ?? [];
+  const stats = [
+    { label: "Repositories and links", value: blueprint.resources.length, icon: FolderGit2Icon },
+    { label: "Required tools", value: tools.length, icon: WrenchIcon },
+    { label: "Scripts", value: scripts.length, icon: TerminalIcon },
+    { label: "Named connections", value: blueprint.connections.length, icon: KeyRoundIcon },
+  ];
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {stats.map(({ label, value, icon: Icon }) => (
+          <div
+            key={label}
+            className="flex flex-col gap-1 rounded-xl bg-muted/50 p-3 dark:bg-accent/40"
+          >
+            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Icon aria-hidden className="size-3.5" />
+              {label}
+            </dt>
+            <dd className="text-lg font-semibold tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {tools.length ? (
+        <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          Needs
+          {tools.map((tool) => (
+            <span
+              key={tool.id}
+              className="inline-flex h-5 items-center rounded-full bg-muted px-2 font-mono text-2xs text-foreground dark:bg-accent"
+            >
+              {tool.id}
+              {tool.minimumVersion ? ` ${tool.minimumVersion}+` : ""}
+            </span>
+          ))}
+        </p>
       ) : null}
-    </section>
+      {scripts.length ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">
+            Importing never runs these. Read them before anyone does.
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {scripts.map((script) => (
+              <li key={script.id} className="flex min-w-0 flex-col gap-1">
+                <span className="text-xs font-medium">{script.name}</span>
+                <code className="block overflow-x-auto whitespace-pre rounded-lg bg-muted px-3 py-2 font-mono text-xs dark:bg-accent/60">
+                  {script.command}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
