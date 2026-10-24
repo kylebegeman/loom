@@ -1595,6 +1595,12 @@ export const make = Effect.gen(function* () {
       if (shell !== null && shell.deletedAt === null)
         return { threadId: previous, created: false } satisfies BotsPromoteResult;
     }
+    // The fork copies the run's thread, whose history a day after its deletion is purged.
+    const source = yield* threads
+      .getThreadShell(run.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (source !== null && source.deletedAt !== null)
+      return yield* fail("not_found", "This run's thread was deleted, so it cannot be opened.");
     const suffix = previous === null ? "" : `-${(yield* randomUuidV4).slice(0, 8)}`;
     // Not the run prefix, so every list that hides bot runs shows this thread.
     const threadId = ThreadId.make(`bot-open-${run.id}${suffix}`);

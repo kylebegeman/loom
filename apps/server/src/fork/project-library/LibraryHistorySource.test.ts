@@ -5,8 +5,13 @@ import { type LibraryProject, type LibraryResolvedBinding } from "@t3tools/contr
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
+import { isWithheldError } from "../deleted-history/deletedHistory.ts";
+import { runForkMigrationSet } from "../persistence/migrations.ts";
+import { ProjectLibraryMigrations } from "./migrations.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import { source, threadId, localProjectId, resource, archiveFor } from "./Library.testkit.ts";
@@ -39,7 +44,7 @@ const run = <A, E, R>(
     restart: Effect.Effect<
       HistorySource.LibraryHistorySource["Service"],
       never,
-      import("effect/Crypto").Crypto | ProjectionStore.ProjectionStoreV2
+      import("effect/Crypto").Crypto | ProjectionStore.ProjectionStoreV2 | SqlClient.SqlClient
     >;
     binding: Ref.Ref<LibraryResolvedBinding | null>;
   }) => Effect.Effect<A, E, R>,
@@ -78,7 +83,13 @@ const run = <A, E, R>(
     const service = yield* restart;
     return yield* use({ service, restart, binding });
   }).pipe(
-    Effect.provide(Layer.merge(ProjectionStore.layerMemory, NodeServices.layer)),
+    Effect.provide(
+      Layer.mergeAll(
+        ProjectionStore.layerMemory,
+        SqlitePersistence.layerMemory,
+        NodeServices.layer,
+      ),
+    ),
     Effect.scoped,
   );
 
@@ -146,6 +157,137 @@ describe("execution host Library snapshots", () => {
           "invalid",
         );
       }),
+    ),
+  );
+  it.effect(
+    "withholds a deleted conversation once the Library holds its deletion or it was purged",
+    () =>
+      Effect.gen(function* () {
+        yield* runForkMigrationSet(ProjectLibraryMigrations);
+        const sql = yield* SqlClient.SqlClient;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const archive = yield* archiveFor(project);
+        const event = (sequence: number, eventType: string) =>
+          sql`INSERT INTO orchestration_events (sequence,event_id,stream_version,occurred_at,actor_kind,metadata_json,application_event_version,aggregate_kind,stream_id,event_type,payload_json) VALUES (${sequence},${`event-${sequence}`},${sequence},'2026-10-15T00:00:00.000Z','server','{}',2,'thread',${threadId},${eventType},'{}')`;
+        yield* projections.apply({
+          id: EventId.make("thread-created"),
+          threadId,
+          type: "thread.created",
+          payload: archive.projection.thread,
+          occurredAt: archive.projection.updatedAt,
+        });
+        yield* projections.apply({
+          id: EventId.make("message-created"),
+          threadId,
+          type: "message.updated",
+          payload: archive.projection.messages[0]!,
+          occurredAt: archive.projection.updatedAt,
+        });
+        yield* projections.apply({
+          id: EventId.make("thread-deleted"),
+          threadId,
+          type: "thread.deleted",
+          payload: { ...archive.projection.thread, deletedAt: archive.projection.updatedAt },
+          occurredAt: archive.projection.updatedAt,
+        });
+        yield* event(1, "thread.created");
+        yield* event(2, "message.updated");
+        yield* event(3, "thread.deleted");
+        const service = yield* HistorySource.LibraryHistorySource.pipe(
+          Effect.provide(
+            HistorySource.layer.pipe(
+              Layer.provide(
+                Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
+                  getBinding: () => Effect.succeed(resolved),
+                  getBoundProject: () => Effect.succeed(project),
+                }),
+              ),
+              Layer.provide(
+                Layer.succeed(ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(source),
+                }),
+              ),
+            ),
+          ),
+        );
+        const withheld = service.snapshotThread({ threadId }).pipe(
+          Effect.flip,
+          Effect.map(isWithheldError),
+          Effect.orElseSucceed(() => false),
+        );
+        // The deletion itself still goes up while the Library has not acknowledged it.
+        expect((yield* service.snapshotThread({ threadId })).summary.deleted).toBe(true);
+        yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence,acknowledged_sequence) VALUES (${threadId},2,2)`;
+        expect(yield* withheld).toBe(false);
+        yield* sql`UPDATE fork_library_source_threads SET acknowledged_sequence=3`;
+        expect(yield* withheld).toBe(true);
+        // A purged history stays withheld even when replication starts over without its rows.
+        yield* sql`DELETE FROM fork_library_source_threads`;
+        expect(yield* withheld).toBe(false);
+        yield* sql`DELETE FROM orchestration_events WHERE sequence=2`;
+        expect(yield* withheld).toBe(true);
+      }).pipe(
+        Effect.provide(
+          ProjectionStore.layer.pipe(
+            Layer.provideMerge(SqlitePersistence.layerMemory),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ),
+        Effect.scoped,
+      ),
+  );
+  it.effect("sends the deletion of a conversation that never had more than its creation", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      const sql = yield* SqlClient.SqlClient;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const thread = (yield* archiveFor(project)).projection.thread;
+      yield* projections.apply({
+        id: EventId.make("thread-created"),
+        threadId,
+        type: "thread.created",
+        payload: thread,
+        occurredAt: thread.createdAt,
+      });
+      yield* projections.apply({
+        id: EventId.make("thread-deleted"),
+        threadId,
+        type: "thread.deleted",
+        payload: { ...thread, deletedAt: thread.createdAt },
+        occurredAt: thread.createdAt,
+      });
+      yield* sql`INSERT INTO orchestration_events (sequence,event_id,stream_version,occurred_at,actor_kind,metadata_json,application_event_version,aggregate_kind,stream_id,event_type,payload_json) VALUES
+        (1,'created',0,'2026-10-15T00:00:00.000Z','server','{}',2,'thread',${threadId},'thread.created','{}'),
+        (2,'deleted',1,'2026-10-15T00:00:00.000Z','server','{}',2,'thread',${threadId},'thread.deleted','{}')`;
+      const service = yield* HistorySource.LibraryHistorySource.pipe(
+        Effect.provide(
+          HistorySource.layer.pipe(
+            Layer.provide(
+              Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
+                getBinding: () => Effect.succeed(resolved),
+                getBoundProject: () => Effect.succeed(project),
+              }),
+            ),
+            Layer.provide(
+              Layer.succeed(ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(source),
+              }),
+            ),
+          ),
+        ),
+      );
+      // Not yet received by the Library, and received only while it was live.
+      expect((yield* service.snapshotThread({ threadId })).summary.deleted).toBe(true);
+      yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence,acknowledged_sequence) VALUES (${threadId},1,1)`;
+      expect((yield* service.snapshotThread({ threadId })).summary.deleted).toBe(true);
+    }).pipe(
+      Effect.provide(
+        ProjectionStore.layer.pipe(
+          Layer.provideMerge(SqlitePersistence.layerMemory),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+      Effect.scoped,
     ),
   );
 });

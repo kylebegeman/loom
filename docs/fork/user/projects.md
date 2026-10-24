@@ -83,3 +83,18 @@ Start from their saved recovery archive or prepared again from their repositorie
 
 These workflows require updated Library and execution computers. Older computers retain
 their existing Start flow; connect an updated computer to see durable operation history.
+
+## Deleted conversations
+
+Deleting a conversation removes its attachment files right away. After a day the computer
+also removes its history and keeps only the record that it was deleted. For a conversation
+saved to the Library, both wait until the Library has recorded the deletion, so the Library's
+copy keeps its attachments. On a computer that is not connected to its Library, such a
+conversation's files are removed shortly after deletion and its history waits. A conversation
+exported to the Library from a computer that has not been activated yet keeps its history until
+activation, so the Library still learns of the deletion.
+
+History that a remaining conversation still shares, such as the source of a fork, stays
+until that conversation is deleted too. An older database keeps the freed space on disk
+until its one-time repair; see
+[Reclaim database space](../../user/background-service.md#reclaim-database-space).

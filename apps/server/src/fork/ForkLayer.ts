@@ -54,6 +54,7 @@ import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHeal
 import { LibraryHttpRoutes } from "./project-library/http.ts";
 import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
 import * as StaleConnectLink from "./connect-off/staleConnectLink.ts";
+import * as DeletedThreadHistory from "./deleted-history/DeletedThreadHistory.ts";
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
@@ -380,6 +381,11 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryHistorySource.layer.pipe(
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(ProjectionStore.layer),
+  ),
+  DeletedThreadHistory.layer.pipe(
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(ProjectionStore.layer),
+    Layer.provide(layerLibraryPublisher),
   ),
   layerLibraryWorkspace,
   ProjectCheckoutManagement.layer.pipe(

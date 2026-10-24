@@ -14,6 +14,7 @@ import {
   LibraryProject,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";
@@ -24,12 +25,14 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ThreadId, NonNegativeInt } from "@t3tools/contracts";
 import { Command, Flag } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import * as ServerConfig from "../src/config.ts";
 import * as WorkspaceStore from "../src/fork/project-library/LibraryWorkspaceStore.ts";
 import * as Migration from "../src/fork/project-library/LibraryMigration.ts";
+import { DELETED_HISTORY_RETENTION_MS } from "../src/fork/deleted-history/deletedHistory.ts";
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../src/orchestration-v2/ProjectStore.ts";
 import { libraryAttachments } from "../src/fork/project-library/attachments.ts";
@@ -136,6 +139,8 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
   output: string;
   requestId: string;
   journalId: string;
+  /** The source computer's state, where the export records itself until activation. */
+  stateDir: string;
   chunked?: boolean;
   afterSequence?: number;
 }) {
@@ -143,10 +148,53 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const plan = yield* decodePlan(yield* fs.readFileString(input.plan));
+  if (
+    (yield* fs.readFileString(path.join(input.stateDir, "environment-id"))).trim() !==
+    plan.sourceEnvironmentId
+  )
+    return yield* new LibraryError({ reason: "blocked" });
+  // Recorded before the archive exists, so the computer keeps every conversation the Library may
+  // receive from it until activation binds them.
+  const recordExport = Effect.fnUntraced(function* (
+    threads: ReadonlyArray<{ readonly threadId: ThreadId; readonly deleted?: boolean | undefined }>,
+  ) {
+    yield* Migration.recordPendingImport({
+      stateDir: input.stateDir,
+      requestId: input.requestId,
+      threadIds: threads.map((thread) => thread.threadId),
+    });
+    // The record reaches only purge passes that start after it. An earlier pass may already
+    // have taken a conversation that an older snapshot still sends live, if this computer
+    // deleted it a day ago or more. Nothing would then tell the Library about that deletion.
+    const live = new Set<string>(
+      threads.filter((thread) => thread.deleted !== true).map((thread) => thread.threadId),
+    );
+    const database = path.join(input.stateDir, "statev2.sqlite");
+    if (live.size === 0 || !(yield* fs.exists(database))) return;
+    const now = yield* Clock.currentTimeMillis;
+    const deleted = yield* SqlClient.SqlClient.use(
+      (sql) => sql<{ readonly thread_id: string; readonly deleted_at: string }>`
+        SELECT thread_id, deleted_at FROM orchestration_v2_projection_threads
+        WHERE deleted_at IS NOT NULL`,
+    ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: database, readonly: true })));
+    if (
+      deleted.some(
+        (row) =>
+          live.has(row.thread_id) &&
+          Date.parse(row.deleted_at) + DELETED_HISTORY_RETENTION_MS <= now,
+      )
+    )
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "This export's database is older than a conversation deletion on this computer. Take a new snapshot and export it with the same request id.",
+      });
+  });
   if (!input.chunked) {
     const shadow = yield* Migration.LibraryMigration.use((service) =>
       service.exportShadow({ requestId: input.requestId, journalId: input.journalId, plan }),
     ).pipe(Effect.provide(sourceLayer(input.database)));
+    yield* recordExport(shadow.threads.map((thread) => thread.summary));
     yield* writePrivate(input.output, yield* encodeShadow(shadow));
     return {
       projects: shadow.projects.length,
@@ -195,6 +243,8 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
             threadIds: shadow.threads.map((t) => t.summary.threadId),
           });
         }
+        // Only the manifest makes the chunks uploadable.
+        yield* recordExport(included);
         const manifest = {
           version: 1 as const,
           sourceEnvironmentId: plan.sourceEnvironmentId,
@@ -624,7 +674,7 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
       archiveDigest: null,
     });
   }
-  return { receipts, bindings };
+  return { requestId: shadow.requestId, receipts, bindings };
 });
 export const activateMigration = Effect.fnUntraced(function* (input: {
   archive: string;
@@ -636,8 +686,10 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const prepared: Array<Effect.Success<ReturnType<typeof prepareActivation>>> = [];
+  let requestId: string;
   if ((yield* fs.stat(input.archive)).type === "Directory") {
     const { manifest, digest } = yield* readChunkDirectory(input.archive);
+    requestId = manifest.requestId;
     const receipt = yield* decodeChunkReceipt(
       yield* fs.readFileString(path.join(input.receipt, "manifest.json")),
     );
@@ -657,7 +709,11 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
           receipt: path.join(input.receipt, chunk.file),
         }),
       );
-  } else prepared.push(yield* prepareActivation(input));
+  } else {
+    const single = yield* prepareActivation(input);
+    requestId = single.requestId;
+    prepared.push(single);
+  }
   const config = Layer.effect(
     ServerConfig.ServerConfig,
     ServerConfig.ServerConfig.pipe(
@@ -671,6 +727,8 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
   yield* WorkspaceStore.LibraryWorkspaceStore.use((store) =>
     store.importBindings({ receipts, bindings }),
   ).pipe(Effect.provide(WorkspaceStore.layer.pipe(Layer.provide(config))));
+  // Every conversation of the export is bound now, so replication sends its deletions.
+  yield* Migration.clearPendingImport({ stateDir: input.stateDir, requestId });
   return { copies: new Set(receipts.map((r) => r.copy.id)).size, threads: bindings.length };
 });
 
@@ -723,6 +781,7 @@ const exportCommand = Command.make(
     output,
     requestId: Flag.String("request-id"),
     journalId: Flag.String("journal-id"),
+    stateDir: Flag.String("state-dir"),
     chunked: Flag.Boolean("chunked").pipe(Flag.withDefault(false)),
     afterSequence: Flag.Int("after-sequence").pipe(Flag.withSchema(NonNegativeInt), Flag.optional),
   },

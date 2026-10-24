@@ -368,6 +368,13 @@ write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
 `UsageService.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts` and
 `packages/shared/src/serverSettings.test.ts`.
 
+The `deleted-history` seam frees the space deleted conversations hold. `runtimeLayer.ts` (2
+marker lines) wraps the effect executor so `attachment.cleanup` waits while the Library still
+needs a bound thread's deletion. `apps/server/src/fork/deleted-history/` then purges each thread
+deleted more than 24 hours ago down to its `thread.created` and `thread.deleted` events and its
+thread row, once the Library has acknowledged the deletion or the thread was never bound, and
+the Library history source refuses to send a purged thread again.
+
 The `server-weight` seams cut trace volume and background database work on long-running
 computers. `serverActivation.ts` (4 marker lines) and `Scheduler.ts` (2) start each parked
 fiber and scheduler pass in its own trace through

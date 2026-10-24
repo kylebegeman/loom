@@ -7,8 +7,10 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import { isWithheld, withheldError } from "../deleted-history/deletedHistory.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 
 export class LibraryHistorySource extends Context.Service<
@@ -26,6 +28,7 @@ const make = Effect.gen(function* () {
   const workspaces = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
+  const sql = yield* SqlClient.SqlClient;
   const snapshotThread = Effect.fnUntraced(
     function* (input: { readonly threadId: ThreadId }) {
       const environmentId = yield* identity.getEnvironmentId;
@@ -45,6 +48,10 @@ const make = Effect.gen(function* () {
       const { projection } = snapshot;
       if (projection.thread.projectId !== resolved.localProjectId)
         return yield* new LibraryError({ reason: "invalid" });
+      // Checked after the snapshot: a purge records the deletion as acknowledged before its first
+      // delete, so a snapshot that saw any of it is refused here.
+      if (projection.thread.deletedAt !== null && (yield* isWithheld(sql, input.threadId)))
+        return yield* withheldError();
       const id = Hex.encode(
         yield* crypto.digest(
           "SHA-256",
