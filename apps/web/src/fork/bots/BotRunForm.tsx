@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotParameter, BotRun, BotTarget } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { LockIcon, PlayIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -15,7 +16,12 @@ import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryField,
+  LibraryNotice,
+} from "../project-library/LibraryControls";
 import { BotTargetField } from "./BotAnywhere";
 import {
   checkoutChoices,
@@ -42,16 +48,16 @@ export function ParameterField({
   switch (parameter.type) {
     case "boolean":
       return (
-        <div className="grid gap-1">
-          <label className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={value === "true"}
-              onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
-            />
-            {parameter.label}
-          </label>
-          {hint}
-        </div>
+        <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-muted/50 px-3.5 py-3 dark:bg-accent/50">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm font-medium">{parameter.label}</span>
+            {hint}
+          </span>
+          <Switch
+            checked={value === "true"}
+            onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
+          />
+        </label>
       );
     case "choice":
       return (
@@ -183,17 +189,18 @@ export function BotRunForm({
       description={bot.description || "Fill in the inputs, then run."}
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button shape="pill" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !canRun} onClick={() => void submit()}>
+          <Button shape="pill" disabled={busy || !canRun} onClick={() => void submit()}>
+            <PlayIcon />
             {busy ? "Starting…" : "Run"}
           </Button>
         </>
       }
     >
       <form
-        className="grid gap-4"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -265,15 +272,9 @@ export function BotRunForm({
             </Select>
           </LibraryField>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
+        <LibraryErrorNotice error={error} />
         {!canRun ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            This connection cannot run bots.
-          </p>
+          <LibraryNotice icon={LockIcon}>This connection cannot run bots.</LibraryNotice>
         ) : null}
       </form>
     </LibraryDialog>

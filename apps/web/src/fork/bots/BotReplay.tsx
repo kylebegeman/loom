@@ -11,7 +11,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { applyRunChanges, formatReplaySummary } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { Badge } from "~/components/ui/badge";
+import { HistoryIcon, RefreshCwIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -21,11 +21,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Skeleton } from "~/components/ui/skeleton";
+import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LIBRARY_OUTLINE,
+  LibraryDialog,
+  LibraryField,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
+import { ProgressBar, type ProgressTone } from "./BotBatches";
 import { RawReply } from "./BotFindings";
-import { runInputSummary } from "./BotRuns";
+import { BotsEmptyList, runInputSummary } from "./BotRuns";
 import { BotRunStatusBadge, VerdictChip, runTime } from "./BotIdentity";
 import {
   ALL_REPLAY_FILTERS,
@@ -47,20 +55,21 @@ export type BotReplaySourceChoice =
   | { readonly kind: "draft"; readonly draft: BotDefinitionInput }
   | { readonly kind: "version"; readonly version: number };
 
+/** Comparisons in the order the bar and the summary read them: good news, then bad, then open. */
 const COMPARISONS: Record<
   BotReplayComparison,
-  {
-    readonly label: string;
-    readonly variant: "secondary" | "success" | "error" | "warning" | "info";
-  }
+  { readonly label: string; readonly tone: ProgressTone }
 > = {
-  fixed: { label: "Fixed", variant: "success" },
-  broke: { label: "Broke", variant: "error" },
-  same: { label: "Same", variant: "secondary" },
-  changed: { label: "Changed", variant: "info" },
-  pending: { label: "Waiting", variant: "secondary" },
-  failed: { label: "Failed", variant: "error" },
+  fixed: { label: "Fixed", tone: "success" },
+  changed: { label: "Changed", tone: "active" },
+  same: { label: "Same", tone: "neutral" },
+  broke: { label: "Broke", tone: "danger" },
+  failed: { label: "Failed", tone: "danger" },
+  pending: { label: "Waiting", tone: "waiting" },
 };
+const COMPARISON_ORDER = Object.keys(COMPARISONS) as ReadonlyArray<BotReplayComparison>;
+
+const RUN_SKELETON_ROWS = ["first", "second", "third"];
 
 const OUTCOME_FILTERS: ReadonlyArray<{
   readonly value: ReplayOutcomeFilter;
@@ -148,29 +157,31 @@ function RunOutcome({
   title,
   run,
   missing,
+  className,
 }: {
   readonly title: string;
   readonly run: BotRun | undefined;
   readonly missing: string;
+  readonly className?: string;
 }) {
   if (run === undefined)
     return (
-      <div className="grid gap-1 rounded-md bg-muted p-2 text-xs">
-        <span className="text-muted-foreground">{title}</span>
+      <div className={cn("flex min-w-0 flex-col gap-1 text-xs", className)}>
+        <span className="font-medium text-muted-foreground">{title}</span>
         <span className="text-muted-foreground">{missing}</span>
       </div>
     );
   return (
-    <div className="grid min-w-0 content-start gap-2 rounded-md bg-muted p-2 text-xs">
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="text-muted-foreground">{title}</span>
+    <div className={cn("flex min-w-0 flex-col gap-1.5 text-xs", className)}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-medium text-muted-foreground">{title}</span>
         <BotRunStatusBadge status={run.status} />
         {run.verdict ? <VerdictChip verdict={run.verdict.verdict} /> : null}
       </div>
-      <p className="text-muted-foreground">
+      <p className="tabular-nums text-muted-foreground">
         {runDurationLabel(run)} · {runTokensLabel(run)}
       </p>
-      <p className="line-clamp-4 whitespace-pre-wrap wrap-anywhere">
+      <p className="line-clamp-4 text-sm whitespace-pre-wrap text-foreground/90 wrap-anywhere">
         {run.error ??
           run.verdict?.summary ??
           run.result ??
@@ -180,7 +191,9 @@ function RunOutcome({
       </p>
       {run.result ? (
         <details>
-          <summary className="cursor-pointer">Full reply</summary>
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+            Full reply
+          </summary>
           <div className="mt-2">
             <RawReply run={run} />
           </div>
@@ -197,45 +210,68 @@ function ReplayResults({
   readonly current: BotReplay;
   readonly runById: ReadonlyMap<string, BotRun>;
 }) {
+  const counted = COMPARISON_ORDER.map((comparison) => ({
+    key: comparison,
+    tone: COMPARISONS[comparison].tone,
+    count: current.items.filter((item) => item.comparison === comparison).length,
+  }));
   return (
     <>
-      <p role="status" className="text-sm">
-        {current.status === "running"
-          ? "Replaying. "
-          : current.status === "cancelled"
-            ? "Cancelled. "
-            : "Done. "}
-        {formatReplaySummary(current.summary)}
-      </p>
-      <ul aria-label="Replay comparisons" className="grid gap-2">
+      <div className="flex flex-col gap-2">
+        <p role="status" className="text-sm">
+          <span className="font-medium">
+            {current.status === "running"
+              ? "Replaying. "
+              : current.status === "cancelled"
+                ? "Cancelled. "
+                : "Done. "}
+          </span>
+          <span className="text-muted-foreground">{formatReplaySummary(current.summary)}</span>
+        </p>
+        <ProgressBar segments={counted} label={formatReplaySummary(current.summary)} />
+      </div>
+      <ul
+        aria-label="Replay comparisons"
+        className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
+      >
         {current.items.map((item) => {
           const original = runById.get(item.originalRunId);
           const after = item.replayRunId === null ? undefined : runById.get(item.replayRunId);
           const comparison = COMPARISONS[item.comparison];
           const metrics = replayMetricChanges(original, after);
           return (
-            <li
-              key={item.originalRunId}
-              className={`grid gap-2 rounded-lg border border-border p-3 ${item.comparison === "fixed" ? "bg-success/5" : item.comparison === "broke" ? "bg-destructive/5" : item.comparison === "changed" ? "bg-muted/50" : ""}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={comparison.variant}>{comparison.label}</Badge>
-                <span className="min-w-0 text-xs text-muted-foreground wrap-anywhere">
+            <li key={item.originalRunId} className="flex min-w-0 flex-col gap-3 px-4 py-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <LibraryStateBadge
+                  tone={comparison.tone === "waiting" ? "neutral" : comparison.tone}
+                >
+                  {comparison.label}
+                </LibraryStateBadge>
+                <span className="min-w-0 flex-1 text-xs text-muted-foreground wrap-anywhere">
                   {original ? runInputSummary(original) || "No inputs" : item.originalRunId}
                 </span>
+                {metrics.duration || metrics.tokens ? (
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {[metrics.duration, metrics.tokens]
+                      .filter((value) => value !== null)
+                      .join(" · ")}
+                  </span>
+                ) : null}
               </div>
               {item.reason ? (
                 <p className="text-sm text-destructive-foreground">{item.reason}</p>
               ) : null}
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2 sm:gap-0 sm:divide-x sm:divide-border">
                 <RunOutcome
                   title="Before"
                   run={original}
                   missing="Original run no longer available"
+                  className="sm:pe-4"
                 />
                 <RunOutcome
                   title="After"
                   run={after}
+                  className="sm:ps-4"
                   missing={
                     item.replayRunId !== null
                       ? "Replay run unavailable. Refresh to reload."
@@ -245,11 +281,6 @@ function ReplayResults({
                   }
                 />
               </div>
-              {metrics.duration || metrics.tokens ? (
-                <p className="text-xs text-muted-foreground">
-                  {[metrics.duration, metrics.tokens].filter((value) => value !== null).join(" · ")}
-                </p>
-              ) : null}
             </li>
           );
         })}
@@ -406,15 +437,18 @@ export function BotReplayDialog({
           <>
             {current.status === "running" ? (
               <Button
+                shape="pill"
                 variant="outline"
                 className="sm:me-auto"
                 disabled={!canRun || busy}
                 onClick={() => void stop()}
               >
+                <SquareIcon />
                 Cancel replay
               </Button>
             ) : null}
             <Button
+              shape="pill"
               variant="ghost"
               disabled={replayQuery.isPending || runsQuery.isPending}
               onClick={() => {
@@ -422,16 +456,20 @@ export function BotReplayDialog({
                 runsQuery.refresh();
               }}
             >
+              <RefreshCwIcon />
               Refresh
             </Button>
-            <Button onClick={onClose}>Close</Button>
+            <Button shape="pill" onClick={onClose}>
+              Close
+            </Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" onClick={onClose}>
+            <Button shape="pill" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button
+              shape="pill"
               disabled={!canRun || busy || chosen.length === 0 || !definition || !checkoutConfirmed}
               onClick={() => void start()}
             >
@@ -445,7 +483,7 @@ export function BotReplayDialog({
         )
       }
     >
-      <div className="grid gap-3">
+      <div className="flex flex-col gap-4">
         {error || replayQuery.error || (current && runsQuery.error) ? (
           <p role="alert" className="text-sm text-destructive-foreground">
             {error ?? replayQuery.error ?? runsQuery.error}
@@ -459,24 +497,29 @@ export function BotReplayDialog({
               versionQuery.error ? (
                 <div
                   role="alert"
-                  className="flex items-center gap-2 text-sm text-destructive-foreground"
+                  className="flex flex-wrap items-center gap-3 text-sm text-destructive-foreground"
                 >
                   <p>{versionQuery.error}</p>
-                  <Button size="xs" variant="outline" onClick={versionQuery.refresh}>
+                  <Button shape="pill" size="xs" variant="outline" onClick={versionQuery.refresh}>
                     Reload version
                   </Button>
                 </div>
               ) : (
-                <p role="status" className="text-sm text-muted-foreground">
-                  Loading v{source.version}…
-                </p>
+                <div role="status" className="flex items-center gap-2">
+                  <span className="sr-only">Loading v{source.version}…</span>
+                  <Skeleton shape="pill" className="h-5 w-16" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
               )
             ) : null}
             {checkoutWarning ? (
-              <div className="grid gap-2 rounded-lg bg-warning/10 p-3 text-sm">
-                <p className="font-medium">Replay can change the project checkout</p>
-                <p>{checkoutWarning}</p>
-                <label className="flex items-start gap-2">
+              <div className="flex flex-col gap-2 rounded-xl bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
+                <p className="flex items-center gap-2 font-medium">
+                  <TriangleAlertIcon aria-hidden className="size-4 shrink-0" />
+                  Replay can change the project checkout
+                </p>
+                <p className="text-foreground/90">{checkoutWarning}</p>
+                <label className="flex cursor-pointer items-start gap-2.5 text-foreground">
                   <Checkbox
                     checked={checkoutConfirmed}
                     disabled={busy}
@@ -496,48 +539,59 @@ export function BotReplayDialog({
               }}
               disabled={busy}
             />
-            <div className="flex flex-wrap items-center gap-1">
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={busy || visible.length === 0}
-                onClick={() => setSelected(visible.slice(0, 5))}
-              >
-                Select newest 5
-              </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={busy || visible.length === 0}
-                onClick={() => setSelected(visible.slice(0, BOTS_REPLAY_MAX_RUNS))}
-              >
-                Select shown
-              </Button>
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={busy || chosen.length === 0}
-                onClick={() => setSelected([])}
-              >
-                Clear selection
-              </Button>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  shape="pill"
+                  size="xs"
+                  variant="outline"
+                  disabled={busy || visible.length === 0}
+                  onClick={() => setSelected(visible.slice(0, 5))}
+                >
+                  Select newest 5
+                </Button>
+                <Button
+                  shape="pill"
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy || visible.length === 0}
+                  onClick={() => setSelected(visible.slice(0, BOTS_REPLAY_MAX_RUNS))}
+                >
+                  Select shown
+                </Button>
+                <Button
+                  shape="pill"
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy || chosen.length === 0}
+                  onClick={() => setSelected([])}
+                >
+                  Clear selection
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium tabular-nums text-foreground">
+                  {chosen.length}/{BOTS_REPLAY_MAX_RUNS} selected.
+                </span>{" "}
+                Selections stay when you change pages or filters.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {chosen.length}/{BOTS_REPLAY_MAX_RUNS} selected. Selections stay when you change pages
-              or filters.
-            </p>
             {chosen.length > 0 ? (
               <details>
-                <summary className="cursor-pointer text-xs text-muted-foreground">
+                <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                   Selected runs
                 </summary>
-                <ul className="mt-2 grid gap-1" aria-label="Selected runs">
+                <ul
+                  className="mt-2 flex flex-col divide-y divide-border rounded-xl border border-border"
+                  aria-label="Selected runs"
+                >
                   {chosen.map((run) => (
-                    <li key={run.id} className="flex items-center gap-2 text-xs">
+                    <li key={run.id} className="flex items-center gap-2 py-1 ps-3.5 pe-1.5 text-xs">
                       <span className="min-w-0 flex-1 truncate">
                         {runInputSummary(run) || "No inputs"} · {runTime(run.createdAt)}
                       </span>
                       <Button
+                        shape="pill"
                         size="xs"
                         variant="ghost"
                         disabled={busy}
@@ -554,10 +608,11 @@ export function BotReplayDialog({
             {runsQuery.error ? (
               <div
                 role="alert"
-                className="flex items-center gap-2 text-sm text-destructive-foreground"
+                className="flex flex-wrap items-center gap-3 text-sm text-destructive-foreground"
               >
                 <p>{runsQuery.error}</p>
                 <Button
+                  shape="pill"
                   size="xs"
                   variant="outline"
                   disabled={runsQuery.isPending}
@@ -568,67 +623,98 @@ export function BotReplayDialog({
               </div>
             ) : null}
             {runsQuery.isPending && !runsQuery.data ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                Loading runs…
-              </p>
+              <div
+                role="status"
+                aria-label="Loading runs"
+                className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border")}
+              >
+                {RUN_SKELETON_ROWS.map((row) => (
+                  <div key={row} className="flex items-center gap-3 px-3.5 py-3">
+                    <Skeleton shape="block" className="size-4" />
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-3 w-1/3" />
+                      <Skeleton className="h-2.5 w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : visible.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {candidates.length === 0
-                  ? "No finished runs on this page. Try an older page or run the bot first."
-                  : "No runs match these filters on this page."}
-              </p>
+              <BotsEmptyList
+                icon={HistoryIcon}
+                message={
+                  candidates.length === 0
+                    ? "No finished runs on this page. Try an older page or run the bot first."
+                    : "No runs match these filters on this page."
+                }
+              />
             ) : (
-              <fieldset className="grid gap-2" disabled={busy}>
-                <legend className="mb-1 text-sm text-muted-foreground">
+              <fieldset className="flex min-w-0 flex-col gap-2" disabled={busy}>
+                <legend className="mb-2 text-sm text-muted-foreground">
                   Choose up to {BOTS_REPLAY_MAX_RUNS} runs, newest first. Rated runs are chosen
                   initially.
                 </legend>
-                {visible.map((run) => {
-                  const checked = chosen.some((candidate) => candidate.id === run.id);
-                  return (
-                    <label key={run.id} className="flex items-start gap-2 text-sm">
-                      <Checkbox
-                        checked={checked}
-                        disabled={busy || (!checked && chosen.length >= BOTS_REPLAY_MAX_RUNS)}
-                        onCheckedChange={(on) =>
-                          setSelected(toggleReplaySelection(chosen, run, on === true))
-                        }
-                      />
-                      <span className="grid min-w-0 gap-0.5">
-                        <span className="flex flex-wrap items-center gap-1">
-                          <BotRunStatusBadge status={run.status} />
-                          {run.verdict ? <VerdictChip verdict={run.verdict.verdict} /> : null}
-                          {run.rating ? (
-                            <Badge variant={run.rating === "up" ? "success" : "error"}>
-                              {run.rating === "up" ? "Good" : "Bad"}
-                            </Badge>
-                          ) : null}
-                          <span className="text-xs text-muted-foreground">
+                <div
+                  className={cn(
+                    LIBRARY_OUTLINE,
+                    "flex max-h-80 flex-col divide-y divide-border overflow-y-auto",
+                  )}
+                >
+                  {visible.map((run) => {
+                    const checked = chosen.some((candidate) => candidate.id === run.id);
+                    return (
+                      <label
+                        key={run.id}
+                        className={cn(
+                          "flex min-w-0 cursor-pointer items-start gap-3 px-3.5 py-2.5 transition-colors duration-150",
+                          checked ? "bg-accent/50" : "hover:bg-accent/40",
+                        )}
+                      >
+                        <span className="pt-0.5">
+                          <Checkbox
+                            checked={checked}
+                            disabled={busy || (!checked && chosen.length >= BOTS_REPLAY_MAX_RUNS)}
+                            onCheckedChange={(on) =>
+                              setSelected(toggleReplaySelection(chosen, run, on === true))
+                            }
+                          />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate text-sm">
+                            {runInputSummary(run) || "No inputs"}
+                          </span>
+                          <span className="text-xs tabular-nums text-muted-foreground">
                             v{run.botVersion} · {runTime(run.finishedAt ?? run.createdAt)}
                           </span>
+                          {run.note ? (
+                            <span className="line-clamp-2 text-xs text-muted-foreground">
+                              {run.note}
+                            </span>
+                          ) : null}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {runInputSummary(run) || "No inputs"}
+                        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                          {run.rating ? (
+                            <LibraryStateBadge tone={run.rating === "up" ? "success" : "danger"}>
+                              {run.rating === "up" ? "Good" : "Bad"}
+                            </LibraryStateBadge>
+                          ) : null}
+                          {run.verdict ? <VerdictChip verdict={run.verdict.verdict} /> : null}
+                          <BotRunStatusBadge status={run.status} />
                         </span>
-                        {run.note ? (
-                          <span className="line-clamp-2 text-xs text-muted-foreground">
-                            {run.note}
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
+                </div>
               </fieldset>
             )}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs tabular-nums text-muted-foreground">
                 {before === undefined ? "Newest page" : `Page ${cursors.length + 1}`} ·{" "}
                 {visible.length} matching runs
               </span>
               <div className="flex gap-1">
                 {before !== undefined ? (
                   <Button
+                    shape="pill"
                     size="xs"
                     variant="ghost"
                     disabled={busy || runsQuery.isPending}
@@ -639,6 +725,7 @@ export function BotReplayDialog({
                 ) : null}
                 {hasOlderRuns && oldest !== undefined && oldest !== before ? (
                   <Button
+                    shape="pill"
                     size="xs"
                     variant="outline"
                     disabled={busy || runsQuery.isPending}

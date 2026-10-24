@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  LockIcon,
+  PlusIcon,
+  TextCursorInputIcon,
+  Trash2Icon,
+  WorkflowIcon,
+} from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_PIPELINE_MAX_STEPS,
@@ -14,13 +22,23 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { cn } from "~/lib/utils";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryField,
+  LibraryNotice,
+  LibraryStateDot,
+} from "../project-library/LibraryControls";
 import { BotTargetField } from "./BotAnywhere";
 import { Choice, ParameterRow } from "./BotEditor";
 import { BotModelPicker } from "./BotModelPicker";
+import { BotsEmptyList } from "./BotRuns";
+import { StepRail } from "./PipelineRunView";
 import {
   newParameterDraft,
   slugFromName,
@@ -46,6 +64,7 @@ const VERSION_LABELS: Record<PipelineVersionChoice, string> = {
   stable: "Stable version",
   number: "A fixed version",
 };
+const VERSION_CHOICES = Object.keys(VERSION_LABELS) as ReadonlyArray<PipelineVersionChoice>;
 
 const FAIL_LABELS: Record<PipelineFailChoice, string> = {
   stop: "Stop the pipeline",
@@ -61,14 +80,21 @@ const GATE_LABELS: Record<BotPipelineGate, string> = {
 function Problems({ problems }: { readonly problems: ReadonlyArray<BotPipelineProblem> }) {
   if (problems.length === 0) return null;
   return (
-    <ul className="grid gap-1 text-sm">
+    <ul className="flex flex-col gap-1 text-sm">
       {problems.map((problem) => (
         <li
           key={`${problem.field}:${problem.message}`}
-          className={
-            problem.severity === "error" ? "text-destructive-foreground" : "text-warning-foreground"
-          }
+          className={cn(
+            "flex items-start gap-2",
+            problem.severity === "error"
+              ? "text-destructive-foreground"
+              : "text-warning-foreground",
+          )}
         >
+          <LibraryStateDot
+            tone={problem.severity === "error" ? "danger" : "warning"}
+            className="mt-1.5"
+          />
           {problem.message}
         </li>
       ))}
@@ -86,10 +112,12 @@ function StepCard({
   onChange,
   onMove,
   onRemove,
+  last,
 }: {
   readonly environmentId: EnvironmentId;
   readonly draft: PipelineDraft;
   readonly index: number;
+  readonly last: boolean;
   readonly step: PipelineStepDraft;
   readonly allBots: ReadonlyArray<BotDefinition>;
   readonly problems: ReadonlyArray<BotPipelineProblem>;
@@ -108,205 +136,231 @@ function StepCard({
     draft.steps.map((other) => [other.id, other.id || "Unnamed step"]),
   ) as Record<string, string>;
   return (
-    <div className="grid gap-3 rounded-lg border border-border p-3">
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-        <Input
-          aria-label="Step id"
-          placeholder="step-id"
-          value={step.id}
-          onChange={(event) => onChange({ ...step, id: event.target.value })}
-        />
-        <Choice
-          id={`${step.key}-bot`}
-          value={step.botId}
-          labels={{ ...botLabels, "": "Choose a bot…" }}
-          options={allBots.map((candidate) => candidate.id)}
-          onChange={(botId) => {
-            const next = allBots.find((candidate) => candidate.id === botId);
-            onChange({
-              ...step,
-              botId,
-              inputs: next === undefined ? {} : defaultStepInputs(draft, next),
-            });
-          }}
-        />
-        <div className="flex gap-1">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Move step up"
-            disabled={index === 0}
-            onClick={() => onMove(-1)}
-          >
-            <ArrowUpIcon />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Move step down"
-            disabled={index === draft.steps.length - 1}
-            onClick={() => onMove(1)}
-          >
-            <ArrowDownIcon />
-          </Button>
-          <Button size="icon-sm" variant="ghost" aria-label="Remove step" onClick={onRemove}>
-            <Trash2Icon />
-          </Button>
-        </div>
-      </div>
-      {bot === null ? null : (
-        <>
-          <div className="flex flex-wrap items-center gap-3">
-            <Choice
-              id={`${step.key}-version`}
-              value={step.version}
-              labels={VERSION_LABELS}
-              onChange={(version) => onChange({ ...step, version })}
+    <li className="flex min-w-0 gap-3">
+      <StepRail botId={bot?.id} number={index + 1} last={last} />
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-3", last ? null : "pb-6")}>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1 basis-36">
+            <Input
+              aria-label="Step id"
+              placeholder="step-id"
+              value={step.id}
+              onChange={(event) => onChange({ ...step, id: event.target.value })}
             />
-            {step.version === "number" ? (
-              <Input
-                aria-label="Version"
-                inputMode="numeric"
-                placeholder={String(bot.version)}
-                className="w-24"
-                value={step.versionNumber}
-                onChange={(event) => onChange({ ...step, versionNumber: event.target.value })}
-              />
-            ) : null}
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={step.forEach}
-              onCheckedChange={(forEach) => onChange({ ...step, forEach })}
+          <div className="min-w-0 flex-1 basis-36">
+            <Choice
+              id={`${step.key}-bot`}
+              value={step.botId}
+              labels={{ ...botLabels, "": "Choose a bot…" }}
+              options={allBots.map((candidate) => candidate.id)}
+              onChange={(botId) => {
+                const next = allBots.find((candidate) => candidate.id === botId);
+                onChange({
+                  ...step,
+                  botId,
+                  inputs: next === undefined ? {} : defaultStepInputs(draft, next),
+                });
+              }}
             />
-            Run once per item, as a batch
-          </label>
-          {step.forEach ? (
-            <LibraryField label="Items">
-              <Input
-                placeholder="{{steps.review.findings}}"
-                value={step.forEachFrom}
-                onChange={(event) => onChange({ ...step, forEachFrom: event.target.value })}
-              />
-              <span className="text-xs font-normal text-muted-foreground">
-                The findings of an earlier step, or a long-text input with one item per line.
-              </span>
-            </LibraryField>
-          ) : null}
-          {step.forEach ? (
-            <LibraryField label="Item label (optional)">
-              <Input
-                placeholder="Finding {{item}}"
-                value={step.forEachItemLabel}
-                onChange={(event) => onChange({ ...step, forEachItemLabel: event.target.value })}
-              />
-            </LibraryField>
-          ) : null}
-          {bot.parameters.map((parameter) => (
-            <LibraryField
-              key={parameter.name}
-              label={parameter.required ? parameter.label : `${parameter.label} (optional)`}
+          </div>
+          <div className="flex gap-0.5">
+            <Button
+              shape="pill"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Move step up"
+              disabled={index === 0}
+              onClick={() => onMove(-1)}
             >
-              <Textarea
-                rows={parameter.type === "text" ? 3 : 1}
-                value={step.inputs[parameter.name] ?? ""}
-                onChange={(event) =>
-                  onChange({
-                    ...step,
-                    inputs: { ...step.inputs, [parameter.name]: event.target.value },
-                  })
-                }
+              <ArrowUpIcon />
+            </Button>
+            <Button
+              shape="pill"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Move step down"
+              disabled={last}
+              onClick={() => onMove(1)}
+            >
+              <ArrowDownIcon />
+            </Button>
+            <Button
+              shape="pill"
+              size="icon-sm"
+              variant="ghost-destructive"
+              aria-label="Remove step"
+              onClick={onRemove}
+            >
+              <Trash2Icon />
+            </Button>
+          </div>
+        </div>
+        {bot === null ? null : (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <ToggleGroup
+                shape="pill"
+                variant="segmented"
+                aria-label="Which version runs"
+                value={[step.version]}
+                onValueChange={(next) => {
+                  const version = VERSION_CHOICES.find((choice) => choice === next[0]);
+                  if (version) onChange({ ...step, version });
+                }}
+              >
+                {VERSION_CHOICES.map((choice) => (
+                  <ToggleGroupItem key={choice} value={choice}>
+                    {VERSION_LABELS[choice]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {step.version === "number" ? (
+                <div className="w-24">
+                  <Input
+                    aria-label="Version"
+                    inputMode="numeric"
+                    placeholder={String(bot.version)}
+                    value={step.versionNumber}
+                    onChange={(event) => onChange({ ...step, versionNumber: event.target.value })}
+                  />
+                </div>
+              ) : null}
+            </div>
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+              <Switch
+                checked={step.forEach}
+                onCheckedChange={(forEach) => onChange({ ...step, forEach })}
               />
-            </LibraryField>
-          ))}
-          <p className="text-xs text-muted-foreground">
-            Can use {stepReferences(draft, index).join(", ")}.
-          </p>
-          {gives ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <LibraryField label="On a fail verdict">
-                <Choice
-                  id={`${step.key}-fail`}
-                  value={step.onFail}
-                  labels={FAIL_LABELS}
-                  onChange={(onFail) =>
+              Run once per item, as a batch
+            </label>
+            {step.forEach ? (
+              <LibraryField label="Items">
+                <Input
+                  placeholder="{{steps.review.findings}}"
+                  value={step.forEachFrom}
+                  onChange={(event) => onChange({ ...step, forEachFrom: event.target.value })}
+                />
+                <span className="text-xs font-normal text-muted-foreground">
+                  The findings of an earlier step, or a long-text input with one item per line.
+                </span>
+              </LibraryField>
+            ) : null}
+            {step.forEach ? (
+              <LibraryField label="Item label (optional)">
+                <Input
+                  placeholder="Finding {{item}}"
+                  value={step.forEachItemLabel}
+                  onChange={(event) => onChange({ ...step, forEachItemLabel: event.target.value })}
+                />
+              </LibraryField>
+            ) : null}
+            {bot.parameters.map((parameter) => (
+              <LibraryField
+                key={parameter.name}
+                label={parameter.required ? parameter.label : `${parameter.label} (optional)`}
+              >
+                <Textarea
+                  rows={parameter.type === "text" ? 3 : 1}
+                  value={step.inputs[parameter.name] ?? ""}
+                  onChange={(event) =>
                     onChange({
                       ...step,
-                      onFail,
-                      goTo: step.goTo === "" ? (draft.steps[0]?.id ?? "") : step.goTo,
+                      inputs: { ...step.inputs, [parameter.name]: event.target.value },
                     })
                   }
                 />
               </LibraryField>
-              <LibraryField label="On needs attention">
-                <Choice
-                  id={`${step.key}-attention`}
-                  value={step.onNeedsAttention}
-                  labels={GATE_LABELS}
-                  onChange={(onNeedsAttention) => onChange({ ...step, onNeedsAttention })}
-                />
-              </LibraryField>
-            </div>
-          ) : null}
-          {gives && step.onFail === "loop" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <LibraryField label="Go back to">
-                <Choice
-                  id={`${step.key}-goto`}
-                  value={step.goTo}
-                  labels={stepLabels}
-                  options={[step, ...otherSteps].map((other) => other.id)}
-                  onChange={(goTo) => onChange({ ...step, goTo })}
-                />
-              </LibraryField>
-              <LibraryField label="At most this many rounds">
-                <Input
-                  inputMode="numeric"
-                  value={step.maxRounds}
-                  onChange={(event) => onChange({ ...step, maxRounds: event.target.value })}
-                />
-              </LibraryField>
-            </div>
-          ) : null}
-          <LibraryField label="When the run fails or times out">
-            <Choice
-              id={`${step.key}-error`}
-              value={step.onError}
-              labels={GATE_LABELS}
-              onChange={(onError) => onChange({ ...step, onError })}
-            />
-          </LibraryField>
-          <div className="grid gap-2">
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={step.modelSelection !== null}
-                onCheckedChange={(on) =>
-                  onChange({ ...step, modelSelection: on ? bot.modelSelection : null })
-                }
+            ))}
+            <p className="text-xs text-muted-foreground">
+              Can use {stepReferences(draft, index).join(", ")}.
+            </p>
+            {gives ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <LibraryField label="On a fail verdict">
+                  <Choice
+                    id={`${step.key}-fail`}
+                    value={step.onFail}
+                    labels={FAIL_LABELS}
+                    onChange={(onFail) =>
+                      onChange({
+                        ...step,
+                        onFail,
+                        goTo: step.goTo === "" ? (draft.steps[0]?.id ?? "") : step.goTo,
+                      })
+                    }
+                  />
+                </LibraryField>
+                <LibraryField label="On needs attention">
+                  <Choice
+                    id={`${step.key}-attention`}
+                    value={step.onNeedsAttention}
+                    labels={GATE_LABELS}
+                    onChange={(onNeedsAttention) => onChange({ ...step, onNeedsAttention })}
+                  />
+                </LibraryField>
+              </div>
+            ) : null}
+            {gives && step.onFail === "loop" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <LibraryField label="Go back to">
+                  <Choice
+                    id={`${step.key}-goto`}
+                    value={step.goTo}
+                    labels={stepLabels}
+                    options={[step, ...otherSteps].map((other) => other.id)}
+                    onChange={(goTo) => onChange({ ...step, goTo })}
+                  />
+                </LibraryField>
+                <LibraryField label="At most this many rounds">
+                  <Input
+                    inputMode="numeric"
+                    value={step.maxRounds}
+                    onChange={(event) => onChange({ ...step, maxRounds: event.target.value })}
+                  />
+                </LibraryField>
+              </div>
+            ) : null}
+            <LibraryField label="When the run fails or times out">
+              <Choice
+                id={`${step.key}-error`}
+                value={step.onError}
+                labels={GATE_LABELS}
+                onChange={(onError) => onChange({ ...step, onError })}
               />
-              Use another model in this pipeline
-            </label>
-            {step.modelSelection !== null ? (
-              <BotModelPicker
+            </LibraryField>
+            <div className="grid gap-2">
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                <Switch
+                  checked={step.modelSelection !== null}
+                  onCheckedChange={(on) =>
+                    onChange({ ...step, modelSelection: on ? bot.modelSelection : null })
+                  }
+                />
+                Use another model in this pipeline
+              </label>
+              {step.modelSelection !== null ? (
+                <BotModelPicker
+                  environmentId={environmentId}
+                  value={step.modelSelection}
+                  onChange={(modelSelection) => onChange({ ...step, modelSelection })}
+                />
+              ) : null}
+            </div>
+            {anywhereSupported ? (
+              <BotTargetField
                 environmentId={environmentId}
-                value={step.modelSelection}
-                onChange={(modelSelection) => onChange({ ...step, modelSelection })}
+                botId={bot.id}
+                projectId={null}
+                value={step.target}
+                onChange={(target) => onChange({ ...step, target })}
               />
             ) : null}
-          </div>
-          {anywhereSupported ? (
-            <BotTargetField
-              environmentId={environmentId}
-              botId={bot.id}
-              projectId={null}
-              value={step.target}
-              onChange={(target) => onChange({ ...step, target })}
-            />
-          ) : null}
-        </>
-      )}
-      <Problems problems={problems} />
-    </div>
+          </>
+        )}
+        <Problems problems={problems} />
+      </div>
+    </li>
   );
 }
 
@@ -355,6 +409,30 @@ export function PipelineEditor({
   const problems = sentKey === builtKey && built.ok ? (check.data?.problems ?? []) : [];
   const blocked = problems.some((problem) => problem.severity === "error");
 
+  const addInput = (
+    <Button
+      shape="pill"
+      size="xs"
+      variant="outline"
+      onClick={() => update({ parameters: [...draft.parameters, newParameterDraft()] })}
+    >
+      <PlusIcon />
+      Add input
+    </Button>
+  );
+  const addStep = (
+    <Button
+      shape="pill"
+      size="xs"
+      variant="outline"
+      disabled={draft.steps.length >= BOTS_PIPELINE_MAX_STEPS}
+      onClick={() => update({ steps: [...draft.steps, newStepDraft(draft, null)] })}
+    >
+      <PlusIcon />
+      Add step
+    </Button>
+  );
+
   const submit = async () => {
     if (busy || !canSave) return;
     if (!built.ok) {
@@ -390,17 +468,17 @@ export function PipelineEditor({
       description="Steps run one after another; each fills its bot's inputs from the pipeline's inputs and earlier steps."
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button shape="pill" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !canSave || blocked} onClick={() => void submit()}>
+          <Button shape="pill" disabled={busy || !canSave || blocked} onClick={() => void submit()}>
             {busy ? "Saving…" : "Save"}
           </Button>
         </>
       }
     >
       <form
-        className="grid gap-4"
+        className="flex flex-col gap-6"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -435,22 +513,17 @@ export function PipelineEditor({
             onChange={(event) => update({ description: event.target.value })}
           />
         </LibraryField>
-        <section className="grid gap-2" aria-label="Inputs">
-          <div className="flex items-center justify-between gap-2">
+        <section className="flex flex-col gap-3" aria-label="Inputs">
+          <div className="flex min-h-7 items-center justify-between gap-2">
             <h3 className="text-sm font-medium">Inputs</h3>
-            <Button
-              size="xs"
-              variant="outline"
-              onClick={() => update({ parameters: [...draft.parameters, newParameterDraft()] })}
-            >
-              <PlusIcon />
-              Add input
-            </Button>
+            {draft.parameters.length > 0 ? addInput : null}
           </div>
           {draft.parameters.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No inputs. Add one and refer to it in a step as {"{{input.name}}"}.
-            </p>
+            <BotsEmptyList
+              icon={TextCursorInputIcon}
+              message="No inputs. Add one and refer to it in a step as {{input.name}}."
+              action={addInput}
+            />
           ) : null}
           {draft.parameters.map((parameter) => (
             <ParameterRow
@@ -471,58 +544,57 @@ export function PipelineEditor({
             />
           ))}
         </section>
-        <section className="grid gap-2" aria-label="Steps">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Steps</h3>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={draft.steps.length >= BOTS_PIPELINE_MAX_STEPS}
-              onClick={() => update({ steps: [...draft.steps, newStepDraft(draft, null)] })}
-            >
-              <PlusIcon />
-              Add step
-            </Button>
+        <section className="flex flex-col gap-3" aria-label="Steps">
+          <div className="flex min-h-7 items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">
+              Steps
+              {draft.steps.length > 0 ? (
+                <span className="ms-1.5 text-xs font-normal tabular-nums text-muted-foreground">
+                  {draft.steps.length} of {BOTS_PIPELINE_MAX_STEPS}
+                </span>
+              ) : null}
+            </h3>
+            {draft.steps.length > 0 ? addStep : null}
           </div>
           {draft.steps.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No steps. Add one for each bot the pipeline runs.
-            </p>
-          ) : null}
-          {draft.steps.map((step, index) => (
-            <StepCard
-              key={step.key}
-              environmentId={environmentId}
-              draft={draft}
-              index={index}
-              step={step}
-              allBots={runnable}
-              problems={problemsOf(problems, step.id.trim())}
-              onChange={(next) => updateStep(step.key, next)}
-              onMove={(by) =>
-                setDraft((current) => {
-                  const steps = [...current.steps];
-                  const [moved] = steps.splice(index, 1);
-                  steps.splice(index + by, 0, moved!);
-                  return { ...current, steps };
-                })
-              }
-              onRemove={() =>
-                update({ steps: draft.steps.filter((entry) => entry.key !== step.key) })
-              }
+            <BotsEmptyList
+              icon={WorkflowIcon}
+              message="No steps. Add one for each bot the pipeline runs."
+              action={addStep}
             />
-          ))}
+          ) : (
+            <ol className="flex flex-col">
+              {draft.steps.map((step, index) => (
+                <StepCard
+                  key={step.key}
+                  environmentId={environmentId}
+                  draft={draft}
+                  index={index}
+                  last={index === draft.steps.length - 1}
+                  step={step}
+                  allBots={runnable}
+                  problems={problemsOf(problems, step.id.trim())}
+                  onChange={(next) => updateStep(step.key, next)}
+                  onMove={(by) =>
+                    setDraft((current) => {
+                      const steps = [...current.steps];
+                      const [moved] = steps.splice(index, 1);
+                      steps.splice(index + by, 0, moved!);
+                      return { ...current, steps };
+                    })
+                  }
+                  onRemove={() =>
+                    update({ steps: draft.steps.filter((entry) => entry.key !== step.key) })
+                  }
+                />
+              ))}
+            </ol>
+          )}
         </section>
         <Problems problems={problemsOf(problems, null)} />
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
+        <LibraryErrorNotice error={error} />
         {!canSave ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            This connection cannot change pipelines.
-          </p>
+          <LibraryNotice icon={LockIcon}>This connection cannot change pipelines.</LibraryNotice>
         ) : null}
       </form>
     </LibraryDialog>

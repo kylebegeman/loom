@@ -7,13 +7,29 @@ import {
 } from "@t3tools/contracts/fork";
 import { applyPipelineRunChanges } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  HistoryIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  WorkflowIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import {
+  LIBRARY_OUTLINE,
+  LibraryErrorNotice,
+  LibrarySection,
+} from "../project-library/LibraryControls";
 import { useLibraryPermission } from "../project-library/state";
+import { BotRowsSkeleton, BotsEmptyList } from "./BotRuns";
 import { PipelineEditor } from "./PipelineEditor";
-import { PipelineRunList, PipelineRunView } from "./PipelineRunView";
+import { PipelineRunList, PipelineRunView, PipelineSteps } from "./PipelineRunView";
 import { bots, usePipelines } from "./state";
 
 type Editing = { readonly pipeline: BotPipeline | null } | null;
@@ -77,119 +93,149 @@ export function BotPipelines({
   };
 
   return (
-    <section className="space-y-4" aria-label="Pipelines">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-medium">Pipelines</h3>
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={!canSave}
-          onClick={() => setEditing({ pipeline: null })}
-        >
-          New pipeline
-        </Button>
-      </div>
-      {list.error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {list.error}
-        </p>
-      ) : list.isPending && !list.data ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading pipelines…
-        </p>
-      ) : pipelines.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No pipelines yet. A pipeline runs bots one after another, passing what each found to the
-          next.
-        </p>
-      ) : (
-        <ul className="grid gap-2">
-          {pipelines.map((pipeline) => (
-            <li
-              key={pipeline.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+    <section className="flex flex-col gap-8" aria-label="Pipelines">
+      <LibrarySection
+        title="Pipelines"
+        icon={WorkflowIcon}
+        count={pipelines.length}
+        action={
+          pipelines.length > 0 ? (
+            <Button
+              shape="pill"
+              size="xs"
+              variant="outline"
+              disabled={!canSave}
+              onClick={() => setEditing({ pipeline: null })}
             >
-              <div className="grid min-w-0 gap-0.5">
-                <span className="font-medium">{pipeline.name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {pipeline.steps.map((step) => step.id).join(" → ")}
-                  {pipeline.description ? ` · ${pipeline.description}` : ""}
-                </span>
-              </div>
-              <div className="flex gap-1">
-                <Button size="xs" disabled={!canRun} onClick={() => onRun(pipeline)}>
-                  Run
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={!canSave}
-                  onClick={() => setEditing({ pipeline })}
-                >
-                  Edit
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={!canDelete}
-                  onClick={() => void deletePipeline(pipeline)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
-        </p>
-      ) : null}
-      {selectedRunId !== undefined ? (
-        <PipelineRunView
-          key={selectedRunId}
-          environmentId={environmentId}
-          pipelineRunId={selectedRunId}
-          changes={changes}
-          canRun={canResume}
-          canCancel={canCancel}
-          onOpenBatch={onOpenBatch}
-          onClose={() => onSelectRun(undefined)}
-        />
-      ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-medium">Recent pipeline runs</h3>
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={!connected || runsQuery.isPending}
-          onClick={runsQuery.refresh}
-        >
-          Refresh
-        </Button>
-      </div>
-      {runsQuery.error ? (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {runsQuery.error}
-        </p>
-      ) : runsQuery.isPending && !runsQuery.data ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading pipeline runs…
-        </p>
-      ) : (
-        <PipelineRunList
-          runs={runs}
-          selectedId={selectedRunId}
-          onSelect={(run) => onSelectRun(run.id)}
-          emptyMessage="No pipeline has run yet."
-        />
-      )}
-      {runsQuery.data?.hasMore ? (
-        <p className="text-xs text-muted-foreground">
-          Showing the {BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT} most recent pipeline runs.
-        </p>
-      ) : null}
+              <PlusIcon />
+              New pipeline
+            </Button>
+          ) : null
+        }
+      >
+        <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
+        {list.error && !list.data ? null : list.isPending && !list.data ? (
+          <BotRowsSkeleton label="Loading pipelines" />
+        ) : pipelines.length === 0 ? (
+          <BotsEmptyList
+            icon={WorkflowIcon}
+            message="No pipelines yet. A pipeline runs bots one after another, passing what each found to the next."
+            action={
+              <Button
+                shape="pill"
+                size="sm"
+                disabled={!canSave}
+                onClick={() => setEditing({ pipeline: null })}
+              >
+                <PlusIcon />
+                New pipeline
+              </Button>
+            }
+          />
+        ) : (
+          <ul
+            className={cn(LIBRARY_OUTLINE, "flex flex-col divide-y divide-border overflow-hidden")}
+          >
+            {pipelines.map((pipeline) => (
+              <li
+                key={pipeline.id}
+                className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3"
+              >
+                <div className="flex min-w-0 flex-1 basis-72 flex-col gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{pipeline.name}</p>
+                    {pipeline.description ? (
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {pipeline.description}
+                      </p>
+                    ) : null}
+                  </div>
+                  <PipelineSteps pipeline={pipeline} />
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    shape="pill"
+                    size="xs"
+                    variant="outline"
+                    disabled={!canRun}
+                    onClick={() => onRun(pipeline)}
+                  >
+                    <PlayIcon />
+                    Run
+                  </Button>
+                  <Button
+                    shape="pill"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Edit ${pipeline.name}`}
+                    disabled={!canSave}
+                    onClick={() => setEditing({ pipeline })}
+                  >
+                    <PencilIcon />
+                  </Button>
+                  <Button
+                    shape="pill"
+                    size="icon-xs"
+                    variant="ghost-destructive"
+                    aria-label={`Delete ${pipeline.name}`}
+                    disabled={!canDelete}
+                    onClick={() => void deletePipeline(pipeline)}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <LibraryErrorNotice error={error} />
+      </LibrarySection>
+      <LibrarySection
+        title="Recent runs"
+        icon={HistoryIcon}
+        action={
+          <Button
+            shape="pill"
+            size="xs"
+            variant="ghost"
+            disabled={!connected || runsQuery.isPending}
+            onClick={runsQuery.refresh}
+          >
+            <RefreshCwIcon />
+            Refresh
+          </Button>
+        }
+      >
+        {selectedRunId !== undefined ? (
+          <PipelineRunView
+            key={selectedRunId}
+            environmentId={environmentId}
+            pipelineRunId={selectedRunId}
+            changes={changes}
+            canRun={canResume}
+            canCancel={canCancel}
+            onOpenBatch={onOpenBatch}
+            onClose={() => onSelectRun(undefined)}
+            pipelines={pipelines}
+          />
+        ) : null}
+        <LibraryErrorNotice error={runsQuery.error} onRetry={runsQuery.refresh} />
+        {runsQuery.error && !runsQuery.data ? null : runsQuery.isPending && !runsQuery.data ? (
+          <BotRowsSkeleton label="Loading pipeline runs" />
+        ) : (
+          <PipelineRunList
+            runs={runs}
+            selectedId={selectedRunId}
+            onSelect={(run) => onSelectRun(run.id)}
+            emptyMessage="No pipeline has run yet. Each run and the report it leaves collect here."
+          />
+        )}
+        {runsQuery.data?.hasMore ? (
+          <p className="text-xs text-muted-foreground">
+            Showing the {BOTS_LIST_PIPELINE_RUNS_MAX_LIMIT} most recent pipeline runs.
+          </p>
+        ) : null}
+      </LibrarySection>
       {editing ? (
         <PipelineEditor
           environmentId={environmentId}

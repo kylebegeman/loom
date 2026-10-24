@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { BotBatch, BotDefinition, BotsBatchInput, BotTarget } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { InfoIcon, LayersIcon, ListChecksIcon, LockIcon, TriangleAlertIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -11,14 +12,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Textarea } from "~/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryDialog, LibraryField } from "../project-library/LibraryControls";
+import {
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryField,
+  LibraryNotice,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
 import { BotTargetField } from "./BotAnywhere";
 import { ParameterField } from "./BotRunForm";
+import { BotsEmptyList } from "./BotRuns";
 import {
   batchSourceFromDraft,
   checkoutChoices,
@@ -35,6 +45,12 @@ import {
 import { bots, useBotsHost } from "./state";
 
 const PREVIEW_DEBOUNCE_MS = 400;
+const PREVIEW_SKELETON_ROWS = ["w-2/5", "w-3/5", "w-1/2"];
+
+const SEARCH_MODES = [
+  ["files", "File names"],
+  ["contents", "File contents"],
+] as const;
 
 const SOURCE_LABELS: Record<BatchSourceType, string> = {
   lines: "Pasted lines",
@@ -184,26 +200,27 @@ export function RunOnManyDialog({
       description="Choose where the items come from and which input each one fills. Every item runs with the bot's own limits."
       actions={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button shape="pill" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={busy || !canRun || !ready} onClick={() => void submit()}>
+          <Button shape="pill" disabled={busy || !canRun || !ready} onClick={() => void submit()}>
+            <LayersIcon />
             {busy ? "Starting…" : runLabel}
           </Button>
         </>
       }
     >
       <form
-        className="grid gap-4"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
         {bot.parameters.length === 0 ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <LibraryNotice icon={InfoIcon} tone="warning">
             This bot takes no inputs, so there is nothing for each item to fill.
-          </p>
+          </LibraryNotice>
         ) : null}
         <Choice
           label="Items"
@@ -230,15 +247,27 @@ export function RunOnManyDialog({
           </LibraryField>
         ) : null}
         {draft.type === "search" ? (
-          <Choice
-            label="Search"
-            value={draft.searchMode}
-            options={[
-              ["files", "File names"],
-              ["contents", "File contents"],
-            ]}
-            onChange={(searchMode) => update({ searchMode })}
-          />
+          <div className="flex flex-col gap-2">
+            <p id="run-on-many-search" className="text-sm font-medium">
+              Search
+            </p>
+            <ToggleGroup
+              shape="pill"
+              variant="segmented"
+              aria-labelledby="run-on-many-search"
+              value={[draft.searchMode]}
+              onValueChange={(next) => {
+                const searchMode = SEARCH_MODES.find(([mode]) => mode === next[0])?.[0];
+                if (searchMode) update({ searchMode });
+              }}
+            >
+              {SEARCH_MODES.map(([mode, label]) => (
+                <ToggleGroupItem key={mode} value={mode}>
+                  {label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
         ) : null}
         {draft.type === "search" || draft.type === "pullRequests" ? (
           <LibraryField label={draft.type === "search" ? "Text" : "Filter (optional)"}>
@@ -302,65 +331,83 @@ export function RunOnManyDialog({
             ))}
           </fieldset>
         ) : null}
-        <section
-          aria-label="Preview"
-          className="space-y-2 rounded-lg border border-border p-3 text-sm"
-        >
+        <section aria-label="Preview" className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Preview</h3>
           {input === null ? (
-            <p className="text-muted-foreground">Fill in the source to see the items.</p>
+            <BotsEmptyList icon={ListChecksIcon} message="Fill in the source to see the items." />
           ) : !settled || (preview.isPending && !preview.data) ? (
-            <p role="status" className="text-muted-foreground">
-              Finding items…
-            </p>
+            <div
+              role="status"
+              aria-label="Finding items"
+              className="flex flex-col divide-y divide-border rounded-xl border border-border"
+            >
+              {PREVIEW_SKELETON_ROWS.map((width) => (
+                <div key={width} className="px-3.5 py-2.5">
+                  <div className={width}>
+                    <Skeleton className="h-3" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : preview.error ? (
-            <p role="alert" className="text-destructive-foreground">
-              {preview.error}
-            </p>
+            <LibraryErrorNotice error={preview.error} onRetry={preview.refresh} />
           ) : previewed ? (
             <>
-              <p className="font-medium">{previewed.sourceSummary}</p>
-              {previewed.note ? <p className="text-muted-foreground">{previewed.note}</p> : null}
-              <ul className="space-y-0.5">
-                {previewed.items.map((item) => (
-                  <li key={JSON.stringify(item.inputs)} className="truncate">
-                    {item.label}
-                  </li>
-                ))}
-              </ul>
-              {total > previewed.items.length + previewed.invalid.length ? (
-                <p className="text-muted-foreground">
-                  And {total - previewed.items.length - previewed.invalid.length} more.
-                </p>
-              ) : null}
-              {previewed.invalid.length > 0 ? (
-                <div role="alert" className="text-destructive-foreground">
-                  <p>Fix these items before running:</p>
-                  <ul>
-                    {previewed.invalid.map((item) => (
-                      <li key={`${item.label}\n${item.message}`}>
-                        {item.label}: {item.message}
+              <div className="flex flex-col overflow-hidden rounded-xl border border-border">
+                <div className="flex min-w-0 items-center gap-3 border-b border-border px-3.5 py-2.5">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {previewed.sourceSummary}
+                  </p>
+                  <LibraryStateBadge tone={previewed.invalid.length > 0 ? "danger" : "neutral"}>
+                    {total} item{total === 1 ? "" : "s"}
+                  </LibraryStateBadge>
+                </div>
+                {previewed.note ? (
+                  <p className="border-b border-border px-3.5 py-2 text-xs text-muted-foreground">
+                    {previewed.note}
+                  </p>
+                ) : null}
+                {previewed.items.length > 0 ? (
+                  <ul className="flex max-h-56 flex-col divide-y divide-border overflow-y-auto">
+                    {previewed.items.map((item) => (
+                      <li
+                        key={JSON.stringify(item.inputs)}
+                        className="truncate px-3.5 py-1.5 font-mono text-xs"
+                      >
+                        {item.label}
                       </li>
                     ))}
                   </ul>
-                </div>
+                ) : null}
+                {total > previewed.items.length + previewed.invalid.length ? (
+                  <p className="border-t border-border px-3.5 py-2 text-xs text-muted-foreground">
+                    And {total - previewed.items.length - previewed.invalid.length} more.
+                  </p>
+                ) : null}
+              </div>
+              {previewed.invalid.length > 0 ? (
+                <LibraryNotice icon={TriangleAlertIcon} tone="danger">
+                  <p>Fix these items before running:</p>
+                  <ul className="mt-1 flex flex-col gap-0.5">
+                    {previewed.invalid.map((item) => (
+                      <li key={`${item.label}\n${item.message}`} className="wrap-anywhere">
+                        <span className="font-mono text-xs">{item.label}</span>: {item.message}
+                      </li>
+                    ))}
+                  </ul>
+                </LibraryNotice>
               ) : null}
             </>
           ) : null}
         </section>
         {checkout === undefined && draft.checkoutThreadId !== "" ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <LibraryNotice icon={InfoIcon}>
             That checkout is gone; the project root is used.
-          </p>
+          </LibraryNotice>
         ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
+        <LibraryErrorNotice error={error} />
         {!canRun ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            This connection cannot run bots.
-          </p>
+          <LibraryNotice icon={LockIcon}>This connection cannot run bots.</LibraryNotice>
         ) : null}
       </form>
     </LibraryDialog>
