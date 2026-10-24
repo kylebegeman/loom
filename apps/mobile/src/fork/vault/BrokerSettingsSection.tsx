@@ -102,33 +102,29 @@ function BrokerManager({
       platform,
     };
     setPendingBegin(input);
-    try {
-      const result = await beginCommand({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setAdding(false);
-      setInvitation(result.value);
-      setPendingBegin(null);
-      snapshot.refresh();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await beginCommand({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setAdding(false);
+        setInvitation(result.value);
+        setPendingBegin(null);
+        snapshot.refresh();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const apply = async () => {
     if (!review || busy) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await applyCommand({ environmentId, input: review.input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setReview(null);
-      snapshot.refresh();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await applyCommand({ environmentId, input: review.input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setReview(null);
+        snapshot.refresh();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const inspectChange = (
     change: VaultBrokerMutation["change"],

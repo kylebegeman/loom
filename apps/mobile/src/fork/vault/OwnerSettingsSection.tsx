@@ -95,30 +95,30 @@ export function VaultOwnerSettings({
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      const result = await change({
-        environmentId,
-        input: {
-          operationId: uuidv4().replaceAll("-", ""),
-          expectedRevision: snapshot.revision,
-          mode: summary.enabled ? "restricted" : "owner-trusted",
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setSnapshot(result.value);
-      setConfirmed(false);
-      setNotice(
-        result.value.ownerPolicy?.mode === "owner-trusted"
-          ? "Owner access enabled for this environment."
-          : "Restricted access restored. Saved access rules apply again.",
-      );
-    } catch (cause) {
-      setSnapshot(null);
-      setConfirmed(false);
-      setError(failureMessage(cause));
-    } finally {
-      setBusy(false);
-    }
+    await change({
+      environmentId,
+      input: {
+        operationId: uuidv4().replaceAll("-", ""),
+        expectedRevision: snapshot.revision,
+        mode: summary.enabled ? "restricted" : "owner-trusted",
+      },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setSnapshot(result.value);
+        setConfirmed(false);
+        setNotice(
+          result.value.ownerPolicy?.mode === "owner-trusted"
+            ? "Owner access enabled for this environment."
+            : "Restricted access restored. Saved access rules apply again.",
+        );
+      })
+      .catch((cause: unknown) => {
+        setSnapshot(null);
+        setConfirmed(false);
+        setError(failureMessage(cause));
+      })
+      .finally(() => setBusy(false));
   };
   const openRepair = useCallback((section: "broker" | "health") => setRepair(section), []);
   return (

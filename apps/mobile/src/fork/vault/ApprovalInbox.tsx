@@ -98,20 +98,20 @@ function Inbox({
     setPending(input);
     setBusy(true);
     setError(null);
-    try {
-      const result = await change({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setPending(null);
-      query.refresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "The decision could not be confirmed. Retry or refresh its status.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await change({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setPending(null);
+        query.refresh();
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "The decision could not be confirmed. Retry or refresh its status.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   return (
     <View accessibilityLabel="Vault approvals" className="gap-3">

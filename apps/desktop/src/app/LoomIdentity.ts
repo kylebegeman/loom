@@ -201,7 +201,10 @@ export async function signInToLoom(
   httpBaseUrl: string,
   openBrowser: (url: string) => Promise<boolean>,
   signal?: AbortSignal,
-  expected?: Pick<LoomDesktopSignInRequest, "expectedEnvironmentId" | "expectedIdentity">,
+  expected?: Pick<
+    LoomDesktopSignInRequest,
+    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer"
+  >,
 ): Promise<LoomSignIn> {
   const origin = loomHostOrigin(httpBaseUrl);
   if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this computer.");
@@ -234,6 +237,8 @@ export async function signInToLoom(
       throw new Error(
         "This computer's Identity provider changed. Remove the saved connection before signing in again.",
       );
+    if (expected?.expectedIssuer !== undefined && expected.expectedIssuer !== metadata.issuer)
+      throw new Error("This computer uses a different sign-in provider than your Library.");
     const discovery = decodeDiscovery(
       await jsonRequest(
         `${metadata.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`,

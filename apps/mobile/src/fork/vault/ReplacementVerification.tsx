@@ -71,18 +71,19 @@ export function ReplacementVerification({
     setBusy(true);
     setError(null);
     setConfirmed(false);
-    try {
-      const next = unwrap(await run({ environmentId, input }));
-      if (next.receipt?.state !== "running" || next.freshness === "interrupted") setPending(null);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Verification response was lost. Refresh its receipt before retrying.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await run({ environmentId, input })
+      .then((result) => {
+        const next = unwrap(result);
+        if (next.receipt?.state !== "running" || next.freshness === "interrupted") setPending(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Verification response was lost. Refresh its receipt before retrying.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   return (
     <View className="gap-3 rounded-lg border border-border p-3">

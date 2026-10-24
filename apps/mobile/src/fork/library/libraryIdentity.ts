@@ -109,8 +109,13 @@ export function nativeIdentityAuthorizationParameters(
   };
 }
 
-type IdentityOptions = {
+export type IdentityOptions = {
   readonly expectedIdentity?: LoomIdentityAccount;
+  /**
+   * The issuer this computer must use, checked before the provider sign-in opens. A computer
+   * found through the Library's directory is pinned to the Library's own issuer.
+   */
+  readonly expectedIssuer?: string;
   readonly requireSessionExchange?: boolean;
   readonly signal?: AbortSignal;
 };
@@ -153,6 +158,8 @@ export async function loadLibraryIdentity(
     throw new Error(
       "This computer's Identity provider changed. Remove the saved connection before signing in again.",
     );
+  if (options.expectedIssuer !== undefined && metadata.issuer !== options.expectedIssuer)
+    throw new Error("This computer uses a different sign-in provider than your Library.");
   secureIdentityEndpoint(metadata.issuer);
   secureIdentityEndpoint(metadata.authorizationEndpoint);
   secureIdentityEndpoint(metadata.tokenEndpoint);

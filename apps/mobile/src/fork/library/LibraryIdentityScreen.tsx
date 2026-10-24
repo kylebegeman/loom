@@ -1,32 +1,28 @@
-// @effect-diagnostics globalDate:off globalTimers:off -- Expo OAuth is an imperative native boundary with a bounded cancellation timer.
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
-import { AuthRequest, exchangeCodeAsync, makeRedirectUri, ResponseType } from "expo-auth-session";
-import { dismissAuthSession } from "expo-web-browser";
-import Constants from "expo-constants";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { environmentCatalog } from "../../connection/catalog";
-import { identityGrantStore } from "../identity-renewal/mobileIdentityRenewal";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
-import {
-  completeNativeIdentitySignIn,
-  libraryIdentityAddress,
-  libraryIdentityResourceParameters,
-  loadLibraryIdentity,
-  loadNativeIdentityDiscovery,
-  nativeIdentityAuthorizationParameters,
-  nativeIdentityScopes,
-} from "./libraryIdentity";
 import { useLibraryAuthority } from "./libraryState";
+import {
+  NativeIdentitySignInExpired,
+  saveNativeIdentitySignIn,
+  signInWithNativeIdentity,
+} from "./nativeIdentitySignIn";
 
 type IdentityRouteParams = { readonly environmentId?: string; readonly address?: string };
+
+const SIGN_IN_PROGRESS = {
+  "signing-in": "Sign in with your account...",
+  verifying: "Verifying computer access...",
+} as const;
+const SAVING = "Saving computer access...";
+const CANCELLED_OR_EXPIRED = "Sign-in cancelled or expired. Try again.";
 
 export function LibraryIdentityRouteScreen({ route }: StaticScreenProps<IdentityRouteParams>) {
   const environmentId = route.params?.environmentId
@@ -80,136 +76,65 @@ function IdentityContent({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
-      if (active.current) {
-        active.current.abort();
-        try {
-          dismissAuthSession();
-        } catch {}
-      }
-    },
-    [],
-  );
+  // Aborting closes an open provider sheet; `signInWithNativeIdentity` listens for it.
+  useEffect(() => () => active.current?.abort(), []);
 
   function cancel() {
     active.current?.abort();
-    try {
-      dismissAuthSession();
-    } catch {
-      /* The provider browser may already be closed. */
-    }
   }
 
-  async function signIn() {
+  function signIn() {
     if (active.current || !address.trim()) return;
     const abort = new AbortController();
     active.current = abort;
-    const timer = setTimeout(() => {
-      abort.abort();
-      try {
-        dismissAuthSession();
-      } catch {}
-    }, 300_000);
     setPending("Checking computer...");
     setError(null);
-    try {
-      const destination = libraryIdentityAddress(address);
-      const options = {
-        requireSessionExchange: true,
-        signal: abort.signal,
-        ...(connection?.identity ? { expectedIdentity: connection.identity } : {}),
-      };
-      const metadata = await loadLibraryIdentity(
-        destination.httpBaseUrl,
-        environmentId ?? undefined,
-        fetch,
-        options,
-      );
-      const discovery = await loadNativeIdentityDiscovery(metadata, fetch, abort.signal);
-      const configuredScheme = Constants.expoConfig?.scheme;
-      const scheme = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
-      if (!scheme) throw new Error("This app does not have a sign-in callback configured.");
-      // Reuse the registered native callback for Library and ordinary computers.
-      const redirectUri = makeRedirectUri({ scheme, path: "library-auth" });
-      const auth = new AuthRequest({
-        clientId: metadata.nativeClientId,
-        redirectUri,
-        responseType: ResponseType.Code,
-        usePKCE: true,
-        scopes: [...nativeIdentityScopes(metadata)],
-        extraParams: nativeIdentityAuthorizationParameters(metadata),
-      });
-      setPending("Sign in with your account...");
-      const result = await auth.promptAsync(discovery);
-      if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-      if (result.type === "cancel" || result.type === "dismiss") return;
-      if (result.type !== "success" || !result.params.code || !auth.codeVerifier)
-        throw new Error("Account sign-in did not complete. Try again.");
-      setPending("Verifying computer access...");
-      const account = await exchangeCodeAsync(
-        {
-          clientId: metadata.nativeClientId,
-          code: result.params.code,
-          redirectUri,
-          extraParams: {
-            code_verifier: auth.codeVerifier,
-            ...libraryIdentityResourceParameters(metadata),
-          },
+    // A promise chain, not try/finally, which the React Compiler cannot compile.
+    return (async () => {
+      const signedIn = await signInWithNativeIdentity({
+        httpBaseUrl: address,
+        expectedEnvironmentId: environmentId ?? undefined,
+        options: {
+          requireSessionExchange: true,
+          ...(connection?.identity ? { expectedIdentity: connection.identity } : {}),
         },
-        discovery,
-      );
-      if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-      const signedIn = await completeNativeIdentitySignIn({
-        destination,
-        metadata,
-        discovery,
-        tokens: account,
-        label: connection?.environmentLabel ?? new URL(destination.httpBaseUrl).hostname,
-        options,
-        request: fetch,
-        now: Date.now,
+        label: connection?.environmentLabel,
+        signal: abort.signal,
+        onProgress: (stage) => setPending(SIGN_IN_PROGRESS[stage]),
       });
-      clearTimeout(timer);
-      setPending("Saving computer access...");
-      const registration = await register(signedIn.registration);
-      if (AsyncResult.isFailure(registration)) throw squashAtomCommandFailure(registration);
-      if (!registration.value)
-        throw new Error("This computer is managed by this app and cannot be added here.");
-      // Without a new grant, an older one would keep renewing a sign-in the user just replaced.
-      await (
-        signedIn.grant
-          ? identityGrantStore.put(signedIn.grant)
-          : identityGrantStore.remove(signedIn.grantKey)
-      ).catch(() => {
-        // The session still works until it ends; Loom then asks to sign in again.
-      });
-      const enabled = await enable({ environmentId: metadata.environmentId, enabled: true });
-      if (AsyncResult.isFailure(enabled)) throw squashAtomCommandFailure(enabled);
+      if (signedIn === null) {
+        // Closing the provider sheet is not an error; Cancel sign-in or leaving the screen is.
+        if (abort.signal.aborted) setError(CANCELLED_OR_EXPIRED);
+        return;
+      }
+      setPending(SAVING);
+      await saveNativeIdentitySignIn(signedIn, { register, enable });
+      const savedId = signedIn.registration.profile.environmentId;
       if (purpose === "library") {
-        await authority.select(metadata.environmentId);
+        await authority.select(savedId);
         navigation.navigate("Library");
       } else
         navigation.navigate("SettingsSheet", {
           screen: "SettingsContent",
           params: {
             screen: "SettingsEnvironmentDetail",
-            params: { environmentId: metadata.environmentId },
+            params: { environmentId: savedId },
           },
         });
-    } catch (cause) {
-      setError(
-        abort.signal.aborted
-          ? "Sign-in cancelled or expired. Try again."
-          : cause instanceof Error
-            ? cause.message
-            : "Identity sign-in could not complete.",
-      );
-    } finally {
-      clearTimeout(timer);
-      active.current = null;
-      setPending(null);
-    }
+    })()
+      .catch((cause: unknown) =>
+        setError(
+          abort.signal.aborted || cause instanceof NativeIdentitySignInExpired
+            ? CANCELLED_OR_EXPIRED
+            : cause instanceof Error
+              ? cause.message
+              : "Identity sign-in could not complete.",
+        ),
+      )
+      .finally(() => {
+        active.current = null;
+        setPending(null);
+      });
   }
   return (
     <LibraryPage title={purpose === "library" ? "Library sign-in" : "Computer sign-in"} back>
@@ -251,7 +176,7 @@ function IdentityContent({
           <Button
             label="Cancel sign-in"
             tone="text"
-            disabled={pending === "Saving computer access..."}
+            disabled={pending === SAVING}
             onPress={cancel}
           />
         ) : null}

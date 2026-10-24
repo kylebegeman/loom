@@ -100,20 +100,20 @@ export function OriginalRouteReview({
     setError(null);
     setContact(false);
     setReviewed(false);
-    try {
-      const result = await run({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      const next = result.value;
-      if (next.receipt?.state !== "running" || next.freshness === "interrupted") setPending(null);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Response was lost. Refresh the original receipt before retrying.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await run({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const next = result.value;
+        if (next.receipt?.state !== "running" || next.freshness === "interrupted") setPending(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Response was lost. Refresh the original receipt before retrying.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const refresh = () => {
     setError(null);

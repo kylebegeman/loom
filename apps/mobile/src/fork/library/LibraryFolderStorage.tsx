@@ -151,7 +151,9 @@ function FolderStorage({
     setConfirming(true);
     setReviewing(true);
     setError(null);
-    try {
+    // Stands in for try/finally, which the React Compiler cannot lower. Every return and throw,
+    // synchronous ones included, still reaches the cleanup.
+    await (async () => {
       const reviewed = await reviewFolder({
         environmentId: copy.environmentId,
         input: { projectId },
@@ -169,15 +171,17 @@ function FolderStorage({
         consent.current = reviewed.value.reviewToken;
         setConsentToken(reviewed.value.reviewToken);
       }
-    } catch (cause) {
-      if (mounted.current) setError(failureMessage(cause));
-    } finally {
-      busy.current = false;
-      if (mounted.current) {
-        setReviewing(false);
-        onPending?.(false);
-      }
-    }
+    })()
+      .catch((cause: unknown) => {
+        if (mounted.current) setError(failureMessage(cause));
+      })
+      .finally(() => {
+        busy.current = false;
+        if (mounted.current) {
+          setReviewing(false);
+          onPending?.(false);
+        }
+      });
   }
   async function save(keep: boolean) {
     if (!mounted.current || busy.current || !ready || !preview || !allowed || !liveAccess()) return;
@@ -199,7 +203,9 @@ function FolderStorage({
     onPending?.(true);
     setSaving(true);
     setError(null);
-    try {
+    // Stands in for try/finally, which the React Compiler cannot lower. Every return and throw,
+    // synchronous ones included, still reaches the cleanup.
+    await (async () => {
       const change = libraryFolderStorageChange(
         copy,
         projectId,
@@ -218,21 +224,23 @@ function FolderStorage({
       setConfirming(false);
       refresh();
       onChanged();
-    } catch (cause) {
-      if (mounted.current) {
-        consent.current = null;
-        confirmingRef.current = false;
-        setConfirming(false);
-        setError(failureMessage(cause));
-        refresh();
-      }
-    } finally {
-      busy.current = false;
-      if (mounted.current) {
-        setSaving(false);
-        onPending?.(false);
-      }
-    }
+    })()
+      .catch((cause: unknown) => {
+        if (mounted.current) {
+          consent.current = null;
+          confirmingRef.current = false;
+          setConfirming(false);
+          setError(failureMessage(cause));
+          refresh();
+        }
+      })
+      .finally(() => {
+        busy.current = false;
+        if (mounted.current) {
+          setSaving(false);
+          onPending?.(false);
+        }
+      });
   }
   const queryError =
     result._tag === "Failure"

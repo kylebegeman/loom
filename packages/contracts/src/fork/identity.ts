@@ -72,6 +72,11 @@ export const LoomDesktopSignInRequest = Schema.Struct({
   httpBaseUrl: Schema.String,
   expectedEnvironmentId: Schema.optional(EnvironmentId),
   expectedIdentity: Schema.optional(LoomIdentityAccount),
+  /**
+   * The issuer the computer must name before the provider opens, with or without a saved account.
+   * A computer found through the Library's directory is pinned to the Library's own issuer.
+   */
+  expectedIssuer: Schema.optional(Schema.String),
 });
 export type LoomDesktopSignInRequest = typeof LoomDesktopSignInRequest.Type;
 export const LoomDesktopSignInResult = Schema.Struct({

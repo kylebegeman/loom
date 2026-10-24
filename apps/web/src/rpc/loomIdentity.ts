@@ -95,6 +95,10 @@ export async function signInToLoomBrowser(
       throw new Error(
         "This computer's Identity provider changed. Remove the saved connection before signing in again.",
       );
+    // Desktop and iPhone open the provider this issuer names. Here the computer's own login page
+    // picks the provider, so this stops only a computer that reports its provider honestly.
+    if (input.expectedIssuer !== undefined && metadata.issuer !== input.expectedIssuer)
+      throw new Error("This computer uses a different sign-in provider than your Library.");
     const random = () => {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       return btoa(String.fromCharCode(...bytes))

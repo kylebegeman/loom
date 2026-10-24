@@ -147,6 +147,19 @@ describe("ordinary computer Identity", () => {
         expectedIdentity: { ...identity, issuer: "https://other-id.test" },
       }),
     ).rejects.toThrow("provider changed");
+    // A directory computer has no saved account yet, so only the Library's issuer pins it.
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        expectedIssuer: "https://other-id.test",
+      }),
+    ).rejects.toThrow("different sign-in provider than your Library");
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        expectedIssuer: identity.issuer,
+      }),
+    ).resolves.toMatchObject({ issuer: identity.issuer });
     for (const tokenEndpoint of [
       "http://identity.example/token",
       "https://user:secret@identity.example/token",

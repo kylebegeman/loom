@@ -33,6 +33,33 @@ native clients. A browser on a local, IP or VPN address can use direct pairing;
 Connections provides the hosted-web sign-in link when that deployment supports
 it. A privately configured account service follows its own supported domains.
 
+## Connect computers from your Library
+
+Once this device is connected to your Library, Loom lists the other computers in
+your Library that this device has not connected yet. On desktop and in a browser
+they are under **Settings > Connections**. On iPhone they are in the **From your
+Library** section of **Settings > Computers**. Choose **Connect** to sign in to
+one with Loom Identity, with no pairing code. In a browser, choose **Sign in**
+next, which opens the sign-in window. For now Loom reaches these computers over
+Tailscale, so this device needs to be on your tailnet.
+
+If you joined your Library with Loom Identity, sign in to each computer with the
+same account. Loom only signs in to a computer that uses the same sign-in
+provider as your Library.
+
+When Loom cannot sign in, it says why and offers the pairing form instead, with
+the computer's address filled in when Loom has a usable one. That happens when
+the computer cannot be reached, does not offer Loom sign-in to this app, or uses
+a different sign-in provider than your Library. In a browser, sign-in also needs
+the computer to allow this app's address. Get a pairing code from Connections
+settings in Loom on that computer.
+
+The list is read when you open it. To read it again, choose **Refresh** on
+desktop and in a browser, or pull down on iPhone. If your Library cannot be
+reached, Loom says so and shows the last list it read. Connected computers keep
+their own addresses, and a computer you remove from this device returns to the
+list.
+
 ## Stay signed in with Identity
 
 Each Identity sign-in to a computer lasts up to an hour. When the computer sets

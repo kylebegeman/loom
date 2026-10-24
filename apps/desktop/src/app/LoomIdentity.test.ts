@@ -219,23 +219,29 @@ describe("Loom native OAuth enrollment", () => {
             .end(JSON.stringify(result));
         })().catch(() => response.writeHead(500).end());
       });
-      const pending = signInToLoom(origin, async (authorizationUrl) => {
-        const url = new URL(authorizationUrl);
-        nonce = url.searchParams.get("nonce")!;
-        challenge = url.searchParams.get("code_challenge")!;
-        expect(url.searchParams.has("max_age")).toBe(modern);
-        redirect = url.searchParams.get("redirect_uri")!;
-        const wrong = new URL(redirect);
-        wrong.search = "state=wrong&code=bad";
-        expect((await fetch(wrong)).status).toBe(400);
-        const callback = new URL(redirect);
-        callback.search = new URLSearchParams({
-          state: url.searchParams.get("state")!,
-          code: "valid",
-        }).toString();
-        expect((await fetch(callback)).status).toBe(200);
-        return true;
-      });
+      // Pinned to the computer's own issuer, as a Library directory sign-in is.
+      const pending = signInToLoom(
+        origin,
+        async (authorizationUrl) => {
+          const url = new URL(authorizationUrl);
+          nonce = url.searchParams.get("nonce")!;
+          challenge = url.searchParams.get("code_challenge")!;
+          expect(url.searchParams.has("max_age")).toBe(modern);
+          redirect = url.searchParams.get("redirect_uri")!;
+          const wrong = new URL(redirect);
+          wrong.search = "state=wrong&code=bad";
+          expect((await fetch(wrong)).status).toBe(400);
+          const callback = new URL(redirect);
+          callback.search = new URLSearchParams({
+            state: url.searchParams.get("state")!,
+            code: "valid",
+          }).toString();
+          expect((await fetch(callback)).status).toBe(200);
+          return true;
+        },
+        undefined,
+        { expectedIssuer: `${origin}/idp` },
+      );
       if (expiresIn <= 0) {
         await expect(pending).rejects.toThrow();
         expect(exchanged).toBe(true);
@@ -298,6 +304,10 @@ describe("Loom native OAuth enrollment", () => {
         expectedIdentity: { issuer: "https://other.test", subject: "user" },
       }),
     ).rejects.toThrow("provider changed");
+    // A directory computer is pinned to the Library's issuer even when no account is saved.
+    await expect(
+      signInToLoom(origin, open, undefined, { expectedIssuer: "https://library-id.test" }),
+    ).rejects.toThrow("different sign-in provider than your Library");
     expect(open).not.toHaveBeenCalled();
   });
 

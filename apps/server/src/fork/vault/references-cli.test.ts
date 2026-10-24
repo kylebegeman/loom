@@ -246,7 +246,7 @@ it.effect(
           code: 1,
           stdout: "",
           stderr:
-            "Vault reference completion failed. Check the Loom connection and inspect grants.\n",
+            "Vault reference completion failed. Check the Loom connection and Vault access policy.\n",
         });
       }
       const result = yield* run(["references-complete"], {});
@@ -254,7 +254,7 @@ it.effect(
         code: 1,
         stdout: "",
         stderr:
-          "Vault reference completion failed. Check the Loom connection and inspect grants.\n",
+          "Vault reference completion failed. Check the Loom connection and Vault access policy.\n",
       });
     }).pipe(Effect.scoped),
 );

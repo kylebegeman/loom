@@ -10,8 +10,10 @@ import {
   directoryUnattachedMachines,
 } from "./directory.ts";
 import {
+  APP_ORIGIN,
   BOOK,
   DESK,
+  LIBRARY_ISSUER,
   MINUTES,
   NOW,
   STUDIO,
@@ -21,6 +23,8 @@ import {
   machine,
   reported,
 } from "./directory-test-fixtures.ts";
+
+const native = { signIn: { surface: "native" }, libraryIssuer: LIBRARY_ISSUER } as const;
 
 /** A saved connection as a client holds it, with routes the directory must never touch. */
 const savedStudio = {
@@ -149,7 +153,7 @@ describe("directoryCatalogRows", () => {
       proof: { text: "Reported 1 min ago" },
     });
     expect(row?.report).not.toHaveProperty("routes");
-    expect(row && directoryConnectPlan(row, identity(STUDIO), "browser")).toBeNull();
+    expect(row && directoryConnectPlan(row, identity(STUDIO), native)).toBeNull();
   });
 
   it("lists saved connections first in their order, then discovered computers by label", () => {
@@ -188,7 +192,7 @@ describe("directoryCatalogRows", () => {
       now: NOW,
     });
     expect(row).toMatchObject({ routes: [], action: null });
-    expect(row && directoryConnectPlan(row, null, "native")).toBeNull();
+    expect(row && directoryConnectPlan(row, null, native)).toBeNull();
   });
 
   it("attaches LoomOS machines to the computer that reported them", () => {
@@ -246,35 +250,61 @@ describe("directoryConnectPlan", () => {
     now: NOW,
   });
   if (row === undefined) throw new Error("expected a discovered row");
+  const browser = {
+    signIn: { surface: "browser", origin: APP_ORIGIN },
+    libraryIssuer: LIBRARY_ISSUER,
+  } as const;
 
   it("tries the public route first, then tailnet", () => {
-    expect(directoryConnectPlan(row, null, "browser")).toEqual({
+    expect(directoryConnectPlan(row, null, native)).toEqual({
       environmentId: BOOK,
       routes: [
         { kind: "public", url: "https://book.example.com" },
         { kind: "tailnet", url: "https://book.example.ts.net" },
       ],
       signIn: "pairing",
+      reason: "no-sign-in",
     });
   });
 
-  it("signs in with Loom Identity when the computer advertises it for this surface", () => {
-    expect(directoryConnectPlan(row, identity(BOOK), "browser")?.signIn).toBe("loom-identity");
-    expect(directoryConnectPlan(row, identity(BOOK), "native")?.signIn).toBe("loom-identity");
-    expect(
-      directoryConnectPlan(row, identity(BOOK, { browserLoginEnabled: false }), "browser")?.signIn,
-    ).toBe("pairing");
+  it("signs in with Loom Identity when the computer offers it here", () => {
+    expect(directoryConnectPlan(row, identity(BOOK), browser)).toMatchObject({
+      signIn: "loom-identity",
+      reason: null,
+    });
+    expect(directoryConnectPlan(row, identity(BOOK), native)?.signIn).toBe("loom-identity");
     const { nativeClientId: _native, ...browserOnly } = identity(BOOK);
-    expect(directoryConnectPlan(row, browserOnly, "native")?.signIn).toBe("pairing");
+    expect(directoryConnectPlan(row, browserOnly, native)?.reason).toBe("not-here");
+  });
+
+  it("keeps a browser on pairing where the computer does not allow its origin", () => {
+    for (const metadata of [
+      identity(BOOK, { browserLoginEnabled: false }),
+      identity(BOOK, { browserOrigins: ["https://elsewhere.example.com"] }),
+      identity(BOOK, { sessionExchangeEnabled: false }),
+    ]) {
+      expect(directoryConnectPlan(row, metadata, browser)?.reason).toBe("not-here");
+    }
   });
 
   it("pairs when sign-in is off or the route reaches another computer", () => {
-    expect(directoryConnectPlan(row, identity(BOOK, { enabled: false }), "browser")?.signIn).toBe(
-      "pairing",
+    expect(directoryConnectPlan(row, identity(BOOK, { enabled: false }), browser)?.reason).toBe(
+      "no-sign-in",
     );
-    expect(directoryConnectPlan(row, identity(STUDIO), "browser")?.signIn).toBe("pairing");
+    expect(directoryConnectPlan(row, identity(BOOK, { tokenEndpoint: null }), native)?.reason).toBe(
+      "no-sign-in",
+    );
+    expect(directoryConnectPlan(row, identity(STUDIO), browser)?.reason).toBe("other-computer");
+  });
+
+  it("offers Loom Identity only under the Library's own issuer", () => {
+    const elsewhere = identity(BOOK, { issuer: "https://login.attacker.example" });
+    expect(directoryConnectPlan(row, elsewhere, native)).toMatchObject({
+      signIn: "pairing",
+      reason: "issuer-mismatch",
+    });
     expect(
-      directoryConnectPlan(row, identity(BOOK, { tokenEndpoint: null }), "native")?.signIn,
-    ).toBe("pairing");
+      directoryConnectPlan(row, identity(BOOK), { ...native, libraryIssuer: null }),
+    ).toMatchObject({ signIn: "pairing", reason: "library-issuer-unknown" });
   });
 });

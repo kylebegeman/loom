@@ -92,7 +92,9 @@ function Checks({
     setReport(null);
     setExpired(false);
     setError(null);
-    try {
+    // Stands in for try/finally, which the React Compiler cannot lower. Every return and throw,
+    // synchronous ones included, still reaches the cleanup.
+    await (async () => {
       const result = await executeAtomQuery(
         registry,
         github.readiness.resultAtom({
@@ -108,17 +110,17 @@ function Checks({
       );
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       setReport(result.value);
-    } catch (cause) {
-      setError(
-        cancellation.signal.aborted
-          ? "Readiness check cancelled. Run again for a fresh result."
-          : cause instanceof Error
-            ? cause.message
-            : "Could not check GitHub readiness.",
-      );
-    } finally {
-      setController(null);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(
+          cancellation.signal.aborted
+            ? "Readiness check cancelled. Run again for a fresh result."
+            : cause instanceof Error
+              ? cause.message
+              : "Could not check GitHub readiness.",
+        );
+      })
+      .finally(() => setController(null));
   };
   const example = `loom vault github-exec '${JSON.stringify({ id: info.item.id, expectedVersion: info.item.version, repository, command: { tool: "gh", argv: ["pr", "list"] } })}'`;
   return (

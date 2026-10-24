@@ -116,15 +116,13 @@ function SshCreator({
     }
     setBusy(true);
     setError(null);
-    try {
-      const result = await generate({ environmentId, input: decoded.value });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      onCreated(result.value.item.id);
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await generate({ environmentId, input: decoded.value })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        onCreated(result.value.item.id);
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   return (
     <>
@@ -252,19 +250,19 @@ function SshDetails({
     setAction("trust");
     setError(null);
     setProbe(null);
-    try {
-      const result = await trust({ environmentId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setHostKey("");
-      setConfirmed(false);
-      setRemoving(false);
-      setOperationId(newId());
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-      setAction(null);
-    }
+    await trust({ environmentId, input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setHostKey("");
+        setConfirmed(false);
+        setRemoving(false);
+        setOperationId(newId());
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => {
+        setBusy(false);
+        setAction(null);
+      });
   };
   const probeConnection = async () => {
     if (!info || busy || !connected || !canProbe) return;
@@ -272,19 +270,19 @@ function SshDetails({
     setAction("probe");
     setError(null);
     setProbe(null);
-    try {
-      const result = await test({
-        environmentId,
-        input: { id, expectedVersion: info.item.version },
+    await test({
+      environmentId,
+      input: { id, expectedVersion: info.item.version },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setProbe(result.value);
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => {
+        setBusy(false);
+        setAction(null);
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setProbe(result.value);
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-      setAction(null);
-    }
   };
   const copy = async () => {
     if (!info) return;

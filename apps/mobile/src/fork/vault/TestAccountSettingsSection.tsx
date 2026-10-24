@@ -139,17 +139,15 @@ function Manager({
     if (!review || busy || !connected) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await command({ environmentId, input: review.input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setReview(null);
-      setEditor(null);
-      snapshot.refresh();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    await command({ environmentId, input: review.input })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setReview(null);
+        setEditor(null);
+        snapshot.refresh();
+      })
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => setBusy(false));
   };
   const start = (kind: "collection" | "account") => {
     setEditor(kind);

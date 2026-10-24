@@ -86,17 +86,15 @@ function Manager({
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      await work();
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "The GitHub operation failed. Refresh and try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    await work()
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "The GitHub operation failed. Refresh and try again.",
+        );
+      })
+      .finally(() => setBusy(false));
   };
   const edit = (info?: VaultGitHubInfo) => {
     setError(null);

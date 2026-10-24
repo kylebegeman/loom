@@ -302,14 +302,19 @@ it.effect.each(["ssh", "git-ssh", "github-api"] as const)(
     withAdmission(kind, (f) =>
       Effect.gen(function* () {
         f.controls.afterMetadata = Effect.sync(() => {
-          if (f.controls.metadata === 1)
-            f.state.thread = {
-              ...f.state.thread,
-              providerInstanceId: ProviderInstanceId.make("changed-provider"),
-              worktreePath: "/private/changed-worktree",
-            };
+          if (f.controls.metadata !== 1) return;
+          const changed = ProviderInstanceId.make("changed-provider");
+          // The fixture derives the active run from the model selection. A thread whose provider
+          // differs from its running run is denied as not live before the stamps are compared.
+          f.state.thread = {
+            ...f.state.thread,
+            providerInstanceId: changed,
+            modelSelection: { ...f.state.thread.modelSelection, instanceId: changed },
+            worktreePath: "/private/changed-worktree",
+          };
         });
         expect((yield* f.admit().pipe(Effect.flip)).reason).toBe("conflict");
+        expect(f.controls.metadata).toBe(2);
         expect(f.remoteCalls()).toBe(0);
         expect((yield* f.journal.status(f.input.id, f.threadId)).journal?.state).toBe("unknown");
       }),
