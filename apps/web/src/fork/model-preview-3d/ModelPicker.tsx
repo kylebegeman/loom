@@ -86,7 +86,8 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
   const create = async () => {
     setCreateBusy(true);
     setCreateError(null);
-    try {
+    // The async wrapper turns the path check's throw into a rejection for the catch.
+    await (async () => {
       if (!assemblyPath.toLowerCase().endsWith(".loom-assembly.json"))
         throw new Error("Use a .loom-assembly.json path.");
       await runModelCommand(models.updateAssembly, {
@@ -99,11 +100,15 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
       });
       appAtomRegistry.refresh(atom);
       useRightPanelStore.getState().openSurface(threadRef, modelSurface(assemblyPath.trim()));
-    } catch (cause) {
-      setCreateError(cause instanceof Error ? cause.message : "The assembly could not be created.");
-    } finally {
-      setCreateBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setCreateError(
+          cause instanceof Error ? cause.message : "The assembly could not be created.",
+        );
+      })
+      .finally(() => {
+        setCreateBusy(false);
+      });
   };
   const atom = models.models({
     environmentId: threadRef.environmentId,

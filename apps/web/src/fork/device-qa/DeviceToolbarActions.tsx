@@ -9,6 +9,16 @@ import { useServerConfigs } from "~/state/entities";
 import { valueOf } from "./parts";
 import { FEATURE, captureScreenshot, deviceQa, openPanel, stopRecording } from "./state";
 
+// Outside the component because React Compiler cannot lower try/finally.
+async function whileBusy(setBusy: (busy: boolean) => void, action: () => Promise<unknown>) {
+  setBusy(true);
+  try {
+    await action();
+  } finally {
+    setBusy(false);
+  }
+}
+
 function Actions({ threadRef, device }: { threadRef: ScopedThreadRef; device: DeviceSummary }) {
   const { environmentId, threadId } = threadRef;
   const evidence = valueOf(
@@ -31,15 +41,13 @@ function Actions({ threadRef, device }: { threadRef: ScopedThreadRef; device: De
         variant="ghost"
         disabled={busy}
         aria-label={recordingHere ? "Stop recording" : "Capture evidence"}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            if (recordingHere) await stopRecording(environmentId, recordingHere.evidenceId);
-            else await captureScreenshot(threadRef, target);
-          } finally {
-            setBusy(false);
-          }
-        }}
+        onClick={() =>
+          whileBusy(setBusy, () =>
+            recordingHere
+              ? stopRecording(environmentId, recordingHere.evidenceId)
+              : captureScreenshot(threadRef, target),
+          )
+        }
       >
         {recordingHere ? (
           <>

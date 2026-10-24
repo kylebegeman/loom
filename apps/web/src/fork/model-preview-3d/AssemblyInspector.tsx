@@ -69,26 +69,32 @@ export function AssemblyInspector(props: AssemblyInspectorProps) {
     saving.current = true;
     setPending(true);
     setMessage(null);
-    try {
+    // The async wrapper routes a synchronous throw from onApply into the catch.
+    await (async () => {
       await props.onApply(operations);
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      props.onPreview(null);
-      saving.current = false;
-      setPending(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        props.onPreview(null);
+        saving.current = false;
+        setPending(false);
+      });
   };
   const undo = async () => {
     setPending(true);
     setMessage(null);
-    try {
+    // The async wrapper routes a synchronous throw from onUndo into the catch.
+    await (async () => {
       await props.onUndo();
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setPending(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        setPending(false);
+      });
   };
   return (
     <aside className={styles.inspector} aria-label="Assembly inspector">

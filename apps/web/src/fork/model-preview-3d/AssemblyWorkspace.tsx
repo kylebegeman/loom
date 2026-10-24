@@ -22,6 +22,18 @@ import { useModelEditing } from "./useModelEditing";
 
 export type AssemblyInspectorTab = "parts" | "fit" | "markup" | "views";
 
+// Module level because React Compiler cannot lower try/finally inside a hook.
+function captureFromCamera(viewer: ModelViewer, camera: ModelCamera, refit: boolean) {
+  const original = viewer.snapshot();
+  try {
+    viewer.restore(camera);
+    if (refit) viewer.refit();
+    return viewer.capture(false);
+  } finally {
+    viewer.restore(original);
+  }
+}
+
 /** Assembly markup uses assembled coordinates and the same persisted workspace as model markup. */
 export function useAssemblyWorkspace(input: {
   threadRef: ScopedThreadRef;
@@ -94,20 +106,10 @@ export function useAssemblyWorkspace(input: {
   const viewThumbnail = useCallback(
     async (view: ModelSavedView) => {
       if (disabled || !viewerRef.current) return null;
-      const viewer = viewerRef.current,
-        original = viewer.snapshot();
-      let capture: Promise<Blob>;
-      const refit = view.sourceRevision !== revision;
-      try {
-        viewer.restore(view.camera);
-        if (refit) viewer.refit();
-        capture = viewer.capture(false);
-      } finally {
-        viewer.restore(original);
-      }
-      return thumbnail(await capture);
+      return thumbnail(
+        await captureFromCamera(viewerRef.current, view.camera, view.sourceRevision !== revision),
+      );
     },
-    // oxlint-disable-next-line react/memo-dependencies -- A revision change refits the saved camera before capturing its thumbnail.
     [disabled, viewerRef, revision],
   );
   const startTool = (mode: "measure" | "annotate", measure?: "distance" | "hole") => {

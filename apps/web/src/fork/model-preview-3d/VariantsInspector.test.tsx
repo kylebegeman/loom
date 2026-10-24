@@ -140,7 +140,7 @@ function apply(state: ModelWorkspace, operation: ModelWorkspaceOperation): Model
       : [...state.variants, item],
   };
 }
-function Harness() {
+function Harness({ refuse }: { refuse?: (operation: ModelWorkspaceOperation) => boolean }) {
   const [data, setData] = useState(EMPTY_MODEL_WORKSPACE);
   return createElement(VariantsInspector, {
     data,
@@ -152,6 +152,7 @@ function Harness() {
     onActivity: () => undefined,
     mutate: async (operation: ModelWorkspaceOperation) => {
       mocks.operations.push(operation);
+      if (refuse?.(operation)) return false;
       setData((current) => apply(current, operation));
       return true;
     },
@@ -252,4 +253,33 @@ it("sweeps two parameters with inline limits, then keeps one and discards the re
     [],
   );
   expect(text(root())).not.toContain("Discard all");
+});
+
+it("stops a render batch when a thumbnail save is refused, after releasing the hidden viewer", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.command.mockImplementation((command: string) =>
+    command === "render"
+      ? new Promise((resolve) => mocks.renders.push({ resolve }))
+      : Promise.resolve(),
+  );
+  await act(async () => {
+    renderer = create(
+      createElement(Harness, {
+        refuse: (operation) => operation.kind === "variant" && operation.item.thumbnail !== null,
+      }),
+    );
+  });
+  await act(async () => button("Parameter sweepUp to 6").props.onClick());
+  await type("Sweep values", "40, 60");
+  await submit();
+  expect(mocks.renders).toHaveLength(1);
+
+  const done = { status: "ok", mesh: { relativeUrl: "/m.stl" }, meshFormat: "stl", log: [] };
+  await act(async () => mocks.renders[0]!.resolve(done));
+  await act(async () => undefined);
+  // The refused save ends the batch: the second variant never renders and nothing is left running.
+  expect(mocks.renders).toHaveLength(1);
+  expect(document.body.childElementCount).toBe(0);
+  expect(root().findAll((node) => node.type === "button" && text(node) === "Stop")).toEqual([]);
+  expect(alert()).toHaveLength(0);
 });

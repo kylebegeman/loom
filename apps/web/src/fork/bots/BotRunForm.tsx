@@ -279,7 +279,8 @@ export function BotRunForm({
     }
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper lets a throw while building the input reach the same handlers.
+    await (async () => {
       const result = await run({
         environmentId,
         input: {
@@ -295,11 +296,13 @@ export function BotRunForm({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onStarted(result.value);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not run ${bot.name}.`);
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : `Could not run ${bot.name}.`);
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   const blocked = !host.connected

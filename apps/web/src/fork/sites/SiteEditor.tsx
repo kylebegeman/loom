@@ -496,7 +496,8 @@ function SiteWizard({
     setBusy(true);
     setError(null);
     let progress = sent;
-    try {
+    // Async so a synchronous decode failure reaches the same handler as a failed save.
+    await (async () => {
       if (draft.watch) {
         const serviceId =
           progress?.serviceId ??
@@ -510,7 +511,7 @@ function SiteWizard({
             `${serviceId}-home`.slice(0, MAX_ID_LENGTH),
             new Set(snapshot.checks.map((check) => check.id)),
           );
-        progress ??= { serviceId, checkId, service: null, check: null };
+        progress = progress ?? { serviceId, checkId, service: null, check: null };
         const service = unsentRequest(
           decodeSaveSiteServiceRequest({
             id: serviceId,
@@ -554,17 +555,17 @@ function SiteWizard({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       leave(() => onSaved(draft.id));
-    } catch (cause) {
-      const text = failureText(cause);
-      setError(
-        progress?.service
-          ? `The ${siteHost(origin)} service${progress.check ? " and its home page check are" : " is"} registered, but the site is not yet. ${text}`
-          : text,
-      );
-      if (sitesStage(cause) === "project") setStep(SITE_WIZARD_STEPS.indexOf("serves"));
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause) => {
+        const text = failureText(cause);
+        setError(
+          progress?.service
+            ? `The ${siteHost(origin)} service${progress.check ? " and its home page check are" : " is"} registered, but the site is not yet. ${text}`
+            : text,
+        );
+        if (sitesStage(cause) === "project") setStep(SITE_WIZARD_STEPS.indexOf("serves"));
+      })
+      .finally(() => setBusy(false));
   };
 
   const last = step === SITE_WIZARD_STEPS.length - 1;
@@ -1216,7 +1217,8 @@ function ServiceDialog({
     setBusy(true);
     setError(null);
     let serviceSaved = false;
-    try {
+    // Async so a synchronous decode failure reaches the same handler as a failed save.
+    await (async () => {
       const service = unsentRequest(
         decodeSaveSiteServiceRequest({ id, name: name.trim(), url: origin, active, kind }),
         sentService,
@@ -1248,12 +1250,12 @@ function ServiceDialog({
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       }
       leave(() => onSaved(id));
-    } catch (cause) {
-      const text = failureText(cause);
-      setError(serviceSaved ? `The service is registered, but its check is not. ${text}` : text);
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause) => {
+        const text = failureText(cause);
+        setError(serviceSaved ? `The service is registered, but its check is not. ${text}` : text);
+      })
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -1507,7 +1509,8 @@ function CheckDialog({
     if (!canSave || !reading?.ok || Object.values(issues).some(Boolean)) return;
     setBusy(true);
     setError(null);
-    try {
+    // Async so a synchronous decode failure reaches the same handler as a failed save.
+    await (async () => {
       const result = await saveCheck({
         environmentId,
         input: decodeSaveSiteCheckRequest({
@@ -1522,11 +1525,11 @@ function CheckDialog({
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       leave(() => onSaved(id));
-    } catch (cause) {
-      setError(failureText(cause));
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((cause) => {
+        setError(failureText(cause));
+      })
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -1919,7 +1922,8 @@ export function useSiteActiveToggle({
     const key = `${target.kind}:${target.row.id}`;
     const name = target.row.name;
     setPending((keys) => new Set(keys).add(key));
-    try {
+    // Async so an entry that no longer decodes reaches the same toast as a failed save.
+    await (async () => {
       const request = activeToggleRequest(target, active);
       const result =
         request.kind === "site"
@@ -1943,21 +1947,23 @@ export function useSiteActiveToggle({
           },
         },
       });
-    } catch (cause) {
-      toastManager.add({
-        type: "error",
-        title: active ? `Could not resume ${name}` : `Could not pause ${name}`,
-        description: Schema.isSchemaError(cause)
-          ? "Some of its saved details no longer fit what Sites accepts. Open it to fix them."
-          : failureText(cause),
+    })()
+      .catch((cause) => {
+        toastManager.add({
+          type: "error",
+          title: active ? `Could not resume ${name}` : `Could not pause ${name}`,
+          description: Schema.isSchemaError(cause)
+            ? "Some of its saved details no longer fit what Sites accepts. Open it to fix them."
+            : failureText(cause),
+        });
+      })
+      .finally(() => {
+        setPending((keys) => {
+          const next = new Set(keys);
+          next.delete(key);
+          return next;
+        });
       });
-    } finally {
-      setPending((keys) => {
-        const next = new Set(keys);
-        next.delete(key);
-        return next;
-      });
-    }
   };
   return {
     /** The `kind:id` of each entry being saved, so its control can say so. */

@@ -10,6 +10,19 @@ import { LibrarySavedThreads } from "./LibrarySavedThreads";
 import { projectLibrary, useLibraryAuthority } from "./state";
 import { useNoProjectStart } from "./useNoProjectStart";
 
+// Outside the component because React Compiler cannot lower try/finally.
+async function whileStarting(
+  setStarting: (starting: boolean) => void,
+  start: () => Promise<unknown>,
+) {
+  setStarting(true);
+  try {
+    await start();
+  } finally {
+    setStarting(false);
+  }
+}
+
 /** A history authority opens conversations without pretending to be an execution computer. */
 export function LibraryThreadHome() {
   const library = useLibraryAuthority();
@@ -23,12 +36,7 @@ export function LibraryThreadHome() {
   const [startingScratch, setStartingScratch] = useState(false);
   const startWithoutProject = async () => {
     if (!noProject || startingScratch) return;
-    setStartingScratch(true);
-    try {
-      await noProject.start();
-    } finally {
-      setStartingScratch(false);
-    }
+    await whileStarting(setStartingScratch, () => noProject.start());
   };
   const noProjectNote = noProject
     ? ` Without a project, new work starts on ${noProject.label}.`

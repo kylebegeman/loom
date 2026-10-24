@@ -67,11 +67,9 @@ export function useOverhangAngleSetting(
         });
       });
     saving.current = { angle: next, operation };
-    try {
-      await operation;
-    } finally {
+    await operation.finally(() => {
       if (saving.current?.operation === operation) saving.current = null;
-    }
+    });
   }, [canSave, environmentId]);
   return useMemo(() => ({ angle, canSave, setAngle, commit }), [angle, canSave, setAngle, commit]);
 }

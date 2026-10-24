@@ -151,20 +151,19 @@ export function HardwareLibrary({
     if (!data || busy || !canEdit) return false;
     setBusy("save");
     setError(null);
-    try {
-      setLocal(
-        await runPcbCommand(pcb.updateLibrary, {
-          environmentId: threadRef.environmentId,
-          input: { expectedVersion: data.version, library: { ...data, items } },
-        }),
-      );
-      return true;
-    } catch (e) {
-      setError(errorText(e, "The library could not save."));
-      return false;
-    } finally {
-      setBusy(null);
-    }
+    return runPcbCommand(pcb.updateLibrary, {
+      environmentId: threadRef.environmentId,
+      input: { expectedVersion: data.version, library: { ...data, items } },
+    })
+      .then((library) => {
+        setLocal(library);
+        return true;
+      })
+      .catch((e: unknown) => {
+        setError(errorText(e, "The library could not save."));
+        return false;
+      })
+      .finally(() => setBusy(null));
   };
   const create = (entry: PcbHardware) =>
     data &&

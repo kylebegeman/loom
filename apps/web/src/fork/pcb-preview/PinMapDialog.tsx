@@ -118,31 +118,31 @@ export function PinMapDialog({
     setSaving(true);
     setError(null);
     setSaved(null);
-    try {
-      const result = await runModelCommand(pcb.pinMap, {
-        environmentId: threadRef.environmentId,
-        input: {
-          threadId: threadRef.threadId,
-          designId,
-          reference,
-          format,
-          ...(family ? { family } : {}),
-          names: currentNames,
-          includePower: power,
-          includeNoConnect: unconnected,
-          expectedSourceHash: inspection.sourceHash,
-          save: { path, overwrite: replaceKey === requestKey },
-        },
-      });
-      setSaved(result.saved?.path ?? null);
-      setReplaceKey(null);
-    } catch (cause) {
-      const message = errorMessage(cause);
-      setError(message);
-      if (message.includes("Confirm Replace")) setReplaceKey(requestKey);
-    } finally {
-      setSaving(false);
-    }
+    await runModelCommand(pcb.pinMap, {
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        designId,
+        reference,
+        format,
+        ...(family ? { family } : {}),
+        names: currentNames,
+        includePower: power,
+        includeNoConnect: unconnected,
+        expectedSourceHash: inspection.sourceHash,
+        save: { path, overwrite: replaceKey === requestKey },
+      },
+    })
+      .then((result) => {
+        setSaved(result.saved?.path ?? null);
+        setReplaceKey(null);
+      })
+      .catch((cause: unknown) => {
+        const message = errorMessage(cause);
+        setError(message);
+        if (message.includes("Confirm Replace")) setReplaceKey(requestKey);
+      })
+      .finally(() => setSaving(false));
   };
   return (
     <Dialog

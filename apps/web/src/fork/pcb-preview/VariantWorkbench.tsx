@@ -110,15 +110,16 @@ export function VariantWorkbench({
     if (saving) return;
     setSaving(true);
     setError(null);
-    try {
+    // The async wrapper routes a synchronous throw from `operation` to the catch handler.
+    return (async () => {
       await operation();
       return true;
-    } catch (e) {
-      setError(errorText(e, "Could not save variants."));
-      return false;
-    } finally {
-      setSaving(false);
-    }
+    })()
+      .catch((e: unknown) => {
+        setError(errorText(e, "Could not save variants."));
+        return false;
+      })
+      .finally(() => setSaving(false));
   };
   const savePatch = (variant: PcbVariant, patch: Partial<PcbVariant>) =>
     mutate((current) => ({
@@ -148,49 +149,48 @@ export function VariantWorkbench({
     renderFingerprint.current = sessionKey;
     setError(null);
     const images = new Map<string, string>();
-    try {
-      await runVariantBatch({
-        variants,
-        current: () => generation.current === token,
-        progress: (index, variant) => {
-          active.current = variant.id;
-          setProgress({ index, total: variants.length, id: variant.id });
-        },
-        render: (variant) =>
-          runPcbCommand(pcb.renderVariant, {
-            ...target,
+    return runVariantBatch({
+      variants,
+      current: () => generation.current === token,
+      progress: (index, variant) => {
+        active.current = variant.id;
+        setProgress({ index, total: variants.length, id: variant.id });
+      },
+      render: (variant) =>
+        runPcbCommand(pcb.renderVariant, {
+          ...target,
+          input: {
+            ...target.input,
+            variantId: variant.id,
+            values: variant.values,
+            expectedSourceHash: schema.sourceHash,
+          },
+        }),
+      read: async (result) => {
+        const svg = (
+          await runPcbCommand(pcb.readSheet, {
+            environmentId: threadRef.environmentId,
             input: {
-              ...target.input,
-              variantId: variant.id,
-              values: variant.values,
-              expectedSourceHash: schema.sourceHash,
+              threadId: threadRef.threadId,
+              renderKey: result.renderKey,
+              sheetId: result.sheet!.id,
             },
-          }),
-        read: async (result) => {
-          const svg = (
-            await runPcbCommand(pcb.readSheet, {
-              environmentId: threadRef.environmentId,
-              input: {
-                threadId: threadRef.threadId,
-                renderKey: result.renderKey,
-                sheetId: result.sheet!.id,
-              },
-            })
-          ).svg;
-          if (options.collectImages) images.set(result.variantId, svg);
-          return svg;
-        },
-        thumbnail: svgThumbnail,
-        save: savePatch,
+          })
+        ).svg;
+        if (options.collectImages) images.set(result.variantId, svg);
+        return svg;
+      },
+      thumbnail: svgThumbnail,
+      save: savePatch,
+    })
+      .then(() => (generation.current === token ? images : new Map<string, string>()))
+      .finally(() => {
+        if (generation.current === token) {
+          running.current = false;
+          active.current = null;
+          setProgress(null);
+        }
       });
-      return generation.current === token ? images : new Map<string, string>();
-    } finally {
-      if (generation.current === token) {
-        running.current = false;
-        active.current = null;
-        setProgress(null);
-      }
-    }
   };
   const renderButton = (ids: readonly string[]) => {
     void render(ids).catch((e) => setError(errorText(e, "Could not render variants.")));

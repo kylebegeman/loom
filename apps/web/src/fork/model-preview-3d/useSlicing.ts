@@ -141,23 +141,25 @@ export function useSlicing(input: SlicingInput) {
         cachedOnly,
       });
       lease.current = request;
-      try {
-        const result = await request.promise;
-        if (generation.current === own && result.status !== "none") {
-          setSaved({ scope: current.scope, key: current.key, result });
-          if (result.status === "error") setError(result.warnings[0] ?? "Slicing failed.");
-        }
-        return result.status === "ok" ? result : null;
-      } catch (cause) {
-        if (generation.current === own && !cachedOnly)
-          setError(cause instanceof Error ? cause.message : String(cause));
-        return null;
-      } finally {
-        if (generation.current === own) {
-          lease.current = null;
-          setRunning(false);
-        }
-      }
+      return request.promise
+        .then((result) => {
+          if (generation.current === own && result.status !== "none") {
+            setSaved({ scope: current.scope, key: current.key, result });
+            if (result.status === "error") setError(result.warnings[0] ?? "Slicing failed.");
+          }
+          return result.status === "ok" ? result : null;
+        })
+        .catch((cause: unknown) => {
+          if (generation.current === own && !cachedOnly)
+            setError(cause instanceof Error ? cause.message : String(cause));
+          return null;
+        })
+        .finally(() => {
+          if (generation.current === own) {
+            lease.current = null;
+            setRunning(false);
+          }
+        });
     },
     [canRun, cancel],
   );
@@ -190,9 +192,11 @@ export function useSlicing(input: SlicingInput) {
       const controller = new AbortController();
       fetching.current?.abort();
       fetching.current = controller;
-      try {
+      const layerFile = sliced.layers.file;
+      // The async wrapper keeps the cleanup when modelUrl throws synchronously.
+      return (async () => {
         const response = await fetch(
-          modelUrl(current.input.threadRef.environmentId, sliced.layers.file.relativeUrl),
+          modelUrl(current.input.threadRef.environmentId, layerFile.relativeUrl),
           { signal: controller.signal },
         );
         if (!response.ok) throw new Error("The layer file could not be loaded.");
@@ -203,9 +207,9 @@ export function useSlicing(input: SlicingInput) {
           return data;
         }
         return null;
-      } finally {
+      })().finally(() => {
         if (fetching.current === controller) fetching.current = null;
-      }
+      });
     },
     [hideLayers, layers, result, stale, run],
   );

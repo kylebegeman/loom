@@ -24,11 +24,7 @@ export function NoProjectsHero({
   const startWithoutProject = async () => {
     if (scratchTargetEnvironmentId === null || startingScratch) return;
     setStartingScratch(true);
-    try {
-      await startScratchThread(scratchTargetEnvironmentId);
-    } finally {
-      setStartingScratch(false);
-    }
+    await startScratchThread(scratchTargetEnvironmentId).finally(() => setStartingScratch(false));
   };
 
   return (

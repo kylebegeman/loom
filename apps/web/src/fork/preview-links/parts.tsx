@@ -36,21 +36,28 @@ export function toastFailure(title: string, error: unknown) {
   );
 }
 
+// Outside the hook because React Compiler cannot lower `try`/`finally`.
+async function runAction(
+  title: string,
+  task: () => Promise<unknown>,
+  setBusy: (busy: boolean) => void,
+) {
+  setBusy(true);
+  try {
+    await task();
+    return true;
+  } catch (caught) {
+    toastFailure(title, caught);
+    return false;
+  } finally {
+    setBusy(false);
+  }
+}
+
 /** One action at a time; failures become a toast with the action's title. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
-  const act = async (title: string, task: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await task();
-      return true;
-    } catch (caught) {
-      toastFailure(title, caught);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const act = (title: string, task: () => Promise<unknown>) => runAction(title, task, setBusy);
   return { busy, act };
 }
 

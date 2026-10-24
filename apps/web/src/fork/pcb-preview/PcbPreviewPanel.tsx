@@ -468,20 +468,19 @@ export function DesignWorkspace({
       throw new Error(measureDisabledReason ?? "Component heights cannot be measured.");
     if (measuringHeights) return;
     setMeasuringHeights(true);
-    try {
-      await runPcbCommand(pcb.asset, {
-        environmentId: threadRef.environmentId,
-        input: {
-          threadId: threadRef.threadId,
-          designId: design.id,
-          format: "glb",
-          transport: "url",
-        },
-      });
-      refreshInspection();
-    } finally {
-      setMeasuringHeights(false);
-    }
+    await runPcbCommand(pcb.asset, {
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        designId: design.id,
+        format: "glb",
+        transport: "url",
+      },
+    })
+      .then(() => {
+        refreshInspection();
+      })
+      .finally(() => setMeasuringHeights(false));
   };
   const draftBoardStats = (text: string) => {
     const store = useComposerDraftStore.getState();
@@ -658,10 +657,11 @@ export function DesignWorkspace({
     const other = view === "pcb" ? pin.schematic : pin.pcb;
     if (other) linkedViewport.current?.focus(other);
   };
+  const currentSheet = preview.selectedSheet;
   const beginRequest = (
     anchor: PcbRequestAnchor,
     targetView = view,
-    sheet = preview.selectedSheet,
+    sheet = currentSheet,
     initialText?: string,
     noteId?: string,
   ) => {
@@ -773,20 +773,21 @@ export function DesignWorkspace({
       camera: viewport.current?.snapshot(),
       three,
     };
-    try {
-      await waitForDrawing(r.view, r.sheet, [r.id]);
-      return await capture(viewport.current!);
-    } finally {
-      setCaptureOnly(null);
-      setView(original.view);
-      if (original.view === "schematic") preview.selectSheet(original.sheet);
-      setThree(original.three);
-      if (original.camera) restoreView.current = { sheet: original.sheet, camera: original.camera };
-    }
+    return waitForDrawing(r.view, r.sheet, [r.id])
+      .then(() => capture(viewport.current!))
+      .finally(() => {
+        setCaptureOnly(null);
+        setView(original.view);
+        if (original.view === "schematic") preview.selectSheet(original.sheet);
+        setThree(original.three);
+        if (original.camera)
+          restoreView.current = { sheet: original.sheet, camera: original.camera };
+      });
   };
   const captureRequest = (r: PcbChangeRequest) =>
     withRequestDrawing(r, (handle) => handle.capture(true));
-  const addRequestsToDraft = async (ids: readonly string[], requests = workbench.data.requests) => {
+  const workspaceRequests = workbench.data.requests;
+  const addRequestsToDraft = async (ids: readonly string[], requests = workspaceRequests) => {
     const chosen = ids
       .map((id) => requests.find((r) => r.id === id))
       .filter((r): r is PcbChangeRequest => !!r);
@@ -800,7 +801,8 @@ export function DesignWorkspace({
       three,
     };
     setCaptureBusy(true);
-    try {
+    // The async wrapper keeps a throw from the first loop pass on the cleanup path.
+    await (async () => {
       const groups = new Map<string, PcbChangeRequest[]>();
       for (const r of chosen) {
         if (!anchorPoint(r.anchor, workbench.inspection, r.view, r.sheet)) {
@@ -836,14 +838,14 @@ export function DesignWorkspace({
         ),
       );
       await workbench.changeRequest({ op: "sent", ids: chosen.map((r) => r.id) });
-    } finally {
+    })().finally(() => {
       setCaptureBusy(false);
       setCaptureOnly(null);
       setView(original.view);
       if (original.view === "schematic") preview.selectSheet(original.sheet);
       setThree(original.three);
       if (original.camera) restoreView.current = { sheet: original.sheet, camera: original.camera };
-    }
+    });
   };
   const saveRequest = async (title: string, text: string, add: boolean) => {
     if (!requestForm || !preview.sourceHash)
@@ -872,26 +874,26 @@ export function DesignWorkspace({
       resolvedAt: null,
     };
     setPendingRequest(pending);
-    try {
-      const image = await captureRequest(pending);
-      const savedDraft = { ...draft, referenceImage: await thumbnail(image, 24000) };
-      const result = await workbench.changeRequest(
-        requestForm.noteId
-          ? { op: "convert-note", noteId: requestForm.noteId, request: savedDraft }
-          : { op: "create", request: savedDraft, sent: false },
-      );
-      setRequestForm(null);
-      setPendingRequest(null);
-      if (add) await addRequestsToDraft([draft.id], result.requests);
-    } catch (cause) {
-      setNotice({
-        tone: "error",
-        text: cause instanceof Error ? cause.message : "The request could not be saved.",
-      });
-      throw cause;
-    } finally {
-      setPendingRequest(null);
-    }
+    await captureRequest(pending)
+      .then(async (image) => {
+        const savedDraft = { ...draft, referenceImage: await thumbnail(image, 24000) };
+        const result = await workbench.changeRequest(
+          requestForm.noteId
+            ? { op: "convert-note", noteId: requestForm.noteId, request: savedDraft }
+            : { op: "create", request: savedDraft, sent: false },
+        );
+        setRequestForm(null);
+        setPendingRequest(null);
+        if (add) await addRequestsToDraft([draft.id], result.requests);
+      })
+      .catch((cause: unknown) => {
+        setNotice({
+          tone: "error",
+          text: cause instanceof Error ? cause.message : "The request could not be saved.",
+        });
+        throw cause;
+      })
+      .finally(() => setPendingRequest(null));
   };
   const chooseTool = (next: Tool) => {
     if (next === "request") {
@@ -998,7 +1000,8 @@ export function DesignWorkspace({
     if (captureBusy) return;
     setCaptureBusy(true);
     setNotice(null);
-    try {
+    // The async wrapper keeps the load checks that throw before any await on the error path.
+    await (async () => {
       const store = useComposerDraftStore.getState();
       if (three) {
         if (!board3d.current) throw new Error("Wait for the 3D board to load.");
@@ -1030,18 +1033,19 @@ export function DesignWorkspace({
         );
       }
       setNotice({ tone: "info", text: "Capture attached to your draft." });
-    } catch (e) {
-      setNotice({ tone: "error", text: e instanceof Error ? e.message : "Capture failed." });
-    } finally {
-      setCaptureBusy(false);
-    }
+    })()
+      .catch((e: unknown) => {
+        setNotice({ tone: "error", text: e instanceof Error ? e.message : "Capture failed." });
+      })
+      .finally(() => setCaptureBusy(false));
   };
 
   const exportCapture = async (full: boolean, action: CaptureExportAction) => {
     if (captureBusy) return;
     setCaptureBusy(true);
     setNotice(null);
-    try {
+    // The async wrapper catches the pre-await checks and still starts a copy inside the gesture.
+    await (async () => {
       const format = action === "svg" ? "svg" : "png";
       const surfaceLabel = three ? "3d" : view === "pcb" ? "board" : "schematic";
       const sheetLabel =
@@ -1082,14 +1086,14 @@ export function DesignWorkspace({
           text: `${action === "copy" ? "Image copied." : "Download started."}${result.reduced ? " Size reduced to the browser canvas limit." : ""}`,
         });
       }
-    } catch (cause) {
-      setNotice({
-        tone: "error",
-        text: cause instanceof Error ? cause.message : "Capture export failed.",
-      });
-    } finally {
-      setCaptureBusy(false);
-    }
+    })()
+      .catch((cause: unknown) => {
+        setNotice({
+          tone: "error",
+          text: cause instanceof Error ? cause.message : "Capture export failed.",
+        });
+      })
+      .finally(() => setCaptureBusy(false));
   };
 
   const editorEvents = useAtomValue(
@@ -1427,7 +1431,8 @@ export function DesignWorkspace({
                 : "SVG captures cannot be attached as draft images.",
             );
           setCaptureBusy(true);
-          try {
+          // The async wrapper keeps the pre-await unknown-request throw on the cleanup path.
+          await (async () => {
             if (c.requestId) {
               const r = workbench.data.requests.find((r) => r.id === c.requestId);
               if (!r) throw new Error("Unknown change request.");
@@ -1454,9 +1459,7 @@ export function DesignWorkspace({
                 );
               png = await captureBase64(blob);
             }
-          } finally {
-            setCaptureBusy(false);
-          }
+          })().finally(() => setCaptureBusy(false));
           break;
         }
 
@@ -1557,35 +1560,33 @@ export function DesignWorkspace({
     if (exportBusy) return false;
     setExportBusy(true);
     setNotice(null);
-    try {
-      const reference = await runPcbCommand(pcb.exportReference, {
-        environmentId: threadRef.environmentId,
-        input: {
-          threadId: threadRef.threadId,
-          designId: design.id,
-          ...(targetThreadId
-            ? { targetThreadId: targetThreadId as typeof threadRef.threadId }
-            : {}),
-        },
-      });
-      const store = useComposerDraftStore.getState();
-      store.setPrompt(
-        threadRef,
-        appendSummary(
-          store.getComposerDraft(threadRef)?.prompt ?? "",
-          `Board reference for enclosure design:\n3D model: ${reference.path}\nMechanical metadata: ${reference.metadataPath}\nSource revision: ${reference.sourceHash}\nDestination thread: ${reference.targetThreadId}\nUse this board model as a reference for the enclosure, with space for connectors, fasteners and component clearance.`,
-        ),
-      );
-      setNotice({ tone: "info", text: `Board reference saved to ${reference.path}` });
-      setExportOpen(false);
-      return true;
-    } catch (e) {
-      setNotice({ tone: "error", text: e instanceof Error ? e.message : "Board export failed." });
-      setExportOpen(false);
-      return false;
-    } finally {
-      setExportBusy(false);
-    }
+    return runPcbCommand(pcb.exportReference, {
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        designId: design.id,
+        ...(targetThreadId ? { targetThreadId: targetThreadId as typeof threadRef.threadId } : {}),
+      },
+    })
+      .then((reference) => {
+        const store = useComposerDraftStore.getState();
+        store.setPrompt(
+          threadRef,
+          appendSummary(
+            store.getComposerDraft(threadRef)?.prompt ?? "",
+            `Board reference for enclosure design:\n3D model: ${reference.path}\nMechanical metadata: ${reference.metadataPath}\nSource revision: ${reference.sourceHash}\nDestination thread: ${reference.targetThreadId}\nUse this board model as a reference for the enclosure, with space for connectors, fasteners and component clearance.`,
+          ),
+        );
+        setNotice({ tone: "info", text: `Board reference saved to ${reference.path}` });
+        setExportOpen(false);
+        return true;
+      })
+      .catch((e: unknown) => {
+        setNotice({ tone: "error", text: e instanceof Error ? e.message : "Board export failed." });
+        setExportOpen(false);
+        return false;
+      })
+      .finally(() => setExportBusy(false));
   };
   const chooseView = (next: PcbView) => {
     setOutputs(null);

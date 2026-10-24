@@ -294,7 +294,8 @@ function PartParameters({
       active = false;
     };
   }, []);
-  const commit = (next = latest.current) => {
+  const commit = (override?: Record<string, string>) => {
+    const next = override ?? latest.current;
     if (
       !data ||
       data.parameters.some(

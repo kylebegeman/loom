@@ -184,20 +184,22 @@ function PrintContents({
       save,
     });
     request.current = lease;
-    try {
-      const value = await lease.promise;
-      if (generation.current === own) setResult(value);
-    } catch (cause) {
-      if (generation.current === own)
-        setError(
-          cause instanceof Error ? cause.message : "The PDF could not be created. Try again.",
-        );
-    } finally {
-      if (generation.current === own) {
-        setRunning(false);
-        request.current = null;
-      }
-    }
+    await lease.promise
+      .then((value) => {
+        if (generation.current === own) setResult(value);
+      })
+      .catch((cause: unknown) => {
+        if (generation.current === own)
+          setError(
+            cause instanceof Error ? cause.message : "The PDF could not be created. Try again.",
+          );
+      })
+      .finally(() => {
+        if (generation.current === own) {
+          setRunning(false);
+          request.current = null;
+        }
+      });
   };
   const download = async () => {
     if (!result) return;
@@ -205,7 +207,8 @@ function PrintContents({
     setError(null);
     const controller = new AbortController();
     fetchController.current = controller;
-    try {
+    // The async wrapper routes a synchronous throw from `modelUrl` to the catch handler.
+    await (async () => {
       const response = await fetch(modelUrl(threadRef.environmentId, result.file.relativeUrl), {
         signal: controller.signal,
       });
@@ -218,13 +221,15 @@ function PrintContents({
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (cause) {
-      if (!controller.signal.aborted)
-        setError(cause instanceof Error ? cause.message : "The PDF could not be downloaded.");
-    } finally {
-      if (!controller.signal.aborted) setDownloading(false);
-      fetchController.current = null;
-    }
+    })()
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "The PDF could not be downloaded.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDownloading(false);
+        fetchController.current = null;
+      });
   };
   const openFile = async (reveal: boolean) => {
     if (!result?.path || !canOpen || !showOpen || (reveal && !showReveal)) return;

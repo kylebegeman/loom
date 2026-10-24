@@ -124,23 +124,30 @@ export function Muted({ children }: { children: ReactNode }) {
   return <p className="text-muted-foreground text-xs leading-relaxed">{children}</p>;
 }
 
+// Outside the hook because React Compiler cannot lower try/finally.
+async function runAction(
+  task: () => Promise<unknown>,
+  setBusy: (busy: boolean) => void,
+  setError: (error: string | null) => void,
+) {
+  setBusy(true);
+  setError(null);
+  try {
+    await task();
+    return true;
+  } catch (caught) {
+    setError(errorText(caught));
+    return false;
+  } finally {
+    setBusy(false);
+  }
+}
+
 /** Tracks one action at a time and reports its failure. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const act = async (task: () => Promise<unknown>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await task();
-      return true;
-    } catch (caught) {
-      setError(errorText(caught));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const act = (task: () => Promise<unknown>) => runAction(task, setBusy, setError);
   return { busy, error, act };
 }
 

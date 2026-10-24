@@ -157,6 +157,32 @@ const AXIS_INDEX = { x: 0, y: 1, z: 2 } as const;
 const MEASUREMENT_LIMIT = 100,
   PIN_LIMIT = 30;
 
+// The two capture helpers live at module level because React Compiler cannot lower try/finally.
+function captureViewSheet(
+  viewer: ModelViewer,
+  views: readonly ModelSavedView[],
+  footer: string,
+  revision: string,
+  restoreOverlays: () => void,
+) {
+  try {
+    return captureNamedViews(viewer, views, footer, revision);
+  } finally {
+    restoreOverlays();
+  }
+}
+
+function captureFromCamera(viewer: ModelViewer, camera: ModelCamera, refit: boolean) {
+  const original = viewer.snapshot();
+  try {
+    viewer.restore(camera);
+    if (refit) viewer.refit();
+    return viewer.capture(false);
+  } finally {
+    viewer.restore(original);
+  }
+}
+
 function ModelFile({
   threadRef,
   path,
@@ -949,11 +975,9 @@ function ModelFile({
                 (a) => a.sourceRevision === geometryRevision,
               );
               get().setOverlays(preset.includeMeasurements ? measurements : [], annotations, null);
-              try {
-                capture = captureNamedViews(get(), views, path, geometryRevision);
-              } finally {
-                get().setOverlays(measurements, annotations, editing.pendingPoint);
-              }
+              capture = captureViewSheet(get(), views, path, geometryRevision, () =>
+                get().setOverlays(measurements, annotations, editing.pendingPoint),
+              );
             } else capture = get().capture(c.four ?? false);
             const blob = await capture;
             if (c.attachToDraft)
@@ -1382,18 +1406,10 @@ function ModelFile({
     async (view: ModelSavedView) => {
       const current = viewer.current;
       if (!current || !stats || busy) return null;
-      const original = current.snapshot();
-      let blob: Promise<Blob>;
-      try {
-        current.restore(view.camera);
-        if (view.sourceRevision !== geometryRevision) current.refit();
-        blob = current.capture(false);
-      } finally {
-        current.restore(original);
-      }
-      return thumbnail(await blob);
+      return thumbnail(
+        await captureFromCamera(current, view.camera, view.sourceRevision !== geometryRevision),
+      );
     },
-    // oxlint-disable-next-line react/memo-dependencies -- The revision decides whether a saved view refits; the rule misses its use inside try.
     [stats, busy, geometryRevision],
   );
   const saveView = () => {
@@ -1485,17 +1501,19 @@ function ModelFile({
         setCapturing(true);
         setSuccess(null);
         setCaptureError(null);
-        try {
-          await captureToComposer(viewer.current, threadRef, path, four);
-          setSuccess("Capture attached to the composer.");
-        } catch (cause) {
-          setCaptureError({
-            title: "Capture could not be attached",
-            message: failureMessage(cause),
+        await captureToComposer(viewer.current, threadRef, path, four)
+          .then(() => {
+            setSuccess("Capture attached to the composer.");
+          })
+          .catch((cause: unknown) => {
+            setCaptureError({
+              title: "Capture could not be attached",
+              message: failureMessage(cause),
+            });
+          })
+          .finally(() => {
+            setCapturing(false);
           });
-        } finally {
-          setCapturing(false);
-        }
       });
     },
     [threadRef, path, perform, stats, busy, viewingHistory],
@@ -1511,25 +1529,29 @@ function ModelFile({
         return;
       }
       await perform(action === "copy" ? "Copying model image" : "Saving model image", async () => {
-        if (!viewer.current) return;
+        const current = viewer.current;
+        if (!current) return;
         setCapturing(true);
         setSuccess(null);
         setCaptureError(null);
-        try {
+        // The async wrapper routes copyImage's synchronous throw into the catch.
+        await (async () => {
           const label = four
             ? "four-views"
             : (activeView ??
               editing.data.views.find((view) => view.id === activeViewId)?.name ??
               "view");
-          const image = viewer.current.capture(four);
+          const image = current.capture(four);
           if (action === "copy") await copyImage(image);
           else saveImage(await image, captureFileName(path, label, new Date()));
           setSuccess(action === "copy" ? "Image copied." : "Download started.");
-        } catch (cause) {
-          setCaptureError({ title, message: failureMessage(cause) });
-        } finally {
-          setCapturing(false);
-        }
+        })()
+          .catch((cause: unknown) => {
+            setCaptureError({ title, message: failureMessage(cause) });
+          })
+          .finally(() => {
+            setCapturing(false);
+          });
       });
     },
     [path, perform, stats, busy, activeView, activeViewId, editing.data.views, viewingHistory],

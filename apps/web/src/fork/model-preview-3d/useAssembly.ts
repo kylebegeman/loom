@@ -159,32 +159,34 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
       setBusy(true);
       setError(null);
       generation.current++;
-      try {
-        const result = await runModelCommand(models.updateAssembly, {
-          environmentId: threadRef.environmentId,
-          input: {
-            file: { threadId: threadRef.threadId, path },
-            expectedRevision: current.revision,
-            operations,
-          },
+      await runModelCommand(models.updateAssembly, {
+        environmentId: threadRef.environmentId,
+        input: {
+          file: { threadId: threadRef.threadId, path },
+          expectedRevision: current.revision,
+          operations,
+        },
+      })
+        .then((result) => {
+          generation.current++;
+          lastSavedRevision.current = result.revision;
+          latest.current = result;
+          setSnapshot(result);
+          if (remember) {
+            undo.current.push(current.assembly);
+            if (undo.current.length > 20) undo.current.shift();
+            setUndoCount(undo.current.length);
+          }
+        })
+        .catch(async (cause: unknown) => {
+          await refresh();
+          setError(message(cause));
+          throw cause;
+        })
+        .finally(() => {
+          saving.current = false;
+          setBusy(false);
         });
-        generation.current++;
-        lastSavedRevision.current = result.revision;
-        latest.current = result;
-        setSnapshot(result);
-        if (remember) {
-          undo.current.push(current.assembly);
-          if (undo.current.length > 20) undo.current.shift();
-          setUndoCount(undo.current.length);
-        }
-      } catch (cause) {
-        await refresh();
-        setError(message(cause));
-        throw cause;
-      } finally {
-        saving.current = false;
-        setBusy(false);
-      }
     },
     [canEdit, canTerminal, threadRef.environmentId, threadRef.threadId, path, refresh],
   );
@@ -228,23 +230,25 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
     request.current = id;
     setChecking(true);
     setError(null);
-    try {
-      const result = await runModelCommand(models.checkAssembly, {
-        environmentId: threadRef.environmentId,
-        input: { file: { threadId: threadRef.threadId, path }, requestId: id, force: true },
+    await runModelCommand(models.checkAssembly, {
+      environmentId: threadRef.environmentId,
+      input: { file: { threadId: threadRef.threadId, path }, requestId: id, force: true },
+    })
+      .then((result) => {
+        if (checkGeneration.current === own && result.report) {
+          setReport(result.report);
+          setReportBasis(basis);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (checkGeneration.current === own) setError(message(cause));
+      })
+      .finally(() => {
+        if (checkGeneration.current === own) {
+          setChecking(false);
+          request.current = null;
+        }
       });
-      if (checkGeneration.current === own && result.report) {
-        setReport(result.report);
-        setReportBasis(basis);
-      }
-    } catch (cause) {
-      if (checkGeneration.current === own) setError(message(cause));
-    } finally {
-      if (checkGeneration.current === own) {
-        setChecking(false);
-        request.current = null;
-      }
-    }
   }, [cancel, canCheck, threadRef.environmentId, threadRef.threadId, path]);
   const loadParameters = useCallback(
     async (part: AssemblyPart) => {

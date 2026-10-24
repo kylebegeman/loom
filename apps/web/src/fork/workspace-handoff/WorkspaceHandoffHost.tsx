@@ -203,48 +203,46 @@ function HandoffContent() {
     setRunning(true);
     const destinationKey = state.destinationKey || selected?.key || "";
     useWorkspaceHandoff.setState({ error: null, destinationKey });
-    try {
-      await runWorkspaceHandoff({
-        attempt: {
-          offer: state.offer,
-          receipt: state.receipt,
-          sourceResult: state.sourceResult,
-        },
-        offer: () =>
-          runLaneCommand(handoff.offer, {
-            environmentId: source.environmentId,
-            input: { threadId: source.threadId, requestId: state.requestId },
-          }),
-        prepare: (offer) =>
-          runLaneCommand(handoff.prepare, {
-            environmentId: destination.environmentId,
-            input: { offer, projectId: destination.id },
-          }),
-        finish: (offer, receipt) =>
-          runLaneCommand(handoff.finish, {
-            environmentId: source.environmentId,
-            input: { offer, receipt },
-          }),
-        resume: (offer, receipt) =>
-          runLaneCommand(handoff.resume, {
-            environmentId: destination.environmentId,
-            input: { offer, receipt },
-          }),
-        progress: (phase, attempt) => {
-          useWorkspaceHandoff.setState({ ...attempt, phase });
-        },
-      });
-    } catch (error) {
-      useWorkspaceHandoff.setState({
-        phase: "idle",
-        error:
-          error instanceof Error
-            ? error.message
-            : "The move could not finish. Retry when the other computer is available.",
-      });
-    } finally {
-      setRunning(false);
-    }
+    await runWorkspaceHandoff({
+      attempt: {
+        offer: state.offer,
+        receipt: state.receipt,
+        sourceResult: state.sourceResult,
+      },
+      offer: () =>
+        runLaneCommand(handoff.offer, {
+          environmentId: source.environmentId,
+          input: { threadId: source.threadId, requestId: state.requestId },
+        }),
+      prepare: (offer) =>
+        runLaneCommand(handoff.prepare, {
+          environmentId: destination.environmentId,
+          input: { offer, projectId: destination.id },
+        }),
+      finish: (offer, receipt) =>
+        runLaneCommand(handoff.finish, {
+          environmentId: source.environmentId,
+          input: { offer, receipt },
+        }),
+      resume: (offer, receipt) =>
+        runLaneCommand(handoff.resume, {
+          environmentId: destination.environmentId,
+          input: { offer, receipt },
+        }),
+      progress: (phase, attempt) => {
+        useWorkspaceHandoff.setState({ ...attempt, phase });
+      },
+    })
+      .catch((error) => {
+        useWorkspaceHandoff.setState({
+          phase: "idle",
+          error:
+            error instanceof Error
+              ? error.message
+              : "The move could not finish. Retry when the other computer is available.",
+        });
+      })
+      .finally(() => setRunning(false));
   };
   const openDestination = () => {
     if (!state.receipt) return;

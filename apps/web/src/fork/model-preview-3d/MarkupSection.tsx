@@ -222,11 +222,12 @@ function RequestDetail({
     void mutate({ kind: "annotation", item: { ...annotation, ...patch } });
   const work = async (task: () => Promise<unknown>) => {
     setWorking(true);
-    try {
+    // The async wrapper keeps the cleanup when task throws synchronously.
+    await (async () => {
       await task();
-    } finally {
+    })().finally(() => {
       setWorking(false);
-    }
+    });
   };
   const remove = () => {
     void mutate({ kind: "remove", collection: "annotations", id: annotation.id });

@@ -143,11 +143,12 @@ export function ViewsSection({
     preset: Pick<ModelCapturePreset, "id" | "name" | "viewIds" | "includeMeasurements">,
   ) => {
     setCapturing(preset.id);
-    try {
+    // The async wrapper keeps the cleanup when onCapture throws synchronously.
+    await (async () => {
       await onCapture(preset.viewIds, preset.includeMeasurements, preset.name);
-    } finally {
+    })().finally(() => {
       setCapturing(null);
-    }
+    });
   };
   const saveDraft = () => {
     if (!draft?.ids.length) return;

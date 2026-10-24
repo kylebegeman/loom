@@ -84,7 +84,7 @@ export function InspectorElapsed({ since }: { since: string }) {
     const sync = () => {
       if (document.visibilityState === "visible") {
         write();
-        timer ??= setInterval(write, 1000);
+        timer = timer ?? setInterval(write, 1000);
       } else if (timer !== null) {
         clearInterval(timer);
         timer = null;

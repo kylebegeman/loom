@@ -198,68 +198,73 @@ export function EnclosureTab({
   };
   const updateBoard = async () => {
     if (working || !snapshot?.assembly.enclosure) return;
+    const board = snapshot.assembly.enclosure.board;
     setWorking(true);
     setError(null);
-    try {
-      const reference = await runModelCommand(pcb.exportReference, {
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, designId: design.id },
+    await runModelCommand(pcb.exportReference, {
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, designId: design.id },
+    })
+      .then((reference) =>
+        assembly.apply([
+          {
+            op: "swap-board",
+            id: board,
+            path: boardReferencePath(reference),
+          },
+        ]),
+      )
+      .catch((cause: unknown) => {
+        if (alive.current) setError(errorText(cause, "Could not update the board."));
+      })
+      .finally(() => {
+        if (alive.current) setWorking(false);
       });
-      await assembly.apply([
-        {
-          op: "swap-board",
-          id: snapshot.assembly.enclosure.board,
-          path: boardReferencePath(reference),
-        },
-      ]);
-    } catch (cause) {
-      if (alive.current) setError(errorText(cause, "Could not update the board."));
-    } finally {
-      if (alive.current) setWorking(false);
-    }
   };
   const applyCase = async () => {
     if (working || !casePath.trim()) return;
     setWorking(true);
     setError(null);
-    try {
-      const reference = await runModelCommand(pcb.exportReference, {
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId, designId: design.id },
+    await runModelCommand(pcb.exportReference, {
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, designId: design.id },
+    })
+      .then(async (reference) => {
+        const ids = snapshot?.assembly.parts.map((p) => p.id) ?? [],
+          board = snapshot?.assembly.enclosure?.board ?? slugId("board", ids),
+          caseId = slugId("case", [...ids, board]);
+        const operations: AssemblyOperation[] = [
+          ...(snapshot?.assembly.enclosure
+            ? [{ op: "swap-board" as const, id: board, path: boardReferencePath(reference) }]
+            : [
+                {
+                  op: "add-part" as const,
+                  id: board,
+                  name: "Board",
+                  path: boardReferencePath(reference),
+                },
+              ]),
+          { op: "add-part", id: caseId, name: "Case", path: casePath.trim() },
+          { op: "set-enclosure", board, parts: [caseId] },
+          { op: "place-board", id: board },
+        ];
+        if (snapshot) await assembly.apply(operations);
+        else
+          await runModelCommand(models.updateAssembly, {
+            environmentId: threadRef.environmentId,
+            input: { file: { threadId: threadRef.threadId, path }, operations, createOnly: true },
+          });
+        if (alive.current) {
+          await assembly.refresh();
+          open(path);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (alive.current) setError(errorText(cause, "Could not use this case."));
+      })
+      .finally(() => {
+        if (alive.current) setWorking(false);
       });
-      const ids = snapshot?.assembly.parts.map((p) => p.id) ?? [],
-        board = snapshot?.assembly.enclosure?.board ?? slugId("board", ids),
-        caseId = slugId("case", [...ids, board]);
-      const operations: AssemblyOperation[] = [
-        ...(snapshot?.assembly.enclosure
-          ? [{ op: "swap-board" as const, id: board, path: boardReferencePath(reference) }]
-          : [
-              {
-                op: "add-part" as const,
-                id: board,
-                name: "Board",
-                path: boardReferencePath(reference),
-              },
-            ]),
-        { op: "add-part", id: caseId, name: "Case", path: casePath.trim() },
-        { op: "set-enclosure", board, parts: [caseId] },
-        { op: "place-board", id: board },
-      ];
-      if (snapshot) await assembly.apply(operations);
-      else
-        await runModelCommand(models.updateAssembly, {
-          environmentId: threadRef.environmentId,
-          input: { file: { threadId: threadRef.threadId, path }, operations, createOnly: true },
-        });
-      if (alive.current) {
-        await assembly.refresh();
-        open(path);
-      }
-    } catch (cause) {
-      if (alive.current) setError(errorText(cause, "Could not use this case."));
-    } finally {
-      if (alive.current) setWorking(false);
-    }
   };
   if (!executionAllowed)
     return (

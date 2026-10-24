@@ -86,14 +86,15 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
     if (password === null || copying) return;
     setCopying(true);
     setError(null);
-    try {
-      if (!(await writeTextToClipboard(password, "password"))) throw new Error("Copy failed.");
-      setCopied(true);
-    } catch {
-      setError("The password could not be copied. Reveal it to copy manually, or try again.");
-    } finally {
-      setCopying(false);
-    }
+    await writeTextToClipboard(password, "password")
+      .then((written) => {
+        if (!written) throw new Error("Copy failed.");
+        setCopied(true);
+      })
+      .catch(() => {
+        setError("The password could not be copied. Reveal it to copy manually, or try again.");
+      })
+      .finally(() => setCopying(false));
   };
   return (
     <Dialog

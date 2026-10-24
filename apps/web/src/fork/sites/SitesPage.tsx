@@ -578,15 +578,15 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
     if (!environmentId || !canManage || running) return;
     setRunning(true);
     setActionError(null);
-    try {
-      const result = await runChecks({ environmentId, input: {} });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      query.refresh();
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Could not run checks.");
-    } finally {
-      setRunning(false);
-    }
+    await runChecks({ environmentId, input: {} })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        query.refresh();
+      })
+      .catch((cause) => {
+        setActionError(cause instanceof Error ? cause.message : "Could not run checks.");
+      })
+      .finally(() => setRunning(false));
   };
 
   const notices = (

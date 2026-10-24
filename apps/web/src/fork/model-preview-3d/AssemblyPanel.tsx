@@ -18,6 +18,7 @@ import {
   type ModelCamera,
   type ModelProjection,
   type ModelPoint,
+  type ModelSavedView,
   type ModelSection,
   type AssemblyPart,
   type AssemblyPairResult,
@@ -64,6 +65,20 @@ import type { ModelViewer, NavigationMode } from "./viewer/createViewer";
 import styles from "./workspace.module.css";
 const idleEditor = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, never>());
 const AXIS_INDEX = { x: 0, y: 1, z: 2 } as const;
+// Module level because React Compiler cannot lower try/finally inside a component.
+function captureViewSheet(
+  viewer: ModelViewer,
+  views: readonly ModelSavedView[],
+  footer: string,
+  revision: string,
+  restoreOverlays: () => void,
+) {
+  try {
+    return captureNamedViews(viewer, views, footer, revision);
+  } finally {
+    restoreOverlays();
+  }
+}
 function AssemblyWatch({
   threadRef,
   path,
@@ -458,11 +473,9 @@ export default function AssemblyPanel({
                 editing.annotations,
                 null,
               );
-              try {
-                image = captureNamedViews(viewer, views, path, geometryRevision);
-              } finally {
-                viewer.setOverlays(editing.measurements, editing.annotations, editing.pendingPoint);
-              }
+              image = captureViewSheet(viewer, views, path, geometryRevision, () =>
+                viewer.setOverlays(editing.measurements, editing.annotations, editing.pendingPoint),
+              );
             } else image = viewer.capture(command.four ?? false);
             const blob = await image;
             if (command.attachToDraft)

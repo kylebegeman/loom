@@ -16,6 +16,9 @@ import { pcb } from "./state";
 import { runModelCommand } from "../model-preview-3d/state";
 import { Bar, EmptyState, Group, Scroll, Section, Segmented } from "./InspectorKit";
 import k from "./inspector.module.css";
+
+const loadCaptureSheet = () => import("../model-preview-3d/viewer/captureSheet");
+
 export function RequestForm({
   anchor,
   initialText = "",
@@ -37,14 +40,15 @@ export function RequestForm({
     if (busy || !canSave || !title.trim() || !text.trim()) return;
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper routes a synchronous throw from `onSave` to the catch handler.
+    await (async () => {
       await onSave(title.trim(), text.trim(), add);
       onCancel();
-    } catch (c) {
-      setError(c instanceof Error ? c.message : "The request could not be saved.");
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((c: unknown) => {
+        setError(c instanceof Error ? c.message : "The request could not be saved.");
+      })
+      .finally(() => setBusy(false));
   };
   return (
     <Section title="Request a change">
@@ -147,13 +151,14 @@ export function RequestsTab({
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper routes a synchronous throw from `work` to the catch handler.
+    await (async () => {
       await work();
-    } catch (c) {
-      setError(c instanceof Error ? c.message : "The request could not be updated.");
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((c: unknown) => {
+        setError(c instanceof Error ? c.message : "The request could not be updated.");
+      })
+      .finally(() => setBusy(false));
   };
   const request = data.requests.find((r) => r.id === detail);
   return (
@@ -299,7 +304,8 @@ function RequestDetail({
   const compare = async () => {
     setBusy(true);
     setError(null);
-    try {
+    // The async wrapper puts both branches on one catch and cleanup path.
+    await (async () => {
       if (r.baseRef) {
         setComparison(
           await runModelCommand(pcb.compare, {
@@ -313,14 +319,14 @@ function RequestDetail({
           }),
         );
       } else {
-        const { thumbnail } = await import("../model-preview-3d/viewer/captureSheet");
+        const { thumbnail } = await loadCaptureSheet();
         setNowImage(await thumbnail(await onCapture(), 24000));
       }
-    } catch (c) {
-      setError(c instanceof Error ? c.message : "Comparison failed.");
-    } finally {
-      setBusy(false);
-    }
+    })()
+      .catch((c: unknown) => {
+        setError(c instanceof Error ? c.message : "Comparison failed.");
+      })
+      .finally(() => setBusy(false));
   };
   const near = comparison ? changesNearAnchor(comparison, r.anchor, r.view, r.sheet) : null;
   return (

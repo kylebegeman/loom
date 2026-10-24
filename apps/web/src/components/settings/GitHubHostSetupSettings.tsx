@@ -50,7 +50,8 @@ export function GitHubHostSetupSettings({
     pendingRef.current = true;
     setPending(true);
     setError(null);
-    try {
+    // The async wrapper sends a synchronous throw from the command call to the same catch.
+    await (async () => {
       const result = await (action === "start" ? start : cancel)({
         environmentId,
         input: {
@@ -63,12 +64,12 @@ export function GitHubHostSetupSettings({
           failure instanceof Error ? failure.message : "GitHub setup could not finish. Try again.",
         );
       }
-    } catch {
-      setError("GitHub setup could not finish. Try again.");
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    })()
+      .catch(() => setError("GitHub setup could not finish. Try again."))
+      .finally(() => {
+        pendingRef.current = false;
+        setPending(false);
+      });
   }
   return (
     <SettingsSection

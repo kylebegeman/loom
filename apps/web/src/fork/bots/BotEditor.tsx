@@ -932,19 +932,21 @@ export function BotEditorForm({
     const attempt = ++refineAttempt.current;
     setRefining(copy.status);
     setError(null);
-    try {
-      const result = await request();
-      if (attempt !== refineAttempt.current) return;
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      const next = botDraft(result.value.draft);
-      setDraft(next);
-      setLastDrafted(next);
-      setNotes(result.value.notes.length > 0 ? result.value.notes : [copy.note]);
-    } catch (cause) {
-      if (attempt === refineAttempt.current) setError(failureText(cause, copy.failure));
-    } finally {
-      if (attempt === refineAttempt.current) setRefining(null);
-    }
+    await request()
+      .then((result) => {
+        if (attempt !== refineAttempt.current) return;
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const next = botDraft(result.value.draft);
+        setDraft(next);
+        setLastDrafted(next);
+        setNotes(result.value.notes.length > 0 ? result.value.notes : [copy.note]);
+      })
+      .catch((cause: unknown) => {
+        if (attempt === refineAttempt.current) setError(failureText(cause, copy.failure));
+      })
+      .finally(() => {
+        if (attempt === refineAttempt.current) setRefining(null);
+      });
   };
 
   const askModel = (work: ModelWork) => {
@@ -970,31 +972,33 @@ export function BotEditorForm({
     }
     setBusy(true);
     setError(null);
-    try {
-      const result = await save({ environmentId, input: checked.input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      const saved = result.value;
-      setBase(saved);
-      rememberSavedBot(saved);
-      // The bot is saved either way; a suggestion left open is only a stale prompt.
-      if (suggestionId !== null) {
-        await dismissSuggestion({ environmentId, input: { suggestionId, dismissed: true } });
-        openSuggestions.refresh();
-      }
-      leaveFor(saved.id);
-    } catch (cause) {
-      const message = failureText(cause, "Could not save the bot.");
-      // Creating over a taken id fails; older servers word that as a stale edit, which would
-      // confuse someone who never opened a bot.
-      const takenId =
-        base === null &&
-        (message.startsWith("This bot changed since") || message.startsWith("Another bot already"));
-      if (takenId) {
-        setError(`Another bot already uses the id ${checked.input.id}. Choose another id.`);
-        focusField(fieldIds.id);
-      } else setError(message);
-      setBusy(false);
-    }
+    await save({ environmentId, input: checked.input })
+      .then(async (result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const saved = result.value;
+        setBase(saved);
+        rememberSavedBot(saved);
+        // The bot is saved either way; a suggestion left open is only a stale prompt.
+        if (suggestionId !== null) {
+          await dismissSuggestion({ environmentId, input: { suggestionId, dismissed: true } });
+          openSuggestions.refresh();
+        }
+        leaveFor(saved.id);
+      })
+      .catch((cause: unknown) => {
+        const message = failureText(cause, "Could not save the bot.");
+        // Creating over a taken id fails; older servers word that as a stale edit, which would
+        // confuse someone who never opened a bot.
+        const takenId =
+          base === null &&
+          (message.startsWith("This bot changed since") ||
+            message.startsWith("Another bot already"));
+        if (takenId) {
+          setError(`Another bot already uses the id ${checked.input.id}. Choose another id.`);
+          focusField(fieldIds.id);
+        } else setError(message);
+        setBusy(false);
+      });
   };
 
   const tryOnPastRuns = () => {
@@ -1013,18 +1017,19 @@ export function BotEditorForm({
     if (!starterId || !access.canSave || locked) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await restoreStarter({ environmentId, input: { starterId } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      const restored = result.value;
-      setBase(restored);
-      setConfirming(null);
-      leaveFor(restored.id);
-    } catch (cause) {
-      setConfirming(null);
-      setError(failureText(cause, "Could not restore the starter."));
-      setBusy(false);
-    }
+    await restoreStarter({ environmentId, input: { starterId } })
+      .then((result) => {
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const restored = result.value;
+        setBase(restored);
+        setConfirming(null);
+        leaveFor(restored.id);
+      })
+      .catch((cause: unknown) => {
+        setConfirming(null);
+        setError(failureText(cause, "Could not restore the starter."));
+        setBusy(false);
+      });
   };
 
   const cancel = async () => {
