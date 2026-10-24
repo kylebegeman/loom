@@ -11,6 +11,7 @@ import {
   VaultSshRunInput,
   VaultGitRunInput,
   VaultConnectionError,
+  type VaultConnectionPin,
   type VaultSshAgentSession,
   VaultError,
   VaultWorkloadError,
@@ -93,6 +94,14 @@ const make = Effect.gen(function* () {
     path = yield* Path.Path,
     crypto = yield* Crypto.Crypto;
   const connections = yield* VaultConnections.VaultConnections;
+  // VaultSsh runs its guard before accepting a command and again before every agent frame. A full
+  // connection revalidation reveals and re-evaluates the item, taking seconds against a live Vault,
+  // so it runs once per operation. Frames still re-check the item version, which fixes the pin's
+  // destination, host and account, plus the workload session and current use policy. Only the
+  // inspect permission used to find the connection goes unchecked per frame; it never authorizes
+  // signing.
+  const pinGuard = (pin: VaultConnectionPin, threadId: ThreadId) =>
+    Effect.cached(connections.revalidate(pin, threadId));
   const profiles = yield* VaultProfiles.VaultProfiles,
     github = yield* VaultGitHub.VaultGitHub;
   const configured = environment.LOOM_VAULT_EXECUTION_BROKER_DIR ?? "";
@@ -289,7 +298,7 @@ const make = Effect.gen(function* () {
       return yield* operations.ssh(
         { id: pin.item.id, command: { ...input.command, expectedVersion: pin.item.version } },
         threadId,
-        connections.revalidate(pin, threadId),
+        yield* pinGuard(pin, threadId),
       );
     }),
     git: Effect.fn("VaultLaunch.gitConnection")(function* (input, threadId) {
@@ -302,7 +311,7 @@ const make = Effect.gen(function* () {
       return yield* operations.git(
         { ...input, id: pin.item.id, expectedVersion: pin.item.version },
         threadId,
-        connections.revalidate(pin, threadId),
+        yield* pinGuard(pin, threadId),
       );
     }),
     agent: Effect.fn("VaultLaunch.agent")(function* (raw, threadId) {

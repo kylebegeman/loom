@@ -667,8 +667,9 @@ it.effect("refuses a changed key in the final execution guard and releases its w
         f.threadId,
       )
       .pipe(Effect.flip);
-    expect(error).toBeInstanceOf(VaultConnectionError);
-    expect(error.reason).toBe("version-conflict");
+    // The connection resolves once per operation; the per-frame item version check refuses it.
+    expect(error).toBeInstanceOf(VaultError);
+    expect(error.reason).toBe("conflict");
     expect(f.executed).toEqual([]);
     expect(yield* f.workloads.list(f.threadId)).toEqual([]);
   }).pipe(Effect.provide(dependencies)),

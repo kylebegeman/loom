@@ -14,6 +14,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
+import * as VaultConnections from "./VaultConnections.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import { VaultSshToolkit, vaultSshHandlers } from "./ssh-mcp.ts";
@@ -461,5 +462,95 @@ it.effect(
         { kind: "ssh", hostname: f.key.target.hostname, port: f.key.target.port },
       ]);
       expect(reports.every((report) => report.category === "outage" && !report.healthy)).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect.each(["ssh", "git"] as const)(
+  "resolves a %s connection once per operation while every agent frame still enforces revocation",
+  (kind) =>
+    Effect.gen(function* () {
+      let frames = 0;
+      let beforeFrame: (frame: number) => Effect.Effect<void> = () => Effect.void;
+      // A pre-spawn check followed by identities, session-bind and sign requests.
+      const f = yield* launchFixture(
+        Layer.succeed(SshTransport.SshTransport, {
+          execute: (input) =>
+            Effect.gen(function* () {
+              for (let frame = 0; frame < 4; frame++) {
+                yield* beforeFrame(frame);
+                yield* input.authorize;
+                frames++;
+              }
+              return { exitCode: 0, stdout: "signed" };
+            }),
+        }),
+      );
+      const owner = (mode: "restricted" | "owner-trusted") =>
+        Effect.gen(function* () {
+          const policy = yield* f.access.snapshot;
+          yield* f.access.setOwnerPolicy(
+            { operationId: yield* f.id, expectedRevision: policy.revision, mode },
+            "admin",
+            Effect.void,
+          );
+        });
+      yield* owner("owner-trusted");
+      const resolver = Context.get(f.context, VaultConnections.VaultConnections);
+      let revalidations = 0;
+      const counted = Context.add(
+        f.context,
+        VaultConnections.VaultConnections,
+        VaultConnections.VaultConnections.of({
+          ...resolver,
+          revalidate: (pin, threadId) =>
+            Effect.suspend(() => {
+              revalidations++;
+              return resolver.revalidate(pin, threadId);
+            }),
+        }),
+      );
+      const launch = yield* VaultLaunch.VaultLaunch.pipe(
+        Effect.provide(
+          VaultLaunch.layer.pipe(
+            Layer.provide(Layer.merge(f.project, Layer.succeedContext(counted))),
+          ),
+        ),
+        Effect.provideService(BrokerIdentity.BrokerIdentity, f.identity),
+        Effect.provideService(HostProcess.Environment, {
+          LOOM_VAULT_EXECUTION_BROKER_DIR: "/private/broker",
+        }),
+      );
+      const operate =
+        kind === "ssh"
+          ? launch.ssh(
+              {
+                connection: { resource: "Launch SSH" },
+                command: { argv: ["true"], timeoutMs: 8000 },
+              },
+              f.threadId,
+            )
+          : launch.git(
+              {
+                connection: { resource: "Launch SSH" },
+                action: "ls-remote",
+                repository: "team/repo.git",
+                timeoutMs: 30000,
+              },
+              f.threadId,
+            );
+      expect((yield* operate).exitCode).toBe(0);
+      expect(frames).toBe(4);
+      expect(revalidations).toBe(1);
+
+      frames = 0;
+      revalidations = 0;
+      beforeFrame = (frame) => (frame === 2 ? owner("restricted").pipe(Effect.orDie) : Effect.void);
+      expect(yield* operate.pipe(Effect.flip)).toMatchObject({
+        _tag: "VaultError",
+        reason: "denied",
+      });
+      expect(frames).toBe(2);
+      expect(revalidations).toBe(1);
+      expect(yield* f.workloads.list(f.threadId)).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
