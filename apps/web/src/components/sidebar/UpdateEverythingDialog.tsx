@@ -1,5 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
+// fork: machine-updates
+import {
+  collectRestartImpact,
+  describeRestartImpact,
+  type RestartImpact,
+  restartInterruptsWork,
+  sameRestartImpact,
+} from "@t3tools/client-runtime/fork";
 import { EnvironmentId } from "@t3tools/contracts";
+import * as Option from "effect/Option"; // fork: machine-updates
 import { Atom } from "effect/reactivity";
 
 import { environmentThreadShells } from "~/state/threads";
@@ -15,23 +24,25 @@ import {
 import { Button } from "../ui/button";
 import type { RestartingMachine, SkippedMachine } from "./updateEverything.logic";
 
-const isRunning = (status: string) =>
-  status === "preparing" || status === "starting" || status === "running";
-
-const runningThreadCountAtom = Atom.family((environmentIds: string) =>
-  Atom.make((get) =>
-    environmentIds
-      .split("\n")
-      .filter((id) => id !== "")
-      .reduce(
-        (count, id) =>
-          count +
-          get(environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(id))).filter(
-            (thread) => isRunning(thread.status),
-          ).length,
-        0,
-      ),
-  ).pipe(Atom.withLabel(`update-everything-running-threads:${environmentIds}`)),
+// fork: machine-updates: keyed by one `+id` (continues threads) or `-id` line per restarting
+// server. Thread shells keep streaming while the dialog is open, so an unchanged impact keeps
+// its identity and the dialog does not re-render.
+const restartImpactAtom = Atom.family((servers: string) =>
+  Atom.make((get): RestartImpact => {
+    const impact = collectRestartImpact(
+      servers
+        .split("\n")
+        .filter((server) => server !== "")
+        .map((server) => ({
+          continuesThreads: server.startsWith("+"),
+          threads: get(
+            environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(server.slice(1))),
+          ),
+        })),
+    );
+    const previous = Option.getOrNull(get.self<RestartImpact>());
+    return previous !== null && sameRestartImpact(previous, impact) ? previous : impact;
+  }).pipe(Atom.withLabel(`update-everything-restart-impact:${servers}`)),
 );
 
 interface UpdateEverythingDialogProps {
@@ -42,6 +53,10 @@ interface UpdateEverythingDialogProps {
   readonly restarts: ReadonlyArray<RestartingMachine>;
   readonly skipped: ReadonlyArray<SkippedMachine>;
   readonly onConfirm: () => void;
+  // fork: machine-updates: the app install confirm shares this dialog, and both can wait for
+  // local agents instead of interrupting them.
+  readonly confirmLabel?: string;
+  readonly onConfirmWhenIdle?: () => void;
 }
 
 export function UpdateEverythingDialog({
@@ -65,41 +80,31 @@ function UpdateEverythingDialogContent({
   restarts,
   skipped,
   onConfirm,
+  confirmLabel = "Update", // fork: machine-updates
+  onConfirmWhenIdle, // fork: machine-updates
 }: Omit<UpdateEverythingDialogProps, "open" | "onOpenChange">) {
-  const stopped = useAtomValue(
-    runningThreadCountAtom(
+  // fork: machine-updates
+  const impact = useAtomValue(
+    restartImpactAtom(
       restarts
-        .filter((machine) => !machine.continuesThreads)
-        .map((machine) => machine.environmentId)
+        .map((machine) => `${machine.continuesThreads ? "+" : "-"}${machine.environmentId}`)
         .join("\n"),
     ),
   );
-  const continuing = useAtomValue(
-    runningThreadCountAtom(
-      restarts
-        .filter((machine) => machine.continuesThreads)
-        .map((machine) => machine.environmentId)
-        .join("\n"),
-    ),
-  );
-  const running = stopped + continuing;
-  const threads = `${running} running ${running === 1 ? "thread" : "threads"}`;
+  const impactLines = describeRestartImpact(impact);
 
   return (
     <>
       <AlertDialogHeader>
         <AlertDialogTitle>{summary}?</AlertDialogTitle>
-        <AlertDialogDescription className="whitespace-pre-line">
-          {lines.join("\n")}
-        </AlertDialogDescription>
-        {running > 0 ? (
-          <p className="pt-2 text-sm">
-            {stopped === 0
-              ? `${threads} will be interrupted and can resume after the restart.`
-              : continuing === 0
-                ? `${threads} will be interrupted.`
-                : `${threads} will be interrupted. ${continuing} can resume after the restart.`}
-          </p>
+        {/* fork: machine-updates: the app install confirm has no update list. */}
+        {lines.length > 0 ? (
+          <AlertDialogDescription className="whitespace-pre-line">
+            {lines.join("\n")}
+          </AlertDialogDescription>
+        ) : null}
+        {impactLines.length > 0 ? (
+          <p className="whitespace-pre-line pt-2 text-sm">{impactLines.join("\n")}</p>
         ) : null}
         {skipped.length > 0 ? (
           <p className="whitespace-pre-line pt-2 text-sm">
@@ -109,7 +114,13 @@ function UpdateEverythingDialogContent({
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-        <Button onClick={onConfirm}>Update</Button>
+        {/* fork: machine-updates */}
+        {onConfirmWhenIdle && restartInterruptsWork(impact) ? (
+          <Button variant="outline" onClick={onConfirmWhenIdle}>
+            Install when idle
+          </Button>
+        ) : null}
+        <Button onClick={onConfirm}>{confirmLabel}</Button>
       </AlertDialogFooter>
     </>
   );
