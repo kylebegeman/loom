@@ -60,7 +60,7 @@ export const vaultMigrationHandlers = McpToolAccess.toLayer(
     const admin = Effect.gen(function* () {
       const scope = yield* McpInvocationContext;
       if (scope.thread || scope.client?.access !== "full-access")
-        return yield* new VaultError({ reason: "denied" });
+        return yield* new VaultError({ reason: "denied", detail: "admin-only" });
     });
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));

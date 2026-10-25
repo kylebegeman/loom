@@ -1,4 +1,5 @@
 import { objectInput } from "./mcp-input.ts";
+import { withFailureMessages } from "./mcp-failure.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
@@ -26,12 +27,9 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultAccess from "./VaultAccess.ts";
-const failure = Schema.Union([
-    VaultError,
-    VaultGitHubError,
-    VaultConnectionError,
-    OrchestratorMcpFailure,
-  ]),
+const failure = withFailureMessages(
+    Schema.Union([VaultError, VaultGitHubError, VaultConnectionError, OrchestratorMcpFailure]),
+  ),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github_exec", {
@@ -115,7 +113,9 @@ export const vaultGitHubHandlers = McpToolAccess.toLayer(
     });
     const admin = caller.pipe(
       Effect.flatMap((scope) =>
-        scope.thread ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.succeed(scope),
+        scope.thread
+          ? Effect.fail(new VaultError({ reason: "denied", detail: "admin-only" }))
+          : Effect.succeed(scope),
       ),
     );
     return {

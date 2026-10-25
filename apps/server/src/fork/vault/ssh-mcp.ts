@@ -1,4 +1,5 @@
 import { objectInput } from "./mcp-input.ts";
+import { withFailureMessages } from "./mcp-failure.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
@@ -32,13 +33,15 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultAccess from "./VaultAccess.ts";
-const failure = Schema.Union([
-  VaultError,
-  VaultSshError,
-  VaultWorkloadError,
-  VaultConnectionError,
-  OrchestratorMcpFailure,
-]);
+const failure = withFailureMessages(
+  Schema.Union([
+    VaultError,
+    VaultSshError,
+    VaultWorkloadError,
+    VaultConnectionError,
+    OrchestratorMcpFailure,
+  ]),
+);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_agent_open", {
@@ -141,7 +144,7 @@ export const vaultSshHandlers = McpToolAccess.toLayer(
     const administrator = Effect.gen(function* () {
       const caller = yield* McpInvocationContext;
       if (caller.thread || caller.client?.access !== "full-access")
-        return yield* new VaultError({ reason: "denied" });
+        return yield* new VaultError({ reason: "denied", detail: "admin-only" });
       return `client:${caller.client.sessionId}`;
     });
     const callingThread = Effect.gen(function* () {

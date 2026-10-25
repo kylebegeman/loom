@@ -2525,13 +2525,23 @@ it.effect(
         expect((yield* explain()).decision.reason).toBe("caller-permission");
         fixture.state.approvalRequired = false;
         fixture.state.interactionMode = "plan";
+        const list = () =>
+          access
+            .listForThread({ cursor: null, includeArchived: false }, threadId)
+            .pipe(Effect.flip);
+        const use = () => access.require(threadId, itemId, "use", null).pipe(Effect.flip);
         expect((yield* explain()).decision.reason).toBe("caller-permission");
+        // The gate is about the caller, so list and use both say so instead of looking empty.
+        const callerPermission = new VaultError({ reason: "denied", detail: "caller-permission" });
+        expect(yield* list()).toEqual(callerPermission);
+        expect(yield* use()).toEqual(callerPermission);
         fixture.state.interactionMode = "default";
         fixture.state.runStatus = "completed";
         expect((yield* explain()).decision.reason).toBe("workload-inactive");
-        expect(
-          (yield* access.listForThread({ cursor: null, includeArchived: false }, threadId)).items,
-        ).toEqual([]);
+        const inactive = new VaultError({ reason: "denied", detail: "workload-inactive" });
+        expect(yield* list()).toEqual(inactive);
+        expect(yield* use()).toEqual(inactive);
+        expect(inactive.message).toContain("Continue in a new turn of this thread.");
         fixture.state.runStatus = "running";
         fixture.state.active = false;
         expect((yield* explain()).decision.reason).toBe("workload-inactive");

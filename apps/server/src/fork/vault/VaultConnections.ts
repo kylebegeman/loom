@@ -13,6 +13,7 @@ import {
   type VaultConnectionReport,
   type VaultConnectionRepair,
   type VaultConnectionState,
+  type VaultAccessDecision,
   VaultError,
   type VaultItemSummary,
   type VaultItemPage,
@@ -81,6 +82,8 @@ const repair = {
   revoked: "renew-access",
   expired: "renew-access",
   "policy-denied": "repair-policy",
+  "workload-inactive": "continue-in-active-turn",
+  "caller-permission": "switch-to-full-access",
   "backend-unavailable": "check-backend",
   "backend-locked": "unlock-backend",
   "backend-unconfigured": "configure-backend",
@@ -97,21 +100,30 @@ const report = (
   choices: ReadonlyArray<VaultConnectionChoice> = [],
   selected: VaultConnectionPin | null = null,
 ): VaultConnectionReport => ({ state, selected, choices, repair: repair[state] });
+// Owner access gates the calling thread rather than the connection. Reporting that cause, not a
+// missing or denied connection, keeps agents from creating a duplicate.
+const deniedState = (error: VaultError, fallback: VaultConnectionState): VaultConnectionState =>
+  error.detail === "workload-inactive" ||
+  error.detail === "caller-permission" ||
+  error.detail === "untrusted-host"
+    ? error.detail
+    : fallback;
 const backendFailure = (error: VaultError): VaultConnectionReport =>
   report(
-    (
-      {
-        configuration: "backend-unconfigured",
-        locked: "backend-locked",
-        denied: "backend-denied",
-        unavailable: "backend-unavailable",
-        "invalid-response": "backend-unavailable",
-        "not-found": "missing",
-        conflict: "version-conflict",
-        "invalid-input": "invalid-input",
-        archived: "inactive",
-      } as const
-    )[error.reason],
+    error.reason === "denied"
+      ? deniedState(error, "backend-denied")
+      : (
+          {
+            configuration: "backend-unconfigured",
+            locked: "backend-locked",
+            unavailable: "backend-unavailable",
+            "invalid-response": "backend-unavailable",
+            "not-found": "missing",
+            conflict: "version-conflict",
+            "invalid-input": "invalid-input",
+            archived: "inactive",
+          } as const
+        )[error.reason],
   );
 const normalize = (value: string) =>
   value
@@ -119,8 +131,14 @@ const normalize = (value: string) =>
     .toLowerCase()
     .replace(/\/+$/, "")
     .replace(/\.git$/, "");
-const policyState = (reason: string): VaultConnectionState =>
-  reason === "expired" ? "expired" : reason === "not-active" ? "revoked" : "policy-denied";
+const policyState = (reason: VaultAccessDecision["reason"]): VaultConnectionState =>
+  reason === "expired"
+    ? "expired"
+    : reason === "not-active"
+      ? "revoked"
+      : reason === "workload-inactive" || reason === "caller-permission"
+        ? reason
+        : "policy-denied";
 const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore,
     access = yield* VaultAccess.VaultAccess,
@@ -322,7 +340,8 @@ const make = Effect.gen(function* () {
           ]);
         const loaded = yield* metadata(item, input.kind, threadId).pipe(Effect.result);
         if (loaded._tag === "Failure") {
-          if (loaded.failure.reason === "denied") return report("policy-denied");
+          if (loaded.failure.reason === "denied")
+            return report(deniedState(loaded.failure, "policy-denied"));
           return yield* loaded.failure;
         }
         return loaded.success
@@ -382,7 +401,7 @@ const make = Effect.gen(function* () {
             if (loaded.failure.reason !== "denied") return yield* loaded.failure;
             if (matchesLabel)
               matches.push(
-                report("policy-denied", [
+                report(deniedState(loaded.failure, "policy-denied"), [
                   { item, kind: input.kind, hostname: null, account: null, repositories: [] },
                 ]),
               );
@@ -500,7 +519,10 @@ const make = Effect.gen(function* () {
         });
       yield* access.require(threadId, pin.item.id, "use", pin.destination).pipe(
         Effect.mapError((error) => {
-          const state = error.reason === "denied" ? "policy-denied" : backendFailure(error).state;
+          const state =
+            error.reason === "denied"
+              ? deniedState(error, "policy-denied")
+              : backendFailure(error).state;
           return new VaultConnectionError({ state, choices: [], repair: repair[state] });
         }),
       );
