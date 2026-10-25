@@ -1115,7 +1115,11 @@ describe("orphan worktree reports", () => {
             "refs/heads/orphan-removal",
           ])).stdout,
         ).toContain("orphan-removal");
-      }),
+      }).pipe(
+        // The fixture mocks lsof; a real Linux /proc scan keeps the orphan whenever a runner
+        // process hides its cwd. Removal reads the platform per call, so pin the whole test.
+        Effect.provideService(HostProcess.Platform, "darwin"),
+      ),
     ),
   );
 
