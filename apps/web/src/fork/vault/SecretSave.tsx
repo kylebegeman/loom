@@ -51,12 +51,12 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
     return true;
   };
   const control = (disabled: boolean) =>
-    supported ? (
+    supported || enabled ? (
       <div className="flex flex-col gap-2">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={enabled}
-            disabled={disabled || saved || !allowed}
+            disabled={disabled || saved || (!allowed && !enabled)}
             onCheckedChange={setEnabled}
           />
           Also save to Vault as

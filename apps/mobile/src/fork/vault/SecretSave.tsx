@@ -49,13 +49,13 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
     return true;
   };
   const control = (disabled: boolean) =>
-    supported ? (
+    supported || enabled ? (
       <View className="gap-2">
         <View className="flex-row items-center gap-2">
           <Switch
             accessibilityLabel="Also save to Vault"
             value={enabled}
-            disabled={disabled || saved || !allowed}
+            disabled={disabled || saved || (!allowed && !enabled)}
             onValueChange={setEnabled}
           />
           <Text>Also save to Vault as</Text>

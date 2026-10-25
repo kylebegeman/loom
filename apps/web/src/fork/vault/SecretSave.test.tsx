@@ -145,14 +145,24 @@ it("holds the answer on a failed Vault save, redacts the error and retries the s
   expect(state.save.mock.calls[0]?.[0].input.id).toBe(state.save.mock.calls[1]?.[0].input.id);
   expect(state.answer).toHaveBeenCalledOnce();
 });
-it("rechecks human Vault permission before submitting a selected save", async () => {
-  fillSecret();
-  act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
-  state.allowed = false;
-  act(() =>
-    root.render(<SecretRequestCard environmentId={environmentId} item={item} visibility="local" />),
-  );
-  await submit();
-  expect(state.save).not.toHaveBeenCalled();
-  expect(state.answer).not.toHaveBeenCalled();
-});
+it.each(["permission", "capability"])(
+  "allows answering without a Vault copy after losing %s",
+  async (unavailable) => {
+    fillSecret();
+    act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+    state.allowed = unavailable !== "permission";
+    state.supported = unavailable !== "capability";
+    act(() =>
+      root.render(
+        <SecretRequestCard environmentId={environmentId} item={item} visibility="local" />,
+      ),
+    );
+    await submit();
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.answer).not.toHaveBeenCalled();
+    act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+    await submit();
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.answer).toHaveBeenCalledOnce();
+  },
+);
