@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Disposable executable fixtures inspect child credential routing without network calls.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -148,6 +149,71 @@ it.effect("repository hooks are disabled without blocking scoped release command
       ),
     );
     expect((yield* f.service.execute(input).pipe(Effect.flip)).reason).toBe("unsafe-git-config");
+  }).pipe(Effect.scoped),
+);
+it.effect("a push to origin leaves origin's tracking branch, upstream and lease current", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const remote = NodePath.join(f.dir, "remote.git"),
+      checkout = NodePath.join(f.dir, "checkout");
+    // Real git, with only the network hop swapped: the selected GitHub URL resolves to a local
+    // bare repository. The child's own configuration still chooses the remote and refs.
+    yield* f.write(
+      "git",
+      `const cp=require('node:child_process');const env={...process.env};if(['push','fetch'].includes(process.argv[2])){const n=Number(env.GIT_CONFIG_COUNT??0);env.GIT_CONFIG_COUNT=String(n+2);env['GIT_CONFIG_KEY_'+n]=${JSON.stringify(`url.${remote}.insteadOf`)};env['GIT_CONFIG_VALUE_'+n]='https://github.com/owner/repo.git';env['GIT_CONFIG_KEY_'+(n+1)]='protocol.file.allow';env['GIT_CONFIG_VALUE_'+(n+1)]='always'}const r=cp.spawnSync('/usr/bin/git',process.argv.slice(2),{env,encoding:'utf8'});process.stdout.write(r.stdout??'');process.stderr.write(r.stderr??'');process.exit(r.status??1);`,
+    );
+    const git = (...args: string[]) =>
+      NodeChildProcess.execFileSync("/usr/bin/git", args, {
+        cwd: f.dir,
+        encoding: "utf8",
+        env: {
+          PATH: "/usr/bin:/bin",
+          HOME: f.dir,
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_AUTHOR_NAME: "Loom",
+          GIT_AUTHOR_EMAIL: "loom@example.test",
+          GIT_COMMITTER_NAME: "Loom",
+          GIT_COMMITTER_EMAIL: "loom@example.test",
+        },
+      }).trim();
+    git("init", "-q", "--bare", remote);
+    git("init", "-q", "-b", "main", checkout);
+    git("-C", checkout, "remote", "add", "origin", "git@github.com:owner/repo.git");
+    git("-C", checkout, "commit", "-q", "--allow-empty", "-m", "one");
+    git("-C", checkout, "switch", "-q", "-c", "feature");
+    git("-C", checkout, "commit", "-q", "--allow-empty", "-m", "two");
+    const push = (...argv: string[]) =>
+      f.service.execute({
+        token: Redacted.make("synthetic-terminal-token"),
+        repository: "owner/repo",
+        command: { tool: "git", argv },
+        cwd: checkout,
+        authorize: Effect.void,
+      });
+
+    const pushed = yield* push("push", "-u", "origin", "feature");
+    expect(pushed.exitCode).toBe(0);
+    expect(pushed.stdout).toContain("set up to track 'origin/feature'");
+    expect(git("-C", checkout, "rev-parse", "refs/remotes/origin/feature")).toBe(
+      git("-C", checkout, "rev-parse", "feature"),
+    );
+    expect(git("-C", checkout, "config", "branch.feature.remote")).toBe("origin");
+    expect(git("-C", checkout, "status", "-sb").split("\n")[0]).toBe("## feature...origin/feature");
+
+    // A bare lease checks the remote against origin/feature, which the push above recorded.
+    git("-C", checkout, "commit", "-q", "--amend", "--allow-empty", "-m", "three");
+    expect((yield* push("push", "-q", "--force-with-lease", "origin", "feature")).exitCode).toBe(0);
+    expect(git("--git-dir", remote, "rev-parse", "feature")).toBe(
+      git("-C", checkout, "rev-parse", "feature"),
+    );
+    expect(git("-C", checkout, "status", "-sb").split("\n")[0]).toBe("## feature...origin/feature");
+
+    // The checkout cannot add a destination to the remote that Loom's push uses.
+    git("-C", checkout, "config", "remote.loom-vault-origin.pushurl", "https://elsewhere.invalid/x");
+    expect((yield* push("push", "origin", "feature").pipe(Effect.flip)).reason).toBe(
+      "unsafe-git-config",
+    );
   }).pipe(Effect.scoped),
 );
 it.effect("rejects repository credential rewrites, denied execution and oversized output", () =>

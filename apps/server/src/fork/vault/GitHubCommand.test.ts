@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { githubTerminalArgs } from "./GitHubCommand.ts";
+import { githubTerminalArgs, VAULT_PUSH_REMOTE } from "./GitHubCommand.ts";
 test("normal gh commands retain flags while repository selection stays explicit", () => {
   expect(
     githubTerminalArgs("owner/repo", {
@@ -32,7 +32,7 @@ test("Git HTTPS accepts ordinary remote commands and rejects executable options 
   for (const action of ["fetch", "push", "ls-remote"]) {
     expect(githubTerminalArgs("owner/repo", { tool: "git", argv: [action, "origin"] })).toEqual([
       action,
-      "https://github.com/owner/repo.git",
+      action === "push" ? VAULT_PUSH_REMOTE : "https://github.com/owner/repo.git",
       ...(action === "fetch" ? ["+refs/heads/*:refs/remotes/origin/*"] : []),
     ]);
   }
@@ -50,6 +50,40 @@ test("Git HTTPS accepts ordinary remote commands and rejects executable options 
     ["fetch", "--upload-pack", "evil", "origin"],
   ])
     expect(githubTerminalArgs("owner/repo", { tool: "git", argv })).toBeNull();
+});
+
+test("Git push and fetch accept the short, upstream, tag and lease forms agents use", () => {
+  const git = (...argv: string[]) => githubTerminalArgs("owner/repo", { tool: "git", argv });
+  expect(git("push", "-q", "-u", "--follow-tags", "origin", "main")).toEqual([
+    "push",
+    "--quiet",
+    "--set-upstream",
+    "--follow-tags",
+    VAULT_PUSH_REMOTE,
+    "main",
+  ]);
+  for (const lease of ["refs/heads/reserve:", "main:0123abcd", "main"])
+    expect(git("push", `--force-with-lease=${lease}`, "origin", "HEAD:refs/heads/main")).toEqual([
+      "push",
+      `--force-with-lease=${lease}`,
+      VAULT_PUSH_REMOTE,
+      "HEAD:refs/heads/main",
+    ]);
+  expect(git("fetch", "-q", "--no-prune", "origin", "refs/tags/v1:refs/tags/v1")).toEqual([
+    "fetch",
+    "--quiet",
+    "--no-prune",
+    "https://github.com/owner/repo.git",
+    "refs/tags/v1:refs/tags/v1",
+  ]);
+  for (const argv of [
+    ["push", "--force-with-lease=", "origin"],
+    ["push", "--force-with-lease=main:a:b", "origin"],
+    ["push", "--force-with-lease=-x", "origin"],
+    ["push", "--force-with-lease=main:$(id)", "origin"],
+    ["fetch", "-u", "origin"],
+  ])
+    expect(git(...argv)).toBeNull();
 });
 
 test.each([

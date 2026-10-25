@@ -79,6 +79,11 @@ const remote = (value: string, repository: string) =>
   value.toLowerCase() === `https://github.com/${repository}` ||
   value.toLowerCase() === `https://github.com/${repository}.git`;
 const ref = /^[+a-zA-Z0-9_][a-zA-Z0-9_./:*+-]{0,255}$/;
+// Pushes name a remote that only the command's environment defines, fetching into
+// refs/remotes/origin/*, so git updates origin's tracking branches and checks leases against them.
+// A push to the bare URL leaves them stale. Pushing to "origin" would also apply the checkout's
+// own push URLs, push refspecs and mirror setting.
+export const VAULT_PUSH_REMOTE = "loom-vault-origin";
 
 type GhOption =
   | "text"
@@ -328,6 +333,7 @@ export const githubTerminalArgs = (
       : action === "fetch"
         ? [
             "--prune",
+            "--no-prune",
             "--prune-tags",
             "--tags",
             "--no-tags",
@@ -344,6 +350,7 @@ export const githubTerminalArgs = (
               "--force",
               "--delete",
               "--tags",
+              "--follow-tags",
               "--all",
               "--set-upstream",
               "--atomic",
@@ -355,9 +362,20 @@ export const githubTerminalArgs = (
   const flags: string[] = [],
     positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
-    const value = argv[i]!;
+    const value =
+      argv[i] === "-q"
+        ? "--quiet"
+        : action === "push" && argv[i] === "-u"
+          ? "--set-upstream"
+          : argv[i]!;
     if (switches.has(value)) flags.push(value);
-    else if (
+    else if (action === "push" && value.startsWith("--force-with-lease=")) {
+      // <ref> or <ref>:<expected>; an empty <expected> requires that the ref not exist yet.
+      const [lease, expected, ...rest] = value.slice("--force-with-lease=".length).split(":");
+      if (rest.length || !lease || !ref.test(lease) || (expected && !ref.test(expected)))
+        return null;
+      flags.push(value);
+    } else if (
       (action === "clone" || action === "fetch") &&
       (value === "--depth" || value.startsWith("--depth="))
     ) {
@@ -383,7 +401,7 @@ export const githubTerminalArgs = (
   return [
     action,
     ...flags,
-    `https://github.com/${repository}.git`,
+    action === "push" ? VAULT_PUSH_REMOTE : `https://github.com/${repository}.git`,
     ...positional.slice(1),
     ...(action === "fetch" && positional[0] === "origin" && positional.length === 1
       ? ["+refs/heads/*:refs/remotes/origin/*"]

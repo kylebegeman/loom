@@ -709,6 +709,11 @@ inputs are unavailable. Git supports `ls-remote`, `fetch`,
 `push` and `clone`, with the selected HTTPS URL or `origin`. For clone, use the selected URL
 and optionally a new directory name under the checkout. `origin` means the selected Vault
 repository for this command; fetching it without refspecs updates its remote-tracking branches.
+A push updates the `origin/` tracking branch of each branch it pushes, so the checkout shows it
+as pushed. `-u` records `origin` as the upstream, and a bare `--force-with-lease` checks the
+remote against those tracking branches. `--force-with-lease=<ref>:<commit>` names the expected
+commit instead; leave the commit empty to require a new ref. Push also accepts `-q` and
+`--follow-tags`, and fetch accepts `-q` and `--no-prune`.
 Stored remotes and the surrounding shell's account stay unchanged. Account-login commands,
 interactive flags, extensions, other destinations and custom executable transport flags fail
 with guidance. A repository with custom credential, HTTP, URL-rewrite or executable settings

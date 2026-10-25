@@ -431,7 +431,13 @@ redirects are disabled and repository hooks/automatic signing/maintenance are su
 
 Commands infer cwd from the authenticated thread checkout or project root. `origin` is expanded
 to the selected HTTPS URL for this invocation. Fetch without an explicit refspec also updates
-`refs/remotes/origin/*`; persisted remote configuration is untouched. CLI output is raw scrubbed
+`refs/remotes/origin/*`. Push instead names `loom-vault-origin`, a remote defined only in the
+child's configuration with the selected URL and an `origin/*` fetch refspec. Git then updates the
+pushed branches' `origin/` tracking refs and checks bare leases against them, which a push to the
+bare URL does not. Pushing to the checkout's own `origin` would also apply its push URLs, push
+refspecs and mirror setting. A checkout that defines `loom-vault-origin` is rejected, and
+upstreams recorded by `-u` or `push.autoSetupRemote` are pointed back at `origin` after the push.
+Persisted remote configuration is untouched. CLI output is raw scrubbed
 stdout/stderr with the child's exit status. Combined output is capped at 64 KiB, command time
 at 120 seconds, and connection-use concurrency at four. Cleanup removes the private directory,
 terminates the owned process group and attempts App-token release. No local secret payload is
