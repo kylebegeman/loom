@@ -1,3 +1,4 @@
+import * as PinnedHostKeys from "./PinnedHostKeys.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   VaultSshAgentOpen,
@@ -10,6 +11,8 @@ import {
   VaultSshError,
   VaultWorkloadError,
   VaultSshTarget,
+  type VaultSshPinnedKey,
+  type VaultSshPinnedKeysInput,
   VaultSshPublicKey,
   VaultSshGenerate,
   VaultGitExecute,
@@ -49,6 +52,9 @@ type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultSsh extends Context.Service<
   VaultSsh,
   {
+    readonly pinnedKeys: (
+      input: VaultSshPinnedKeysInput,
+    ) => Effect.Effect<ReadonlyArray<VaultSshPinnedKey>, VaultSshError>;
     readonly agentOpen: (
       input: VaultSshAgentOpen,
       proof: VaultWorkloadProof,
@@ -119,6 +125,7 @@ const make = Effect.gen(function* () {
     workloads = yield* VaultWorkloads.VaultWorkloads,
     transport = yield* SshTransport.SshTransport,
     crypto = yield* Crypto.Crypto;
+  const pins = yield* PinnedHostKeys.PinnedHostKeys;
   const active = yield* Ref.make(0);
   type Activation = {
     session: VaultWorkloadSession;
@@ -185,6 +192,7 @@ const make = Effect.gen(function* () {
     return activation;
   });
   return VaultSsh.of({
+    pinnedKeys: pins.resolve,
     agentOpen: Effect.fn("VaultSsh.agentOpen")(function* (input, proof, threadId) {
       if (!isAgentOpen(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const { session } = yield* workloads.check(proof);
@@ -515,4 +523,4 @@ const make = Effect.gen(function* () {
     }),
   });
 });
-export const layer = Layer.effect(VaultSsh, make);
+export const layer = Layer.effect(VaultSsh, make).pipe(Layer.provide(PinnedHostKeys.layer));

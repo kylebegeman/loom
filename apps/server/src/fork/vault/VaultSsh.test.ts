@@ -248,6 +248,17 @@ it.effect(
         isFailure: true,
         result: { _tag: "VaultError", reason: "denied" },
       });
+      const pins = yield* toolkit
+        .handle("loom_vault_ssh_pinned_keys", { hostname: "example.test", port: 22 })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provide(f.context),
+          Effect.provideService(McpInvocationContext, scope),
+        );
+      expect(pins[0]).toMatchObject({
+        isFailure: true,
+        result: { _tag: "VaultError", reason: "denied" },
+      });
       const trust = yield* toolkit
         .handle("loom_vault_ssh_trust", {
           id: f.itemId,

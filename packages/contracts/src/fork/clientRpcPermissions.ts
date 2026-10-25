@@ -81,6 +81,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [VG.change]: AuthAccessWriteScope,
   [VP.apply]: AuthAccessWriteScope,
   [VP.retirePin]: AuthAccessWriteScope,
+  [VS.pinnedKeys]: AuthAccessReadScope,
   [VS.generate]: AuthAccessWriteScope,
   [VS.trust]: AuthAccessWriteScope,
   [VS.probe]: AuthAccessWriteScope,
