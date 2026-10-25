@@ -295,7 +295,7 @@ apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecyc
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	9
 apps/server/src/orchestration-v2/Orchestrator.ts	deleted-history	4
 apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
-apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	9
+apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	10
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	2
 apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	1
@@ -752,8 +752,8 @@ apps/server/src/orchestration-v2/ThreadManagementService.ts	library-projects	5
 apps/server/src/mcp/WorktreeMcpService.ts	library-projects	4
 apps/web/src/components/BranchToolbarBranchSelector.tsx	library-projects	2
 apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	4
-apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	7
-apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	library-projects	6
+apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	20
+apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	library-projects	15
 apps/server/src/auth/ServerSecretStore.test.ts	server-weight	2
 apps/server/src/auth/ServerSecretStore.ts	server-weight	7
 apps/server/src/observability/EventLoopMonitor.test.ts	server-weight	3
@@ -777,3 +777,12 @@ packages/provider-opencode/src/server/OpenCodeRuntime.ts	server-weight	3
 packages/provider-pi/src/server/rpc.ts	server-weight	2
 packages/shared/src/AgentScope.ts	server-weight	2
 packages/shared/src/nodeSqliteClient.ts	server-weight	1
+apps/server/src/mcp/OrchestratorMcpService.test.ts	library-projects	3
+apps/server/src/mcp/OrchestratorMcpService.ts	library-projects	9
+apps/server/src/mcp/toolkits/project/handlers.test.ts	library-projects	1
+apps/server/src/mcp/toolkits/project/handlers.ts	library-projects	6
+apps/server/src/mcp/toolkits/project/tools.ts	library-projects	3
+packages/contracts/src/orchestratorMcp.ts	library-projects	1
+packages/provider-core/src/server/orchestrationInstructions.ts	library-projects	1
+docs/user/outside-agents.md	library-projects	1
+docs/user/project-settings.md	library-projects	2
