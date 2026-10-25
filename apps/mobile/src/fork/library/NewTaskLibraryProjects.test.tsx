@@ -281,20 +281,33 @@ describe("mobile source launch actions", () => {
     expectFreshConversation(null, null);
   });
 
+  it("opens the Library form for a Library conversation that ran in its own worktree", async () => {
+    await mount();
+    await act(() =>
+      launch({ ...source, branch: "feature/source", worktreePath: "/lanes/source" }),
+    );
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith(
+      "LibraryStart",
+      expect.objectContaining({ sourceThreadId: source.id, initialCopyId: binding.workingCopyId }),
+    );
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.switchRef).not.toHaveBeenCalled();
+  });
+
   it.each(["feature/source", null])(
-    "preserves an explicit worktree with branch %s",
+    "preserves an explicit worktree with branch %s outside the Library",
     async (branch) => {
+      state.binding.mockResolvedValue(AsyncResult.success(null));
       await mount();
       await act(() => launch({ ...source, branch, worktreePath: "/lanes/source" }));
       expectFreshConversation(branch, "/lanes/source");
-      expect(state.binding).not.toHaveBeenCalled();
-      expect(state.lookup).not.toHaveBeenCalled();
       expect(state.readRefs).not.toHaveBeenCalled();
       expect(state.switchRef).not.toHaveBeenCalled();
     },
   );
 
   it("reuses the occupied worktree for an explicit source branch before creating fresh history", async () => {
+    state.binding.mockResolvedValue(AsyncResult.success(null));
     state.readRefs.mockResolvedValue(
       AsyncResult.success({
         refs: [
@@ -312,11 +325,11 @@ describe("mobile source launch actions", () => {
     await mount();
     await act(() => launch({ ...source, branch: "feature/source" }));
     expectFreshConversation("feature/source", "/lanes/source");
-    expect(state.binding).not.toHaveBeenCalled();
     expect(state.switchRef).not.toHaveBeenCalled();
   });
 
   it("does not create a conversation after a source branch checkout fails", async () => {
+    state.binding.mockResolvedValue(AsyncResult.success(null));
     state.readRefs.mockResolvedValue(AsyncResult.success({ refs: [], nextCursor: null }));
     state.switchRef.mockResolvedValue(
       AsyncResult.failure(Cause.fail(new Error("Checkout failed"))),
