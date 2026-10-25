@@ -16,7 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
-import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -349,6 +349,21 @@ const cleanupFixture = (
         ),
       ),
     );
+    const processHost: ProcessRunner.ProcessRunner["Service"] = {
+      run: (input) =>
+        input.command === "/usr/sbin/lsof"
+          ? Effect.sync(() => ({
+              stdout: processCwd === null ? "" : `p42\nn${processCwd}\n`,
+              stderr: "",
+              code: ChildProcessSpawner.ExitCode(processInspectionFails ? 1 : 0),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            }))
+          : runner.run(input),
+    };
     const context = yield* Layer.build(StorageCleanup.layer).pipe(
       Effect.provideService(GitVcsDriver.GitVcsDriver, {
         ...git,
@@ -368,21 +383,7 @@ const cleanupFixture = (
           return git.statusDetailsLocal(...args);
         },
       }),
-      Effect.provideService(ProcessRunner.ProcessRunner, {
-        run: (input) =>
-          input.command === "/usr/sbin/lsof"
-            ? Effect.sync(() => ({
-                stdout: processCwd === null ? "" : `p42\nn${processCwd}\n`,
-                stderr: "",
-                code: processInspectionFails ? 1 : 0,
-                timedOut: false,
-                stdoutTruncated: false,
-                stderrTruncated: false,
-                stdoutInvalidUtf8: false,
-                stderrInvalidUtf8: false,
-              }))
-            : runner.run(input),
-      }),
+      Effect.provideService(ProcessRunner.ProcessRunner, processHost),
       Effect.provideService(Settings.ServerSettingsService, {
         getSettings: Effect.sync(() => settings),
         subscribeChanges: Effect.succeed(Stream.empty),
@@ -477,7 +478,16 @@ const cleanupFixture = (
       } as unknown as TerminalManager.TerminalManager["Service"]),
       Effect.provideService(ServerActivation, Deferred.await(activated)),
     );
-    const service = Context.get(context, StorageCleanup.StorageCleanup);
+    const built = Context.get(context, StorageCleanup.StorageCleanup);
+    // Sweeps inherit this fixture's process runner from the layer build, but manual removal runs
+    // in its caller's context, as an RPC does, so it gets the same runner here.
+    const service: StorageCleanup.StorageCleanup["Service"] = {
+      ...built,
+      removeOrphan: (target) =>
+        built
+          .removeOrphan(target)
+          .pipe(Effect.provideService(ProcessRunner.ProcessRunner, processHost)),
+    };
     return {
       service,
       libraryStore: yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
