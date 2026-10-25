@@ -87,6 +87,8 @@ const input = (overrides: Partial<Parameters<typeof libraryStartDefaults>[0]> = 
   })),
   remembered: [],
   operable: new Set([dorothy, mini]),
+  terminal: new Set([dorothy, mini]),
+  libraryOperable: true,
   configs: new Map([
     [dorothy, config],
     [mini, config],
@@ -168,6 +170,22 @@ describe("New task Library project defaults", () => {
     const elsewhere = input({ copies: [copy("files"), copy("mini-files", mini)] });
     expect(webPromise(elsewhere)?.environmentId).toBe(dorothy);
     expect(libraryStartDefaults({ ...elsewhere, operable: new Set([mini]) })).toBeNull();
+  });
+
+  it("promises no start the start screen would refuse for a missing grant", () => {
+    expect(libraryStartDefaults(input({ libraryOperable: false }))).toBeNull();
+    const workflows = input().hosts.map((host) => ({
+      ...host,
+      capabilities: {
+        repositoryIdentity: false,
+        loomFeatures: ["project-library", "project-workflows"],
+      },
+    }));
+    expect(libraryStartDefaults(input({ hosts: workflows, terminal: new Set() }))).toBeNull();
+    expect(libraryStartDefaults(input({ hosts: workflows }))).not.toBeNull();
+    const borrowed = { ...copy("files"), ownership: "borrowed" as const };
+    expect(libraryStartDefaults(input({ copies: [borrowed], terminal: new Set() }))).toBeNull();
+    expect(libraryStartDefaults(input({ terminal: new Set() }))).not.toBeNull();
   });
 
   it("leaves the start to the settings screen when it needs a decision first", () => {

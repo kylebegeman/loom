@@ -53,6 +53,8 @@ type NewTaskRouteParams = {
   readonly pr?: string | string[];
   readonly provider?: string | string[];
   readonly model?: string | string[];
+  // fork: library - A Library project in view, which leads the choices.
+  readonly libraryProjectId?: string; // fork: library
 };
 
 // fork: fleet-connections - Empty states speak of computers and surface unsupported clients.
@@ -162,8 +164,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
-  const libraryProjects = useNewTaskLibraryProjects({ hasRouteParams: !!route.params, searchText }); // fork: library
-  const sharedChoices = libraryProjects.choices; // fork: library
+  const suggestedProjectId = route.params?.libraryProjectId; // fork: library
+  const libraryProjects = useNewTaskLibraryProjects({ searchText, suggestedProjectId }); // fork: library
+  const sharedChoices = [...libraryProjects.suggested, ...libraryProjects.choices]; // fork: library
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();
@@ -327,6 +330,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
+          {/* fork: library - The Library project in view leads, ahead of No project, as on web. */}
+          <NewTaskLibraryProjectChoices choices={libraryProjects.suggested} error={null} />
           {/* fork: no-project-first - No project leads the choices whenever a computer can run it. */}
           {canStartScratch && !emptyStateOffersScratch ? (
             Platform.OS === "android" ? (
@@ -380,7 +385,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             )
           ) : null}
           {/* fork: library */}
-          <NewTaskLibraryProjectChoices choices={sharedChoices} error={libraryProjects.error} />
+          <NewTaskLibraryProjectChoices
+            choices={libraryProjects.choices} // fork: library
+            error={libraryProjects.error} // fork: library
+          />
           {legacyScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View
               collapsable={false}

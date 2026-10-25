@@ -34,6 +34,7 @@ import * as SessionStore from "../../auth/SessionStore.ts";
 import {
   readRecoveryGrantClaims,
   recoveryDescriptorDigest,
+  recoveryGrantRefused,
   recoveryGrantSubject,
 } from "./recoveryGrant.ts";
 
@@ -284,7 +285,7 @@ const make = Effect.gen(function* () {
           grant.destinationEnvironmentId !== (yield* destinationIdentity.value.getEnvironmentId) ||
           Date.parse(grant.expiresAt) <= (yield* Clock.currentTimeMillis)
         )
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* recoveryGrantRefused();
         const copy = grant.sourceCopy;
         const metadata = copy.recovery;
         if (
@@ -306,10 +307,10 @@ const make = Effect.gen(function* () {
                 Option.isNone(localStore) ||
                 grant.libraryEnvironmentId !== grant.destinationEnvironmentId
               )
-                return yield* new LibraryError({ reason: "blocked" });
+                return yield* recoveryGrantRefused();
               const verified = yield* sessions.value
                 .verify(grant.accessToken)
-                .pipe(Effect.mapError(() => new LibraryError({ reason: "blocked" })));
+                .pipe(Effect.mapError(recoveryGrantRefused));
               yield* readRecoveryGrantClaims(verified);
               if (
                 verified.subject !==
@@ -317,7 +318,7 @@ const make = Effect.gen(function* () {
                   Effect.provideService(Crypto.Crypto, crypto),
                 ))
               )
-                return yield* new LibraryError({ reason: "blocked" });
+                return yield* recoveryGrantRefused();
               const archive = yield* localStore.value.get(
                 copy.environmentId,
                 copy.id,
@@ -359,7 +360,7 @@ const make = Effect.gen(function* () {
                 Effect.mapError(() => new LibraryError({ reason: "publisher-unavailable" })),
               );
               if (info.environmentId !== grant.libraryEnvironmentId || info.isAuthority === false)
-                return yield* new LibraryError({ reason: "blocked" });
+                return yield* recoveryGrantRefused();
               body = yield* remoteArchive(
                 portableConnection.endpoint(
                   `/api/loom/library/recovery-grants/${encodeURIComponent(grant.destinationEnvironmentId)}/${encodeURIComponent(copy.environmentId)}/${encodeURIComponent(copy.id)}/${metadata.sha256}`,

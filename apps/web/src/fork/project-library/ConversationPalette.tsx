@@ -25,6 +25,7 @@ import {
   modelSelectionsEqual,
 } from "@t3tools/shared/model";
 import { getProviderModelCapabilities } from "~/providerModels";
+import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { runtimeModeConfig, runtimeModeOptions } from "~/components/chat/runtimeModeConfig";
 import { LibraryModelPalette } from "./LibraryModelPalette";
 import { LibraryTextPalette } from "./LibraryTextPalette";
@@ -428,10 +429,12 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         title:
           s.busy || waiting
             ? (s.operationPhase ?? "Starting...")
-            : s.locked
-              ? "Retry conversation"
+            : s.held
+              ? s.held.title
+                ? `Retry “${s.held.title}”`
+                : "Retry untitled conversation"
               : "Start conversation",
-        description: `${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
+        description: `${s.held?.savedAt ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
         icon: <PlayIcon className="size-4 text-(--project-green)" />,
         disabled: !s.canCreate || waiting,
         select: () => void s.submit(),

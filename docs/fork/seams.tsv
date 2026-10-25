@@ -79,7 +79,7 @@ apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
-apps/server/scripts/migrate-dev-db.ts	dev-db	8
+apps/server/scripts/migrate-dev-db.ts	dev-db	9
 apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1
 apps/server/src/config.ts	mini-managed-projects	1
@@ -215,6 +215,7 @@ apps/mobile/src/features/workspace-handoff/WorkspaceHandoffScreen.tsx	project-ho
 apps/web/src/components/ChatView.tsx	project-home	1
 apps/web/src/components/CommandPalette.tsx	project-home	12
 apps/web/src/components/LegacySidebar.tsx	project-home	2
+apps/web/src/components/LegacySidebar.tsx	library-projects	3
 apps/web/src/components/Sidebar.tsx	project-home	1
 apps/web/src/hooks/useThreadActionMenu.ts	project-home	1
 apps/web/src/routes/projects.$projectKey.tsx	project-home	1
@@ -252,7 +253,7 @@ apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	1
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	1
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	1
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
-apps/web/src/components/CommandPalette.tsx	library-palette	37
+apps/web/src/components/CommandPalette.tsx	library-palette	46
 apps/web/src/components/CommandPalette.tsx	sites	8
 scripts/build-cli-archive.ts	library-semantic-search	3
 apps/server/package.json	-	"onnxruntime-web": "1.30.0"
@@ -264,7 +265,7 @@ apps/mobile/src/Stack.tsx	project-navigation	4
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	fleet-connections	3
 apps/mobile/src/features/files/AttachmentFileScreen.tsx	library	5
 apps/mobile/src/features/home/HomeRouteScreen.tsx	fleet-connections	1
-apps/mobile/src/features/home/HomeRouteScreen.tsx	library	11
+apps/mobile/src/features/home/HomeRouteScreen.tsx	library	12
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	3
 apps/mobile/src/features/home/HomeScreen.tsx	library	8
 apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
@@ -272,7 +273,7 @@ apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
 apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
-apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	8
+apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	14
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	2
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	1
@@ -676,7 +677,8 @@ apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	no-project-first	2
 apps/mobile/src/features/prompt-links/usePromptLinkResolver.ts	no-project-first	2
-apps/mobile/src/features/layout/createWorkspaceStackNavigator.ios.tsx	no-project-first	1
+apps/mobile/src/features/layout/createWorkspaceStackNavigator.ios.tsx	no-project-first	4
+apps/mobile/src/features/workspace/AndroidWorkspaceNavigation.android.tsx	no-project-first	12
 apps/desktop/src/ipc/DesktopIpcHandlers.ts	identity-renewal	3
 apps/desktop/src/ipc/channels.ts	identity-renewal	2
 apps/desktop/src/main.ts	identity-renewal	2
@@ -735,4 +737,7 @@ apps/web/src/confirmDialog.test.ts	confirm-label	1
 apps/web/src/components/ConfirmDialogHost.tsx	confirm-label	4
 apps/web/src/hooks/useThreadActions.ts	confirm-label	1
 apps/web/src/hooks/useThreadActions.ts	project-root-worktree	2
+apps/server/src/git/GitWorkflowService.ts	project-root-worktree	5
+apps/server/src/git/GitWorkflowService.test.ts	project-root-worktree	5
+apps/server/src/server.ts	project-root-worktree	1
 packages/shared/package.json	-	"./fork/reach"

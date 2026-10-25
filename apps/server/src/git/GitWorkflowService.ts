@@ -4,7 +4,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path"; // fork: project-root-worktree
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
 
 import {
   GitManagerError,
@@ -196,6 +198,65 @@ export const make = Effect.gen(function* () {
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const fileSystem = yield* FileSystem.FileSystem;
+
+  // fork: project-root-worktree -- a project opened through a symlink can have its resolved folder
+  // recorded as a thread worktree, and `git worktree remove --force` would then delete the project.
+  // Folder identity, not path text, decides, so aliases and case differences cannot slip through.
+  const projectStore = yield* Effect.serviceOption(ProjectStore.ProjectStoreV2);
+  const pathService = yield* Path.Path;
+  const refuseProjectRootRemoval = Effect.fn("GitWorkflowService.refuseProjectRootRemoval")(
+    function* (input: VcsRemoveWorktreeInput) {
+      const target = pathService.resolve(input.cwd, input.path);
+      const found = yield* fileSystem.stat(target).pipe(Effect.option);
+      if (Option.isNone(found)) return;
+      const targetInfo = found.value;
+      const targetReal = yield* fileSystem
+        .realPath(target)
+        .pipe(Effect.orElseSucceed(() => target));
+      const refused = (detail: string) =>
+        new GitCommandError({
+          operation: "GitWorkflowService.removeWorktree",
+          command: "worktree-guard",
+          cwd: input.cwd,
+          detail,
+        });
+      const projects = Option.isNone(projectStore)
+        ? []
+        : yield* projectStore.value
+            .listShells()
+            .pipe(
+              Effect.mapError(() =>
+                refused(
+                  `Kept ${target} because Loom could not check which project folders it holds.`,
+                ),
+              ),
+            );
+      const isTarget = (info: FileSystem.File.Info, realPath: string) =>
+        Option.isSome(info.ino) && Option.isSome(targetInfo.ino)
+          ? info.dev === targetInfo.dev && info.ino.value === targetInfo.ino.value
+          : realPath === targetReal;
+      const visited = new Set<string>();
+      for (const root of [input.cwd, ...projects.map((project) => project.workspaceRoot)]) {
+        const resolved = pathService.resolve(input.cwd, root);
+        let current = yield* fileSystem
+          .realPath(resolved)
+          .pipe(Effect.orElseSucceed(() => resolved));
+        // The target holds a project when it is that project's folder or any folder around it.
+        while (!visited.has(current)) {
+          visited.add(current);
+          const info = yield* fileSystem.stat(current).pipe(Effect.option);
+          if (Option.isSome(info) && isTarget(info.value, current))
+            return yield* refused(
+              `Kept ${target} because it holds a project's own folder, not a separate worktree.`,
+            );
+          const parent = pathService.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      }
+    },
+  );
+  // fork: project-root-worktree end
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
@@ -498,6 +559,7 @@ export const make = Effect.gen(function* () {
       ),
     removeWorktree: (input) =>
       ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
+        Effect.andThen(refuseProjectRootRemoval(input)), // fork: project-root-worktree
         Effect.andThen(git.removeWorktree(input)),
       ),
     pruneWorktrees: (input) =>

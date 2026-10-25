@@ -122,6 +122,7 @@ vi.mock("./LibraryPalette", () => ({
       {props.items.map((item) => (
         <button key={item.id} disabled={props.busy || item.disabled} onClick={item.select}>
           {item.title}
+          {item.description ? <small>{item.description}</small> : null}
         </button>
       ))}
       {props.message}
@@ -200,7 +201,15 @@ const commands = state.commands;
 const attemptKey = `loom:library:conversation:${authorityId}:${project.id}`;
 const reopeningKey = `loom:library:launch-reopen:${authorityId}:${project.id}`;
 const portableKey = `loom:library:launch-portable:${authorityId}:${project.id}`;
-const preparationKey = `loom:library:launch-files:${authorityId}:${project.id}`;
+const continuationScope = `${authorityId}:${project.id}:continue:saved-conversation`;
+const continuationAttemptKey = `loom:library:conversation:${continuationScope}`;
+const continuationPortableKey = `loom:library:launch-portable:${continuationScope}`;
+const savedKeys = ["conversation", "launch-files", "launch-reopen", "launch-portable"].flatMap(
+  (kind) => [
+    `loom:library:${kind}:${authorityId}:${project.id}`,
+    `loom:library:${kind}:${continuationScope}`,
+  ],
+);
 const onChanged = vi.fn();
 const onClose = vi.fn();
 const failure = (message: string) => AsyncResult.failure(Cause.fail(new Error(message)));
@@ -288,8 +297,7 @@ beforeEach(() => {
     addEventListener: events.addEventListener.bind(events),
     removeEventListener: events.removeEventListener.bind(events),
   });
-  for (const key of [attemptKey, reopeningKey, preparationKey, portableKey])
-    saveLibraryAttempt(key, null, storage);
+  for (const key of savedKeys) saveLibraryAttempt(key, null, storage);
   for (const command of Object.values(commands)) command.run.mockReset();
   state.nextId = 0;
   state.threadIds = [];
@@ -368,8 +376,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => renderer?.unmount());
   renderer = undefined;
-  for (const key of [attemptKey, reopeningKey, preparationKey, portableKey])
-    saveLibraryAttempt(key, null, storage);
+  for (const key of savedKeys) saveLibraryAttempt(key, null, storage);
   vi.unstubAllGlobals();
 });
 
@@ -892,7 +899,7 @@ describe("portable project launch", () => {
     );
     await mount([], { continuation: sourceSummary });
     await click("Start conversation");
-    const rejected = JSON.parse(storage.getItem(portableKey)!);
+    const rejected = JSON.parse(storage.getItem(continuationPortableKey)!);
     expect(rejected).toMatchObject({
       sourceReviewToken: "review-source",
       sourceSnapshotRejected: true,
@@ -906,7 +913,7 @@ describe("portable project launch", () => {
     await mount([], { continuation: sourceSummary });
     expect(launch.canCreate).toBe(false);
     await click("Review latest source files");
-    const reviewed = JSON.parse(storage.getItem(portableKey)!);
+    const reviewed = JSON.parse(storage.getItem(continuationPortableKey)!);
     expect(reviewed.snapshotRequestId).not.toBe(rejected.snapshotRequestId);
     expect(reviewed.sourceReviewToken).toBeUndefined();
     expect(reviewed.sourceSnapshotRejected).toBeUndefined();
@@ -1109,6 +1116,41 @@ describe("portable project launch", () => {
     expectOpened();
   });
 
+  it("holds an unfinished continuation for that continuation only, names it, and retries it there", async () => {
+    setup();
+    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    await mount([restoredCopy], { continuation: sourceSummary });
+    await act(() => launch.selectCopy(restoredCopy.id));
+    await click("Start conversation");
+    const held = JSON.parse(storage.getItem(continuationAttemptKey)!);
+    expect(held.binding.continuationOf).toEqual({
+      environmentId: sourceEnvironmentId,
+      threadId: sourceSummary.threadId,
+      sequence: sourceSummary.sequence,
+    });
+    expect(savedAttempt()).toBeNull();
+
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([restoredCopy]);
+    expect(launch.locked).toBe(false);
+    expect(launch.held).toBeNull();
+    expect(launch.title).toBe("");
+
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([restoredCopy], { continuation: sourceSummary });
+    expect(launch.held).toEqual({ title: "Continue: Original work", savedAt: held.createdAt });
+    await click("Retry conversation");
+    expect(commands.restoreCopy.run).not.toHaveBeenCalled();
+    expect(commands.bindThread.run).toHaveBeenLastCalledWith({
+      environmentId,
+      input: { threadId, binding: held.binding, project },
+    });
+    expect(storage.getItem(continuationAttemptKey)).toBeNull();
+    expectOpened();
+  });
+
   it("preserves continuation context and chosen model options across a restore failure and remount", async () => {
     setup();
     commands.restoreCopy.run.mockResolvedValueOnce(failure("Destination disconnected"));
@@ -1124,7 +1166,8 @@ describe("portable project launch", () => {
       initialInteractionMode: "plan",
     });
     await click("Start conversation");
-    const receipt = JSON.parse(storage.getItem(portableKey)!);
+    expect(storage.getItem(portableKey)).toBeNull();
+    const receipt = JSON.parse(storage.getItem(continuationPortableKey)!);
     expect(receipt.launch).toMatchObject({
       modelSelection,
       runtimeMode: "auto",
@@ -1138,7 +1181,14 @@ describe("portable project launch", () => {
     expect(receipt.launch.context).toContain("Original work");
     await act(() => renderer!.unmount());
     renderer = undefined;
+    // An ordinary start in the same project is not held by the continuation's restore.
     await mount();
+    expect(launch.locked).toBe(false);
+    expect(launch.title).toBe("");
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([], { continuation: sourceSummary });
+    expect(launch.held).toEqual({ title: "Continue: Original work", savedAt: null });
     await click("Retry conversation");
     expect(commands.restoreCopy.run.mock.calls[0]![0].input.requestId).toBe(
       commands.restoreCopy.run.mock.calls[1]![0].input.requestId,
@@ -1404,11 +1454,11 @@ describe("held attempts and one-step starts", () => {
 
     // Reopened later with no error showing: the held attempt must still have a way out.
     await remount(dialog());
-    expect(action("Retry conversation")).toBeDefined();
+    expect(action("Retry untitled conversation")).toBeDefined();
     expect(action("Computer")?.props.disabled).toBe(true);
     await choose("Start over");
     expect(savedAttempt()).toBeNull();
-    expect(action("Retry conversation")).toBeUndefined();
+    expect(action("Retry untitled conversation")).toBeUndefined();
     expect(action("Computer")?.props.disabled).toBe(false);
 
     state.threadIds.push("second-thread");
@@ -1430,6 +1480,71 @@ describe("held attempts and one-step starts", () => {
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId: "second-thread" },
     });
+  });
+
+  it("offers an attempt already saved for the project by name, with Retry and Start over", async () => {
+    const continuationOf = {
+      environmentId: EnvironmentId.make("old-computer"),
+      threadId: ThreadId.make("old-thread"),
+      sequence: 3,
+    };
+    const stuck = {
+      environmentId,
+      threadId,
+      binding: { ...binding, continuationOf },
+      project,
+      title: "Continue: Old work",
+      context: "Earlier notes",
+      modelSelection: { instanceId, model: "test-model" },
+      runtimeMode: "full-access",
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      created: true,
+      registerRequestId: "stuck-request",
+    };
+    saveLibraryAttempt(attemptKey, JSON.stringify(stuck), storage);
+    await render(dialog());
+    const retry = action("Retry “Continue: Old work”");
+    expect(retry?.props.disabled).toBe(false);
+    expect(retry!.findByType("small").children.join("")).toMatch(/^First tried 2h ago\. /);
+    expect(action("Start over")).toBeDefined();
+
+    await choose("Retry “Continue: Old work”");
+    expect(commands.create.run).not.toHaveBeenCalled();
+    expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { threadId, binding: stuck.binding, project },
+    });
+    expectOpened();
+  });
+
+  it("names an attempt held before the conversation step by the title it will use", async () => {
+    commands.reopenCopy.run.mockResolvedValueOnce(failure("Disconnected"));
+    await mount();
+    await act(() => launch.setTitle("Fix login"));
+    await click("Start conversation");
+    const held = JSON.parse(storage.getItem(reopeningKey)!);
+    expect(Number.isNaN(Date.parse(held.savedAt))).toBe(false);
+    expect(launch.held).toEqual({ title: "Fix login", savedAt: held.savedAt });
+  });
+
+  it("retries with the project revision it started from after the brief changes", async () => {
+    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    await mount([restoredCopy]);
+    await click("Start conversation");
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    // The binding names the first revision, and the computer refuses a project that differs from it.
+    await mount([restoredCopy], { project: { ...project, brief: "Edited", revision: 2 } });
+    await click("Retry conversation");
+    expect(commands.resolveBinding.run).toHaveBeenLastCalledWith({
+      environmentId,
+      input: { binding, project },
+    });
+    expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { threadId, binding, project },
+    });
+    expectOpened();
   });
 
   it("keeps a retry whose conversation was deleted, says so, and starts a new operation after Start over", async () => {
@@ -1483,7 +1598,7 @@ describe("held attempts and one-step starts", () => {
     await remount(dialog(promised, settle));
     expect(settle).toHaveBeenCalledTimes(2);
     expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
-    expect(action("Retry conversation")).toBeDefined();
+    expect(action("Retry untitled conversation")).toBeDefined();
     expect(action("Start over")).toBeDefined();
   });
 

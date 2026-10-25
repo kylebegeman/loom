@@ -187,6 +187,7 @@ function WithOptions() {
           {
             id: "alpha",
             title: "Alpha",
+            enterLabel: "Start",
             select: () => selected("start alpha"),
             options: () => selected("options alpha"),
           },
@@ -221,6 +222,16 @@ it("opens a row's options from Right Arrow at the end of the search and from its
   expect(selected.mock.calls).toEqual([["options alpha"], ["options alpha"]]);
   await press("Enter");
   expect(selected).toHaveBeenLastCalledWith("start alpha");
+});
+it("names what Enter and Right Arrow do for the row Enter would run", async () => {
+  await act(() => root.render(<WithOptions />));
+  await act(() => vi.advanceTimersToNextFrame());
+  const footer = () => document.querySelector('[data-slot="command-footer"]')!.textContent;
+  expect(footer()).toBe("NavigateEnterStartOptionsEscClose");
+  await press("ArrowDown");
+  expect(footer()).toBe("NavigateEnterSelectEscClose");
+  await type("Al");
+  expect(footer()).toBe("NavigateEnterStartOptionsEscClose");
 });
 
 function TextEditor() {

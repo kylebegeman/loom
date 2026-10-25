@@ -286,6 +286,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       yield* fullText.rebuild; // fork: dev-db
       yield* sql`DELETE FROM main.sqlite_sequence`;
       yield* sql`INSERT INTO main.sqlite_sequence SELECT name, seq FROM src.sqlite_sequence`;
+      yield* sql`DELETE FROM main.sqlite_sequence WHERE name IN ${sql.in(FORK_LIVE_RESOURCE_TABLES)}`; // fork: dev-db
       for (const entry of schema) {
         if (entry.type !== "table") yield* sql.unsafe(entry.sql).unprepared;
       }

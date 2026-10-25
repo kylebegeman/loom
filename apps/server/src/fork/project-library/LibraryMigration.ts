@@ -262,7 +262,12 @@ const make = Effect.gen(function* () {
       for (const row of records.threads) {
         if (excluded.has(row.threadId)) continue;
         const bound = mapping.get(row.localProjectId);
-        if (bound === undefined) return yield* new LibraryError({ reason: "blocked" });
+        if (bound === undefined)
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail:
+              "A conversation belongs to a project this plan does not include. Include its project or exclude the conversation, then try again.",
+          });
         const snapshot = yield* projections.getThreadSnapshot(row.threadId);
         if (snapshot.projection.thread.projectId !== row.localProjectId)
           return yield* new LibraryError({ reason: "invalid" });

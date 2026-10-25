@@ -153,11 +153,8 @@ export function HomeRouteScreen() {
       ? resolvedProjectKey
       : null;
 
-  // fork: library - A selected Library project starts a host-bound conversation.
-  const startConversation = () => {
-    if (!libraryHome.startConversation(selectedProjectKey))
-      navigation.navigate("NewTaskSheet", { screen: "NewTask" });
-  };
+  // fork: library - A selected Library project leads the New task choices.
+  const startConversation = () => libraryHome.startConversation(selectedProjectKey); // fork: library
 
   if (layout.usesSplitView && !nativePrimaryColumn) {
     return (

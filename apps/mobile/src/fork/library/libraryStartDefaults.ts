@@ -2,6 +2,7 @@ import {
   libraryLaunchDefaults,
   libraryLaunchInputs,
   libraryQuickLaunch,
+  supportsLoomFeature,
   type LibraryLaunchHost,
   type LibraryLaunchRememberedComputer,
 } from "@t3tools/client-runtime/fork";
@@ -38,6 +39,10 @@ export function libraryStartDefaults(input: {
   readonly remembered: readonly LibraryLaunchRememberedComputer[];
   /** Computers this device may start conversations on. */
   readonly operable: ReadonlySet<EnvironmentId>;
+  /** Computers this device may run project operations and prepare files on. */
+  readonly terminal: ReadonlySet<EnvironmentId>;
+  /** Whether this device may register conversations and files in the Library. */
+  readonly libraryOperable: boolean;
   readonly configs: ReadonlyMap<EnvironmentId, ServerConfig>;
   readonly localProject: (
     environmentId: EnvironmentId,
@@ -61,8 +66,17 @@ export function libraryStartDefaults(input: {
   });
   if (quick === null) return null;
   const { environmentId, copy } = quick;
-  // The start screen runs work only where this device has conversation access.
-  if (!input.operable.has(environmentId)) return null;
+  // The start screen runs work only where this device has conversation access, and refuses to
+  // start without the grants for the steps this computer and these files take.
+  if (!input.operable.has(environmentId) || !input.libraryOperable) return null;
+  const capabilities = input.hosts.find(
+    (host) => host.environmentId === environmentId,
+  )?.capabilities;
+  if (
+    (supportsLoomFeature(capabilities, "project-workflows") || copy.ownership !== "managed") &&
+    !input.terminal.has(environmentId)
+  )
+    return null;
   // The start screen offers whole-project files only when their repositories match the project
   // exactly, so a folder still holding a removed repository needs a choice there.
   if (!libraryLaunchCopyMatchesScope(project, copy, null)) return null;

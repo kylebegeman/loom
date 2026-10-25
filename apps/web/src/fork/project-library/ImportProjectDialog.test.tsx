@@ -72,10 +72,6 @@ vi.mock("./LibraryAccessNotice", () => ({
     onLeave?: () => void;
   }) => (block ? <button onClick={onLeave}>{`Repair: ${block.message}`}</button> : null),
 }));
-vi.mock("./attempts", async () => {
-  const { useState } = await import("react");
-  return { useLibraryAttempt: () => useState<unknown>(null) };
-});
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "dorothy" }));
 vi.mock("~/state/use-atom-command", () => ({
@@ -160,6 +156,7 @@ vi.mock("./LibraryPalette", () => ({
   ),
 }));
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { saveLibraryAttempt } from "./attempts";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -210,10 +207,26 @@ const registeredTo = (project: LibraryProject, ownership: "borrowed" | "managed"
     }),
   );
 const created = libraryProject("created", "kyle");
+// An import an earlier visit left unfinished, after it created its project.
+const saveUnfinishedImport = (copy: LibraryWorkingCopy | null) =>
+  saveLibraryAttempt(
+    "loom:library:import:library",
+    JSON.stringify({
+      environmentId: "dorothy",
+      rootPath: "/Users/kyle",
+      createInput: { requestId: "create-earlier", title: "kyle", brief: "", resources: [] },
+      project: created,
+      prepareRequestId: "prepare-earlier",
+      registerRequestId: "register-earlier",
+      copy,
+    }),
+    window.localStorage,
+  );
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  saveLibraryAttempt("loom:library:import:library", null, window.localStorage);
   state.readCopies.mockResolvedValue(AsyncResult.success([]));
   state.create.mockResolvedValue(AsyncResult.success(created));
   state.prepare.mockImplementation(async ({ input }: { input: { project: LibraryProject } }) =>
@@ -284,6 +297,18 @@ it("creates a project for the browsed folder in one step", async () => {
     strategy: "reuse",
   });
   expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("leads with folders at the home folder it opens on, and with the action once one is chosen", async () => {
+  await mount();
+  const titles = () =>
+    Array.from(container.querySelectorAll("button"), (entry) => entry.textContent);
+  expect(titles().indexOf("Developer")).toBeLessThan(titles().indexOf("Create project kyle"));
+  await act(async () => button("Developer").click());
+  expect(titles().indexOf("Create project Developer")).toBeLessThan(
+    titles().indexOf("Parent folder"),
+  );
+  expect(titles().find((title) => title !== "Back")).toBe("Create project Developer");
 });
 
 it("retraces folder navigation with Back and leaves without changing the chosen folder", async () => {
@@ -637,4 +662,63 @@ it("does not offer other projects once a check shows a current project holds the
   expect(button("Add to another project...")).toBeUndefined();
   expect(button("Add to Owner app").disabled).toBe(false);
   expect(state.prepare).not.toHaveBeenCalled();
+});
+
+it("reopens an unfinished import with Retry, Back and Start over, and keeps it offered while browsing", async () => {
+  const onSaved = vi.fn();
+  state.projects = [created];
+  saveUnfinishedImport(copyOf(created));
+  await mount({ onSaved });
+  expect(button("Retry import").disabled).toBe(false);
+  expect(container.textContent).toContain("Adds /Users/kyle on dorothy to kyle.");
+  expect(button("Start over")).toBeDefined();
+  await act(async () => button("Back").click());
+  expect(button("Add to kyle")).toBeDefined();
+  await act(async () => button("Retry earlier import").click());
+  await act(async () => button("Retry import").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare).not.toHaveBeenCalled();
+  expect(state.register.mock.calls[0]![0].input.requestId).toBe("register-earlier");
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("starts an unfinished import over without creating its project again", async () => {
+  const onSaved = vi.fn();
+  state.projects = [created];
+  // The earlier try stopped before preparing the folder, so its computer has no record of it.
+  saveUnfinishedImport(null);
+  await mount({ onSaved });
+  await act(async () => button("Start over").click());
+  expect(button("Retry earlier import")).toBeUndefined();
+  await act(async () => button("Add to kyle").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare.mock.calls[0]![0].input).toMatchObject({
+    project: created,
+    rootPath: "/Users/kyle",
+  });
+  expect(state.prepare.mock.calls[0]![0].input.requestId).not.toBe("prepare-earlier");
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("adds a different browsed folder while an unfinished import waits", async () => {
+  const onSaved = vi.fn();
+  saveUnfinishedImport(copyOf(created));
+  await mount({ onSaved });
+  await act(async () => button("Back").click());
+  await act(async () => button("Developer").click());
+  await act(async () => button("Create project Developer").click());
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
+  expect(state.register.mock.calls[0]![0].input.requestId).not.toBe("register-earlier");
+  expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it("opens on the folder it was asked to add and only offers an unfinished import of another", async () => {
+  saveUnfinishedImport(copyOf(created));
+  await mount({ initialRootPath: "/Users/kyle/Developer" });
+  expect(button("Retry import")).toBeUndefined();
+  expect(button("Retry earlier import")).toBeDefined();
+  await act(async () => button("Add folder to Developer").click());
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
 });

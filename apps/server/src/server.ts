@@ -374,6 +374,7 @@ const layerGit = Layer.empty.pipe(
 
 const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
+  Layer.provide(ProjectStore.layer), // fork: project-root-worktree
   Layer.provideMerge(layerVcsDriverRegistry),
   Layer.provideMerge(layerGit),
 );

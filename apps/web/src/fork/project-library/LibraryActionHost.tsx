@@ -11,23 +11,17 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentProviders } from "~/state/environments";
 import { useProjects } from "~/state/entities";
 import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
-import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryProject,
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ArrowDownIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  FolderPlusIcon,
-  MessageSquareDashedIcon,
-  PlusIcon,
-} from "lucide-react";
+import { FolderPlusIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import {
   projectLibrary,
   useLibraryProject,
@@ -110,8 +104,8 @@ export function LibraryActionHost({
   const [newTitle, setNewTitle] = useState("");
   const [initialResource, setInitialResource] = useState("");
   const [initialFolder, setInitialFolder] = useState("");
-  // A start a project row or a folder just added promised. `run` remounts the settings so they
-  // begin from its defaults.
+  // A start a project row or a folder just added promised, `pending` until it runs or its settings
+  // show instead. `run` remounts the settings so they begin from its defaults.
   const [quick, setQuick] = useState<{
     readonly projectId: string;
     readonly launch: ConversationQuickStart;
@@ -128,6 +122,8 @@ export function LibraryActionHost({
     intent.kind === "repository"
       ? libraryStartRepositoryProjects(catalog.query.data ?? [], intent.url)
       : [];
+  // A visited step stays mounted so Back keeps its draft. Once saved it holds nothing to return to,
+  // only checks and names from before the save, so the next visit starts fresh.
   const [visited, setVisited] = useState({
     create: action === "create-project",
     import: action === "import-folder",
@@ -136,6 +132,8 @@ export function LibraryActionHost({
     setVisited((previous) => ({ ...previous, [next]: true }));
     setStep(next);
   };
+  const forget = (draft: "create" | "import") =>
+    setVisited((previous) => ({ ...previous, [draft]: false }));
   // Inherited settings belong to their settings step, so only a chooser the user did not fill in
   // starts in one step.
   const quickStarts = useQuickStarts({
@@ -147,24 +145,29 @@ export function LibraryActionHost({
     projects: catalog.query.data,
     threads: recent.data?.threads,
   });
-  /** `launch` is a start the user was promised; without it the project's settings open. */
+  /**
+   * `launch` is the start a row promised. `start` runs it; otherwise the settings open on its
+   * computer and files, as the row showed them. Without a promise the settings choose.
+   */
   const choose = (
     project: LibraryProject,
     copy?: LibraryWorkingCopy,
     launch?: ConversationQuickStart,
+    start = true,
   ) => {
-    // Returning to the same project keeps its settings and draft. Anything else ends the start,
-    // whose computer would otherwise outrank the one holding a folder added since.
+    // Returning to the same project keeps its settings and draft, unless a start remounts them.
+    // Anything else ends the promise, whose computer would otherwise outrank the one holding a
+    // folder added since.
     setQuick((previous) =>
-      launch
-        ? { projectId: project.id, launch, run: (previous?.run ?? 0) + 1, pending: true }
-        : previous?.projectId === project.id && !copy
-          ? { ...previous, pending: false }
+      previous?.projectId === project.id && !copy && !(launch && start)
+        ? { ...previous, pending: false }
+        : launch
+          ? { projectId: project.id, launch, run: (previous?.run ?? 0) + 1, pending: start }
           : null,
     );
     let nextDefaults = defaults;
-    // Files and repositories carry only into the project they came from, and never into a start,
-    // which runs on what its row showed.
+    // Files and repositories carry only into the project they came from, and never into a
+    // promise, which names its own.
     if (defaults && (launch || (requestedProject && requestedProject !== project.id)))
       nextDefaults = {
         ...(defaults.environmentId ? { environmentId: defaults.environmentId } : {}),
@@ -210,7 +213,13 @@ export function LibraryActionHost({
       ...row,
       summary: promise?.summary ?? row.summary,
       select: () => choose(entry, undefined, promise?.launch),
-      options: action === "new-conversation" ? () => choose(entry) : undefined,
+      ...(action === "new-conversation"
+        ? {
+            // Without a promise, Enter opens the settings too.
+            enterLabel: promise ? "Start" : "Options",
+            options: () => choose(entry, undefined, promise?.launch, false),
+          }
+        : {}),
     };
   };
   const quickProject = quick?.projectId === project?.id ? quick : null;
@@ -224,6 +233,7 @@ export function LibraryActionHost({
             title: "No project",
             summary: `Starts on ${noProject.label}`,
             terms: NO_PROJECT_TERMS,
+            enterLabel: "Start",
             icon: <MessageSquareDashedIcon className="size-4 text-muted-foreground" />,
             select: () => {
               onClose();
@@ -270,35 +280,6 @@ export function LibraryActionHost({
           }
           // A suggested project that no longer loads is only left out, not an error.
           error={catalog.query.error ?? (step === "conversation" ? library.project.error : null)}
-          footerHints={
-            action === "new-conversation" && library.authorityId ? (
-              <>
-                <KbdGroup>
-                  <Kbd>
-                    <ArrowUpIcon />
-                  </Kbd>
-                  <Kbd>
-                    <ArrowDownIcon />
-                  </Kbd>
-                  <span>Navigate</span>
-                </KbdGroup>
-                <KbdGroup>
-                  <Kbd>Enter</Kbd>
-                  <span>Start</span>
-                </KbdGroup>
-                <KbdGroup>
-                  <Kbd>
-                    <ArrowRightIcon />
-                  </Kbd>
-                  <span>Options</span>
-                </KbdGroup>
-                <KbdGroup>
-                  <Kbd>Esc</Kbd>
-                  <span>Close</span>
-                </KbdGroup>
-              </>
-            ) : undefined
-          }
           items={
             !library.authorityId || loadingProject
               ? noProjectItems
@@ -371,7 +352,10 @@ export function LibraryActionHost({
                     description: "Browse files on a connected computer",
                     icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
                     next: true,
-                    select: () => show("import"),
+                    select: () => {
+                      setInitialFolder("");
+                      show("import");
+                    },
                   },
                   ...(catalog.query.error
                     ? [
@@ -406,7 +390,10 @@ export function LibraryActionHost({
           continueToConversation={action === "new-conversation"}
           onBack={back}
           onClose={onClose}
-          onSaved={choose}
+          onSaved={(saved) => {
+            forget("create");
+            choose(saved);
+          }}
         />
       ) : null}
       {library.authorityId && visited.import ? (
@@ -420,13 +407,14 @@ export function LibraryActionHost({
           onClose={onClose}
           // The folder just added is where the user means to work, so it starts there when the
           // settings need no choice.
-          onSaved={(saved, copy) =>
+          onSaved={(saved, copy) => {
+            forget("import");
             choose(
               saved,
               copy,
               copy && quickStarts.start(saved, [copy], copy.environmentId)?.launch,
-            )
-          }
+            );
+          }}
         />
       ) : null}
       {library.authorityId && project && !project.archived ? (
@@ -493,6 +481,10 @@ function useQuickStarts({
   );
   const providers = useEnvironmentProviders();
   const localProjects = useProjects();
+  const grants = useStartGrants(
+    environments.map((entry) => entry.environmentId),
+    authorityId,
+  );
   const hosts = environments.map((entry) => ({
     environmentId: entry.environmentId,
     label: entry.label,
@@ -526,6 +518,16 @@ function useQuickStarts({
     });
     const host = environments.find((entry) => entry.environmentId === quick?.environmentId);
     if (!quick || !host?.serverConfig) return null;
+    // The settings refuse to start without these grants, so the row must not promise a start.
+    const computer = quick.environmentId;
+    if (
+      !grants.register ||
+      !grants.bind.has(computer) ||
+      (supportsLoomFeature(host.serverConfig.environment.capabilities, "project-workflows") &&
+        !grants.launch.has(computer)) ||
+      (quick.copy.ownership !== "managed" && !(grants.prepare.has(computer) && grants.registerCopy))
+    )
+      return null;
     const localProject =
       localProjects.find(
         (entry) =>
@@ -561,4 +563,37 @@ function useQuickStarts({
       if (promise) starts.set(project.id, promise);
     }
   return { starts, start };
+}
+
+type PermissionCommand = {
+  readonly permissionAtom: (environmentId: EnvironmentId) => Atom.Atom<boolean>;
+};
+
+/**
+ * The grants the conversation settings check before starting on a ready copy: binding and
+ * launching on its computer, registering on the Library, and preparing and registering a folder
+ * Loom does not manage.
+ */
+function useStartGrants(
+  environmentIds: readonly EnvironmentId[],
+  authorityId: EnvironmentId | null,
+) {
+  const key = JSON.stringify([authorityId, ...environmentIds]);
+  const grants = useMemo(() => {
+    const [library, ...computers] = JSON.parse(key) as [EnvironmentId | null, ...EnvironmentId[]];
+    return Atom.make((get) => {
+      const on = (command: PermissionCommand) =>
+        new Set(computers.filter((id) => get(command.permissionAtom(id))));
+      const onLibrary = (command: PermissionCommand) =>
+        library !== null && get(command.permissionAtom(library));
+      return {
+        bind: on(projectLibrary.bindThread),
+        launch: on(projectLibrary.executeOperation),
+        prepare: on(projectLibrary.prepareCopy),
+        register: onLibrary(projectLibrary.registerThread),
+        registerCopy: onLibrary(projectLibrary.registerCopy),
+      };
+    });
+  }, [key]);
+  return useAtomValue(grants);
 }

@@ -6,7 +6,12 @@ import {
   libraryStartRepositoryProjects,
   rankLibraryStartProjects,
 } from "@t3tools/client-runtime/fork";
-import { AuthOrchestrationOperateScope, CommandId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  CommandId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { LibraryProject } from "@t3tools/contracts/fork";
 import { useMemo, useRef } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -39,8 +44,9 @@ import { libraryStartDefaults, type LibraryStartDefaults } from "./libraryStartD
 
 /** Library projects use their normal computer and files form without inheriting a thread. */
 export function useNewTaskLibraryProjects(input: {
-  readonly hasRouteParams: boolean;
   readonly searchText: string;
+  /** The Library project in view where New task was opened. */
+  readonly suggestedProjectId?: string | undefined;
 }) {
   const authority = useLibraryAuthority();
   const sharedProjects = useEnvironmentQuery(
@@ -81,6 +87,13 @@ export function useNewTaskLibraryProjects(input: {
     libraryHoldsLocalRefs([], refs, sharedCopies.data ?? []);
   const { environments } = useEnvironments();
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
+  const terminal = useEnvironmentsWithScope(environments, AuthTerminalOperateScope);
+  const libraryRef = useMemo(
+    () => (authority.environmentId ? [{ environmentId: authority.environmentId }] : []),
+    [authority.environmentId],
+  );
+  const libraryOperable =
+    useEnvironmentsWithScope(libraryRef, AuthOrchestrationOperateScope).size > 0;
   const configs = useServerConfigs();
   const localProjects = useProjects();
   // Keyed by project and independent of the search text, so typing only filters. The computers
@@ -108,6 +121,8 @@ export function useNewTaskLibraryProjects(input: {
           hosts,
           remembered: authority.computers,
           operable,
+          terminal,
+          libraryOperable,
           configs,
           localProject: (environmentId, projectId) =>
             localProjects.find(
@@ -122,13 +137,19 @@ export function useNewTaskLibraryProjects(input: {
     recent.data,
     environments,
     operable,
+    terminal,
+    libraryOperable,
     configs,
     localProjects,
     authority.computers,
   ]);
 
+  const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));
   return {
-    choices: choices.map((project) => ({ project, start: starts.get(project.id) ?? null })),
+    // The project in view only leads, as on web: every other project and No project stay a tap
+    // away, and a suggestion the catalog no longer lists is left out rather than reported.
+    suggested: rows.filter((row) => row.project.id === input.suggestedProjectId),
+    choices: rows.filter((row) => row.project.id !== input.suggestedProjectId),
     error: sharedProjects.error,
     holdsLocalRefs,
   };

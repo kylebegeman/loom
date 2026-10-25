@@ -5,7 +5,7 @@ import {
   type LibraryPaletteItem,
 } from "./LibraryPalette";
 import { LibraryFolderPalette, type LibraryBrowsedFolder } from "./LibraryFolderPalette";
-import { MonitorIcon, FolderInputIcon, FolderPlusIcon } from "lucide-react";
+import { MonitorIcon, FolderInputIcon, FolderPlusIcon, RotateCcwIcon } from "lucide-react";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -107,23 +107,31 @@ export function ImportProjectDialog({
     connectedHosts.length === 1
       ? connectedHosts[0]!.environmentId
       : (connectedHosts.find((entry) => entry.environmentId === primaryId)?.environmentId ?? null);
+  // The saved import this dialog presents, by its request. Opening for another folder or computer
+  // only offers it, so an import that keeps failing never takes over adding a different folder.
+  const [resumed, setResumed] = useState(() =>
+    attempt &&
+    (!initialRootPath || initialRootPath === attempt.rootPath) &&
+    (!initialHostId || initialHostId === attempt.environmentId)
+      ? attempt.registerRequestId
+      : null,
+  );
+  const saved = attempt?.registerRequestId === resumed ? attempt : null;
   const [hostId, setHostId] = useState<EnvironmentId | null>(
-    attempt?.environmentId ?? initialHostId ?? defaultHostId,
+    saved?.environmentId ?? initialHostId ?? defaultHostId,
   );
   const [page, setPage] = useState<
     "computers" | "folders" | "project" | "choose-project" | "name" | "brief"
   >(
-    attempt || initialRootPath
-      ? "project"
-      : defaultHostId || initialHostId
-        ? "folders"
-        : "computers",
+    saved || initialRootPath ? "project" : defaultHostId || initialHostId ? "folders" : "computers",
   );
   const [search, setSearch] = useState("");
-  const [rootPath, setRootPath] = useState(attempt?.rootPath ?? initialRootPath ?? "");
-  const [title, setTitle] = useState(attempt?.createInput?.title ?? initialTitle ?? "");
-  const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
-  const [projectId, setProjectId] = useState(attempt?.project?.id ?? "choose");
+  const [rootPath, setRootPath] = useState(saved?.rootPath ?? initialRootPath ?? "");
+  const [title, setTitle] = useState(saved?.createInput?.title ?? initialTitle ?? "");
+  const [brief, setBrief] = useState(saved?.createInput?.brief ?? "");
+  const [projectId, setProjectId] = useState(
+    saved?.project?.id ?? (saved?.createInput ? "new" : "choose"),
+  );
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);
   // Repository roots are checked as they are browsed, so their row can name the project they
   // join. Other folders can hold many repositories and wait for Enter, as checks are costly.
@@ -134,13 +142,22 @@ export function ImportProjectDialog({
   const [browsed, setBrowsed] = useState<LibraryBrowsedFolder | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [chooseFrom, setChooseFrom] = useState<"project" | "folders">("project");
-  // A project this dialog created for a folder. A failure after it was created clears the
-  // attempt, and a retry must add the folder to this project rather than create another.
+  // A project this dialog, or a saved import from an earlier visit, created for a folder. A
+  // failure can clear the import and Start over drops it, so adding that folder again must join
+  // this project rather than create another.
   const [created, setCreated] = useState<{
     readonly environmentId: EnvironmentId;
     readonly rootPath: string;
     readonly project: LibraryProject;
-  } | null>(null);
+  } | null>(() =>
+    attempt?.createInput && attempt.project
+      ? {
+          environmentId: attempt.environmentId,
+          rootPath: attempt.rootPath,
+          project: attempt.project,
+        }
+      : null,
+  );
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
@@ -199,11 +216,18 @@ export function ImportProjectDialog({
   const blockFor = (creating: boolean) =>
     canAdd(creating) ? null : (hostBlock ?? (creating ? createBlock : registerBlock));
   const issueFor = (holder: LibraryFolderOwner | null, id: string) =>
-    attempt
+    saved
       ? null
       : holder?.kind === "unchecked" && library.query.isPending
         ? "Checking which project owns this folder..."
         : libraryFolderOwnerIssue(holder, id === "choose" ? null : id);
+  // A project created moments ago may not be listed yet. One archived since, which a saved import
+  // from an earlier visit can name, takes no folders.
+  const findProject = (id: string) => {
+    const listed = library.query.data?.find((project) => project.id === id);
+    if (listed) return listed.archived ? undefined : listed;
+    return created?.project.id === id ? created.project : undefined;
+  };
   /** What adding a folder does, from its check when there is one and its path otherwise. */
   const folderTarget = (
     path: string,
@@ -217,7 +241,7 @@ export function ImportProjectDialog({
       owner,
       created:
         created?.environmentId === hostId && created.rootPath === folderPath
-          ? created.project
+          ? (findProject(created.project.id) ?? null)
           : null,
       matches: report
         ? matchingProjects(report, copies)
@@ -297,7 +321,7 @@ export function ImportProjectDialog({
       canInspect &&
       host?.connection.phase === "connected" &&
       !library.query.isPending &&
-      !attempt
+      !saved
     ) {
       inspectedInitial.current = true;
       inspectInitial();
@@ -309,12 +333,9 @@ export function ImportProjectDialog({
     canInspect,
     host?.connection.phase,
     library.query.isPending,
-    attempt,
+    saved,
   ]);
   const matches = inspection ? matchingProjects(inspection, registeredCopies ?? []) : [];
-  const findProject = (id: string) =>
-    library.query.data?.find((project) => project.id === id && !project.archived) ??
-    (created?.project.id === id ? created.project : undefined);
   const owner = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
   const ownerIssue = issueFor(owner, projectId);
   /** Add a checked folder to a project, creating it first for "new". True once it is saved. */
@@ -331,17 +352,17 @@ export function ImportProjectDialog({
       !authorityId ||
       busy ||
       issueFor(holder, target.projectId) ||
-      (!attempt && !inspection?.exists)
+      (!saved && !inspection?.exists)
     )
       return false;
     const existing = findProject(target.projectId);
-    if (!attempt && target.projectId !== "new" && !existing) return false;
+    if (!saved && target.projectId !== "new" && !existing) return false;
     const title = target.title.trim();
     setBusy(true);
     setError(null);
-    let submitted = attempt;
+    let submitted = saved;
     const importFolder = async () => {
-      let next = attempt ?? {
+      let next = saved ?? {
         environmentId: hostId,
         rootPath: inspection!.rootPath,
         createInput: existing
@@ -367,7 +388,9 @@ export function ImportProjectDialog({
         registerRequestId: randomUUID(),
         copy: null,
       };
+      // A new import replaces one saved for another folder; the work that one finished stays.
       saveAttempt(next);
+      setResumed(next.registerRequestId);
       submitted = next;
       if (!next.project) {
         if (!next.createInput) throw new Error("Choose a project before importing.");
@@ -422,8 +445,8 @@ export function ImportProjectDialog({
               isLibraryError(cause) &&
               ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
             ) {
-              // The project already exists, so a retry adds the folder to it. An attempt restored
-              // from an earlier visit created it too, before this dialog could record it.
+              // The project already exists, so a retry adds the folder to it. An import saved by
+              // another window created it too, before this dialog could record it.
               if (submitted.createInput)
                 setCreated({
                   environmentId: submitted.environmentId,
@@ -495,6 +518,51 @@ export function ImportProjectDialog({
     setTitle(target.title);
     openChoice("folders");
   };
+  const resume = (next: NonNullable<typeof attempt>) => {
+    setResumed(next.registerRequestId);
+    setHostId(next.environmentId);
+    setRootPath(next.rootPath);
+    setTitle(next.createInput?.title ?? "");
+    setBrief(next.createInput?.brief ?? "");
+    setProjectId(next.project?.id ?? (next.createInput ? "new" : "choose"));
+    setInspection(null);
+    setError(null);
+    setSearch("");
+    setPage("project");
+  };
+  /**
+   * Forget the saved request and browse its folder again. The computer may still finish it, and a
+   * project it created stays in `created`, so the folder's row joins that project and reuses files
+   * already prepared there instead of creating another.
+   */
+  const startOver = () => {
+    saveAttempt(null);
+    setError(null);
+    setSearch("");
+    setPage("folders");
+  };
+  const savedPlace = (unfinished: NonNullable<typeof attempt>) => {
+    const computer =
+      library.environments.find((entry) => entry.environmentId === unfinished.environmentId)
+        ?.label ?? "another computer";
+    const target = unfinished.project
+      ? unfinished.project.title
+      : `a new project named ${unfinished.createInput?.title ?? libraryFolderTitle(unfinished.rootPath)}`;
+    return `Adds ${unfinished.rootPath} on ${computer} to ${target}.`;
+  };
+  const savedOffer: LibraryPaletteItem[] =
+    attempt && !saved
+      ? [
+          {
+            id: "saved-import",
+            title: "Retry earlier import",
+            description: savedPlace(attempt),
+            icon: <RotateCcwIcon className="size-4" />,
+            next: true,
+            select: () => resume(attempt),
+          },
+        ]
+      : [];
   const reviewCleanup = async () => {
     if (!attempt?.copy || !library.authorityId) return;
     setBusy(true);
@@ -527,15 +595,15 @@ export function ImportProjectDialog({
       />
     );
   if (!open) return null;
-  const locked = attempt !== null;
+  const locked = saved !== null;
   const selectedProject = findProject(projectId);
   const canImport =
     canAdd(projectId === "new") &&
     !ownerIssue &&
-    (!!attempt ||
+    (!!saved ||
       (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
   const accessIssue = canImport ? null : (hostBlock ?? libraryBlock);
-  const formIssue = attempt
+  const formIssue = saved
     ? null
     : !inspection
       ? busy
@@ -551,12 +619,14 @@ export function ImportProjectDialog({
               : null));
   const repositories = inspection?.repositories ?? [];
   const importDescription = canImport
-    ? (libraryFolderTakeover(owner) ??
-      (selectedProject
-        ? "Use the existing Library project"
-        : repositories.length > 1
-          ? `One Library project for ${repositories.length} repositories: ${repositories.map((repository) => repository.relativePath).join(", ")}`
-          : "Create a Library project for these files"))
+    ? saved
+      ? savedPlace(saved)
+      : (libraryFolderTakeover(owner) ??
+        (selectedProject
+          ? "Use the existing Library project"
+          : repositories.length > 1
+            ? `One Library project for ${repositories.length} repositories: ${repositories.map((repository) => repository.relativePath).join(", ")}`
+            : "Create a Library project for these files"))
     : accessIssue?.repair
       ? "Restore access above to add this folder."
       : (accessIssue?.message ?? formIssue ?? "Checking this device's access...");
@@ -584,6 +654,7 @@ export function ImportProjectDialog({
           disabled: true,
           select: () => {},
         },
+        ...savedOffer,
       ];
     const report = hostId ? (lookups.get(lookupKey(hostId, folder.path)) ?? null) : null;
     const target = folderTarget(folder.path, report, copies ?? []);
@@ -637,6 +708,7 @@ export function ImportProjectDialog({
             },
           ]
         : []),
+      ...savedOffer,
     ];
   };
   const browsedBlock =
@@ -653,8 +725,11 @@ export function ImportProjectDialog({
     setSearch("");
     if (page === "choose-project") setPage(chooseFrom);
     else if (page === "name" || page === "brief") setPage("project");
-    else if (page === "project") setPage("folders");
-    else if (page === "folders") setPage("computers");
+    else if (page === "project") {
+      // Browsing adds the browsed folder; the saved import stays offered there.
+      setResumed(null);
+      setPage("folders");
+    } else if (page === "folders") setPage("computers");
     else onBack?.();
   };
   const close = () => {
@@ -715,16 +790,15 @@ export function ImportProjectDialog({
         }
         query={page === "name" ? title : search}
         onQueryChange={page === "name" ? setTitle : setSearch}
-        onBack={!locked && (page !== "computers" || onBack) ? back : undefined}
+        onBack={page !== "computers" || onBack ? back : undefined}
         onClose={close}
         busy={busy}
-        readOnly={locked}
         filter={page !== "name"}
         error={error ?? library.query.error}
         message={
           progress ??
-          (attempt
-            ? "An import is waiting for confirmation. Retry to finish the same import."
+          (saved
+            ? "This import did not finish. Retry it, or start over to choose the folder again."
             : inspection
               ? `${inspection.rootPath} on ${host?.label ?? "the selected computer"}. Your files stay here.`
               : initialRootPath
@@ -808,7 +882,7 @@ export function ImportProjectDialog({
                 : [
                     {
                       id: "import",
-                      title: attempt
+                      title: saved
                         ? "Retry import"
                         : `Add folder to ${selectedProject?.title ?? (title || "a project")}`,
                       description: importDescription,
@@ -816,7 +890,19 @@ export function ImportProjectDialog({
                       icon: <FolderPlusIcon className="size-4" />,
                       select: () => void submit({ projectId, title, inspection }),
                     },
-                    ...(!inspection && rootPath && !attempt
+                    ...(saved
+                      ? [
+                          {
+                            id: "start-over",
+                            title: "Start over",
+                            description:
+                              "Forget this import and choose the folder again. A project it already created stays in your Library.",
+                            icon: <RotateCcwIcon className="size-4 text-muted-foreground" />,
+                            select: startOver,
+                          },
+                        ]
+                      : []),
+                    ...(!inspection && rootPath && !saved
                       ? [
                           {
                             id: "inspect-again",
@@ -858,7 +944,7 @@ export function ImportProjectDialog({
                           },
                         ]
                       : []),
-                    ...(attempt?.copy?.state === "failed"
+                    ...(saved?.copy?.state === "failed"
                       ? [
                           {
                             id: "review",
@@ -868,6 +954,7 @@ export function ImportProjectDialog({
                           },
                         ]
                       : []),
+                    ...savedOffer,
                   ]
         }
       >

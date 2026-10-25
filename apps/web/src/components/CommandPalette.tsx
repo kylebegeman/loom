@@ -6,6 +6,7 @@ import {
   useLibraryPaletteSession,
 } from "~/fork/project-library/LibraryActionHost"; // fork: library-palette
 import { openLibraryAction } from "~/fork/project-library/actions"; // fork: library-palette
+import { useLibraryLocalProjectStart } from "~/fork/project-library/libraryLocalProjectStart"; // fork: library-palette
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -831,6 +832,7 @@ function OpenCommandPaletteDialog(props: {
   const [linkedThreadSearch, setLinkedThreadSearch] = useState(initialSearch.linkedThreadSearch);
   const deferredQuery = useDeferredValue(query);
   const tryLibraryConversation = useLibraryNewConversation(); // fork: library-palette
+  const startLibraryFolder = useLibraryLocalProjectStart(); // fork: library-palette
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
@@ -1229,6 +1231,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
+    if (startLibraryFolder(scopeProjectRef(project.environmentId, project.id))) return; // fork: library-palette
     await handleNewThread(scopeProjectRef(project.environmentId, project.id));
   };
 
@@ -1317,10 +1320,12 @@ function OpenCommandPaletteDialog(props: {
                 projectRef.environmentId === contextualProjectRef.environmentId &&
                 projectRef.projectId === contextualProjectRef.projectId,
             );
+          const startRef = contextualRefBelongsToGroup // fork: library-palette
+            ? contextualProjectRef // fork: library-palette
+            : scopeProjectRef(project.environmentId, project.id); // fork: library-palette
+          if (startLibraryFolder(startRef)) return; // fork: library-palette
           await handleNewThread(
-            contextualRefBelongsToGroup
-              ? contextualProjectRef
-              : scopeProjectRef(project.environmentId, project.id),
+            startRef, // fork: library-palette
             projectHomeContext && contextualRefBelongsToGroup // fork: project-home
               ? { environmentSelection: "manual" }
               : undefined,
@@ -2511,7 +2516,8 @@ function OpenCommandPaletteDialog(props: {
             scopeThreadRef(latestThread.environmentId, latestThread.id),
           ),
         });
-      } else {
+      } else if (!startLibraryFolder(scopeProjectRef(existing.environmentId, existing.id))) {
+        // fork: library-palette - Only a plain local project starts a bare thread here.
         const navigationResult = await settlePromise(() =>
           handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
         );

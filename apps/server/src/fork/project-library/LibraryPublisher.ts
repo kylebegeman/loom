@@ -35,7 +35,12 @@ import {
   PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
 import { PreviewAccessService } from "../preview-access/PreviewAccessService.ts";
-import { resolveLibraryConnection } from "./LibraryConnection.ts";
+import {
+  LIBRARY_MISMATCH,
+  LIBRARY_NOT_CONNECTED,
+  LIBRARY_SIGN_IN_MISSING,
+  resolveLibraryConnection,
+} from "./LibraryConnection.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -204,7 +209,12 @@ const make = Effect.gen(function* () {
   const sourceEnvironmentId = yield* sourceIdentity.getEnvironmentId;
   const noPages = Effect.fail(libraryPagesError("unavailable"));
   const unavailable = (enabled: boolean) => {
-    const blocked = Effect.fail(new LibraryError({ reason: "blocked" }));
+    const blocked = Effect.fail(
+      new LibraryError({
+        reason: "blocked",
+        detail: enabled ? LIBRARY_SIGN_IN_MISSING : LIBRARY_NOT_CONNECTED,
+      }),
+    );
     return LibraryPublisher.of({
       enabled,
       copyRegistrations,
@@ -391,7 +401,7 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
     if (credential !== null && info.environmentId !== credential.libraryEnvironmentId)
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_MISMATCH });
     if (info.computers !== undefined) {
       const descriptor = Option.isSome(descriptorService)
         ? yield* descriptorService.value.getDescriptor
@@ -408,7 +418,11 @@ const make = Effect.gen(function* () {
         : credential?.computer;
       if (computer !== undefined && computer !== null) {
         if (computer.environmentId !== (yield* sourceIdentity.getEnvironmentId))
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail:
+              "This Library sign-in belongs to another computer. Reconnect this computer to your Library, then try again.",
+          });
         yield* execute(
           HttpClientRequest.post(endpoint("/api/loom/library/computers/register")).pipe(
             HttpClientRequest.bodyText(

@@ -1,7 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { ArrowLeftIcon, ChevronRightIcon, CircleIcon, CheckIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  CheckIcon,
+} from "lucide-react";
 import { CommandPaletteContent } from "~/components/CommandPaletteContent";
+import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
@@ -24,6 +33,8 @@ export interface LibraryPaletteItem {
   readonly selected?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly select: () => void;
+  /** What Enter does on this row, named in the footer while the row is highlighted. */
+  readonly enterLabel?: string | undefined;
   /** A second step reached from the row's chevron or Right Arrow, while Enter runs `select`. */
   readonly options?: (() => void) | undefined;
 }
@@ -72,6 +83,7 @@ export function LibraryPaletteView({
   children,
   footerHints,
 }: {
+  /** Replaces the keys the footer names, for pages whose keys do not follow the rows. */
   readonly footerHints?: ReactNode;
   readonly title: string;
   readonly placeholder: string;
@@ -142,6 +154,8 @@ export function LibraryPaletteView({
       item.select();
     },
   }));
+  const enterLabel = selected?.enterLabel ?? "Select";
+  const escapeLabel = onBack ? "Back" : "Close";
   return (
     <CommandPaletteContent
       mode="none"
@@ -161,10 +175,46 @@ export function LibraryPaletteView({
         const id = typeof value === "string" ? value : null;
         setHighlight((previous) => ({ id, choice: reason === "none" ? previous.choice : id }));
       }}
-      footerActionLabel="Select"
-      footerHints={footerHints}
+      footerActionLabel={enterLabel}
+      // The default footer has no Right Arrow hint, so a row with options lists every key.
+      footerHints={
+        footerHints ??
+        (selected?.options ? (
+          <>
+            <KbdGroup>
+              <Kbd>
+                <ArrowUpIcon />
+              </Kbd>
+              <Kbd>
+                <ArrowDownIcon />
+              </Kbd>
+              <span>Navigate</span>
+            </KbdGroup>
+            <KbdGroup>
+              <Kbd>Enter</Kbd>
+              <span>{enterLabel}</span>
+            </KbdGroup>
+            <KbdGroup>
+              <Kbd>
+                <ArrowRightIcon />
+              </Kbd>
+              <span>Options</span>
+            </KbdGroup>
+            {onBack ? (
+              <KbdGroup>
+                <Kbd>Backspace</Kbd>
+                <span>Back</span>
+              </KbdGroup>
+            ) : null}
+            <KbdGroup>
+              <Kbd>Esc</Kbd>
+              <span>{escapeLabel}</span>
+            </KbdGroup>
+          </>
+        ) : undefined)
+      }
       showBackHint={!!onBack}
-      escapeLabel={onBack ? "Back" : "Close"}
+      escapeLabel={escapeLabel}
       inputAccessory={
         onBack ? (
           <button

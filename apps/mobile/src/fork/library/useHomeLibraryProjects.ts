@@ -15,8 +15,8 @@ export function isLibraryProjectScopeKey(key: string | null): boolean {
 
 /**
  * Library additions to the Home thread list: saved Library projects join the project filter,
- * a selected Library project starts a host-bound conversation, and a thread on a computer that
- * is not connected opens its saved Library history when one exists.
+ * a selected Library project leads New task, and a thread on a computer that is not connected
+ * opens its saved Library history when one exists.
  */
 export function useHomeLibraryProjects(selectLiveThread: (thread: EnvironmentThreadShell) => void) {
   const navigation = useNavigation();
@@ -62,15 +62,18 @@ export function useHomeLibraryProjects(selectLiveThread: (thread: EnvironmentThr
     selectLiveThread(thread);
   };
 
-  /** Opens a Library conversation for a Library scope key; returns false for any other key. */
-  const startConversation = (projectKey: string | null): boolean => {
+  /**
+   * Opens New task, led by the project a Library scope key selects. The filter only suggests it, as
+   * on web, so the other projects and No project stay offered beside it.
+   */
+  const startConversation = (projectKey: string | null) => {
     const scope = parseLibraryProjectScope(projectKey);
-    if (!scope) return false;
-    navigation.navigate("LibraryStart", {
-      projectId: scope.projectId,
-      ...(scope.resourceId ? { initialResourceId: scope.resourceId } : {}),
-    });
-    return true;
+    navigation.navigate(
+      "NewTaskSheet",
+      scope
+        ? { screen: "NewTask", params: { libraryProjectId: scope.projectId } }
+        : { screen: "NewTask" },
+    );
   };
 
   return { filterOptions, selectThread, startConversation };

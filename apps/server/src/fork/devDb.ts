@@ -5,7 +5,10 @@ import * as SqlClient from "effect/sql/SqlClient";
  * Loom tables whose rows name the live install's own resources: lane images, ports and
  * leases, run folders, evidence files and graph folders. `migrate-dev-db` leaves them empty,
  * because a dev server reconciling copied rows would stop, clean or delete those real
- * resources.
+ * resources. The Library history journal belongs to the live computer and its Library too: a
+ * dev server has its own environment id, so a copied journal fails its fence on every pass and
+ * the dev server never publishes history. Left empty, with its numbering, it starts a journal of
+ * its own whose first entry is the 1 a new journal must begin with.
  */
 export const FORK_LIVE_RESOURCE_TABLES: ReadonlyArray<string> = [
   "fork_project_lifecycle_lanes",
@@ -13,6 +16,12 @@ export const FORK_LIVE_RESOURCE_TABLES: ReadonlyArray<string> = [
   "fork_device_qa_runs",
   "fork_device_qa_evidence",
   "fork_code_graph_projects",
+  "fork_library_source_state",
+  "fork_library_source_outbox",
+  "fork_library_source_threads",
+  "fork_library_source_baselines",
+  "fork_library_source_activity",
+  "fork_library_source_assets",
 ];
 
 /** Why a copied run, batch or pipeline run stopped, as its run history shows it. */

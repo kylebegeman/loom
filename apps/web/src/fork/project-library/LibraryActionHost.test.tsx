@@ -11,6 +11,9 @@ const state = vi.hoisted(() => ({
   copies: [] as LibraryWorkingCopy[],
   libraryCopies: [] as LibraryWorkingCopy[],
   pending: false,
+  // `command:environment` grants this browser lacks.
+  denied: new Set<string>(),
+  features: ["project-library"],
   navigate: vi.fn(),
   select: vi.fn(),
   refresh: vi.fn(),
@@ -47,6 +50,11 @@ vi.mock("./ConversationPalette", async () => {
 });
 vi.mock("./state", async () => {
   const { useSyncExternalStore } = await import("react");
+  const { Atom } = await import("effect/reactivity");
+  const guarded = (name: string) => ({
+    permissionAtom: (environmentId: string) =>
+      Atom.make(!state.denied.has(`${name}:${environmentId}`)),
+  });
   // The real hooks read atoms that re-render their reader. Compiled, the harness hands back the
   // same host element when only this state changes, so the mocks must subscribe the same way.
   const useRevision = () =>
@@ -61,6 +69,11 @@ vi.mock("./state", async () => {
     projectLibrary: {
       threadIndex: (target: object) => ({ kind: "threadIndex", ...target }),
       copies: (target: object) => ({ kind: "copies", ...target }),
+      bindThread: guarded("bindThread"),
+      executeOperation: guarded("executeOperation"),
+      prepareCopy: guarded("prepareCopy"),
+      registerThread: guarded("registerThread"),
+      registerCopy: guarded("registerCopy"),
     },
     useSelectedLibraryProject: () => [null, state.select],
     useLibraryProject: (id: string) => {
@@ -93,7 +106,7 @@ vi.mock("./state", async () => {
             serverConfig: {
               settings: {},
               environment: {
-                capabilities: { supportsExecution: true, loomFeatures: ["project-library"] },
+                capabilities: { supportsExecution: true, loomFeatures: state.features },
               },
             },
           },
@@ -125,7 +138,12 @@ vi.mock("./LibraryPalette", () => ({
           ),
         )
         .map((item) => (
-          <button key={item.id} disabled={item.disabled} onClick={item.select}>
+          <button
+            key={item.id}
+            disabled={item.disabled}
+            onClick={item.select}
+            data-enter={item.enterLabel}
+          >
             {item.title}
           </button>
         ))}
@@ -137,7 +155,6 @@ vi.mock("./LibraryPalette", () => ({
           <button key={item.id} onClick={item.options}>{`Options ${item.title}`}</button>
         ) : null,
       )}
-      <footer>{props.footerHints}</footer>
     </div>
   ),
 }));
@@ -163,6 +180,7 @@ vi.mock("./ImportProjectDialog", () => ({
       onBack={props.onBack}
       label="Folder"
       save={() => props.onSaved(state.projects[0]!, state.copies[0])}
+      details={JSON.stringify({ initialRootPath: props.initialRootPath })}
     />
   ),
 }));
@@ -306,6 +324,8 @@ beforeEach(async () => {
   state.copies = [copy];
   state.libraryCopies = [];
   state.pending = false;
+  state.denied = new Set();
+  state.features = ["project-library"];
   state.noProject = { label: "Dorothy", start: vi.fn(async () => {}) };
   vi.clearAllMocks();
   container = document.createElement("div");
@@ -365,6 +385,29 @@ it("preserves a new project draft across Back and continues into conversation se
   await click("Save");
   expect(launch().project.id).toBe(project.id);
   expect(state.navigate).not.toHaveBeenCalled();
+  // A saved project leaves no draft to return to.
+  await click("Back");
+  await click("New project");
+  expect(input("Project name").value).toBe("");
+});
+it("opens Add existing folder on the browser, keeps a folder in progress, and starts fresh after a save", async () => {
+  await act(() => openLibraryAction("new-conversation"));
+  await type("Search projects", "/work/typed");
+  await click("Use folder: typed");
+  expect(launch().initialRootPath).toBe("/work/typed");
+  await click("Back");
+  await type("Search projects", "");
+  await click("Add existing folder");
+  expect(launch().initialRootPath).toBe("");
+  await type("Folder", "/work/browsed");
+  await click("Back");
+  await click("Add existing folder");
+  expect(input("Folder").value).toBe("/work/browsed");
+  // The saved folder's checks from before the save must not answer the next pick.
+  await click("Save");
+  await click("Back");
+  await click("Add existing folder");
+  expect(input("Folder").value).toBe("");
 });
 it("starts on the folder just added with the project's defaults", async () => {
   // A project made with the folder is not in the catalog yet.
@@ -473,13 +516,21 @@ it("offers No project only when the chooser starts a conversation", async () => 
   await click("Back");
   expect(button("Alpha")).toBeDefined();
   expect(button("No project")).toBeUndefined();
+  // Here Enter opens the project, so neither start nor options are named.
+  expect(button("Alpha").dataset.enter).toBeUndefined();
+  expect(button("Options Alpha")).toBeUndefined();
 });
 
 it("starts a ready project from Enter with the defaults its row shows, and offers its settings", async () => {
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   await act(() => openLibraryAction("new-conversation"));
   expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
-  expect(container.querySelector("footer")!.textContent).toContain("Options");
+  // Enter is named for what it does on each row: Alpha cannot start yet, so it opens settings.
+  expect(
+    ["No project", "Beta", "Alpha", "New project", "Add existing folder"].map(
+      (title) => button(title).dataset.enter,
+    ),
+  ).toEqual(["Start", "Start", "Options", undefined, undefined]);
   await click("Beta");
   expect(launch()).toMatchObject({
     project: { id: second.id },
@@ -533,7 +584,7 @@ it("leads with the project where the user is, without opening its settings", asy
   expect(launch().initialCopyId).toBeUndefined();
   expect(launch().initialResourceIds).toBeUndefined();
 });
-it("starts a suggested project with only what its row shows, and keeps the source for Options", async () => {
+it("starts and opens options for a suggested project on only what its row shows", async () => {
   state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
   const source = { environmentId: EnvironmentId.make("laptop"), workingCopyId: "source-copy" };
   await act(() =>
@@ -545,22 +596,66 @@ it("starts a suggested project with only what its row shows, and keeps the sourc
     ),
   );
   expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
+  // The source thread's computer, copy and repository never replace what the row named.
   await click("Options Beta");
-  expect(launch()).toMatchObject({
-    initialHostId: "laptop",
-    initialCopyId: "source-copy",
-    initialResourceId: "web",
-    autoStart: null,
-  });
+  expect(launch()).toMatchObject({ initialHostId: "dorothy", autoStart: null });
+  expect(launch().initialCopyId).toBeUndefined();
+  expect(launch().initialResourceId).toBeUndefined();
   await click("Back");
   await click("Beta");
-  // The source thread's copy and repository never ride along on the start the row promised.
   expect(launch()).toMatchObject({
     initialHostId: "dorothy",
     autoStart: { launch: { environmentId: "dorothy", workingCopyId: "beta-copy" } },
   });
   expect(launch().initialCopyId).toBeUndefined();
   expect(launch().initialResourceId).toBeUndefined();
+});
+it("opens a promised row's options on the computer it named, and keeps them on return", async () => {
+  state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
+  await act(() => openLibraryAction("new-conversation"));
+  await click("Options Beta");
+  expect(launch()).toMatchObject({
+    project: { id: second.id },
+    initialHostId: "dorothy",
+    autoStart: null,
+  });
+  await type("Conversation title", "My draft");
+  await click("Back");
+  await click("Options Beta");
+  expect(input("Conversation title").value).toBe("My draft");
+  // Without a promise the settings choose the computer themselves.
+  await click("Back");
+  await click("Options Alpha");
+  expect(launch().project.id).toBe(project.id);
+  expect(launch().initialHostId).toBeUndefined();
+});
+it.each([
+  { denied: "bindThread:dorothy" },
+  { denied: "registerThread:library" },
+  { denied: "executeOperation:dorothy", features: ["project-workflows"] },
+  { denied: "prepareCopy:dorothy" },
+  { denied: "registerCopy:library" },
+])("promises no start the settings would refuse without $denied", async (grant) => {
+  state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
+  state.denied = new Set([grant.denied]);
+  state.features = ["project-library", ...(grant.features ?? [])];
+  await act(() => openLibraryAction("new-conversation"));
+  expect(container.textContent).not.toContain("Dorothy · GPT 6.0 Astra");
+  expect(button("Beta").dataset.enter).toBe("Options");
+  await click("Beta");
+  expect(launch().autoStart).toBeNull();
+});
+it("still promises a start that needs none of the missing grants", async () => {
+  // Loom manages this copy, so it is not prepared again, and this computer launches without
+  // durable operations.
+  state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id, ownership: "managed" }];
+  state.denied = new Set([
+    "prepareCopy:dorothy",
+    "registerCopy:library",
+    "executeOperation:dorothy",
+  ]);
+  await act(() => openLibraryAction("new-conversation"));
+  expect(container.textContent).toContain("Dorothy · GPT 6.0 Astra · Full access");
 });
 it("hides a suggested project that no longer loads instead of reporting an error", async () => {
   state.projects = [project];

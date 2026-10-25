@@ -761,6 +761,70 @@ describe("Library start progressive disclosure", () => {
     expect(state.create.mock.calls[0]![0].input.commandId).not.toContain("saved-request");
   });
 
+  it("starts over on the dropped attempt's computer, model, permissions and folder", async () => {
+    state.copies = [];
+    state.preferences = {
+      [JSON.stringify(["library", project.id, "new"])]: encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "saved-request",
+        threadId: ThreadId.make("saved-thread"),
+        receipt: {
+          ...emptyLibraryLaunchReceipt(),
+          intent: {
+            project,
+            executionEnvironmentId: computerA,
+            resourceIds: [],
+            threadId: ThreadId.make("saved-thread"),
+          },
+        },
+        review: {
+          authorityEnvironmentId: EnvironmentId.make("library"),
+          model: {
+            key: "codex:custom",
+            selection: { instanceId: ProviderInstanceId.make("codex"), model: "custom" },
+          },
+          title: "Ship the new flow",
+          mode: "clone",
+          rootPath: "/Work/Loom",
+          copy: null,
+          carryContext: "",
+          keepOnComputer: true,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        },
+      }),
+    };
+    await render();
+    await click("Start over");
+    expect(state.preferences).toEqual({});
+    expect(button("Computer").disabled).toBe(false);
+    // Ranked alone, the Mac mini would lead.
+    expect(button("Computer").textContent).toContain("MacBook");
+    expect(button("Agent model").textContent).toContain("Codex: custom");
+    await click("Files");
+    // The computer may still be preparing this folder, so a second one is never suggested.
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Project folder on selected computer"]',
+      )!.value,
+    ).toBe("/Work/Loom");
+    await click("Start work");
+    expect(state.launch.mock.calls[0]![0].executionEnvironmentId).toBe(computerA);
+    expect(state.prepare).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ rootPath: "/Work/Loom", strategy: "clone" }),
+    });
+    expect(state.create).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({
+        title: "Ship the new flow",
+        modelSelection: { instanceId: "codex", model: "custom" },
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+      }),
+    });
+  });
+
   it("keeps launch warnings and explicit safety actions visible while options are collapsed", async () => {
     state.warning = { message: "This copy is 2 commits behind.", pullPaths: ["/Projects/Loom"] };
     await render();

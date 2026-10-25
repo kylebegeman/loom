@@ -103,6 +103,7 @@ const PreparationAttempt = Schema.NullOr(
     registerRequestId: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
     keepOnComputer: Schema.optional(Schema.Boolean),
+    savedAt: Schema.optional(Schema.String),
   }),
 );
 const ReopeningAttempt = Schema.NullOr(
@@ -115,8 +116,10 @@ const ReopeningAttempt = Schema.NullOr(
     registerRequestId: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
     keepOnComputer: Schema.optional(Schema.Boolean),
+    savedAt: Schema.optional(Schema.String),
   }),
 );
+const UNTITLED_CONVERSATION = "New project conversation";
 type ReopeningFiles = NonNullable<typeof ReopeningAttempt.Type>;
 
 /** Keep the restored receipt across authority failures without restoring a second workspace. */
@@ -230,20 +233,24 @@ export function useLibraryConversationSetup({
   const clientSettings = useClientSettings();
   const navigate = useNavigate();
   const localProjects = useProjects();
+  // A continuation holds its own attempt, so an unfinished one never turns every later start in
+  // the project into its retry, replaying the archived conversation's title, context and link.
+  // Ordinary starts keep the bare key their attempts are already saved under.
+  const attemptScope = `${authority.authorityId}:${project.id}${continuation ? `:continue:${continuation.id}` : ""}`;
   const [attempt, saveAttempt] = useLibraryAttempt(
-    `loom:library:conversation:${authority.authorityId}:${project.id}`,
+    `loom:library:conversation:${attemptScope}`,
     ConversationAttempt,
   );
   const [preparation, savePreparation] = useLibraryAttempt(
-    `loom:library:launch-files:${authority.authorityId}:${project.id}`,
+    `loom:library:launch-files:${attemptScope}`,
     PreparationAttempt,
   );
   const [reopening, saveReopening] = useLibraryAttempt(
-    `loom:library:launch-reopen:${authority.authorityId}:${project.id}`,
+    `loom:library:launch-reopen:${attemptScope}`,
     ReopeningAttempt,
   );
   const [restoring, saveRestoring] = useLibraryAttempt(
-    `loom:library:launch-portable:${authority.authorityId}:${project.id}`,
+    `loom:library:launch-portable:${attemptScope}`,
     PortableLaunchAttempt,
   );
   const needsSourceReview =
@@ -672,7 +679,7 @@ export function useLibraryConversationSetup({
                 copy: null,
                 keepOnComputer,
                 launch: {
-                  title: title.trim() || "New project conversation",
+                  title: title.trim() || UNTITLED_CONVERSATION,
                   context,
                   modelSelection,
                   runtimeMode,
@@ -769,6 +776,7 @@ export function useLibraryConversationSetup({
                 registerRequestId: randomUUID(),
                 copy: null,
                 keepOnComputer,
+                savedAt: new Date().toISOString(),
               }
             : null);
         if (!files)
@@ -833,6 +841,7 @@ export function useLibraryConversationSetup({
             registerRequestId: randomUUID(),
             copy: null,
             keepOnComputer,
+            savedAt: new Date().toISOString(),
           };
           savePreparation(files);
         }
@@ -886,7 +895,7 @@ export function useLibraryConversationSetup({
               }
             : {}),
         },
-        title: title.trim() || "New project conversation",
+        title: title.trim() || UNTITLED_CONVERSATION,
         context,
         modelSelection,
         defaultsResolved: false,
@@ -1217,12 +1226,19 @@ export function useLibraryConversationSetup({
     ranking.candidates
       .find((candidate) => candidate.environmentId === environmentId && candidate.kind !== "mini")
       ?.toolProblems.join(", ") ?? "";
+  // A connection already on its way back needs no action, so it is not asked for.
+  const reconnecting = (phase: string | undefined) =>
+    phase === "connecting" || phase === "reconnecting";
   const blocker = !authority.connected
-    ? "Reconnect your Library before starting."
+    ? reconnecting(authority.environment?.connection.phase)
+      ? "Connecting to your Library..."
+      : "Reconnect your Library before starting."
     : !hostId
       ? "Choose a computer to run this conversation."
       : host?.connection.phase !== "connected"
-        ? "Reconnect the selected computer before starting."
+        ? reconnecting(host?.connection.phase)
+          ? `Connecting to ${host?.label ?? "the selected computer"}...`
+          : "Reconnect the selected computer before starting."
         : copiesReadiness === "loading"
           ? "Loading project files..."
           : copiesReadiness === "error"
@@ -1241,6 +1257,9 @@ export function useLibraryConversationSetup({
                         (!canCreate && !busy && !existingFolder
                           ? "Review the selected computer, files and connection permissions."
                           : null);
+  // Names what Retry replays. An attempt held before the conversation step saved no title, so it
+  // uses the one shown, which cannot change until Start over.
+  const heldTitle = attempt?.title ?? (title.trim() || UNTITLED_CONVERSATION);
   return {
     project,
     operationPhase,
@@ -1335,6 +1354,12 @@ export function useLibraryConversationSetup({
     needsReopen,
     needsPortable,
     locked,
+    held: locked
+      ? {
+          title: heldTitle === UNTITLED_CONVERSATION ? null : heldTitle,
+          savedAt: attempt?.createdAt ?? preparation?.savedAt ?? reopening?.savedAt ?? null,
+        }
+      : null,
     busy: busy || pulling,
     checking,
     canCreate,

@@ -5,11 +5,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+import type { OrchestrationProjectShell } from "@t3tools/contracts"; // fork: project-root-worktree
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path"; // fork: project-root-worktree
 
 import * as ServerConfig from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -17,6 +19,7 @@ import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
 
 function layer(input: {
   readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
@@ -341,4 +344,95 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
       ),
     ),
   );
+
+  // fork: project-root-worktree
+  const projectRoots: string[] = [];
+  it.effect("keeps a project's own folder when it is named as the worktree to remove", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const base = yield* fileSystem.realPath(
+        yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-project-root-worktree-" }),
+      );
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const repo = path.join(base, "repo");
+      yield* fileSystem.makeDirectory(repo);
+      const git = (args: ReadonlyArray<string>) =>
+        driver.execute({ operation: "test.setupRepo", cwd: repo, args });
+      yield* git(["init", "-b", "main"]);
+      yield* git([
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "i",
+      ]);
+      const worktree = (name: string) =>
+        git(["worktree", "add", "-b", name, path.join(base, name)]).pipe(
+          Effect.as(path.join(base, name)),
+        );
+
+      // The project was opened through a symlink, and its resolved folder is recorded as the
+      // thread's worktree.
+      const linked = yield* worktree("linked");
+      const projectLink = path.join(base, "project-link");
+      yield* fileSystem.symlink(linked, projectLink);
+      const own = yield* workflow
+        .removeWorktree({ cwd: projectLink, path: linked, force: true })
+        .pipe(Effect.flip);
+      expect(own).toMatchObject({ _tag: "GitCommandError", command: "worktree-guard" });
+      expect(own.detail).toContain("holds a project's own folder");
+      expect(yield* fileSystem.exists(path.join(linked, ".git"))).toBe(true);
+
+      // Another project lives inside the worktree.
+      const holding = yield* worktree("holding");
+      projectRoots.push(path.join(holding, "app"));
+      yield* fileSystem.makeDirectory(path.join(holding, "app"));
+      expect(
+        (yield* workflow
+          .removeWorktree({ cwd: repo, path: holding, force: true })
+          .pipe(Effect.flip)).command,
+      ).toBe("worktree-guard");
+      expect(yield* fileSystem.exists(path.join(holding, "app"))).toBe(true);
+
+      const separate = yield* worktree("separate");
+      yield* workflow.removeWorktree({ cwd: repo, path: separate, force: true });
+      expect(yield* fileSystem.exists(separate)).toBe(false);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        GitWorkflowService.layer.pipe(
+          Layer.provide(
+            Layer.mock(ProjectStore.ProjectStoreV2)({
+              listShells: () =>
+                Effect.succeed(
+                  projectRoots.map(
+                    (workspaceRoot) => ({ workspaceRoot }) as OrchestrationProjectShell,
+                  ),
+                ),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+              resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
+            }),
+          ),
+          Layer.provide(Layer.mock(GitManager.GitManager)({})),
+          Layer.provideMerge(GitVcsDriver.layer),
+          Layer.provideMerge(VcsProcess.layer),
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-root-worktree-" }).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+  // fork: project-root-worktree end
 });

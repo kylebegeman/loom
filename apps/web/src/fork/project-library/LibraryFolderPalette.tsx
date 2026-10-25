@@ -52,6 +52,9 @@ export function LibraryFolderPalette({
   const separator = Math.max(query.lastIndexOf("/"), query.lastIndexOf("\\"));
   const browsePath = typedPath ? ensureBrowseDirectoryPath(query.slice(0, separator + 1)) : path;
   const filter = typedPath ? query.slice(separator + 1) : query;
+  // The home folder the browser opens on is where browsing starts, not a choice. Its actions
+  // follow its folders so Enter on opening never adds the whole home folder.
+  const chosen = typedPath || history.length > 0 || path !== "~/";
   const listing = useEnvironmentQuery(
     access.canReadFiles
       ? filesystemEnvironment.browse({ environmentId, input: { partialPath: browsePath } })
@@ -82,6 +85,22 @@ export function LibraryFolderPalette({
       (!entry.name.startsWith(".") || filter.startsWith(".")) &&
       entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
   );
+  const folderActions: readonly LibraryPaletteItem[] = filter
+    ? []
+    : actions
+      ? actions(folder)
+      : [
+          {
+            id: "select-folder",
+            title: "Use this folder",
+            description: currentPath,
+            icon: <CheckIcon className="size-4" />,
+            disabled: !ready || !currentPath,
+            select: () => {
+              if (ready && currentPath) onSelect?.(currentPath);
+            },
+          },
+        ];
   return (
     <LibraryPaletteView
       title={`Folders on ${computerName}`}
@@ -111,22 +130,7 @@ export function LibraryFolderPalette({
           : listing.error)
       }
       items={[
-        ...(filter
-          ? []
-          : actions
-            ? actions(folder)
-            : [
-                {
-                  id: "select-folder",
-                  title: "Use this folder",
-                  description: currentPath,
-                  icon: <CheckIcon className="size-4" />,
-                  disabled: !ready || !currentPath,
-                  select: () => {
-                    if (ready && currentPath) onSelect?.(currentPath);
-                  },
-                },
-              ]),
+        ...(chosen ? folderActions : []),
         ...entries.map((entry) => ({
           id: entry.fullPath,
           title: entry.name,
@@ -135,6 +139,7 @@ export function LibraryFolderPalette({
           next: true,
           select: () => open(entry.fullPath),
         })),
+        ...(chosen ? [] : folderActions),
         ...(!filter && parentPath
           ? [
               {

@@ -311,10 +311,12 @@ Web Locks so several windows on one origin show one notification. While the shel
 after a reconnect nothing is known yet, so shown notifications stay and their clicks still
 open the thread. Its two upstream tests mark the mock changes and the added cases.
 
-`apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 8 marker lines) skips the Loom
-tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database. Their
-rows name the live install's lanes, run folders and graphs, and a dev server reconciling
-them would release leases, clear scratch or delete files that belong to the live install.
+`apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 9 marker lines) skips the Loom
+tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database, along
+with their AUTOINCREMENT counters. Their rows name the live install's lanes, run folders and
+graphs, and a dev server reconciling them would release leases, clear scratch or delete files
+that belong to the live install. The live computer's Library history journal is skipped too:
+it is fenced to that computer's environment id, so a copy never publishes.
 Add a table there when a feature stores host resources it later cleans up. The same helpers
 rebuild the Library's full-text search tables in the copy and stop copied bot work, so a dev
 server never runs the developer's bots.
@@ -343,9 +345,10 @@ On mobile, `NewTaskRouteScreen.tsx` (8 marker lines) moves the No project row ab
 Library and local projects, shows it whenever a computer can run it, and names that computer.
 `new-task-flow-provider.tsx` (2 marker lines) and `usePromptLinkResolver.ts` (2 marker lines)
 filter the scratch draft's computer list and prompt-link candidates through
-`noProjectWorkspaceRoot`, so neither offers a Library. `createWorkspaceStackNavigator.ios.tsx`
-(1 marker line) sends the iOS compose button to the New task picker unless a Library project
-is on screen.
+`noProjectWorkspaceRoot`, so neither offers a Library. The compose button always opens the
+New task picker, and a Library project on screen leads it: `createWorkspaceStackNavigator.ios.tsx`
+(4 marker lines) on iOS and `AndroidWorkspaceNavigation.android.tsx` (12) on Android pass that
+project as `libraryProjectId`.
 
 L112 `identity-renewal` seams let desktop and iPhone renew Identity sessions on their own. On the
 server, `SessionStore.ts` (17 marker lines) links a renewed session to the one it replaces and
@@ -425,7 +428,11 @@ either way. Desktop uses the same in-app dialog, so it needs no seam. Unset keep
 
 The `project-root-worktree` seam in `useThreadActions.ts` (2) keeps thread deletion from offering
 to remove a project's own folder. Library conversations record that folder as their worktree
-path, so upstream's check alone would treat it as a worktree only that thread uses.
+path, so upstream's check alone would treat it as a worktree only that thread uses. The server
+refuses the removal too: `GitWorkflowService.ts` (5) compares folders on disk, so a project
+opened through a symlink or with different case is still recognised, and also refuses a
+worktree that holds any project's folder. `server.ts` (1) gives it `ProjectStore` for that list,
+and `GitWorkflowService.test.ts` (5) marks its cases.
 
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
