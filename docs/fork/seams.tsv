@@ -913,3 +913,4 @@ apps/web/src/components/settings/SettingsPanels.tsx	machine-updates	5
 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx	machine-updates	1
 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	machine-updates	9
 packages/contracts/src/ipc.ts	machine-updates	3
+apps/server/src/mcp/toolkits/orchestrator/tools.ts	ext-vault	1
