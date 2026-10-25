@@ -12,7 +12,11 @@ import {
   CommandId,
   ThreadId,
 } from "@t3tools/contracts";
-import type { LibraryProject } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryWorkingCopy,
+  LibraryThreadSummary,
+} from "@t3tools/contracts/fork";
 import { useMemo, useRef } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -39,7 +43,12 @@ import {
   sourceConversationSettings,
   type LibrarySourceContext,
 } from "./librarySourceLaunch";
-import { library, useLibraryAuthority } from "./libraryState";
+import {
+  library,
+  useLibraryAuthority,
+  useLibraryStartProjects,
+  useLibraryStartCopies,
+} from "./libraryState";
 import { libraryStartDefaults, type LibraryStartDefaults } from "./libraryStartDefaults";
 
 /** Library projects use their normal computer and files form without inheriting a thread. */
@@ -49,19 +58,8 @@ export function useNewTaskLibraryProjects(input: {
   readonly suggestedProjectId?: string | undefined;
 }) {
   const authority = useLibraryAuthority();
-  const sharedProjects = useEnvironmentQuery(
-    authority.environmentId
-      ? library.projects({
-          environmentId: authority.environmentId,
-          input: { includeArchived: false },
-        })
-      : null,
-  );
-  const sharedCopies = useEnvironmentQuery(
-    authority.environmentId
-      ? library.copies({ environmentId: authority.environmentId, input: {} })
-      : null,
-  );
+  const sharedProjects = useLibraryStartProjects();
+  const sharedCopies = useLibraryStartCopies();
   const recent = useEnvironmentQuery(
     authority.environmentId
       ? library.threadIndex({ environmentId: authority.environmentId, input: { limit: 200 } })
@@ -85,6 +83,30 @@ export function useNewTaskLibraryProjects(input: {
   );
   const holdsLocalRefs = (refs: readonly { environmentId: string; projectId: string }[]) =>
     libraryHoldsLocalRefs([], refs, sharedCopies.data ?? []);
+  const starts = useLibraryProjectStarts(
+    sharedProjects.data ?? [],
+    sharedCopies.data ?? [],
+    recent.data?.threads ?? [],
+  );
+
+  const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));
+  return {
+    // The project in view only leads, as on web: every other project and No project stay a tap
+    // away, and a suggestion the catalog no longer lists is left out rather than reported.
+    suggested: rows.filter((row) => row.project.id === input.suggestedProjectId),
+    choices: rows.filter((row) => row.project.id !== input.suggestedProjectId),
+    error: sharedProjects.error,
+    holdsLocalRefs,
+  };
+}
+
+/** Project pages reuse their own query results instead of reading the whole catalog again. */
+export function useLibraryProjectStarts(
+  projects: readonly LibraryProject[],
+  copies: readonly LibraryWorkingCopy[],
+  threads: readonly LibraryThreadSummary[],
+) {
+  const authority = useLibraryAuthority();
   const { environments } = useEnvironments();
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
   const terminal = useEnvironmentsWithScope(environments, AuthTerminalOperateScope);
@@ -112,17 +134,18 @@ export function useNewTaskLibraryProjects(input: {
       };
     });
     return new Map(
-      (sharedProjects.data ?? []).map((project) => [
+      projects.map((project) => [
         project.id,
         libraryStartDefaults({
           project,
-          copies: sharedCopies.data ?? [],
-          threads: recent.data?.threads ?? [],
+          copies,
+          threads,
           hosts,
           remembered: authority.computers,
           operable,
           terminal,
           libraryOperable,
+          offline: !authority.connected,
           configs,
           localProject: (environmentId, projectId) =>
             localProjects.find(
@@ -132,9 +155,9 @@ export function useNewTaskLibraryProjects(input: {
       ]),
     );
   }, [
-    sharedProjects.data,
-    sharedCopies.data,
-    recent.data,
+    projects,
+    copies,
+    threads,
     environments,
     operable,
     terminal,
@@ -142,17 +165,10 @@ export function useNewTaskLibraryProjects(input: {
     configs,
     localProjects,
     authority.computers,
+    authority.connected,
   ]);
 
-  const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));
-  return {
-    // The project in view only leads, as on web: every other project and No project stay a tap
-    // away, and a suggestion the catalog no longer lists is left out rather than reported.
-    suggested: rows.filter((row) => row.project.id === input.suggestedProjectId),
-    choices: rows.filter((row) => row.project.id !== input.suggestedProjectId),
-    error: sharedProjects.error,
-    holdsLocalRefs,
-  };
+  return starts;
 }
 
 /**
@@ -241,13 +257,22 @@ export function useNewTaskFromSource() {
     const open = async () => {
       const host = environments.find((entry) => entry.environmentId === source.environmentId);
       if (authority.environmentId) {
-        const live =
-          host?.connection.phase === "connected" &&
-          supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library")
-            ? await binding({ environmentId: source.environmentId, input: { threadId: source.id } })
-            : null;
+        const hostReady =
+          host?.entry.enabled === true &&
+          host.connection.phase === "connected" &&
+          supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library");
+        if (!authority.connected && !hostReady) {
+          navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+          return;
+        }
+        const catalogEnvironment = authority.connected
+          ? authority.environmentId
+          : source.environmentId;
+        const live = hostReady
+          ? await binding({ environmentId: source.environmentId, input: { threadId: source.id } })
+          : null;
         let context: LibrarySourceContext | null = live?._tag === "Success" ? live.value : null;
-        if (!context) {
+        if (!context && authority.connected) {
           const saved = await lookup({
             environmentId: authority.environmentId,
             input: { sourceEnvironmentId: source.environmentId, threadId: source.id },
@@ -255,19 +280,17 @@ export function useNewTaskFromSource() {
           if (saved._tag === "Success" && saved.value) context = saved.value;
         }
         if (!context) {
-          const registered = await copies({ environmentId: authority.environmentId, input: {} });
-          if (registered._tag === "Success")
-            context = librarySourceProjectContext(source, registered.value);
+          const registered = await copies({ environmentId: catalogEnvironment, input: {} });
+          if (registered._tag === "Failure") throw squashAtomCommandFailure(registered);
+          context = librarySourceProjectContext(source, registered.value);
         }
         if (context) {
           const shared = await project({
-            environmentId: authority.environmentId,
+            environmentId: catalogEnvironment,
             input: { projectId: context.projectId },
           });
-          const params =
-            shared._tag === "Success"
-              ? librarySourceLaunchParams(source, context, shared.value)
-              : null;
+          if (shared._tag === "Failure") throw squashAtomCommandFailure(shared);
+          const params = librarySourceLaunchParams(source, context, shared.value);
           if (params) {
             navigation.navigate("LibraryStart", params);
             return;

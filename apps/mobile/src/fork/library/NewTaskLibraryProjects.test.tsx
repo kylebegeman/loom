@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   switchRef: vi.fn(),
   create: vi.fn(),
   online: true,
+  libraryOnline: true,
   projects: [] as LibraryProject[],
 }));
 vi.mock("@react-navigation/native", () => ({
@@ -30,7 +31,13 @@ vi.mock("@react-navigation/native", () => ({
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
 vi.mock("./libraryState", () => ({
-  useLibraryAuthority: () => ({ environmentId: "library", computers: [] }),
+  useLibraryAuthority: () => ({
+    environmentId: "library",
+    connected: state.libraryOnline,
+    computers: [],
+  }),
+  useLibraryStartProjects: () => ({ data: state.projects, error: null }),
+  useLibraryStartCopies: () => ({ data: [], error: null }),
   library: {
     projects: () => "projects",
     threadIndex: () => "thread-index",
@@ -179,6 +186,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
   state.online = true;
+  state.libraryOnline = true;
   state.binding.mockResolvedValue(AsyncResult.success(binding));
   state.lookup.mockResolvedValue(AsyncResult.success(null));
   state.copies.mockResolvedValue(AsyncResult.success([]));
@@ -282,19 +290,20 @@ describe("mobile source launch actions", () => {
   });
 
   it.each(["feature/source", null])(
-    "preserves an explicit worktree with branch %s",
+    "preserves an explicit worktree outside the Library with branch %s",
     async (branch) => {
+      state.binding.mockResolvedValue(AsyncResult.success(null));
       await mount();
       await act(() => launch({ ...source, branch, worktreePath: "/lanes/source" }));
       expectFreshConversation(branch, "/lanes/source");
-      expect(state.binding).not.toHaveBeenCalled();
-      expect(state.lookup).not.toHaveBeenCalled();
+      expect(state.binding).toHaveBeenCalledOnce();
       expect(state.readRefs).not.toHaveBeenCalled();
       expect(state.switchRef).not.toHaveBeenCalled();
     },
   );
 
-  it("reuses the occupied worktree for an explicit source branch before creating fresh history", async () => {
+  it("reuses the occupied worktree for a source branch outside the Library before creating fresh history", async () => {
+    state.binding.mockResolvedValue(AsyncResult.success(null));
     state.readRefs.mockResolvedValue(
       AsyncResult.success({
         refs: [
@@ -312,11 +321,12 @@ describe("mobile source launch actions", () => {
     await mount();
     await act(() => launch({ ...source, branch: "feature/source" }));
     expectFreshConversation("feature/source", "/lanes/source");
-    expect(state.binding).not.toHaveBeenCalled();
+    expect(state.binding).toHaveBeenCalledOnce();
     expect(state.switchRef).not.toHaveBeenCalled();
   });
 
   it("does not create a conversation after a source branch checkout fails", async () => {
+    state.binding.mockResolvedValue(AsyncResult.success(null));
     state.readRefs.mockResolvedValue(AsyncResult.success({ refs: [], nextCursor: null }));
     state.switchRef.mockResolvedValue(
       AsyncResult.failure(Cause.fail(new Error("Checkout failed"))),
@@ -373,4 +383,20 @@ describe("mobile New task Library choices", () => {
     expect(ids(shown!.suggested)).toEqual([]);
     expect(ids(shown!.choices)).toEqual(["newer"]);
   });
+});
+
+it("opens a source conversation's Library form from the execution computer during an outage", async () => {
+  state.libraryOnline = false;
+  await mount();
+  await act(() => launch(source));
+  expect(state.project).toHaveBeenCalledExactlyOnceWith({
+    environmentId: source.environmentId,
+    input: { projectId: project.id },
+  });
+  expect(state.lookup).not.toHaveBeenCalled();
+  expect(state.navigate).toHaveBeenCalledWith(
+    "LibraryStart",
+    expect.objectContaining({ projectId: project.id, initialCopyId: binding.workingCopyId }),
+  );
+  expect(state.create).not.toHaveBeenCalled();
 });

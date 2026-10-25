@@ -58,6 +58,7 @@ import * as DeletedThreadHistory from "./deleted-history/DeletedThreadHistory.ts
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
+import * as LibraryLocalCatalog from "./project-library/LibraryLocalCatalog.ts";
 import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
 import * as LibraryLaunchCandidates from "./project-library/LibraryLaunchCandidates.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
@@ -220,6 +221,7 @@ const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
 );
 const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHttpClient.layer));
 const layerLibraryService = LibraryService.layer.pipe(
+  Layer.provide(LibraryLocalCatalog.layer.pipe(Layer.provide(LibraryWorkspaceStore.layer))),
   Layer.provide(layerLibraryAssets),
   Layer.provide(layerLibraryRecovery),
 );

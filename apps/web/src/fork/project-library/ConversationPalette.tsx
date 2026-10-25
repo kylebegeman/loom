@@ -600,6 +600,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         page === "start"
           ? (s.blocker ??
             s.warning?.message ??
+            s.offlineNotice ??
             (promise && conversationAutoStart(s, promise) === "changed"
               ? "These settings differ from what the project list showed. Review them, then start."
               : undefined))

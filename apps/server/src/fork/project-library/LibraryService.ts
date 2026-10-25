@@ -61,6 +61,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryStore from "./LibraryStore.ts";
+import * as LibraryLocalCatalog from "./LibraryLocalCatalog.ts";
 import { applyHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -257,6 +258,7 @@ const make = Effect.gen(function* () {
     Config.withDefault(false),
   );
   const store = yield* LibraryStore.LibraryStore;
+  const localCatalog = yield* Effect.serviceOption(LibraryLocalCatalog.LibraryLocalCatalog);
   const fs = yield* FileSystem.FileSystem;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
@@ -1257,26 +1259,33 @@ const make = Effect.gen(function* () {
         codecs.briefProposal,
         briefs.dismiss(input),
       ),
-    project: (input) => catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
+    project: (input) =>
+      !isAuthority && Option.isSome(localCatalog)
+        ? localCatalog.value.project(input)
+        : catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
     projects: (input) =>
-      catalogRead(
-        store.projects(input.includeArchived ?? false).pipe(
-          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.project, row))),
-          Effect.mapError(io),
-        ),
-      ),
-    copies: (input) =>
-      catalogRead(
-        store.copies(input.projectId).pipe(
-          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.copy, row))),
-          Effect.map((copies) =>
-            input.includeReleased === true
-              ? copies
-              : copies.filter((copy) => copy.registered !== false && copy.state !== "released"),
+      !isAuthority && Option.isSome(localCatalog)
+        ? localCatalog.value.projects(input)
+        : catalogRead(
+            store.projects(input.includeArchived ?? false).pipe(
+              Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.project, row))),
+              Effect.mapError(io),
+            ),
           ),
-          Effect.mapError(io),
-        ),
-      ),
+    copies: (input) =>
+      !isAuthority && Option.isSome(localCatalog)
+        ? localCatalog.value.copies(input)
+        : catalogRead(
+            store.copies(input.projectId).pipe(
+              Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.copy, row))),
+              Effect.map((copies) =>
+                input.includeReleased === true
+                  ? copies
+                  : copies.filter((copy) => copy.registered !== false && copy.state !== "released"),
+              ),
+              Effect.mapError(io),
+            ),
+          ),
     threads: (input) =>
       catalogRead(
         store.threads(input.projectId, 2147483647, 0).pipe(

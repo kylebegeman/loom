@@ -120,11 +120,13 @@ export function useLibraryNewConversation() {
       return true;
     }
     if (!result || !result.value) {
-      const saved = await lookup({
-        environmentId: authority.authorityId,
-        input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
-      });
-      if (saved._tag === "Success" && saved.value) {
+      const saved = authority.connected
+        ? await lookup({
+            environmentId: authority.authorityId,
+            input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
+          })
+        : null;
+      if (saved?._tag === "Success" && saved.value) {
         openLibraryAction(
           "new-conversation",
           saved.value.projectId,
@@ -142,7 +144,7 @@ export function useLibraryNewConversation() {
         );
         return true;
       }
-      if (saved._tag === "Failure") {
+      if (saved?._tag === "Failure") {
         openLibraryAction("new-conversation");
         return true;
       }
@@ -151,7 +153,14 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      const copies = await loadCopies({ environmentId: authority.authorityId, input: {} });
+      if (!authority.connected && !connected) {
+        openLibraryAction("new-conversation");
+        return true;
+      }
+      const copies = await loadCopies({
+        environmentId: authority.connected ? authority.authorityId : thread.environmentId,
+        input: {},
+      });
       if (copies._tag === "Failure") {
         openLibraryAction("new-conversation");
         return true;

@@ -123,7 +123,6 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useLibraryLocalProjectStart } from "../fork/project-library/libraryLocalProjectStart"; // fork: library-projects
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -1258,7 +1257,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     isManualProjectSorting,
     dragHandleProps,
   } = props;
-  const startLibraryFolder = useLibraryLocalProjectStart(); // fork: library-projects
   const environmentMachine = project.allRemoteMembersAreWsl
     ? "linux"
     : project.allRemoteMembersAreDesktopLocal
@@ -1917,14 +1915,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   };
 
   const createThreadForProjectMember = (member: SidebarProjectGroupMember) => {
+    // fork: library-projects
     if (isMobile) {
       setOpenMobile(false);
     }
     // fork: library-projects - a Library project's folder starts through the Library, linked.
-    if (startLibraryFolder(scopeProjectRef(member.environmentId, member.id))) return;
     void (async () => {
-      const result = await settlePromise(() =>
-        handleNewThread(scopeProjectRef(member.environmentId, member.id)),
+      const result = await settlePromise(
+        () => handleNewThread(scopeProjectRef(member.environmentId, member.id)), // fork: library-projects
       );
       if (result._tag === "Failure") {
         const error = squashAtomCommandFailure(result);

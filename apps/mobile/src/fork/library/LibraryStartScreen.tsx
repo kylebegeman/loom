@@ -1,3 +1,4 @@
+import { useLibraryStartProject, useLibraryStartCopies } from "./libraryState";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   StackActions,
@@ -114,14 +115,7 @@ export function LibraryStartRouteScreen({
   // Start over remounts the screen without the attempt it drops, but with that attempt's choices.
   // Every attempt has its own request id, so each Start over remounts.
   const [restart, setRestart] = useState<typeof LibraryLaunchAttempt.Type | null>(null);
-  const project = useEnvironmentQuery(
-    authority.environmentId
-      ? library.project({
-          environmentId: authority.environmentId,
-          input: { projectId: route.params.projectId },
-        })
-      : null,
-  );
+  const project = useLibraryStartProject(route.params.projectId);
   useFocusEffect(
     useCallback(() => {
       if (!authority.environmentId || !authority.connected || !authority.canRead) return;
@@ -330,14 +324,7 @@ function LibraryStartContent(props: {
     resourceIds =
       progress.intent?.resourceIds ??
       (scope === "all" ? repositories.map((resource) => resource.id) : [scope]);
-  const copies = useEnvironmentQuery(
-    authority.environmentId
-      ? library.copies({
-          environmentId: authority.environmentId,
-          input: { projectId: props.project.id, includeReleased: true },
-        })
-      : null,
-  );
+  const copies = useLibraryStartCopies(props.project.id, true);
   const [carryInput, setCarryContext] = useState<string | null>(seed?.review.carryContext ?? null);
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const copiesState = libraryListState(copies);
@@ -596,13 +583,26 @@ function LibraryStartContent(props: {
     supportsLoomFeature(selectedHost.serverConfig?.environment.capabilities, "project-library") &&
     execution !== null &&
     operable.has(execution);
+  const offline = !authority.connected;
+  const offlineCopy = progress.copy ?? selectedCopy;
+  const offlineReady =
+    offline &&
+    mode === "reuse" &&
+    offlineCopy?.state === "ready" &&
+    offlineCopy.registered !== false &&
+    offlineCopy.environmentId === execution &&
+    !props.sourceArchiveId &&
+    !progress.retentionCopy &&
+    (offlineCopy.ownership === "borrowed" ||
+      (offlineCopy.keepOnComputer !== false) === keepOnComputer) &&
+    supportsLoomFeature(config?.environment.capabilities, "project-workflows");
+  const canExecuteOperation = useAtomValue(library.executeOperation.permissionAtom(execution));
   const canStart =
-    authority.ready &&
+    (offline ? offlineReady && canExecuteOperation : authority.ready) &&
     !folderPending &&
     hostReady &&
     canBind &&
-    canRegisterCopy &&
-    canRegisterThread &&
+    (offline || (canRegisterCopy && canRegisterThread)) &&
     (!supportsFileLifecycle || keepFiles === null || canSetRetention) &&
     (progress.intent !== null || copiesReady) &&
     (progress.intent !== null || props.projectReady) &&
@@ -657,16 +657,11 @@ function LibraryStartContent(props: {
       return;
     if (!reviewed.current) {
       if (!chosenModel) return;
-      const catalog = appAtomRegistry.get(
-        library.copies({
-          environmentId: authority.environmentId,
-          input: { projectId: props.project.id, includeReleased: true },
-        }),
-      );
-      if (catalog._tag !== "Success" || catalog.waiting) return;
+      const catalog = copies;
+      if (!catalog.isSuccess || catalog.isPending || catalog.data === null) return;
       if (
         mode !== "reuse" &&
-        catalog.value.some(
+        catalog.data.some(
           (copy) =>
             copy.environmentId === execution &&
             copy.ownership === "managed" &&
@@ -691,7 +686,7 @@ function LibraryStartContent(props: {
         copy: selectedCopy,
         ...(recoverySource ? { recoverySource } : {}),
         carryContext,
-        ...(supportsFileLifecycle ? { keepOnComputer } : {}),
+        ...(!offline && supportsFileLifecycle ? { keepOnComputer } : {}),
       };
       setReviewState(reviewed.current);
       setModelKey(chosenModel.key);
@@ -753,7 +748,9 @@ function LibraryStartContent(props: {
               );
             }
             const copy =
-              review.mode === "reuse" && review.copy?.ownership === "managed"
+              review.mode === "reuse" &&
+              review.copy &&
+              (review.copy.ownership === "managed" || offlineReady)
                 ? review.copy.state === "released"
                   ? await restoreLibraryLaunchCopy(
                       review.copy,
@@ -790,6 +787,13 @@ function LibraryStartContent(props: {
             return copy;
           },
           registerCopy: async (copy) => {
+            if (
+              offlineReady &&
+              copy.id === offlineCopy?.id &&
+              copy.registered !== false &&
+              copy.state === "ready"
+            )
+              return;
             unwrap(
               await registerCopy({
                 environmentId: authority.environmentId!,
@@ -839,7 +843,8 @@ function LibraryStartContent(props: {
                               .runtimeMode,
                           interactionMode:
                             review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-                          ...(receipt.current.copy?.ownership === "managed" &&
+                          ...(!offline &&
+                          receipt.current.copy?.ownership === "managed" &&
                           review.keepOnComputer !== undefined
                             ? { keepOnComputer: review.keepOnComputer }
                             : {}),
@@ -1484,8 +1489,10 @@ function LibraryStartContent(props: {
           ) : null}
         </View>
       ) : null}
-      {!authority.ready ? (
-        <LibraryNotice detail="Reconnect your library to save this conversation. Your chosen computer stays selected." />
+      {offlineReady ? (
+        <LibraryNotice detail="Library offline; starting from this computer's copy. This conversation syncs when it reconnects." />
+      ) : !authority.ready ? (
+        <LibraryNotice detail="Reconnect the Library to prepare files or change retention. Offline starts need a ready registered copy." />
       ) : null}
       {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
       {copiesState === "loading" && progress.intent === null ? (

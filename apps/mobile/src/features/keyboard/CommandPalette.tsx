@@ -1,3 +1,9 @@
+// fork: library
+import { libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
+import { librarySourceProjectContext } from "../../fork/library/librarySourceLaunch";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import { THREAD_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
@@ -179,6 +185,51 @@ export function CommandPalette(props: {
       ),
     [search.matches],
   );
+  // fork: library - Wait for the folder's registered identity before creating a local draft.
+  const authority = useLibraryAuthority();
+  const readCopies = useAtomQueryRunner(library.copies, { refresh: true, reportFailure: false });
+  const startInProject = async (project: EnvironmentProject) => {
+    if (authority.environmentId) {
+      const environmentId = authority.connected ? authority.environmentId : project.environmentId;
+      if (
+        !authority.connected &&
+        !environments.some(
+          (entry) => entry.environmentId === environmentId && entry.connectionState === "connected",
+        )
+      ) {
+        navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+        return;
+      }
+      const copies = await readCopies({ environmentId, input: {} });
+      if (copies._tag === "Failure") {
+        navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+        return;
+      }
+      const ref = { environmentId: project.environmentId, projectId: project.id };
+      if (libraryHoldsLocalRefs([], [ref], copies.value)) {
+        const context = librarySourceProjectContext(ref, copies.value);
+        if (context)
+          navigation.navigate("LibraryStart", {
+            projectId: context.projectId,
+            reuseEnvironmentId: context.environmentId,
+            ...(context.workingCopyId ? { initialCopyId: context.workingCopyId } : {}),
+            ...(context.resourceIds?.length === 1
+              ? { initialResourceId: context.resourceIds[0]! }
+              : {}),
+          });
+        else navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+        return;
+      }
+    }
+    navigation.navigate("NewTaskSheet", {
+      screen: "NewTaskDraft",
+      params: {
+        environmentId: project.environmentId,
+        projectId: project.id,
+        title: project.title,
+      },
+    });
+  };
   const items = useMemo(() => {
     const actions: CommandPaletteItem[] = [
       {
@@ -274,15 +325,9 @@ export function CommandPalette(props: {
         kind: "action",
         title: `New thread in ${activeProject.title}`,
         searchTerms: ["new task", "chat", "create"],
-        run: () =>
-          navigation.navigate("NewTaskSheet", {
-            screen: "NewTaskDraft",
-            params: {
-              environmentId: activeProject.environmentId,
-              projectId: activeProject.id,
-              title: activeProject.title,
-            },
-          }),
+        run: () => {
+          void startInProject(activeProject);
+        }, // fork: library
       });
     }
     if (activeThreadRef) {
@@ -308,15 +353,9 @@ export function CommandPalette(props: {
       title: project.title,
       detail: `New thread · ${savedConnectionsById[project.environmentId]?.environmentLabel ?? project.environmentId}`,
       searchTerms: [project.workspaceRoot, "new thread", "project"],
-      run: () =>
-        navigation.navigate("NewTaskSheet", {
-          screen: "NewTaskDraft",
-          params: {
-            environmentId: project.environmentId,
-            projectId: project.id,
-            title: project.title,
-          },
-        }),
+      run: () => {
+        void startInProject(project);
+      }, // fork: library
     }));
     const threadItems: CommandPaletteItem[] = threads
       .filter((thread) => thread.archivedAt === null)
@@ -346,6 +385,7 @@ export function CommandPalette(props: {
     return [...actions, ...projectItems, ...threadItems];
   }, [
     activeThread,
+    startInProject, // fork: library
     activeThreadRef,
     navigation,
     projects,

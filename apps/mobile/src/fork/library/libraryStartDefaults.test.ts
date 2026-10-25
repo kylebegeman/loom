@@ -200,4 +200,30 @@ describe("New task Library project defaults", () => {
       ),
     ).toBeNull();
   });
+  it("can start from registered files during a Library outage using a durable host operation", () => {
+    const hosts = input().hosts.map((host) => ({
+      ...host,
+      capabilities: {
+        repositoryIdentity: false,
+        loomFeatures: ["project-library", "project-workflows"],
+      },
+    }));
+    const offline = input({ hosts, offline: true, libraryOperable: false });
+    expect(libraryStartDefaults(offline)).toMatchObject({
+      environmentId: dorothy,
+      copyId: "files",
+    });
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), ownership: "borrowed" }] }),
+    ).not.toBeNull();
+    expect(libraryStartDefaults({ ...offline, terminal: new Set() })).toBeNull();
+    expect(libraryStartDefaults({ ...offline, hosts: input().hosts })).toBeNull();
+    expect(libraryStartDefaults({ ...offline, copies: [] })).toBeNull();
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), registered: false }] }),
+    ).toBeNull();
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), state: "released" }] }),
+    ).toBeNull();
+  });
 });
