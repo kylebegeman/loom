@@ -27,10 +27,7 @@ import {
   shouldPublishAgentAwarenessEvent,
 } from "../../relay/AgentAwarenessRelay.ts";
 import { forkParked } from "../../serverActivation.ts";
-import {
-  type LibraryConnection,
-  resolveLibraryConnection,
-} from "../project-library/LibraryConnection.ts";
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { LibraryPushService } from "./LibraryPushService.ts";
 
 /**
@@ -175,7 +172,8 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
       seen.set(threadId, step.seen);
       if (step.alert === null || nowMs < pausedUntilMs) return;
       const outcome = yield* input.post({ threadId, kind: step.alert });
-      if (PAUSE_MS[outcome] > 0) pausedUntilMs = (yield* Clock.currentTimeMillis) + PAUSE_MS[outcome];
+      if (PAUSE_MS[outcome] > 0)
+        pausedUntilMs = (yield* Clock.currentTimeMillis) + PAUSE_MS[outcome];
       yield* Effect.logDebug("Agent alert posted", { kind: step.alert, outcome });
     },
     // A missed alert is the only symptom, so nothing here reaches the log above debug.
@@ -223,7 +221,10 @@ const outcomeOfStatus = (status: number): AgentAlertOutcome => {
 /** Posts over the publisher session, which names this computer to the Library. */
 export const remoteAgentAlertPost =
   (
-    library: Pick<Extract<LibraryConnection, { readonly kind: "remote" }>, "endpoint" | "send">,
+    library: Pick<
+      Extract<LibraryConnection.LibraryConnection, { readonly kind: "remote" }>,
+      "endpoint" | "send"
+    >,
   ): AgentAlertPost =>
   (request) =>
     library
@@ -245,7 +246,9 @@ export const remoteAgentAlertPost =
         ),
         Effect.catchTags({
           LibraryError: (error) =>
-            Effect.succeed<AgentAlertOutcome>(error.reason === "blocked" ? "refused" : "unreachable"),
+            Effect.succeed<AgentAlertOutcome>(
+              error.reason === "blocked" ? "refused" : "unreachable",
+            ),
         }),
         Effect.timeout(POST_TIMEOUT),
         Effect.orElseSucceed((): AgentAlertOutcome => "unreachable"),
@@ -275,8 +278,8 @@ const authorityPost =
  */
 export const AgentAlertsLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const connection = yield* resolveLibraryConnection.pipe(
-      Effect.orElseSucceed((): LibraryConnection => ({ kind: "unavailable" })),
+    const connection = yield* (yield* LibraryConnection.LibraryConnectionService).current.pipe(
+      Effect.orElseSucceed((): LibraryConnection.LibraryConnection => ({ kind: "unavailable" })),
     );
     const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
     const push = yield* LibraryPushService;
@@ -293,10 +296,12 @@ export const AgentAlertsLive = Layer.effectDiscard(
     yield* forkParked(
       alerts.seed.pipe(
         // Without the seed a thread's first look goes by time alone, which still alerts nothing old.
-        Effect.catchCause((cause) => Effect.logDebug("Agent alerts started without a seed", { cause })),
+        Effect.catchCause((cause) =>
+          Effect.logDebug("Agent alerts started without a seed", { cause }),
+        ),
         Effect.andThen(Stream.runForEach(threads.streamDomainEvents, alerts.observe)),
         Effect.catchCause((cause) => Effect.logWarning("Agent alerts stopped", { cause })),
       ),
     );
   }),
-);
+).pipe(Layer.provide(LibraryConnection.layer));
