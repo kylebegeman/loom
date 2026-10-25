@@ -1,3 +1,5 @@
+// fork: vault-core
+import { useSecretVaultSave } from "../../fork/vault/SecretSave";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
   SECRET_REQUEST_PRIVACY_NOTE,
@@ -34,6 +36,7 @@ export function SecretRequestCard(props: {
   if (display.kind === "pending") {
     return (
       <PendingSecretRequestForm
+        key={`${props.environmentId}:${item.id}`} // fork: vault-core
         environmentId={props.environmentId}
         item={item}
         iconColor={props.iconColor}
@@ -68,6 +71,8 @@ function PendingSecretRequestForm(props: {
     reportFailure: false,
     reportDefect: false,
   });
+  // fork: vault-core
+  const vaultSave = useSecretVaultSave(props.environmentId, item.label);
   const [secret, setSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +87,12 @@ function PendingSecretRequestForm(props: {
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
+    // fork: vault-core
+    if (input.answer.type === "save" && !(await vaultSave.beforeReply(input.answer.secret))) {
+      inFlight.current = false;
+      setSubmitting(false);
+      return;
+    }
     const result = await answer({ environmentId: props.environmentId, input }).finally(() => {
       inFlight.current = false;
       setSubmitting(false);
@@ -108,7 +119,7 @@ function PendingSecretRequestForm(props: {
         placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
         value={secret}
         onChangeText={setSecret}
-        editable={!submitting}
+        editable={!submitting && !vaultSave.saved} // fork: vault-core
         secureTextEntry
         autoCorrect={false}
         autoCapitalize="none"
@@ -119,6 +130,8 @@ function PendingSecretRequestForm(props: {
         returnKeyType="done"
         onSubmitEditing={() => void send({ type: "save", secret })}
       />
+      {/* fork: vault-core */}
+      {vaultSave.control(submitting)}
       {error !== null ? (
         <Text
           accessibilityRole="alert"

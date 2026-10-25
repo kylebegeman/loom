@@ -1,3 +1,4 @@
+import { openVaultAdd } from "./add-navigation";
 import { KeyRoundIcon } from "lucide-react";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { openVaultSsh } from "./ssh-navigation";
@@ -5,6 +6,19 @@ import { openVaultAccess } from "./access-navigation";
 export const vaultAccessPaletteSource: ForkCommandPaletteSource = {
   id: "vault-grants",
   items: ({ activeThreadRef, loomFeatures }) => [
+    ...(loomFeatures.includes("vault-core")
+      ? [
+          {
+            kind: "action" as const,
+            value: "action:loom:vault:add",
+            title: "Add to Vault...",
+            description: "Save a secret, note or file in this computer's Vault",
+            searchTerms: ["vault", "save", "file", "key", "secret", "add"],
+            icon: <KeyRoundIcon className="size-4" />,
+            run: async () => openVaultAdd(activeThreadRef?.environmentId),
+          },
+        ]
+      : []),
     ...(loomFeatures.includes("vault-owner-trusted")
       ? [
           {
