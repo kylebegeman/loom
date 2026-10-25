@@ -107,8 +107,9 @@ const listToolsOverHttp = Effect.fn("test.listToolsOverHttp")(function* (
   });
   // The transport answers in JSON or as one SSE event, depending on timing.
   const text = yield* listed.text;
-  const payload = yield* decodeToolsListPayload(text.match(/\{.*\}/s)![0]);
-  return payload.result.tools;
+  const serialized = text.match(/\{.*\}/s)![0];
+  const payload = yield* decodeToolsListPayload(serialized);
+  return { tools: payload.result.tools, bytes: Buffer.byteLength(serialized) };
 });
 
 const serveProductionMcp = HttpRouter.serve(
@@ -149,8 +150,8 @@ it.effect("lists each session only the tools its credential can call", () =>
       threadId: ThreadId.make("thread-catalog-limited"),
       providerInstanceId,
       browserToolsAvailable: false,
-    })).map((tool) => tool.name);
-    const full = (yield* listToolsOverHttp(fullAccessSession)).map((tool) => tool.name);
+    })).tools.map((tool) => tool.name);
+    const full = (yield* listToolsOverHttp(fullAccessSession)).tools.map((tool) => tool.name);
 
     expect(limited).toEqual(expect.arrayContaining(["delegate_task", "loom_preview_link_share"]));
     expect(limited.filter((name) => CAPABILITY_TOOL.test(name))).toEqual([]);
@@ -175,14 +176,15 @@ it.effect("lists each session only the tools its credential can call", () =>
  * output schema. Raise a budget only on purpose, after cutting what new text repeats.
  */
 const AGENT_VISIBLE_BUDGET_BYTES = 420_000;
+// The 340-tool response measures 1,054,829 bytes, leaving about 4% for small additions.
+const FULL_CATALOG_BUDGET_BYTES = 1_100_000;
 const TOOL_BUDGET_BYTES = 32 * 1024;
-// Its output schema inlines a whole thread projection, with the turn item union twice.
-const OVERSIZED_TOOLS = new Set(["loom_library_history"]);
 
 it.effect("keeps the full tool catalog within its byte budgets", () =>
   Effect.gen(function* () {
     yield* serveProductionMcp;
-    const sized = (yield* listToolsOverHttp(fullAccessSession)).map((tool) => ({
+    const { tools, bytes } = yield* listToolsOverHttp(fullAccessSession);
+    const sized = tools.map((tool) => ({
       name: tool.name,
       bytes: Buffer.byteLength(JSON.stringify(tool)),
       agentVisibleBytes: Buffer.byteLength(
@@ -204,8 +206,12 @@ it.effect("keeps the full tool catalog within its byte budgets", () =>
       `agents read ${agentVisible} bytes of tool definitions; largest: ${largest("agentVisibleBytes")}`,
     ).toBeLessThanOrEqual(AGENT_VISIBLE_BUDGET_BYTES);
     expect(
+      bytes,
+      `tools/list sends ${bytes} bytes including output schemas; largest: ${largest("bytes")}`,
+    ).toBeLessThanOrEqual(FULL_CATALOG_BUDGET_BYTES);
+    expect(
       sized
-        .filter((tool) => tool.bytes > TOOL_BUDGET_BYTES && !OVERSIZED_TOOLS.has(tool.name))
+        .filter((tool) => tool.bytes > TOOL_BUDGET_BYTES)
         .map((tool) => `${tool.name} ${tool.bytes}`),
       `largest tools: ${largest("bytes")}`,
     ).toEqual([]);

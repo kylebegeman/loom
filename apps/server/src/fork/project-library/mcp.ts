@@ -53,6 +53,27 @@ const searchParameters = Schema.Struct({
   ...Library.LibrarySearchRequest.fields,
   limit: Schema.optional(Library.LibrarySearchRequest.fields.limit),
 });
+// Agents reuse a saved project, so its nested profile need not be repeated in the launch input.
+// Keep the JSON decoder: production MCP also accepts null for optional project/profile fields.
+const launchOperationParameters = Schema.Struct({
+  ...Library.LibraryLaunchOperation.fields,
+  project: Schema.Record(Schema.String, Schema.Unknown)
+    .annotate({
+      description: "Complete project returned by loom_library_project; pass it unchanged.",
+    })
+    .pipe(Schema.decodeTo(Schema.toCodecJson(Library.LibraryProject))),
+});
+// The full archive still validates and encodes the result. Only its advertised projection is
+// loose; encoding it again as a record preserves every field without inlining the turn unions.
+const historyResult = Schema.toEncoded(
+  Schema.Struct({
+    ...Library.LibraryThreadArchive.fields,
+    projection: Schema.Record(Schema.String, Schema.Unknown).annotate({
+      description:
+        "Saved thread projection, including thread, messages, turnItems, visibleTurnItems and updatedAt.",
+    }),
+  }),
+).pipe(Schema.decodeTo(Library.LibraryThreadArchive));
 export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_workstreams", {
     description: "List optional durable workstreams and linked work for a project.",
@@ -120,7 +141,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
       operationId: Library.LibraryRequestId,
       request: Schema.Struct({
         kind: Schema.Literal("launch"),
-        input: Library.LibraryLaunchOperation,
+        input: launchOperationParameters,
       }),
     }),
     success: Library.LibraryOperation,
@@ -182,7 +203,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
         Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
       ),
     }),
-    success: Library.LibraryThreadArchive,
+    success: historyResult,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_decisions", {
