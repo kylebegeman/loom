@@ -26,6 +26,7 @@ const library = (overrides: Partial<LibraryPushLibrary> = {}): LibraryPushLibrar
   configured: true,
   connected: true,
   advertised: true,
+  alerts: false,
   canChange: true,
   account: ACCOUNT,
   ...overrides,
@@ -274,6 +275,22 @@ describe("libraryPushContent", () => {
       label: LIBRARY_PUSH_COPY.toggleLabel,
       description: "On. Registered with the Library.",
     });
+  });
+
+  it("says in the footer whether the Library sends agent alerts, once that is known", () => {
+    expect(content({ chosen: library({ alerts: true }) }).footer).toBe(
+      LIBRARY_PUSH_COPY.footerAlerts,
+    );
+    expect(content({ chosen: library({ alerts: false }) }).footer).toBe(
+      LIBRARY_PUSH_COPY.footerTestsOnly,
+    );
+    for (const overrides of [
+      { chosen: library({ advertised: null, alerts: null }) },
+      { chosen: null },
+      { supported: false, chosen: library({ alerts: true }) },
+    ]) {
+      expect(content(overrides).footer).toBe(LIBRARY_PUSH_COPY.footer);
+    }
   });
 
   it("covers every kind without an em dash in any copy", () => {

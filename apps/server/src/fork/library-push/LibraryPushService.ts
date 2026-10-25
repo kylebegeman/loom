@@ -1,8 +1,14 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- APNs signs with an ES256 KeyObject, which Effect's Crypto cannot import from a .p8.
 import * as NodeCrypto from "node:crypto";
 
-import { type AuthEnvironmentScope, AuthSettingsWriteScope } from "@t3tools/contracts";
 import {
+  type AuthEnvironmentScope,
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+} from "@t3tools/contracts";
+import {
+  type LibraryPushActivityReply,
+  type LibraryPushActivityRequest,
   type LibraryPushDeliveryReason,
   type LibraryPushDevice,
   LibraryPushError,
@@ -33,8 +39,8 @@ import * as Semaphore from "effect/Semaphore";
 import { identityAccountFromSession } from "../../auth/identityPolicy.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ApnsClient from "./ApnsClient.ts";
-import { LIBRARY_PUSH_TEST_ALERT } from "./apnsPayloads.ts";
-import { libraryPushConfig } from "./config.ts";
+import { agentAlertRequest, type ApnsAlertRequest, LIBRARY_PUSH_TEST_ALERT } from "./apnsPayloads.ts";
+import { libraryPushActivitySwitchOn, libraryPushConfig } from "./config.ts";
 import {
   applyRegistration,
   applyUnregister,
@@ -59,7 +65,11 @@ export const LIBRARY_PUSH_DEVICES_SECRET = "loom-push-devices";
 const ACCOUNT_TEST_INTERVAL_MS = 10_000;
 const DEVICE_TEST_WINDOW_MS = 10 * 60_000;
 const DEVICE_TESTS_PER_WINDOW = 3;
-const TEST_SEND_CONCURRENCY = 4;
+// Agent alerts (C04-10) count separately from tests, so a busy hour never blocks a test.
+const ALERT_WINDOW_MS = 60 * 60_000;
+const ALERTS_PER_COMPUTER = 20;
+const ALERTS_PER_DEVICE = 30;
+const SEND_CONCURRENCY = 4;
 // A .p8 is a few hundred bytes; anything this large is not one.
 const KEY_FILE_MAX_BYTES = 16 * 1024;
 const APPLE_ID = /^[A-Z0-9]{10}$/;
@@ -108,6 +118,17 @@ export class LibraryPushService extends Context.Service<
       caller: LibraryPushCaller,
       request: LibraryPushTestRequest,
     ) => Effect.Effect<LibraryPushTestResult, LibraryPushError>;
+    /** Agent alerts run here, as `library-push-activity` advertises. */
+    readonly alerts: boolean;
+    /**
+     * Sends one agent alert from a computer to the alert recipients' devices. The caller has
+     * already established which computer it is. Fails `off` while alerts are off and
+     * `rate-limited` past the computer's hourly limit; a device past its own limit is skipped.
+     */
+    readonly alert: (
+      environmentId: EnvironmentId,
+      request: LibraryPushActivityRequest,
+    ) => Effect.Effect<LibraryPushActivityReply, LibraryPushError>;
   }
 >()("t3/fork/library-push/LibraryPushService") {}
 
@@ -131,6 +152,10 @@ const disabled = (reason: "not-library" | null) =>
       Effect.succeed({ removed: false }),
     ),
     test: Effect.fn("LibraryPushService.test")(function* () {
+      return yield* refuse("off");
+    }),
+    alerts: false,
+    alert: Effect.fn("LibraryPushService.alert")(function* () {
       return yield* refuse("off");
     }),
   });
@@ -189,10 +214,37 @@ const encodeRegistry = Schema.encodeEffect(RegistryJson);
 const deliveryReasonOf = (outcome: ApnsClient.ApnsOutcome): LibraryPushDeliveryReason | null =>
   outcome === "sent" ? null : outcome;
 
-interface TestPlan {
+/** `sends` are the targets that still had a rate-limit slot. */
+interface SendPlan {
   readonly targets: ReadonlyArray<StoredLibraryPushDevice>;
   readonly sends: ReadonlyArray<StoredLibraryPushDevice>;
 }
+
+/** Drops slots older than the window and keys left without one. */
+const pruneSlots = (
+  slots: Map<string, ReadonlyArray<number>>,
+  nowMs: number,
+  windowMs: number,
+) => {
+  for (const [key, times] of slots) {
+    const recent = times.filter((at) => nowMs - at < windowMs);
+    if (recent.length === 0) slots.delete(key);
+    else slots.set(key, recent);
+  }
+};
+
+/** Takes one of the key's slots when it has one left in the pruned window. */
+const takeSlot = (
+  slots: Map<string, ReadonlyArray<number>>,
+  key: string,
+  nowMs: number,
+  limit: number,
+) => {
+  const recent = slots.get(key) ?? [];
+  if (recent.length >= limit) return false;
+  slots.set(key, [...recent, nowMs]);
+  return true;
+};
 
 const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
@@ -223,6 +275,12 @@ const make = Effect.gen(function* () {
   if (config.topics.length === 0) {
     yield* Effect.logWarning(
       "LOOM_LIBRARY_PUSH_TOPICS names no supported bundle and environment, so no device can register",
+    );
+  }
+  const recipients = config.alertRecipients;
+  if (recipients === null && libraryPushActivitySwitchOn(env)) {
+    yield* Effect.logWarning(
+      "LOOM_LIBRARY_PUSH_ACTIVITY is on, but no account is set to receive agent alerts: with more than one allowed Identity subject, name them in LOOM_LIBRARY_PUSH_RECIPIENTS",
     );
   }
   const sender =
@@ -267,6 +325,8 @@ const make = Effect.gen(function* () {
   // Mutated only while holding `lock`.
   const accountTests = new Map<string, number>();
   const deviceTests = new Map<string, ReadonlyArray<number>>();
+  const computerAlerts = new Map<string, ReadonlyArray<number>>();
+  const deviceAlerts = new Map<string, ReadonlyArray<number>>();
 
   /** The store is written first; memory follows only a successful write. */
   const commit = (next: LibraryPushRegistry) =>
@@ -397,34 +457,71 @@ const make = Effect.gen(function* () {
         const targets = pruned.registry.devices.filter(
           (row) => visibleTo(scope, row) && (id === undefined || row.id === id),
         );
-        if (targets.length === 0) return { targets, sends: [] } satisfies TestPlan;
+        if (targets.length === 0) return { targets, sends: [] } satisfies SendPlan;
 
         for (const [key, at] of accountTests) {
           if (nowMs - at >= ACCOUNT_TEST_INTERVAL_MS) accountTests.delete(key);
         }
-        for (const [key, times] of deviceTests) {
-          const recent = times.filter((at) => nowMs - at < DEVICE_TEST_WINDOW_MS);
-          if (recent.length === 0) deviceTests.delete(key);
-          else deviceTests.set(key, recent);
-        }
+        pruneSlots(deviceTests, nowMs, DEVICE_TEST_WINDOW_MS);
         if (scope._tag === "Account") {
           const accountKey = `${scope.account.issuer}\0${scope.account.subject}`;
           if (accountTests.has(accountKey)) return yield* refuse("rate-limited");
           accountTests.set(accountKey, nowMs);
         }
-        const sends = targets.filter((row) => {
-          const recent = deviceTests.get(row.id) ?? [];
-          if (recent.length >= DEVICE_TESTS_PER_WINDOW) return false;
-          deviceTests.set(row.id, [...recent, nowMs]);
-          return true;
-        });
-        return { targets, sends } satisfies TestPlan;
+        const sends = targets.filter((row) =>
+          takeSlot(deviceTests, row.id, nowMs, DEVICE_TESTS_PER_WINDOW),
+        );
+        return { targets, sends } satisfies SendPlan;
       }),
     );
 
+  /**
+   * Picks the alert recipients' live devices and takes the computer's slot and each device's,
+   * all under the lock. Every accepted alert counts against the computer, sent or not.
+   */
+  const planAlert = (alertRecipients: ReadonlyArray<string>, environmentId: EnvironmentId) =>
+    lock.withPermits(1)(
+      Effect.gen(function* () {
+        const nowMs = yield* Clock.currentTimeMillis;
+        pruneSlots(computerAlerts, nowMs, ALERT_WINDOW_MS);
+        pruneSlots(deviceAlerts, nowMs, ALERT_WINDOW_MS);
+        if (!takeSlot(computerAlerts, environmentId, nowMs, ALERTS_PER_COMPUTER)) {
+          return yield* refuse("rate-limited");
+        }
+        const pruned = pruneRegistry(yield* Ref.get(registryRef), policyAt(nowMs));
+        yield* commitPrune(pruned);
+        const targets = pruned.registry.devices.filter((row) =>
+          alertRecipients.includes(row.subject),
+        );
+        const sends = targets.filter((row) =>
+          takeSlot(deviceAlerts, row.id, nowMs, ALERTS_PER_DEVICE),
+        );
+        return { targets, sends } satisfies SendPlan;
+      }),
+    );
+
+  /** Sent outside the lock: a slow Apple reply must not hold up registrations. */
+  const sendAll = (
+    send: ApnsClient.ApnsSender["send"],
+    rows: ReadonlyArray<StoredLibraryPushDevice>,
+    request: ApnsAlertRequest,
+  ) =>
+    Effect.forEach(
+      rows,
+      (row) =>
+        send({
+          deviceId: row.id,
+          token: row.token,
+          bundleId: row.bundleId,
+          apsEnvironment: row.apsEnvironment,
+          request,
+        }).pipe(Effect.map((delivery) => ({ row, delivery }))),
+      { concurrency: SEND_CONCURRENCY },
+    );
+
   /** Applies what Apple said: dead tokens go, results are remembered, `failing` follows the key. */
-  const settleTest = (
-    plan: TestPlan,
+  const settle = (
+    plan: SendPlan,
     results: ReadonlyArray<{
       readonly row: StoredLibraryPushDevice;
       readonly delivery: ApnsClient.ApnsDelivery;
@@ -508,25 +605,37 @@ const make = Effect.gen(function* () {
     if (scope._tag === "Operator" && request.id === undefined) return yield* refuse("invalid");
     const plan = yield* planTest(scope, request.id);
     if (plan.targets.length === 0) return { deliveries: [] };
-    // Sent outside the lock: a slow Apple reply must not hold up registrations.
-    const results = yield* Effect.forEach(
-      plan.sends,
-      (row) =>
-        sender
-          .send({
-            deviceId: row.id,
-            token: row.token,
-            bundleId: row.bundleId,
-            apsEnvironment: row.apsEnvironment,
-            request: LIBRARY_PUSH_TEST_ALERT,
-          })
-          .pipe(Effect.map((delivery) => ({ row, delivery }))),
-      { concurrency: TEST_SEND_CONCURRENCY },
-    );
-    return yield* settleTest(plan, results);
+    const results = yield* sendAll(sender.send, plan.sends, LIBRARY_PUSH_TEST_ALERT);
+    return yield* settle(plan, results);
   });
 
-  return LibraryPushService.of({ status, register, unregister, test });
+  const alert = Effect.fn("LibraryPushService.alert")(function* (
+    environmentId: EnvironmentId,
+    request: LibraryPushActivityRequest,
+  ) {
+    if (recipients === null) return yield* refuse("off");
+    if (sender === null) return yield* refuse("misconfigured");
+    const plan = yield* planAlert(recipients, environmentId);
+    if (plan.sends.length === 0) return { sent: 0 } satisfies LibraryPushActivityReply;
+    const results = yield* sendAll(
+      sender.send,
+      plan.sends,
+      agentAlertRequest({ environmentId, threadId: request.threadId, kind: request.kind }),
+    );
+    yield* settle(plan, results);
+    return {
+      sent: results.filter((result) => result.delivery.outcome === "sent").length,
+    } satisfies LibraryPushActivityReply;
+  });
+
+  return LibraryPushService.of({
+    status,
+    register,
+    unregister,
+    test,
+    alerts: recipients !== null,
+    alert,
+  });
 });
 
 /** Needs an `ApnsClient`; `LibraryPushLive` supplies the real one. */

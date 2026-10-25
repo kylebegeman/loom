@@ -118,6 +118,8 @@ import * as ReachPocketId from "./reach/library/ReachPocketId.ts";
 import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
+import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import { LibraryPushHttpRoutes } from "./library-push/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -512,7 +514,8 @@ const ForkServicesLive = Layer.mergeAll(
   layerReachLibrary,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
-  LibraryPushLive,
+  // On the Library, alerts for its own threads go straight to this one push service instance.
+  AgentAlertsLive.pipe(Layer.provideMerge(LibraryPushLive), Layer.provide(FetchHttpClient.layer)),
   // Reads the worker identities the one Mini instance keeps from its readiness checks.
   DirectoryReporter.DirectoryReporterLive.pipe(
     Layer.provideMerge(
@@ -549,6 +552,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   DirectoryHttpRoutes,
   BotLibraryHttpRoutes,
   ReachHttpRoutes,
+  LibraryPushHttpRoutes,
   // Global, so it also covers upstream routes such as /mcp and requests no route matches.
   ReachGuardLayer,
 );

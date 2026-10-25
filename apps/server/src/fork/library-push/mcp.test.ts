@@ -58,6 +58,8 @@ const setup = Effect.fn("test.setup")(function* (topics?: ReadonlyArray<typeof D
         tests.push({ caller, request });
         return { deliveries: [{ id: ROW_ID, label: LABEL, outcome: "sent", reason: null }] };
       }),
+    alerts: true,
+    alert: () => Effect.die("unused"),
   });
   const toolkit = yield* LibraryPushToolkit.pipe(
     Effect.provide(
@@ -96,7 +98,7 @@ describe("library push MCP tools", () => {
     }),
   );
 
-  it.effect("report push health with a device count and no device details", () =>
+  it.effect("report push health with a device count, alerts and no device details", () =>
     Effect.gen(function* () {
       const { toolkit, invoke } = yield* setup();
       const result = yield* invoke(
@@ -108,6 +110,7 @@ describe("library push MCP tools", () => {
         reason: null,
         key: { teamId: "TEAM123456", keyId: "KEY1234567" },
         deviceCount: 1,
+        alerts: true,
       });
       const output = JSON.stringify(result);
       expect(output).not.toContain(LABEL);

@@ -7,6 +7,8 @@ import {
   type AuthEnvironmentScope,
   AuthOrchestrationReadScope,
   AuthSettingsWriteScope,
+  EnvironmentId,
+  ThreadId,
 } from "@t3tools/contracts";
 import type { LibraryPushRegisterRequest } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -718,6 +720,113 @@ describe("LibraryPushService", () => {
       const output = [...recorded, ...logs].join("\n").toLowerCase();
       expect(output).not.toContain(TOKEN);
       expect(output).not.toContain(BOB_TOKEN);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+describe("LibraryPushService agent alerts", () => {
+  const STUDIO = EnvironmentId.make("environment-studio");
+  const LAPTOP = EnvironmentId.make("environment-laptop");
+  const THREAD = ThreadId.make("thread-1");
+  const ALERTS_FOR_ALICE = {
+    LOOM_LIBRARY_PUSH_ACTIVITY: "true",
+    LOOM_LIBRARY_PUSH_RECIPIENTS: "alice",
+  };
+
+  it.effect("runs only with its switch on and someone named to receive alerts", () =>
+    Effect.gen(function* () {
+      const off = yield* ready();
+      expect(off.push.alerts).toBe(false);
+      expect(
+        (yield* off.push.alert(STUDIO, { threadId: THREAD, kind: "completed" }).pipe(Effect.flip))
+          .reason,
+      ).toBe("off");
+
+      // Two accounts can sign in, so the Library cannot tell whose computer this is.
+      const unnamed = yield* ready({ LOOM_LIBRARY_PUSH_ACTIVITY: "true" });
+      expect(unnamed.push.alerts).toBe(false);
+
+      expect((yield* ready(ALERTS_FOR_ALICE)).push.alerts).toBe(true);
+
+      const keyFile = yield* writeKeyFile();
+      const { push } = yield* start(libraryEnv(`${keyFile}.missing`, ALERTS_FOR_ALICE));
+      expect(push.alerts).toBe(true);
+      expect(
+        (yield* push.alert(STUDIO, { threadId: THREAD, kind: "completed" }).pipe(Effect.flip))
+          .reason,
+      ).toBe("misconfigured");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("sends generic text to the recipients' devices, one notification per thread", () =>
+    Effect.gen(function* () {
+      const { env, push, apns } = yield* ready(ALERTS_FOR_ALICE);
+      yield* push.register(identity(env, "alice"), registration());
+      yield* push.register(identity(env, "bob"), registration({ token: BOB_TOKEN }));
+
+      expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "approval" })).toEqual({
+        sent: 1,
+      });
+      yield* push.alert(STUDIO, { threadId: THREAD, kind: "completed" });
+      yield* push.alert(STUDIO, { threadId: ThreadId.make("thread-2"), kind: "completed" });
+
+      expect(apns.sent.map((send) => send.deviceId)).toEqual([
+        rowId("alice"),
+        rowId("alice"),
+        rowId("alice"),
+      ]);
+      const [approval, completed, other] = apns.sent.map((send) => send.request);
+      expect(approval?.payload).toEqual({
+        aps: {
+          alert: { title: "Loom", body: "An agent needs your approval." },
+          sound: "default",
+          "thread-id": `${STUDIO}/${THREAD}`,
+        },
+        body: {
+          environmentId: STUDIO,
+          threadId: THREAD,
+          deepLink: `/threads/${STUDIO}/${THREAD}`,
+        },
+      });
+      expect(completed?.payload.aps.alert.body).toBe("An agent finished.");
+      expect(completed?.collapseId).toBe(approval?.collapseId);
+      expect(other?.collapseId).not.toBe(approval?.collapseId);
+      expect((yield* push.status(identity(env, "alice"))).devices[0]?.lastDelivery).toMatchObject(
+        { outcome: "sent" },
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("holds each computer to 20 alerts an hour and each device to 30", () =>
+    Effect.gen(function* () {
+      const { env, push, apns } = yield* ready(ALERTS_FOR_ALICE);
+      yield* push.register(identity(env, "alice"), registration());
+      const send = (computer: EnvironmentId) =>
+        push.alert(computer, { threadId: THREAD, kind: "completed" });
+
+      for (let count = 0; count < 20; count++) yield* send(STUDIO);
+      expect((yield* send(STUDIO).pipe(Effect.flip)).reason).toBe("rate-limited");
+
+      for (let count = 0; count < 10; count++) yield* send(LAPTOP);
+      // The laptop is under its own limit, but the phone has heard enough this hour.
+      expect(yield* send(LAPTOP)).toEqual({ sent: 0 });
+      expect(apns.sent).toHaveLength(30);
+
+      yield* TestClock.adjust("1 hour");
+      expect(yield* send(STUDIO)).toEqual({ sent: 1 });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("drops a device whose token Apple reports dead", () =>
+    Effect.gen(function* () {
+      const { env, push, secrets, apns } = yield* ready(ALERTS_FOR_ALICE);
+      yield* push.register(identity(env, "alice"), registration());
+      apns.control.respond = () => "bad-token";
+      expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "failed" })).toEqual({
+        sent: 0,
+      });
+      expect((yield* push.status(identity(env, "alice"))).devices).toEqual([]);
+      expect(secrets.storedSubjects()).toEqual([]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

@@ -17,8 +17,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 
-// Every product line for the Library push section lives here. Nothing below promises agent alerts:
-// until computers send them, a Library only sends test notifications.
+// Every product line for the Library push section lives here. Agent alerts are promised only where
+// the Library advertises them; otherwise it sends only test notifications.
 
 export type LibraryPushTone = "neutral" | "success" | "warning" | "danger";
 
@@ -49,6 +49,8 @@ export interface LibraryPushViewInput {
   readonly connected: boolean;
   /** The Library advertises `library-push`; null while its capabilities are unknown. */
   readonly supported: boolean | null;
+  /** The Library advertises `library-push-activity`, so it sends agent alerts too. */
+  readonly alerts: boolean;
   readonly result: AsyncResult.AsyncResult<LibraryPushStatus, unknown>;
   /** The `test` command's permission atom for the Library. */
   readonly canTest: boolean;
@@ -78,6 +80,8 @@ export interface LibraryPushView {
   readonly key: string | null;
   /** The app builds the Library sends to; null when it does not say or the headline already does. */
   readonly builds: string | null;
+  /** What the Library notifies iPhones about; null while push cannot send at all. */
+  readonly alerts: string | null;
   readonly devices: readonly LibraryPushDeviceView[];
   /** The line shown in place of an empty device list. */
   readonly empty: string | null;
@@ -97,6 +101,10 @@ const KEY_SETTINGS_HINT =
   "Check the push key settings in the Library's server environment, then restart the Library.";
 const LIBRARY_UNREACHABLE_TEXT = "Your Library is not reachable right now.";
 const NO_APP_TEXT = "The Library's push settings name no app it can send to.";
+const ALERTS_ON_TEXT =
+  "Agent alerts are on: the Library notifies your iPhones when an agent on any of your computers needs your approval or an answer, fails, reaches a usage limit or finishes.";
+const ALERTS_OFF_TEXT =
+  "Agent alerts are off, so the Library sends only test notifications. They are turned on in the Library's server environment.";
 
 const BUNDLE_NAMES: Readonly<Record<LibraryPushBundleId, string>> = {
   "com.kylebegeman.loom": "Loom",
@@ -186,11 +194,13 @@ function lastDeliveryLine(
 ): LibraryPushLine | null {
   if (delivery === null) return null;
   const at = formatDate(delivery.at);
-  if (delivery.outcome === "sent") return { tone: "success", text: `Last test sent ${at}.` };
+  // Tests and agent alerts both count, since either one shows whether this iPhone still hears.
+  if (delivery.outcome === "sent")
+    return { tone: "success", text: `Last notification sent ${at}.` };
   const reason = delivery.reason ?? "other";
   return {
     tone: DELIVERY_REASON_TONE[reason],
-    text: `Last test failed ${at}. ${DELIVERY_REASON_TEXT[reason]}`,
+    text: `Last notification failed ${at}. ${DELIVERY_REASON_TEXT[reason]}`,
   };
 }
 
@@ -278,6 +288,7 @@ export function libraryPushView(input: LibraryPushViewInput): LibraryPushView {
     hint: null,
     key: null,
     builds: null,
+    alerts: null,
     devices: NO_DEVICES,
     empty: null,
     error: null,
@@ -331,6 +342,7 @@ export function libraryPushView(input: LibraryPushViewInput): LibraryPushView {
     hint,
     key: status.key === null ? null : `Apple key ${status.key.keyId}, team ${status.key.teamId}.`,
     builds: buildsLine(status),
+    alerts: canSend && !noApp ? (input.alerts ? ALERTS_ON_TEXT : ALERTS_OFF_TEXT) : null,
     devices,
     // With no app served, nothing can register, and the headline already says why.
     empty:

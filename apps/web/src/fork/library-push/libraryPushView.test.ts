@@ -60,6 +60,7 @@ function view(
     libraryId: LIBRARY,
     connected: true,
     supported: true,
+    alerts: false,
     result,
     canTest: true,
     canRemove: true,
@@ -204,7 +205,7 @@ describe("libraryPushView", () => {
     });
   });
 
-  it("lists several phones with their app, environment, dates and last test", () => {
+  it("lists several phones with their app, environment, dates and last notification", () => {
     const result = view(
       AsyncResult.success(
         status({
@@ -230,7 +231,7 @@ describe("libraryPushView", () => {
         id: "AAAAAAAAAAAAAAAAAAAAAA",
         label: "Kyle's iPhone",
         detail: "Loom 0.0.91 · Production · Registered 2026-10-01 · Expires 2026-11-19",
-        lastDelivery: { tone: "success", text: "Last test sent 2026-10-22." },
+        lastDelivery: { tone: "success", text: "Last notification sent 2026-10-22." },
         test: true,
         remove: { confirm: expect.stringContaining("Remove Kyle's iPhone?") },
       },
@@ -271,7 +272,7 @@ describe("libraryPushView", () => {
       test: true,
       lastDelivery: {
         tone: "danger",
-        text: "Last test failed 2026-10-23. Apple refused the Library's push key.",
+        text: "Last notification failed 2026-10-23. Apple refused the Library's push key.",
       },
     });
   });
@@ -295,8 +296,31 @@ describe("libraryPushView", () => {
     expect(result.status).toBe("ready");
     expect(result.devices[0]?.lastDelivery).toEqual({
       tone: "danger",
-      text: "Last test failed 2026-10-23. Apple won't accept the Library's push key for this build of Loom.",
+      text: "Last notification failed 2026-10-23. Apple won't accept the Library's push key for this build of Loom.",
     });
+  });
+
+  it("says whether the Library sends agent alerts wherever it can send at all", () => {
+    const ready = AsyncResult.success(status());
+    expect(view(ready, { alerts: true }).alerts).toBe(
+      "Agent alerts are on: the Library notifies your iPhones when an agent on any of your computers needs your approval or an answer, fails, reaches a usage limit or finishes.",
+    );
+    expect(view(ready).alerts).toBe(
+      "Agent alerts are off, so the Library sends only test notifications. They are turned on in the Library's server environment.",
+    );
+    expect(
+      view(AsyncResult.success(status({ state: "failing", reason: "key-rejected" })), {
+        alerts: true,
+      }).alerts,
+    ).toContain("Agent alerts are on");
+    for (const silent of [
+      status({ state: "misconfigured", reason: "key-invalid" }),
+      status({ state: "off", reason: null, key: null }),
+      status({ topics: [] }),
+    ]) {
+      expect(view(AsyncResult.success(silent), { alerts: true }).alerts).toBeNull();
+    }
+    expect(view(ready, { alerts: true, supported: false }).alerts).toBeNull();
   });
 
   it("offers Remove only with the unregister permission, and Send test only with the test permission", () => {
