@@ -6,7 +6,7 @@ import {
   type LibraryLaunchHost,
   type LibraryLaunchRememberedComputer,
 } from "@t3tools/client-runtime/fork";
-import type { EnvironmentId, ProjectId, ServerConfig } from "@t3tools/contracts";
+import type { EnvironmentId, ModelSelection, ProjectId, ServerConfig } from "@t3tools/contracts";
 import type {
   LibraryProject,
   LibraryThreadSummary,
@@ -48,6 +48,8 @@ export function libraryStartDefaults(input: {
     environmentId: EnvironmentId,
     projectId: ProjectId,
   ) => LegacyProjectSettingsFields | null;
+  /** The model this device's composer used last. */
+  readonly lastUsedSelection?: ModelSelection | null;
 }): LibraryStartDefaults | null {
   const { project } = input;
   // Ranked without working threads, as web ranks, so a row never moves as threads start and stop.
@@ -94,6 +96,7 @@ export function libraryStartDefaults(input: {
     localProjectId,
     localProject: localProjectId ? input.localProject(environmentId, localProjectId) : null,
     savedSelection: null,
+    lastUsedSelection: input.lastUsedSelection ?? null,
   });
   if (defaultModel === null) return null;
   const runtimeMode = libraryLaunchDefaults({

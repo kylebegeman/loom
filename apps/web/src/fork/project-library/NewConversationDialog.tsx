@@ -51,6 +51,7 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
+  resolveSelectableProviderInstance,
 } from "~/providerInstances";
 import { type LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
 import { useProjects, waitForProject } from "~/state/entities";
@@ -158,29 +159,51 @@ export async function reopenLibraryLaunchCopy(
 
 const isLibraryError = Schema.is(LibraryError);
 
-/** Local settings keep their precedence; the shared profile supplies defaults before computer settings. */
+/** The model new upstream drafts start with: the one last picked in any composer. */
+export const selectLastUsedModel = (
+  state: Pick<
+    ReturnType<typeof useComposerDraftStore.getState>,
+    "stickyActiveProvider" | "stickyModelSelectionByProvider"
+  >,
+): ModelSelection | null =>
+  state.stickyActiveProvider === null
+    ? null
+    : (state.stickyModelSelectionByProvider[state.stickyActiveProvider] ?? null);
+
+/**
+ * Local settings keep their precedence; the shared profile supplies defaults before computer
+ * settings. The last-used model counts only when this computer can run it, so a model picked
+ * elsewhere never replaces this computer's default with a provider fallback.
+ */
 export function libraryConversationDefaults(input: {
   readonly settings: ServerSettings;
   readonly localProject: (LegacyProjectSettingsFields & { readonly id: ProjectId }) | null;
   readonly project: LibraryProject;
   readonly providers: readonly ServerProvider[];
   readonly selection?: ModelSelection | undefined;
+  readonly lastUsedSelection?: ModelSelection | null | undefined;
   readonly runtimeMode?: RuntimeMode | undefined;
 }) {
-  const defaults = libraryLaunchDefaults({
-    settings: input.settings,
-    localProjectId: input.localProject?.id ?? null,
-    localProject: input.localProject,
-    projectDefaultSelection: input.project.profile?.defaultModelSelection,
-    selection: input.selection,
-    runtimeMode: input.runtimeMode,
-  });
   const entries = applyProviderInstanceSettings(
     deriveProviderInstanceEntries(input.providers),
     input.settings,
     input.localProject?.id ?? null,
   );
   const providers = entries.map((entry) => ({ ...entry.snapshot, enabled: entry.enabled }));
+  const lastUsed = input.lastUsedSelection;
+  const defaults = libraryLaunchDefaults({
+    settings: input.settings,
+    localProjectId: input.localProject?.id ?? null,
+    localProject: input.localProject,
+    projectDefaultSelection: input.project.profile?.defaultModelSelection,
+    selection: input.selection,
+    lastUsedSelection:
+      lastUsed &&
+      resolveSelectableProviderInstance(providers, lastUsed.instanceId) === lastUsed.instanceId
+        ? lastUsed
+        : null,
+    runtimeMode: input.runtimeMode,
+  });
   return {
     entries,
     providers,
@@ -233,6 +256,7 @@ export function useLibraryConversationSetup({
   const clientSettings = useClientSettings();
   const navigate = useNavigate();
   const localProjects = useProjects();
+  const lastUsedSelection = useComposerDraftStore(selectLastUsedModel);
   // A continuation holds its own attempt, so an unfinished one never turns every later start in
   // the project into its retry, replaying the archived conversation's title, context and link.
   // Ordinary starts keep the bare key their attempts are already saved under.
@@ -553,6 +577,7 @@ export function useLibraryConversationSetup({
         localProject,
         project,
         providers: providersByEnvironment.get(host.environmentId) ?? [],
+        lastUsedSelection,
         ...(modelChoice ? { selection: modelChoice } : {}),
         ...(runtimeChoice ? { runtimeMode: runtimeChoice } : {}),
       })
@@ -954,6 +979,7 @@ export function useLibraryConversationSetup({
           project: next.project,
           providers:
             appAtomRegistry.get(serverEnvironment.providersValueAtom(next.environmentId)) ?? [],
+          lastUsedSelection: selectLastUsedModel(useComposerDraftStore.getState()),
           ...(next.requestedModelSelection ? { selection: next.requestedModelSelection } : {}),
           ...(next.requestedRuntimeMode ? { runtimeMode: next.requestedRuntimeMode } : {}),
         });

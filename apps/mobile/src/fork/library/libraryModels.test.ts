@@ -47,6 +47,29 @@ describe("library conversation model defaults", () => {
     ).toEqual(preferred);
   });
 
+  it("uses the last-used model after the project model and before the computer default", () => {
+    const lastUsedSelection = selection("saved");
+    expect(
+      libraryConversationModels({ ...input, lastUsedSelection }).defaultModel?.selection,
+    ).toEqual(lastUsedSelection);
+    expect(
+      libraryConversationModels({
+        ...input,
+        lastUsedSelection,
+        projectDefaultSelection: selection("project"),
+      }).defaultModel?.selection,
+    ).toEqual(selection("project"));
+  });
+
+  it("keeps the computer default when this computer cannot run the last-used model", () => {
+    expect(
+      libraryConversationModels({
+        ...input,
+        lastUsedSelection: { instanceId: ProviderInstanceId.make("elsewhere"), model: "saved" },
+      }).defaultModel?.selection,
+    ).toEqual(selection("environment"));
+  });
+
   it("resolves the selected computer's project override before its environment default", () => {
     const localProjectId = ProjectId.make("local-project");
     expect(

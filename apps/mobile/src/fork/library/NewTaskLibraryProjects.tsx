@@ -25,6 +25,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentsWithScope } from "../../state/session";
+import { useStickyComposerModelSelection } from "../../state/use-composer-drafts";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
@@ -96,6 +97,7 @@ export function useNewTaskLibraryProjects(input: {
     useEnvironmentsWithScope(libraryRef, AuthOrchestrationOperateScope).size > 0;
   const configs = useServerConfigs();
   const localProjects = useProjects();
+  const lastUsedSelection = useStickyComposerModelSelection();
   // Keyed by project and independent of the search text, so typing only filters. The computers
   // are listed as web lists them, so both promise the same computer for a project.
   const starts = useMemo(() => {
@@ -128,6 +130,7 @@ export function useNewTaskLibraryProjects(input: {
             localProjects.find(
               (entry) => entry.environmentId === environmentId && entry.id === projectId,
             ) ?? null,
+          lastUsedSelection,
         }),
       ]),
     );
@@ -142,6 +145,7 @@ export function useNewTaskLibraryProjects(input: {
     configs,
     localProjects,
     authority.computers,
+    lastUsedSelection,
   ]);
 
   const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));

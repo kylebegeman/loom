@@ -31,7 +31,12 @@ import {
 import { onLibraryAction, type LibraryConversationDefaults, type LibraryAction } from "./actions";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
-import { NewConversationDialog, libraryConversationDefaults } from "./NewConversationDialog";
+import {
+  NewConversationDialog,
+  libraryConversationDefaults,
+  selectLastUsedModel,
+} from "./NewConversationDialog";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
 import { LibrarySetup } from "./LibrarySetup";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
@@ -481,6 +486,7 @@ function useQuickStarts({
   );
   const providers = useEnvironmentProviders();
   const localProjects = useProjects();
+  const lastUsedSelection = useComposerDraftStore(selectLastUsedModel);
   const grants = useStartGrants(
     environments.map((entry) => entry.environmentId),
     authorityId,
@@ -538,6 +544,7 @@ function useQuickStarts({
       localProject,
       project,
       providers: providers.get(quick.environmentId) ?? [],
+      lastUsedSelection,
     });
     const { modelSelection, runtimeMode } = defaults;
     if (!modelSelection) return null;

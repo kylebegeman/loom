@@ -53,7 +53,11 @@ import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
-import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
+import {
+  setComposerDraftText,
+  flushComposerDrafts,
+  useStickyComposerModelSelection,
+} from "../../state/use-composer-drafts";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { threadEnvironment } from "../../state/threads";
@@ -462,12 +466,14 @@ function LibraryStartContent(props: {
     seed?.review.model.selection ?? props.launchSettings?.modelSelection ?? null;
   const runtimeMode = seed?.review.runtimeMode ?? props.launchSettings?.runtimeMode,
     interactionMode = seed?.review.interactionMode ?? props.launchSettings?.interactionMode;
+  const lastUsedSelection = useStickyComposerModelSelection();
   const { models, defaultModel } = libraryConversationModels({
     config,
     projectDefaultSelection,
     localProjectId,
     localProject,
     savedSelection: savedModelSelection,
+    lastUsedSelection,
   });
   const chosenModel =
     modelKey !== null ? (models.find((model) => model.key === modelKey) ?? null) : defaultModel;

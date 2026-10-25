@@ -89,6 +89,20 @@ describe("Library launch defaults shared by clients", () => {
     ).toEqual(library);
   });
 
+  it("uses the last-used model after project defaults and before the computer default", () => {
+    const lastUsedSelection = selection("last-used");
+    expect(
+      libraryLaunchDefaults({ ...input, localProjectId: null, lastUsedSelection }).modelSelection,
+    ).toEqual(library);
+    expect(
+      libraryLaunchDefaults({ settings, localProjectId: null, lastUsedSelection }).modelSelection,
+    ).toEqual(lastUsedSelection);
+    expect(libraryLaunchDefaults({ ...input, lastUsedSelection }).modelSelection).toEqual(local);
+    expect(
+      libraryLaunchDefaults({ ...input, selection: source, lastUsedSelection }).modelSelection,
+    ).toEqual(source);
+  });
+
   it("uses computer defaults before falling through to provider policy", () => {
     expect(libraryLaunchDefaults({ settings, localProjectId: null }).modelSelection).toEqual(
       computer,

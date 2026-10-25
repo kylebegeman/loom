@@ -190,6 +190,7 @@ vi.mock("../../state/vcs", () => ({ vcsEnvironment: { pull: state.pull } }));
 vi.mock("../../state/use-composer-drafts", () => ({
   setComposerDraftText: vi.fn(),
   flushComposerDrafts: vi.fn(),
+  useStickyComposerModelSelection: () => null,
 }));
 vi.mock("./useLibraryLaunchRanking", () => ({
   useLibraryLaunchRanking: (input: {

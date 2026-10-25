@@ -59,6 +59,9 @@ vi.mock("../../state/entities", () => ({
   useThreadShells: () => [],
 }));
 vi.mock("../../state/session", () => ({ useEnvironmentsWithScope: () => new Set() }));
+vi.mock("../../state/use-composer-drafts", () => ({
+  useStickyComposerModelSelection: () => null,
+}));
 vi.mock("../../components/ui/IconButton", () => ({ IconButton: () => null }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (query: unknown) => ({

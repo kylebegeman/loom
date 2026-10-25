@@ -80,8 +80,9 @@ available computer and prepares its files automatically, and you can choose anot
 or work on one repository. If a start gets stuck, **Start over** drops that attempt and keeps
 its model, permissions and folder; a conversation it already created stays in your list.
 The conversation uses your chosen model, then any computer folder override, the project's
-preference and the computer's default. Editing the brief applies to new conversations; earlier conversations keep their
-original context.
+preference, the model you used last on this device if that computer can run it, and the
+computer's default. Editing the brief applies to new conversations; earlier conversations keep
+their original context.
 
 T3's folder records are the computer locations of these projects. Adding an existing folder
 reuses its folder record and settings. Once added, **Project settings** from a thread opens
