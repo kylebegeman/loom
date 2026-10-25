@@ -535,6 +535,10 @@
       "types": "./src/fork/run-continuation.ts",
       "import": "./src/fork/run-continuation.ts"
     },
+    "./fork/provider-processes": {
+      "types": "./src/fork/provider-processes.ts",
+      "import": "./src/fork/provider-processes.ts"
+    },
     "./markdownMath": {
       "types": "./src/markdownMath.ts",
       "import": "./src/markdownMath.ts"
