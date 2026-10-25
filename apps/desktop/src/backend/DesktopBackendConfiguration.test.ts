@@ -369,6 +369,25 @@ describe("DesktopBackendConfiguration", () => {
     ),
   );
 
+  // fork: restart-continuity: a WSL backend's ledger lives on another file system.
+  it.effect("only the local primary backend names its provider ledger", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const primary = yield* configuration.resolvePrimary;
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+
+        assert.equal(
+          primary.providerProcessLedger,
+          environment.path.join(environment.stateDir, "runtime", "provider-processes.json"),
+        );
+        assert.isUndefined(wsl.providerProcessLedger);
+      }),
+    ),
+  );
+
   it.effect("keeps server hydration enabled when desktop preparation failed", () =>
     withHarness(
       Effect.gen(function* () {

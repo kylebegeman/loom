@@ -30,6 +30,7 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+import * as OrphanedProviders from "../fork/orphaned-providers/OrphanedProviders.ts"; // fork: restart-continuity
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -44,8 +45,12 @@ const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 export const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
 // fork: restart-continuity: the grace, then SIGKILL and the spawner's
 // one-second wait for the process group, so a stop that returns has really
-// ended the backend instead of leaving it to outlive a quitting app.
-export const BACKEND_STOP_TIMEOUT = Duration.sum(BACKEND_TERMINATE_GRACE, Duration.seconds(2));
+// ended the backend instead of leaving it to outlive a quitting app. A killed
+// backend's providers are stopped after it exits, within their own bound.
+export const BACKEND_STOP_TIMEOUT = Duration.sum(
+  Duration.sum(BACKEND_TERMINATE_GRACE, Duration.seconds(2)),
+  OrphanedProviders.CLEANUP_TIMEOUT,
+);
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 const { logWarning: logBackendProcessWarning } =
@@ -80,6 +85,10 @@ export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly preflightFailure: Option.Option<PreflightFailure>;
   readonly runningDistro?: string;
   readonly wslRuntimeId?: string;
+  // fork: restart-continuity: set only for the primary local backend, whose
+  // state dir is the desktop's own, so the desktop can stop the providers a
+  // dead backend leaves running.
+  readonly providerProcessLedger?: string;
 }
 
 export interface PreflightFailure {
@@ -683,6 +692,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* Ref.make(initialState);
   const mutex = yield* Semaphore.make(1);
+  const orphanedProviders = yield* OrphanedProviders.make; // fork: restart-continuity
 
   const { logWarning: logInstanceWarning, logError: logInstanceError } =
     DesktopObservability.makeComponentLogger(`desktop-backend-instance:${spec.id}`);
@@ -927,6 +937,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           );
         });
 
+        // fork: restart-continuity: the cleanup runs on exit, before finalizeRun,
+        // so the next backend never starts while it is still signalling.
+        const providers = yield* orphanedProviders.watch(config.value.providerProcessLedger);
         const program = runBackendProcess({
           ...config.value,
           desktopTelemetryStream: desktopTelemetryPublisher.encoded,
@@ -935,6 +948,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           onDesktopTelemetryControl: (message) =>
             desktopTelemetryPublisher.handleControlForSource(spec.id, message),
           onStarted: Effect.fn("desktop.backendInstance.onStarted")(function* (pid) {
+            yield* providers.started(pid); // fork: restart-continuity
             yield* updateActiveRun(runId, (run) => ({
               ...run,
               pid: Option.some(pid),
@@ -947,7 +961,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             updateActiveRun(runId, (run) => ({
               ...run,
               exitObserved: true,
-            })),
+            })).pipe(Effect.andThen(providers.exited)), // fork: restart-continuity
           onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
             const isCurrentRun = yield* Ref.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);

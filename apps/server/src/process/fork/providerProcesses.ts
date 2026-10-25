@@ -3,30 +3,19 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { ProviderProcesses, type ProviderProcessRegistration } from "@t3tools/shared/AgentScope";
+import {
+  PROVIDER_PROCESS_LEDGER_PATH,
+  decodeProviderProcessLedger as decode,
+  parsePsIdentity,
+  processState,
+  psIdentityArgs,
+  type ProcessIdentity as Identity,
+  type ProviderProcessRecord as Record,
+} from "@t3tools/shared/fork/provider-processes";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as ServerConfig from "../../config.ts";
-
-const Identity = Schema.Struct({
-  pid: Schema.Int.check(Schema.isGreaterThan(1)),
-  pgid: Schema.Int.check(Schema.isGreaterThan(1)),
-  // PID, group and start second identify a process; command lines are not compared because
-  // `#!/usr/bin/env node` launchers and retitling CLIs rewrite theirs after spawn.
-  lstart: Schema.String,
-});
-const Record = Schema.Struct({
-  ...Identity.fields,
-  owner: Identity,
-  threadId: Schema.optional(Schema.String),
-  nativeSessionId: Schema.optional(Schema.String),
-  cwd: Schema.optional(Schema.String),
-});
-type Record = typeof Record.Type;
-type Identity = typeof Identity.Type;
-const Document = Schema.Struct({ version: Schema.Literal(1), processes: Schema.Array(Record) });
-const decode = Schema.decodeUnknownSync(Schema.fromJsonString(Document));
 
 export interface ProcessRegistryHost {
   readonly owner: Identity;
@@ -36,9 +25,6 @@ export interface ProcessRegistryHost {
   readonly read: () => string | null;
   readonly write: (contents: string) => void;
 }
-
-const sameProcess = (record: Identity, current: Identity) =>
-  record.pid === current.pid && record.pgid === current.pgid && record.lstart === current.lstart;
 
 // Shared providers carry no thread, so they hold every thread; a folder match keeps two
 // conversations from writing to one checkout.
@@ -67,9 +53,7 @@ export const makeRegistry = (
     host.write(JSON.stringify({ version: 1, processes: [...previous.values(), ...live.values()] }));
   const inspect = (record: Record): "gone" | "owned" | "uncertain" => {
     try {
-      const current = host.inspect(record.pid);
-      if (current === null || current.lstart !== record.lstart) return "gone";
-      return sameProcess(record, current) ? "owned" : "uncertain";
+      return processState(record, host.inspect(record.pid));
     } catch {
       return "uncertain";
     }
@@ -206,24 +190,20 @@ export const makeRegistry = (
 const inspectProcess = (pid: number): Identity | null => {
   let output: string;
   try {
-    output = NodeChildProcess.execFileSync(
-      "/bin/ps",
-      ["-p", String(pid), "-o", "pgid=", "-o", "lstart="],
-      {
-        encoding: "utf8",
-        timeout: 1000,
-        stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, LC_ALL: "C" },
-      },
-    ).trim();
+    output = NodeChildProcess.execFileSync("/bin/ps", psIdentityArgs(pid), {
+      encoding: "utf8",
+      timeout: 1000,
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, LC_ALL: "C" },
+    });
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && "status" in cause && cause.status === 1)
       return null;
     throw cause;
   }
-  const match = /^(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})$/.exec(output);
-  if (!match) throw new Error("Could not verify provider process identity");
-  return { pid, pgid: Number(match[1]), lstart: match[2]! };
+  const identity = parsePsIdentity(pid, output);
+  if (identity === null) throw new Error("Could not verify provider process identity");
+  return identity;
 };
 
 export const layer = Layer.effect(
@@ -231,8 +211,8 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     if ((yield* HostProcess.Platform) === "win32") return ProviderProcesses.defaultValue();
     const { stateDir } = yield* ServerConfig.ServerConfig;
-    const directory = NodePath.join(stateDir, "runtime");
-    const path = NodePath.join(directory, "provider-processes.json");
+    const path = NodePath.join(stateDir, ...PROVIDER_PROCESS_LEDGER_PATH);
+    const directory = NodePath.dirname(path);
     let unreadable: unknown;
     const registry = yield* Effect.try(() => {
       NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
