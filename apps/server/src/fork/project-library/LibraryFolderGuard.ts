@@ -10,7 +10,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 
 export const LIBRARY_FOLDER_CHANGE_REFUSAL =
-  "This conversation belongs to a Library project and runs in its folder. Start a new conversation on that branch instead.";
+  "This conversation belongs to a Library project and always runs in the project's folder, so it can't move to a worktree. You can still switch branches in that folder.";
 
 const refused = () =>
   new LibraryError({ reason: "blocked", detail: LIBRARY_FOLDER_CHANGE_REFUSAL });
