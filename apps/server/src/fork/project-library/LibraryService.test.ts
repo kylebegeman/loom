@@ -383,6 +383,10 @@ describe("independent Library catalog and durable history", () => {
         };
         yield* service.registerThread({ requestId: "index-thread-1", thread: first });
         yield* service.registerThread({ requestId: "index-thread-2", thread: second });
+        const scoped = yield* service.threadIndex({ projectId: firstProject.id, limit: 1 });
+        expect(scoped.threads.map((thread) => thread.id)).toEqual([first.summary.id]);
+        expect(scoped.nextOffset).toBeNull();
+        expect(scoped.projectActivity).toBeUndefined();
         const a = yield* service.threadIndex({ limit: 1 });
         const b = yield* service.threadIndex({ limit: 1, offset: a.nextOffset! });
         expect((yield* service.lookupThread({ sourceEnvironmentId: source, threadId }))?.id).toBe(

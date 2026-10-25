@@ -18,8 +18,6 @@ import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import * as BriefSuggestions from "./LibraryBriefSuggestions.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
-import * as Timeline from "./LibraryTimeline.ts";
-import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Replication from "./LibraryReplication.ts";
 
@@ -117,10 +115,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }),
   Tool.make("loom_library_operation_run", {
     description:
-      "Run a durable create, import/prepare, restore, launch, archive or cleanup operation. Reuse operationId and identical input after a lost response. Runtime and task authorization still apply. Do not send credentials except an existing short-lived recovery grant through its typed restore path.",
+      "Launch a bound Library conversation. Reuse operationId and identical input after a lost response. For other jobs use the direct project and copy tools; resume or cancel with loom_library_operation_control. Prefer t3_thread_launch for a registered local Library copy.",
     parameters: Schema.Struct({
       operationId: Library.LibraryRequestId,
-      request: Library.LibraryOperationInput,
+      request: Schema.Struct({
+        kind: Schema.Literal("launch"),
+        input: Library.LibraryLaunchOperation,
+      }),
     }),
     success: Library.LibraryOperation,
     failure,
@@ -140,9 +141,9 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_conversations", {
     description:
-      "Read a project's centrally saved conversation index with source computer and saved watermark.",
-    parameters: Schema.Struct({ projectId: Library.LibraryId }),
-    success: Schema.Array(Library.LibraryThreadSummary),
+      "Read a bounded page of saved conversations with source computer and watermark. Omit projectId to search all Library projects. Follow nextOffset for the next page.",
+    parameters: Library.LibraryConversationsRead,
+    success: Library.LibraryThreadIndex,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_lookup_thread", {
@@ -153,18 +154,6 @@ export const ProjectLibraryToolkit = Toolkit.make(
       threadId: ThreadId,
     }),
     success: Schema.NullOr(Library.LibraryThreadSummary),
-    failure,
-  }).annotate(Tool.Readonly, true),
-  Tool.make("loom_library_thread_index", {
-    description:
-      "Read a bounded page of centrally saved conversations across projects without opening full history.",
-    parameters: Schema.Struct({
-      offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-      limit: Schema.optional(
-        Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(200)),
-      ),
-    }),
-    success: Library.LibraryThreadIndex,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_connection", {
@@ -178,14 +167,9 @@ export const ProjectLibraryToolkit = Toolkit.make(
     description:
       "Read the pinned project brief and repository scope for a conversation on this execution computer, even when its Library is offline.",
     parameters: Schema.Struct({ threadId: ThreadId }),
-    success: Schema.NullOr(Library.LibraryProject),
-    failure,
-  }).annotate(Tool.Readonly, true),
-  Tool.make("loom_library_thread_binding", {
-    description:
-      "Read the immutable project, scope and working-copy binding of an existing conversation on this computer.",
-    parameters: Schema.Struct({ threadId: ThreadId }),
-    success: Schema.NullOr(Library.LibraryThreadBinding),
+    success: Schema.NullOr(
+      Schema.Struct({ project: Library.LibraryProject, binding: Library.LibraryThreadBinding }),
+    ),
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history", {
@@ -482,7 +466,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_projects: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(Catalog.LibraryService, (service) =>
+          Effect.flatMap(Publisher.LibraryPublisher, (service) =>
             service.projects(
               input.includeArchived === undefined ? {} : { includeArchived: input.includeArchived },
             ),
@@ -497,30 +481,32 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_conversations: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threads(input))),
+        onHost(
+          Effect.flatMap(Publisher.LibraryPublisher, (service) => service.conversations(input)),
+        ),
       ),
       loom_library_lookup_thread: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.lookupThread(input))),
-      ),
-      loom_library_thread_index: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threadIndex(input))),
+        onHost(
+          Effect.flatMap(Publisher.LibraryPublisher, (service) => service.lookupThread(input)),
+        ),
       ),
       loom_library_connection: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.info)),
       ),
       loom_library_bound_project: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.threadProject(input)),
-        ),
-      ),
-      loom_library_thread_binding: McpToolAccess.reads((input) =>
-        onHost(
-          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.threadBinding(input)),
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) =>
+            Effect.gen(function* () {
+              const project = yield* service.threadProject(input);
+              const binding = yield* service.threadBinding(input);
+              return project === null || binding === null ? null : { project, binding };
+            }),
+          ),
         ),
       ),
       loom_library_history: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(Catalog.LibraryService, (service) =>
+          Effect.flatMap(Publisher.LibraryPublisher, (service) =>
             service.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
           ),
         ),
@@ -530,17 +516,17 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_search: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(Catalog.LibraryService, (service) =>
+          Effect.flatMap(Publisher.LibraryPublisher, (service) =>
             service.search({ ...input, limit: input.limit ?? 20 }),
           ),
         ),
       ),
       loom_library_timeline: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Timeline.LibraryTimeline, (service) => service.page(input))),
+        onHost(Effect.flatMap(Publisher.LibraryPublisher, (service) => service.timeline(input))),
       ),
       loom_library_launch_candidates: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(Launch.LibraryLaunchCandidates, (service) => service.candidates(input)),
+          Effect.flatMap(Publisher.LibraryPublisher, (service) => service.launchCandidates(input)),
         ),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>

@@ -152,6 +152,7 @@ export class LibraryService extends Context.Service<
       threadId: ThreadId;
     }) => Effect.Effect<LibraryThreadSummary | null, LibraryError>;
     readonly threadIndex: (input: {
+      projectId?: string | undefined;
       offset?: number | undefined;
       limit?: number | undefined;
     }) => Effect.Effect<LibraryThreadIndex, LibraryError>;
@@ -1308,17 +1309,21 @@ const make = Effect.gen(function* () {
         store
           .transaction(
             Effect.gen(function* () {
-              const rows = yield* store
-                .threadIndex(limit + 1, offset)
-                .pipe(
-                  Effect.flatMap((rows) =>
-                    Effect.forEach(rows, (row) => decode(codecs.summary, row)),
-                  ),
-                );
+              const rows = yield* (
+                input.projectId === undefined
+                  ? store.threadIndex(limit + 1, offset)
+                  : store.threads(input.projectId, limit + 1, offset)
+              ).pipe(
+                Effect.flatMap((rows) =>
+                  Effect.forEach(rows, (row) => decode(codecs.summary, row)),
+                ),
+              );
               return {
                 threads: rows.slice(0, limit),
                 nextOffset: rows.length > limit ? offset + limit : null,
-                ...(offset === 0 ? { projectActivity: yield* store.projectActivity } : {}),
+                ...(offset === 0 && input.projectId === undefined
+                  ? { projectActivity: yield* store.projectActivity }
+                  : {}),
               };
             }),
           )

@@ -226,6 +226,8 @@ const layerLibraryService = LibraryService.layer.pipe(
 
 const layerProjectWorkflows = ProjectWorkflows.layer.pipe(Layer.provide(layerLibraryService));
 const layerLibraryPublisher = LibraryPublisher.layer.pipe(
+  Layer.provide(LibraryTimeline.layer),
+  Layer.provide(LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService))),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerLibraryService),
   Layer.provide(layerLibraryAssets),

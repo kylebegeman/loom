@@ -1,8 +1,23 @@
 import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as Timeline from "./LibraryTimeline.ts";
+import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import {
+  LibraryProjectsRead,
+  LibraryConversationsRead,
+  LibraryConversationLookup,
+  LibraryHistoryRead,
+  LibraryThreadIndex,
+  LibraryThreadSummary,
+  LibraryThreadArchive as LibraryArchive,
+  LibrarySearchRequest,
+  LibrarySearchResult,
+  LibraryTimelineRequest,
+  LibraryTimelinePage,
+  LibraryLaunchCandidatesRequest,
+  LibraryLaunchCandidates as LaunchCandidatesResult,
   LibraryBriefProposal,
   LibraryDocumentsPublishRequest,
   LibraryDocumentsPublishResult,
@@ -71,6 +86,28 @@ export class LibraryPublisher extends Context.Service<
   LibraryPublisher,
   {
     readonly enabled: boolean;
+    readonly projects: (
+      input: typeof LibraryProjectsRead.Type,
+    ) => Effect.Effect<readonly LibraryProject[], LibraryError>;
+    readonly conversations: (
+      input: typeof LibraryConversationsRead.Type,
+    ) => Effect.Effect<LibraryThreadIndex, LibraryError>;
+    readonly lookupThread: (
+      input: typeof LibraryConversationLookup.Type,
+    ) => Effect.Effect<LibraryThreadSummary | null, LibraryError>;
+    readonly history: (
+      input: typeof LibraryHistoryRead.Type,
+    ) => Effect.Effect<LibraryThreadArchive, LibraryError>;
+    readonly search: (
+      input: typeof LibrarySearchRequest.Type,
+    ) => Effect.Effect<LibrarySearchResult, LibraryError>;
+    readonly timeline: (
+      input: typeof LibraryTimelineRequest.Type,
+    ) => Effect.Effect<LibraryTimelinePage, LibraryError>;
+    readonly launchCandidates: (
+      input: typeof LibraryLaunchCandidatesRequest.Type,
+    ) => Effect.Effect<typeof LaunchCandidatesResult.Type, LibraryError>;
+
     readonly decisions: (
       input: LibraryDecisionsSearchInput,
     ) => Effect.Effect<LibraryDecisionsSearchResult, LibraryError>;
@@ -217,6 +254,13 @@ const make = Effect.gen(function* () {
     );
     return LibraryPublisher.of({
       enabled,
+      projects: () => blocked,
+      conversations: () => blocked,
+      lookupThread: () => blocked,
+      history: () => blocked,
+      search: () => blocked,
+      timeline: () => blocked,
+      launchCandidates: () => blocked,
       copyRegistrations,
       publishDocuments: () => blocked,
       decisions: () => blocked,
@@ -264,6 +308,8 @@ const make = Effect.gen(function* () {
   });
   if (connection.kind === "authority") {
     const localLibrary = yield* LibraryService.LibraryService;
+    const localTimeline = yield* Timeline.LibraryTimeline;
+    const localLaunch = yield* Launch.LibraryLaunchCandidates;
     const localAssets = yield* Assets.LibraryAssetService;
     const localPreviewAccess = yield* PreviewAccessService;
     const publishLocalAttachments = Effect.fnUntraced(
@@ -308,6 +354,14 @@ const make = Effect.gen(function* () {
     );
     return LibraryPublisher.of({
       enabled: true,
+      projects: localLibrary.projects,
+      conversations: localLibrary.threadIndex,
+      lookupThread: localLibrary.lookupThread,
+      history: (input) =>
+        localLibrary.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
+      search: localLibrary.search,
+      timeline: localTimeline.page,
+      launchCandidates: localLaunch.candidates,
       copyRegistrations,
       publishDocuments: localLibrary.publishDocuments,
       decisions: localLibrary.decisions,
@@ -471,6 +525,50 @@ const make = Effect.gen(function* () {
       Effect.tap(registered),
     );
   });
+  const readCatalog = <I, IE, O, OE>(
+    route: string,
+    input: Schema.Codec<I, IE>,
+    output: Schema.Codec<O, OE>,
+  ) =>
+    Effect.fn(`LibraryPublisher.read.${route}`)(function* (value: I) {
+      const body = yield* Schema.encodeEffect(Schema.fromJsonString(input))(value).pipe(
+        Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+      );
+      const response = yield* execute(
+        HttpClientRequest.post(endpoint(`/api/loom/library/${route}`)).pipe(
+          HttpClientRequest.bodyText(body, "application/json"),
+        ),
+        true,
+        true,
+      );
+      return yield* response.json.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(output)),
+        Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+      );
+    });
+  const projects = readCatalog("projects/list", LibraryProjectsRead, Schema.Array(LibraryProject));
+  const conversations = readCatalog(
+    "conversations/list",
+    LibraryConversationsRead,
+    LibraryThreadIndex,
+  );
+  const lookupThread = readCatalog(
+    "conversations/lookup",
+    LibraryConversationLookup,
+    Schema.NullOr(LibraryThreadSummary),
+  );
+  const history = readCatalog(
+    "history/read",
+    LibraryHistoryRead,
+    Schema.toCodecJson(LibraryArchive),
+  );
+  const search = readCatalog("history/search", LibrarySearchRequest, LibrarySearchResult);
+  const timeline = readCatalog("timeline/read", LibraryTimelineRequest, LibraryTimelinePage);
+  const launchCandidates = readCatalog(
+    "launch-candidates",
+    LibraryLaunchCandidatesRequest,
+    LaunchCandidatesResult,
+  );
   const decisions = Effect.fn("LibraryPublisher.decisions")(function* (
     input: LibraryDecisionsSearchInput,
   ) {
@@ -716,6 +814,13 @@ const make = Effect.gen(function* () {
     copyRegistrations,
     publishDocuments,
     decisions,
+    projects,
+    conversations,
+    lookupThread,
+    history,
+    search,
+    timeline,
+    launchCandidates,
     info,
     ingest,
     registerCopy,

@@ -178,6 +178,8 @@ request opens in your browser. Entries marked **estimated time** were rebuilt fr
 before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
 **History** of copies instead. Agents can read the timeline through `loom_library_timeline`.
 
+<!-- fork: library-projects -->
+
 Search finds what was said in saved conversations from every computer, including offline
 ones. The search field on the Projects page looks through every project, and the one on a
 project page looks through that project only. Each result shows the matching words with the
@@ -185,7 +187,18 @@ project, the computer and when it was said. Selecting a result opens the saved c
 at that message and highlights it. Archived conversations are included and marked. In the
 command palette, **Search project history...** jumps to the search field for the project you
 have open, or for every project. Search appears once your Library supports it. Agents can
-search the same history through `loom_library_search`.
+search the same history through `loom_library_search` from a computer connected to the Library.
+
+<!-- fork: library-projects -->
+
+Agents can list your Library projects with `loom_library_projects` and page through saved
+conversations with `loom_library_conversations`, optionally filtered by project. These reads
+use the computer's enrolled Library connection and need an up-to-date Library. Agents can
+start work in a registered copy with `t3_thread_launch` using the project root. Loom links the
+new conversation to that copy before its first turn. A bound agent's batch conversations and
+shared delegated tasks keep its Library scope. Library conversations cannot move to separate
+worktrees; start in the copy's folder instead. `loom_library_bound_project` returns both the
+pinned project brief and its copy binding, including when the Library is offline.
 
 When your Library is set up for semantic search, results also include messages that are close
 in meaning to your words without using them, marked **Similar meaning**. Put a phrase in quotes

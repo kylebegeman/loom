@@ -39,6 +39,7 @@ import {
   OrchestratorThreadAboveModeLimitError,
 } from "../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -56,7 +57,11 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 const decodeTarget = Schema.decodeUnknownEffect(OrchestratorMcpTarget);
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
-  Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+  Layer.provide(
+    Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+      resolveLibraryBinding: () => Effect.succeed(null),
+    }),
+  ), // fork: library-projects
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
@@ -1265,6 +1270,183 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.equal(request.modelSelection.instanceId, antigravityInstanceId);
           assert.equal(request.modelSelection.model, "ant-model");
         }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+      }),
+  );
+
+  // fork: library-projects
+  it.effect(
+    "binds shared Library children before preparation and refuses isolated children before dispatch",
+    () =>
+      Effect.gen(function* () {
+        const stages: string[] = [];
+        let delegated = false;
+        const task = {
+          id: taskId,
+          threadId: parentThreadId,
+          runId: parentRunId,
+          parentNodeId,
+          origin: "app_owned",
+          createdBy: "agent",
+          driver: ProviderDriverKind.make("antigravity"),
+          providerInstanceId: antigravityInstanceId,
+          providerThreadId: null,
+          childThreadId,
+          nativeTaskRef: null,
+          prompt: "Summarize the diff.",
+          title: null,
+          model: "ant-model",
+          status: "running",
+          result: null,
+          startedAt: null,
+          completedAt: null,
+        };
+        const dispatched = yield* Ref.make<ReadonlyArray<unknown>>([]);
+        const layerDependencies = Layer.mergeAll(
+          NodeServices.layer,
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            hasReceipt: () => Effect.succeed(false),
+            assertProviderInstanceEnabled: () => Effect.void,
+            getThreadRecords: (threadId) =>
+              Effect.succeed(
+                threadId === parentThreadId
+                  ? parentProjection(delegated ? [task] : [])
+                  : childProjection,
+              ),
+            dispatch: (command) =>
+              Ref.update(dispatched, (commands) => [...commands, command]).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    stages.push("dispatch");
+                    delegated = true;
+                  }),
+                ),
+                Effect.as({
+                  sequence: 1,
+                  storedEvents: [
+                    {
+                      sequence: 2,
+                      commandId: null,
+                      event: {
+                        type: "run.created",
+                        threadId: childThreadId,
+                        payload: {
+                          id: RunId.make("child-library-run"),
+                          workspacePreparation: { type: "root" },
+                        },
+                      },
+                    },
+                    {
+                      sequence: 1,
+                      commandId: null,
+                      event: { type: "subagent.updated", payload: task },
+                    },
+                  ],
+                } as never),
+              ),
+          }),
+          ServerSettings.layerTest(),
+          Layer.mock(ProviderRegistry.ProviderRegistry)({
+            getProviders: Effect.succeed([
+              providerSnapshot({
+                instanceId: codexInstanceId,
+                driver: ProviderDriverKind.make("codex"),
+                model: "gpt-5.4",
+              }),
+              providerSnapshot({
+                instanceId: antigravityInstanceId,
+                driver: ProviderDriverKind.make("antigravity"),
+                model: "ant-model",
+              }),
+            ]),
+          }),
+          adapterRegistryLayer([codexInstanceId, antigravityInstanceId]),
+          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        );
+
+        yield* Effect.gen(function* () {
+          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+          const refused = yield* service
+            .delegateTask(scope, {
+              task: "Isolated",
+              isolation: "worktree",
+              mode: "async",
+              clientRequestId: "library-isolated",
+              target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+            })
+            .pipe(Effect.flip);
+          assert.equal(refused.message, "Library copies use their own folder.");
+          assert.deepEqual(yield* Ref.get(dispatched), []);
+          const result = yield* service.delegateTask(scope, {
+            task: "Summarize the diff.",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+            mode: "async",
+            clientRequestId: "delegate-antigravity-1",
+          });
+          assert.deepEqual(stages, ["dispatch", "bind", "prepare"]);
+          assert.equal(result.status, "running");
+          assert.equal(result.providerInstanceId, antigravityInstanceId);
+          const commands = yield* Ref.get(dispatched);
+          assert.equal(commands.length, 1);
+          const request = commands[0] as {
+            type: string;
+            modelSelection: { instanceId: string; model: string };
+          };
+          assert.equal(request.type, "delegated_task.request");
+          assert.equal(request.modelSelection.instanceId, antigravityInstanceId);
+          assert.equal(request.modelSelection.model, "ant-model");
+        }).pipe(
+          Effect.provide(
+            OrchestratorMcpService.layer.pipe(
+              Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+              Layer.provide(
+                Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+                  resolveLibraryBinding: (input) => {
+                    assert.equal(input.callerThreadId, parentThreadId);
+                    if (input.workspaceStrategy.type !== "root")
+                      return Effect.fail(
+                        new LibraryError({
+                          reason: "blocked",
+                          detail: "Library copies use their own folder.",
+                        }),
+                      );
+                    return Effect.succeed({
+                      cwd: "/copy",
+                      project: {
+                        id: "shared",
+                        title: "Shared",
+                        brief: "",
+                        revision: 1,
+                        resources: [],
+                        archived: false,
+                        createdAt: "2026-10-25T00:00:00Z",
+                        updatedAt: "2026-10-25T00:00:00Z",
+                      },
+                      binding: {
+                        projectId: "shared",
+                        projectRevision: 1,
+                        workingCopyId: "copy",
+                        environmentId: scope.environmentId,
+                        resourceIds: [],
+                      },
+                    });
+                  },
+                  bindLibraryThread: (threadId) =>
+                    Effect.sync(() => {
+                      assert.equal(threadId, childThreadId);
+                      stages.push("bind");
+                    }),
+                  prepareRun: () =>
+                    Effect.sync(() => {
+                      stages.push("prepare");
+                    }),
+                }),
+              ),
+              Layer.provide(layerDependencies),
+            ),
+          ),
+        );
       }),
   );
 

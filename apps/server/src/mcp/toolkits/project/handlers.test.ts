@@ -504,3 +504,39 @@ it.effect("a launch into a new worktree creates nothing when its base ref has no
     expect(launched).toHaveLength(1);
   }),
 );
+
+// fork: library-projects
+it.effect("launch retries keep the same command, thread and first-message identities", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const handle = (clientRequestId?: string) =>
+      toolkit
+        .handle("t3_thread_launch", {
+          title: "Fix",
+          projectId,
+          message: "Fix once",
+          ...(clientRequestId === undefined ? {} : { clientRequestId }),
+        })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    yield* handle("retry");
+    yield* handle("retry");
+    yield* handle("another");
+    yield* handle();
+    yield* handle();
+    expect(launched[0]?.commandId).toBe(launched[1]?.commandId);
+    expect(launched[0]?.threadId).toBe(launched[1]?.threadId);
+    expect(launched[0]?.initialMessage?.messageId).toBe(launched[1]?.initialMessage?.messageId);
+    expect(launched[0]?.commandId).not.toBe(launched[2]?.commandId);
+    expect(launched[3]?.commandId).not.toBe(launched[4]?.commandId);
+    expect(launched[0]?.libraryCaller).toEqual({ sessionId: "session-1" });
+  }),
+);

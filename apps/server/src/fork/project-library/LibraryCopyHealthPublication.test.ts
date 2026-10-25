@@ -77,6 +77,13 @@ const fixture = Effect.gen(function* () {
     validateThreadCwd: (input) => Effect.succeed(input.cwd),
   });
   const publisher = Publisher.LibraryPublisher.of({
+    projects: () => Effect.die("unused"),
+    conversations: () => Effect.die("unused"),
+    lookupThread: () => Effect.die("unused"),
+    history: () => Effect.die("unused"),
+    search: () => Effect.die("unused"),
+    timeline: () => Effect.die("unused"),
+    launchCandidates: () => Effect.die("unused"),
     copyRegistrations: Stream.empty,
     publishDocuments: () => Effect.die("unused"),
     decisions: () => Effect.die("unused"),
