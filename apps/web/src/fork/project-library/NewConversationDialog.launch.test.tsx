@@ -94,9 +94,15 @@ vi.mock("~/hooks/useSettings", () => ({
   mergeEnvironmentSettings: (settings: unknown) => settings,
 }));
 vi.mock("~/modelSelection", () => ({ getCustomModelOptionsByInstance: () => new Map() }));
-vi.mock("~/composerDraftStore", () => ({
-  useComposerDraftStore: { getState: () => ({ setPrompt: vi.fn() }) },
-}));
+vi.mock("~/composerDraftStore", () => {
+  const sticky = { stickyActiveProvider: null, stickyModelSelectionByProvider: {} };
+  return {
+    useComposerDraftStore: Object.assign(
+      (select: (store: typeof sticky) => unknown) => select(sticky),
+      { getState: () => ({ ...sticky, setPrompt: vi.fn() }) },
+    ),
+  };
+});
 vi.mock("~/lib/utils", () => ({
   newThreadId: () => state.threadIds.shift() ?? "new-thread",
   randomUUID: () => `launch-request-${++state.nextId}`,

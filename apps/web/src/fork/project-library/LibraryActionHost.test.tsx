@@ -187,6 +187,7 @@ vi.mock("./ImportProjectDialog", () => ({
 vi.mock("./NewConversationDialog", async () => {
   const { ConversationAutoStartContext } = await import("./ConversationPalette");
   return {
+    selectLastUsedModel: () => null,
     libraryConversationDefaults: () => ({
       entries: [{ instanceId: "codex", models: [{ slug: "gpt-6", name: "GPT 6.0 Astra" }] }],
       providers: [],
