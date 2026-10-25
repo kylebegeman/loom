@@ -2150,7 +2150,8 @@ export const layerWithOptions = (
         );
       };
 
-      // The service launcher kills the server 5 s after it asks it to stop, and
+      // fork: restart-continuity
+      // The service launcher kills the server 15 s after it asks it to stop, and
       // a busy server can hold 15 sessions.
       const sessionScopes = yield* Scope.make("parallel");
       const shutdown = Effect.gen(function* () {
