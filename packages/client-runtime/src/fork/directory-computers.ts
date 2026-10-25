@@ -25,6 +25,7 @@ import {
   type DirectoryPlanConnectInput,
 } from "./directory-computers-connect.ts";
 import { identityDirectoryAddresses } from "./directory.ts";
+import { learnDirectoryRoutes } from "./directory-routes.ts";
 
 /**
  * Kept in each client's offline query cache under the Library: web IndexedDB, the phone's
@@ -67,6 +68,7 @@ const readDirectoryListing = Effect.fn("DirectoryComputers.read")(function* () {
     yield* Clock.currentTimeMillis,
   );
   yield* saveStoredDirectoryListing(stored);
+  yield* learnDirectoryRoutes(listing);
   return stored;
 });
 

@@ -2377,6 +2377,52 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
+  // fork: directory-computers
+  it.effect("tries the routes its Library lists for a saved computer this device cannot reach", () =>
+    Effect.gen(function* () {
+      const httpBaseUrl = "https://bearer.reach.example.test/";
+      const learnedId = `learned:${BEARER_TARGET.environmentId}:https://bearer.reach.example.test@${BEARER_TARGET.connectionId}`;
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+        {
+          prepareRoute: (target) =>
+            connectionRouteId(target) === BEARER_TARGET.connectionId
+              ? new ConnectionBlockedError({ reason: "configuration", detail: "No route here." })
+              : undefined,
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const reachedPhase = (phase: SupervisorConnectionState["phase"]) =>
+          awaitConnectionState(registry, BEARER_TARGET.environmentId, (state) => state.phase === phase);
+        yield* registry.start;
+        yield* reachedPhase("blocked");
+
+        const reported = [{ httpBaseUrl, kind: "public" }];
+        yield* registry.learnDirectoryRoutes!(BEARER_TARGET.environmentId, reported);
+        yield* reachedPhase("connected");
+        expect(yield* Ref.get(harness.connectedRoutes)).toEqual([learnedId]);
+        expect((yield* Ref.get(harness.storedProfiles)).get(learnedId)).toMatchObject({
+          learned: true,
+          httpBaseUrl,
+        });
+
+        // Once connected, the computer's own report decides its routes.
+        const before = (yield* SubscriptionRef.get(registry.entries)).get(
+          BEARER_TARGET.environmentId,
+        );
+        yield* registry.learnDirectoryRoutes!(BEARER_TARGET.environmentId, [
+          { httpBaseUrl: "https://other.example.test/", kind: "public" },
+        ]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(BEARER_TARGET.environmentId),
+        ).toBe(before);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("drops a learned route whose profile was not saved instead of duplicating it", () =>
     Effect.gen(function* () {
       const learnedId = `learned:${LAN_TARGET.environmentId}:100.64.0.9:3773@${LAN_TARGET.connectionId}`;
