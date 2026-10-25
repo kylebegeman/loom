@@ -130,8 +130,8 @@ The command palette reaches projects from anywhere. Type part of a project's nam
 or use **Go to project...** and **Open project brief...** to pick one, most recently active
 first. **New conversation in...** opens the New conversation project list. In a thread that
 belongs to a project, **Go to this thread's project** opens it, even when that thread's
-computer is offline. To give **Go to project** or
-**New conversation in** a shortcut, bind `loom.library.goToProject` or
+computer is offline. Press `Cmd/Ctrl+Alt+P` for **Go to project** and `Cmd/Ctrl+Alt+Shift+N`
+for **New conversation in**. To change them, rebind `loom.library.goToProject` or
 `loom.library.newConversationIn` in **Settings → Keybindings**.
 
 **Preferences** on the project page records how work gets going on any computer, and it is saved
