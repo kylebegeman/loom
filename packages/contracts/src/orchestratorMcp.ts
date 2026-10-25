@@ -508,17 +508,32 @@ export const OrchestratorMcpThreadInterruptResult = Schema.Struct({
 });
 export type OrchestratorMcpThreadInterruptResult = typeof OrchestratorMcpThreadInterruptResult.Type;
 
+// fork: agent-catalog -- accounts of one driver usually list identical models, so each distinct
+// list is sent once and providers name theirs; one copy per account made the result ~70k chars.
+export const OrchestratorMcpModelCatalog = Schema.Array(
+  Schema.Struct({
+    id: Schema.String,
+    label: Schema.NullOr(Schema.String),
+    options: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
+  }),
+);
+export type OrchestratorMcpModelCatalog = typeof OrchestratorMcpModelCatalog.Type;
+
+export const OrchestratorMcpCapabilitiesInput = Schema.Struct({
+  providerInstanceId: Schema.optional(
+    ProviderInstanceId.annotate({ description: "Only report this provider instance." }),
+  ),
+  driverKind: Schema.optional(
+    ProviderDriverKind.annotate({ description: "Only report instances of this driver kind." }),
+  ),
+});
+export type OrchestratorMcpCapabilitiesInput = typeof OrchestratorMcpCapabilitiesInput.Type;
+
 export const OrchestratorMcpProviderCapability = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   driverKind: ProviderDriverKind,
   displayName: Schema.NullOr(Schema.String),
-  models: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      label: Schema.NullOr(Schema.String),
-      options: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
-    }),
-  ),
+  modelCatalog: Schema.NullOr(Schema.String), // fork: agent-catalog
   runtimeModes: Schema.optional(Schema.Array(RuntimeMode)),
   canRunChildTask: Schema.Boolean,
   canRunCrossProviderChildTask: Schema.Boolean,
@@ -534,6 +549,7 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   providers: Schema.Array(OrchestratorMcpProviderCapability),
+  modelCatalogs: Schema.Record(Schema.String, OrchestratorMcpModelCatalog), // fork: agent-catalog
   features: Schema.Struct({
     appOwnedSubagents: Schema.Boolean,
     asyncPolling: Schema.Boolean,

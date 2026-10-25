@@ -13,7 +13,9 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
   OrchestratorMcpFailure,
+  type OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   type OrchestratorMcpCapabilitiesResult,
+  type OrchestratorMcpModelCatalog, // fork: agent-catalog
   type OrchestratorMcpCreateThreadsInput,
   type OrchestratorMcpCreateThreadsResult,
   type OrchestratorMcpCreatedThread,
@@ -135,6 +137,7 @@ type TerminalTaskStatus = Extract<
 export interface OrchestratorMcpServiceShape {
   readonly capabilities: (
     scope: McpInvocationScope,
+    input?: OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   ) => Effect.Effect<OrchestratorMcpCapabilitiesResult, OrchestratorMcpFailure>;
   readonly delegateTask: (
     scope: McpInvocationScope,
@@ -308,6 +311,29 @@ function providerConstraints(
     constraints.push("Provider is not authenticated.");
   }
   return constraints;
+}
+
+// fork: agent-catalog -- instances share a catalog only when their model lists match exactly,
+// so every instance still reports its own hidden models, options and current values. The first
+// list for a driver is keyed by the driver kind; a different one gets a numbered key.
+function shareModelCatalogs<
+  Provider extends { readonly driverKind: string; readonly models: OrchestratorMcpModelCatalog },
+>(providers: ReadonlyArray<Provider>) {
+  const catalogs = new Map<string, OrchestratorMcpModelCatalog>();
+  const keysByContent = new Map<string, string>();
+  const shared = providers.map(({ models, ...provider }) => {
+    if (models.length === 0) return { ...provider, modelCatalog: null };
+    const content = JSON.stringify(models);
+    let key = keysByContent.get(content);
+    if (key === undefined) {
+      key = provider.driverKind;
+      for (let suffix = 2; catalogs.has(key); suffix += 1) key = `${provider.driverKind}-${suffix}`;
+      keysByContent.set(content, key);
+      catalogs.set(key, models);
+    }
+    return { ...provider, modelCatalog: key };
+  });
+  return { providers: shared, modelCatalogs: Object.fromEntries(catalogs) };
 }
 
 /**
@@ -1986,9 +2012,20 @@ const make = Effect.gen(function* () {
       return { status, secretRef: secretRef.value };
     }),
 
-    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope) {
+    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope, input = {}) {
       const { parent, limits } = yield* loadCaller(scope);
-      const providers = yield* loadProviders;
+      // fork: agent-catalog
+      const providers = (yield* loadProviders).filter(
+        (provider) =>
+          (input.providerInstanceId === undefined ||
+            provider.instanceId === input.providerInstanceId) &&
+          (input.driverKind === undefined || provider.driver === input.driverKind),
+      );
+      if (providers.length === 0 && (input.providerInstanceId ?? input.driverKind) !== undefined)
+        return yield* failure(
+          "invalid_request",
+          "No provider instance matches providerInstanceId or driverKind. Call orchestrator_capabilities without them to list every instance.",
+        );
       const orchestrationCapableInstanceIds = yield* loadOrchestrationCapableInstanceIds();
       const modelPreferences = yield* serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providerModelPreferences ?? {}),
@@ -2001,38 +2038,41 @@ const make = Effect.gen(function* () {
         inheritedOptions: parent?.thread.modelSelection.options ?? [],
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
-        providers: providers.map((provider) => {
-          const constraints = providerConstraints(
-            provider,
-            orchestrationCapableInstanceIds.has(provider.instanceId),
-          );
-          return {
-            providerInstanceId: provider.instanceId,
-            driverKind: provider.driver,
-            displayName: provider?.displayName ?? null,
-            models:
-              provider?.models
-                .filter(
-                  (model) =>
-                    model.isCustom ||
-                    !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
-                )
-                .map((model) => ({
-                  id: model.slug,
-                  label: model.name ?? null,
-                  ...(model.capabilities?.optionDescriptors === undefined
-                    ? {}
-                    : { options: model.capabilities.optionDescriptors }),
-                })) ?? [],
-            ...(provider.supportedRuntimeModes === undefined ||
-            provider.supportedRuntimeModes.length === 0
-              ? {}
-              : { runtimeModes: [...provider.supportedRuntimeModes] }),
-            canRunChildTask: constraints.length === 0,
-            canRunCrossProviderChildTask: constraints.length === 0,
-            constraints: [...constraints],
-          };
-        }),
+        // fork: agent-catalog -- sets providers and modelCatalogs.
+        ...shareModelCatalogs(
+          providers.map((provider) => {
+            const constraints = providerConstraints(
+              provider,
+              orchestrationCapableInstanceIds.has(provider.instanceId),
+            );
+            return {
+              providerInstanceId: provider.instanceId,
+              driverKind: provider.driver,
+              displayName: provider?.displayName ?? null,
+              models:
+                provider?.models
+                  .filter(
+                    (model) =>
+                      model.isCustom ||
+                      !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
+                  )
+                  .map((model) => ({
+                    id: model.slug,
+                    label: model.name ?? null,
+                    ...(model.capabilities?.optionDescriptors === undefined
+                      ? {}
+                      : { options: model.capabilities.optionDescriptors }),
+                  })) ?? [],
+              ...(provider.supportedRuntimeModes === undefined ||
+              provider.supportedRuntimeModes.length === 0
+                ? {}
+                : { runtimeModes: [...provider.supportedRuntimeModes] }),
+              canRunChildTask: constraints.length === 0,
+              canRunCrossProviderChildTask: constraints.length === 0,
+              constraints: [...constraints],
+            };
+          }),
+        ),
         features: {
           appOwnedSubagents: true,
           asyncPolling: true,
