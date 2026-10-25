@@ -349,7 +349,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
           ? remaining.length || result.archive?.ok === false
             ? "Some of this needs another look. Everything listed below was left as it was."
             : "Done. The project and its saved conversations stay in your Library."
-          : "This project has been quiet for two weeks. Free safely saved files and archive the project if you are done with it for now."}
+          : "Free safely saved files. Quiet projects can also be archived if you are done with them for now."}
       </Text>
       {kept.length ? (
         <LibraryNotice
@@ -403,6 +403,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
                 copy,
                 detail: reasons.map(libraryTidyReasonLabel).join(" · "),
                 tone: "warning",
+                repair: true,
               }))}
               hostLabel={hostLabel}
             />
@@ -469,6 +470,7 @@ function CopyGroup(props: {
     readonly copy: LibraryWorkingCopy;
     readonly detail: string;
     readonly tone: keyof typeof DETAIL_TONE;
+    readonly repair?: boolean;
   }[];
   hostLabel: (id: EnvironmentId) => string;
 }) {
@@ -480,11 +482,15 @@ function CopyGroup(props: {
     );
   return (
     <SettingsSection title={props.title} footer={props.footer}>
-      {props.rows.map(({ copy, detail, tone }, index) => (
+      {props.rows.map(({ copy, detail, tone, repair }, index) => (
         <View
           key={copy.id}
-          accessible
-          accessibilityLabel={`${props.hostLabel(copy.environmentId)}, ${copy.rootPath}. ${detail}`}
+          accessible={!repair}
+          accessibilityLabel={
+            repair
+              ? undefined
+              : `${props.hostLabel(copy.environmentId)}, ${copy.rootPath}. ${detail}`
+          }
           className={cn("gap-1 px-4 py-3", index > 0 && "border-t border-border-subtle")}
         >
           <Text className="text-sm text-foreground" numberOfLines={1}>
@@ -494,8 +500,42 @@ function CopyGroup(props: {
             {copy.rootPath}
           </Text>
           <Text className={cn("text-xs", DETAIL_TONE[tone])}>{detail}</Text>
+          {repair ? <CopyRepairActions copy={copy} /> : null}
         </View>
       ))}
     </SettingsSection>
+  );
+}
+
+function CopyRepairActions({ copy }: { readonly copy: LibraryWorkingCopy }) {
+  const navigation = useNavigation();
+  const status = useEnvironmentQuery(
+    library.copyStatus({ environmentId: copy.environmentId, input: { workingCopyId: copy.id } }),
+  );
+  const threads = status.data?.releaseBlockerThreads ?? [];
+  return (
+    <View className="gap-2">
+      {threads.length ? (
+        threads.map((thread) => (
+          <Button
+            key={thread.threadId}
+            label={`Open conversation: ${thread.title}`}
+            tone="secondary"
+            onPress={() =>
+              navigation.navigate("Thread", {
+                environmentId: copy.environmentId,
+                threadId: thread.threadId,
+              })
+            }
+          />
+        ))
+      ) : (
+        <Button
+          label="Open project files"
+          tone="secondary"
+          onPress={() => navigation.navigate("LibraryProject", { projectId: copy.projectId })}
+        />
+      )}
+    </View>
   );
 }

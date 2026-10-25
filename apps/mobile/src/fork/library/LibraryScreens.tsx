@@ -647,6 +647,11 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       <LibraryHistorySearchEntry projectId={p.id} />
       <View className="gap-3">
         <Text className="text-base font-t3-medium text-foreground">Project files</Text>
+        <Button
+          label="Tidy..."
+          tone="secondary"
+          onPress={() => navigation.navigate("LibraryTidy", { projectId: p.id })}
+        />
         {activeCopies.map((copy) => (
           <LibraryCopySection
             key={copy.id}

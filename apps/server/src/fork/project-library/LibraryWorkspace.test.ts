@@ -2071,11 +2071,49 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       yield* git(repository, ["worktree", "add", "-b", "feature", outside]);
       yield* git(repository, ["worktree", "add", "-b", "inside", inside]);
 
-      const blocked = yield* service.status({ workingCopyId: copy.id });
+      const archive = yield* archiveFor(makeProject([]));
+      const owner: OrchestrationV2ThreadShell = {
+        ...archive.projection.thread,
+        id: ThreadId.make("linked-worktree-owner"),
+        title: "Finish the feature",
+        worktreePath: outside,
+        latestRunId: null,
+        status: "idle",
+        latestVisibleMessage: null,
+        latestUserMessageAt: null,
+        hasActionableProposedPlan: false,
+        itemCount: 0,
+        visibleItemCount: 0,
+        activeRunId: null,
+        pendingRuntimeRequest: null,
+        settledOverride: null,
+        archivedAt: archive.projection.thread.createdAt,
+        pendingBackgroundTasks: [],
+        goal: null,
+      };
+      const reporting = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+          ...(yield* ProjectionStore.ProjectionStoreV2),
+          getShellSnapshot: () =>
+            Effect.succeed({
+              schemaVersion: 1,
+              snapshotSequence: 0,
+              threads: [
+                { ...owner, id: ThreadId.make("deleted-owner"), deletedAt: owner.createdAt },
+              ],
+              archivedThreads: [owner, { ...owner, id: ThreadId.make("older-owner") }],
+            }),
+        }),
+      );
+      const blocked = yield* reporting.status({ workingCopyId: copy.id });
       expect(blocked.blockers).toEqual([]);
       expect(blocked.releaseBlockers).toHaveLength(1);
       expect(blocked.releaseBlockers![0]).toContain(outside);
       expect(blocked.releaseBlockers![0]).not.toContain(inside);
+      expect(blocked.releaseBlockerThreads).toEqual([
+        { threadId: owner.id, title: owner.title, worktreePath: outside },
+      ]);
       // Saving never deletes, so the worktree only stops removal.
       const saved = yield* service.snapshotCopy({
         requestId: "linked-worktree-snapshot",
@@ -2096,9 +2134,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
 
       // A removed worktree leaves only prunable metadata, which removal cannot break further.
       yield* fs.remove(outside, { recursive: true });
-      const cleared = yield* service.status({ workingCopyId: copy.id });
+      const cleared = yield* reporting.status({ workingCopyId: copy.id });
       expect(cleared.blockers).toEqual([]);
       expect(cleared.releaseBlockers).toEqual([]);
+      expect(cleared.releaseBlockerThreads).toEqual([]);
       const released = yield* service.release({
         requestId: "linked-worktree-release-cleared",
         workingCopyId: copy.id,
