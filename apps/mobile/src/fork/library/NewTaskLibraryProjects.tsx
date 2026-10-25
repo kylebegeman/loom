@@ -22,7 +22,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { useEnvironmentQuery } from "../../state/query";
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { useStickyComposerModelSelection } from "../../state/use-composer-drafts";
@@ -98,6 +98,7 @@ export function useNewTaskLibraryProjects(input: {
   const configs = useServerConfigs();
   const localProjects = useProjects();
   const lastUsedSelection = useStickyComposerModelSelection();
+  const shells = useThreadShells();
   // Keyed by project and independent of the search text, so typing only filters. The computers
   // are listed as web lists them, so both promise the same computer for a project.
   const starts = useMemo(() => {
@@ -131,6 +132,7 @@ export function useNewTaskLibraryProjects(input: {
               (entry) => entry.environmentId === environmentId && entry.id === projectId,
             ) ?? null,
           lastUsedSelection,
+          shells,
         }),
       ]),
     );
@@ -146,6 +148,7 @@ export function useNewTaskLibraryProjects(input: {
     localProjects,
     authority.computers,
     lastUsedSelection,
+    shells,
   ]);
 
   const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));

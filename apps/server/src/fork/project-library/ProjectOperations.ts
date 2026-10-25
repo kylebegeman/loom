@@ -15,7 +15,14 @@ import {
   LibraryOperationInput,
   LibraryWorkingCopy,
   type LibraryRecoveryGrant,
+  type LibraryResolvedBinding,
 } from "@t3tools/contracts/fork";
+import {
+  buildTemporaryWorktreeBranchName,
+  flattenTemporaryWorktreeBranchName,
+  WORKTREE_BRANCH_PREFIX,
+} from "@t3tools/shared/git";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
@@ -24,11 +31,13 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { SessionStore } from "../../auth/SessionStore.ts";
 import { isVaultRunRunning } from "../vault/active-run.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -55,6 +64,9 @@ const workloadCodec = Schema.fromJsonString(Workload);
 const operationCodec = Schema.fromJsonString(LibraryOperation);
 const requestCodec = Schema.fromJsonString(LibraryOperationInput);
 const copyCodec = Schema.fromJsonString(LibraryWorkingCopy);
+const worktreeCodec = Schema.fromJsonString(
+  Schema.Struct({ path: Schema.String, branch: Schema.String }),
+);
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
   return kind === "create"
     ? [AuthSettingsWriteScope]
@@ -137,6 +149,8 @@ const make = Effect.gen(function* () {
   const workspaceStore = yield* LibraryWorkspaceStore;
   const threads = yield* ThreadManagementService;
   const sessions = yield* SessionStore;
+  const git = yield* GitWorkflowService;
+  const fs = yield* FileSystem.FileSystem;
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const scope = yield* Effect.scope;
@@ -194,6 +208,60 @@ const make = Effect.gen(function* () {
     const required = operationScopes(request.kind);
     if (!active || !required.every((permission) => active.scopes.includes(permission)))
       return yield* denied();
+  }, Effect.mapError(io));
+  /**
+   * A launch's own worktree, made once so a retry never gives the conversation a second checkout.
+   * It goes where Loom keeps worktrees, so landed-work cleanup, and remaking it after a removal,
+   * treat it like any other conversation's worktree.
+   */
+  const launchWorktree = Effect.fn("ProjectOperations.launchWorktree")(function* (
+    id: string,
+    resolved: LibraryResolvedBinding,
+  ) {
+    const receiptId = `${id}:worktree`;
+    const saved = yield* sql<{
+      result_json: string;
+    }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${receiptId}`;
+    if (saved[0]) return yield* Schema.decodeEffect(worktreeCodec)(saved[0].result_json);
+    if (resolved.repositoryPaths.length !== 1 || resolved.repositoryPaths[0] !== resolved.cwd)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Only a conversation working in one repository can start in its own worktree. Choose that repository, or start in the project folder.",
+      });
+    const cwd = resolved.cwd;
+    const uuid = yield* randomUuidV4;
+    const temporary = buildTemporaryWorktreeBranchName(() => uuid.replaceAll("-", ""));
+    const branch = (yield* git.hasCommit({ cwd, refName: `refs/heads/${WORKTREE_BRANCH_PREFIX}` }))
+      ? flattenTemporaryWorktreeBranchName(temporary)
+      : temporary;
+    const base = (yield* git.localStatus({ cwd })).refName;
+    // Once the worktree exists, its receipt must be saved even if the operation is cancelled.
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const created = yield* restore(
+          git.createWorktree({
+            cwd,
+            refName: base ?? "HEAD",
+            newRefName: branch,
+            ...(base === null ? {} : { baseRefName: base }),
+            path: null,
+          }),
+        );
+        const worktree = {
+          path: yield* fs.realPath(created.worktree.path),
+          branch: created.worktree.refName,
+        };
+        // The first turn runs the project's setup script here before the agent starts.
+        yield* fs.writeFileString(
+          `${worktree.path}.t3-setup-pending`,
+          "Workspace setup must complete before starting the agent.\n",
+        );
+        const payload = yield* Schema.encodeEffect(worktreeCodec)(worktree);
+        yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${receiptId},${"worktree"},${payload})`;
+        return worktree;
+      }),
+    );
   }, Effect.mapError(io));
   const worker = Effect.fn("ProjectOperations.worker")(function* (id: string) {
     const row = yield* read(id);
@@ -262,6 +330,9 @@ const make = Effect.gen(function* () {
             binding: input.binding,
             project: input.project,
           });
+          if (input.workspace === "worktree") yield* phase("Creating worktree");
+          const worktree =
+            input.workspace === "worktree" ? yield* launchWorktree(id, resolved) : null;
           yield* phase("Creating conversation");
           yield* threads
             .dispatch({
@@ -273,8 +344,8 @@ const make = Effect.gen(function* () {
               modelSelection: input.modelSelection,
               runtimeMode: input.runtimeMode,
               interactionMode: input.interactionMode,
-              branch: null,
-              worktreePath: resolved.cwd,
+              branch: worktree?.branch ?? null,
+              worktreePath: worktree?.path ?? resolved.cwd,
               createdBy: row.session_id.startsWith("workload:") ? "agent" : "user",
               creationSource: row.session_id.startsWith("workload:") ? "mcp" : "web",
             })
@@ -293,6 +364,7 @@ const make = Effect.gen(function* () {
             threadId: input.threadId,
             binding: input.binding,
             project: input.project,
+            ...(worktree === null ? {} : { worktreePath: worktree.path }),
           });
           if (input.keepOnComputer !== undefined) {
             yield* phase("Saving file retention");

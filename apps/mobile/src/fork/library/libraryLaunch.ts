@@ -7,6 +7,7 @@ import {
   type ProjectId,
 } from "@t3tools/contracts";
 import {
+  LibraryLaunchWorkspace,
   LibraryProject,
   type LibraryResolveBindingRequest,
   type LibraryRegisterCopyRequest,
@@ -81,6 +82,7 @@ export const LibraryLaunchAttempt = Schema.Struct({
     recoverySource: Schema.optional(LibraryWorkingCopy),
     carryContext: Schema.String,
     keepOnComputer: Schema.optional(Schema.Boolean),
+    workspace: Schema.optional(LibraryLaunchWorkspace),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),
   }),

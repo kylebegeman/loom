@@ -10,15 +10,16 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 
 export const LIBRARY_FOLDER_CHANGE_REFUSAL =
-  "This conversation belongs to a Library project and always runs in the project's folder, so it can't move to a worktree. You can still switch branches in that folder.";
+  "This conversation belongs to a Library project and stays in the folder it started in. To work in a worktree of its own, start a new conversation from the project and choose New worktree. You can still switch branches in this folder.";
 
 const refused = () =>
   new LibraryError({ reason: "blocked", detail: LIBRARY_FOLDER_CHANGE_REFUSAL });
 
 /**
- * Every turn of a Library-bound conversation prepares and validates its copy folder, so a
- * conversation moved anywhere else is accepted and then fails on its next turn. Callers that
- * change a thread's folder ask here first and refuse up front instead.
+ * Every turn of a Library-bound conversation prepares and validates its bound folder, the copy
+ * folder or the worktree it started in, so a conversation moved anywhere else is accepted and
+ * then fails on its next turn. Callers that change a thread's folder ask here first and refuse
+ * up front instead.
  */
 export class LibraryFolderGuard extends Context.Service<
   LibraryFolderGuard,
@@ -29,7 +30,7 @@ export class LibraryFolderGuard extends Context.Service<
       readonly projectId: ProjectId;
       readonly worktreePath: string | null;
     }) => Effect.Effect<void, LibraryError>;
-    /** For callers about to create a new folder for the thread, which is never its copy folder. */
+    /** For callers about to create a new folder for the thread, which is never its bound folder. */
     readonly assertMayLeaveFolder: (threadId: ThreadId) => Effect.Effect<void, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryFolderGuard") {}
@@ -54,7 +55,7 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
       )?.workspaceRoot;
     // The binding's cwd is already a realpath, and prepareThreadFiles compares the thread's
-    // folder to it after path.resolve only. A symlink or alias of the copy folder would still
+    // folder to it after path.resolve only. A symlink or alias of the bound folder would still
     // fail that turn check, so only the folder itself passes here.
     if (folder === undefined || path.resolve(folder) !== resolved.cwd) return yield* refused();
   });

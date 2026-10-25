@@ -43,7 +43,7 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: () => new Map() }));
-vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
+vi.mock("~/state/entities", () => ({ useProjects: () => [], useThreadShells: () => [] }));
 vi.mock("./ConversationPalette", async () => {
   const { createContext } = await import("react");
   return { ConversationAutoStartContext: createContext(null) };

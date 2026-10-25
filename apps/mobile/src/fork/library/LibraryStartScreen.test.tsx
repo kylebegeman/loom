@@ -45,6 +45,8 @@ const state = vi.hoisted(() => ({
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
   snapshot: vi.fn(),
+  executeOperation: vi.fn(),
+  shells: [] as unknown[],
   savePreferences: vi.fn(),
   preferenceAtom: {},
   preferences: {} as Record<string, string>,
@@ -117,6 +119,7 @@ vi.mock("./libraryState", () => ({
     snapshotCopy: state.snapshotCopy,
     resolveBinding: state.resolve,
     snapshotThread: state.snapshot,
+    executeOperation: state.executeOperation,
   },
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
@@ -136,6 +139,7 @@ vi.mock("../../state/entities", () => ({
       ["library", state.computers[0]?.serverConfig],
     ]),
   useProject: () => null,
+  useThreadShells: () => state.shells,
 }));
 vi.mock("../../state/session", () => ({
   useEnvironmentsWithScope: () =>
@@ -472,6 +476,7 @@ beforeEach(() => {
   state.healthPending = false;
   state.source = null;
   state.warning = null;
+  state.shells = [];
   // Applies each update the way the preferences store does, so a remounted screen reads it.
   state.savePreferences.mockImplementation(
     async (update: {
@@ -824,6 +829,135 @@ describe("Library start progressive disclosure", () => {
         interactionMode: "plan",
       }),
     });
+  });
+
+  it("starts in a new worktree while another conversation works in the files, and a retry keeps it", async () => {
+    const app = {
+      id: "app",
+      title: "App",
+      relativePath: ".",
+      remoteUrl: "https://github.com/team/app",
+      defaultBranch: null,
+    };
+    state.project = { ...project, resources: [app] };
+    const files = {
+      ...copy,
+      repositories: [
+        { resourceId: app.id, path: copy.rootPath, localProjectId, head: null, branch: "main" },
+      ],
+    };
+    state.copies = [files];
+    state.computers[0] = makeComputer(computerA, "MacBook", true, [
+      "project-workflows",
+      "library-worktree-starts",
+    ]);
+    state.shells = [
+      {
+        environmentId: computerA,
+        worktreePath: copy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: null,
+          lastError: null,
+          updatedAt: project.updatedAt,
+        },
+      },
+    ];
+    state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+    state.launch.mockImplementation(async (intent, receipt, ports) => {
+      receipt.intent = intent;
+      receipt.resolved = {
+        cwd: copy.rootPath,
+        localProjectId,
+        repositoryPaths: [copy.rootPath],
+        binding: {
+          projectId: project.id,
+          projectRevision: project.revision,
+          workingCopyId: files.id,
+          environmentId: computerA,
+          resourceIds: [app.id],
+        },
+      };
+      await ports.persist!();
+      await ports.durableLaunch!({
+        threadId: intent.threadId,
+        binding: receipt.resolved.binding,
+        project: intent.project,
+      });
+      throw new Error("Preparation interrupted");
+    });
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: files.id };
+    await render();
+    expect(button("Workspace").textContent).toContain("New worktree");
+    await click("Start work");
+    expect(state.executeOperation.mock.calls[0]![0].input.request.input.workspace).toBe("worktree");
+
+    // The other conversation finishing must not move the retry back into the shared folder.
+    state.shells = [];
+    await act(() => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(container.textContent).toContain("An unfinished preparation is saved");
+    expect(button("Workspace").textContent).toContain("New worktree");
+    await click("Resume starting work");
+    expect(state.executeOperation.mock.calls[1]![0].input.request.input.workspace).toBe("worktree");
+  });
+
+  it("starts in the project folder when chosen, even while another conversation works there", async () => {
+    state.project = {
+      ...project,
+      resources: [
+        {
+          id: "app",
+          title: "App",
+          relativePath: ".",
+          remoteUrl: "https://github.com/team/app",
+          defaultBranch: null,
+        },
+      ],
+    };
+    state.copies = [
+      {
+        ...copy,
+        repositories: [
+          { resourceId: "app", path: copy.rootPath, localProjectId, head: null, branch: "main" },
+        ],
+      },
+    ];
+    state.computers[0] = makeComputer(computerA, "MacBook", true, ["library-worktree-starts"]);
+    state.shells = [
+      {
+        environmentId: computerA,
+        worktreePath: copy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: null,
+          lastError: null,
+          updatedAt: project.updatedAt,
+        },
+      },
+    ];
+    state.launch.mockImplementation(async (intent, receipt, ports) => {
+      receipt.intent = intent;
+      await ports.persist!();
+      throw new Error("Preparation interrupted");
+    });
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id };
+    await render();
+    await click("Workspace");
+    await click("Project folder");
+    expect(button("Workspace").textContent).toContain("Project folder");
+    await click("Start work");
+    expect(state.launch).toHaveBeenCalledOnce();
+    expect(state.preferences[JSON.stringify(["library", project.id, "new"])]).toContain(
+      '"workspace":"folder"',
+    );
   });
 
   it("keeps launch warnings and explicit safety actions visible while options are collapsed", async () => {

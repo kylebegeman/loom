@@ -8,9 +8,12 @@ import {
 } from "@react-navigation/native";
 import {
   libraryContinuationContext,
+  libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
   libraryPortableRecoveryPlan,
   markLibraryConversationStarted,
   supportsLoomFeature,
@@ -35,6 +38,8 @@ import {
   LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
+  type LibraryLaunchWorkspace,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
@@ -50,7 +55,7 @@ import { SettingsSwitchRow } from "../../features/settings/components/SettingsSw
 import { buildModelOptions } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { useProject, useServerConfigs } from "../../state/entities";
+import { useProject, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
@@ -274,7 +279,11 @@ function LibraryStartContent(props: {
     [showComputers, setShowComputers] = useState(false),
     [showOptions, setShowOptions] = useState(false),
     [showSetup, setShowSetup] = useState(false),
-    [keepFiles, setKeepFiles] = useState<boolean | null>(seed?.review.keepOnComputer ?? null);
+    [keepFiles, setKeepFiles] = useState<boolean | null>(seed?.review.keepOnComputer ?? null),
+    [showWorkspace, setShowWorkspace] = useState(false),
+    [workspaceChoice, setWorkspaceChoice] = useState<LibraryLaunchWorkspace | null>(
+      seed?.review.workspace ?? null,
+    );
   const [folderPending, setFolderPending] = useState(false);
   const folderBusy = useRef(false);
   const onFolderPending = useCallback((value: boolean) => {
@@ -306,6 +315,7 @@ function LibraryStartContent(props: {
     recoverySource?: LibraryWorkingCopy;
     carryContext: string;
     keepOnComputer?: boolean;
+    workspace?: LibraryLaunchWorkspace;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
   } | null>(saved?.review ?? null);
@@ -576,12 +586,30 @@ function LibraryStartContent(props: {
         copy.ownership === "managed" &&
         libraryLaunchPathOverlaps(copy.rootPath, rootPath.trim()),
     );
+  const shells = useThreadShells();
+  // Only reused files can have conversations working in them already.
+  const folderConversations =
+    mode === "reuse" ? libraryCopyFolderConversations(shells, selectedCopy) : 0;
+  const workspace = reviewState
+    ? (reviewState.workspace ?? null)
+    : libraryLaunchWorkspace({
+        available:
+          supportsLoomFeature(config?.environment.capabilities, LIBRARY_WORKTREE_STARTS_FEATURE) &&
+          // One repository binds as that component, whatever the scope row says.
+          libraryLaunchCanUseWorktree(
+            launchProject,
+            resourceIds.length === 1 ? resourceIds[0]! : null,
+          ),
+        chosen: workspaceChoice,
+        conversations: folderConversations,
+      });
   const warning =
     progress.intent === null && mode === "reuse" && selectedCopy?.state !== "released"
       ? libraryLaunchWarning(
           selectedCopy ? candidateFor(selectedCopy.environmentId, selectedCopy.id) : null,
           selectedCopy,
           scope === "all" ? null : scope,
+          { conversations: folderConversations, workspace },
         )
       : null;
   const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(execution));
@@ -701,6 +729,7 @@ function LibraryStartContent(props: {
         ...(recoverySource ? { recoverySource } : {}),
         carryContext,
         ...(supportsFileLifecycle ? { keepOnComputer } : {}),
+        ...(workspace ? { workspace } : {}),
       };
       setReviewState(reviewed.current);
       setModelKey(chosenModel.key);
@@ -852,6 +881,7 @@ function LibraryStartContent(props: {
                           review.keepOnComputer !== undefined
                             ? { keepOnComputer: review.keepOnComputer }
                             : {}),
+                          ...(review.workspace ? { workspace: review.workspace } : {}),
                         },
                       },
                     },
@@ -1197,6 +1227,20 @@ function LibraryStartContent(props: {
                 }}
               />
             </View>
+            {workspace ? (
+              <View className="border-t border-border-subtle">
+                <ListRow
+                  label="Workspace"
+                  description={workspace === "worktree" ? "New worktree" : "Project folder"}
+                  detail={showWorkspace ? "Done" : "Change"}
+                  disabled={locked}
+                  onPress={() => {
+                    pin();
+                    setShowWorkspace((value) => !value);
+                  }}
+                />
+              </View>
+            ) : null}
           </>
         ) : null}
       </SettingsSection>
@@ -1239,6 +1283,7 @@ function LibraryStartContent(props: {
                       setMode(null);
                       setRootPath(null);
                       setKeepFiles(null);
+                      setWorkspaceChoice(null);
                       setRecoverySourceId(null);
                       setShowFolderOptions(false);
                     }
@@ -1296,6 +1341,33 @@ function LibraryStartContent(props: {
                   }}
                 />
               ))}
+            </SettingsSection>
+          ) : null}
+          {showWorkspace && workspace ? (
+            <SettingsSection title="Workspace">
+              <ListChoiceRow
+                label="Project folder"
+                description="Work in the project's files, alongside other conversations there."
+                selected={workspace === "folder"}
+                disabled={locked}
+                onPress={() => {
+                  pin();
+                  setWorkspaceChoice("folder");
+                  setShowWorkspace(false);
+                }}
+              />
+              <ListChoiceRow
+                label="New worktree"
+                description="Work on a branch of its own, so other conversations' changes stay apart."
+                selected={workspace === "worktree"}
+                disabled={locked}
+                separated
+                onPress={() => {
+                  pin();
+                  setWorkspaceChoice("worktree");
+                  setShowWorkspace(false);
+                }}
+              />
             </SettingsSection>
           ) : null}
           {showFolderOptions ? (
@@ -1460,6 +1532,7 @@ function LibraryStartContent(props: {
               autoStart.current = false;
               setScope("all");
               setCopyId(null);
+              setWorkspaceChoice(null);
               setRecoverySourceId(null);
             }}
           />
@@ -1474,6 +1547,7 @@ function LibraryStartContent(props: {
                 autoStart.current = false;
                 setScope(resource.id);
                 setCopyId(null);
+                setWorkspaceChoice(null);
                 setRecoverySourceId(null);
               }}
             />

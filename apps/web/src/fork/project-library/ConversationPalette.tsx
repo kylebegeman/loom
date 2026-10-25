@@ -10,6 +10,7 @@ import {
 import {
   CheckIcon,
   FolderIcon,
+  GitBranchIcon,
   MonitorIcon,
   SettingsIcon,
   PlayIcon,
@@ -109,6 +110,7 @@ type Page =
   | "permissions"
   | "mode"
   | "scope"
+  | "workspace"
   | "title"
   | "context";
 
@@ -413,6 +415,31 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         },
       })),
     ];
+  else if (page === "workspace")
+    items = [
+      {
+        id: "folder",
+        selected: s.workspace === "folder",
+        title: "Project folder",
+        description: "Work in the project's files, alongside other conversations there",
+        icon: <FolderIcon className="size-4 text-(--project-teal)" />,
+        select: () => {
+          s.setWorkspaceChoice("folder");
+          go("start");
+        },
+      },
+      {
+        id: "worktree",
+        selected: s.workspace === "worktree",
+        title: "New worktree",
+        description: "Work on a branch of its own, so other conversations' changes stay apart",
+        icon: <GitBranchIcon className="size-4 text-(--project-teal)" />,
+        select: () => {
+          s.setWorkspaceChoice("worktree");
+          go("start");
+        },
+      },
+    ];
   else if (page === "title")
     items = [
       {
@@ -434,7 +461,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
                 ? `Retry “${s.held.title}”`
                 : "Retry untitled conversation"
               : "Start conversation",
-        description: `${s.held?.savedAt ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
+        description: `${s.held?.savedAt ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}${s.workspace === "worktree" ? " in a new worktree" : ""}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
         icon: <PlayIcon className="size-4 text-(--project-green)" />,
         disabled: !s.canCreate || waiting,
         select: () => void s.submit(),
@@ -504,6 +531,16 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         s.rootPath || "Choose project files",
         <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
+      ...(s.workspace
+        ? [
+            edit(
+              "workspace",
+              "Workspace",
+              s.workspace === "worktree" ? "New worktree" : "Project folder",
+              <GitBranchIcon className="size-4 text-(--project-teal)" />,
+            ),
+          ]
+        : []),
       edit(
         "models",
         "Model",
@@ -565,6 +602,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
                 permissions: "Permissions",
                 mode: "Mode",
                 scope: "Repositories",
+                workspace: "Workspace",
                 title: "Conversation title",
                 context: "Context to carry forward",
                 browse: "Folders",

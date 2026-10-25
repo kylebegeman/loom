@@ -20,6 +20,14 @@ export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
+/** A computer that can start a Library conversation in its own new worktree. */
+export const LIBRARY_WORKTREE_STARTS_FEATURE = "library-worktree-starts";
+/**
+ * Where a new Library conversation works: the copy's own folder, or a new worktree made from it
+ * on a branch of its own, so conversations running at once do not change each other's files.
+ */
+export const LibraryLaunchWorkspace = Schema.Literals(["folder", "worktree"]);
+export type LibraryLaunchWorkspace = typeof LibraryLaunchWorkspace.Type;
 
 /** The title a Library conversation starts with when none is typed, on every client. */
 export const LIBRARY_DEFAULT_CONVERSATION_TITLE = "New conversation";
@@ -527,6 +535,11 @@ export type LibraryResolveBindingRequest = typeof LibraryResolveBindingRequest.T
 export const LibraryResolvedBinding = Schema.Struct({
   /** Migration-only base repository for native checkout recovery at the original cwd. */
   legacyWorktreeRoot: Schema.optional(Schema.String),
+  /**
+   * The copy folder a conversation's own worktree was made from. `cwd` is then that worktree,
+   * a linked worktree of this folder's repository, and `repositoryPaths` still names the folder.
+   */
+  worktreeOf: Schema.optional(Schema.String),
   project: Schema.optional(LibraryProject),
   cwd: Schema.String,
   localProjectId: ProjectId,

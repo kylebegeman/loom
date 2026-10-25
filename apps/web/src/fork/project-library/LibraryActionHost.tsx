@@ -1,5 +1,8 @@
 import {
+  libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchInputs,
+  libraryLaunchWorkspace,
   libraryQuickLaunch,
   libraryStartIntent,
   libraryStartRepositoryProjects,
@@ -9,13 +12,14 @@ import {
 import { ProjectTile } from "./ProjectIdentity";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentProviders } from "~/state/environments";
-import { useProjects } from "~/state/entities";
+import { useProjects, useThreadShells } from "~/state/entities";
 import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  LibraryProject,
-  LibraryThreadSummary,
-  LibraryWorkingCopy,
+import {
+  LIBRARY_WORKTREE_STARTS_FEATURE,
+  type LibraryProject,
+  type LibraryThreadSummary,
+  type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -486,6 +490,7 @@ function useQuickStarts({
   );
   const providers = useEnvironmentProviders();
   const localProjects = useProjects();
+  const shells = useThreadShells(enabled);
   const lastUsedSelection = useComposerDraftStore(selectLastUsedModel);
   const grants = useStartGrants(
     environments.map((entry) => entry.environmentId),
@@ -552,6 +557,17 @@ function useQuickStarts({
       defaults.entries
         .find((entry) => entry.instanceId === modelSelection.instanceId)
         ?.models.find((entry) => entry.slug === modelSelection.model)?.name ?? modelSelection.model;
+    // The settings start in a new worktree while other conversations work in the folder, so the
+    // row says so rather than promising the folder it will not use.
+    const workspace = libraryLaunchWorkspace({
+      available:
+        supportsLoomFeature(
+          host.serverConfig.environment.capabilities,
+          LIBRARY_WORKTREE_STARTS_FEATURE,
+        ) && libraryLaunchCanUseWorktree(project, null),
+      chosen: null,
+      conversations: libraryCopyFolderConversations(shells, quick.copy),
+    });
     return {
       launch: {
         environmentId: quick.environmentId,
@@ -559,7 +575,7 @@ function useQuickStarts({
         modelSelection,
         runtimeMode,
       },
-      summary: `${quick.label} · ${model} · ${runtimeModeConfig[runtimeMode].label}`,
+      summary: `${quick.label} · ${model} · ${runtimeModeConfig[runtimeMode].label}${workspace === "worktree" ? " · New worktree" : ""}`,
     };
   };
   const starts = new Map<string, NonNullable<ReturnType<typeof start>>>();

@@ -42,6 +42,7 @@ const state = vi.hoisted(() => ({
   authority: vi.fn(),
   providers: vi.fn(),
   projects: vi.fn(),
+  shells: vi.fn(),
   registryGet: vi.fn(),
   waitForProject: vi.fn(),
   query: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock("~/state/query", () => ({ useEnvironmentQuery: state.query }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: state.providers }));
 vi.mock("~/state/entities", () => ({
   useProjects: state.projects,
+  useThreadShells: state.shells,
   waitForProject: state.waitForProject,
 }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: state.registryGet } }));
@@ -336,6 +338,7 @@ beforeEach(() => {
   });
   state.providers.mockReturnValue(new Map([[environmentId, [provider]]]));
   state.projects.mockReturnValue([]);
+  state.shells.mockReturnValue([]);
   state.registryGet.mockImplementation((atom: unknown) =>
     atom === state.configsAtom ? new Map([[environmentId, serverConfig]]) : [provider],
   );
@@ -1582,6 +1585,59 @@ describe("held attempts and one-step starts", () => {
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId: "second-thread" },
     });
+  });
+
+  it("starts in a new worktree while another conversation works in the folder, and a retry keeps it", async () => {
+    withCapabilities("project-workflows", "library-worktree-starts");
+    const site = {
+      id: "site",
+      title: "Site",
+      remoteUrl: null,
+      relativePath: ".",
+      defaultBranch: null,
+    };
+    const siteProject = { ...project, resources: [site] };
+    const siteCopy: LibraryWorkingCopy = {
+      ...restoredCopy,
+      repositories: [
+        { resourceId: site.id, path: "/work/project", localProjectId, head: null, branch: "main" },
+      ],
+    };
+    state.shells.mockReturnValue([
+      {
+        environmentId,
+        worktreePath: siteCopy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: instanceId,
+          providerName: null,
+          lastError: null,
+          updatedAt: provider.checkedAt,
+        },
+      },
+    ]);
+    commands.executeOperation.run
+      .mockResolvedValueOnce(failure("Disconnected"))
+      .mockResolvedValueOnce(AsyncResult.success({ result: { threadId } }));
+    await mount([siteCopy], { project: siteProject });
+    expect(launch.workspace).toBe("worktree");
+    expect(launch.warning).toBeNull();
+    await click("Start conversation");
+    expect(savedAttempt()).toMatchObject({ workspace: "worktree" });
+
+    // The other conversation finishing must not move the retry back into the shared folder.
+    state.shells.mockReturnValue([]);
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([siteCopy], { project: siteProject });
+    expect(launch.workspace).toBe("worktree");
+    await click("Retry conversation");
+    const [first, retried] = commands.executeOperation.run.mock.calls.map(([call]) => call.input);
+    expect(first.request.input.workspace).toBe("worktree");
+    expect(retried.operationId).toBe(first.operationId);
+    expect(retried.request.input.workspace).toBe("worktree");
   });
 
   it("creates one conversation when started twice before the next render", async () => {

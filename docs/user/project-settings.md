@@ -73,7 +73,8 @@ The Projects page lists each computer folder still waiting to be added, so you c
 through existing projects without losing your place.
 
 **New conversation** lists your projects, with the project you are in first. A project that
-can start right away shows the computer, model and permissions it will use. Press Enter, or
+can start right away shows the computer, model and permissions it will use, and New worktree
+when it will start in one. Press Enter, or
 tap it on iPhone, to start with them, or open its options first (Right Arrow on a keyboard)
 to change them. A project that needs a choice opens its options instead. Loom chooses an
 available computer and prepares its files automatically, and you can choose another computer
@@ -83,6 +84,12 @@ A title you type is kept after the first message; without one, the first message
 conversation. If you leave a conversation you just started without sending anything, Loom
 offers **Discard empty conversation**. You can undo it from the notice that follows; on iPhone,
 choose **Keep** to leave it in your list instead.
+Conversations share the project's folder unless you choose **Workspace → New worktree** before
+starting, which gives the conversation a branch and folder of its own so other conversations'
+changes stay apart. Loom picks New worktree while another conversation is working in the folder.
+A new worktree needs a project with one repository, or one repository chosen to work on.
+**Remove files** stays unavailable until worktrees made from the files are landed or removed.
+Continuing on another computer brings a worktree's commits; its uncommitted changes stay behind.
 The conversation uses your chosen model, then any computer folder override, the project's
 preference, the model you used last on this device if that computer can run it, and the
 computer's default. Editing the brief applies to new conversations; earlier conversations keep

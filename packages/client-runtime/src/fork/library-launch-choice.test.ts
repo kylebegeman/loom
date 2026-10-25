@@ -12,9 +12,11 @@ import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch"
 import type { ThreadRuntimeSummary } from "../state/models.ts";
 import {
   libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryLaunchRanking,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
 } from "./library-launch-choice.ts";
 
 const MINI = EnvironmentId.make("mini");
@@ -257,7 +259,7 @@ describe("libraryLaunchWarning", () => {
   const warningFor = (
     repositories: readonly LibraryRepositoryHealth[],
     resourceId: string | null = null,
-    sharedFolder?: { conversations: number; canUseWorktree: boolean },
+    sharedFolder?: { conversations: number; workspace: "folder" | "worktree" | null },
   ) => {
     const entry = copy("mini-copy", MINI);
     const ranking = libraryLaunchRanking({
@@ -297,27 +299,28 @@ describe("libraryLaunchWarning", () => {
 
   it("warns when other conversations work in the same folder, pointing to a worktree", () => {
     const changed = [repository("app", { uncommittedFiles: 1 }), repository("docs")];
-    expect(warningFor(changed, null, { conversations: 1, canUseWorktree: true })).toEqual({
+    expect(warningFor(changed, null, { conversations: 1, workspace: "folder" })).toEqual({
       message:
         "Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
       pullPaths: null,
     });
-    expect(warningFor(changed, null, { conversations: 2, canUseWorktree: false })).toEqual({
+    expect(warningFor(changed, null, { conversations: 2, workspace: null })).toEqual({
       message: "2 other conversations are working in this folder and changing the same files.",
       pullPaths: null,
     });
-    expect(warningFor(changed, null, { conversations: 0, canUseWorktree: true })).toBeNull();
+    expect(warningFor(changed, null, { conversations: 0, workspace: "folder" })).toBeNull();
+    expect(warningFor(changed, null, { conversations: 1, workspace: "worktree" })).toBeNull();
   });
 
   it("never offers a pull under another conversation's work", () => {
-    expect(
-      warningFor([repository("app", { behind: 3 }), repository("docs")], null, {
-        conversations: 1,
-        canUseWorktree: true,
-      }),
-    ).toEqual({
+    const behind = [repository("app", { behind: 3 }), repository("docs")];
+    expect(warningFor(behind, null, { conversations: 1, workspace: "folder" })).toEqual({
       message:
         "This copy is 3 commits behind. Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
+      pullPaths: null,
+    });
+    expect(warningFor(behind, null, { conversations: 1, workspace: "worktree" })).toEqual({
+      message: "This copy is 3 commits behind.",
       pullPaths: null,
     });
   });
@@ -369,6 +372,55 @@ describe("libraryLaunchWarning", () => {
       resourceId: null,
     });
     expect(libraryLaunchWarning(ranking.preselected, null, null)).toBeNull();
+  });
+});
+
+describe("libraryLaunchCanUseWorktree", () => {
+  const root = {
+    id: "site",
+    title: "Site",
+    remoteUrl: null,
+    relativePath: ".",
+    defaultBranch: null,
+  };
+  const link = {
+    id: "spec",
+    title: "Spec",
+    kind: "link" as const,
+    url: "https://example.com/spec",
+    remoteUrl: null,
+    relativePath: "",
+    defaultBranch: null,
+  };
+
+  it("allows one chosen repository, or a project that is one repository at its root", () => {
+    expect(libraryLaunchCanUseWorktree(project, "app")).toBe(true);
+    expect(libraryLaunchCanUseWorktree({ resources: [root, link] }, null)).toBe(true);
+  });
+
+  it("refuses a whole project of several repositories or one in a subfolder", () => {
+    expect(libraryLaunchCanUseWorktree(project, null)).toBe(false);
+    expect(libraryLaunchCanUseWorktree({ resources: [project.resources[0]!] }, null)).toBe(false);
+  });
+});
+
+describe("libraryLaunchWorkspace", () => {
+  it("defaults to a new worktree only while others work in the folder", () => {
+    expect(libraryLaunchWorkspace({ available: true, chosen: null, conversations: 0 })).toBe(
+      "folder",
+    );
+    expect(libraryLaunchWorkspace({ available: true, chosen: null, conversations: 1 })).toBe(
+      "worktree",
+    );
+  });
+
+  it("keeps the user's choice, and has none when worktrees are unavailable", () => {
+    expect(libraryLaunchWorkspace({ available: true, chosen: "folder", conversations: 2 })).toBe(
+      "folder",
+    );
+    expect(libraryLaunchWorkspace({ available: false, chosen: "worktree", conversations: 2 })).toBe(
+      null,
+    );
   });
 });
 

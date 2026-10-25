@@ -6,11 +6,14 @@ import { LibraryPaletteDialog } from "./LibraryPalette";
 import { useRef, useState } from "react";
 import {
   libraryContinuationContext,
+  libraryCopyFolderConversations,
   libraryCopyReadiness,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryPortableRecoveryPlan,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
   markLibraryConversationStarted,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
@@ -33,7 +36,9 @@ import {
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
   isDefaultThreadTitle,
+  LibraryLaunchWorkspace,
   LibraryThreadBinding,
   LibraryProject,
   LibraryPrepareCopyRequest,
@@ -61,7 +66,7 @@ import {
   resolveSelectableProviderInstance,
 } from "~/providerInstances";
 import { type LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
-import { useProjects, waitForProject } from "~/state/entities";
+import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
 
@@ -101,6 +106,7 @@ const ConversationAttempt = Schema.NullOr(
     requestedModelSelection: Schema.optional(ModelSelection),
     keepOnComputer: Schema.optional(Schema.Boolean),
     retentionCopy: Schema.optional(LibraryWorkingCopy),
+    workspace: Schema.optional(LibraryLaunchWorkspace),
   }),
 );
 
@@ -348,6 +354,9 @@ export function useLibraryConversationSetup({
   );
   const [sourceChoiceId, setSourceChoiceId] = useState<string | null>(null);
   const [keepChoice, setKeepChoice] = useState<boolean | null>(null);
+  const [workspaceChoice, setWorkspaceChoice] = useState<LibraryLaunchWorkspace | null>(
+    attempt?.workspace ?? null,
+  );
   const [typedPath, setRootPath] = useState<string | null>(null);
   const [existingFolder, setExistingFolder] = useState<string | null>(null);
   const [localFolder, setLocalFolder] = useState<string | null>(null);
@@ -489,16 +498,6 @@ export function useLibraryConversationSetup({
         })
       : null,
   );
-  // A failed check leaves these files' freshness unknown, which is worth reading before starting.
-  const warning = attempt
-    ? null
-    : (libraryLaunchWarning(chosen, copy, resourceId) ??
-      (checksHealth && copyHealth.error
-        ? {
-            message: `Could not check whether these files are up to date. ${copyHealth.error}`,
-            pullPaths: null,
-          }
-        : null));
   const supportsReopen = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     LIBRARY_FILE_LIFECYCLE_FEATURE,
@@ -545,6 +544,37 @@ export function useLibraryConversationSetup({
     preparation?.keepOnComputer ??
     keepChoice ??
     (movingLocalCopy ? false : filesPolicy ? filesPolicy.keepOnComputer !== false : false);
+  const shells = useThreadShells();
+  // Files moved to a new folder leave the conversations working in the old one behind.
+  const folderConversations = movingLocalCopy ? 0 : libraryCopyFolderConversations(shells, copy);
+  const workspace = attempt
+    ? (attempt.workspace ?? null)
+    : libraryLaunchWorkspace({
+        available:
+          supportsLoomFeature(
+            host?.serverConfig?.environment.capabilities,
+            LIBRARY_WORKTREE_STARTS_FEATURE,
+          ) &&
+          libraryLaunchCanUseWorktree(
+            launchProject,
+            launchResourceIds.length === 1 ? launchResourceIds[0]! : null,
+          ),
+        chosen: workspaceChoice,
+        conversations: folderConversations,
+      });
+  // A failed check leaves these files' freshness unknown, which is worth reading before starting.
+  const warning = attempt
+    ? null
+    : (libraryLaunchWarning(chosen, copy, resourceId, {
+        conversations: folderConversations,
+        workspace,
+      }) ??
+      (checksHealth && copyHealth.error
+        ? {
+            message: `Could not check whether these files are up to date. ${copyHealth.error}`,
+            pullPaths: null,
+          }
+        : null));
   const needsReopen =
     reopening !== null ||
     (!movingLocalCopy &&
@@ -937,6 +967,7 @@ export function useLibraryConversationSetup({
           keepOnComputer,
         ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
         ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
+        ...(workspace ? { workspace } : {}),
         runtimeMode,
         interactionMode,
         createdAt: new Date().toISOString(),
@@ -1028,6 +1059,7 @@ export function useLibraryConversationSetup({
                 ...(launchCopy.ownership === "managed" && next.keepOnComputer !== undefined
                   ? { keepOnComputer: next.keepOnComputer }
                   : {}),
+                ...(next.workspace ? { workspace: next.workspace } : {}),
               },
             },
           },
@@ -1323,6 +1355,7 @@ export function useLibraryConversationSetup({
       setRuntimeChoice(null);
       setInteractionChoice("default");
       setKeepChoice(null);
+      setWorkspaceChoice(null);
     },
     scope: launchResourceIds,
     selectScope: (value: string | null) => {
@@ -1340,6 +1373,7 @@ export function useLibraryConversationSetup({
       setLocalFolder(null);
       setRootPath(null);
       setKeepChoice(null);
+      setWorkspaceChoice(null);
     },
     modelSelection,
     entries: defaults?.entries ?? [],
@@ -1384,6 +1418,8 @@ export function useLibraryConversationSetup({
     existingFolder,
     keepOnComputer,
     setKeepChoice,
+    workspace,
+    setWorkspaceChoice,
     canKeep:
       supportsReopen && filesPolicy?.ownership !== "borrowed" && canSetRetention && canRegisterCopy,
     needsReopen,

@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
+  LibraryLaunchWorkspace,
   LibraryProfileReadiness,
   LibraryProject,
   LibraryThreadSummary,
@@ -15,6 +16,7 @@ import {
 } from "@t3tools/shared/fork/library-launch";
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "../state/models.ts";
 import { libraryRepositoryCanPull } from "./library-copy-health.ts";
+import { isRepositoryResource } from "./library-resources.ts";
 
 /**
  * Rank this project's computers for one scope, counting only copies that cover it. While
@@ -99,6 +101,32 @@ export function libraryCopyFolderConversations(
 }
 
 /**
+ * Whether a start in this scope can have a worktree of its own: the server makes one only for a
+ * single repository, which is a chosen component or a project that is one repository at its root.
+ */
+export function libraryLaunchCanUseWorktree(
+  project: Pick<LibraryProject, "resources">,
+  resourceId: string | null,
+): boolean {
+  if (resourceId !== null) return true;
+  const repositories = project.resources.filter(isRepositoryResource);
+  return repositories.length === 1 && repositories[0]!.relativePath === ".";
+}
+
+/**
+ * Where a start works: the user's choice, otherwise a new worktree while other conversations are
+ * working in the copy's folder, otherwise the folder. Null when the start can only use the folder.
+ */
+export function libraryLaunchWorkspace(input: {
+  readonly available: boolean;
+  readonly chosen: LibraryLaunchWorkspace | null;
+  readonly conversations: number;
+}): LibraryLaunchWorkspace | null {
+  if (!input.available) return null;
+  return input.chosen ?? (input.conversations > 0 ? "worktree" : "folder");
+}
+
+/**
  * What to say before launching on a copy that is behind or broken, or into a folder other
  * conversations are working in. Uncommitted files alone are normal in a copy in use, so they are
  * only mentioned alongside being behind, where they explain why a pull is not offered.
@@ -108,20 +136,23 @@ export function libraryLaunchWarning(
   copy: LibraryWorkingCopy | null,
   resourceId: string | null,
   sharedFolder?: {
-    /** Other conversations working in the folder this start would use. */
+    /** Other conversations working in the copy's folder. */
     readonly conversations: number;
-    /** Whether this start could use a new worktree instead. */
-    readonly canUseWorktree: boolean;
+    /** Where this start works, or null when it can only use the folder. */
+    readonly workspace: LibraryLaunchWorkspace | null;
   },
 ): LibraryLaunchWarning | null {
   if (candidate?.kind !== "copy") return null;
   const others = sharedFolder?.conversations ?? 0;
+  const working = `${others === 1 ? "Another conversation is" : `${others} other conversations are`} working in this folder`;
+  // A start in its own worktree leaves the folder alone, but pulling would still change files
+  // under the others' work, so the pull stays withheld below.
   const shared =
-    others === 0
+    others === 0 || sharedFolder?.workspace === "worktree"
       ? null
-      : sharedFolder?.canUseWorktree
-        ? `${others === 1 ? "Another conversation is" : `${others} other conversations are`} working in this folder. Choose New worktree to keep the changes apart.`
-        : `${others === 1 ? "Another conversation is" : `${others} other conversations are`} working in this folder and changing the same files.`;
+      : sharedFolder?.workspace === "folder"
+        ? `${working}. Choose New worktree to keep the changes apart.`
+        : `${working} and changing the same files.`;
   if (candidate.health !== null && candidate.freshness === "broken")
     return {
       message: "A folder in this copy is missing or is no longer a Git repository.",
