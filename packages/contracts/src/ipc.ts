@@ -289,6 +289,8 @@ export interface DesktopUpdateState {
   errorContext: "check" | "download" | "install" | null;
   canRetry: boolean;
   notAppliedVersion?: string;
+  // fork: machine-updates: installs the download once local agents are idle; cleared when the download changes or an install starts.
+  installWhenIdle?: boolean;
 }
 
 export interface DesktopUpdateReleaseNote {
@@ -321,6 +323,7 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),
   canRetry: Schema.Boolean,
   notAppliedVersion: Schema.optionalKey(Schema.String),
+  installWhenIdle: Schema.optionalKey(Schema.Boolean), // fork: machine-updates
 });
 
 export const DesktopCliCommandStateSchema = Schema.Struct({
@@ -1146,6 +1149,8 @@ export interface DesktopBridge {
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
+  // fork: machine-updates: older desktop shells cannot wait for idle agents.
+  setInstallWhenIdle?: (armed: boolean) => Promise<DesktopUpdateState>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   cliCommand?: {
     getState: () => Promise<DesktopCliCommandState>;

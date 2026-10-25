@@ -107,3 +107,4 @@ export * from "./library-attention.ts";
 export * from "./library-workflows.ts";
 
 export * from "./thread-attention.ts";
+export * from "./restart-impact.ts";

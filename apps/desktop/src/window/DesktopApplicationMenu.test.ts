@@ -70,6 +70,7 @@ const layerDesktopUpdates = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   download: Effect.die("unexpected download"),
   install: Effect.die("unexpected install"),
   installPrepared: () => Effect.die("unexpected installPrepared"),
+  setInstallWhenIdle: () => Effect.die("unexpected setInstallWhenIdle"), // fork: machine-updates
 } satisfies DesktopUpdates.DesktopUpdates["Service"]);
 
 const layerDesktopWindow = (selectedAction: Deferred.Deferred<string>) =>
@@ -143,21 +144,22 @@ describe("DesktopApplicationMenu", () => {
       const template = yield* Deferred.await(applicationMenuTemplate);
       const applicationMenu = template[0];
       assert.isDefined(applicationMenu);
-      assert.equal(applicationMenu.label, "T3 Code (Nightly)");
+      // fork: brand
+      assert.equal(applicationMenu.label, "Loom (Nightly)");
       if (!Array.isArray(applicationMenu.submenu)) {
         throw new Error("Expected application menu submenu to be an array.");
       }
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "about")?.label,
-        "About T3 Code (Nightly)",
+        "About Loom (Nightly)",
       );
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "hide")?.label,
-        "Hide T3 Code (Nightly)",
+        "Hide Loom (Nightly)",
       );
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "quit")?.label,
-        "Quit T3 Code (Nightly)",
+        "Quit Loom (Nightly)",
       );
     }),
   );

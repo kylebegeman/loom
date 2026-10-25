@@ -6,7 +6,6 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
-import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -16,7 +15,6 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -37,12 +35,15 @@ import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarUpdateCapsule } from "./SidebarUpdateCapsule";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
 import type { UpdateEverythingRun, UpdateRunLocalState } from "./updateEverything.logic";
-import {
-  clearSavedUpdateEverythingResult,
-  saveUpdateEverythingResult,
-  useUpdateEverythingRun,
-} from "./updateEverythingRun";
+import { useUpdateEverythingRun } from "./updateEverythingRun"; // fork: machine-updates
 import { type ReportLocalUpdateError, useUpdateEverything } from "./useUpdateEverything";
+// fork: machine-updates
+import { InstallWhenIdlePill } from "~/fork/connections/InstallWhenIdlePill";
+import {
+  requestLocalUpdateInstall,
+  setLocalInstallWhenIdle,
+  supportsInstallWhenIdle,
+} from "~/fork/connections/localUpdateInstall";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -160,7 +161,8 @@ async function downloadLocalUpdate(
   }
 }
 
-async function installLocalUpdate(
+// fork: machine-updates: the root install dialog installs through the same path.
+export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
 ): Promise<boolean> {
@@ -284,37 +286,17 @@ function SidebarUpdateControl() {
     }
 
     if (!bridge || !state) return;
+    // fork: machine-updates: the shared in-app dialog shows the work a restart would interrupt.
+    if (action === "install") {
+      requestLocalUpdateInstall();
+      return;
+    }
     setIsActionPending(true);
 
     if (action === "download") {
       void downloadLocalUpdate(bridge, { notifyDownloaded: true }).finally(() =>
         setIsActionPending(false),
       );
-      return;
-    }
-
-    if (action === "install") {
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(state),
-        );
-      } catch (error) {
-        setIsActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsActionPending(false);
-        return;
-      }
-      void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
       return;
     }
 
@@ -347,7 +329,8 @@ function SidebarUpdateControl() {
       .finally(() => setIsActionPending(false));
   };
 
-  const runEverything = async () => {
+  // fork: machine-updates: whenIdle waits for local agents instead of the restart countdown.
+  const runEverything = async (whenIdle = false) => {
     const bridge = window.desktopBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
@@ -361,6 +344,13 @@ function SidebarUpdateControl() {
           : {}),
         ...(bridge && action !== "none"
           ? { installLocal: (reportError) => installLocalUpdate(bridge, reportError) }
+          : {}),
+        // fork: machine-updates
+        ...(bridge && action !== "none" && whenIdle
+          ? {
+              installLocalWhenIdle: (reportError) =>
+                setLocalInstallWhenIdle(bridge, true, reportError),
+            }
           : {}),
       }),
     );
@@ -404,6 +394,10 @@ function SidebarUpdateControl() {
       restarts={everything.restarts}
       skipped={everything.skipped}
       onConfirm={() => void runEverything()}
+      // fork: machine-updates
+      {...(action !== "none" && supportsInstallWhenIdle(window.desktopBridge)
+        ? { onConfirmWhenIdle: () => void runEverything(true) }
+        : {})}
     />
   );
 
@@ -421,22 +415,19 @@ function SidebarUpdateControl() {
           local={local}
           icon={statusIcon}
           {...(run.localVersion === null && action === "install" && window.desktopBridge
-            ? {
-                onRestart: async () => {
-                  saveUpdateEverythingResult({
-                    localVersion: localUpdateVersion,
-                    updatedServers: 0,
-                    updatedProviders: 0,
-                    failures: [],
-                    restarting: [],
-                  });
-                  if (!(await installLocalUpdate(window.desktopBridge!))) {
-                    clearSavedUpdateEverythingResult();
-                  }
-                },
-              }
+            ? { onRestart: async () => requestLocalUpdateInstall() } // fork: machine-updates
             : {})}
         />
+        {confirmDialog}
+      </SidebarMenuItem>
+    );
+  }
+
+  // fork: machine-updates
+  if (state?.installWhenIdle === true && window.desktopBridge) {
+    return (
+      <SidebarMenuItem className="ml-auto flex min-w-0 flex-1">
+        <InstallWhenIdlePill bridge={window.desktopBridge} />
         {confirmDialog}
       </SidebarMenuItem>
     );

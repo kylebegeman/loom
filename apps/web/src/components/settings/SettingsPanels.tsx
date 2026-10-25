@@ -63,10 +63,14 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
-  getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
+// fork: machine-updates
+import {
+  requestLocalUpdateInstall,
+  setLocalInstallWhenIdle,
+} from "~/fork/connections/localUpdateInstall";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -338,43 +342,16 @@ function AboutVersionSection() {
       return;
     }
 
+    // fork: machine-updates: the shared in-app dialog shows the work a restart would interrupt.
+    // The sidebar pill is hidden in Settings, so a waiting install is cancelled here too.
     if (action === "install") {
       if (isUpdateActionPending) return;
+      if (updateState?.installWhenIdle !== true) {
+        requestLocalUpdateInstall();
+        return;
+      }
       setIsUpdateActionPending(true);
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(
-            updateState ?? { availableVersion: null, downloadedVersion: null },
-          ),
-        );
-      } catch (error) {
-        setIsUpdateActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsUpdateActionPending(false);
-        return;
-      }
-      void bridge
-        .installUpdate()
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "Install failed.",
-            }),
-          );
-        })
-        .finally(() => setIsUpdateActionPending(false));
+      void setLocalInstallWhenIdle(bridge, false).finally(() => setIsUpdateActionPending(false));
       return;
     }
 
@@ -411,7 +388,11 @@ function AboutVersionSection() {
       ? !canCheckForUpdate(updateState)
       : isDesktopUpdateButtonDisabled(updateState);
 
-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+  const installsWhenIdle = action === "install" && updateState?.installWhenIdle === true; // fork: machine-updates
+  const actionLabel: Record<string, string> = {
+    download: "Download",
+    install: installsWhenIdle ? "Cancel" : "Install", // fork: machine-updates
+  };
   const statusLabel: Record<string, string> = {
     checking: "Checking…",
     downloading: "Downloading…",
@@ -419,8 +400,9 @@ function AboutVersionSection() {
   };
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
-  const description =
-    action === "download" || action === "install"
+  const description = installsWhenIdle
+    ? "Installs when agents finish." // fork: machine-updates
+    : action === "download" || action === "install"
       ? "Update available."
       : (getDesktopUpdateDisabledReason(updateState) ?? "Current version of the application.");
 

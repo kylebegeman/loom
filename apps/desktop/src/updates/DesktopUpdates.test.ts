@@ -961,6 +961,58 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  // fork: machine-updates
+  it.effect("keeps an install-when-idle arm only while its download is waiting", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        assert.isUndefined((yield* updates.setInstallWhenIdle(true)).installWhenIdle);
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        assert.isTrue((yield* updates.setInstallWhenIdle(true)).installWhenIdle);
+        assert.isTrue(harness.sentStates.at(-1)?.installWhenIdle);
+        assert.isUndefined((yield* updates.setInstallWhenIdle(false)).installWhenIdle);
+
+        yield* updates.setInstallWhenIdle(true);
+        yield* updates.check("poll");
+        assert.isTrue((yield* updates.getState).installWhenIdle);
+
+        harness.emit("update-available", { version: "1.2.5" });
+        yield* flushCallbacks;
+        const state = yield* updates.getState;
+        assert.isNull(state.downloadedVersion);
+        assert.isUndefined(state.installWhenIdle);
+        assert.isUndefined(harness.sentStates.at(-1)?.installWhenIdle);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  // fork: machine-updates
+  it.effect("consumes the install-when-idle arm once an install is admitted", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* updates.setInstallWhenIdle(true);
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.isUndefined(result.state.installWhenIdle);
+        assert.equal(harness.quitAndInstalls(), 1);
+        assert.isUndefined((yield* updates.setInstallWhenIdle(true)).installWhenIdle);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("persists channel changes through the settings service", () => {
     const harness = makeHarness();
 

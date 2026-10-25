@@ -36,6 +36,7 @@ import { ComputerConnectSection } from "../../fork/connect/ComputerConnectSectio
 import { ComputerReachSection } from "../../fork/connections/ComputerReachSection"; // fork: reach
 import { ComputerWorkSection } from "../../fork/connections/ComputerWorkSection";
 import { DevicesWithAccessSection } from "../../fork/connections/DevicesWithAccessSection";
+import { describeServerUpdateImpact } from "../../fork/connections/serverUpdateImpact"; // fork: machine-updates
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
 import { SettingsActionRow } from "./components/SettingsActionRow";
@@ -130,9 +131,15 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     const targetVersion = checkedRelease?.targetVersion;
     if (disabled || !targetVersion || !capabilities || !supportsEnvironmentUpdate(capabilities))
       return;
+    // fork: machine-updates: name the work this restart stops, as desktop and web do.
+    const impact = describeServerUpdateImpact(
+      environmentId,
+      capabilities.serverUpdateThreadContinuation === true &&
+        config?.settings.continueThreadsAfterServerUpdate === true,
+    );
     Dialog.alert(
       `Update ${environment?.environmentLabel ?? "environment"}?`,
-      `Install server version ${targetVersion}. ${capabilities.serverSelfUpdate === "desktop-managed" ? "The desktop app will close and relaunch." : "The server will restart and reconnect."} Running threads may be interrupted.`,
+      `Install server version ${targetVersion}. ${capabilities.serverSelfUpdate === "desktop-managed" ? "The desktop app will close and relaunch." : "The server will restart and reconnect."}${impact === "" ? "" : ` ${impact}`}`, // fork: machine-updates
       [
         { text: "Cancel", style: "cancel" },
         {
