@@ -745,6 +745,7 @@ apps/server/src/git/GitManager.test.ts	test-temp-isolation	9
 packages/shared/package.json	-	"./fork/reach"
 packages/shared/package.json	-	"./fork/thread-alerts"
 packages/shared/package.json	-	"./fork/run-continuation"
+packages/shared/package.json	-	"./fork/provider-processes"
 packages/shared/src/projectSettings.ts	project-lifecycle	3
 packages/shared/src/serverSettings.ts	project-lifecycle	1
 docs/user/project-settings.md	project-lifecycle	5
@@ -986,11 +987,11 @@ apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
 apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-compaction	1
-apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-continuity	1
+apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-continuity	2
 apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-compaction	2
-apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	1
-apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	4
-apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	13
+apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	3
+apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	11
+apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	19
 apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-compaction	1
 apps/desktop/src/backend/DesktopBackendPool.ts	restart-continuity	1
 apps/desktop/src/ipc/DesktopIpc.test.ts	server-weight	3
