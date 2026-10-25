@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { formatBrandDisplayName } from "@t3tools/shared/brand"; // fork: brand
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -142,22 +143,24 @@ describe("DesktopApplicationMenu", () => {
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const applicationMenu = template[0];
+      // fork: brand: the menu shows the fork's display name.
+      const displayName = formatBrandDisplayName("Nightly");
       assert.isDefined(applicationMenu);
-      assert.equal(applicationMenu.label, "T3 Code (Nightly)");
+      assert.equal(applicationMenu.label, displayName);
       if (!Array.isArray(applicationMenu.submenu)) {
         throw new Error("Expected application menu submenu to be an array.");
       }
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "about")?.label,
-        "About T3 Code (Nightly)",
+        `About ${displayName}`,
       );
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "hide")?.label,
-        "Hide T3 Code (Nightly)",
+        `Hide ${displayName}`,
       );
       assert.equal(
         applicationMenu.submenu.find((item) => item.role === "quit")?.label,
-        "Quit T3 Code (Nightly)",
+        `Quit ${displayName}`,
       );
     }),
   );
