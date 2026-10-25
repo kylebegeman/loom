@@ -1,9 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { nextAttentionThread } from "@t3tools/client-runtime/fork";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { environmentThreadShells } from "../../state/threads";
+import { useThreadRouteRef } from "../../hooks/useThreadRouteTarget";
 import { Button } from "../../components/ui/button";
 import { resolveShortcutCommand } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
@@ -12,14 +12,9 @@ import { isCommandPaletteOpen } from "../../commandPaletteBus";
 
 export function useThreadAttention() {
   const threads = useAtomValue(environmentThreadShells.attentionThreadShellsAtom);
-  const { environmentId, threadId } = useParams({ strict: false });
+  const current = useThreadRouteRef();
   const navigate = useNavigate();
-  const next = nextAttentionThread(
-    threads,
-    environmentId && threadId
-      ? { environmentId: EnvironmentId.make(environmentId), threadId: ThreadId.make(threadId) }
-      : null,
-  );
+  const next = nextAttentionThread(threads, current);
   const goNext = useCallback(async () => {
     if (next)
       await navigate({
