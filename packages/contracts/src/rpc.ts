@@ -2129,9 +2129,3 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,
 ).middleware(RpcScopeAuthorization);
-
-// fork: project-lifecycle -- ws.ts serves these from their own handler layer; see ServerWsRpcGroup there.
-export const CheckpointRestoreRpcGroup = RpcGroup.make(
-  WsCheckpointRestoreStateRpc,
-  WsCheckpointUndoRestoreRpc,
-).middleware(RpcScopeAuthorization);

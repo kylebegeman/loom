@@ -96,7 +96,6 @@ import {
   type PullRequestRef,
   WS_METHODS,
   WsRpcGroup,
-  CheckpointRestoreRpcGroup, // fork: project-lifecycle
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -549,22 +548,7 @@ function projectFileFailureContext(
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
-// fork: project-lifecycle -- one handler map for every RPC exceeds the compiler's instantiation
-// limit, which surfaces only as `any` requirements in server.ts (TS2589 shows with --checkers 1).
-const ServerWsRpcGroup = WsRpcGroup.omit(
-  WS_METHODS.checkpointRestoreState,
-  WS_METHODS.checkpointUndoRestore,
-).middleware(RpcInstrumentation);
-const ServerCheckpointRestoreRpcGroup = CheckpointRestoreRpcGroup.middleware(RpcInstrumentation);
-const layerCheckpointRestoreRpc = ServerCheckpointRestoreRpcGroup.toLayer(
-  Effect.gen(function* () {
-    const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
-    return ServerCheckpointRestoreRpcGroup.of({
-      [WS_METHODS.checkpointRestoreState]: (input) => checkpointRollback.restoreState(input),
-      [WS_METHODS.checkpointUndoRestore]: (input) => checkpointRollback.undoRestore(input),
-    });
-  }),
-);
+const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 // Replaying each intervening event costs a shell refetch; past this gap a
 // single O(active-threads) snapshot is cheaper and bounded.
 const SHELL_RESUME_MAX_GAP = 1_000;
@@ -1323,6 +1307,8 @@ export const layerWsRpc = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
+      // fork: project-lifecycle
+      const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -2431,6 +2417,8 @@ export const layerWsRpc = (
             return { keybindings: keybindingsConfig, issues: [] };
           }),
         // fork: project-lifecycle
+        [WS_METHODS.checkpointRestoreState]: (input) => checkpointRollback.restoreState(input),
+        [WS_METHODS.checkpointUndoRestore]: (input) => checkpointRollback.undoRestore(input),
         [WS_METHODS.serverRunStorageCleanup]: (input) =>
           input.removeOrphanPath === undefined
             ? storageCleanup.runNow
@@ -3254,10 +3242,7 @@ export const layer = Layer.unwrap(
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           // fork: ext-core
           yield* RpcServer.make(
-            ServerWsRpcGroup.merge(
-              ServerCheckpointRestoreRpcGroup, // fork: project-lifecycle
-              ForkRpcGroup.middleware(RpcInstrumentation),
-            ),
+            ServerWsRpcGroup.merge(ForkRpcGroup.middleware(RpcInstrumentation)),
             WS_RPC_SERVER_OPTIONS,
           ).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
@@ -3296,7 +3281,6 @@ export const layer = Layer.unwrap(
               heldSession, // fork: identity-renewal
             ).pipe(
               Layer.merge(makeForkRpcLayer(session)), // fork: ext-core
-              Layer.merge(layerCheckpointRestoreRpc), // fork: project-lifecycle
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
