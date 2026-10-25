@@ -129,6 +129,16 @@ and turns on automatic shrinking. Settings > Storage (web and desktop) or
 Settings > Maintenance (mobile) suggests the repair when at least 1 GiB can be
 reclaimed.
 
+<!-- fork: restart-compaction -->
+
+When the Loom desktop app hosts the environment, it runs this repair itself
+while it restarts, so you do not need `t3 doctor` there. It runs at the first
+launch after an update, or at the next launch after you choose **Compact at
+next restart** in Settings on any device, and shows its progress in the startup
+window. It skips the repair when the disk lacks room for it. After a repair
+that failed or that you skipped, it waits until you ask again, and Settings
+shows what happened.
+
 Run `t3 doctor` on the machine that hosts the environment. It reports the
 database size and the space it can reclaim, then asks which repairs to run;
 pass `--fix` to run the recommended ones without a prompt (for scripts), or

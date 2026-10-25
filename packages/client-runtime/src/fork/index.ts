@@ -105,3 +105,4 @@ export * from "./bots-presentation.ts";
 export * from "./library-start-intent.ts";
 export * from "./library-attention.ts";
 export * from "./library-workflows.ts";
+export * from "./database-compaction.ts";
