@@ -1,3 +1,5 @@
+// fork: server-weight
+import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 /**
  * Framing follows Pi's spec: LF-delimited only, with a trailing `\r` stripped.
  * Lines are split manually (never with `readline`, which also splits on
@@ -198,6 +200,8 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
     )
     .pipe(Effect.mapError((cause) => new PiRpcError({ operation: "spawn", cause })));
 
+  // fork: server-weight
+  yield* trackProviderProcess(child, { cwd: options.cwd });
   let childExited = false;
   let diagnosingStdoutClose = false;
 

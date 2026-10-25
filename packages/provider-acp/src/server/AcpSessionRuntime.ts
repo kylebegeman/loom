@@ -1,3 +1,5 @@
+// fork: server-weight
+import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -1487,6 +1489,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       ),
     );
 
+  // fork: server-weight -- Effect detaches on POSIX unless explicitly disabled.
+  if (options.ownDetachedProcessGroup !== false)
+    yield* trackProviderProcess(child, { cwd: options.spawn.cwd ?? options.cwd }).pipe(
+      Effect.provideService(Scope.Scope, runtimeScope),
+    );
   const posixOwnershipLedger = new Map<string, AcpOwnedPosixProcess>();
   const posixOwnershipFrontier = new Map<number, AcpOwnedPosixProcess>();
   const posixOwnershipChildQueues = new Map<number, Array<number>>();

@@ -105,3 +105,46 @@ export function agentScopeCommand(input: {
     ],
   };
 }
+
+// fork: server-weight -- SDK spawn/exit callbacks and the signal hook cannot wait for Effect finalizers.
+export interface ProviderProcessRegistration {
+  readonly pid: number;
+  readonly shared?: boolean;
+  readonly threadId?: string | undefined;
+  readonly nativeSessionId?: string | undefined;
+  readonly cwd?: string | undefined;
+}
+
+export const ProviderProcesses = Context.Reference<{
+  readonly register: (input: ProviderProcessRegistration) => () => void;
+  readonly signalAll: () => void;
+  readonly reap: Effect.Effect<void>;
+  readonly blocks: (threadId: string, cwd?: string) => boolean;
+  readonly stop: (threadId: string) => Effect.Effect<void>;
+}>("@t3tools/shared/ProviderProcesses", {
+  defaultValue: () => ({
+    register: () => () => {},
+    signalAll: () => {},
+    reap: Effect.void,
+    blocks: () => false,
+    stop: () => Effect.void,
+  }),
+});
+
+// fork: server-weight -- exit watchers forget only confirmed exits, never interrupted cleanup.
+export const trackProviderProcess = Effect.fn("ProviderProcesses.track")(function* <E>(
+  child: { readonly pid: number; readonly exitCode: Effect.Effect<unknown, E> },
+  input: Omit<ProviderProcessRegistration, "pid"> = {},
+) {
+  const registry = yield* ProviderProcesses;
+  const threadId =
+    input.shared === true ? undefined : (input.threadId ?? (yield* AgentScopeThreadId));
+  const forget = yield* Effect.sync(() =>
+    registry.register({ ...input, threadId, pid: Number(child.pid) }),
+  );
+  yield* child.exitCode.pipe(
+    Effect.tap(() => Effect.sync(forget)),
+    Effect.ignore,
+    Effect.forkScoped,
+  );
+});

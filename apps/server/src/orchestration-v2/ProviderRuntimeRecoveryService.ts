@@ -1,3 +1,6 @@
+// fork: server-weight
+import { ProviderProcesses } from "@t3tools/shared/AgentScope";
+import { TurnItemId } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
@@ -170,6 +173,7 @@ function latestStartedRun(
 
 export const make = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService;
+  const processes = yield* ProviderProcesses; // fork: server-weight
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const eventSink = yield* EventSink.EventSinkV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
@@ -262,6 +266,36 @@ export const make = Effect.gen(function* () {
           ),
         );
       const events: Array<OrchestrationV2DomainEvent> = [];
+      // fork: server-weight -- persist the refusal for every client before the effect worker starts.
+      const previousAgentRunning =
+        trigger === "startup" &&
+        processes.blocks(projection.thread.id, projection.thread.worktreePath ?? undefined);
+      if (previousAgentRunning)
+        events.push({
+          id: yield* allocateEventId(),
+          type: "turn-item.updated",
+          threadId: projection.thread.id,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(`notice:previous-agent:${projection.thread.id}`),
+            type: "system_notice",
+            threadId: projection.thread.id,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 0,
+            status: "completed",
+            title: "A previous agent is still running in this folder",
+            message:
+              "A previous agent is still running in this folder. Use Stop to retry cleanup before continuing.",
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+          },
+        });
       const cancelledBackgroundWork = new Map<
         ProviderThreadId,
         Array<OrchestrationV2RestartCancelledBackgroundWork>
@@ -622,7 +656,7 @@ export const make = Effect.gen(function* () {
         });
       }
       const continuationRun =
-        continueAfterRestart && trigger === "startup"
+        continueAfterRestart && trigger === "startup" && !previousAgentRunning // fork: server-weight
           ? restartContinuationRun(
               { ...projection, providerSessions: sessionsLiveAtStart(projection, stoppedThisPass) },
               now,

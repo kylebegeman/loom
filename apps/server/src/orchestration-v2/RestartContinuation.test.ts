@@ -1,4 +1,6 @@
-import { assert, it } from "@effect/vitest";
+// fork: server-weight
+import { ProviderProcesses } from "@t3tools/shared/AgentScope";
+import { assert, expect, it } from "@effect/vitest";
 import {
   MessageId,
   NodeId,
@@ -326,6 +328,8 @@ it.effect.each([
                     },
             }),
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              // fork: server-weight -- these projections have no additional detached sessions.
+              getProviderSessionsForRecovery: () => Effect.succeed([]),
               getRecoveryThreadIds: () => Effect.succeed([threadId]),
               getRuntimeRecoveryProjection: () => Effect.succeed(makeProjection()),
             }),
@@ -389,6 +393,8 @@ it.effect("lets a cut blocking delegate_task wake its parent like an async task"
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // fork: server-weight -- these projections have no additional detached sessions.
+            getProviderSessionsForRecovery: () => Effect.succeed([]),
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
@@ -455,6 +461,8 @@ it.effect.each(["running", "waiting"])(
           Layer.mergeAll(
             ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              // fork: server-weight -- these projections have no additional detached sessions.
+              getProviderSessionsForRecovery: () => Effect.succeed([]),
               getRecoveryThreadIds: () => Effect.succeed([threadId]),
               getRuntimeRecoveryProjection: () => Effect.succeed(projection),
             }),
@@ -582,6 +590,8 @@ it.effect("prepares no continuation for background work another provider thread 
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // fork: server-weight -- these projections have no additional detached sessions.
+            getProviderSessionsForRecovery: () => Effect.succeed([]),
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.succeed(projection),
           }),
@@ -609,6 +619,8 @@ it.effect("prepares no continuation for background work another provider thread 
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // fork: server-weight -- these projections have no additional detached sessions.
+            getProviderSessionsForRecovery: () => Effect.succeed([]),
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.succeed(ownWork),
           }),
@@ -704,6 +716,8 @@ it.effect.each([
             Layer.mergeAll(
               ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
               Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                // fork: server-weight -- these projections have no additional detached sessions.
+                getProviderSessionsForRecovery: () => Effect.succeed([]),
                 getRecoveryThreadIds: () => Effect.succeed([threadId]),
                 getRuntimeRecoveryProjection: () => Effect.succeed(projection),
               }),
@@ -857,6 +871,8 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // fork: server-weight -- these projections have no additional detached sessions.
+            getProviderSessionsForRecovery: () => Effect.succeed([]),
             getRecoveryThreadIds: () => Effect.succeed([threadId]),
             getRuntimeRecoveryProjection: () => Effect.sync(() => projection),
           }),
@@ -1116,6 +1132,8 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
         Layer.mergeAll(
           ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            // fork: server-weight -- these projections have no additional detached sessions.
+            getProviderSessionsForRecovery: () => Effect.succeed([]),
             getRecoveryThreadIds: () => Effect.succeed([brokenThreadId, threadId]),
             getRuntimeRecoveryProjection: (id) =>
               id === brokenThreadId
@@ -1280,4 +1298,74 @@ it.effect.each(["completed", "failed", "interrupted"] as const)(
         [],
       );
     }),
+);
+
+// fork: server-weight
+it.effect("does not resume while a previous provider survives", () =>
+  Effect.gen(function* () {
+    const base = makeProjection();
+    const projection = {
+      ...base,
+      runs: [{ ...base.runs[0]!, status: "cancelled", completedAt: now }],
+      providerTurns: [{ ...base.providerTurns[0]!, status: "cancelled" }],
+    } as OrchestrationV2ThreadProjection;
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+        Layer.succeed(ProviderProcesses, {
+          ...ProviderProcesses.defaultValue(),
+          blocks: () => true,
+        }),
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: () => Effect.succeed(projection),
+          recoverDelegatedTask: () => Effect.void,
+          dispatch: () => Effect.die("A surviving provider must not be resumed"),
+        }),
+      ]),
+    );
+  }),
+);
+
+// fork: server-weight
+it.effect("persists a previous-agent notice and suppresses the recovery wake", () =>
+  Effect.gen(function* () {
+    const commits: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0][] = [];
+    const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+      Effect.provide([
+        ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+        Layer.succeed(ProviderProcesses, {
+          ...ProviderProcesses.defaultValue(),
+          blocks: () => true,
+        }),
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getRecoveryThreadIds: () => Effect.succeed([threadId]),
+          getRuntimeRecoveryProjection: () => Effect.succeed(makeProjection()),
+          getProviderSessionsForRecovery: () => Effect.succeed([]),
+        }),
+        Layer.mock(EventSink.EventSinkV2)({
+          commitCommand: (input) => {
+            commits.push(input);
+            return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+          },
+        }),
+        IdAllocator.layer,
+        Layer.mock(EffectOutbox.EffectOutboxV2)({
+          reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+        }),
+      ]),
+    );
+    yield* recovery.reconcile("startup");
+    expect(commits[0]?.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "turn-item.updated",
+          payload: expect.objectContaining({
+            type: "system_notice",
+            title: "A previous agent is still running in this folder",
+          }),
+        }),
+      ]),
+    );
+    expect(commits[0]?.effects).toEqual([]);
+  }),
 );
