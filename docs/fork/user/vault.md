@@ -358,6 +358,12 @@ independent host verification; a missing/offline broker needs broker setup. Back
 outage and an upstream login failure are separate repairs. Resolution checks configuration and
 policy; it does not contact the host or prove current broker or upstream readiness.
 
+In personal mode, owner access covers a thread only in full access outside plan mode, and only
+while its turn is running. Outside those, Loom reports that cause and its repair instead of a
+missing connection. Work that continues after the turn ends, such as a background task, cannot
+use Vault; continue in a new turn of the thread. Refusals name the Settings section that holds
+the repair.
+
 ## Use Vault from an agent or scheduled run
 
 Ask an active Loom agent to use the selected resource with `loom_vault_ssh_exec`, or
