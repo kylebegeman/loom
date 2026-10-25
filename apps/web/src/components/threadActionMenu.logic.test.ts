@@ -243,3 +243,18 @@ describe("buildDraftActionMenuItems", () => {
     expect(items.at(-1)).toMatchObject({ label: "Discard draft", destructive: true });
   });
 });
+
+// fork: attention-status
+it("offers queue recovery only for held work and disables it for read-only connections", () => {
+  expect(ids(baseState)).not.toContain("resume-queue");
+  expect(
+    buildThreadActionMenuItems({ ...baseState, queueHeld: true }).find(
+      (item) => item.id === "resume-queue",
+    )?.disabled,
+  ).not.toBe(true);
+  expect(
+    buildThreadActionMenuItems({ ...baseState, queueHeld: true, canOperate: false }).find(
+      (item) => item.id === "resume-queue",
+    )?.disabled,
+  ).toBe(true);
+});

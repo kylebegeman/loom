@@ -3,7 +3,9 @@ import { describe, expect, it } from "@effect/vitest";
 import { isLibraryAuthorityEnv } from "../project-library/authority.ts";
 import {
   DEFAULT_LIBRARY_PUSH_TTL_SECONDS,
+  libraryPushActivityAdvertised,
   libraryPushAdvertised,
+  libraryPushAlertRecipients,
   libraryPushConfig,
   libraryPushEffective,
   libraryPushSwitchOn,
@@ -97,6 +99,33 @@ describe("library push config", () => {
       _tag: "Off",
       reason: null,
     });
+  });
+
+  it("sends agent alerts to the one allowed account, else only to the ones named", () => {
+    const one = { ...FULL, LOOM_IDENTITY_ALLOWED_SUBJECTS: "alice" };
+    expect(libraryPushAlertRecipients(one)).toEqual(["alice"]);
+    expect(libraryPushAlertRecipients(FULL)).toEqual([]);
+    expect(
+      libraryPushAlertRecipients({ ...FULL, LOOM_LIBRARY_PUSH_RECIPIENTS: " bob, carol,bob" }),
+    ).toEqual(["bob"]);
+    // A named account must also be allowed to sign in.
+    expect(libraryPushAlertRecipients({ ...one, LOOM_LIBRARY_PUSH_RECIPIENTS: "carol" })).toEqual(
+      [],
+    );
+  });
+
+  it("runs agent alerts only with their switch, working push and someone to receive them", () => {
+    const on = { ...FULL, LOOM_LIBRARY_PUSH_ACTIVITY: "yes", LOOM_LIBRARY_PUSH_RECIPIENTS: "alice" };
+    expect(libraryPushActivityAdvertised(on)).toBe(true);
+    expect(libraryPushConfig(on)).toMatchObject({ _tag: "On", alertRecipients: ["alice"] });
+    const off = [
+      { ...on, LOOM_LIBRARY_PUSH_ACTIVITY: undefined },
+      { ...on, LOOM_LIBRARY_PUSH_ACTIVITY: "TRUE" },
+      { ...on, LOOM_LIBRARY_PUSH_ENABLED: "false" },
+      { ...on, LOOM_LIBRARY_PUSH_RECIPIENTS: "carol" },
+    ];
+    expect(off.map(libraryPushActivityAdvertised)).toEqual([false, false, false, false]);
+    expect(libraryPushConfig(FULL)).toMatchObject({ _tag: "On", alertRecipients: null });
   });
 
   it("takes the account rules from the Identity settings", () => {

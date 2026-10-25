@@ -13,19 +13,40 @@ does not move conversations or change the computer they run on.
 and its conversations across your computers. Use **Settings → Projects** for project
 settings. Returning from either restores the conversation you left.
 
+<!-- fork: attention-status -->
+
+## Find work that needs you
+
+**N need you** above the thread list counts approvals, questions, paused queues and failed or
+limited runs across your enabled computers. Select it to visit the oldest waiting thread;
+repeat to move through the list. On web and desktop, use **Go to next thread that needs you**
+in the command palette or `Cmd+Shift+U` on macOS (`Ctrl+Shift+U` on Windows and Linux).
+The palette's **Waiting on you** group lists questions and approvals. On mobile, the status
+filter offers **Needs you** and **Waiting on you**. Snoozed work stays out until it wakes.
+The desktop badge follows this count, so focusing Loom does not clear unresolved work.
+Offline rows show their last known status.
+
+A **Paused** thread has queued messages waiting to run. Choose **Resume queue** from the
+thread's menu after a restart, stop or run failure. You can also ask an agent to find paused
+queues across this computer's projects and resume them.
+
+To reopen an archived conversation, go to **Settings → Archive**, search its title and choose
+**Unarchive and open**. You can also ask an agent to find and reopen an archived conversation.
+
 ## Start a thread
 
 On web and desktop, hover a thread or focus it with the keyboard and choose **+**
 to start a fresh conversation with that thread's project, computer and settings.
-A Library project's conversation starts in the project's folder, even when the
-source thread ran in a worktree of its own.
+A Library project's conversation starts in the project's folder, or in a new worktree
+of its own when you choose **Workspace → New worktree**. It does not continue in the
+source thread's worktree.
 Review or change the selections before starting. The main **New thread** action
 remains available when you want to choose a different setup.
 
 For local projects on web and desktop, a new thread keeps the current project and carries your model
 and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
-an existing worktree, use **New thread in this worktree** from the branch toolbar.
+an existing worktree, choose **Previous worktree** from the new thread's **Workspace** menu in the branch toolbar.
 
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
@@ -226,8 +247,10 @@ for custom configuration.
 **Limited** means the provider stopped on a usage or rate limit. The conversation
 keeps the provider's explanation. Retry after the limit resets, or switch to
 another provider instance.
-On web and desktop, press **Resume** in an empty composer to continue a limited
-or interrupted turn manually.
+Press **Resume** in an empty composer on web and desktop, or **Resume** or
+**Retry** above the composer on mobile, to continue a limited, interrupted, or
+failed turn manually. When a failure offers neither, fix the cause shown in the
+conversation, then send a new message. <!-- fork: failed-run-retry -->
 Queued messages stay saved while the limit blocks the thread. They run after
 the continuation finishes. If the queue was held by a restart, resume it then.
 

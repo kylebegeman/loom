@@ -1,3 +1,5 @@
+// fork: vault-core
+import { useSecretVaultSave } from "~/fork/vault/SecretSave";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
   SECRET_REQUEST_PRIVACY_NOTE,
@@ -46,7 +48,14 @@ export function SecretRequestCard(props: {
       />
     );
   }
-  return <PendingSecretRequestForm environmentId={props.environmentId} item={item} />;
+  // fork: vault-core
+  return (
+    <PendingSecretRequestForm
+      key={`${props.environmentId}:${item.id}`}
+      environmentId={props.environmentId}
+      item={item}
+    />
+  );
 }
 
 function PendingSecretRequestForm(props: {
@@ -63,6 +72,8 @@ function PendingSecretRequestForm(props: {
     reportFailure: false,
     reportDefect: false,
   });
+  // fork: vault-core
+  const vaultSave = useSecretVaultSave(props.environmentId, item.label);
   const [secret, setSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +88,12 @@ function PendingSecretRequestForm(props: {
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
+    // fork: vault-core
+    if (input.answer.type === "save" && !(await vaultSave.beforeReply(input.answer.secret))) {
+      inFlight.current = false;
+      setSubmitting(false);
+      return;
+    }
     const result = await answer({ environmentId: props.environmentId, input }).finally(() => {
       inFlight.current = false;
       setSubmitting(false);
@@ -131,7 +148,7 @@ function PendingSecretRequestForm(props: {
             data-bwignore
             placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
             value={secret}
-            disabled={submitting}
+            disabled={submitting || vaultSave.saved} // fork: vault-core
             aria-invalid={error !== null || undefined}
             aria-describedby={error !== null ? `${privacyId} ${errorId}` : privacyId}
             onChange={(event) => setSecret(event.currentTarget.value)}
@@ -141,6 +158,8 @@ function PendingSecretRequestForm(props: {
           Save securely
         </Button>
       </div>
+      {/* fork: vault-core */}
+      {vaultSave.control(submitting)}
       {error !== null ? (
         <p id={errorId} role="alert" className="text-xs text-destructive">
           {error}

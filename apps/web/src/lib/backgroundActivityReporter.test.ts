@@ -1,9 +1,13 @@
 import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
+// fork: server-weight
+import * as Deferred from "effect/Deferred";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+// fork: server-weight
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
@@ -105,6 +109,9 @@ describe("layer", () => {
       let calls = 0;
       const registry = EnvironmentRegistry.EnvironmentRegistry.of({
         entries,
+        // fork: server-weight
+        state: () => Effect.succeed({ phase: "connected" }),
+        stateChanges: () => Stream.empty,
         run: () => {
           calls += 1;
           return calls === 1 ? Effect.failCause(Cause.interrupt()) : Effect.void;
@@ -120,5 +127,42 @@ describe("layer", () => {
       yield* TestClock.adjust("25 seconds");
       expect(calls).toBe(2);
     }).pipe(Effect.scoped),
+  );
+  // fork: server-weight
+  it.effect(
+    "reports once when an offline environment reconnects without changing the catalog",
+    () =>
+      Effect.gen(function* () {
+        const id = EnvironmentId.make("offline-computer");
+        const entries = yield* SubscriptionRef.make(new Map([[id, {}]]));
+        const state = yield* SubscriptionRef.make({ phase: "offline" });
+        const reported = yield* Deferred.make<void>();
+        let calls = 0;
+        const registry = {
+          entries,
+          state: () => SubscriptionRef.get(state),
+          stateChanges: () => SubscriptionRef.changes(state),
+          run: () =>
+            Effect.sync(() => {
+              calls += 1;
+            }).pipe(Effect.andThen(Deferred.succeed(reported, undefined))),
+        } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"];
+        yield* Layer.build(
+          layer.pipe(
+            Layer.provide(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, registry)),
+          ),
+        );
+        yield* TestClock.adjust("26 seconds");
+        expect(calls).toBe(0);
+        yield* SubscriptionRef.set(state, { phase: "connected" });
+        yield* Deferred.await(reported);
+        expect(calls).toBe(1);
+        yield* SubscriptionRef.set(state, { phase: "connected" });
+        yield* TestClock.adjust("1 second");
+        expect(calls).toBe(1);
+        yield* SubscriptionRef.set(state, { phase: "offline" });
+        yield* TestClock.adjust("25 seconds");
+        expect(calls).toBe(1);
+      }).pipe(Effect.scoped),
   );
 });

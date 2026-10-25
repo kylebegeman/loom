@@ -11,6 +11,7 @@ import {
   type GitRunStackedActionResult,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred"; // fork: source-control-cockpit
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -600,6 +601,9 @@ describe("vcsActionState", () => {
           targetKey,
           interruptedActionId,
         );
+        // fork: source-control-cockpit -- cancellation must finish the owned stream before clearing its state.
+        const started = yield* Deferred.make<void>();
+        const finalized = yield* Deferred.make<void>();
         const rpcInputs = new Array<GitRunStackedActionInput>();
         const client = {
           [WS_METHODS.gitRunStackedAction]: (input: GitRunStackedActionInput) =>
@@ -614,7 +618,12 @@ describe("vcsActionState", () => {
                   }),
                 )
               : input.actionId === interruptedTransportActionId
-                ? Stream.fromEffect(Effect.interrupt)
+                ? Stream.fromEffect(
+                    Deferred.succeed(started, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                      Effect.ensuring(Deferred.succeed(finalized, undefined)),
+                    ),
+                  ) // fork: source-control-cockpit
                 : Stream.make(
                     progress({
                       kind: "action_failed",
@@ -702,12 +711,23 @@ describe("vcsActionState", () => {
         expect(registry.get(state).revision).toBe(2);
         expect(removed).toEqual([`${environmentId}:*`, `${environmentId}:*`]);
 
-        const interruptedResult = yield* Effect.promise(() =>
-          manager.runStackedAction(targetKey).run(registry, {
+        // fork: source-control-cockpit
+        const interruptedPromise = manager
+          .runStackedAction(targetKey)
+          .run(registry, { actionId: interruptedActionId, action });
+        yield* Deferred.await(started);
+        const staleCancel = yield* Effect.promise(() =>
+          manager.cancelStackedAction.run(registry, { target: targetKey, actionId: "old-action" }),
+        );
+        expect(AsyncResult.isSuccess(staleCancel) && staleCancel.value).toBe(false);
+        yield* Effect.promise(() =>
+          manager.cancelStackedAction.run(registry, {
+            target: targetKey,
             actionId: interruptedActionId,
-            action,
           }),
         );
+        const interruptedResult = yield* Effect.promise(() => interruptedPromise);
+        expect(yield* Deferred.isDone(finalized)).toBe(true);
 
         expect(AsyncResult.isFailure(interruptedResult)).toBe(true);
         if (AsyncResult.isFailure(interruptedResult)) {

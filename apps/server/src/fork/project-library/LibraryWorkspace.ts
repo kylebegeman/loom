@@ -1,3 +1,4 @@
+import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
 import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
@@ -135,6 +136,8 @@ export class LibraryWorkspace extends Context.Service<
       readonly threadId: ThreadId;
       readonly binding: LibraryThreadBinding;
       readonly project?: LibraryProject | undefined;
+      /** The conversation's own worktree, made from the bound copy folder when it started. */
+      readonly worktreePath?: string | undefined;
     }) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryWorkspace") {}
@@ -1216,10 +1219,20 @@ const make = Effect.gen(function* () {
                 resource.remoteUrl,
                 repositoryPath,
               ],
+              // Keep the host's credential helpers and remote URL; only suppress interactive prompts.
+              env: { ...hostEnvironment, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
               timeout: "10 minutes",
+              timeoutBehavior: "timedOutResult",
               maxOutputBytes: 1024 * 1024,
             });
-            if (cloned.code !== 0) return yield* new LibraryError({ reason: "io", cause: cloned });
+            if (cloned.code !== 0)
+              return yield* libraryCloneFailure({
+                stderr: cloned.stderr,
+                timedOut: cloned.timedOut,
+                remoteUrl: resource.remoteUrl,
+                environmentId,
+                computer: yield* HostProcess.Hostname,
+              });
           }
           const inspected = yield* inspectRepository(rootPath, repositoryPath);
           if (
@@ -1516,6 +1529,18 @@ const make = Effect.gen(function* () {
       contentsDigest,
       blockers: [...new Set(blockers)],
       releaseBlockers,
+      releaseBlockerThreads: [...linkedWorktrees]
+        .toSorted()
+        .slice(0, LISTED_WORKTREES)
+        .flatMap((worktreePath) => {
+          // One owner per listed worktree keeps old conversations from flooding the repair list.
+          const thread = [...snapshot.threads, ...snapshot.archivedThreads].find(
+            (candidate) => candidate.deletedAt === null && candidate.worktreePath === worktreePath,
+          );
+          return thread === undefined
+            ? []
+            : [{ threadId: thread.id, title: thread.title, worktreePath }];
+        }),
       reviewToken:
         blockers.length === 0
           ? yield* digest(
@@ -1622,6 +1647,44 @@ const make = Effect.gen(function* () {
       repositoryPaths: selected.map((repository) => repository.path),
       binding: input.binding,
     };
+  });
+
+  /**
+   * The folder a conversation binds to: the copy's own folder, or the worktree it started in. That
+   * worktree must be a linked worktree of the one repository in scope and live outside the copy,
+   * where the copy's Remove files check finds it and keeps the copy until the worktree is gone.
+   */
+  const threadFolder = Effect.fn("LibraryWorkspace.threadFolder")(function* (
+    input: LibraryResolveBindingRequest & {
+      readonly project?: LibraryProject | undefined;
+      readonly worktreePath?: string | undefined;
+    },
+  ) {
+    const resolved = yield* resolveBinding({
+      binding: input.binding,
+      ...(input.project === undefined ? {} : { project: input.project }),
+    });
+    if (input.worktreePath === undefined) return resolved;
+    const receipt = yield* store.get(resolved.binding.workingCopyId);
+    if (
+      resolved.repositoryPaths.length !== 1 ||
+      resolved.repositoryPaths[0] !== resolved.cwd ||
+      !(yield* fs.exists(input.worktreePath))
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const worktree = yield* fs.realPath(input.worktreePath);
+    if (
+      contained(receipt.copy.rootPath, worktree) ||
+      (yield* fs.stat(path.join(worktree, ".git"))).type !== "File"
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const commonDirectory = Effect.fnUntraced(function* (directory: string) {
+      const common = yield* git(directory, ["rev-parse", "--git-common-dir"]);
+      return yield* fs.realPath(path.resolve(directory, common!));
+    });
+    if ((yield* commonDirectory(worktree)) !== (yield* commonDirectory(resolved.cwd)))
+      return yield* new LibraryError({ reason: "invalid" });
+    return { ...resolved, cwd: worktree, worktreeOf: resolved.cwd };
   });
 
   const unregister = Effect.fn("LibraryWorkspace.unregister")(function* (
@@ -3103,9 +3166,12 @@ const make = Effect.gen(function* () {
             const resolved =
               savedBinding !== null && savedCopy?.copy.registered === false
                 ? { ...savedBinding, binding: input.binding }
-                : yield* resolveBinding({
-                    binding: input.binding,
-                    ...(input.project === undefined ? {} : { project: input.project }),
+                : yield* threadFolder({
+                    ...input,
+                    // Binding again, as a retry does, keeps the worktree the conversation started in.
+                    worktreePath:
+                      input.worktreePath ??
+                      (savedBinding?.worktreeOf === undefined ? undefined : savedBinding.cwd),
                   });
             const thread = yield* projections.getThread(input.threadId);
             const localProject = yield* projects.getById(thread.projectId);

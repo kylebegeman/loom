@@ -33,9 +33,16 @@ Disabling blocks new personal-mode authorization; an already authenticated conne
 continue, and completed remote effects cannot be recalled. Restricted grants can still allow
 access after personal access is disabled.
 
+These limits apply to Loom's tools, not to the operating system. Agents run under the same
+account as Loom on that computer and can read the files it can read, including the token file
+Loom uses to reach OpenBao. Store dedicated development credentials in Vault and keep personal
+credentials out of it.
+
 ## Manage records
 
-Choose **Add item**, give it a name and kind, and enter its value. Secret values are hidden by
+Choose **Add item**, or **Add to Vault...** in the command palette, and enter a name and value.
+To save a file, choose **Choose file** beside the value or drop one onto the Vault page on web/desktop.
+Loom selects Secure file and uses the filename as the initial name. Secret values are hidden by
 default. Multiline entry is explicitly visible, for keys and notes. File imports support files
 up to 512 KB. Choose **Edit** to rename an item; enable **Replace value** only when changing its
 contents. Values appear only after **Reveal value**, **Download** or **Share file**. Downloads
@@ -49,6 +56,10 @@ changes while you edit it, refresh before retrying instead of overwriting the ne
 Inspection requires access to read this computer's credentials; changes and reveal require
 write access. A locked, unavailable or misconfigured backend reports its state and can be
 checked again with **Refresh**. Vault does not fall back to your personal password manager.
+
+When answering a private secret request, you can select **Also save to Vault as** and enter a name.
+This saves a separate Vault item using your own write access before answering the request.
+If the save fails, retry or turn the option off to answer without a Vault copy.
 
 Agents with a manage grant can save values using Loom's private secret prompt and a one-use reference. Never paste
 credentials into chat. Normal agent tools return metadata, not stored values. The authenticated
@@ -318,6 +329,12 @@ alone does not establish trust. **Remove host trust** requires confirmation and 
 connections; save a verified pin later to restore access. Archive/restore uses the normal
 item actions. Removing trust or archiving does not unregister the public key on the host.
 
+Use **Find pinned keys on this computer** to read the selected computer's configured SSH known-hosts files.
+When a matching Ed25519 key exists, review its source file and fingerprint, then choose
+**Use pinned key from this computer** and confirm the fingerprint. Global pins are labeled separately
+from user known-hosts entries, which may have been accepted on first use. This reads the computer
+running Loom, including when you connect from a phone; it does not scan the remote host.
+
 After registering the public key and saving host trust, choose **Test SSH connection**.
 Loom runs a fixed harmless command from its server, using this key and pinned host. Success
 names the tested item version. The target must be reachable from that server and support
@@ -357,6 +374,12 @@ needs the matching restricted grant or a review of personal setup. An untrusted 
 independent host verification; a missing/offline broker needs broker setup. Backend lock or
 outage and an upstream login failure are separate repairs. Resolution checks configuration and
 policy; it does not contact the host or prove current broker or upstream readiness.
+
+In personal mode, owner access covers a thread only in full access outside plan mode, and only
+while its turn is running. Outside those, Loom reports that cause and its repair instead of a
+missing connection. Work that continues after the turn ends, such as a background task, cannot
+use Vault; continue in a new turn of the thread. Refusals name the Settings section that holds
+the repair.
 
 ## Use Vault from an agent or scheduled run
 
@@ -450,11 +473,13 @@ loom vault broker ssh-exec --state-dir /absolute/private/machine-directory \
 Loom signs this exact command request and rechecks policy, host presence and key version.
 Only macOS/Linux servers with compatible OpenSSH host-bound authentication and Ed25519 host
 keys are supported. There is no password, personal-agent, host-key bypass or forwarding fallback.
-IPv6 targets, SSH aliases and certificates are not implemented. Keys stay in OpenBao/server
+IPv6 targets, SSH config aliases and certificates are not implemented. Keys stay in OpenBao/server
 memory; the SSH operation writes only public identity/host-trust files and removes its local
 resources afterward.
 
-Commands are limited to eight seconds, 2 KiB stdout and four concurrent executions. The CLI
+Commands are limited to eight seconds, 2 KiB stdout and four concurrent executions, so use them
+for short probes. For longer commands, file transfers or piped input, use the agent terminal
+command in the next section. The CLI
 prints JSON with `exitCode` and `stdout`; inspect the remote exit code, since it is not used as
 the CLI process exit status. SSH failures fail the CLI. Do not place credentials in argv or
 print sensitive remote values. Timeout, cancellation or a lost response can leave remote
@@ -475,6 +500,18 @@ the managed key's current details:
 loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"ssh","argv":["git@dev.example.test","uname -a"]}}'
 loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"git","argv":["fetch","origin"]}}'
 ```
+
+You can also select the connection by name instead of its ID and version. The command can then
+use that name, or `user@name`, as its destination, and Loom connects to the connection's pinned
+host, user and port. Standard input and output pass through, so pipes work for file transfers:
+
+```sh
+loom vault ssh-agent-exec '{"connection":{"resource":"personal-vps"},"timeoutMs":120000,"command":{"tool":"ssh","argv":["personal-vps","df -h"]}}'
+gzip -c backup.sql | loom vault ssh-agent-exec '{"connection":{"resource":"personal-vps"},"timeoutMs":300000,"command":{"tool":"ssh","argv":["personal-vps","cat > backup.sql.gz"]}}'
+```
+
+`timeoutMs` can be up to five minutes. Use a host-style name, such as `personal-vps`, for this;
+other destinations must still match the pinned host.
 
 Git clone/push and other ordinary Git argv also use this command. The key's host, user and port
 must match the SSH remote; existing remotes are retained. Direct SSH supports the pinned host,
@@ -591,10 +628,13 @@ This is not secure erasure or remote credential revocation. Human administrators
 
 ## Connect GitHub and approve project access
 
-Open **Settings → Loom → GitHub access** on web/desktop, or **GitHub access** under
+Open **Settings → Loom → GitHub for agents (Vault)** on web/desktop, or **GitHub for agents (Vault)** under
 **Settings → Computers → Manage computer** on mobile. Save a dedicated fine-grained token
 or choose a GitHub App under **Advanced connection settings**. Paste GitHub repository URLs
 or `owner/repository` names. Loom verifies the account and API access before saving.
+Personal owner-trusted environments support up to 100 repositories per connection; restricted
+environments support 32. When editing repositories or the name, leave the credential blank
+to keep it. Enter a credential only when replacing it.
 
 The token form links to GitHub and lists the required repository permissions. Choosing
 **All repositories** on GitHub chooses repository coverage; it does not add permission entries.
@@ -689,6 +729,11 @@ inputs are unavailable. Git supports `ls-remote`, `fetch`,
 `push` and `clone`, with the selected HTTPS URL or `origin`. For clone, use the selected URL
 and optionally a new directory name under the checkout. `origin` means the selected Vault
 repository for this command; fetching it without refspecs updates its remote-tracking branches.
+A push updates the `origin/` tracking branch of each branch it pushes, so the checkout shows it
+as pushed. `-u` records `origin` as the upstream, and a bare `--force-with-lease` checks the
+remote against those tracking branches. `--force-with-lease=<ref>:<commit>` names the expected
+commit instead; leave the commit empty to require a new ref. Push also accepts `-q` and
+`--follow-tags`, and fetch accepts `-q` and `--no-prune`.
 Stored remotes and the surrounding shell's account stay unchanged. Account-login commands,
 interactive flags, extensions, other destinations and custom executable transport flags fail
 with guidance. A repository with custom credential, HTTP, URL-rewrite or executable settings

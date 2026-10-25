@@ -70,7 +70,7 @@ export const vaultHealthHandlers = McpToolAccess.toLayer(
     const admin = Effect.gen(function* () {
       const scope = yield* McpInvocationContext;
       if (scope.thread || scope.client?.access !== "full-access")
-        return yield* new VaultError({ reason: "denied" });
+        return yield* new VaultError({ reason: "denied", detail: "admin-only" });
       return `client:${scope.client.sessionId}`;
     });
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>

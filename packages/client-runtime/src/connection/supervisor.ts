@@ -359,10 +359,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     { discard: true },
   );
 
+  // fork: fleet-connections - one place stamps every failing state, including progress reports.
+  const failingSince = yield* Ref.make<number | null>(null);
   const setState = Effect.fn("EnvironmentSupervisor.setState")(function* (
     next: SupervisorConnectionState,
   ) {
-    yield* SubscriptionRef.set(state, next);
+    // fork: fleet-connections
+    const since =
+      next.phase === "connecting" || next.phase === "backoff" || next.phase === "blocked"
+        ? yield* Ref.get(failingSince)
+        : null;
+    yield* SubscriptionRef.set(state, since === null ? next : { ...next, failingSince: since });
   });
 
   const signal = Effect.fn("EnvironmentSupervisor.signal")(function* (next: SupervisorSignal) {
@@ -783,6 +790,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     if (options?.learnRoutes !== undefined) {
       yield* learnRoutesFrom(options.learnRoutes, active.lease).pipe(Effect.forkScoped);
     }
+    yield* Ref.set(failingSince, null); // fork: fleet-connections
     yield* setState({
       desired: true,
       network: currentIntent.network,
@@ -892,12 +900,15 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       if (!currentIntent.desired) {
         resetRetryLadder();
         latestFailure = null;
+        yield* Ref.set(failingSince, null); // fork: fleet-connections
         yield* clearLease;
         yield* setState(availableState(currentIntent, generation));
         yield* waitForSignal;
         continue;
       }
       if (currentIntent.network === "offline" && !replacing) {
+        // fork: fleet-connections - this device is offline, so no computer failed to answer it.
+        yield* Ref.set(failingSince, null);
         yield* clearLease;
         yield* setState(offlineState(currentIntent, generation, failureCount + 1, latestFailure));
         const applicationActivated = yield* waitForSignal;
@@ -938,6 +949,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       if (!outcome.established) {
         latestFailure = error;
       }
+      // fork: fleet-connections - a dropped live session starts a run too.
+      const failedAt = yield* Clock.currentTimeMillis;
+      yield* Ref.update(failingSince, (since) => since ?? failedAt);
       if (error._tag === "ConnectionBlockedError") {
         const blockedIntent = yield* Ref.get(intent);
         yield* setState({

@@ -86,6 +86,17 @@ const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressIn
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
+// fork: machine-updates: the renderer installs an armed download once local agents are idle, so
+// the arm only exists while there is a download to install.
+function withInstallWhenIdle(state: DesktopUpdateState, armed: boolean): DesktopUpdateState {
+  if (armed && state.downloadedVersion !== null) {
+    return state.installWhenIdle === true ? state : { ...state, installWhenIdle: true };
+  }
+  if (state.installWhenIdle === undefined) return state;
+  const { installWhenIdle: _, ...unarmed } = state;
+  return unarmed;
+}
+
 export class DesktopUpdateActionInProgressError extends Schema.TaggedError<DesktopUpdateActionInProgressError>()(
   "DesktopUpdateActionInProgressError",
   {
@@ -192,6 +203,8 @@ export class DesktopUpdates extends Context.Service<
     readonly installPrepared: (
       expectedVersion: string,
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
+    // fork: machine-updates
+    readonly setInstallWhenIdle: (armed: boolean) => Effect.Effect<DesktopUpdateState>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
 
@@ -372,12 +385,15 @@ export const make = Effect.gen(function* () {
     Effect.flatMap((state) => electronWindow.sendAll(IpcChannels.UPDATE_STATE_CHANNEL, state)),
   );
 
-  const setState = (state: DesktopUpdateState): Effect.Effect<void> =>
-    stateMutex
+  const setState = (update: DesktopUpdateState): Effect.Effect<void> => {
+    // fork: machine-updates: every write passes here, so a lost download always drops its idle arm.
+    const state = withInstallWhenIdle(update, update.installWhenIdle === true);
+    return stateMutex
       .withPermits(1)(
         Ref.set(updateStateRef, state).pipe(Effect.andThen(PubSub.publish(stateChanges, state))),
       )
       .pipe(Effect.andThen(emitState));
+  };
 
   const updateState = (
     f: (state: DesktopUpdateState) => DesktopUpdateState,
@@ -734,6 +750,11 @@ export const make = Effect.gen(function* () {
         if (admission === "refused") {
           return { accepted: false, completed: false, failed: false };
         }
+        // fork: machine-updates: an admitted install consumes the idle arm, so a failed install
+        // waits for the user instead of retrying on its own.
+        if ((yield* Ref.get(updateStateRef)).installWhenIdle === true) {
+          yield* updateState((state) => withInstallWhenIdle(state, false));
+        }
 
         yield* Ref.set(desktopState.quitting, true);
         yield* Ref.set(installRunningBackendsRef, []);
@@ -755,7 +776,7 @@ export const make = Effect.gen(function* () {
           yield* Ref.set(installRunningBackendsRef, runningInstances);
           yield* Effect.forEach(
             instances,
-            (instance) => instance.stop({ timeout: Duration.seconds(5) }),
+            (instance) => instance.stop({ timeout: DesktopBackendPool.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
             { concurrency: "unbounded" },
           );
           yield* electronUpdater.quitAndInstall({
@@ -1169,6 +1190,17 @@ export const make = Effect.gen(function* () {
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
     installPrepared: (expectedVersion) => installWithExpectedVersion(expectedVersion),
+    // fork: machine-updates
+    setInstallWhenIdle: Effect.fn("desktop.updates.setInstallWhenIdle")(function* (armed: boolean) {
+      yield* Effect.annotateCurrentSpan({ armed });
+      if (
+        armed &&
+        ((yield* Ref.get(desktopState.quitting)) || !(yield* Ref.get(updaterConfiguredRef)))
+      ) {
+        return yield* Ref.get(updateStateRef);
+      }
+      return yield* updateState((state) => withInstallWhenIdle(state, armed));
+    }),
   });
 });
 

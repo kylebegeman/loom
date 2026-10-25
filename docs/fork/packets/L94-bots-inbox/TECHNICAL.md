@@ -37,13 +37,16 @@ row that matches the predicate, so the inbox never needs a new item kind.
 
 | Tag                 | Payload                                       | Success                    | Scope                   |
 | ------------------- | --------------------------------------------- | -------------------------- | ----------------------- |
-| `loom.bots.inbox`   | `{ dismissed?, before?, limit }` (at most 50) | `{ runs, total, hasMore }` | `orchestration:read`    |
+| `loom.bots.inbox`   | `{ dismissed?, before?, limit }` (at most 50) | `{ runs, total, handled?, hasMore }` | `orchestration:read`    |
 | `loom.bots.retry`   | `{ runId, modelSelection? }`                  | `BotRun` (the new run)     | `orchestration:operate` |
 | `loom.bots.dismiss` | `{ runIds (1 to 50), dismissed }`             | `{ runs }`                 | `orchestration:operate` |
 | `loom.bots.promote` | `{ runId }`                                   | `{ threadId, created }`    | `orchestration:operate` |
 
 `dismissed: true` lists dismissed runs instead, for the Restore view. `total` counts every
-matching run, so the badge does not depend on paging. No `BotsChange` member is added; updated
+matching run, so the badge does not depend on paging. `handled` counts the matches whose calling
+agent already has the outcome (`isBotRunHandledByCaller`: an agent's `notify` run whose result
+was delivered, recorded in `delivered_at`, since `notified_at` also marks a failed delivery).
+Older servers omit it, which counts as none. No `BotsChange` member is added; updated
 runs flow through the existing `run` change, which older clients decode because the new keys are
 optional.
 
@@ -144,13 +147,14 @@ will drop. Pruning (L89) treats inbox items like any other run.
 
 - `packages/client-runtime/src/fork/bots.ts`: `inboxAtom` (first page and `total`), folded with
   `watch` run changes: a run that starts or stops matching `isBotInboxRun` is inserted or removed
-  and `total` adjusted, without refetching. `waitingRunsAtom` per environment. Commands for retry,
+  and `total` and `handled` adjusted, without refetching. `waitingRunsAtom` per environment. Commands for retry,
   dismiss and promote.
 - `apps/web/src/fork/bots/BotsInbox.tsx`: Waiting for you, Needs attention, the Dismissed filter.
   Each row: bot, inputs, duration, model, error or verdict summary, batch link, and the actions.
   The model picker reuses the bot editor's picker.
-- The Bots footer entry shows `total + waiting` as "N need attention" (singular "1 needs
-  attention"); hidden at zero.
+- The Bots footer entry shows `total - handled + waiting` as "N need attention" (singular "1
+  needs attention"); hidden at zero. Handled runs fold into a "Handled by the calling agent"
+  group at the bottom of Needs you.
 - Promote navigates to the returned thread.
 - Palette: "Open bots inbox".
 

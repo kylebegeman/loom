@@ -17,6 +17,56 @@ const ready = {
   canOperate: true,
 };
 
+const dorothy = {
+  label: "Dorothy",
+  signIn: false,
+  stallTitle: null,
+  directoryHealth: null,
+};
+
+describe("thread recovery for a computer that needs more than a reconnect", () => {
+  it("asks for a sign-in when the computer refused an expired one, even with messages queued", () => {
+    const result = resolveThreadRecoveryPresentation({
+      ...ready,
+      connectionState: "error",
+      queuedMessages: [{ messageId: "one" }, { messageId: "two" }],
+      computer: { ...dorothy, signIn: true },
+    });
+    expect(result).toEqual({
+      title: "Sign in to Dorothy again",
+      detail: "Your sign-in expired. Loom sends your 2 queued messages once you sign in.",
+      action: "identity",
+    });
+  });
+
+  it("stops saying reconnecting once the reconnect has stalled, and says what the Library heard", () => {
+    const result = resolveThreadRecoveryPresentation({
+      ...ready,
+      connectionState: "reconnecting",
+      queuedMessages: [{ messageId: "one", deliveryAttempted: true }],
+      computer: {
+        ...dorothy,
+        stallTitle: "Can't reach Dorothy since 3:04 PM",
+        directoryHealth: "Running, but not reachable from here.",
+      },
+    });
+    expect(result).toMatchObject({ title: "Can't reach Dorothy since 3:04 PM", action: "retry" });
+    expect(result?.detail).toBe(
+      "Loom keeps trying. Running, but not reachable from here. Your message may already have arrived, and Loom confirms delivery after reconnecting. You do not need to send it again.",
+    );
+  });
+
+  it("keeps the plain reconnecting card inside the stall window", () => {
+    expect(
+      resolveThreadRecoveryPresentation({
+        ...ready,
+        connectionState: "reconnecting",
+        computer: dorothy,
+      }),
+    ).toMatchObject({ title: "Reconnecting", action: "reconnect" });
+  });
+});
+
 describe("thread interruption recovery presentation", () => {
   it("keeps an unsent offline message visibly queued with a reconnect action", () => {
     expect(
@@ -125,6 +175,36 @@ describe("thread interruption recovery presentation", () => {
       title: "Queue paused",
       action: "resume",
     });
+  });
+
+  it("offers to continue a stopped or failed run, ahead of its held queue", () => {
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "interrupted" }),
+    ).toMatchObject({
+      title: "Run stopped",
+      detail: "Resume to continue where it left off.",
+      action: "resume-run",
+    });
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "failed", queueHeld: true }),
+    ).toMatchObject({
+      title: "Run failed",
+      detail: "Retry to continue where it left off. Queued messages run after it.",
+      action: "retry-run",
+      danger: true,
+    });
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "failed", canOperate: false })
+        ?.action,
+    ).toBeNull();
+    expect(
+      resolveThreadRecoveryPresentation({
+        ...ready,
+        stoppedRun: "failed",
+        runtimeStatus: "failed",
+        workspaceError: "Saved files are unavailable.",
+      })?.action,
+    ).toBe("files");
   });
 });
 

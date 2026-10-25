@@ -6,11 +6,15 @@ import { LibraryPaletteDialog } from "./LibraryPalette";
 import { useRef, useState } from "react";
 import {
   libraryContinuationContext,
+  libraryCopyFolderConversations,
   libraryCopyReadiness,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryPortableRecoveryPlan,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
+  markLibraryConversationStarted,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 
@@ -30,7 +34,11 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
+  isDefaultThreadTitle,
+  LibraryLaunchWorkspace,
   LibraryThreadBinding,
   LibraryProject,
   LibraryPrepareCopyRequest,
@@ -40,7 +48,11 @@ import {
   type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopeThreadRef,
+  scopedThreadKey,
+} from "@t3tools/client-runtime/environment";
 import * as Schema from "effect/Schema";
 
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -51,9 +63,10 @@ import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
+  resolveSelectableProviderInstance,
 } from "~/providerInstances";
 import { type LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
-import { useProjects, waitForProject } from "~/state/entities";
+import { useProjects, useThreadShells, waitForProject } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server";
 
@@ -93,6 +106,7 @@ const ConversationAttempt = Schema.NullOr(
     requestedModelSelection: Schema.optional(ModelSelection),
     keepOnComputer: Schema.optional(Schema.Boolean),
     retentionCopy: Schema.optional(LibraryWorkingCopy),
+    workspace: Schema.optional(LibraryLaunchWorkspace),
   }),
 );
 
@@ -119,7 +133,6 @@ const ReopeningAttempt = Schema.NullOr(
     savedAt: Schema.optional(Schema.String),
   }),
 );
-const UNTITLED_CONVERSATION = "New project conversation";
 type ReopeningFiles = NonNullable<typeof ReopeningAttempt.Type>;
 
 /** Keep the restored receipt across authority failures without restoring a second workspace. */
@@ -158,29 +171,51 @@ export async function reopenLibraryLaunchCopy(
 
 const isLibraryError = Schema.is(LibraryError);
 
-/** Local settings keep their precedence; the shared profile supplies defaults before computer settings. */
+/** The model new upstream drafts start with: the one last picked in any composer. */
+export const selectLastUsedModel = (
+  state: Pick<
+    ReturnType<typeof useComposerDraftStore.getState>,
+    "stickyActiveProvider" | "stickyModelSelectionByProvider"
+  >,
+): ModelSelection | null =>
+  state.stickyActiveProvider === null
+    ? null
+    : (state.stickyModelSelectionByProvider[state.stickyActiveProvider] ?? null);
+
+/**
+ * Local settings keep their precedence; the shared profile supplies defaults before computer
+ * settings. The last-used model counts only when this computer can run it, so a model picked
+ * elsewhere never replaces this computer's default with a provider fallback.
+ */
 export function libraryConversationDefaults(input: {
   readonly settings: ServerSettings;
   readonly localProject: (LegacyProjectSettingsFields & { readonly id: ProjectId }) | null;
   readonly project: LibraryProject;
   readonly providers: readonly ServerProvider[];
   readonly selection?: ModelSelection | undefined;
+  readonly lastUsedSelection?: ModelSelection | null | undefined;
   readonly runtimeMode?: RuntimeMode | undefined;
 }) {
-  const defaults = libraryLaunchDefaults({
-    settings: input.settings,
-    localProjectId: input.localProject?.id ?? null,
-    localProject: input.localProject,
-    projectDefaultSelection: input.project.profile?.defaultModelSelection,
-    selection: input.selection,
-    runtimeMode: input.runtimeMode,
-  });
   const entries = applyProviderInstanceSettings(
     deriveProviderInstanceEntries(input.providers),
     input.settings,
     input.localProject?.id ?? null,
   );
   const providers = entries.map((entry) => ({ ...entry.snapshot, enabled: entry.enabled }));
+  const lastUsed = input.lastUsedSelection;
+  const defaults = libraryLaunchDefaults({
+    settings: input.settings,
+    localProjectId: input.localProject?.id ?? null,
+    localProject: input.localProject,
+    projectDefaultSelection: input.project.profile?.defaultModelSelection,
+    selection: input.selection,
+    lastUsedSelection:
+      lastUsed &&
+      resolveSelectableProviderInstance(providers, lastUsed.instanceId) === lastUsed.instanceId
+        ? lastUsed
+        : null,
+    runtimeMode: input.runtimeMode,
+  });
   return {
     entries,
     providers,
@@ -233,6 +268,7 @@ export function useLibraryConversationSetup({
   const clientSettings = useClientSettings();
   const navigate = useNavigate();
   const localProjects = useProjects();
+  const lastUsedSelection = useComposerDraftStore(selectLastUsedModel);
   // A continuation holds its own attempt, so an unfinished one never turns every later start in
   // the project into its retry, replaying the archived conversation's title, context and link.
   // Ordinary starts keep the bare key their attempts are already saved under.
@@ -318,6 +354,9 @@ export function useLibraryConversationSetup({
   );
   const [sourceChoiceId, setSourceChoiceId] = useState<string | null>(null);
   const [keepChoice, setKeepChoice] = useState<boolean | null>(null);
+  const [workspaceChoice, setWorkspaceChoice] = useState<LibraryLaunchWorkspace | null>(
+    attempt?.workspace ?? null,
+  );
   const [typedPath, setRootPath] = useState<string | null>(null);
   const [existingFolder, setExistingFolder] = useState<string | null>(null);
   const [localFolder, setLocalFolder] = useState<string | null>(null);
@@ -345,6 +384,7 @@ export function useLibraryConversationSetup({
   const [pulling, setPulling] = useState(false);
   const [reviewingFiles, setReviewingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
   const copiesReadiness = libraryCopyReadiness(copiesQuery);
   const knownCopies = [
     ...copies.filter((entry) => entry.id !== preparedCopy?.id),
@@ -394,10 +434,12 @@ export function useLibraryConversationSetup({
       : [],
   );
   const chosen = choice.candidate;
+  const offline = !authority.connected;
+  const retainedEnvironmentId = offline ? hostId : authority.authorityId;
   const retained = useEnvironmentQuery(
-    authority.authorityId
+    retainedEnvironmentId
       ? projectLibrary.copies({
-          environmentId: authority.authorityId,
+          environmentId: retainedEnvironmentId,
           input: { projectId: project.id, includeReleased: true },
         })
       : null,
@@ -459,16 +501,6 @@ export function useLibraryConversationSetup({
         })
       : null,
   );
-  // A failed check leaves these files' freshness unknown, which is worth reading before starting.
-  const warning = attempt
-    ? null
-    : (libraryLaunchWarning(chosen, copy, resourceId) ??
-      (checksHealth && copyHealth.error
-        ? {
-            message: `Could not check whether these files are up to date. ${copyHealth.error}`,
-            pullPaths: null,
-          }
-        : null));
   const supportsReopen = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     LIBRARY_FILE_LIFECYCLE_FEATURE,
@@ -515,6 +547,37 @@ export function useLibraryConversationSetup({
     preparation?.keepOnComputer ??
     keepChoice ??
     (movingLocalCopy ? false : filesPolicy ? filesPolicy.keepOnComputer !== false : false);
+  const shells = useThreadShells();
+  // Files moved to a new folder leave the conversations working in the old one behind.
+  const folderConversations = movingLocalCopy ? 0 : libraryCopyFolderConversations(shells, copy);
+  const workspace = attempt
+    ? (attempt.workspace ?? null)
+    : libraryLaunchWorkspace({
+        available:
+          supportsLoomFeature(
+            host?.serverConfig?.environment.capabilities,
+            LIBRARY_WORKTREE_STARTS_FEATURE,
+          ) &&
+          libraryLaunchCanUseWorktree(
+            launchProject,
+            launchResourceIds.length === 1 ? launchResourceIds[0]! : null,
+          ),
+        chosen: workspaceChoice,
+        conversations: folderConversations,
+      });
+  // A failed check leaves these files' freshness unknown, which is worth reading before starting.
+  const warning = attempt
+    ? null
+    : (libraryLaunchWarning(chosen, copy, resourceId, {
+        conversations: folderConversations,
+        workspace,
+      }) ??
+      (checksHealth && copyHealth.error
+        ? {
+            message: `Could not check whether these files are up to date. ${copyHealth.error}`,
+            pullPaths: null,
+          }
+        : null));
   const needsReopen =
     reopening !== null ||
     (!movingLocalCopy &&
@@ -553,6 +616,7 @@ export function useLibraryConversationSetup({
         localProject,
         project,
         providers: providersByEnvironment.get(host.environmentId) ?? [],
+        lastUsedSelection,
         ...(modelChoice ? { selection: modelChoice } : {}),
         ...(runtimeChoice ? { runtimeMode: runtimeChoice } : {}),
       })
@@ -624,6 +688,24 @@ export function useLibraryConversationSetup({
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
   const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
+  const supportsOperations = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    "project-workflows",
+  );
+  const offlineReady =
+    offline &&
+    supportsOperations &&
+    copy?.state === "ready" &&
+    copy.registered !== false &&
+    !movingLocalCopy &&
+    !needsPortable &&
+    !needsReopen &&
+    preparation === null &&
+    restoring === null &&
+    reopening === null &&
+    continuation === undefined &&
+    (copy.ownership === "borrowed" || (copy.keepOnComputer !== false) === keepOnComputer);
+
   // `busy` is a render-time copy, so two calls before the next render, such as an automatic start
   // and an Enter on the same row, would both pass it and each create a conversation.
   const submitting = useRef(false);
@@ -635,7 +717,8 @@ export function useLibraryConversationSetup({
       !modelSelection ||
       busy ||
       submitting.current ||
-      copiesReadiness !== "ready"
+      copiesReadiness !== "ready" ||
+      (offline && !offlineReady)
     )
       return;
     submitting.current = true;
@@ -679,7 +762,7 @@ export function useLibraryConversationSetup({
                 copy: null,
                 keepOnComputer,
                 launch: {
-                  title: title.trim() || UNTITLED_CONVERSATION,
+                  title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
                   context,
                   modelSelection,
                   runtimeMode,
@@ -895,7 +978,7 @@ export function useLibraryConversationSetup({
               }
             : {}),
         },
-        title: title.trim() || UNTITLED_CONVERSATION,
+        title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         context,
         modelSelection,
         defaultsResolved: false,
@@ -906,6 +989,7 @@ export function useLibraryConversationSetup({
           keepOnComputer,
         ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
         ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
+        ...(workspace ? { workspace } : {}),
         runtimeMode,
         interactionMode,
         createdAt: new Date().toISOString(),
@@ -917,7 +1001,7 @@ export function useLibraryConversationSetup({
       saveRestoring(null);
       savePreparation(null);
       submittedPreparation = null;
-      if (launchCopy.ownership === "borrowed" && !next.created) {
+      if (launchCopy.ownership === "borrowed" && !next.created && !offline) {
         const prepared = await prepareCopy({
           environmentId: next.environmentId,
           input: {
@@ -954,6 +1038,7 @@ export function useLibraryConversationSetup({
           project: next.project,
           providers:
             appAtomRegistry.get(serverEnvironment.providersValueAtom(next.environmentId)) ?? [],
+          lastUsedSelection: selectLastUsedModel(useComposerDraftStore.getState()),
           ...(next.requestedModelSelection ? { selection: next.requestedModelSelection } : {}),
           ...(next.requestedRuntimeMode ? { runtimeMode: next.requestedRuntimeMode } : {}),
         });
@@ -993,9 +1078,12 @@ export function useLibraryConversationSetup({
                 modelSelection: next.modelSelection,
                 runtimeMode: next.runtimeMode,
                 interactionMode: next.interactionMode ?? "default",
-                ...(launchCopy.ownership === "managed" && next.keepOnComputer !== undefined
+                ...(!offline &&
+                launchCopy.ownership === "managed" &&
+                next.keepOnComputer !== undefined
                   ? { keepOnComputer: next.keepOnComputer }
                   : {}),
+                ...(next.workspace ? { workspace: next.workspace } : {}),
               },
             },
           },
@@ -1073,6 +1161,9 @@ export function useLibraryConversationSetup({
           .getState()
           .setPrompt(scopeThreadRef(next.environmentId, next.threadId), next.context);
       saveAttempt(null);
+      markLibraryConversationStarted(
+        scopedThreadKey(scopeThreadRef(next.environmentId, next.threadId)),
+      );
       onChanged();
       onClose();
       await navigate({
@@ -1083,6 +1174,7 @@ export function useLibraryConversationSetup({
     try {
       await launch();
     } catch (cause) {
+      setCloneRepair(isLibraryError(cause) ? cause.repair : undefined);
       if (submittedPreparation) {
         const receipt = await recoverPreparation({
           environmentId: submittedPreparation.environmentId,
@@ -1141,8 +1233,7 @@ export function useLibraryConversationSetup({
     } else setReviewingFiles(true);
     setBusy(false);
   };
-  const connected =
-    authority.connected && host?.connection.phase === "connected" && host.entry.enabled;
+  const connected = host?.connection.phase === "connected" && host.entry.enabled;
   const canContinue =
     !needsSourceReview &&
     !busy &&
@@ -1150,34 +1241,36 @@ export function useLibraryConversationSetup({
     existingFolder === null &&
     (!movingLocalCopy || rootPath.trim().length > 0) &&
     copiesReadiness === "ready" &&
-    (needsPortable
-      ? supportsPortable &&
-        canRestoreCopy &&
-        canAuthorizeRecovery &&
-        canRegisterCopy &&
-        canInspect &&
-        rootPath.trim().length > 0 &&
-        sourceCanSnapshot &&
-        (snapshotSource?.state !== "ready" ||
-          restoring?.sourceSnapshot !== undefined ||
-          restoring?.copy != null ||
-          (canReadSource && canSnapshotSource))
-      : needsReopen
-        ? supportsReopen &&
-          canReopen &&
+    (offline
+      ? offlineReady
+      : needsPortable
+        ? supportsPortable &&
+          canRestoreCopy &&
+          canAuthorizeRecovery &&
           canRegisterCopy &&
-          libraryCopyReadiness(retained) === "ready"
-        : (copy?.state === "ready" &&
-            (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
-          (canPrepare &&
-            canInspect &&
+          canInspect &&
+          rootPath.trim().length > 0 &&
+          sourceCanSnapshot &&
+          (snapshotSource?.state !== "ready" ||
+            restoring?.sourceSnapshot !== undefined ||
+            restoring?.copy != null ||
+            (canReadSource && canSnapshotSource))
+        : needsReopen
+          ? supportsReopen &&
+            canReopen &&
             canRegisterCopy &&
-            rootPath.trim().length > 0 &&
-            libraryCopyReadiness(retained) === "ready")) &&
+            libraryCopyReadiness(retained) === "ready"
+          : (copy?.state === "ready" &&
+              (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
+            (canPrepare &&
+              canInspect &&
+              canRegisterCopy &&
+              rootPath.trim().length > 0 &&
+              libraryCopyReadiness(retained) === "ready")) &&
     (locked || needsReopen || (filesPlan.kind !== "choose" && filesPlan.kind !== "unavailable")) &&
     supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library") &&
     allowed &&
-    canRegister &&
+    (offline ? offlineReady : canRegister) &&
     (!(
       supportsReopen &&
       filesPolicy?.ownership !== "borrowed" &&
@@ -1188,10 +1281,6 @@ export function useLibraryConversationSetup({
       (canSetRetention && canRegisterCopy)) &&
     (continuation === undefined || (source.isSuccess && !source.isPending)) &&
     connected;
-  const supportsOperations = supportsLoomFeature(
-    host?.serverConfig?.environment.capabilities,
-    "project-workflows",
-  );
   const operationProgress = useEnvironmentQuery(
     busy && hostId && supportsOperations
       ? projectLibrary.operations({ environmentId: hostId, input: { projectId: project.id } })
@@ -1229,39 +1318,43 @@ export function useLibraryConversationSetup({
   // A connection already on its way back needs no action, so it is not asked for.
   const reconnecting = (phase: string | undefined) =>
     phase === "connecting" || phase === "reconnecting";
-  const blocker = !authority.connected
-    ? reconnecting(authority.environment?.connection.phase)
-      ? "Connecting to your Library..."
-      : "Reconnect your Library before starting."
-    : !hostId
-      ? "Choose a computer to run this conversation."
-      : host?.connection.phase !== "connected"
-        ? reconnecting(host?.connection.phase)
-          ? `Connecting to ${host?.label ?? "the selected computer"}...`
-          : "Reconnect the selected computer before starting."
-        : copiesReadiness === "loading"
-          ? "Loading project files..."
-          : copiesReadiness === "error"
-            ? (copiesQuery.error ?? "Could not load project files.")
-            : !modelSelection
-              ? "Enable an authenticated provider on this computer."
-              : filesPlan.kind === "choose"
-                ? filesPlan.reason
-                : filesPlan.kind === "unavailable" && !needsReopen
-                  ? filesPlan.message
-                  : needsPortable && !supportsPortable
-                    ? "Update this computer to restore saved project files."
-                    : needsPortable && !sourceCanSnapshot
-                      ? "Connect the source computer to save its latest files."
-                      : toolProblemsOf(hostId) ||
-                        (!canCreate && !busy && !existingFolder
-                          ? "Review the selected computer, files and connection permissions."
-                          : null);
+  const blocker =
+    offline && !offlineReady
+      ? reconnecting(authority.environment?.connection.phase)
+        ? "Connecting to your Library..."
+        : "Reconnect the Library to prepare files or change retention. Offline starts need a ready registered copy."
+      : !hostId
+        ? "Choose a computer to run this conversation."
+        : host?.connection.phase !== "connected"
+          ? reconnecting(host?.connection.phase)
+            ? `Connecting to ${host?.label ?? "the selected computer"}...`
+            : "Reconnect the selected computer before starting."
+          : copiesReadiness === "loading"
+            ? "Loading project files..."
+            : copiesReadiness === "error"
+              ? (copiesQuery.error ?? "Could not load project files.")
+              : !modelSelection
+                ? "Enable an authenticated provider on this computer."
+                : filesPlan.kind === "choose"
+                  ? filesPlan.reason
+                  : filesPlan.kind === "unavailable" && !needsReopen
+                    ? filesPlan.message
+                    : needsPortable && !supportsPortable
+                      ? "Update this computer to restore saved project files."
+                      : needsPortable && !sourceCanSnapshot
+                        ? "Connect the source computer to save its latest files."
+                        : toolProblemsOf(hostId) ||
+                          (!canCreate && !busy && !existingFolder
+                            ? "Review the selected computer, files and connection permissions."
+                            : null);
   // Names what Retry replays. An attempt held before the conversation step saved no title, so it
   // uses the one shown, which cannot change until Start over.
-  const heldTitle = attempt?.title ?? (title.trim() || UNTITLED_CONVERSATION);
+  const heldTitle = attempt?.title ?? (title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE);
   return {
     project,
+    offlineNotice: offlineReady
+      ? "Library offline; starting from this computer's copy. This conversation syncs when it reconnects."
+      : null,
     operationPhase,
     open,
     embedded,
@@ -1288,6 +1381,7 @@ export function useLibraryConversationSetup({
       setRuntimeChoice(null);
       setInteractionChoice("default");
       setKeepChoice(null);
+      setWorkspaceChoice(null);
     },
     scope: launchResourceIds,
     selectScope: (value: string | null) => {
@@ -1305,6 +1399,7 @@ export function useLibraryConversationSetup({
       setLocalFolder(null);
       setRootPath(null);
       setKeepChoice(null);
+      setWorkspaceChoice(null);
     },
     modelSelection,
     entries: defaults?.entries ?? [],
@@ -1349,6 +1444,8 @@ export function useLibraryConversationSetup({
     existingFolder,
     keepOnComputer,
     setKeepChoice,
+    workspace,
+    setWorkspaceChoice,
     canKeep:
       supportsReopen && filesPolicy?.ownership !== "borrowed" && canSetRetention && canRegisterCopy,
     needsReopen,
@@ -1356,7 +1453,7 @@ export function useLibraryConversationSetup({
     locked,
     held: locked
       ? {
-          title: heldTitle === UNTITLED_CONVERSATION ? null : heldTitle,
+          title: isDefaultThreadTitle(heldTitle) ? null : heldTitle,
           savedAt: attempt?.createdAt ?? preparation?.savedAt ?? reopening?.savedAt ?? null,
         }
       : null,
@@ -1368,6 +1465,7 @@ export function useLibraryConversationSetup({
     pullThenSubmit,
     submit,
     error,
+    cloneRepair: error && cloneRepair?.environmentId === hostId ? cloneRepair : null,
     blocker,
     refreshFiles: () => {
       copiesQuery.refresh();

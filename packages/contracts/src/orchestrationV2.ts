@@ -427,6 +427,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
     ),
   ),
   rollbackRequestId: Schema.optional(CommandId),
+  // fork: project-lifecycle -- file-only restores have no rolled-back run to signal completion.
+  rollbackCompletedRequestId: Schema.optional(CommandId),
   rollbackFailure: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
@@ -1831,6 +1833,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
     Schema.NullOr(Schema.Literals(["preparing", "starting", "running", "waiting"])),
   ),
   blockedOnThreadWait: Schema.optional(Schema.Boolean),
+  // fork: attention-status - Older servers omit the flag.
+  queueHeld: Schema.optional(Schema.Boolean),
   status: OrchestrationV2ShellThreadStatus,
   lastError: Schema.optional(Schema.NullOr(Schema.String)),
   lastErrorClass: Schema.optional(Schema.NullOr(OrchestrationV2ProviderFailureClass)),

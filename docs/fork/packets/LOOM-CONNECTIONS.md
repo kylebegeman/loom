@@ -65,7 +65,7 @@ APNs refuses for Loom's own app ID.
 | C01 | L112 Identity renewal                      | Done           | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d.                                                                                                                                            |
 | C02 | L113 Library computer list on every client | Done           | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes. Sign-ins are pinned to the Library's issuer. The list lives in Connections settings only, not the command palette or settings search.                                                                                                                           |
 | C03 | L114 Reach from anywhere                   | Built, off     | Per-computer Cloudflare tunnel at `<computer>-loom.<zone>`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off, removing the address and retiring it from the Library. The hosted Library's credential files are installed and passed read-only checks; reach is not verified live ([runbook](../operations/reach.md)). |
-| C04 | L115 Push infrastructure                   | Built, off     | Library device registry and APNs sender with Kyle's team key, off at four layers (Library switch, advertised slug, iOS build flag, per-device opt-in). The iPhone registers with the Library only when all four are on, and only test notifications exist. Apple setup, a build with the flag on and the C04-10 go or no-go on agent alerts are pending Kyle.                                                                              |
+| C04 | L115 Push infrastructure                   | Built, off     | Library device registry and APNs sender with Kyle's team key, off at four layers (Library switch, advertised slug, iOS build flag, per-device opt-in). The iPhone registers with the Library only when all four are on. Agent alerts (C04-10) are built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default: computers tell their Library when an agent needs you. Apple setup and a build with the flag on are pending Kyle.              |
 | C05 | L116 Connect off in Loom builds            | Phase 1 landed | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text. Phase 1: the server cleanup behind an explicit retired flag, the relay and mobile tracing strip, and two copy fixes. The rest is the [C05 flip](#c05-flip).                        |
 
 ## Decisions
@@ -112,8 +112,8 @@ APNs refuses for Loom's own app ID.
   Rotating either one means replacing its file, with no restart. C03 and C04 are not verified
   live.
 - **C04 build (2026-10-24).** Library push is built and off at four layers, with a secret-store
-  registry and no migration. Its defaults K1 to K10 wait for Kyle, and agent alerts (C04-10)
-  are not built; see the [L115 decisions](./L115-push/README.md#decisions-defaults-pending-kyle).
+  registry and no migration. Agent alerts (C04-10) are built behind
+  `LOOM_LIBRARY_PUSH_ACTIVITY`, off. Its defaults K1 to K12 wait for Kyle; see the [L115 decisions](./L115-push/README.md#decisions-defaults-pending-kyle).
 
 - **C01 rollout (2026-10-24).** Renewal starts only on a computer that sets
   `LOOM_IDENTITY_MAX_SESSION_AGE`, and clients older than C01 cannot sign in once it is set, so

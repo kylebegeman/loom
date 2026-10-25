@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import { HttpClient } from "effect/http";
+import { HttpClient, HttpClientError } from "effect/http"; // fork: restart-continuity
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
@@ -30,6 +30,7 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+import * as OrphanedProviders from "../fork/orphaned-providers/OrphanedProviders.ts"; // fork: restart-continuity
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -37,9 +38,19 @@ const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(1);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
-// Same as the service launcher. A killed backend leaves its agents running,
-// and a busy one needs a few seconds to stop every provider session.
-const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(5);
+// fork: restart-continuity: same as the service launcher. A killed backend
+// leaves its agents running. Three of four measured install stops hit the old
+// 5 s cap (5001, 5002 and 5001 ms; the fourth took 4725 ms), so busy backends
+// were cut off while still stopping provider sessions.
+export const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
+// fork: restart-continuity: the grace, then SIGKILL and the spawner's
+// one-second wait for the process group, so a stop that returns has really
+// ended the backend instead of leaving it to outlive a quitting app. A killed
+// backend's providers are stopped after it exits, within their own bound.
+export const BACKEND_STOP_TIMEOUT = Duration.sum(
+  Duration.sum(BACKEND_TERMINATE_GRACE, Duration.seconds(2)),
+  OrphanedProviders.CLEANUP_TIMEOUT,
+);
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 const { logWarning: logBackendProcessWarning } =
@@ -74,6 +85,10 @@ export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly preflightFailure: Option.Option<PreflightFailure>;
   readonly runningDistro?: string;
   readonly wslRuntimeId?: string;
+  // fork: restart-continuity: set only for the primary local backend, whose
+  // state dir is the desktop's own, so the desktop can stop the providers a
+  // dead backend leaves running.
+  readonly providerProcessLedger?: string;
 }
 
 export interface PreflightFailure {
@@ -101,6 +116,7 @@ export class BackendReadinessTimeoutError extends Schema.TaggedError<BackendRead
     readinessUrl: Schema.URL,
     timeoutMs: Schema.Number,
     cause: Schema.Defect(),
+    lastProbe: Schema.optional(Schema.String), // fork: restart-continuity
   },
 ) {
   override get message(): string {
@@ -312,28 +328,69 @@ const closeRun = (
   );
 };
 
+// fork: restart-continuity: a slow start should say whether the backend is
+// listening yet, which the overall timeout alone does not.
+function describeReadinessProbeFailure(cause: unknown): string | undefined {
+  if (HttpClientError.isHttpClientError(cause)) {
+    const reason = cause.reason;
+    if (reason._tag === "StatusCodeError") return `answered HTTP ${reason.response.status}`;
+    if (reason._tag !== "TransportError") return reason.message;
+    const code = findErrorCode(reason.cause);
+    if (code === "ECONNREFUSED") return "connection refused; the backend is not listening yet";
+    return code === undefined ? "connection failed" : `connection failed (${code})`;
+  }
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "kind" in cause &&
+    cause.kind === "probe-timeout" &&
+    "probeTimeoutMs" in cause
+  ) {
+    return `no answer within ${String(cause.probeTimeoutMs)}ms; the connection was not refused`;
+  }
+  return undefined;
+}
+
+// fork: restart-continuity: undici may nest the socket error under a wrapper.
+function findErrorCode(cause: unknown): string | undefined {
+  let current = cause;
+  for (let depth = 0; depth < 4 && typeof current === "object" && current !== null; depth += 1) {
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+}
+
 export const waitForHttpReady = (
   options: BackendProcessContext & { readonly timeout: Duration.Duration },
-): Effect.Effect<void, BackendReadinessTimeoutError, HttpClient.HttpClient> => {
-  const readinessUrl = new URL(BACKEND_READINESS_PATH, options.httpBaseUrl);
-  return waitForHttpReadyShared({
-    baseUrl: options.httpBaseUrl.href,
-    path: BACKEND_READINESS_PATH,
-    timeoutMs: Duration.toMillis(options.timeout),
-    intervalMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_INTERVAL),
-    probeTimeoutMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT),
-    makeError: ({ cause }) =>
-      new BackendReadinessTimeoutError({
-        executablePath: options.executablePath,
-        entryPath: options.entryPath,
-        cwd: options.cwd,
-        httpBaseUrl: options.httpBaseUrl,
-        readinessUrl,
-        timeoutMs: Duration.toMillis(options.timeout),
-        cause,
-      }),
+): Effect.Effect<void, BackendReadinessTimeoutError, HttpClient.HttpClient> =>
+  // fork: restart-continuity: suspended so each wait tracks its own last probe.
+  Effect.suspend(() => {
+    const readinessUrl = new URL(BACKEND_READINESS_PATH, options.httpBaseUrl);
+    let lastProbe: string | undefined; // fork: restart-continuity
+    return waitForHttpReadyShared({
+      baseUrl: options.httpBaseUrl.href,
+      path: BACKEND_READINESS_PATH,
+      timeoutMs: Duration.toMillis(options.timeout),
+      intervalMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_INTERVAL),
+      probeTimeoutMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT),
+      makeError: ({ cause }) => {
+        // fork: restart-continuity: called once per failed probe, then once more
+        // with the overall timeout, which keeps the latest probe's reason.
+        lastProbe = describeReadinessProbeFailure(cause) ?? lastProbe;
+        return new BackendReadinessTimeoutError({
+          executablePath: options.executablePath,
+          entryPath: options.entryPath,
+          cwd: options.cwd,
+          httpBaseUrl: options.httpBaseUrl,
+          readinessUrl,
+          timeoutMs: Duration.toMillis(options.timeout),
+          cause,
+          lastProbe,
+        });
+      },
+    });
   });
-};
 
 function drainBackendOutput(
   context: BackendProcessContext & { readonly pid: number },
@@ -437,7 +494,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stdout: options.captureOutput ? "pipe" : "inherit",
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
-    forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
+    forceKillAfter: BACKEND_TERMINATE_GRACE, // fork: restart-continuity
     // wsl.exe drops additional file descriptors when forwarding to the Linux
     // side, so the WSL spawn path delivers the bootstrap envelope via stdin
     // (`--bootstrap-fd 0`) instead.
@@ -635,6 +692,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* Ref.make(initialState);
   const mutex = yield* Semaphore.make(1);
+  const orphanedProviders = yield* OrphanedProviders.make; // fork: restart-continuity
 
   const { logWarning: logInstanceWarning, logError: logInstanceError } =
     DesktopObservability.makeComponentLogger(`desktop-backend-instance:${spec.id}`);
@@ -879,6 +937,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           );
         });
 
+        // fork: restart-continuity: the cleanup runs on exit, before finalizeRun,
+        // so the next backend never starts while it is still signalling.
+        const providers = yield* orphanedProviders.watch(config.value.providerProcessLedger);
         const program = runBackendProcess({
           ...config.value,
           desktopTelemetryStream: desktopTelemetryPublisher.encoded,
@@ -887,6 +948,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           onDesktopTelemetryControl: (message) =>
             desktopTelemetryPublisher.handleControlForSource(spec.id, message),
           onStarted: Effect.fn("desktop.backendInstance.onStarted")(function* (pid) {
+            yield* providers.started(pid); // fork: restart-continuity
             yield* updateActiveRun(runId, (run) => ({
               ...run,
               pid: Option.some(pid),
@@ -899,7 +961,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             updateActiveRun(runId, (run) => ({
               ...run,
               exitObserved: true,
-            })),
+            })).pipe(Effect.andThen(providers.exited)), // fork: restart-continuity
           onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
             const isCurrentRun = yield* Ref.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);
@@ -933,11 +995,16 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           }),
           onReadinessFailure: Effect.fn("desktop.backendInstance.onReadinessFailure")(
             function* (error) {
-              yield* logInstanceWarning("backend readiness check failed during bootstrap", {
-                error: error.message,
+              // fork: restart-continuity: the run keeps probing while the process
+              // lives, so this is a slow start, not a kill. Say so in both logs so
+              // the snapshot in server-child.log is not read as a crash.
+              const lastProbe = error.lastProbe ?? "unknown";
+              yield* logInstanceWarning("backend not ready yet, still waiting", {
+                budgetMs: error.timeoutMs,
+                lastProbe,
               });
               yield* backendOutputLog.persistFailureSnapshot({
-                details: error.message,
+                details: `Backend not ready within the last ${error.timeoutMs}ms; still waiting while the process runs. Last probe: ${lastProbe}.`,
               });
             },
           ),
@@ -1062,7 +1129,13 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       onSome: (run) =>
         Effect.gen(function* () {
           const closed = yield* closeRun(run, parentScope, options);
+          // fork: restart-continuity: tells a stop that ran out of budget from one that finished.
+          yield* Effect.annotateCurrentSpan({ "backend.stopped_within_budget": closed });
           if (!closed) {
+            // fork: restart-continuity
+            yield* logInstanceWarning("backend still stopping when its stop budget ran out", {
+              timeoutMs: options?.timeout === undefined ? null : Duration.toMillis(options.timeout),
+            });
             return;
           }
           const cleanup = yield* mutex.withPermits(1)(

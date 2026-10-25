@@ -8,7 +8,29 @@ shows the same branch, checkout, thread and PR information (README, "Retired par
 `lane` facts query below stays; the panel header, Conflicts, Switch and the leak check read
 it.
 
-## Overview
+## Implemented recovery boundary
+
+Recovery uses `GitWorkflowService.resolveOperation` and `GitVcsDriverCore`, with optional
+operation, unmerged count/path and HEAD fields on `VcsStatus`. Paths in status are capped
+at 200; the count retains the total. `git.resolveOperation` uses source-control-write
+permission and the existing checkout lease. The server checks active conversations,
+operation and HEAD again, refuses unmerged entries on Continue, and never stages files.
+It returns the operation/count after the step, including a normal stop at the next conflict.
+
+The client cancels its owned stacked-action stream. RPC interruption closes the scoped
+Git child. Push hooks and output travel through the existing progress events. The explicit
+lane decision is a ten-minute push ceiling, including hooks. The idle label is tentative
+because silence alone cannot establish SSH approval as the cause.
+
+Landed state compares HEAD with the fetched remote default using merge-base ancestry.
+The comparison carries its HEAD so a newer local status cannot reuse a stale landed label.
+Project consent lives in `ProjectSettingsOverrides.skipDefaultBranchConfirmation`, absent
+meaning ask. No automatic merge into the default checkout is added.
+
+The remaining design below describes the future Graph, Checks and Switch panel. Its
+conflict view must reuse this implemented recovery path, not add parallel mutations.
+
+## Remaining panel overview
 
 ```
  Right panel "source-control-cockpit" (ext-panels), views: Graph | Checks | Conflicts | Switch
@@ -390,32 +412,18 @@ with `timeoutMs: 60_000` and `maxOutputBytes: 16 MiB`, then:
    for abort as a copyable command only. The panel shows them as copy chips next to the
    Continue and Abort buttons.
 
-### Continue and abort (`operationStep.ts`)
+### Continue and abort
 
-Runs only on an explicit click after the client's confirmation dialog.
+The implemented `git.resolveOperation` service accepts the checkout, operation, expected
+HEAD and Continue/Abort choice. It uses the same checkout lease as other Git writes,
+checks all active checkout holders, revalidates operation and HEAD, and refuses Continue
+while unmerged index entries remain. Git runs with editors disabled and terminal prompts
+disabled. No files are staged automatically.
 
-1. Resolve the cwd and take the same per-cwd `Semaphore` as the stash operations.
-2. Re-detect the operation (lane facts logic) and read HEAD. If the operation differs from
-   `input.operation` or HEAD differs from `input.expectedHead`, fail `stale` ("The
-   repository changed. Review the conflicts again."); the panel refetches.
-3. Continue only: `git status --porcelain=v2 -z`; any `u` record fails `unresolved`
-   ("Resolve and stage every conflicted file first."). The server does not stage files.
-4. Run `git <verb> --continue` or `git <verb> --abort`, where the verb is `merge`, `rebase`
-   (also for `rebase-interactive`), `am`, `cherry-pick` or `revert`, with env
-   `GIT_EDITOR=true` (accept git's prepared commit message; nothing may open an editor on the
-   environment), `GIT_TERMINAL_PROMPT=0`, `timeoutMs: 120_000` (commit hooks can run),
-   `maxOutputBytes: 256 KiB`, `allowNonZeroExit: true`.
-5. Re-detect the operation and count `u` records. A non-zero exit with the operation still
-   in progress and conflicts present is a normal result (a rebase stopped at the next
-   conflicting commit): return it. A non-zero exit otherwise fails `git-failed` with the
-   first line of stderr (for example a failing pre-commit hook).
-6. `VcsStatusBroadcaster.refreshLocalStatus(cwd)`, ignoring its failure, then return
-   `{ operation, conflictedCount, output }`.
-
-The client disables both buttons while any thread whose shell shares this checkout (same
-`worktreePath`, or the project root) has a running session, using the sibling-thread list
-from `useCheckoutThreads`. That is a courtesy against racing an agent; the server's
-HEAD check is the real guard.
+After the command, the driver reads operation/conflicts again. A nonzero Continue exit
+with new conflicts is a normal result; other failures remain typed errors. The WebSocket
+handler refreshes status on both success and failure. Web, desktop and mobile use the
+command's permission state and require confirmation. Agents continue to use Git directly.
 
 ### Switch preflight
 
@@ -555,8 +563,8 @@ tool tokens down (EXTENSION-POINTS.md, MCP).
   graph was a table of lane records, its conflict view listed placeholder paths, and its safe
   switch tray was not wired to anything (see REFERENCES.md).
 - **Separate right panels per view.** Rejected: more launcher letters and tabs for one object.
-- **Adding a conflict flag to upstream's status schema.** Rejected: an upstream wire schema
-  change; the fork RPC carries it instead.
+- **Separate conflict state in a fork query.** Superseded by the minimal recovery slice:
+  optional status fields keep older clients compatible and avoid another subscription.
 - **Running the checkout in the fork to get git's stderr.** Rejected: upstream's `switchRef`
   handles remote tracking branches and refreshes status; the preflight makes its missing
   stderr matter less.

@@ -40,15 +40,24 @@ const resolveInstance = (
   instanceId: ProviderInstanceId,
 ): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
   registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
+    // fork: server-weight -- use the cached status; starting a CLI cannot repair missing credentials.
+    Effect.flatMap(
+      Effect.fnUntraced(function* (instance) {
+        if (instance === undefined) {
+          return yield* new TextGenerationError({
+            operation,
+            detail: `No provider instance registered for id '${instanceId}'.`,
+          });
+        }
+        const snapshot = yield* instance.snapshot.getSnapshot;
+        if (snapshot.auth.status === "unauthenticated") {
+          return yield* new TextGenerationError({
+            operation,
+            detail: `Sign in to provider instance '${instanceId}' before generating text.`,
+          });
+        }
+        return instance.textGeneration;
+      }),
     ),
   );
 

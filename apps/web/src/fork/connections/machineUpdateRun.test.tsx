@@ -10,6 +10,7 @@ import {
 import { EnvironmentId } from "@t3tools/contracts";
 import type { UpdateEverythingRun } from "~/components/sidebar/updateEverything.logic";
 import { useUpdateEverything } from "~/components/sidebar/useUpdateEverything";
+import { waitForUpdateRestart } from "~/components/sidebar/updateEverythingRun";
 
 const fixture = vi.hoisted(() => ({
   run: null as UpdateEverythingRun | null,
@@ -145,4 +146,16 @@ it("does not replace an update pass that is already running", async () => {
   expect(fixture.run).toBe(existing);
   expect(fixture.updateProviders).not.toHaveBeenCalled();
   expect(fixture.updateServer).not.toHaveBeenCalled();
+});
+it("hands the app install to the idle wait instead of the restart countdown", async () => {
+  await act(async () => {
+    renderer = create(<Harness scope="local" />);
+  });
+  const installLocal = vi.fn(async () => true);
+  const installLocalWhenIdle = vi.fn(async () => true);
+  await updates.run({ installLocal, installLocalWhenIdle });
+  expect(installLocalWhenIdle).toHaveBeenCalledOnce();
+  expect(installLocal).not.toHaveBeenCalled();
+  expect(waitForUpdateRestart).not.toHaveBeenCalled();
+  expect(fixture.run).toBeNull();
 });

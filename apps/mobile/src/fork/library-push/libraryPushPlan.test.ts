@@ -37,6 +37,7 @@ const library = (overrides: Partial<LibraryPushLibrary> = {}): LibraryPushLibrar
   configured: true,
   connected: true,
   advertised: true,
+  alerts: false,
   canChange: true,
   account: ACCOUNT,
   ...overrides,

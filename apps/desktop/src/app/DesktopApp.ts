@@ -1,5 +1,4 @@
 import * as Cause from "effect/Cause";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -35,6 +34,7 @@ import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
+import { compactBeforeBackendStart } from "../fork/database-compaction/RestartCompaction.ts"; // fork: restart-compaction
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
@@ -153,7 +153,7 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
     const instances = yield* pool.list;
     yield* Effect.forEach(
       instances,
-      (instance) => instance.stop({ timeout: Duration.seconds(5) }),
+      (instance) => instance.stop({ timeout: DesktopBackendPool.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
       { concurrency: "unbounded" },
     );
   },
@@ -238,6 +238,9 @@ const bootstrap = Effect.gen(function* () {
     );
   }
 
+  // fork: restart-compaction: no backend has the database open yet. A quit
+  // during the repair stops it, and the check below then skips the start.
+  yield* compactBeforeBackendStart;
   if (!(yield* Ref.get(state.quitting))) {
     if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;

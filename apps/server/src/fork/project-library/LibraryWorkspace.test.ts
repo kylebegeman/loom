@@ -121,6 +121,7 @@ const projections = Layer.mock(ProjectionStore.ProjectionStoreV2)({
     Effect.succeed({ schemaVersion: 1, snapshotSequence: 0, threads: [], archivedThreads: [] }),
 });
 const cloneSources = new Map<string, string>();
+const cloneFailures = new Map<string, string>();
 const publisherFailures = new Set<string>();
 const publisherEdits = new Map<string, { path: string; contents: string }>();
 const recoveryArchivePath = Effect.fnUntraced(function* (sha256: string) {
@@ -137,6 +138,19 @@ const runnerLayer = Layer.effect(
         return Effect.gen(function* () {
           const remoteIndex = input.args.indexOf("--") + 1;
           const remoteUrl = input.args[remoteIndex]!;
+          expect(input.env?.GIT_TERMINAL_PROMPT).toBe("0");
+          const failure = cloneFailures.get(remoteUrl);
+          if (failure)
+            return {
+              code: 128,
+              stdout: "",
+              stderr: failure,
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            } as ProcessRunner.ProcessRunOutput;
           const source = cloneSources.get(remoteUrl);
           if (source === undefined) return yield* Effect.die("Unexpected clone fixture");
           const args = [...input.args];
@@ -313,6 +327,36 @@ const reconnectDetail =
   "Loom could not check which project owns this folder. Reconnect your Library and try again.";
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
+  it.effect("reports clone authentication with a computer-specific setup repair", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const remoteUrl = "https://github.com/team/clone-auth-test.git";
+      cloneFailures.set(
+        remoteUrl,
+        "fatal: Authentication failed for 'https://private@github.com/team/clone-auth-test'",
+      );
+      const project = makeProject(
+        projectFor()
+          .resources.slice(0, 1)
+          .map((resource) => ({ ...resource, remoteUrl })),
+      );
+      const failure = yield* service
+        .prepareCopy({
+          requestId: "clone-auth-failure",
+          project,
+          rootPath: path.join(parent, "clone-auth"),
+          strategy: "clone",
+        })
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("blocked");
+      expect(failure.repair).toMatchObject({ kind: "github-host-setup", environmentId });
+      expect(failure.message).toContain("Git authentication failed");
+      expect(failure.message).not.toContain("private@");
+      cloneFailures.delete(remoteUrl);
+    }),
+  );
   it.effect(
     "portable snapshots allow idle conversations, reject active and pending work, and replay immutable results",
     () =>
@@ -706,6 +750,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             ),
           ),
         );
+        const destinationContext = yield* Layer.build(destinationLayer);
         const destination = yield* Effect.gen(function* () {
           return {
             service: yield* LibraryWorkspace.LibraryWorkspace,
@@ -713,7 +758,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             config: yield* ServerConfig.ServerConfig,
             context: yield* Effect.context<Layer.Success<typeof destinationLayer>>(),
           };
-        }).pipe(Effect.provide(destinationLayer));
+        }).pipe(Effect.provide(destinationContext));
         expect(destination.config.stateDir).not.toBe(sourceConfig.stateDir);
         const destinationRoot = path.join(parent, "destination", "renamed-copy");
         const input = {
@@ -2070,11 +2115,49 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       yield* git(repository, ["worktree", "add", "-b", "feature", outside]);
       yield* git(repository, ["worktree", "add", "-b", "inside", inside]);
 
-      const blocked = yield* service.status({ workingCopyId: copy.id });
+      const archive = yield* archiveFor(makeProject([]));
+      const owner: OrchestrationV2ThreadShell = {
+        ...archive.projection.thread,
+        id: ThreadId.make("linked-worktree-owner"),
+        title: "Finish the feature",
+        worktreePath: outside,
+        latestRunId: null,
+        status: "idle",
+        latestVisibleMessage: null,
+        latestUserMessageAt: null,
+        hasActionableProposedPlan: false,
+        itemCount: 0,
+        visibleItemCount: 0,
+        activeRunId: null,
+        pendingRuntimeRequest: null,
+        settledOverride: null,
+        archivedAt: archive.projection.thread.createdAt,
+        pendingBackgroundTasks: [],
+        goal: null,
+      };
+      const reporting = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+          ...(yield* ProjectionStore.ProjectionStoreV2),
+          getShellSnapshot: () =>
+            Effect.succeed({
+              schemaVersion: 1,
+              snapshotSequence: 0,
+              threads: [
+                { ...owner, id: ThreadId.make("deleted-owner"), deletedAt: owner.createdAt },
+              ],
+              archivedThreads: [owner, { ...owner, id: ThreadId.make("older-owner") }],
+            }),
+        }),
+      );
+      const blocked = yield* reporting.status({ workingCopyId: copy.id });
       expect(blocked.blockers).toEqual([]);
       expect(blocked.releaseBlockers).toHaveLength(1);
       expect(blocked.releaseBlockers![0]).toContain(outside);
       expect(blocked.releaseBlockers![0]).not.toContain(inside);
+      expect(blocked.releaseBlockerThreads).toEqual([
+        { threadId: owner.id, title: owner.title, worktreePath: outside },
+      ]);
       // Saving never deletes, so the worktree only stops removal.
       const saved = yield* service.snapshotCopy({
         requestId: "linked-worktree-snapshot",
@@ -2095,9 +2178,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
 
       // A removed worktree leaves only prunable metadata, which removal cannot break further.
       yield* fs.remove(outside, { recursive: true });
-      const cleared = yield* service.status({ workingCopyId: copy.id });
+      const cleared = yield* reporting.status({ workingCopyId: copy.id });
       expect(cleared.blockers).toEqual([]);
       expect(cleared.releaseBlockers).toEqual([]);
+      expect(cleared.releaseBlockerThreads).toEqual([]);
       const released = yield* service.release({
         requestId: "linked-worktree-release-cleared",
         workingCopyId: copy.id,

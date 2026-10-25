@@ -1,4 +1,8 @@
+// fork: source-control-cockpit
+import { GitRecovery } from "../../fork/source-control-cockpit/GitRecovery";
+import { Button as GitSummaryButton } from "../../components/ui/Button";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState"; // fork: library
+import { useEmptyConversationLeave } from "../../fork/library/useEmptyConversationLeave"; // fork: library
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
@@ -20,9 +24,12 @@ import {
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  MessageId, // fork: failed-run-retry
   ThreadId,
   type ProjectScript,
+  type RunId, // fork: failed-run-retry
 } from "@t3tools/contracts";
+import { continuableRun } from "@t3tools/shared/fork/run-continuation"; // fork: failed-run-retry
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
@@ -239,6 +246,7 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       );
   }, [canUseArchive, saved.data, navigation]);
   useThreadPromptLink(params, routeThreadKey);
+  useEmptyConversationLeave(environmentId, threadIdRaw); // fork: library
 
   if (environmentId === null || threadIdRaw === null) {
     return <OpeningThreadLoadingScreen />;
@@ -319,6 +327,11 @@ function ThreadRouteContent(
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
+  // fork: failed-run-retry - The recovery notice shows why a continuation failed.
+  const startContinuation = useAtomCommand(threadEnvironment.startTurn, {
+    label: "continue run",
+    reportFailure: false,
+  });
   const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
     reportFailure: false,
@@ -619,6 +632,51 @@ function ThreadRouteContent(
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
   };
 
+  // fork: failed-run-retry
+  // Continues as the web Resume does. A usage limit offers it on its own card, beside resume at reset.
+  const continuable =
+    !selectedThread || selectedThreadDetail === null
+      ? null
+      : continuableRun({
+          runs: selectedThreadDetail.runs,
+          turnItems: selectedThreadDetail.turnItems,
+          lastErrorClass: selectedThread.runtime?.lastErrorClass,
+        });
+  const handleContinueRun = async (runId: RunId) => {
+    if (!selectedThread) return;
+    const result = await startContinuation({
+      environmentId: selectedThread.environmentId,
+      input: {
+        threadId: selectedThread.id,
+        creationSource: "mobile",
+        manualContinuationOfRunId: runId,
+        message: {
+          messageId: MessageId.make(uuidv4()),
+          role: "user",
+          text: "Continue where you left off.",
+          attachments: [],
+        },
+        runtimeMode: selectedThread.runtimeMode,
+        interactionMode: selectedThread.interactionMode,
+        dispatchMode: "start",
+      },
+    });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    if (composer.queueHeld) await handleResumeQueue();
+  };
+  const limited = continuable?.failure?.class === "usage_limit";
+  const continuableRunAction =
+    continuable === null || limited
+      ? null
+      : {
+          failed: continuable.failure !== null,
+          onContinue: () => handleContinueRun(continuable.run.id),
+        };
+  const retryLimitedRun =
+    continuable !== null && limited && canOperateThread
+      ? () => handleContinueRun(continuable.run.id)
+      : null;
+
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
     terminalDebugLog("terminal-menu:open-existing", {
       terminalId: nextTerminalId ?? null,
@@ -752,10 +810,7 @@ function ThreadRouteContent(
     onOpenFilesInspector:
       fileInspector.supported && selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
     onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
-    onMergeBack:
-      mergeBackTargetThreadId !== null && mergeBackRun !== null
-        ? () => void handleMergeBack()
-        : undefined,
+    // fork: source-control-cockpit -- latest-turn transfer stays outside the Git control.
     currentBranch: selectedThread?.branch ?? null,
     gitStatus: gitStatus.data,
     gitOperationLabel: gitState.gitOperationLabel,
@@ -932,6 +987,17 @@ function ThreadRouteContent(
         onOpenPullRequest={openPullRequest}
       />
 
+      {/* fork: source-control-cockpit */}
+      <GitRecovery status={gitStatus.data} />
+      {mergeBackTargetThreadId !== null && mergeBackRun !== null && (
+        <GitSummaryButton
+          disabled={!canOperateThread}
+          label="Send latest turn to source thread"
+          icon="text.bubble"
+          tone="text"
+          onPress={() => void handleMergeBack()}
+        />
+      )}
       <ThreadPane>
         <ThreadDetailScreen
           onOpenConversationDetails={openConversationDetails}
@@ -1014,6 +1080,8 @@ function ThreadRouteContent(
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
           onResumeQueue={composer.queueHeld ? handleResumeQueue : null}
+          continuableRun={continuableRunAction} // fork: failed-run-retry
+          onRetryLimitedRun={retryLimitedRun} // fork: failed-run-retry
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}

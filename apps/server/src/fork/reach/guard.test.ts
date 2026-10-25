@@ -51,6 +51,7 @@ const withGuard = <A, E>(
   Effect.gen(function* () {
     const state = { current: { hostname: REACH_HOST, serving: true } as ReachGuardState };
     const reach = ReachService.of({
+      applyIdentity: () => Effect.void,
       status: Effect.die("unused"),
       changes: Effect.die("unused") as never,
       setEnabled: () => Effect.die("unused"),

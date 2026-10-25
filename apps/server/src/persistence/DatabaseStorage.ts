@@ -1,6 +1,15 @@
 import type { DatabaseStorageStatus } from "@t3tools/contracts";
+// fork: restart-compaction
+import {
+  DATABASE_COMPACTION_REQUEST_FILE,
+  DATABASE_COMPACTION_RESULT_FILE,
+  DatabaseCompactionRequestError,
+  RestartCompactionResult,
+  type RestartCompactionState,
+} from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime"; // fork: restart-compaction
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -8,6 +17,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema"; // fork: restart-compaction
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -30,6 +40,11 @@ export class DatabaseStorage extends Context.Service<
     readonly reclaim: Effect.Effect<void>;
     /** Current file accounting, re-published after each maintenance pass. Null until first read. */
     readonly status: Stream.Stream<DatabaseStorageStatus | null>;
+    // fork: restart-compaction
+    /** Ask the desktop to compact at its next launch, or withdraw the request. */
+    readonly requestRestartCompaction: (
+      requested: boolean,
+    ) => Effect.Effect<void, DatabaseCompactionRequestError>;
   }
 >()("t3/persistence/DatabaseStorage") {}
 
@@ -59,6 +74,29 @@ const make = Effect.gen(function* () {
   const doctorTargetsThisDatabase =
     path.resolve(config.dbPath) ===
     path.resolve(config.baseDir, "userdata", path.basename(config.dbPath));
+  // fork: restart-compaction: a desktop shell runs the doctor's repair on this
+  // database before it starts the server, so Settings can ask for that instead
+  // of showing a command. Its result is written before this server starts.
+  const restartCompactionSupported = config.restartCompaction === true && doctorTargetsThisDatabase;
+  const compactionRequestPath = path.join(
+    path.dirname(config.dbPath),
+    DATABASE_COMPACTION_REQUEST_FILE,
+  );
+  const lastRestartCompaction = restartCompactionSupported
+    ? yield* fs
+        .readFileString(path.join(path.dirname(config.dbPath), DATABASE_COMPACTION_RESULT_FILE))
+        .pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(RestartCompactionResult))),
+          Effect.orElseSucceed(() => null),
+        )
+    : null;
+  const readRestartCompaction = Effect.gen(function* () {
+    if (!restartCompactionSupported) return undefined;
+    const requested = yield* fs
+      .exists(compactionRequestPath)
+      .pipe(Effect.orElseSucceed(() => false));
+    return { requested, lastAttempt: lastRestartCompaction } satisfies RestartCompactionState;
+  });
   const publishStatus = Effect.gen(function* () {
     if (!doctorTargetsThisDatabase) return;
     const pages = yield* sql<{ readonly page_count: number }>`PRAGMA page_count`;
@@ -66,11 +104,13 @@ const make = Effect.gen(function* () {
     const size = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;
     const mode = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`;
     const pageSize = size[0]?.page_size ?? 0;
+    const restartCompaction = yield* readRestartCompaction; // fork: restart-compaction
     const next: DatabaseStorageStatus = {
       databaseBytes: (pages[0]?.page_count ?? 0) * pageSize,
       reclaimableBytes: (free[0]?.freelist_count ?? 0) * pageSize,
       incrementalVacuumEnabled: mode[0]?.auto_vacuum === 2,
       compactCommand,
+      ...(restartCompaction === undefined ? {} : { restartCompaction }), // fork: restart-compaction
     };
     // Every set reaches each open Storage page; most passes change nothing.
     if (!Equal.equals(yield* SubscriptionRef.get(statusRef), next)) {
@@ -149,7 +189,29 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  return DatabaseStorage.of({ reclaim, status: SubscriptionRef.changes(statusRef) });
+  // fork: restart-compaction
+  const requestRestartCompaction = Effect.fn("DatabaseStorage.requestRestartCompaction")(function* (
+    requested: boolean,
+  ) {
+    if (!restartCompactionSupported) {
+      return yield* new DatabaseCompactionRequestError({ reason: "unavailable" });
+    }
+    const requestedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* (
+      requested
+        ? fs.writeFileString(compactionRequestPath, requestedAt)
+        : fs.remove(compactionRequestPath, { force: true })
+    ).pipe(
+      Effect.mapError((cause) => new DatabaseCompactionRequestError({ reason: "write", cause })),
+    );
+    yield* publishStatus;
+  });
+
+  return DatabaseStorage.of({
+    reclaim,
+    status: SubscriptionRef.changes(statusRef),
+    requestRestartCompaction, // fork: restart-compaction
+  });
 });
 
 export const layer = Layer.effect(DatabaseStorage, make);

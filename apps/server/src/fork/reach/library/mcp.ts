@@ -20,7 +20,7 @@ const failure = Schema.Union([ReachLibraryError, OrchestratorMcpFailure]);
 export const ReachLibraryToolkit = Toolkit.make(
   Tool.make("loom_reach_computers", {
     description:
-      "List this Library's reach addresses: each computer's hostname, record state and last error, whether its tunnel is connected and how many connectors it has (more than one means a copy of its connector token runs elsewhere), its Loom Identity resource and whether its Library sign-in is still active, plus the Library's reach setup. Answered only by the Library authority. Includes no credentials or connector tokens.",
+      "List this Library's reach addresses: each computer's hostname, record state and last error, whether its tunnel is connected and how many connectors it has (more than one means a copy of its connector token runs elsewhere), its Loom Identity resource and whether its Library sign-in is still active, plus the Library's reach setup. Answered by the Library authority, also when called on another computer. Includes no credentials or connector tokens.",
     success: ReachLibraryListing,
     failure,
   })
@@ -46,7 +46,7 @@ export const reachLibraryHandlers = McpToolAccess.toLayer(
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
     return {
       loom_reach_computers: McpToolAccess.reads(() =>
-        onHost(Effect.flatMap(ReachProvisioner, (provisioner) => provisioner.list)),
+        onHost(Effect.flatMap(ReachProvisioner, (provisioner) => provisioner.computers)),
       ),
       loom_reach_retire: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(ReachProvisioner, (provisioner) => provisioner.retire(input))),

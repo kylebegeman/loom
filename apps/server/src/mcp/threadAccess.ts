@@ -31,10 +31,74 @@ export const refuseBotRunSpawn = (scope: McpInvocationContext.McpInvocationScope
       )
     : Effect.void;
 
-export const unavailable = () =>
+// fork: mcp-refusals -- each known cause gets fixed text that names a next step. An error's own
+// message can carry workspace paths, git output or settings file locations, so it never reaches
+// the agent.
+const TRY_AGAIN = "Try once more, and tell the user if it fails again.";
+const UNAVAILABLE_REPAIRS = new Map<string, string>([
+  [
+    "OrchestratorDispatchError",
+    "Loom could not save this change. Read the thread with t3_thread_read to see whether it applied before trying again.",
+  ],
+  [
+    "OrchestratorCommandRejectedError",
+    "Loom refused this change. Read the thread's current state with t3_thread_read before trying again.",
+  ],
+  ["OrchestratorProjectionError", `Loom could not load the thread. ${TRY_AGAIN}`],
+  ["ThreadManagementProjectionLoadError", `Loom could not load the thread. ${TRY_AGAIN}`],
+  [
+    "OrchestratorProviderAdapterError",
+    "The thread's provider did not accept this request. Check the provider with orchestrator_capabilities, and tell the user if it reports a problem.",
+  ],
+  [
+    "OrchestratorSubagentThreadReadOnlyError",
+    "This subagent is run by its provider and cannot take messages. Message the parent thread instead.",
+  ],
+  [
+    "ThreadManagementThreadArchivedError",
+    "The thread is archived. Ask the user to unarchive it, or work in another thread.",
+  ],
+  [
+    "ThreadManagementProviderInstanceDisabledError",
+    "The thread's provider is disabled for this project. Choose another with orchestrator_capabilities, or ask the user to enable it.",
+  ],
+  [
+    "ThreadLaunchError",
+    "Loom could not start the thread. Check t3_thread_list before launching again, since the thread may already exist.",
+  ],
+  [
+    "ProjectOperationError",
+    "Loom could not read or change the project. Check it with t3_project_read, then try once more.",
+  ],
+  [
+    "ScheduledTaskError",
+    "The scheduler could not complete this. Check the task with list_scheduled_tasks, then try once more.",
+  ],
+  [
+    "ThreadSearchError",
+    "Thread search failed. Try a simpler query, or browse with t3_thread_list.",
+  ],
+  [
+    "ServerSettingsError",
+    "Loom could not read or save its settings file. Tell the user, since this needs a fix on the host.",
+  ],
+  [
+    "PreviewSessionLookupError",
+    "The preview tab was not found. List open tabs with t3_preview_list.",
+  ],
+  [
+    "GitCommandError",
+    "Git could not read this checkout. Check the thread's worktree with t3_worktree_status.",
+  ],
+  ["AttachmentUploadSigningKeyError", `Loom could not prepare the upload. ${TRY_AGAIN}`],
+]);
+
+export const unavailable = (error?: { readonly _tag: string }) =>
   new OrchestratorMcpFailure({
     code: "orchestration_error",
-    message: "The operation could not be completed.",
+    message:
+      (error === undefined ? undefined : UNAVAILABLE_REPAIRS.get(error._tag)) ??
+      `The operation could not be completed. ${TRY_AGAIN}`,
   });
 
 export const dispatchFailure = (
@@ -50,7 +114,7 @@ export const dispatchFailure = (
           code: "orchestration_error",
           message: Array.from(error.cause).slice(0, 1000).join(""),
         })
-      : unavailable();
+      : unavailable(error); // fork: mcp-refusals
 
 export interface CallerLimits {
   readonly runtimeMode: RuntimeMode;
@@ -130,7 +194,8 @@ export function assertLiveCaller({ caller, scope }: Caller) {
     : Effect.fail(
         new OrchestratorMcpFailure({
           code: "parent_not_active",
-          message: "The calling provider no longer owns an active thread run.",
+          // fork: mcp-refusals
+          message: `The calling provider no longer owns an active thread run. ${OrchestrationMcp.ENDED_RUN_REPAIR}`,
         }),
       );
 }
@@ -183,13 +248,14 @@ export const readThread = Effect.fn("mcp.readThread")(function* <
       turnItemTypes: ["user_input_request"],
     })
     .pipe(
-      Effect.mapError((error) =>
-        error._tag === "ThreadManagementThreadNotFoundError"
-          ? new OrchestratorMcpFailure({
-              code: "thread_not_found",
-              message: "The thread was not found.",
-            })
-          : unavailable(),
+      Effect.mapError(
+        (error) =>
+          error._tag === "ThreadManagementThreadNotFoundError"
+            ? new OrchestratorMcpFailure({
+                code: "thread_not_found",
+                message: "The thread was not found.",
+              })
+            : unavailable(error), // fork: mcp-refusals
       ),
     );
   return { ...context, projection };

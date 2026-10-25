@@ -14,6 +14,8 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
+  type OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
+  type OrchestratorMcpCapabilitiesResult, // fork: agent-catalog
   type OrchestrationV2ThreadProjection,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -39,6 +41,7 @@ import {
   OrchestratorThreadAboveModeLimitError,
 } from "../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -56,7 +59,11 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 const decodeTarget = Schema.decodeUnknownEffect(OrchestratorMcpTarget);
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
-  Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+  Layer.provide(
+    Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+      resolveLibraryBinding: () => Effect.succeed(null),
+    }),
+  ), // fork: library-projects
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
@@ -890,6 +897,204 @@ describe("OrchestratorMcpService provider resolution", () => {
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
 
+  // fork: agent-catalog
+  const catalogModelIds = (capabilities: OrchestratorMcpCapabilitiesResult, instanceId: string) => {
+    const entry = capabilities.providers.find(
+      (candidate) => candidate.providerInstanceId === instanceId,
+    );
+    if (entry === undefined) return undefined;
+    if (entry.modelCatalog === null) return [];
+    return capabilities.modelCatalogs[entry.modelCatalog]?.map((model) => model.id);
+  };
+
+  // fork: agent-catalog
+  const capabilitiesFor = (
+    providers: ReadonlyArray<ServerProvider>,
+    options: {
+      readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
+      readonly input?: OrchestratorMcpCapabilitiesInput;
+    } = {},
+  ) =>
+    Effect.gen(function* () {
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      return yield* service.capabilities(scope, options.input);
+    }).pipe(
+      Effect.provide(
+        layerOrchestratorService.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              Layer.mock(ThreadManagementService.ThreadManagementService)({
+                getThreadRecords: () => Effect.succeed(parentProjection([])),
+              }),
+              ServerSettings.layerTest(options.settings).pipe(Layer.orDie),
+              providerRegistryLayer(providers),
+              adapterRegistryLayer(providers.map((provider) => provider.instanceId)),
+              Layer.mock(ProjectService.ProjectService)({}),
+              Layer.mock(SecretRequests.SecretRequests)({}),
+              Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+            ),
+          ),
+        ),
+      ),
+    );
+
+  // fork: agent-catalog -- the shape of a real catalog: every model carries option descriptors.
+  const accountFor = (
+    instanceId: string,
+    driver: string,
+    modelCount: number,
+    enabled = true,
+  ): ServerProvider => ({
+    ...providerSnapshot({
+      instanceId: ProviderInstanceId.make(instanceId),
+      driver: ProviderDriverKind.make(driver),
+      enabled,
+    }),
+    models: enabled
+      ? Array.from({ length: modelCount }, (_, index) => ({
+          slug: `${driver}-model-${index}`,
+          name: `${driver} model ${index}`,
+          isCustom: false,
+          capabilities: {
+            optionDescriptors: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning effort",
+                type: "select" as const,
+                options: ["low", "medium", "high", "max"].map((id) => ({ id, label: id })),
+                currentValue: "high",
+              },
+              { id: "fastMode", label: "Fast mode", type: "boolean" as const, currentValue: false },
+            ],
+          },
+        }))
+      : [],
+  });
+
+  // fork: agent-catalog
+  it.effect("sends a model list that several accounts share once", () =>
+    Effect.gen(function* () {
+      const single = yield* capabilitiesFor([
+        accountFor("codex", "codex", 27),
+        accountFor("claudeAgent", "claudeAgent", 13),
+      ]);
+      const accounts = [
+        ...["codex", "codex_1", "codex_2", "codex_3"].map((id) => accountFor(id, "codex", 27)),
+        ...["claudeAgent", "claude_1", "claude_2", "claude_3", "claude_api"].map((id) =>
+          accountFor(id, "claudeAgent", 13),
+        ),
+        ...["cursor", "grok", "opencode", "antigravity", "pi"].map((id) =>
+          accountFor(id, id, 0, false),
+        ),
+      ];
+      const multi = yield* capabilitiesFor(accounts);
+
+      assert.deepEqual(Object.keys(multi.modelCatalogs).toSorted(), ["claudeAgent", "codex"]);
+      assert.deepEqual(
+        Object.fromEntries(
+          multi.providers.map((entry) => [entry.providerInstanceId, entry.modelCatalog]),
+        ),
+        {
+          codex: "codex",
+          codex_1: "codex",
+          codex_2: "codex",
+          codex_3: "codex",
+          claudeAgent: "claudeAgent",
+          claude_1: "claudeAgent",
+          claude_2: "claudeAgent",
+          claude_3: "claudeAgent",
+          claude_api: "claudeAgent",
+          cursor: null,
+          grok: null,
+          opencode: null,
+          antigravity: null,
+          pi: null,
+        },
+      );
+      for (const account of accounts) {
+        assert.deepEqual(
+          catalogModelIds(multi, account.instanceId),
+          account.models.map((model) => model.slug),
+        );
+      }
+      // Twelve more accounts once cost a full catalog each; now each costs only its own entry.
+      const singleSize = JSON.stringify(single).length;
+      const multiSize = JSON.stringify(multi).length;
+      assert.isBelow(
+        multiSize,
+        singleSize * 1.4,
+        `${multiSize} chars for 14 accounts vs ${singleSize} for 2`,
+      );
+    }),
+  );
+
+  // fork: agent-catalog
+  it.effect("gives an account whose model list differs its own catalog", () =>
+    Effect.gen(function* () {
+      const capabilities = yield* capabilitiesFor(
+        [accountFor("codex", "codex", 3), accountFor("codex_2", "codex", 3)],
+        {
+          settings: {
+            providerModelPreferences: {
+              [ProviderInstanceId.make("codex_2")]: {
+                hiddenModels: ["codex-model-1"],
+                modelOrder: [],
+              },
+            },
+          },
+        },
+      );
+      assert.deepEqual(
+        capabilities.providers.map((entry) => entry.modelCatalog),
+        ["codex", "codex-2"],
+      );
+      assert.deepEqual(catalogModelIds(capabilities, "codex"), [
+        "codex-model-0",
+        "codex-model-1",
+        "codex-model-2",
+      ]);
+      assert.deepEqual(catalogModelIds(capabilities, "codex_2"), [
+        "codex-model-0",
+        "codex-model-2",
+      ]);
+    }),
+  );
+
+  // fork: agent-catalog
+  it.effect("reports only the instances a filter names", () =>
+    Effect.gen(function* () {
+      const accounts = [
+        accountFor("codex", "codex", 2),
+        accountFor("claudeAgent", "claudeAgent", 2),
+        accountFor("claude_api", "claudeAgent", 2),
+      ];
+      const byDriver = yield* capabilitiesFor(accounts, {
+        input: { driverKind: ProviderDriverKind.make("claudeAgent") },
+      });
+      assert.deepEqual(
+        byDriver.providers.map((entry) => entry.providerInstanceId),
+        ["claudeAgent", "claude_api"],
+      );
+      assert.deepEqual(Object.keys(byDriver.modelCatalogs), ["claudeAgent"]);
+
+      const byInstance = yield* capabilitiesFor(accounts, {
+        input: { providerInstanceId: ProviderInstanceId.make("codex") },
+      });
+      assert.deepEqual(
+        byInstance.providers.map((entry) => entry.providerInstanceId),
+        ["codex"],
+      );
+      assert.deepEqual(Object.keys(byInstance.modelCatalogs), ["codex"]);
+
+      const unknown = yield* capabilitiesFor(accounts, {
+        input: { providerInstanceId: ProviderInstanceId.make("claude") },
+      }).pipe(Effect.flip);
+      assert.strictEqual(unknown.code, "invalid_request");
+      assert.include(unknown.message, "without them");
+    }),
+  );
+
   it.effect(
     "advertises orchestration capability from registered adapters rather than a driver allowlist",
     () =>
@@ -973,7 +1178,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           );
           for (const provider of providers) {
             assert.deepEqual(
-              byId.get(provider.instanceId)?.models.map((model) => model.id),
+              catalogModelIds(capabilities, provider.instanceId), // fork: agent-catalog
               provider.models.map((model) => model.slug),
             );
           }
@@ -993,9 +1198,7 @@ describe("OrchestratorMcpService provider resolution", () => {
           const refreshed = yield* service.capabilities(scope);
           for (const provider of providers) {
             assert.deepEqual(
-              refreshed.providers
-                .find((entry) => entry.providerInstanceId === provider.instanceId)
-                ?.models.map((model) => model.id),
+              catalogModelIds(refreshed, provider.instanceId), // fork: agent-catalog
               provider.models.map((model) => model.slug),
             );
           }
@@ -1082,7 +1285,7 @@ describe("OrchestratorMcpService provider resolution", () => {
         const service = yield* OrchestratorMcpService.OrchestratorMcpService;
         const capabilities = yield* service.capabilities(scope);
         assert.deepEqual(
-          capabilities.providers[0]?.models.map((model) => model.id),
+          catalogModelIds(capabilities, codexInstanceId), // fork: agent-catalog
           ["gpt-5.4", "my-model"],
         );
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
@@ -1265,6 +1468,183 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.equal(request.modelSelection.instanceId, antigravityInstanceId);
           assert.equal(request.modelSelection.model, "ant-model");
         }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+      }),
+  );
+
+  // fork: library-projects
+  it.effect(
+    "binds shared Library children before preparation and refuses isolated children before dispatch",
+    () =>
+      Effect.gen(function* () {
+        const stages: string[] = [];
+        let delegated = false;
+        const task = {
+          id: taskId,
+          threadId: parentThreadId,
+          runId: parentRunId,
+          parentNodeId,
+          origin: "app_owned",
+          createdBy: "agent",
+          driver: ProviderDriverKind.make("antigravity"),
+          providerInstanceId: antigravityInstanceId,
+          providerThreadId: null,
+          childThreadId,
+          nativeTaskRef: null,
+          prompt: "Summarize the diff.",
+          title: null,
+          model: "ant-model",
+          status: "running",
+          result: null,
+          startedAt: null,
+          completedAt: null,
+        };
+        const dispatched = yield* Ref.make<ReadonlyArray<unknown>>([]);
+        const layerDependencies = Layer.mergeAll(
+          NodeServices.layer,
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            hasReceipt: () => Effect.succeed(false),
+            assertProviderInstanceEnabled: () => Effect.void,
+            getThreadRecords: (threadId) =>
+              Effect.succeed(
+                threadId === parentThreadId
+                  ? parentProjection(delegated ? [task] : [])
+                  : childProjection,
+              ),
+            dispatch: (command) =>
+              Ref.update(dispatched, (commands) => [...commands, command]).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    stages.push("dispatch");
+                    delegated = true;
+                  }),
+                ),
+                Effect.as({
+                  sequence: 1,
+                  storedEvents: [
+                    {
+                      sequence: 2,
+                      commandId: null,
+                      event: {
+                        type: "run.created",
+                        threadId: childThreadId,
+                        payload: {
+                          id: RunId.make("child-library-run"),
+                          workspacePreparation: { type: "root" },
+                        },
+                      },
+                    },
+                    {
+                      sequence: 1,
+                      commandId: null,
+                      event: { type: "subagent.updated", payload: task },
+                    },
+                  ],
+                } as never),
+              ),
+          }),
+          ServerSettings.layerTest(),
+          Layer.mock(ProviderRegistry.ProviderRegistry)({
+            getProviders: Effect.succeed([
+              providerSnapshot({
+                instanceId: codexInstanceId,
+                driver: ProviderDriverKind.make("codex"),
+                model: "gpt-5.4",
+              }),
+              providerSnapshot({
+                instanceId: antigravityInstanceId,
+                driver: ProviderDriverKind.make("antigravity"),
+                model: "ant-model",
+              }),
+            ]),
+          }),
+          adapterRegistryLayer([codexInstanceId, antigravityInstanceId]),
+          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        );
+
+        yield* Effect.gen(function* () {
+          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+          const refused = yield* service
+            .delegateTask(scope, {
+              task: "Isolated",
+              isolation: "worktree",
+              mode: "async",
+              clientRequestId: "library-isolated",
+              target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+            })
+            .pipe(Effect.flip);
+          assert.equal(refused.message, "Library copies use their own folder.");
+          assert.deepEqual(yield* Ref.get(dispatched), []);
+          const result = yield* service.delegateTask(scope, {
+            task: "Summarize the diff.",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+            mode: "async",
+            clientRequestId: "delegate-antigravity-1",
+          });
+          assert.deepEqual(stages, ["dispatch", "bind", "prepare"]);
+          assert.equal(result.status, "running");
+          assert.equal(result.providerInstanceId, antigravityInstanceId);
+          const commands = yield* Ref.get(dispatched);
+          assert.equal(commands.length, 1);
+          const request = commands[0] as {
+            type: string;
+            modelSelection: { instanceId: string; model: string };
+          };
+          assert.equal(request.type, "delegated_task.request");
+          assert.equal(request.modelSelection.instanceId, antigravityInstanceId);
+          assert.equal(request.modelSelection.model, "ant-model");
+        }).pipe(
+          Effect.provide(
+            OrchestratorMcpService.layer.pipe(
+              Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+              Layer.provide(
+                Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+                  resolveLibraryBinding: (input) => {
+                    assert.equal(input.callerThreadId, parentThreadId);
+                    if (input.workspaceStrategy.type !== "root")
+                      return Effect.fail(
+                        new LibraryError({
+                          reason: "blocked",
+                          detail: "Library copies use their own folder.",
+                        }),
+                      );
+                    return Effect.succeed({
+                      cwd: "/copy",
+                      project: {
+                        id: "shared",
+                        title: "Shared",
+                        brief: "",
+                        revision: 1,
+                        resources: [],
+                        archived: false,
+                        createdAt: "2026-10-25T00:00:00Z",
+                        updatedAt: "2026-10-25T00:00:00Z",
+                      },
+                      binding: {
+                        projectId: "shared",
+                        projectRevision: 1,
+                        workingCopyId: "copy",
+                        environmentId: scope.environmentId,
+                        resourceIds: [],
+                      },
+                    });
+                  },
+                  bindLibraryThread: (threadId) =>
+                    Effect.sync(() => {
+                      assert.equal(threadId, childThreadId);
+                      stages.push("bind");
+                    }),
+                  prepareRun: () =>
+                    Effect.sync(() => {
+                      stages.push("prepare");
+                    }),
+                }),
+              ),
+              Layer.provide(layerDependencies),
+            ),
+          ),
+        );
       }),
   );
 

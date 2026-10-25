@@ -3,12 +3,14 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
+  type OrchestrationV2ProviderFailure,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadShell,
   type ThreadId,
   type TurnTokenUsage,
 } from "@t3tools/contracts";
 import type { BotsSaveInput } from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -55,6 +57,8 @@ export const reviewer = (fields: Partial<BotsSaveInput> = {}): BotsSaveInput => 
 export interface ThreadOutcome {
   readonly status: "completed" | "failed" | "interrupted";
   readonly reply: string | null;
+  /** What the provider recorded on the run's root node when it failed. */
+  readonly failure?: OrchestrationV2ProviderFailure;
 }
 
 /** Fake launch and thread services: a test decides when and how each run thread ends. */
@@ -64,6 +68,7 @@ export const makeHarness = Effect.gen(function* () {
   const interrupted: Array<string> = [];
   const outcomes = new Map<string, Deferred.Deferred<ThreadOutcome>>();
   const replies = new Map<string, string>();
+  const failures = new Map<string, OrchestrationV2ProviderFailure>();
   const sent: Array<ThreadManagement.ThreadManagementSendInput> = [];
   const receipts = new Set<string>();
   const dispatched: Array<OrchestrationV2ServerCommand> = [];
@@ -86,7 +91,33 @@ export const makeHarness = Effect.gen(function* () {
   const end = (threadId: string, outcome: ThreadOutcome) =>
     Effect.sync(() => {
       if (outcome.reply !== null && !replies.has(threadId)) replies.set(threadId, outcome.reply);
+      if (outcome.failure !== undefined) failures.set(threadId, outcome.failure);
     }).pipe(Effect.andThen(Deferred.succeed(outcomeFor(threadId), outcome)), Effect.asVoid);
+  const threadRun = (threadId: string, status: string) => ({
+    id: `run-${threadId}`,
+    rootNodeId: `node-${threadId}`,
+    status,
+  });
+  const turnItemsOf = (threadId: string) => {
+    const failure = failures.get(threadId);
+    return {
+      turnItems:
+        failure === undefined
+          ? []
+          : [
+              {
+                id: `error-${threadId}`,
+                type: "error",
+                status: "failed",
+                runId: `run-${threadId}`,
+                nodeId: `node-${threadId}`,
+                ordinal: 1,
+                updatedAt: DateTime.makeUnsafe(0),
+                failure,
+              },
+            ],
+    };
+  };
 
   const messagesOf = (threadId: string) => {
     const reply = replies.get(threadId);
@@ -107,9 +138,17 @@ export const makeHarness = Effect.gen(function* () {
     waitForThread: (input: ThreadManagement.ThreadManagementWaitInput) =>
       Effect.gen(function* () {
         if (state.timeOut && !interrupted.includes(input.threadId))
-          return { threadId: input.threadId, run: { status: "running" }, timedOut: true };
+          return {
+            threadId: input.threadId,
+            run: threadRun(input.threadId, "running"),
+            timedOut: true,
+          };
         const outcome = yield* Deferred.await(outcomeFor(input.threadId));
-        return { threadId: input.threadId, run: { status: outcome.status }, timedOut: false };
+        return {
+          threadId: input.threadId,
+          run: threadRun(input.threadId, outcome.status),
+          timedOut: false,
+        };
       }),
     interruptThread: (input: ThreadManagement.ThreadManagementInterruptInput) =>
       Effect.gen(function* () {
@@ -122,6 +161,7 @@ export const makeHarness = Effect.gen(function* () {
       fields: ReadonlyArray<string>,
     ) =>
       Effect.suspend((): Effect.Effect<unknown, { readonly _tag: string }> => {
+        if (fields.includes("turnItems")) return Effect.succeed(turnItemsOf(input.threadId));
         if (!fields.includes("providerTurns")) return Effect.succeed(messagesOf(input.threadId));
         if (state.usageError) return Effect.fail({ _tag: "RecordsUnavailable" });
         return Effect.succeed({

@@ -245,6 +245,10 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
+  // fork: attention-status
+  t3_queue_resume: writesThread((input) =>
+    dispatch(input.threadId, (common) => ({ ...common, type: "queue.resume" })),
+  ),
   t3_queue_read: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const { projection } = yield* readThread(input.threadId, ["runs", "messages"]);

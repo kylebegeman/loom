@@ -90,3 +90,7 @@ export * from "./bots.ts";
 export * from "./library-push.ts";
 
 export * from "./project-workflows.ts";
+
+export * from "./library-agent-reads.ts";
+export * from "./thread-attention.ts";
+export * from "./database-compaction.ts";

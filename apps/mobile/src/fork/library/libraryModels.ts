@@ -13,6 +13,8 @@ export function libraryConversationModels(input: {
   localProject?: LegacyProjectSettingsFields | null;
   localProjectId: ProjectId | null;
   savedSelection: ModelSelection | null;
+  /** The model this device's composer used last, as new upstream tasks start with. */
+  lastUsedSelection?: ModelSelection | null;
 }) {
   const { config, localProjectId } = input;
   const defaults = libraryLaunchDefaults({
@@ -25,6 +27,12 @@ export function libraryConversationModels(input: {
       localProjectId,
     ),
     selection: input.savedSelection,
+    // Null when this computer cannot run it, so its own default applies instead of a fallback.
+    lastUsedSelection: resolveDefaultableModelSelection(
+      config,
+      input.lastUsedSelection ?? null,
+      localProjectId,
+    ),
   });
   const preferred = resolveDefaultableModelSelection(
     config,

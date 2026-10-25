@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import * as CheckpointRollbackService from "./orchestration-v2/CheckpointRollbackService.ts";
 import { computerNameConfigUpdates } from "./fork/computer-naming/config.ts"; // fork: computer-naming
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -101,7 +103,7 @@ import {
   HttpServerRespondable,
   HttpServerResponse,
 } from "effect/http";
-import { RpcSerialization, RpcServer } from "effect/rpc";
+import { RpcSerialization, RpcServer, type Rpc, type RpcGroup } from "effect/rpc"; // fork: source-control-cockpit
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -223,6 +225,7 @@ import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import { ForkRpcGroup } from "@t3tools/contracts/fork"; // fork: ext-core
 import { makeForkRpcLayer } from "./fork/rpc.ts"; // fork: ext-core
+import { makeDatabaseCompactionRpcLayer } from "./fork/database-compaction/rpc.ts"; // fork: restart-compaction
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -1305,6 +1308,8 @@ export const layerWsRpc = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
+      // fork: project-lifecycle
+      const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -2412,7 +2417,13 @@ export const layerWsRpc = (
             const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
             return { keybindings: keybindingsConfig, issues: [] };
           }),
-        [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
+        // fork: project-lifecycle
+        [WS_METHODS.checkpointRestoreState]: (input) => checkpointRollback.restoreState(input),
+        [WS_METHODS.checkpointUndoRestore]: (input) => checkpointRollback.undoRestore(input),
+        [WS_METHODS.serverRunStorageCleanup]: (input) =>
+          input.removeOrphanPath === undefined
+            ? storageCleanup.runNow
+            : storageCleanup.removeOrphan(input.removeOrphanPath),
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.serverGetSettings]: (_input) =>
@@ -2834,6 +2845,11 @@ export const layerWsRpc = (
                 refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
             }),
           ),
+        // fork: source-control-cockpit
+        [WS_METHODS.gitResolveOperation]: (input) =>
+          gitWorkflow
+            .resolveOperation(input)
+            .pipe(Effect.ensuring(refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true })))),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow
@@ -3159,7 +3175,16 @@ export const layerWsRpc = (
             ),
           ),
       });
-      return handlers;
+      // fork: source-control-cockpit -- bound the handler type so another RPC does not exhaust inference in layer consumers.
+      type HandlerResult = ReturnType<(typeof handlers)[keyof typeof handlers]>;
+      type HandlerServices = Effect.Services<HandlerResult> | Stream.Services<HandlerResult>;
+      const boundHandlers: {
+        [Request in RpcGroup.Rpcs<typeof ServerWsRpcGroup> as Request["_tag"]]: Rpc.ToHandlerFn<
+          Request,
+          HandlerServices
+        >;
+      } = handlers;
+      return boundHandlers;
     }),
   );
 
@@ -3257,6 +3282,7 @@ export const layer = Layer.unwrap(
               heldSession, // fork: identity-renewal
             ).pipe(
               Layer.merge(makeForkRpcLayer(session)), // fork: ext-core
+              Layer.merge(makeDatabaseCompactionRpcLayer(session)), // fork: restart-compaction
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

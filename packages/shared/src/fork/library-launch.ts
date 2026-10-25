@@ -99,8 +99,9 @@ export interface LibraryLaunchMiniWorker {
 export type LibraryLaunchReadiness = "ready" | "not-ready" | "unknown";
 
 /**
- * How current a copy is. `up-to-date` is clean and not behind, `unknown` has no health yet,
- * `stale` is behind or has uncommitted files, and `broken` has a missing or non-Git folder.
+ * How current a copy is. `up-to-date` is not behind, `unknown` has no health yet, `stale` is
+ * behind, and `broken` has a missing or non-Git folder. Uncommitted files never change it: a copy
+ * someone works in nearly always has some, so they are only reported as `changed`.
  */
 export type LibraryLaunchFreshness = "up-to-date" | "unknown" | "stale" | "broken";
 
@@ -200,7 +201,7 @@ export function libraryLaunchFreshness(
   }
   const freshness: LibraryLaunchFreshness = broken
     ? "broken"
-    : behind > 0 || changed > 0
+    : behind > 0
       ? "stale"
       : unreadable || repositories.length === 0
         ? "unknown"
@@ -249,7 +250,7 @@ export function libraryLaunchMiniEligible(
 function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, changed: number) {
   switch (freshness) {
     case "up-to-date":
-      return "up to date";
+      return changed > 0 ? `${changed} changed` : "up to date";
     case "unknown":
       return "not checked";
     case "broken":
@@ -264,7 +265,7 @@ function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, chan
 /**
  * Order every computer that could start this project's conversation, best first:
  * online before offline, a copy covering the scope before getting one, up to date before
- * unchecked before stale, the computer used most recently for this project, then the one with
+ * unchecked before behind, the computer used most recently for this project, then the one with
  * the fewest working threads. A computer whose checks show a required tool missing or too old
  * ranks after every online computer that passes or was not checked. Remaining ties fall to label,
  * computer and copy id, so the order never depends on input order. Live health wins over health

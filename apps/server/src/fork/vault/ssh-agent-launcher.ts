@@ -1,13 +1,25 @@
 import type { VaultSshAgentSession } from "@t3tools/contracts/fork";
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+// Lets the command name its connection the way it was selected, such as "personal-vps". An alias
+// only names the pinned destination: ssh still connects to the pinned host, user and port.
+const HOST_ALIAS = /^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$/;
 
 // Git supplies its SSH arguments after this executable. Validate the destination before ssh
 // sees it; an agent authentication signature alone cannot prove a network hostname or port.
 export const renderAgentSshLauncher = (
   session: VaultSshAgentSession,
   paths: { socket: string; identity: string; knownHosts: string },
+  aliases: ReadonlyArray<string> = [],
 ) => {
   const { target } = session;
+  const destinations = new Set([
+    target.hostname,
+    `${target.username}@${target.hostname}`,
+    `ssh://${target.username}@${target.hostname}:${target.port}`,
+    ...aliases.flatMap((alias) =>
+      HOST_ALIAS.test(alias) ? [alias, `${target.username}@${alias}`] : [],
+    ),
+  ]);
   const options = [
     "BatchMode=yes",
     "IdentitiesOnly=yes",
@@ -55,7 +67,7 @@ while [ "$#" -gt 0 ]; do
 done
 [ "$#" -gt 0 ] || fail
 case "$1" in
-  ${[target.hostname, `${target.username}@${target.hostname}`, `ssh://${target.username}@${target.hostname}:${target.port}`].map(quote).join("|")}) shift ;;
+  ${[...destinations].map(quote).join("|")}) shift ;;
   *) fail ;;
 esac
 exec /usr/bin/ssh $verbosity -F none ${options.flatMap((option) => ["-o", quote(option)]).join(" ")} -T -p ${target.port} -l ${quote(target.username)} -- ${quote(target.hostname)} "$@"

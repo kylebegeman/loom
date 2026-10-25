@@ -15,6 +15,7 @@ import {
   dismissibleRuns,
   foldRepeats,
   groupTriage,
+  needsPerson,
   olderCursor,
   orderTriage,
   outsideInboxWindow,
@@ -22,6 +23,7 @@ import {
   triageBotState,
   triageEvidence,
   triageItems,
+  triageReasonLabel,
   triageRunItem,
   triageTone,
   triageVerb,
@@ -263,6 +265,26 @@ describe("groupTriage", () => {
     const items = [triageRunItem(makeBotRun("broke", { status: "failed" }))];
     expect(groupTriage(items).map((section) => section.group)).toEqual(["failed"]);
   });
+
+  it("puts an agent's run whose result reached it last, as needing no one", () => {
+    const agent = {
+      status: "failed",
+      startedBy: "agent",
+      callerThreadId: ThreadId.make("chat"),
+      notify: true,
+    } as const;
+    const items = [
+      triageRunItem(makeBotRun("handled", { ...agent, deliveredAt: at(5) })),
+      triageRunItem(makeBotRun("unreached", agent)),
+      triageRunItem(makeBotRun("by-person", { ...agent, startedBy: "user", deliveredAt: at(5) })),
+    ];
+    const sections = groupTriage(items);
+    expect(sections.map((section) => [section.group, ids(section.items)])).toEqual([
+      ["failed", ["run:unreached", "run:by-person"]],
+      ["handled", ["run:handled"]],
+    ]);
+    expect(ids(items.filter(needsPerson))).toEqual(["run:unreached", "run:by-person"]);
+  });
 });
 
 describe("foldRepeats", () => {
@@ -299,6 +321,19 @@ describe("foldRepeats", () => {
 });
 
 describe("triage summaries", () => {
+  it("names how the provider failed a failed run, when it said", () => {
+    const failed = (fields: Partial<BotRun> = {}) =>
+      triageRunItem(makeBotRun("failed", { status: "failed", ...fields }));
+    expect(triageReasonLabel(failed({ failureClass: "usage_limit" }))).toBe("Usage limit");
+    expect(triageReasonLabel(failed({ failureClass: "transport_error" }))).toBe(
+      "Connection dropped",
+    );
+    expect(triageReasonLabel(failed())).toBe("Failed");
+    expect(triageReasonLabel(triageRunItem(makeBotRun("late", { status: "timed_out" })))).toBe(
+      "Timed out",
+    );
+  });
+
   it("counts items per bot, busiest first", () => {
     const items = [
       triageRunItem(makeBotRun("1", { botId: "writer", botName: "Writer", status: "failed" })),

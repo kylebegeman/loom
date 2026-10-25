@@ -1,3 +1,4 @@
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { isVaultRunRunning } from "./active-run.ts";
 import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
@@ -5,6 +6,8 @@ import { type ThreadId } from "@t3tools/contracts";
 import {
   VaultError,
   VaultGitHubError,
+  VAULT_GITHUB_REPOSITORY_LIMIT,
+  VAULT_GITHUB_OWNER_REPOSITORY_LIMIT,
   VaultGitHubCredential,
   VaultGitHubSave,
   VaultGitHubRun,
@@ -92,7 +95,7 @@ export const Stored = Schema.Struct({
   account: Schema.String,
   repositories: Schema.Array(VaultGitHubTarget.fields.repository).check(
     Schema.isMinLength(1),
-    Schema.isMaxLength(32),
+    Schema.isMaxLength(VAULT_GITHUB_OWNER_REPOSITORY_LIMIT),
   ),
 });
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(Stored)),
@@ -113,6 +116,7 @@ const make = Effect.gen(function* () {
     projects = yield* ProjectStoreV2,
     terminal = yield* GitHubTerminal.GitHubTerminal;
   const connections = yield* VaultConnections.VaultConnections;
+  const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const permits = yield* Semaphore.make(4);
   const load = Effect.fnUntraced(function* (id: string) {
     const item = yield* core.inspect(id);
@@ -136,7 +140,14 @@ const make = Effect.gen(function* () {
     if (record.info.item.state !== "active") return yield* fail("archived");
     if (record.info.item.version !== input.expectedVersion) return yield* fail("conflict");
     if (!record.stored.repositories.includes(input.repository.toLowerCase()))
-      return yield* new VaultGitHubError({ reason: "repository-denied" });
+      return yield* new VaultGitHubError({
+        reason: "repository-denied",
+        repair: {
+          id: input.id,
+          repository: input.repository,
+          settingsPath: `/settings/loom?machine=${encodeURIComponent(environmentId)}&section=vault-github#loom-vault-github?connection=${input.id}&repository=${encodeURIComponent(input.repository)}`,
+        },
+      });
     return record;
   });
   const acquireSession = (
@@ -254,33 +265,57 @@ const make = Effect.gen(function* () {
       if (!isSave(input)) return yield* fail("invalid-input");
       yield* authorize;
       const existing = yield* core.inspect(input.id);
-      if (existing) {
-        if (existing.kind !== "service-connection") return yield* fail("conflict");
-        yield* load(input.id);
-      }
+      if (existing && existing.kind !== "service-connection") return yield* fail("conflict");
+      const record = existing ? yield* load(input.id) : null;
+      if (!input.credential && (!record || input.expectedVersion === 0))
+        return yield* fail("invalid-input");
+      const credential = input.credential ?? record!.stored.credential;
       const repositories = [...new Set(input.repositories.map((r) => r.toLowerCase()))].sort();
-      const current = yield* acquireSession(input.credential, repositories);
+      const authorizeSave = Effect.gen(function* () {
+        yield* authorize;
+        const ownerTrusted = (yield* access.snapshot).ownerPolicy?.mode === "owner-trusted";
+        if (
+          repositories.length >
+          (ownerTrusted ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT)
+        )
+          return yield* fail("invalid-input");
+      });
+      yield* authorizeSave;
+      const persist = Effect.fn("VaultGitHub.persistConnection")(function* (account: string) {
+        const value = yield* encode({
+          schemaVersion: 1,
+          provider: "github.com",
+          credential,
+          account,
+          repositories,
+        }).pipe(Effect.mapError(() => fail("invalid-input")));
+        yield* core.save(
+          {
+            id: input.id,
+            operationId: input.operationId,
+            expectedVersion: input.expectedVersion,
+            label: input.label,
+            kind: "service-connection",
+            value: Redacted.make(value),
+          },
+          actor,
+          authorizeSave,
+        );
+        return (yield* load(input.id)).info;
+      });
+      // Let the core recognize an exact replay without minting a new upstream session for a stale edit.
+      if (record && record.info.item.version !== input.expectedVersion)
+        return yield* persist(record.stored.account);
+      if (!record && input.expectedVersion > 0) return yield* fail("conflict");
+      if (record && record.info.item.state !== "active") return yield* fail("archived");
+      const current = yield* acquireSession(credential, repositories);
+      if (
+        !input.credential &&
+        current.account.toLowerCase() !== record!.stored.account.toLowerCase()
+      )
+        return yield* fail("conflict");
       for (const repo of repositories) yield* transport.probe(current, repo);
-      const value = yield* encode({
-        schemaVersion: 1,
-        provider: "github.com",
-        credential: input.credential,
-        account: current.account,
-        repositories,
-      }).pipe(Effect.mapError(() => fail("invalid-input")));
-      yield* core.save(
-        {
-          id: input.id,
-          operationId: input.operationId,
-          expectedVersion: input.expectedVersion,
-          label: input.label,
-          kind: "service-connection",
-          value: Redacted.make(value),
-        },
-        actor,
-        authorize,
-      );
-      return (yield* load(input.id)).info;
+      return yield* persist(current.account);
     }, Effect.scoped),
     test: Effect.fn("VaultGitHub.test")(
       function* (input, authorize) {

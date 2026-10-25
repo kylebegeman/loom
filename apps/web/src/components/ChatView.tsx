@@ -1,3 +1,6 @@
+// fork: project-lifecycle
+import type { PendingRevert } from "./chat/ChatOverlayHosts";
+import { CheckpointScopeId } from "@t3tools/contracts";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
@@ -33,10 +36,7 @@ import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import {
-  latestExecutedRun,
-  latestRootProviderFailure,
-} from "@t3tools/shared/orchestrationV2ThreadError";
+import { continuableRun } from "@t3tools/shared/fork/run-continuation"; // fork: failed-run-retry
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
@@ -85,6 +85,7 @@ import {
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
 import {
+  isTransportConnectionErrorMessage, // fork: fleet-connections
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
 } from "@t3tools/client-runtime/errors";
@@ -266,6 +267,21 @@ import { RightPanelTabs } from "./RightPanelTabs";
 import { ForkPanelHost } from "../fork/panels/ForkPanelHost"; // fork: ext-panels
 import { useForkPanelPresentation } from "../fork/panels/presentation"; // fork: ext-panels
 import { useForkPanelActions } from "../fork/panels/useForkPanelActions"; // fork: ext-panels
+// fork: fleet-connections
+import {
+  computerConnectionBanner,
+  needsIdentitySignIn,
+} from "../fork/connection-health/ComputerConnectionBanner";
+import {
+  canHoldSendFor,
+  heldDraftSignature,
+  newCommandId,
+  newHeldSendIds,
+  unavailableSendNotice,
+  useHeldSendStore,
+  type HeldSend,
+} from "../fork/connection-health/heldSend";
+import { useConnectionStalled } from "../fork/connection-health/useConnectionStalled";
 import {
   OS_MANAGED_RUNTIME_NOTE,
   runtimeManagedByOperatingSystem,
@@ -1121,6 +1137,13 @@ export default function ChatView(props: ChatViewProps) {
   const revertThreadCheckpoint = useOrchestrationCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
+  // fork: project-lifecycle
+  const checkRestoreState = useAtomCommand(serverEnvironment.checkpointRestoreState, {
+    reportFailure: false,
+  });
+  const undoCheckpointRestore = useAtomCommand(serverEnvironment.undoCheckpointRestore, {
+    reportFailure: false,
+  });
   const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {
     reportFailure: false,
   });
@@ -1559,16 +1582,16 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread &&
     serverProjection?.runs.some((run) => run.status === "queued" && run.queueHeld === true) ===
       true;
-  const resumableRunId = (() => {
-    if (!isServerThread || serverProjection === null) return null;
-    const run = latestExecutedRun(serverProjection.runs);
-    if (run?.status === "interrupted") return run.id;
-    return run?.status === "failed" &&
-      serverRuntime?.lastErrorClass === "usage_limit" &&
-      latestRootProviderFailure(run, serverProjection.turnItems)?.class === "usage_limit"
-      ? run.id
-      : null;
-  })();
+  // fork: failed-run-retry
+  const continuable =
+    !isServerThread || serverProjection === null
+      ? null
+      : continuableRun({
+          runs: serverProjection.runs,
+          turnItems: serverProjection.turnItems,
+          lastErrorClass: serverRuntime?.lastErrorClass,
+        });
+  const resumableRunId = continuable?.run.id ?? null; // fork: failed-run-retry
   const parentSubagentThreadId =
     activeThread?.lineage.relationshipToParent === "subagent"
       ? activeThread.lineage.parentThreadId
@@ -2085,6 +2108,35 @@ export default function ChatView(props: ChatViewProps) {
       connection: activeEnvironment.connection,
     };
   })() as EnvironmentUnavailableState | null;
+  // fork: fleet-connections - a follow-up held for a computer that is coming back, and the stall.
+  const activeEnvironmentStalled = useConnectionStalled(
+    activeEnvironmentUnavailableState?.connection ?? null,
+  );
+  const heldSend = useHeldSendStore((store) => store.held[routeThreadKey]);
+  const heldSendDraft = useComposerDraftStore((store) =>
+    heldSend === undefined ? null : heldDraftSignature(store.getComposerDraft(composerDraftTarget)),
+  );
+  const activeHeldSend =
+    heldSend !== undefined &&
+    heldSend.draft === heldSendDraft &&
+    heldSend.environmentId === activeEnvironment?.environmentId
+      ? heldSend
+      : null;
+  useEffect(() => {
+    if (heldSend !== undefined && activeHeldSend === null) {
+      useHeldSendStore.getState().release(routeThreadKey, heldSend.messageId);
+    }
+  }, [activeHeldSend, heldSend, routeThreadKey]);
+  useEffect(() => {
+    // Seeing the computer drop ends the wait a failed send started with.
+    if (!activeEnvironmentUnavailable || activeHeldSend?.afterFailure !== true) return;
+    const { afterFailure: _seen, ...waiting } = activeHeldSend;
+    useHeldSendStore.getState().hold(routeThreadKey, waiting);
+  }, [activeEnvironmentUnavailable, activeHeldSend, routeThreadKey]);
+  const canHoldActiveSend =
+    isServerThread &&
+    activeEnvironmentUnavailableState !== null &&
+    canHoldSendFor(activeEnvironmentUnavailableState.connection.phase);
   const handleReconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
     const result = await retryEnvironment(environmentId);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -2363,7 +2415,28 @@ export default function ChatView(props: ChatViewProps) {
         unavailableConnection.phase === "reconnecting");
     const suppressUnavailableBanner =
       environmentReconnecting && (updateRunning || !reconnectWarningGraceElapsed);
-    if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
+    // fork: fleet-connections - sign-in, a held follow-up and a stalled reconnect each say more.
+    const computerBanner =
+      activeEnvironment !== null &&
+      activeEnvironmentUnavailableState !== null &&
+      (!updateRunning || activeHeldSend !== null)
+        ? computerConnectionBanner({
+            environment: activeEnvironment,
+            stalled: activeEnvironmentStalled,
+            held: activeHeldSend !== null,
+            onRetry: () =>
+              void handleReconnectActiveEnvironmentStable(activeEnvironment.environmentId),
+            onCancelHeld: () => useHeldSendStore.getState().release(routeThreadKey),
+            disconnectAction,
+          })
+        : null;
+    if (computerBanner !== null) {
+      items.push(computerBanner);
+    } else if (
+      activeEnvironmentUnavailableState &&
+      unavailableConnection &&
+      !suppressUnavailableBanner
+    ) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",
@@ -5968,6 +6041,62 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThreadId, composerRef]);
 
+  // fork: project-lifecycle -- wait for the persisted rollback before offering its recovery token.
+  const showRestoreUndo = async () => {
+    if (!activeThread) return;
+    const state = await checkRestoreState({ environmentId, input: { threadId: activeThread.id } });
+    if (state._tag !== "Success" || state.value.undoToken === null) return;
+    const undoToken = state.value.undoToken;
+    const id = toastManager.add({
+      type: "success",
+      title: "Files restored",
+      timeout: 0,
+      description: "Undo restores your previous files. Conversation history stays rewound.",
+      actionProps: {
+        children: "Undo file restore",
+        onClick: async () => {
+          const result = await undoCheckpointRestore({
+            environmentId,
+            input: { threadId: activeThread.id, undoToken },
+          });
+          if (result._tag === "Success") {
+            toastManager.close(id);
+            toastManager.add({ type: "success", title: "File restore undone" });
+          } else if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add({
+              type: "error",
+              title: "Could not undo the restore",
+              description: error instanceof Error ? error.message : "Try again.",
+            });
+          }
+        },
+      },
+    });
+  };
+  const openCheckedRevert = async (pending: Omit<PendingRevert, "canRestoreFiles" | "reason">) => {
+    if (!activeThread) return;
+    const result = await checkRestoreState({
+      environmentId,
+      input: {
+        threadId: activeThread.id,
+        ...(pending.scopeId === null ? {} : { scopeId: CheckpointScopeId.make(pending.scopeId) }),
+      },
+    });
+    if (currentRouteThreadKeyRef.current !== routeThreadKey) return;
+    openRevertConfirm(routeThreadKey, {
+      ...pending,
+      canRestoreFiles:
+        pending.checkpointId !== null && result._tag === "Success" && result.value.canRestoreFiles,
+      reason:
+        pending.checkpointId === null
+          ? "This checkpoint is not loaded. Reopen the message to restore its files."
+          : result._tag === "Success"
+            ? result.value.reason
+            : "Could not check file restore safety. Reconnect and try again, or keep the current files.",
+    });
+  };
+
   const onRevertToTurnCount = async (
     turnCount: number,
     messageId: MessageId,
@@ -6003,7 +6132,14 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     if (restoreFiles === undefined) {
-      openRevertConfirm(routeThreadKey, { turnCount, messageId });
+      // fork: project-lifecycle
+      const checkpoint = findRevertCheckpoint(serverProjection?.checkpoints ?? [], turnCount);
+      await openCheckedRevert({
+        turnCount,
+        messageId,
+        checkpointId: checkpoint?.id ?? null,
+        scopeId: checkpoint?.scopeId ?? null,
+      });
       return;
     }
 
@@ -6034,6 +6170,8 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(activeThread.id, rewind.error);
       return;
     }
+    // fork: project-lifecycle
+    if (restoreFiles) await showRestoreUndo();
     if (currentRouteThreadKeyRef.current === routeThreadKey) {
       const nextPrompt = rewind.prompt;
       promptRef.current = nextPrompt;
@@ -6044,16 +6182,17 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);
-  const onConfirmRevert = (turnCount: number, messageId: MessageId, restoreFiles: boolean) => {
-    void onRevertToTurnCount(turnCount, messageId, restoreFiles);
-  };
-  const onConfirmRevertStable = useStableCallback(onConfirmRevert);
 
-  const onRollbackCheckpoint = async (input: {
-    readonly checkpointId: string;
-    readonly scopeId: string;
-  }) => {
-    if (!activeThread || isRevertingCheckpoint) return;
+  // fork: project-lifecycle
+  const onRollbackCheckpoint = async (
+    input: {
+      readonly checkpointId: string;
+      readonly scopeId: string;
+    },
+    restoreFiles?: boolean,
+  ) => {
+    // fork: project-lifecycle
+    if (!activeThread || isRevertingCheckpoint || !canOperateThread) return;
     if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
       setThreadError(
         activeThread.id,
@@ -6065,29 +6204,55 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
       return;
     }
-    const localApi = readLocalApi();
-    const confirmed =
-      localApi == null
-        ? window.confirm("Roll back this thread to the selected checkpoint?")
-        : await localApi.dialogs.confirm(
-            "Roll back this thread to the selected checkpoint?\nThis action cannot be undone.",
-          );
-    if (!confirmed) return;
+    // fork: project-lifecycle
+    const checkpoint = serverProjection?.checkpoints.find(
+      (candidate) => candidate.id === input.checkpointId,
+    );
+    if (!checkpoint) {
+      setThreadError(
+        activeThread.id,
+        "This checkpoint is no longer loaded. Reopen it and try again.",
+      );
+      return;
+    }
+    if (restoreFiles === undefined) {
+      await openCheckedRevert({
+        ...input,
+        messageId: null,
+        turnCount: checkpoint.appRunOrdinal ?? 0,
+      });
+      return;
+    }
 
     useComposerDraftStore.setState((store) => ({
       rewindingThreadKeys: new Set(store.rewindingThreadKeys).add(routeThreadKey),
     }));
     setThreadError(activeThread.id, null);
-    const result = await revertThreadCheckpoint({
-      environmentId,
-      input: {
-        threadId: activeThread.id,
-        checkpointId: input.checkpointId,
-        scopeId: input.scopeId,
-      },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
+    // fork: project-lifecycle
+    try {
+      const commandId = CommandId.make(randomUUID());
+      await waitForRevertedMessage(
+        routeThreadRef,
+        checkpoint.appRunOrdinal ?? 0,
+        commandId,
+        async () => {
+          const result = await revertThreadCheckpoint({
+            environmentId,
+            input: {
+              commandId,
+              threadId: activeThread.id,
+              checkpointId: input.checkpointId,
+              scopeId: input.scopeId,
+              restoreFiles,
+            },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        },
+        undefined,
+        { allowFilesOnly: true },
+      );
+      if (restoreFiles) await showRestoreUndo();
+    } catch (error) {
       setThreadError(
         activeThread.id,
         error instanceof Error ? error.message : "Failed to revert thread state.",
@@ -6100,10 +6265,25 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
 
-  const onForkFromRun = async (input: {
-    readonly sourceThreadId: ThreadId;
-    readonly runId: RunId;
-  }) => {
+  // fork: project-lifecycle
+  const onConfirmRevert = (pending: PendingRevert, restoreFiles: boolean) => {
+    if (pending.messageId !== null)
+      void onRevertToTurnCount(pending.turnCount, pending.messageId, restoreFiles);
+    else if (pending.checkpointId !== null && pending.scopeId !== null)
+      void onRollbackCheckpoint(
+        { checkpointId: pending.checkpointId, scopeId: pending.scopeId },
+        restoreFiles,
+      );
+  };
+  const onConfirmRevertStable = useStableCallback(onConfirmRevert);
+
+  // fork: project-lifecycle
+  const onForkFromRun = async (
+    input: { readonly sourceThreadId: ThreadId } & (
+      | { readonly runId: RunId; readonly checkpointId?: never }
+      | { readonly checkpointId: string; readonly runId?: never }
+    ),
+  ) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
@@ -6112,7 +6292,10 @@ export default function ChatView(props: ChatViewProps) {
       input: {
         sourceThreadId: input.sourceThreadId,
         targetThreadId,
-        runId: input.runId,
+        // fork: project-lifecycle
+        ...(input.checkpointId === undefined
+          ? { runId: input.runId }
+          : { checkpointId: input.checkpointId }),
         title: `${activeThread.title} fork`,
       },
     });
@@ -6230,6 +6413,7 @@ export default function ChatView(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    held?: HeldSend, // fork: fleet-connections
   ) => {
     e?.preventDefault();
     if (
@@ -6292,14 +6476,43 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     if (activeEnvironmentUnavailable) {
+      // fork: fleet-connections - hold one follow-up for a computer that is coming back.
+      if (held !== undefined) return;
+      const unavailableDraft = useComposerDraftStore
+        .getState()
+        .getComposerDraft(composerDraftTarget);
+      if (
+        canHoldActiveSend &&
+        activeEnvironment !== null &&
+        !directAnnotation &&
+        !activePendingProgress &&
+        composerDraftHasUserContent(unavailableDraft)
+      ) {
+        const draft = heldDraftSignature(unavailableDraft);
+        if (activeHeldSend?.draft !== draft) {
+          useHeldSendStore.getState().hold(routeThreadKey, {
+            environmentId: activeEnvironment.environmentId,
+            ...newHeldSendIds(),
+            dispatchMode,
+            draft,
+          });
+        }
+        return;
+      }
       const toastSlot = environmentUnavailableSendToastSlotRef.current;
       environmentUnavailableSendToastSlotRef.current =
         (toastSlot + 1) % ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE;
       toastManager.add({
         ...stackedThreadToast({
           type: "warning",
-          title: "Not connected: message not sent",
-          description: "Reconnecting to the environment. Try again once it is connected.",
+          // fork: fleet-connections
+          ...(activeEnvironment === null
+            ? { title: "Message not sent", description: "Your message is still in the composer." }
+            : unavailableSendNotice({
+                label: activeEnvironment.label,
+                connection: activeEnvironment.connection,
+                identitySignIn: needsIdentitySignIn(activeEnvironment),
+              })),
         }),
         id: `chat-send-environment-unavailable:${toastSlot}`,
       });
@@ -6636,7 +6849,13 @@ export default function ChatView(props: ChatViewProps) {
     const outgoingMessageContext = buildOutgoingMessageContext(
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
     );
-    const messageIdForSend = newMessageId();
+    // fork: fleet-connections - a held follow-up keeps its ids, so a resend is the same message.
+    const heldForSend = held ?? activeHeldSend ?? undefined;
+    const messageIdForSend = heldForSend?.messageId ?? newMessageId();
+    const commandIdForSend = heldForSend?.commandId ?? newCommandId();
+    if (heldForSend !== undefined) {
+      useHeldSendStore.getState().release(routeThreadKey, heldForSend.messageId);
+    }
     const messageCreatedAt = new Date().toISOString();
     // A stale Claude session compacts before this message so the turn does not re-read the
     // old history. The message queues behind the /compact run, since steering into it is
@@ -7229,6 +7448,7 @@ export default function ChatView(props: ChatViewProps) {
         environmentId,
         input: {
           threadId: threadIdForSend,
+          commandId: commandIdForSend, // fork: fleet-connections
           message: {
             messageId: messageIdForSend,
             role: "user",
@@ -7351,11 +7571,11 @@ export default function ChatView(props: ChatViewProps) {
         );
         clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
       }
-      if (
-        !composerDraftHasUserContent(
-          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
-        )
-      ) {
+      // fork: fleet-connections
+      const draftRestored = !composerDraftHasUserContent(
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+      );
+      if (draftRestored) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
           for (const message of removed) {
@@ -7386,10 +7606,30 @@ export default function ChatView(props: ChatViewProps) {
       }
       if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
-        setThreadError(
-          threadIdForSend,
-          error instanceof Error ? error.message : "Failed to send message.",
-        );
+        // fork: fleet-connections - it may have arrived, so it waits to resend with the same ids.
+        const holdAfterFailure =
+          draftRestored &&
+          isServerThread &&
+          !directAnnotation &&
+          activeEnvironment !== null &&
+          isTransportConnectionErrorMessage(error instanceof Error ? error.message : null);
+        if (holdAfterFailure) {
+          useHeldSendStore.getState().hold(routeThreadKey, {
+            environmentId: activeEnvironment.environmentId,
+            messageId: messageIdForSend,
+            commandId: commandIdForSend,
+            dispatchMode,
+            draft: heldDraftSignature(
+              useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+            ),
+            afterFailure: true,
+          });
+        } else {
+          setThreadError(
+            threadIdForSend,
+            error instanceof Error ? error.message : "Failed to send message.",
+          );
+        }
         if (
           draftId &&
           (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey)
@@ -7833,6 +8073,22 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
   const onComposerSendStable = useStableCallback(onSend);
+  // fork: fleet-connections - send a held follow-up once, when its computer is back.
+  const heldSendReady =
+    activeHeldSend !== null &&
+    activeHeldSend.afterFailure !== true &&
+    !activeEnvironmentUnavailable &&
+    clientSettingsHydrated &&
+    !threadDetailLoading &&
+    !isConnecting &&
+    !isSendBusy;
+  const sendHeldFollowUp = useStableCallback(() => {
+    if (activeHeldSend === null) return;
+    void onSend(undefined, activeHeldSend.dispatchMode, "foreground", undefined, activeHeldSend);
+  });
+  useEffect(() => {
+    if (heldSendReady) sendHeldFollowUp();
+  }, [heldSendReady, sendHeldFollowUp]);
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -7841,6 +8097,15 @@ export default function ChatView(props: ChatViewProps) {
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
+  // fork: failed-run-retry - A usage limit's row says when to retry, and its recovery covers it.
+  const failedRunRetry =
+    canOperateThread && continuable?.failure != null && continuable.failure.class !== "usage_limit"
+      ? {
+          runId: continuable.run.id,
+          nodeId: continuable.run.rootNodeId,
+          retry: onComposerResumeStable,
+        }
+      : null;
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   const queuedRunsControl =
     isServerThread && activeThread ? (
@@ -8266,6 +8531,7 @@ export default function ChatView(props: ChatViewProps) {
                       retryableWorkspacePreparationRunIds,
                       onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
                     })}
+                failedRunRetry={paintOnlyDisplayedTimeline ? null : failedRunRetry} // fork: failed-run-retry
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
                   : {})}
@@ -8530,7 +8796,9 @@ export default function ChatView(props: ChatViewProps) {
                                   ? openUsageLimits
                                   : undefined
                               }
-                              environmentUnavailable={activeEnvironmentUnavailableState}
+                              environmentUnavailable={
+                                canHoldActiveSend ? null : activeEnvironmentUnavailableState
+                              } // fork: fleet-connections
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
                               pendingUserInputs={pendingUserInputs}
@@ -8929,7 +9197,15 @@ export default function ChatView(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-      <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
+      {/* fork: project-lifecycle */}
+      <RevertConfirmHost
+        threadKey={routeThreadKey}
+        canOperate={canOperateThread}
+        onConfirm={onConfirmRevertStable}
+        onFork={(checkpointId) => {
+          if (activeThread) void onForkFromRun({ sourceThreadId: activeThread.id, checkpointId });
+        }}
+      />
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />

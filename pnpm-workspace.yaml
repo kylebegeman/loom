@@ -225,6 +225,7 @@ overrides:
   # Pin every patched package, including transitive dependencies, so lockfile-free
   # release installs cannot drift past the patch. Update these with patchedDependencies.
   react-native-image-viewing: 0.2.2
+  vitest: 5.0.1 # fork: project-lifecycle
   mdast-util-math: 3.0.0
   micromark-extension-llm-math: 3.1.0
   alchemy: 2.0.0-beta.80
@@ -348,6 +349,8 @@ packageExtensions:
       vite-plus: "catalog:"
 
 patchedDependencies:
+  # fork: project-lifecycle -- pnpm reads patch configuration here.
+  "vitest@5.0.1": patches/vitest@5.0.1.patch
   react-native-image-viewing@0.2.2: patches/react-native-image-viewing@0.2.2.patch
   mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch
   micromark-extension-llm-math@3.1.0: patches/micromark-extension-llm-math@3.1.0.patch

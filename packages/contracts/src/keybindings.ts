@@ -41,6 +41,8 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.editQueuedMessage",
   "thread.previous",
   "thread.next",
+  // fork: attention-status
+  "thread.nextAttention",
   "thread.copyReference",
   "thread.settle",
   "thread.pin",
@@ -58,6 +60,8 @@ const MODEL_PICKER_KEYBINDING_COMMANDS = [
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
 export const STATIC_KEYBINDING_COMMANDS = [
+  "git.commit",
+  "git.commitPush", // fork: source-control-cockpit -- deliberately unbound.
   ...FORK_KEYBINDING_COMMANDS, // fork: ext-keybindings
   "sidebar.toggle",
   "navigation.back",

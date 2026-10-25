@@ -2,10 +2,54 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { ForwardCompatibleArray, IsoDateTime, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import {
+  ForwardCompatibleArray,
+  IsoDateTime,
+  NonNegativeInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "../baseSchemas.ts";
 
 /** Advertised only by a Library whose push switch, Identity and APNs key settings are all set. */
 export const LIBRARY_PUSH_FEATURE = "library-push";
+
+/**
+ * Advertised by a push Library that also sends agent alerts (C04-10): its alert switch is on and
+ * it has an account to send them to. Computers do not wait for it; they post and back off on 404.
+ */
+export const LIBRARY_PUSH_ACTIVITY_FEATURE = "library-push-activity";
+
+/** Where a computer's publisher session posts one thread's alert. */
+export const LIBRARY_PUSH_ACTIVITY_ROUTE = "/api/loom/library/push/activity";
+export const LIBRARY_PUSH_ACTIVITY_MAX_BYTES = 4 * 1024;
+/** Keeps the APNs payload, which carries the id three times, far below Apple's 4 KB. */
+export const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
+
+/** `limited` is a run that failed on a usage limit. */
+export const LibraryPushActivityKind = Schema.Literals([
+  "approval",
+  "input",
+  "failed",
+  "limited",
+  "completed",
+]);
+export type LibraryPushActivityKind = typeof LibraryPushActivityKind.Type;
+
+/**
+ * One thread on the posting computer needs attention or finished. The computer comes from its
+ * publisher session, never the body, and no title, project or model travels with it. The computer
+ * posts a change as it sees it happen, or within 2 minutes of it, so no timestamp crosses between
+ * two clocks.
+ */
+export const LibraryPushActivityRequest = Schema.Struct({
+  threadId: ThreadId.check(Schema.isMaxLength(LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH)),
+  kind: LibraryPushActivityKind,
+});
+export type LibraryPushActivityRequest = typeof LibraryPushActivityRequest.Type;
+
+/** How many iPhones Apple accepted the alert for. None is not a failure. */
+export const LibraryPushActivityReply = Schema.Struct({ sent: NonNegativeInt });
+export type LibraryPushActivityReply = typeof LibraryPushActivityReply.Type;
 
 /**
  * Outer allowlist of Loom's iOS bundle IDs. The Library's `LOOM_LIBRARY_PUSH_TOPICS` narrows it

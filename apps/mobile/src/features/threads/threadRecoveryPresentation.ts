@@ -1,12 +1,36 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import { CONNECTION_STALL_DETAIL } from "@t3tools/client-runtime/fork";
 import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
 
 export interface ThreadRecoveryPresentation {
   readonly title: string;
   readonly detail: string;
-  readonly action: "reconnect" | "connection" | "resume" | "files" | null;
+  readonly action:
+    | "reconnect"
+    | "retry"
+    | "identity"
+    | "connection"
+    | "resume"
+    | "files"
+    | "resume-run"
+    | "retry-run"
+    | null;
   readonly danger?: boolean;
 }
+
+/** What is known about the thread's computer beyond its phase. */
+export interface ThreadRecoveryComputer {
+  readonly label: string;
+  /** It refused an expired Identity sign-in, and this phone can sign in again. */
+  readonly signIn: boolean;
+  /** "Can't reach Dorothy since 3:04 PM", once a reconnect has failed past the stall window. */
+  readonly stallTitle: string | null;
+  /** What the Library's directory last heard from it. */
+  readonly directoryHealth: string | null;
+}
+
+const queuedText = (count: number) =>
+  count === 1 ? "your queued message" : `your ${count} queued messages`;
 
 export function resolveThreadRecoveryPresentation(input: {
   readonly connectionState: EnvironmentConnectionPhase;
@@ -24,12 +48,44 @@ export function resolveThreadRecoveryPresentation(input: {
   readonly workspaceError: string | null;
   readonly queueHeld: boolean;
   readonly canOperate: boolean;
+  readonly computer?: ThreadRecoveryComputer;
+  /** How the latest run ended, when it can continue from there. */
+  readonly stoppedRun?: "interrupted" | "failed" | null;
 }): ThreadRecoveryPresentation | null {
   const connected = input.connectionState === "connected";
   const count = input.queuedMessages.length;
   const uncertain = input.queuedMessages.some((message) => message.deliveryAttempted);
   const connectionAction = input.connectionState === "unsupported" ? "connection" : "reconnect";
   if (!connected) {
+    const computer = input.computer;
+    if (computer?.signIn) {
+      return {
+        title: `Sign in to ${computer.label} again`,
+        detail: uncertain
+          ? "Your sign-in expired. Your message may already have arrived, and Loom confirms delivery once you sign in. You do not need to send it again."
+          : count > 0
+            ? `Your sign-in expired. Loom sends ${queuedText(count)} once you sign in.`
+            : "Your sign-in expired, so Loom can't connect. You can keep editing your draft.",
+        action: "identity",
+      };
+    }
+    if (computer?.stallTitle) {
+      return {
+        title: computer.stallTitle,
+        detail: [
+          CONNECTION_STALL_DETAIL,
+          computer.directoryHealth,
+          uncertain
+            ? "Your message may already have arrived, and Loom confirms delivery after reconnecting. You do not need to send it again."
+            : count > 0
+              ? `Loom sends ${queuedText(count)} once it connects.`
+              : "You can keep editing your draft.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        action: "retry",
+      };
+    }
     if (uncertain) {
       return {
         title: "Waiting for delivery confirmation",
@@ -130,10 +186,21 @@ export function resolveThreadRecoveryPresentation(input: {
       action: "files",
     };
   }
+  if (input.stoppedRun) {
+    const failed = input.stoppedRun === "failed";
+    return {
+      title: failed ? "Run failed" : "Run stopped",
+      detail: `${failed ? "Retry" : "Resume"} to continue where it left off.${input.queueHeld ? " Queued messages run after it." : ""}`,
+      ...(failed ? { danger: true } : {}),
+      action: input.canOperate ? (failed ? "retry-run" : "resume-run") : null,
+    };
+  }
   if (input.queueHeld) {
     return {
       title: "Queue paused",
-      detail: "Resume the queue when you are ready for queued messages to run.",
+      // fork: attention-status - The shell flag does not record a specific cause.
+      detail:
+        "Loom pauses queued messages after a restart, stop or run failure. Resume when you are ready for them to run.",
       action: input.canOperate ? "resume" : null,
     };
   }

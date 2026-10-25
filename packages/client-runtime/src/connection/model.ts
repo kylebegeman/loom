@@ -177,6 +177,9 @@ export interface SupervisorConnectionState {
   readonly generation: number;
   readonly lastFailure: ConnectionAttemptError | null;
   readonly retryAt: number | null;
+  // fork: fleet-connections - "Retry now" keeps it, so a computer that stays down reads as stalled.
+  /** When the current run of failed attempts began, while connecting, backing off or blocked. */
+  readonly failingSince?: number;
 }
 
 export type ConnectionProjectionPhase = "disconnected" | "synchronizing" | "ready";

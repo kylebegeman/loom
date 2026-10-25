@@ -107,11 +107,37 @@ export const make = Effect.gen(function* () {
         }),
       )
       .pipe(Effect.uninterruptible);
+  // fork: github-host-setup
+  const snapshot = gate.withPermit(
+    Effect.gen(function* () {
+      const current = yield* SubscriptionRef.get(state);
+      if (current.phase !== "idle" || current.message !== null) return current;
+      const checked = yield* setup.status().pipe(
+        Effect.map((status): GitHubSetupState => ({
+          ...current,
+          phase: status.state === "signed-in" || status.state === "git-ready" ? "ready" : "idle",
+          message:
+            status.state === "signed-in" || status.state === "git-ready"
+              ? `GitHub signed in${status.account ? ` as ${status.account}` : ""}. Run setup to verify Git credential configuration.`
+              : status.state === "missing-cli"
+                ? "GitHub CLI is missing. Start setup to install it and sign in."
+                : "GitHub sign-in required on this computer. Start setup to connect.",
+        })),
+        Effect.catchTags({
+          GitHubHostSetupError: (error) =>
+            Effect.succeed({ ...current, phase: "error" as const, message: error.message }),
+        }),
+      );
+      yield* SubscriptionRef.set(state, checked);
+      return checked;
+    }),
+  );
   return GitHubSetupFlow.of({
     start,
     cancel,
-    snapshot: SubscriptionRef.get(state),
-    changes: SubscriptionRef.changes(state),
+    // fork: github-host-setup
+    snapshot,
+    changes: Stream.unwrap(snapshot.pipe(Effect.as(SubscriptionRef.changes(state)))),
   });
 });
 export const layer = Layer.effect(GitHubSetupFlow, make);

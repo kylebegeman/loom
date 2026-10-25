@@ -193,28 +193,44 @@ describe("rankLibraryLaunchCandidates", () => {
     expect(ranking.preselected).toMatchObject({ kind: "get-copy", environmentId: MINI });
   });
 
-  it("ranks up to date, then unchecked, then dirty or behind, then broken", () => {
+  it("ranks up to date, then unchecked, then behind, then broken", () => {
     const ranking = rank({
       computers: [computer(MINI)],
       copies: [
         copy("broken", MINI),
-        copy("dirty", MINI),
+        copy("behind", MINI),
         copy("unknown", MINI),
         copy("fresh", MINI),
       ],
       live: [
         health("broken", MINI, [repository({ error: "missing" })]),
-        health("dirty", MINI, [repository({ uncommittedFiles: 4 })]),
+        health("behind", MINI, [repository({ behind: 4 })]),
         health("fresh", MINI),
       ],
     });
-    expect(order(ranking)).toEqual(["mini:fresh", "mini:unknown", "mini:dirty", "mini:broken"]);
+    expect(order(ranking)).toEqual(["mini:fresh", "mini:unknown", "mini:behind", "mini:broken"]);
     expect(ranking.candidates.map((candidate) => candidate.reasons[1])).toEqual([
       "up to date",
       "not checked",
-      "4 changed",
+      "4 behind",
       "folder missing",
     ]);
+  });
+
+  it("keeps a copy with uncommitted files up to date, so it keeps its rank", () => {
+    const ranking = rank({
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI), copy("book-copy", BOOK)],
+      threads: [{ environmentId: MINI, workingCopyId: "mini-copy", updatedAt: CHECKED }],
+      live: [
+        health("mini-copy", MINI, [repository({ uncommittedFiles: 4 })]),
+        health("book-copy", BOOK),
+      ],
+    });
+    expect(order(ranking)).toEqual(["mini:mini-copy", "book:book-copy"]);
+    expect(ranking.candidates[0]).toMatchObject({ freshness: "up-to-date", changed: 4 });
+    expect(ranking.candidates[0]!.reasons).toEqual(["online", "4 changed", "used last"]);
+    expect(ranking.preselected).toMatchObject({ copyId: "mini-copy" });
   });
 
   it("never preselects a broken copy, falling to the next usable candidate", () => {
@@ -608,6 +624,12 @@ describe("libraryLaunchFreshness", () => {
     expect(libraryLaunchFreshness(health("c", MINI, [noUpstream]), null).freshness).toBe(
       "up-to-date",
     );
+  });
+
+  it("reads uncommitted files alone as up to date", () => {
+    expect(
+      libraryLaunchFreshness(health("c", MINI, [repository({ uncommittedFiles: 3 })]), null),
+    ).toEqual({ freshness: "up-to-date", behind: 0, changed: 3 });
   });
 
   it("sums behind and changed counts across repositories", () => {

@@ -207,5 +207,17 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_trigger_firings ADD COLUMN batch_id TEXT`;
       }),
     ],
+    [
+      15,
+      "RunOutcomes",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // notified_at also marks a delivery that failed; this is set only when the result arrived.
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN delivered_at TEXT`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN failure_class TEXT`;
+        // A failed delivery appended its reason to the error, so a run without one arrived.
+        yield* sql`UPDATE fork_bots_runs SET delivered_at = notified_at WHERE notify = 1 AND notified_at IS NOT NULL AND caller_thread_id IS NOT NULL AND (error IS NULL OR instr(error, 'Result delivery failed:') = 0)`;
+      }),
+    ],
   ],
 };

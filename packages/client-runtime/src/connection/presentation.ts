@@ -2,7 +2,11 @@ import type { ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 import type { ConnectionCatalogEntry } from "./catalog.ts";
-import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
+import type {
+  ConnectionBlockedReason, // fork: fleet-connections
+  ConnectionTarget,
+  SupervisorConnectionState,
+} from "./model.ts";
 import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
 
 export type EnvironmentConnectionPhase =
@@ -18,7 +22,16 @@ export interface EnvironmentConnectionPresentation {
   readonly phase: EnvironmentConnectionPhase;
   readonly error: string | null;
   readonly traceId: string | null;
+  // fork: fleet-connections - see `connectionStallAt` in fork/connection-health.ts.
+  /** Why an "error" connection is blocked. "authentication" means signing in again fixes it. */
+  readonly blockedReason?: ConnectionBlockedReason;
+  /** When the current run of failed attempts began, while connecting or reconnecting. */
+  readonly failingSince?: number;
 }
+
+// fork: fleet-connections
+const failingFields = (state: SupervisorConnectionState) =>
+  state.failingSince === undefined ? {} : { failingSince: state.failingSince };
 
 /**
  * Provider statuses are pushed every few minutes with fresh `checkedAt` stamps, and every root
@@ -46,6 +59,7 @@ export function presentConnectionState(
         phase: state.attempt <= 1 && state.lastFailure === null ? "connecting" : "reconnecting",
         error: state.lastFailure?.message ?? null,
         traceId: state.lastFailure?.traceId ?? null,
+        ...failingFields(state), // fork: fleet-connections
       };
     case "connected":
       return { phase: "connected", error: null, traceId: null };
@@ -54,12 +68,17 @@ export function presentConnectionState(
         phase: "reconnecting",
         error: state.lastFailure?.message ?? null,
         traceId: state.lastFailure?.traceId ?? null,
+        ...failingFields(state), // fork: fleet-connections
       };
     case "blocked":
       return {
         phase: state.lastFailure?.reason === "unsupported" ? "unsupported" : "error",
         error: state.lastFailure?.message ?? null,
         traceId: state.lastFailure?.traceId ?? null,
+        // fork: fleet-connections
+        ...(state.lastFailure?._tag === "ConnectionBlockedError"
+          ? { blockedReason: state.lastFailure.reason }
+          : {}),
       };
   }
 }

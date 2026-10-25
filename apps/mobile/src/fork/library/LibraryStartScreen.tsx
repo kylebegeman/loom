@@ -1,3 +1,6 @@
+import { useLibraryStartProject, useLibraryStartCopies } from "./libraryState";
+import { GitHubHostSetupSettings } from "../../features/settings/components/GitHubHostSetupSettings";
+import { LibraryError } from "@t3tools/contracts/fork";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   StackActions,
@@ -8,10 +11,14 @@ import {
 } from "@react-navigation/native";
 import {
   libraryContinuationContext,
+  libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
   libraryPortableRecoveryPlan,
+  markLibraryConversationStarted,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
@@ -31,8 +38,11 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
+  type LibraryLaunchWorkspace,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
@@ -40,20 +50,33 @@ import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import * as Dialog from "../../components/ui/Dialog";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { ListRow } from "../../components/ui/ListRow";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
+import { useIncomingShare } from "../../features/sharing/IncomingShareProvider";
+import {
+  selectIncomingShareAttachmentsForServer,
+  type IncomingShareDraft,
+} from "../../features/sharing/incoming-share-model";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { useProject, useServerConfigs } from "../../state/entities";
+import { useProject, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
-import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
+import {
+  setComposerDraftText,
+  flushComposerDrafts,
+  getComposerDraftSnapshot,
+  mergeComposerDraftContent,
+  scheduleUnusedComposerAttachmentCleanup,
+  useStickyComposerModelSelection,
+} from "../../state/use-composer-drafts";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { threadEnvironment } from "../../state/threads";
@@ -95,6 +118,78 @@ function unwrap<A, E>(result: AtomCommandResult<A, E>): A {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
   return result.value;
 }
+
+const sharedContent = (share: IncomingShareDraft) =>
+  share.attachments.length === 0
+    ? "what you shared"
+    : share.attachments.length === 1
+      ? `the ${share.attachments[0]?.type === "image" ? "image" : "file"} you shared`
+      : `the ${share.attachments.length} ${share.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`;
+
+/**
+ * Adds content shared from another app to the first message of the conversation just started, the
+ * way a New task draft takes it for a local project, and returns whether the draft holds it. The
+ * conversation exists by now, so a problem is reported without failing the start, and the share
+ * leaves the inbox only once the draft holds it.
+ */
+async function addIncomingShare(
+  share: IncomingShareDraft | null,
+  draftKey: string,
+  serverConfig: Parameters<typeof selectIncomingShareAttachmentsForServer>[0]["serverConfig"],
+  consumeShare: (shareId: string) => Promise<void>,
+): Promise<boolean> {
+  if (!share) {
+    Dialog.alert(
+      "Shared content unavailable",
+      "The shared content is no longer in the inbox, so the conversation started without it.",
+    );
+    return false;
+  }
+  const selected = selectIncomingShareAttachmentsForServer({
+    attachments: share.attachments,
+    serverConfig,
+  });
+  if (selected.status === "pending") {
+    Dialog.alert(
+      "Could not add what you shared",
+      "This computer's attachment support is still loading.",
+    );
+    return false;
+  }
+  const merged = await mergeComposerDraftContent(draftKey, {
+    text: share.text,
+    attachments: selected.attachments,
+    sourceShareId: share.id,
+  }).catch((cause: unknown) => {
+    Dialog.alert(
+      "Could not add what you shared",
+      cause instanceof Error ? cause.message : "The shared content could not be saved.",
+    );
+    return null;
+  });
+  if (!merged) return false;
+  try {
+    await consumeShare(share.id);
+    // The consumed inbox entry was the last owner of files the draft did not take.
+    const kept = new Set(
+      getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id),
+    );
+    scheduleUnusedComposerAttachmentCleanup(
+      share.attachments.filter((attachment) => !kept.has(attachment.id)),
+    );
+  } catch (cause) {
+    // The draft already holds the share. The inbox entry still owns its files, so they stay.
+    console.warn("[incoming-share] could not remove shared content from the inbox", cause);
+  }
+  const warnings = [...share.warnings, ...selected.warnings];
+  const skipped = merged.skippedAttachmentCount;
+  if (skipped > 0)
+    warnings.push(
+      `${skipped} shared file${skipped === 1 ? " was" : "s were"} skipped because the message reached the attachment limit.`,
+    );
+  if (warnings.length > 0) Dialog.alert("Some shared content was skipped", warnings.join("\n"));
+  return true;
+}
 export function LibraryStartRouteScreen({
   route,
 }: StaticScreenProps<{
@@ -108,20 +203,15 @@ export function LibraryStartRouteScreen({
   readonly reuseRootPath?: string;
   /** Start as soon as this screen agrees the handed-in computer and files are ready. */
   readonly startNow?: boolean;
+  /** Content shared from another app, which the started conversation's first message takes. */
+  readonly incomingShareId?: string;
 }>) {
   const authority = useLibraryAuthority();
   const preferences = useAtomValue(mobilePreferencesAtom);
   // Start over remounts the screen without the attempt it drops, but with that attempt's choices.
   // Every attempt has its own request id, so each Start over remounts.
   const [restart, setRestart] = useState<typeof LibraryLaunchAttempt.Type | null>(null);
-  const project = useEnvironmentQuery(
-    authority.environmentId
-      ? library.project({
-          environmentId: authority.environmentId,
-          input: { projectId: route.params.projectId },
-        })
-      : null,
-  );
+  const project = useLibraryStartProject(route.params.projectId);
   useFocusEffect(
     useCallback(() => {
       if (!authority.environmentId || !authority.connected || !authority.canRead) return;
@@ -164,6 +254,7 @@ export function LibraryStartRouteScreen({
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
+      incomingShareId={route.params.incomingShareId}
       restart={restart}
       // Starting over is a deliberate step back to the settings, so it never starts by itself.
       startNow={restart === null && route.params.startNow === true}
@@ -192,6 +283,7 @@ function LibraryStartContent(props: {
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
+  incomingShareId?: string | undefined;
   /** The attempt Start over dropped, whose choices this screen starts from. */
   restart: typeof LibraryLaunchAttempt.Type | null;
   startNow: boolean;
@@ -201,6 +293,8 @@ function LibraryStartContent(props: {
     navigation = useNavigation(),
     { environments } = useEnvironments(),
     configs = useServerConfigs();
+  const { getShare, consumeShare } = useIncomingShare();
+  const incomingShare = props.incomingShareId ? getShare(props.incomingShareId) : null;
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
   const attemptKey = JSON.stringify([
@@ -251,7 +345,8 @@ function LibraryStartContent(props: {
       seed?.review.copy?.id ?? props.initialCopyId ?? null,
     ),
     [title, setTitle] = useState(
-      seed?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
+      seed?.review.title ??
+        (props.sourceArchiveId ? "Linked continuation" : LIBRARY_DEFAULT_CONVERSATION_TITLE),
     ),
     [modelKey, setModelKey] = useState<string | null>(
       seed?.review.model.key ??
@@ -267,7 +362,11 @@ function LibraryStartContent(props: {
     [showComputers, setShowComputers] = useState(false),
     [showOptions, setShowOptions] = useState(false),
     [showSetup, setShowSetup] = useState(false),
-    [keepFiles, setKeepFiles] = useState<boolean | null>(seed?.review.keepOnComputer ?? null);
+    [keepFiles, setKeepFiles] = useState<boolean | null>(seed?.review.keepOnComputer ?? null),
+    [showWorkspace, setShowWorkspace] = useState(false),
+    [workspaceChoice, setWorkspaceChoice] = useState<LibraryLaunchWorkspace | null>(
+      seed?.review.workspace ?? null,
+    );
   const [folderPending, setFolderPending] = useState(false);
   const folderBusy = useRef(false);
   const onFolderPending = useCallback((value: boolean) => {
@@ -276,6 +375,8 @@ function LibraryStartContent(props: {
   }, []);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
+  const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
+  const [showGitHubSetup, setShowGitHubSetup] = useState(false);
   const [launchedThread, setLaunchedThread] = useState<Awaited<
     ReturnType<typeof launchLibraryConversation>
   > | null>(null);
@@ -299,6 +400,7 @@ function LibraryStartContent(props: {
     recoverySource?: LibraryWorkingCopy;
     carryContext: string;
     keepOnComputer?: boolean;
+    workspace?: LibraryLaunchWorkspace;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
   } | null>(saved?.review ?? null);
@@ -330,14 +432,7 @@ function LibraryStartContent(props: {
     resourceIds =
       progress.intent?.resourceIds ??
       (scope === "all" ? repositories.map((resource) => resource.id) : [scope]);
-  const copies = useEnvironmentQuery(
-    authority.environmentId
-      ? library.copies({
-          environmentId: authority.environmentId,
-          input: { projectId: props.project.id, includeReleased: true },
-        })
-      : null,
-  );
+  const copies = useLibraryStartCopies(props.project.id, true);
   const [carryInput, setCarryContext] = useState<string | null>(seed?.review.carryContext ?? null);
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const copiesState = libraryListState(copies);
@@ -462,12 +557,14 @@ function LibraryStartContent(props: {
     seed?.review.model.selection ?? props.launchSettings?.modelSelection ?? null;
   const runtimeMode = seed?.review.runtimeMode ?? props.launchSettings?.runtimeMode,
     interactionMode = seed?.review.interactionMode ?? props.launchSettings?.interactionMode;
+  const lastUsedSelection = useStickyComposerModelSelection();
   const { models, defaultModel } = libraryConversationModels({
     config,
     projectDefaultSelection,
     localProjectId,
     localProject,
     savedSelection: savedModelSelection,
+    lastUsedSelection,
   });
   const chosenModel =
     modelKey !== null ? (models.find((model) => model.key === modelKey) ?? null) : defaultModel;
@@ -567,12 +664,30 @@ function LibraryStartContent(props: {
         copy.ownership === "managed" &&
         libraryLaunchPathOverlaps(copy.rootPath, rootPath.trim()),
     );
+  const shells = useThreadShells();
+  // Only reused files can have conversations working in them already.
+  const folderConversations =
+    mode === "reuse" ? libraryCopyFolderConversations(shells, selectedCopy) : 0;
+  const workspace = reviewState
+    ? (reviewState.workspace ?? null)
+    : libraryLaunchWorkspace({
+        available:
+          supportsLoomFeature(config?.environment.capabilities, LIBRARY_WORKTREE_STARTS_FEATURE) &&
+          // One repository binds as that component, whatever the scope row says.
+          libraryLaunchCanUseWorktree(
+            launchProject,
+            resourceIds.length === 1 ? resourceIds[0]! : null,
+          ),
+        chosen: workspaceChoice,
+        conversations: folderConversations,
+      });
   const warning =
     progress.intent === null && mode === "reuse" && selectedCopy?.state !== "released"
       ? libraryLaunchWarning(
           selectedCopy ? candidateFor(selectedCopy.environmentId, selectedCopy.id) : null,
           selectedCopy,
           scope === "all" ? null : scope,
+          { conversations: folderConversations, workspace },
         )
       : null;
   const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(execution));
@@ -596,13 +711,26 @@ function LibraryStartContent(props: {
     supportsLoomFeature(selectedHost.serverConfig?.environment.capabilities, "project-library") &&
     execution !== null &&
     operable.has(execution);
+  const offline = !authority.connected;
+  const offlineCopy = progress.copy ?? selectedCopy;
+  const offlineReady =
+    offline &&
+    mode === "reuse" &&
+    offlineCopy?.state === "ready" &&
+    offlineCopy.registered !== false &&
+    offlineCopy.environmentId === execution &&
+    !props.sourceArchiveId &&
+    !progress.retentionCopy &&
+    (offlineCopy.ownership === "borrowed" ||
+      (offlineCopy.keepOnComputer !== false) === keepOnComputer) &&
+    supportsLoomFeature(config?.environment.capabilities, "project-workflows");
+  const canExecuteOperation = useAtomValue(library.executeOperation.permissionAtom(execution));
   const canStart =
-    authority.ready &&
+    (offline ? offlineReady && canExecuteOperation : authority.ready) &&
     !folderPending &&
     hostReady &&
     canBind &&
-    canRegisterCopy &&
-    canRegisterThread &&
+    (offline || (canRegisterCopy && canRegisterThread)) &&
     (!supportsFileLifecycle || keepFiles === null || canSetRetention) &&
     (progress.intent !== null || copiesReady) &&
     (progress.intent !== null || props.projectReady) &&
@@ -657,16 +785,11 @@ function LibraryStartContent(props: {
       return;
     if (!reviewed.current) {
       if (!chosenModel) return;
-      const catalog = appAtomRegistry.get(
-        library.copies({
-          environmentId: authority.environmentId,
-          input: { projectId: props.project.id, includeReleased: true },
-        }),
-      );
-      if (catalog._tag !== "Success" || catalog.waiting) return;
+      const catalog = copies;
+      if (!catalog.isSuccess || catalog.isPending || catalog.data === null) return;
       if (
         mode !== "reuse" &&
-        catalog.value.some(
+        catalog.data.some(
           (copy) =>
             copy.environmentId === execution &&
             copy.ownership === "managed" &&
@@ -685,13 +808,14 @@ function LibraryStartContent(props: {
         model: chosenModel,
         ...(runtimeMode ? { runtimeMode } : {}),
         ...(interactionMode ? { interactionMode } : {}),
-        title: title.trim() || "Project discussion",
+        title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         mode,
         rootPath: rootPath.trim(),
         copy: selectedCopy,
         ...(recoverySource ? { recoverySource } : {}),
         carryContext,
-        ...(supportsFileLifecycle ? { keepOnComputer } : {}),
+        ...(!offline && supportsFileLifecycle ? { keepOnComputer } : {}),
+        ...(workspace ? { workspace } : {}),
       };
       setReviewState(reviewed.current);
       setModelKey(chosenModel.key);
@@ -753,7 +877,9 @@ function LibraryStartContent(props: {
               );
             }
             const copy =
-              review.mode === "reuse" && review.copy?.ownership === "managed"
+              review.mode === "reuse" &&
+              review.copy &&
+              (review.copy.ownership === "managed" || offlineReady)
                 ? review.copy.state === "released"
                   ? await restoreLibraryLaunchCopy(
                       review.copy,
@@ -790,6 +916,13 @@ function LibraryStartContent(props: {
             return copy;
           },
           registerCopy: async (copy) => {
+            if (
+              offlineReady &&
+              copy.id === offlineCopy?.id &&
+              copy.registered !== false &&
+              copy.state === "ready"
+            )
+              return;
             unwrap(
               await registerCopy({
                 environmentId: authority.environmentId!,
@@ -839,10 +972,12 @@ function LibraryStartContent(props: {
                               .runtimeMode,
                           interactionMode:
                             review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-                          ...(receipt.current.copy?.ownership === "managed" &&
+                          ...(!offline &&
+                          receipt.current.copy?.ownership === "managed" &&
                           review.keepOnComputer !== undefined
                             ? { keepOnComputer: review.keepOnComputer }
                             : {}),
+                          ...(review.workspace ? { workspace: review.workspace } : {}),
                         },
                       },
                     },
@@ -928,6 +1063,9 @@ function LibraryStartContent(props: {
         setComposerDraftText(scopedThreadKey(target), review.carryContext);
         await flushComposerDrafts();
       }
+      const shared =
+        props.incomingShareId !== undefined &&
+        (await addIncomingShare(incomingShare, scopedThreadKey(target), config, consumeShare));
       refreshLibraryWork(authority.environmentId, launchProject.id);
       await savePreferences({
         transform: (current) => {
@@ -936,8 +1074,11 @@ function LibraryStartContent(props: {
           return { loomLibraryLaunches: next };
         },
       });
+      // Discarding it as empty would delete what was shared along with its draft.
+      if (!shared) markLibraryConversationStarted(scopedThreadKey(target));
       setLaunchedThread(target);
     } catch (cause) {
+      setCloneRepair(cause instanceof LibraryError ? cause.repair : undefined);
       setError(
         cause instanceof Error
           ? cause.message
@@ -1107,6 +1248,11 @@ function LibraryStartContent(props: {
   return (
     <LibraryPage title={props.sourceArchiveId ? "Continue conversation" : "New conversation"} back>
       <Text className="text-xl font-t3-semibold text-foreground">{launchProject.title}</Text>
+      {incomingShare ? (
+        <LibraryNotice
+          detail={`The new conversation's first message includes ${sharedContent(incomingShare)}.`}
+        />
+      ) : null}
       {saved ? (
         <LibraryNotice detail="An unfinished preparation is saved on this device. Resume it with the original computer, files and context." />
       ) : null}
@@ -1187,6 +1333,20 @@ function LibraryStartContent(props: {
                 }}
               />
             </View>
+            {workspace ? (
+              <View className="border-t border-border-subtle">
+                <ListRow
+                  label="Workspace"
+                  description={workspace === "worktree" ? "New worktree" : "Project folder"}
+                  detail={showWorkspace ? "Done" : "Change"}
+                  disabled={locked}
+                  onPress={() => {
+                    pin();
+                    setShowWorkspace((value) => !value);
+                  }}
+                />
+              </View>
+            ) : null}
           </>
         ) : null}
       </SettingsSection>
@@ -1229,6 +1389,7 @@ function LibraryStartContent(props: {
                       setMode(null);
                       setRootPath(null);
                       setKeepFiles(null);
+                      setWorkspaceChoice(null);
                       setRecoverySourceId(null);
                       setShowFolderOptions(false);
                     }
@@ -1286,6 +1447,33 @@ function LibraryStartContent(props: {
                   }}
                 />
               ))}
+            </SettingsSection>
+          ) : null}
+          {showWorkspace && workspace ? (
+            <SettingsSection title="Workspace">
+              <ListChoiceRow
+                label="Project folder"
+                description="Work in the project's files, alongside other conversations there."
+                selected={workspace === "folder"}
+                disabled={locked}
+                onPress={() => {
+                  pin();
+                  setWorkspaceChoice("folder");
+                  setShowWorkspace(false);
+                }}
+              />
+              <ListChoiceRow
+                label="New worktree"
+                description="Work on a branch of its own, so other conversations' changes stay apart."
+                selected={workspace === "worktree"}
+                disabled={locked}
+                separated
+                onPress={() => {
+                  pin();
+                  setWorkspaceChoice("worktree");
+                  setShowWorkspace(false);
+                }}
+              />
             </SettingsSection>
           ) : null}
           {showFolderOptions ? (
@@ -1450,6 +1638,7 @@ function LibraryStartContent(props: {
               autoStart.current = false;
               setScope("all");
               setCopyId(null);
+              setWorkspaceChoice(null);
               setRecoverySourceId(null);
             }}
           />
@@ -1464,6 +1653,7 @@ function LibraryStartContent(props: {
                 autoStart.current = false;
                 setScope(resource.id);
                 setCopyId(null);
+                setWorkspaceChoice(null);
                 setRecoverySourceId(null);
               }}
             />
@@ -1484,8 +1674,10 @@ function LibraryStartContent(props: {
           ) : null}
         </View>
       ) : null}
-      {!authority.ready ? (
-        <LibraryNotice detail="Reconnect your library to save this conversation. Your chosen computer stays selected." />
+      {offlineReady ? (
+        <LibraryNotice detail="Library offline; starting from this computer's copy. This conversation syncs when it reconnects." />
+      ) : !authority.ready ? (
+        <LibraryNotice detail="Reconnect the Library to prepare files or change retention. Offline starts need a ready registered copy." />
       ) : null}
       {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
       {copiesState === "loading" && progress.intent === null ? (
@@ -1503,6 +1695,20 @@ function LibraryStartContent(props: {
         <LibraryNotice detail="The selected model is unavailable. Restore it in provider settings before resuming this preparation." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
+      {error && cloneRepair && cloneRepair.environmentId === execution ? (
+        <>
+          <Button
+            label={showGitHubSetup ? "Hide GitHub setup" : `Set up GitHub on ${cloneRepair.label}`}
+            onPress={() => setShowGitHubSetup((value) => !value)}
+          />
+          {showGitHubSetup ? (
+            <GitHubHostSetupSettings
+              environmentId={cloneRepair.environmentId}
+              label={cloneRepair.label}
+            />
+          ) : null}
+        </>
+      ) : null}
       {progress.recoverySnapshotRejected && !progress.copy && !progress.recoverySnapshot ? (
         <Button
           label="Review latest source files"
@@ -1559,7 +1765,7 @@ function LibraryStartContent(props: {
             value={title}
             onChangeText={setTitle}
             editable={!locked}
-            placeholder="Project discussion"
+            placeholder={LIBRARY_DEFAULT_CONVERSATION_TITLE}
             maxLength={160}
             className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
           />

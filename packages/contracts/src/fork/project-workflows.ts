@@ -19,6 +19,7 @@ import {
   LibraryThreadBinding,
   LibraryWorkingCopy,
   LibraryRestoreCopyRequest,
+  LibraryLaunchWorkspace,
 } from "./project-library.ts";
 import {
   LibraryProjectProfileInput,
@@ -124,6 +125,8 @@ export const LibraryLaunchOperation = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   keepOnComputer: Schema.optional(Schema.Boolean),
+  /** Absent means the copy folder, which is all a computer without worktree starts offers. */
+  workspace: Schema.optional(LibraryLaunchWorkspace),
 });
 export const LibraryOperationInput = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
@@ -155,6 +158,7 @@ export const LibraryOperation = Schema.Struct({
   attempt: NonNegativeInt,
   error: Schema.NullOr(Schema.String),
   failureReason: Schema.optional(LibraryError.fields.reason),
+  repair: LibraryError.fields.repair,
   result: Schema.NullOr(
     Schema.Union([LibraryProject, LibraryWorkingCopy, Schema.Struct({ threadId: ThreadId })]),
   ),

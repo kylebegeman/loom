@@ -40,6 +40,7 @@ it.effect.each([
   new VaultWorkloadError({ reason: "not-configured" }),
   new VaultSshError({ reason: "untrusted-host" }),
   new VaultError({ reason: "locked" }),
+  new VaultError({ reason: "denied", detail: "workload-inactive" }),
 ])("retains %s through production MCP serialization and terminal decoding", (failure) =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -50,6 +51,10 @@ it.effect.each([
       })
       .pipe(Effect.provideService(McpSchema.McpServerClient, client));
     expect(result.isError).toBe(true);
+    // Agents read the text, so it carries the cause and repair, not only the tags.
+    expect(result.content).toContainEqual(
+      expect.objectContaining({ type: "text", text: expect.stringContaining(failure.message) }),
+    );
     const decoded = decodeVaultTerminalError(result);
     expect(Option.isSome(decoded)).toBe(true);
     if (Option.isSome(decoded)) expect(decoded.value).toEqual(failure);

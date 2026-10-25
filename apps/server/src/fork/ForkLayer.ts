@@ -1,3 +1,4 @@
+import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
 import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
 import * as ProjectOperations from "./project-library/ProjectOperations.ts";
 import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
@@ -58,6 +59,7 @@ import * as DeletedThreadHistory from "./deleted-history/DeletedThreadHistory.ts
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
+import * as LibraryLocalCatalog from "./project-library/LibraryLocalCatalog.ts";
 import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
 import * as LibraryLaunchCandidates from "./project-library/LibraryLaunchCandidates.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
@@ -116,6 +118,8 @@ import * as ReachPocketId from "./reach/library/ReachPocketId.ts";
 import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
+import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import { LibraryPushHttpRoutes } from "./library-push/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -220,12 +224,15 @@ const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
 );
 const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHttpClient.layer));
 const layerLibraryService = LibraryService.layer.pipe(
+  Layer.provide(LibraryLocalCatalog.layer.pipe(Layer.provide(LibraryWorkspaceStore.layer))),
   Layer.provide(layerLibraryAssets),
   Layer.provide(layerLibraryRecovery),
 );
 
 const layerProjectWorkflows = ProjectWorkflows.layer.pipe(Layer.provide(layerLibraryService));
 const layerLibraryPublisher = LibraryPublisher.layer.pipe(
+  Layer.provide(LibraryTimeline.layer),
+  Layer.provide(LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService))),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerLibraryService),
   Layer.provide(layerLibraryAssets),
@@ -308,6 +315,7 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  LibraryPublishingCredential.layer,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
   ProjectProfiles.layer.pipe(
@@ -506,7 +514,8 @@ const ForkServicesLive = Layer.mergeAll(
   layerReachLibrary,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
-  LibraryPushLive,
+  // On the Library, alerts for its own threads go straight to this one push service instance.
+  AgentAlertsLive.pipe(Layer.provideMerge(LibraryPushLive), Layer.provide(FetchHttpClient.layer)),
   // Reads the worker identities the one Mini instance keeps from its readiness checks.
   DirectoryReporter.DirectoryReporterLive.pipe(
     Layer.provideMerge(
@@ -543,6 +552,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   DirectoryHttpRoutes,
   BotLibraryHttpRoutes,
   ReachHttpRoutes,
+  LibraryPushHttpRoutes,
   // Global, so it also covers upstream routes such as /mcp and requests no route matches.
   ReachGuardLayer,
 );

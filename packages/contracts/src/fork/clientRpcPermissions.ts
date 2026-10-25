@@ -36,6 +36,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 import { REACH_WS_METHODS as REACH } from "./reach.ts";
 import { AuthRelayWriteScope } from "../auth.ts";
 import { LIBRARY_PUSH_WS_METHODS as PUSH } from "./library-push.ts";
+import { DATABASE_COMPACTION_WS_METHODS as DBC } from "./database-compaction.ts";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -81,6 +82,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [VG.change]: AuthAccessWriteScope,
   [VP.apply]: AuthAccessWriteScope,
   [VP.retirePin]: AuthAccessWriteScope,
+  [VS.pinnedKeys]: AuthAccessReadScope,
   [VS.generate]: AuthAccessWriteScope,
   [VS.trust]: AuthAccessWriteScope,
   [VS.probe]: AuthAccessWriteScope,
@@ -237,6 +239,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   // The directory list stays unguarded for the same reason.
   [DIR.forget]: AuthSettingsWriteScope,
   // Reach status and the Library's reach list stay unguarded for the same reason.
+  [REACH.applyIdentity]: AuthSettingsWriteScope,
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
   [REACH.forget]: AuthRelayWriteScope,
@@ -284,4 +287,6 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [ANYWHERE.syncLibrary]: AuthOrchestrationOperateScope,
   [ANYWHERE.bindVaultSlot]: AuthOrchestrationOperateScope,
   [ANYWHERE.setRemoteSettings]: AuthOrchestrationOperateScope,
+  // The desktop rewrites the database file at its next launch, a storage setting.
+  [DBC.setRequest]: AuthSettingsWriteScope,
 } as const;

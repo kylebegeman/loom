@@ -1,3 +1,5 @@
+// fork: server-weight
+import { runShutdownPhase } from "./process/fork/runtimePhase.ts";
 import {
   CommandId,
   DEFAULT_MODEL,
@@ -385,7 +387,10 @@ const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>)
     // Attributes on the span itself, not annotateSpans: an annotation follows
     // every fiber forked inside the phase, such as the effect worker, for the
     // life of the server.
-    Effect.withSpan(`server.startup.${phase}`, { attributes: { "startup.phase": phase } }),
+    Effect.withSpan(`server.startup.${phase}`, {
+      root: true, // fork: server-weight
+      attributes: { "startup.phase": phase },
+    }),
   );
 
 interface StartupOptions {
@@ -480,12 +485,22 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
       );
       const workerFiber = yield* Ref.getAndSet(effectWorkerFiber, null);
       if (workerFiber !== null) {
-        yield* Fiber.interrupt(workerFiber).pipe(Effect.ignore);
+        yield* runShutdownPhase(
+          "effect-worker.stop",
+          Fiber.interrupt(workerFiber).pipe(Effect.ignore),
+        ); // fork: server-weight
       }
-      yield* providerRuntimeRecovery.prepareForShutdown.pipe(
-        Effect.ensuring(providerSessions.shutdown),
+      // fork: server-weight -- preserve continuation capture before closing sessions.
+      yield* runShutdownPhase(
+        "prepareForShutdown",
+        providerRuntimeRecovery.prepareForShutdown,
+      ).pipe(
+        Effect.ensuring(runShutdownPhase("providerSessions.shutdown", providerSessions.shutdown)),
       );
-      const reconciliation = yield* providerRuntimeRecovery.reconcile("shutdown");
+      const reconciliation = yield* runShutdownPhase(
+        "reconcile",
+        providerRuntimeRecovery.reconcile("shutdown"),
+      );
       yield* Effect.logInfo("V2 orchestration shutdown reconciliation completed", reconciliation);
     }).pipe(
       Effect.catchCause((cause) =>

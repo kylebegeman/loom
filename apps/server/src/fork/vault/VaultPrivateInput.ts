@@ -1,6 +1,5 @@
 import { type ThreadId, SecretRequestError } from "@t3tools/contracts";
 import { VaultError, VaultPrivateSave, type VaultItemSummary } from "@t3tools/contracts/fork";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -11,6 +10,7 @@ import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
+import { readOpenBaoSettings } from "./OpenBaoSettings.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultCore from "./VaultCore.ts";
 
@@ -40,7 +40,7 @@ const make = Effect.gen(function* () {
   const secrets = yield* SecretRequests.SecretRequests;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const identity = yield* ServerEnvironmentIdentity;
-  const environment = yield* HostProcess.Environment;
+  const { mount } = yield* readOpenBaoSettings();
   const crypto = yield* Crypto.Crypto;
   return VaultPrivateInput.of({
     store: Effect.fn("VaultPrivateInput.store")(function* (input, threadId, authorize) {
@@ -70,7 +70,7 @@ const make = Effect.gen(function* () {
         input,
         environmentId: yield* identity.getEnvironmentId,
         origin: status.origin,
-        mount: environment.LOOM_VAULT_OPENBAO_MOUNT?.trim() || "loom",
+        mount,
       }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));
       const operationId = Hex.encode(
         yield* crypto

@@ -11,6 +11,7 @@ import {
   applyInboxChanges,
   botColor,
   dismissRunIdBatches,
+  inboxNeedsPersonCount,
   type LibraryWorkflowTone,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -87,6 +88,7 @@ import {
   dismissibleRuns,
   foldRepeats,
   groupTriage,
+  needsPerson,
   olderCursor,
   orderTriage,
   triageBotCounts,
@@ -154,6 +156,11 @@ const GROUPS: Record<TriageGroup, { title: string; hint: string; tone: LibraryWo
     title: "Stopped pipelines",
     hint: "Each goes on once you resume it",
     tone: "warning",
+  },
+  handled: {
+    title: "Handled by the calling agent",
+    hint: "Their results went back to the agent that started them",
+    tone: "neutral",
   },
 };
 const DISMISSED_HINT = "Restore one to put it back in Needs you";
@@ -806,7 +813,7 @@ function TriageRow({
         </p>
         <p className="flex min-w-0 items-center gap-1.5 text-xs">
           <ReasonIcon aria-hidden className={cn("size-3.5 shrink-0", TONE_INK[tone])} />
-          <span className="shrink-0 font-medium">{triageReasonLabel(item.reason)}</span>
+          <span className="shrink-0 font-medium">{triageReasonLabel(item)}</span>
           {evidence ? (
             <span className="min-w-0 truncate text-foreground/75">{evidence}</span>
           ) : null}
@@ -947,6 +954,9 @@ function TriageGroupSection({
   const dismissal = useDismissal(ctx.environmentId, ctx.onSettled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Runs an agent already has stay out of the way until asked for.
+  const collapsible = section.group === "handled" && !ctx.dismissed;
+  const [open, setOpen] = useState(!collapsible);
   const copy = GROUPS[section.group];
   const runs = ctx.dismissed ? [] : dismissibleRuns(section.items);
   const reason = blockedReason(ctx.access.canDismiss, ctx.access.connected);
@@ -962,7 +972,23 @@ function TriageGroupSection({
         title={copy.title}
         count={section.items.length}
         hint={ctx.dismissed ? DISMISSED_HINT : copy.hint}
-        marker={<LibraryStateDot tone={copy.tone} />}
+        marker={
+          collapsible ? (
+            <Button
+              size="icon-xs"
+              variant="ghost-muted"
+              aria-expanded={open}
+              aria-label={open ? `Hide ${copy.title}` : `Show ${copy.title}`}
+              onClick={() => setOpen((value) => !value)}
+            >
+              <ChevronRightIcon
+                className={cn("transition-transform duration-150", open && "rotate-90")}
+              />
+            </Button>
+          ) : (
+            <LibraryStateDot tone={copy.tone} />
+          )
+        }
         action={
           runs.length > 1 ? (
             <Guard reason={reason}>
@@ -981,15 +1007,17 @@ function TriageGroupSection({
           ) : null
         }
       />
-      <ul aria-label={copy.title} className="flex flex-col gap-0.5">
-        {foldRepeats(section).map((entry) =>
-          entry.rest.length > 0 ? (
-            <TriageFold key={entry.lead.key} entry={entry} ctx={ctx} />
-          ) : (
-            <TriageRow key={entry.lead.key} item={entry.lead} density="full" ctx={ctx} />
-          ),
-        )}
-      </ul>
+      {open ? (
+        <ul aria-label={copy.title} className="flex flex-col gap-0.5">
+          {foldRepeats(section).map((entry) =>
+            entry.rest.length > 0 ? (
+              <TriageFold key={entry.lead.key} entry={entry} ctx={ctx} />
+            ) : (
+              <TriageRow key={entry.lead.key} item={entry.lead} density="full" ctx={ctx} />
+            ),
+          )}
+        </ul>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive-foreground">
           {error}
@@ -1197,6 +1225,10 @@ export function NeedsYouView({
       : [...counts, { botId: botFilter, botName: filterName ?? "this bot", count: 0 }];
   const shown = botFilter === null ? items : items.filter((item) => item.botId === botFilter);
   const sections = groupTriage(shown);
+  // Runs their calling agent already has follow, folded, and leave "Nothing needs you" standing.
+  const handled = dismissed ? undefined : sections.find((section) => section.group === "handled");
+  const needing =
+    handled === undefined ? sections : sections.filter((section) => section !== handled);
   const dismissedCount = bot
     ? null
     : dismissed
@@ -1274,16 +1306,16 @@ export function NeedsYouView({
         <LibraryNotice icon={CloudOffIcon}>Reconnect to load the runs that need you.</LibraryNotice>
       ) : null}
       <LibraryErrorNotice error={first.error} onRetry={first.refresh} />
-      {sections.length > 0 ? (
+      {needing.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-7">
-          {sections.map((section) => (
+          {needing.map((section) => (
             <TriageGroupSection key={section.group} section={section} ctx={ctx} />
           ))}
         </div>
       ) : null}
       {loading ? <TriageSkeleton /> : null}
-      {sections.length === 0 && (page !== null || !inboxLive) ? (
-        page?.hasMore ? (
+      {needing.length === 0 && (page !== null || !inboxLive) ? (
+        page?.hasMore && handled === undefined ? (
           // Older pages may hold this bot's runs, so the newest page alone cannot say none do.
           <TriageClear
             tone="neutral"
@@ -1317,6 +1349,7 @@ export function NeedsYouView({
           </TriageClear>
         )
       ) : null}
+      {handled === undefined ? null : <TriageGroupSection section={handled} ctx={ctx} />}
       {page?.hasMore ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -1359,10 +1392,10 @@ export function NeedsYouBand({ bot }: { readonly bot: BotDefinition | null }) {
       findRun: sources.findRun,
       bot,
     }),
-  );
+  ).filter(needsPerson);
   if (environmentId === null || (items.length === 0 && !first.error)) return null;
   const waiting = items.filter((item) => item.kind === "waiting").length;
-  const total = bot ? items.length : (page?.total ?? 0) + waiting;
+  const total = bot ? items.length : (page === null ? 0 : inboxNeedsPersonCount(page)) + waiting;
   const ctx: TriageContext = {
     environmentId,
     access,

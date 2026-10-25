@@ -51,6 +51,17 @@ export const installUpdate = DesktopIpc.makeIpcMethod({
   }),
 });
 
+// fork: machine-updates
+export const setInstallWhenIdle = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.UPDATE_SET_INSTALL_WHEN_IDLE_CHANNEL,
+  payload: Schema.Boolean,
+  result: DesktopUpdateStateSchema,
+  handler: Effect.fn("desktop.ipc.updates.setInstallWhenIdle")(function* (armed) {
+    const updates = yield* DesktopUpdates.DesktopUpdates;
+    return yield* updates.setInstallWhenIdle(armed);
+  }),
+});
+
 export const checkForUpdate = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.UPDATE_CHECK_CHANNEL,
   payload: Schema.Void,

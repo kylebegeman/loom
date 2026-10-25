@@ -1,3 +1,5 @@
+// fork: respectful-notifications
+import { useAttentionBadge } from "../fork/attention/useAttentionBadge";
 import {
   type PendingSubagentRequest,
   presentThreadShell,
@@ -7,6 +9,9 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork";
+// fork: respectful-notifications
+import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
+import * as DateTime from "effect/DateTime"; // fork: respectful-notifications
 import * as Option from "effect/Option";
 import {
   CircleAlertIcon,
@@ -14,12 +19,14 @@ import {
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react"; // fork: scheduled-task-alerts
 
 // fork: respectful-notifications
 import { systemNotificationBody } from "../fork/respectful-notifications/notificationBody";
 // fork: respectful-notifications
 import { deliverDesktopNotification } from "../fork/respectful-notifications/notificationDelivery";
+// fork: scheduled-task-alerts
+import { ScheduledTaskFailureAlerts } from "../fork/scheduled-task-alerts/ScheduledTaskFailureAlerts";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -27,7 +34,6 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
-  setNotificationBadge,
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
@@ -35,6 +41,8 @@ import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
 export function ThreadNotificationCoordinator() {
+  // fork: respectful-notifications
+  useAttentionBadge();
   const environmentIds = useEnvironmentIds();
   const mode = useClientSettings((settings) => settings.notificationMode);
   const inAppNotificationsEnabled = useClientSettings(
@@ -51,10 +59,8 @@ export function ThreadNotificationCoordinator() {
     // fork: respectful-notifications
     notification.addEventListener("close", () => {
       if (pending.current.get(notification.tag)?.notification !== notification) return;
-      pending.current.delete(notification.tag);
-      setNotificationBadge(pending.current.size);
+      pending.current.delete(notification.tag); // fork: respectful-notifications
     });
-    setNotificationBadge(pending.current.size);
   };
 
   // fork: respectful-notifications
@@ -62,34 +68,30 @@ export function ThreadNotificationCoordinator() {
     const value = pending.current.get(tag);
     if (!value) return;
     value.notification.close();
-    pending.current.delete(tag);
-    setNotificationBadge(pending.current.size);
+    pending.current.delete(tag); // fork: respectful-notifications
   };
 
   useEffect(() => {
     const activeIds = new Set(environmentIds);
-    const count = pending.current.size;
+    // fork: respectful-notifications
     for (const [tag, entry] of pending.current) {
       if (activeIds.has(entry.environmentId)) continue;
       entry.notification.close();
       pending.current.delete(tag);
     }
-    if (count !== pending.current.size) setNotificationBadge(pending.current.size);
   }, [environmentIds]);
 
   // fork: respectful-notifications
   useEffect(() => {
     if (previews) return;
     for (const { notification } of pending.current.values()) notification.close();
-    pending.current.clear();
-    setNotificationBadge(0);
+    pending.current.clear(); // fork: respectful-notifications
   }, [previews]);
 
   useEffect(() => {
     const clear = () => {
       for (const { notification } of pending.current.values()) notification.close();
-      pending.current.clear();
-      setNotificationBadge(0);
+      pending.current.clear(); // fork: respectful-notifications
     };
     clear();
     if (!hasDesktopNotifications(mode)) return;
@@ -115,12 +117,15 @@ export function ThreadNotificationCoordinator() {
   if (mode === "off" && !inAppNotificationsEnabled) return null;
 
   return environmentIds.map((environmentId) => (
-    <EnvironmentNotifications
-      key={environmentId}
-      environmentId={environmentId}
-      onNotification={onNotification}
-      onClear={onClear} // fork: respectful-notifications
-    />
+    <Fragment key={environmentId}>
+      <EnvironmentNotifications
+        environmentId={environmentId}
+        onNotification={onNotification}
+        onClear={onClear} // fork: respectful-notifications
+      />
+      {/* fork: scheduled-task-alerts */}
+      <ScheduledTaskFailureAlerts environmentId={environmentId} onNotification={onNotification} />
+    </Fragment>
   ));
 }
 
@@ -130,6 +135,10 @@ interface NotificationState {
   readonly attention: string | null;
   readonly completion: number | null;
 }
+
+// fork: respectful-notifications
+/** After a gap, only this recent a completion is news; older ones would land as a burst on wake. */
+const RESYNC_COMPLETION_WINDOW_MS = 10 * 60 * 1_000;
 
 function EnvironmentNotifications({
   environmentId,
@@ -141,8 +150,9 @@ function EnvironmentNotifications({
   onClear: (tag: string) => void; // fork: respectful-notifications
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
-  const threads =
-    shell.status === "live" && Option.isSome(shell.snapshot) ? shell.snapshot.value.threads : null;
+  // fork: respectful-notifications
+  const snapshot = Option.isSome(shell.snapshot) ? shell.snapshot.value.threads : null;
+  const threads = shell.status === "live" ? snapshot : null; // fork: respectful-notifications
   const mode = useClientSettings((settings) => settings.notificationMode);
   const inAppNotificationsEnabled = useClientSettings(
     (settings) => settings.inAppNotificationsEnabled,
@@ -152,19 +162,26 @@ function EnvironmentNotifications({
     strict: false,
   });
   const previous = useRef(new Map<ThreadId, NotificationState>());
-  const live = useRef(false); // fork: respectful-notifications
+  // fork: respectful-notifications
+  const seeded = useRef(false);
+  const resync = useRef(false); // fork: respectful-notifications
 
   useEffect(() => {
-    live.current = threads !== null; // fork: respectful-notifications
-    if (threads === null) {
-      previous.current.clear();
-      return;
-    }
+    // fork: respectful-notifications
+    // The last known state outlives a disconnect, and the cached snapshot seeds it at launch, so
+    // the next live snapshot can announce what changed in between.
+    if (threads === null) resync.current = seeded.current || snapshot !== null;
+    const current = threads ?? (seeded.current ? null : snapshot);
+    if (current === null) return;
+    const resyncing = threads !== null && resync.current;
+    if (threads !== null) resync.current = false;
+    seeded.current = true;
+    const now = DateTime.nowUnsafe();
     const next = new Map<ThreadId, NotificationState>();
-    const subagentRequests = pendingSubagentRequestsByThread(threads);
-    for (const rawThread of threads) {
+    const subagentRequests = pendingSubagentRequestsByThread(current); // fork: respectful-notifications
+    for (const rawThread of current) {
       if (rawThread.lineage.relationshipToParent === "subagent") continue;
-      if (isBotRunThreadId(rawThread.id)) continue; // fork: bots - the Bots page reports runs
+      const botRun = isBotRunThreadId(rawThread.id); // fork: bots
       const prior = previous.current.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
       if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
@@ -176,7 +193,12 @@ function EnvironmentNotifications({
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       // fork: respectful-notifications
       const attention =
-        status === "input" || status === "approval" || status === "failed" || status === "limited"
+        // fork: respectful-notifications
+        status === "input" ||
+        status === "approval" ||
+        status === "failed" ||
+        status === "limited" ||
+        status === "paused"
           ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
@@ -196,24 +218,40 @@ function EnvironmentNotifications({
           completion !== prior.completion)
       )
         onClear(threadNotificationTag(environmentId, thread.id));
-      if (!prior || thread.archivedAt !== null) continue;
+      // fork: respectful-notifications - after a gap, a thread first seen now is news as well
+      if ((!prior && !resyncing) || thread.archivedAt !== null) continue;
+      // fork: respectful-notifications
       const kind =
-        attention && attention !== prior.attention
+        attention && attention !== prior?.attention
           ? "input"
-          : completion !== null && (prior.completion === null || completion > prior.completion)
+          : completion !== null &&
+              (prior?.completion == null || completion > prior.completion) &&
+              (!resyncing ||
+                DateTime.toEpochMillis(now) - completion <= RESYNC_COMPLETION_WINDOW_MS)
             ? "completion"
             : null;
       if (!kind) continue;
-      const title =
-        kind === "completion"
+      // fork: respectful-notifications - parked threads keep their own completions quiet
+      if (kind === "completion" && threadCompletionAlertMuted(rawThread, now)) continue;
+      // fork: bots - the Bots page reports runs; only a run waiting on a person alerts
+      if (botRun && status !== "approval" && status !== "input") continue;
+      // fork: bots
+      const title = botRun
+        ? status === "approval"
+          ? "Bot needs approval"
+          : "Bot needs input"
+        : kind === "completion"
           ? "Thread completed"
-          : status === "approval"
-            ? "Approval needed"
-            : status === "limited"
-              ? "Usage limit reached"
-              : status === "failed"
-                ? "Thread failed"
-                : "Input needed";
+          : // fork: respectful-notifications
+            status === "paused"
+            ? "Queue paused"
+            : status === "approval"
+              ? "Approval needed"
+              : status === "limited"
+                ? "Usage limit reached"
+                : status === "failed"
+                  ? "Thread failed"
+                  : "Input needed";
       if (hasNotificationSound(mode)) {
         void playNotificationSound(kind, () =>
           hasNotificationSound(getClientSettings().notificationMode),
@@ -266,14 +304,15 @@ function EnvironmentNotifications({
       previous.current.set(thread.id, next.get(thread.id)!);
       // fork: respectful-notifications
       const stale = () => {
-        // While the shell resyncs nothing is known yet, so an alert stays usable.
+        // The last known state stands through a resync, so an alert stays usable meanwhile.
         const latest = previous.current.get(thread.id);
-        return latest
-          ? latest.raw.archivedAt !== null ||
-              latest.attention !== attention ||
-              latest.completion !== completion ||
-              latest.raw.latestRunId !== rawThread.latestRunId
-          : live.current;
+        return (
+          latest === undefined ||
+          latest.raw.archivedAt !== null ||
+          latest.attention !== attention ||
+          latest.completion !== completion ||
+          latest.raw.latestRunId !== rawThread.latestRunId
+        );
       };
       // fork: respectful-notifications
       deliverDesktopNotification(
@@ -287,7 +326,10 @@ function EnvironmentNotifications({
             return false;
           try {
             const notification = new Notification(title, {
-              body: systemNotificationBody(thread.title, "Open Loom to review this thread."),
+              body: systemNotificationBody(
+                thread.title,
+                botRun ? "Open Loom to answer this bot run." : "Open Loom to review this thread.", // fork: bots
+              ),
               tag: threadNotificationTag(environmentId, thread.id),
               silent: true,
             });
@@ -323,6 +365,7 @@ function EnvironmentNotifications({
     navigate,
     onNotification,
     onClear, // fork: respectful-notifications
+    snapshot, // fork: respectful-notifications
     threads,
   ]);
 

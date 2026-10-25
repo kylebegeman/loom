@@ -222,7 +222,9 @@ describe("reachView", () => {
     const elsewhere = reachView(input(value)).signIn;
     expect(elsewhere).toMatchObject({ values: null, copyText: null });
     expect(elsewhere?.text).toContain("only paired devices can connect");
-    expect(elsewhere?.text).toContain("Open its own Connections settings to copy the values.");
+    expect(elsewhere?.text).toContain(
+      "Open its own Connections settings and choose Use these values.",
+    );
     const here = reachView(input(value, { isThisComputer: true })).signIn;
     expect(here?.values).toEqual(PREPARED);
     expect(here?.copyText).toBe(reachPreparedEnvironment(PREPARED));
@@ -233,7 +235,7 @@ describe("reachView", () => {
   it("points elsewhere for a sign-in that differs, and says nothing extra when it matches", () => {
     const differs = status({ warnings: ["identity-resource-differs"], prepared: PREPARED });
     expect(reachView(input(differs)).signIn).toEqual({
-      text: "Your Library prepared Loom sign-in for this computer. Open its own Connections settings to copy the values.",
+      text: "Your Library prepared Loom sign-in for this computer. Open its own Connections settings and choose Use these values.",
       values: null,
       copyText: null,
     });

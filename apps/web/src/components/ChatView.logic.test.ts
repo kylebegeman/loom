@@ -2319,6 +2319,42 @@ describe("waitForRevertedMessage", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  // fork: project-lifecycle
+  it("waits for the exact completion marker when restoring the latest checkpoint", async () => {
+    const { state, projection } = projectionAtom();
+    let finished = false;
+    const waiting = waitForRevertedMessage(threadRef, 4, requestId, async () => {}, undefined, {
+      allowFilesOnly: true,
+    }).then(() => {
+      finished = true;
+    });
+    await Promise.resolve();
+    appAtomRegistry.set(state, {
+      data: Option.some({
+        ...projection,
+        thread: {
+          ...projection.thread,
+          rollbackRequestId: requestId,
+          rollbackCompletedRequestId: CommandId.make("previous-request"),
+        },
+      }),
+    });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    appAtomRegistry.set(state, {
+      data: Option.some({
+        ...projection,
+        thread: {
+          ...projection.thread,
+          rollbackRequestId: requestId,
+          rollbackCompletedRequestId: requestId,
+        },
+      }),
+    });
+    await waiting;
+    expect(finished).toBe(true);
+  });
+
   it("rejects with the projected reason when the rollback fails for good", async () => {
     const { state, projection } = projectionAtom();
     const waiting = waitForRevertedMessage(threadRef, 1, requestId, async () => {});

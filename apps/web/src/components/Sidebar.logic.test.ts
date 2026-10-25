@@ -2449,3 +2449,16 @@ describe("Working shelf (beta)", () => {
     });
   });
 });
+
+// fork: attention-status
+it("shows paused queued work and keeps approvals ahead of the paused queue", () => {
+  const thread = {
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    runtime: null,
+    queueHeld: true,
+  };
+  expect(resolveSidebarThreadStatus(thread)).toBe("paused");
+  expect(resolveSidebarThreadStatus({ ...thread, hasPendingApprovals: true })).toBe("approval");
+  expect(resolveSidebarThreadStatus({ ...thread, queueHeld: false })).toBe("ready");
+});

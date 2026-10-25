@@ -171,6 +171,10 @@ interface GitRefsSnapshot {
   readonly hasPrimaryRemote: boolean;
 }
 
+// fork: source-control-cockpit -- allow long hooks while bounding a forgotten SSH approval.
+const PUSH_TIMEOUT_MS = 10 * 60_000;
+const MAX_UNMERGED_STATUS_PATHS = 200;
+
 interface ExecuteGitOptions {
   stdin?: string | undefined;
   timeoutMs?: number | null | undefined;
@@ -180,6 +184,8 @@ interface ExecuteGitOptions {
   env?: NodeJS.ProcessEnv | undefined;
   maxOutputBytes?: number | undefined;
   appendTruncationMarker?: boolean | undefined;
+  // fork: source-control-cockpit
+  keepLineCallbacksAfterTruncation?: boolean | undefined;
   progress?: GitVcsDriver.ExecuteGitProgress | undefined;
 }
 
@@ -476,7 +482,8 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
-function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
+// fork: github-host-setup
+export function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
     .split(/\r?\n/)
     .filter(
@@ -1060,7 +1067,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             () =>
               new GitCommandError({
                 ...gitCommandContext(commandInput),
-                detail: "Git command timed out.",
+                // fork: source-control-cockpit
+                ...(input.args[0] === "push" && timeoutMs === PUSH_TIMEOUT_MS
+                  ? { reason: "push_timed_out" as const }
+                  : {}),
+                detail:
+                  input.args[0] === "push" && timeoutMs === PUSH_TIMEOUT_MS
+                    ? "Push stopped after 10 minutes. Check SSH approval and pre-push hooks on this computer, then refresh status before retrying."
+                    : "Git command timed out.",
               }),
           ),
         ),
@@ -1113,6 +1127,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? { appendTruncationMarker: options.appendTruncationMarker }
         : {}),
       ...(options.progress ? { progress: options.progress } : {}),
+      // fork: source-control-cockpit
+      ...(options.keepLineCallbacksAfterTruncation !== undefined
+        ? { keepLineCallbacksAfterTruncation: options.keepLineCallbacksAfterTruncation }
+        : {}),
     }).pipe(
       Effect.flatMap((result) => {
         if (options.allowNonZeroExit || result.exitCode === 0) {
@@ -1990,7 +2008,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }).pipe(Effect.orElseSucceed(() => 0))
         : 0;
 
+    // fork: source-control-cockpit -- failed or missing comparisons never imply landed work.
+    const landedHeadSha =
+      branch && !isDefaultBranch
+        ? yield* runGitStdout("GitVcsDriver.landed.head", cwd, [
+            "rev-parse",
+            "--verify",
+            "HEAD",
+          ]).pipe(
+            Effect.map((sha) => sha.trim()),
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
+    const landedOnDefault =
+      landedHeadSha && branch && !isDefaultBranch && defaultBranch
+        ? yield* executeGit(
+            "GitVcsDriver.landed",
+            cwd,
+            ["merge-base", "--is-ancestor", landedHeadSha, `refs/remotes/origin/${defaultBranch}`],
+            { allowNonZeroExit: true },
+          ).pipe(
+            Effect.map((result) => (result.exitCode === 0 ? defaultBranch : null)),
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
     return {
+      // fork: source-control-cockpit
+      landedOnDefault,
+      landedHeadSha,
       isRepo: true,
       defaultBranch,
       isDefaultBranch,
@@ -2001,6 +2046,61 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       behindCount,
       aheadOfDefaultCount,
     };
+  });
+
+  // fork: source-control-cockpit -- resolve markers in the worktree's own git directory.
+  const readOperation = Effect.fn("GitVcsDriver.readOperation")(function* (cwd: string) {
+    const gitDir = (yield* runGitStdout("GitVcsDriver.operation.gitDir", cwd, [
+      "rev-parse",
+      "--absolute-git-dir",
+    ])).trim();
+    const exists = Effect.fn("GitVcsDriver.operationMarkerExists")((marker: string) =>
+      fileSystem.exists(path.join(gitDir, marker)).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.readOperation",
+              command: "git",
+              cwd,
+              detail: "Cannot read the current Git operation.",
+              cause,
+            }),
+        ),
+      ),
+    );
+    if (
+      (yield* exists("rebase-merge")) ||
+      ((yield* exists("rebase-apply")) && !(yield* exists("rebase-apply/applying")))
+    )
+      return "rebase" as const;
+    if (yield* exists("MERGE_HEAD")) return "merge" as const;
+    if (yield* exists("CHERRY_PICK_HEAD")) return "cherry-pick" as const;
+    if (yield* exists("REVERT_HEAD")) return "revert" as const;
+    return null;
+  });
+  const readUnmergedPaths = Effect.fn("GitVcsDriver.readUnmergedPaths")(function* (cwd: string) {
+    const output = yield* runGitStdout("GitVcsDriver.unmergedPaths", cwd, [
+      "diff",
+      "--name-only",
+      "--diff-filter=U",
+      "-z",
+      "--",
+    ]);
+    return output.split("\0").filter((file) => file.length > 0);
+  });
+  const refuseUnmergedPaths = Effect.fn("GitVcsDriver.refuseUnmergedPaths")(function* (
+    cwd: string,
+  ) {
+    if ((yield* readUnmergedPaths(cwd)).length > 0) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.commit",
+        command: "git",
+        cwd,
+        reason: "unresolved_conflicts",
+        detail:
+          "Resolve and stage every conflicted file before continuing. No files were staged or committed.",
+      });
+    }
   });
 
   const readStatusDetailsLocal = Effect.fn("readStatusDetailsLocal")(function* (
@@ -2149,6 +2249,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
     const statusStdout = statusResult.stdout;
 
+    // fork: source-control-cockpit -- porcelain already carries HEAD and unmerged records.
+    const operation = yield* readOperation(cwd);
+    const unmergedPaths: string[] = [];
+    let headSha: string | null = null;
     let refName: string | null = null;
     let upstreamRef: string | null = null;
     let aheadCount = 0;
@@ -2160,6 +2264,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const statusRecords = statusStdout.split("\0");
     for (let index = 0; index < statusRecords.length; index++) {
       const line = statusRecords[index]!;
+      // fork: source-control-cockpit
+      if (line.startsWith("# branch.oid ")) {
+        const oid = line.slice("# branch.oid ".length).trim();
+        headSha = oid.startsWith("(") ? null : oid;
+      }
+      if (line.startsWith("u ")) {
+        const unmergedPath = parsePorcelainPath(line);
+        if (unmergedPath) unmergedPaths.push(unmergedPath);
+      }
       if (line.startsWith("# branch.head ")) {
         const value = line.slice("# branch.head ".length).trim();
         refName = value.startsWith("(") ? null : value;
@@ -2243,6 +2356,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     return {
       isRepo: true,
+      // fork: source-control-cockpit
+      operation,
+      unmergedCount: unmergedPaths.length,
+      unmergedPaths: unmergedPaths.slice(0, MAX_UNMERGED_STATUS_PATHS),
+      headSha,
       hasOriginRemote: hasPrimaryRemote,
       isDefaultBranch,
       branch: refName,
@@ -2302,6 +2420,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         hasPrimaryRemote: details.hasOriginRemote,
         isDefaultRef: details.isDefaultBranch,
         refName: details.branch,
+        // fork: source-control-cockpit
+        operation: details.operation,
+        unmergedCount: details.unmergedCount,
+        unmergedPaths: details.unmergedPaths,
+        headSha: details.headSha,
         hasWorkingTreeChanges: details.hasWorkingTreeChanges,
         workingTree: details.workingTree,
         hasUpstream: details.hasUpstream,
@@ -2312,11 +2435,61 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       })),
     );
 
+  // fork: source-control-cockpit -- reject stale confirmations without staging or starting an editor.
+  const resolveOperation: GitVcsDriver.GitVcsDriver["Service"]["resolveOperation"] = Effect.fn(
+    "GitVcsDriver.resolveOperation",
+  )(function* (input) {
+    const current = yield* readStatusDetailsLocal(input.cwd, { includeDivergence: false });
+    if (current.operation !== input.operation || current.headSha !== input.expectedHead) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.resolveOperation",
+        command: "git",
+        cwd: input.cwd,
+        reason: "operation_changed",
+        detail: "The Git operation or HEAD changed. Refresh status and confirm again.",
+      });
+    }
+    if (input.resolution === "continue") yield* refuseUnmergedPaths(input.cwd);
+    const result = yield* executeGit(
+      "GitVcsDriver.resolveOperation",
+      input.cwd,
+      [input.operation, `--${input.resolution}`],
+      {
+        env: { GIT_EDITOR: "true", GIT_SEQUENCE_EDITOR: "true", GIT_TERMINAL_PROMPT: "0" },
+        timeoutMs: PUSH_TIMEOUT_MS,
+        forceKillAfterMs: 2_000,
+        allowNonZeroExit: true,
+      },
+    );
+    const after = yield* readStatusDetailsLocal(input.cwd, { includeDivergence: false });
+    // A rebase can successfully advance and then stop at the next conflicting commit.
+    if (
+      result.exitCode !== 0 &&
+      !(
+        input.resolution === "continue" &&
+        after.operation === input.operation &&
+        (after.unmergedCount ?? 0) > 0
+      )
+    ) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.resolveOperation",
+        command: "git",
+        cwd: input.cwd,
+        exitCode: result.exitCode,
+        detail:
+          "Git could not finish this step. Check repository hooks and staged files, then refresh status.",
+      });
+    }
+    return { operation: after.operation ?? null, unmergedCount: after.unmergedCount ?? 0 };
+  });
+
   const stageCommitChanges = Effect.fnUntraced(function* (
     cwd: string,
     filePaths?: readonly string[],
     env?: NodeJS.ProcessEnv,
   ) {
+    // fork: source-control-cockpit -- check the real index before add/reset hides conflicts.
+    yield* refuseUnmergedPaths(cwd);
     const config = env
       ? ["-c", "core.splitIndex=false", "-c", "splitIndex.sharedIndexExpire=never"]
       : [];
@@ -2450,6 +2623,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     body,
     options?: GitVcsDriver.GitCommitOptions,
   ) {
+    // fork: source-control-cockpit -- direct driver callers also get the typed refusal.
+    yield* refuseUnmergedPaths(cwd);
     if (options?.stage !== undefined) {
       yield* stageCommitChanges(cwd, options.stage.filePaths);
     }
@@ -2496,6 +2671,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       });
     }
 
+    // fork: source-control-cockpit -- pushes share streamed hook/output reporting and a ten-minute ceiling.
+    const pushOptions = {
+      timeoutMs: PUSH_TIMEOUT_MS,
+      forceKillAfterMs: 2_000,
+      appendTruncationMarker: true,
+      keepLineCallbacksAfterTruncation: true,
+      progress: {
+        ...options?.progress,
+        onStdoutLine: (text: string) =>
+          options?.progress?.onOutputLine?.({ stream: "stdout", text }) ?? Effect.void,
+        onStderrLine: (text: string) =>
+          options?.progress?.onOutputLine?.({ stream: "stderr", text }) ?? Effect.void,
+      },
+    };
     const requestedRemoteName = options?.remoteName?.trim() || null;
     if (requestedRemoteName) {
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
@@ -2503,7 +2692,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
         cwd,
         ["push", "-u", "--", requestedRemoteName, `HEAD:refs/heads/${publishBranch}`],
-        { timeoutMs: null },
+        pushOptions /* fork: source-control-cockpit */,
       );
       return {
         status: "pushed" as const,
@@ -2579,7 +2768,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "GitVcsDriver.pushCurrentBranch.pushWithUpstream",
         cwd,
         ["push", "-u", "--", publishRemoteName, `HEAD:refs/heads/${publishBranch}`],
-        { timeoutMs: null },
+        pushOptions /* fork: source-control-cockpit */,
       );
       return {
         status: "pushed" as const,
@@ -2633,7 +2822,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           "GitVcsDriver.pushCurrentBranch.pushOwnBranch",
           cwd,
           ["push", "-u", "--", remoteName, `HEAD:refs/heads/${publishBranch}`],
-          { timeoutMs: null },
+          pushOptions /* fork: source-control-cockpit */,
         );
         return {
           status: "pushed" as const,
@@ -2647,7 +2836,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "GitVcsDriver.pushCurrentBranch.pushUpstream",
         cwd,
         ["push", "--", currentUpstream.remoteName, `HEAD:refs/heads/${currentUpstream.branchName}`],
-        { timeoutMs: null },
+        pushOptions /* fork: source-control-cockpit */,
       );
       return {
         status: "pushed" as const,
@@ -2657,7 +2846,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push"], { timeoutMs: null });
+    yield* runGit(
+      "GitVcsDriver.pushCurrentBranch.push",
+      cwd,
+      ["push"],
+      pushOptions /* fork: source-control-cockpit */,
+    );
     return {
       status: "pushed" as const,
       branch,
@@ -4467,6 +4661,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     prepareCommitContext,
     commit: (cwd, subject, body, options) =>
       withListRefsInvalidation(cwd, commit(cwd, subject, body, options)),
+    // fork: source-control-cockpit
+    resolveOperation: (input) => withListRefsInvalidation(input.cwd, resolveOperation(input)),
     pushCurrentBranch: (cwd, fallbackBranch, options) =>
       withListRefsInvalidation(cwd, pushCurrentBranch(cwd, fallbackBranch, options)),
     pullCurrentBranch: (cwd) => withListRefsInvalidation(cwd, pullCurrentBranch(cwd)),

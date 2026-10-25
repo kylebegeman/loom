@@ -1,5 +1,6 @@
 // fork: mini-native-retention
 import { EasDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import { RestartCompactionState } from "./fork/database-compaction.ts"; // fork: restart-compaction
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -981,6 +982,8 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
  * settings.json shape but overrides field by field, per `ProviderInstanceId`.
  */
 export const ProjectSettingsOverrides = Schema.Struct({
+  // fork: source-control-cockpit -- project-only consent, absent means ask on every client.
+  skipDefaultBranchConfirmation: Schema.optionalKey(Schema.Boolean),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1009,7 +1012,11 @@ export const ProjectSettingsOverrides = Schema.Struct({
   providerInstances: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
-} satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
+  // fork: source-control-cockpit -- this consent is project-only, never inherited from a server default.
+} satisfies Record<
+  ProjectScopedServerSettingKey | "providerInstances" | "skipDefaultBranchConfirmation",
+  unknown
+>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 /**
@@ -1045,6 +1052,9 @@ export const DatabaseStorageStatus = Schema.Struct({
   incrementalVacuumEnabled: Schema.Boolean,
   /** Command to run on the host to reclaim the space offline. */
   compactCommand: Schema.String,
+  // fork: restart-compaction: present only when a desktop shell compacts this
+  // database at restart; without it, clients offer the doctor command.
+  restartCompaction: Schema.optionalKey(RestartCompactionState),
 });
 export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
 
@@ -1057,6 +1067,8 @@ export function shouldRecommendDatabaseCompaction(status: DatabaseStorageStatus)
 }
 
 export const StorageCleanupReportEntry = Schema.Struct({
+  // fork: project-lifecycle -- older hosts never offer removal without a safety review.
+  canRemove: Schema.optional(Schema.Boolean),
   kind: Schema.Literals(["worktree", "project", "scratch", "browser-artifacts", "logs"]),
   outcome: Schema.Literals(["removed", "kept", "failed"]),
   reason: Schema.String,

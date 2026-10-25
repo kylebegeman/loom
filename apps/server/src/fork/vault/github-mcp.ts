@@ -1,4 +1,5 @@
 import { objectInput } from "./mcp-input.ts";
+import { withFailureMessages } from "./mcp-failure.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   VaultError,
@@ -26,17 +27,14 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultAccess from "./VaultAccess.ts";
-const failure = Schema.Union([
-    VaultError,
-    VaultGitHubError,
-    VaultConnectionError,
-    OrchestratorMcpFailure,
-  ]),
+const failure = withFailureMessages(
+    Schema.Union([VaultError, VaultGitHubError, VaultConnectionError, OrchestratorMcpFailure]),
+  ),
   dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github_exec", {
     description:
-      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Accepts connection:{resource} or an explicit item/version. Active full-access/default thread with current Vault policy permission; owner-trusted mode needs no individual grant. gh supports repo view, PR/issue operations, release list/view/create/edit/upload/download, workflow list/view/run and run list/view/watch/rerun/cancel. Release files must be literal paths inside the active checkout; downloads require an empty checkout directory. Git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
+      "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Accepts connection:{resource} or an explicit item/version. Active full-access/default thread with current Vault policy permission; owner-trusted mode needs no individual grant. gh supports repo view, PR/issue operations, release list/view/create/edit/upload/download, workflow list/view/run and run list/view/watch/rerun/cancel. Release files must be literal paths inside the active checkout; downloads require an empty checkout directory. Git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. A push updates origin's tracking branches and -u records origin as the upstream, so no follow-up fetch is needed. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
     parameters: VaultGitHubTerminalRunInput.check(objectInput),
     success: VaultGitHubTerminalResult,
     failure,
@@ -115,7 +113,9 @@ export const vaultGitHubHandlers = McpToolAccess.toLayer(
     });
     const admin = caller.pipe(
       Effect.flatMap((scope) =>
-        scope.thread ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.succeed(scope),
+        scope.thread
+          ? Effect.fail(new VaultError({ reason: "denied", detail: "admin-only" }))
+          : Effect.succeed(scope),
       ),
     );
     return {

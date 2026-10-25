@@ -38,7 +38,9 @@ const HANDOFF_DELAY_MS = 2_000;
  * take minutes. A missed window rolls back the database, so the next attempt pays the same cost.
  */
 export const PREPARED_TIMEOUT_MS = 30 * 60_000;
-const TERMINATE_GRACE_MS = 5_000;
+// fork: restart-continuity: matches the desktop backend grace; a busy server needs more than
+// 5 s to stop every provider session, and launchd/systemd allow 90 s.
+const TERMINATE_GRACE_MS = 15_000;
 // Matches SERVER_EXIT_CODE_STATE_DIR_OWNED in contracts. The standalone
 // launcher stays independent of the Effect-backed contracts package.
 const STATE_DIR_OWNED_EXIT_CODE = 78;

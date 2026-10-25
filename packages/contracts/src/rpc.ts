@@ -25,7 +25,13 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+// fork: project-lifecycle
+import {
+  ThreadId,
+  CheckpointScopeId,
+  NonNegativeInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import {
   CodexAuthCallbackInput,
   CodexAuthCallbackState,
@@ -137,6 +143,8 @@ import {
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
+  GitResolveOperationInput,
+  GitResolveOperationResult, // fork: source-control-cockpit
   VcsStatusInput,
   VcsStatusSubscriptionInput,
   VcsStatusResult,
@@ -434,6 +442,7 @@ export const WS_METHODS = {
   vcsInit: "vcs.init",
 
   gitRunStackedAction: "git.runStackedAction",
+  gitResolveOperation: "git.resolveOperation", // fork: source-control-cockpit
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
 
@@ -479,6 +488,9 @@ export const WS_METHODS = {
   serverCommitDesktopUpdate: "server.commitDesktopUpdate",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverRemoveKeybinding: "server.removeKeybinding",
+  // fork: project-lifecycle
+  checkpointRestoreState: "checkpoint.restoreState",
+  checkpointUndoRestore: "checkpoint.undoRestore",
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverGetDatabaseStorage: "server.getDatabaseStorage",
@@ -736,8 +748,35 @@ const WsServerCommitDesktopUpdateRpc = Rpc.make(WS_METHODS.serverCommitDesktopUp
   error: Schema.Union([ServerSelfUpdateError, EnvironmentAuthorizationError]),
 });
 
+// fork: project-lifecycle
+export class CheckpointRestoreActionError extends Schema.TaggedError<CheckpointRestoreActionError>()(
+  "CheckpointRestoreActionError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+export const CheckpointRestoreState = Schema.Struct({
+  threadId: ThreadId,
+  canRestoreFiles: Schema.Boolean,
+  reason: Schema.NullOr(Schema.String),
+  undoToken: Schema.NullOr(Schema.String),
+});
+export type CheckpointRestoreState = typeof CheckpointRestoreState.Type;
+const WsCheckpointRestoreStateRpc = Rpc.make(WS_METHODS.checkpointRestoreState, {
+  payload: Schema.Struct({ threadId: ThreadId, scopeId: Schema.optional(CheckpointScopeId) }),
+  success: CheckpointRestoreState,
+  error: Schema.Union([CheckpointRestoreActionError, EnvironmentAuthorizationError]),
+});
+const WsCheckpointUndoRestoreRpc = Rpc.make(WS_METHODS.checkpointUndoRestore, {
+  payload: Schema.Struct({ threadId: ThreadId, undoToken: Schema.String }),
+  success: Schema.Void,
+  error: Schema.Union([CheckpointRestoreActionError, EnvironmentAuthorizationError]),
+});
+
 const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup, {
-  payload: Schema.Struct({}),
+  // fork: project-lifecycle
+  payload: Schema.Struct({ removeOrphanPath: Schema.optional(Schema.String) }),
   success: StorageCleanupReport,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
 });
@@ -1376,6 +1415,13 @@ const WsWorktreeSetupCancelRpc = Rpc.make(WS_METHODS.worktreeSetupCancel, {
   error: EnvironmentAuthorizationError,
 });
 
+// fork: source-control-cockpit
+const WsGitResolveOperationRpc = Rpc.make(WS_METHODS.gitResolveOperation, {
+  payload: GitResolveOperationInput,
+  success: GitResolveOperationResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
 const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
   payload: GitRunStackedActionInput,
   success: GitActionProgressEvent,
@@ -1905,6 +1951,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerRunStorageCleanupRpc,
+  // fork: project-lifecycle
+  WsCheckpointRestoreStateRpc,
+  WsCheckpointUndoRestoreRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerGetDatabaseStorageRpc,
   WsServerGetSettingsRpc,
@@ -2015,6 +2064,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
+  WsGitResolveOperationRpc, // fork: source-control-cockpit
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
   WsVcsListRefsRpc,

@@ -1,4 +1,5 @@
 import type { WorkspaceState } from "../../state/workspaceModel";
+import { stalledWorkspaceStatus } from "../../fork/connection-health/workspaceStall"; // fork: fleet-connections
 
 export interface WorkspaceConnectionStatusPresentation {
   readonly label: string;
@@ -33,9 +34,13 @@ function workspaceConnectionStatusLabel(state: WorkspaceState): string {
 
 export function workspaceConnectionStatusPresentation(
   state: WorkspaceState,
-  options?: { readonly compact: boolean },
+  options?: { readonly compact: boolean; readonly now?: number }, // fork: fleet-connections
 ): WorkspaceConnectionStatusPresentation | null {
   if (!shouldShowWorkspaceConnectionStatus(state)) return null;
+  // fork: fleet-connections - past the stall window, a reconnect stops showing progress.
+  const stalled =
+    options?.now === undefined ? null : stalledWorkspaceStatus(state, options.now, options.compact);
+  if (stalled !== null) return stalled;
   const label = workspaceConnectionStatusLabel(state);
   const connectingCount = state.connectingEnvironments.length;
   const compactLabel =

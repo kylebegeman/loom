@@ -3788,6 +3788,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       ]) {
         assert.equal(heldShell.latestRunId, runId);
         assert.equal(heldShell.status, "completed");
+        // fork: attention-status
+        assert.equal(heldShell.queueHeld, true);
       }
 
       yield* projectionStore.apply({

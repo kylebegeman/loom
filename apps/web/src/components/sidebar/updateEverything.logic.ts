@@ -187,6 +187,7 @@ export interface UpdateEverythingRun {
   // fork: machine-updates - Runs from older clients belong to fleet management.
   readonly scope?: UpdateScope;
   readonly localVersion: string | null;
+  readonly installWhenIdle?: boolean; // fork: machine-updates
   readonly phase: "providers" | "servers" | "countdown" | "installing";
   readonly restartAt: number | null;
   readonly machines: ReadonlyArray<UpdateRunMachine>;

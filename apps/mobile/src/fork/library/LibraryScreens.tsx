@@ -1,3 +1,9 @@
+import { useNewTaskLibraryProjects, useLibraryProjectStarts } from "./NewTaskLibraryProjects";
+import {
+  useLibraryStartProjects,
+  useLibraryStartProject,
+  useLibraryStartCopies,
+} from "./libraryState";
 import { LibraryWorkflows, LibraryPreservationCenter } from "./LibraryWorkflows";
 import { ProjectSites } from "../sites/ProjectSites";
 import { useAtomValue } from "@effect/atom-react";
@@ -141,14 +147,7 @@ export function LibraryRouteScreen() {
   const authority = useLibraryAuthority();
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
-  const catalog = useEnvironmentQuery(
-    authority.environmentId
-      ? library.projects({
-          environmentId: authority.environmentId,
-          input: { includeArchived: true },
-        })
-      : null,
-  );
+  const catalog = useLibraryStartProjects(true);
   const canCreate = useAtomValue(library.createProject.permissionAtom(authority.environmentId));
   const refreshCatalog = catalog.refresh;
   const refreshInfo = authority.info.refresh;
@@ -160,6 +159,7 @@ export function LibraryRouteScreen() {
       }
     }, [authority.connected, refreshCatalog, refreshInfo]),
   );
+  const starts = useNewTaskLibraryProjects({ searchText: "" });
   const query = search.trim();
   const intent = libraryStartIntent(search);
   const associated =
@@ -210,7 +210,7 @@ export function LibraryRouteScreen() {
       ) : (
         <>
           {!authority.connected ? (
-            <LibraryNotice detail="Library offline. Saved projects remain available; reconnect to save changes." />
+            <LibraryNotice detail="Library offline. Projects with registered files on connected computers remain available; new conversations sync when it reconnects." />
           ) : null}
           {authority.connected && !authority.ready ? (
             <LibraryNotice
@@ -246,7 +246,18 @@ export function LibraryRouteScreen() {
                 <Button
                   key={project.id}
                   label={`Continue ${project.title}`}
-                  onPress={() => navigation.navigate("LibraryStart", { projectId: project.id })}
+                  onPress={() => {
+                    const start = starts.choices.find(
+                      (entry) => entry.project.id === project.id,
+                    )?.start;
+                    navigation.navigate("LibraryStart", {
+                      projectId: project.id,
+                      startNow: true,
+                      ...(start
+                        ? { reuseEnvironmentId: start.environmentId, initialCopyId: start.copyId }
+                        : {}),
+                    });
+                  }}
                 />
               ))}
               <Button
@@ -468,21 +479,17 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
     navigation = useNavigation(),
     { environments } = useEnvironments();
   const target = authority.environmentId;
-  const project = useEnvironmentQuery(
-    target ? library.project({ environmentId: target, input: { projectId } }) : null,
-  );
+  const project = useLibraryStartProject(projectId);
   const threads = useEnvironmentQuery(
     target ? library.threads({ environmentId: target, input: { projectId } }) : null,
   );
-  // Removed copies feed the folded history, so the page always asks for them.
-  const copies = useEnvironmentQuery(
-    target
-      ? library.copies({
-          environmentId: target,
-          input: { projectId, includeReleased: true },
-        })
-      : null,
+  const copies = useLibraryStartCopies(projectId, true);
+  const starts = useLibraryProjectStarts(
+    project.data ? [project.data] : [],
+    copies.data ?? [],
+    threads.data ?? [],
   );
+  const start = starts.get(projectId);
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
   // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
@@ -524,7 +531,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
             project.error
               ? null
               : !authority.connected
-                ? "This project is not cached on this device. Reconnect the selected library to load it."
+                ? "Looking for registered project files on connected computers. Reconnect the Library to load other projects."
                 : "Loading the saved project…"
           }
           onRetry={project.refresh}
@@ -571,7 +578,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       ]}
     >
       {!authority.connected ? (
-        <LibraryNotice detail="Viewing saved library data. Reconnect the library server to make changes." />
+        <LibraryNotice detail="Library offline. Start from a computer's registered copy, or reconnect to edit the project and prepare files." />
       ) : null}
       <View className="gap-3">
         <Text className="text-sm text-foreground-muted">
@@ -591,8 +598,18 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         <Button
           label="New conversation"
           tone="primary"
-          disabled={!authority.ready || p.archived}
-          onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
+          disabled={
+            p.archived || (!authority.ready && !activeCopies.some((copy) => copy.state === "ready"))
+          }
+          onPress={() =>
+            navigation.navigate("LibraryStart", {
+              projectId: p.id,
+              startNow: true,
+              ...(start
+                ? { reuseEnvironmentId: start.environmentId, initialCopyId: start.copyId }
+                : {}),
+            })
+          }
         />
       </View>
       {authority.info.data?.features?.includes("project-workflows") ? (
@@ -647,6 +664,11 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       <LibraryHistorySearchEntry projectId={p.id} />
       <View className="gap-3">
         <Text className="text-base font-t3-medium text-foreground">Project files</Text>
+        <Button
+          label="Tidy..."
+          tone="secondary"
+          onPress={() => navigation.navigate("LibraryTidy", { projectId: p.id })}
+        />
         {activeCopies.map((copy) => (
           <LibraryCopySection
             key={copy.id}
@@ -679,7 +701,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         <Button
           label="Work on another computer"
           tone="secondary"
-          disabled={!authority.ready || p.archived}
+          disabled={
+            p.archived || (!authority.ready && !activeCopies.some((copy) => copy.state === "ready"))
+          }
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
       </View>

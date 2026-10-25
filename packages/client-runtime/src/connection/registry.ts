@@ -55,7 +55,9 @@ import {
   entryWithRoutes,
   findRouteToSameAddress,
   hasSavedBearerRoute,
+  isLearned, // fork: directory-computers
   mergeLearnedRoutes,
+  routeHttpBaseUrl, // fork: directory-computers
   routesAfterRemoving,
   upsertRoute,
   type ReportedEndpoint,
@@ -124,6 +126,15 @@ export class EnvironmentRegistry extends Context.Service<
       connectionId: string,
       credential: ConnectionCredential,
     ) => Effect.Effect<void, ConnectionAttemptError>;
+    // fork: directory-computers
+    /**
+     * Gives a saved computer this device cannot reach the routes its Library lists for it. Optional
+     * for the same reason as `replaceCredential`.
+     */
+    readonly learnDirectoryRoutes?: (
+      environmentId: EnvironmentId,
+      reported: ReadonlyArray<ReportedEndpoint>,
+    ) => Effect.Effect<void>;
     readonly remove: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<
@@ -1122,6 +1133,71 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // fork: directory-computers
+  /**
+   * A connected computer reports its own routes. One this device cannot reach learns the routes
+   * its Library lists instead, borrowing the credential of its first saved route; the directory
+   * verified each report with the computer's key, and connecting still checks its identity. Routes
+   * it learned earlier stay, since this computer reported nothing that could prune them.
+   */
+  const learnDirectoryRoutes = Effect.fn("EnvironmentRegistry.learnDirectoryRoutes")(function* (
+    environmentId: EnvironmentId,
+    reported: ReadonlyArray<ReportedEndpoint>,
+  ) {
+    yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) return;
+        const entry = (yield* SubscriptionRef.get(entries)).get(environmentId);
+        const lease = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+        if (entry === undefined || !entry.enabled || lease === undefined) return;
+        if ((yield* SubscriptionRef.get(lease.supervisor.state)).phase === "connected") return;
+        const saved = connectionRoutes(entry);
+        const activeRoute = saved.find(
+          (route) =>
+            !isLearned(route) &&
+            (route.target._tag === "BearerConnectionTarget" ||
+              route.target._tag === "RelayConnectionTarget"),
+        );
+        if (activeRoute === undefined) return;
+        const learned = saved.flatMap((route) => {
+          const httpBaseUrl = isLearned(route) ? routeHttpBaseUrl(route) : null;
+          const profile = Option.getOrNull(route.profile);
+          if (httpBaseUrl === null) return [];
+          return profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale"
+            ? [{ httpBaseUrl, kind: "tailnet" }]
+            : [{ httpBaseUrl }];
+        });
+        const routes = mergeLearnedRoutes({
+          entry,
+          activeRoute,
+          reported: [...learned, ...reported],
+          allowInsecure: allowInsecureRoutes,
+        });
+        if (routes === null) return;
+        const previousProfiles = new Map(
+          saved.map((route) => [connectionRouteId(route.target), Option.getOrNull(route.profile)]),
+        );
+        for (const route of routes) {
+          const profile = Option.getOrNull(route.profile);
+          if (profile !== null && previousProfiles.get(connectionRouteId(route.target)) !== profile)
+            yield* profiles.put(profile);
+        }
+        const next = entryWithRoutes(entry, routes);
+        yield* registrations.setRoutes(environmentId, persistedRoutes(next));
+        // The supervisor tries routes from its own copy of the entry, so a fresh one tries these now.
+        yield* installEntryLocked(next);
+      }),
+    ).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not save routes from the Library's directory.", {
+          environmentId,
+          error,
+        }),
+      ),
+    );
+  });
+
   const removeRoute = Effect.fn("EnvironmentRegistry.removeRoute")(function* (
     environmentId: EnvironmentId,
     routeId: string,
@@ -1336,6 +1412,7 @@ export const make = Effect.gen(function* () {
     registerPlatform,
     reconcilePlatform,
     replaceCredential, // fork: identity-renewal
+    learnDirectoryRoutes, // fork: directory-computers
     remove,
     removeRoute,
     reorderRoutes,

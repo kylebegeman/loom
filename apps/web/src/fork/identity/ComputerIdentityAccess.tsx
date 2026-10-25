@@ -10,7 +10,6 @@ import { isElectron } from "~/env";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
 import { identityProfile, isSavedComputerAddress } from "./identityProfile";
-import { identityRenewalAvailable } from "./renewal";
 import { useEnvironmentSessionState } from "~/state/session";
 
 /**
@@ -30,7 +29,13 @@ function useIdentityExpired(entry: ConnectionCatalogEntry, phase: EnvironmentCon
  * Signs in again over the saved Identity route, pinned to its account. A browser cannot sign in
  * over a public reach address, so it offers pairing.
  */
-export function SavedIdentitySignIn({ entry }: { readonly entry: ConnectionCatalogEntry }) {
+export function SavedIdentitySignIn({
+  entry,
+  renewal = false,
+}: {
+  readonly entry: ConnectionCatalogEntry;
+  readonly renewal?: boolean;
+}) {
   const saved = savedIdentitySignIn(entry, isElectron ? "native" : "browser");
   if (saved === null)
     return (
@@ -45,6 +50,7 @@ export function SavedIdentitySignIn({ entry }: { readonly entry: ConnectionCatal
       expectedIdentity={saved.expectedIdentity}
       description={false}
       showUnavailable
+      renewal={renewal}
     />
   );
 }
@@ -91,11 +97,9 @@ export function SavedComputerIdentity({
         {profile.identity!.issuer}.{" "}
         {expired
           ? "Access expired. Sign in again from the notice above."
-          : identityRenewalAvailable()
-            ? "Each sign-in lasts up to an hour. If this computer sets a sign-in limit, Loom renews it on its own until then. Removing this connection signs this device out."
-            : "Each sign-in lasts up to an hour. Removing this connection revokes this device's active Identity session."}
+          : "Removing this connection signs this device out."}
       </p>
-      {expired ? null : <SavedIdentitySignIn entry={entry} />}
+      {expired ? null : <SavedIdentitySignIn entry={entry} renewal />}
     </section>
   );
 }

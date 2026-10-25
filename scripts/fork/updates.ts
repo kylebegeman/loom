@@ -383,6 +383,47 @@ export function buildEnvironment(
   };
 }
 
+const MAIN_LOG_MAX_BYTES = 10 * 1024 * 1024;
+const ERROR_TAIL_BYTES = 8 * 1024;
+let buildLogFd: number | undefined;
+
+export async function capPublisherLog(path: string) {
+  const file = await NodeFSP.open(path, "r+").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (!file) return;
+  try {
+    // launchd keeps the file open: truncate its inode instead of rotating the pathname.
+    if ((await file.stat()).size > MAIN_LOG_MAX_BYTES) await file.truncate(0);
+  } finally {
+    await file.close();
+  }
+}
+
+export async function withBuildLog<T>(record: string, body: () => Promise<T>): Promise<T> {
+  if (buildLogFd !== undefined) throw new Error("A publisher build log is already open.");
+  await NodeFSP.mkdir(record, { recursive: true });
+  const path = NodePath.join(record, "build.log");
+  const fd = NodeFS.openSync(path, "a+", 0o600);
+  buildLogFd = fd;
+  NodeFS.writeSync(fd, `\n${new Date().toISOString()} Publisher run\n`);
+  try {
+    return await body();
+  } catch (error) {
+    const size = NodeFS.fstatSync(fd).size;
+    const tail = Buffer.alloc(Math.min(size, ERROR_TAIL_BYTES));
+    NodeFS.readSync(fd, tail, 0, tail.length, size - tail.length);
+    console.error(
+      `${new Date().toISOString()} Build failed. Log: ${path}\n${tail.toString("utf8")}`,
+    );
+    throw error;
+  } finally {
+    buildLogFd = undefined;
+    NodeFS.closeSync(fd);
+  }
+}
+
 function run(
   command: string,
   args: string[],
@@ -397,13 +438,21 @@ function run(
       ? buildEnvironment(sourceDir, NodeProcess.env, connect.connectConfig, connect.connectRetired)
       : buildEnvironment(sourceDir, NodeProcess.env, publisherConnectConfig()),
     encoding: "utf8",
-    stdio: options.stream ? "inherit" : "pipe",
+    stdio: options.stream && buildLogFd !== undefined ? ["ignore", buildLogFd, buildLogFd] : "pipe",
     maxBuffer: 8 * 1024 * 1024,
   });
+  if (buildLogFd !== undefined) {
+    if (result.stdout) NodeFS.writeSync(buildLogFd, result.stdout);
+    if (result.stderr) NodeFS.writeSync(buildLogFd, result.stderr);
+  }
+  if (options.stream)
+    console.log(
+      `${new Date().toISOString()} ${command} ${args[0] ?? ""}: ${result.status === 0 ? "done" : "failed"}`,
+    );
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
-      `${command} ${args[0] ?? ""} failed (${result.status ?? result.signal}): ${result.stderr ?? "See the build log."}`,
+      `${command} ${args[0] ?? ""} failed (${result.status ?? result.signal}): ${buildLogFd === undefined ? (result.stderr?.slice(-ERROR_TAIL_BYTES) ?? "See the build log.") : "See the build log."}`,
     );
   }
   return result.stdout?.trim() ?? "";
@@ -639,7 +688,10 @@ async function prepare(release: Release) {
   ]);
   if (!identities.includes(`"${SIGNING_IDENTITY}"`))
     throw new Error(`Missing ${SIGNING_IDENTITY}; run scripts/fork/loom.sh signing-setup first.`);
-  if (await exists(record))
+  if (
+    (await exists(record)) &&
+    (await NodeFSP.readdir(record)).some((name) => name !== "build.log")
+  )
     throw new Error(
       `An incomplete or older build already exists at ${record}; inspect it before retrying.`,
     );
@@ -731,6 +783,13 @@ async function prepare(release: Release) {
     );
     await NodeFSP.writeFile(NodePath.join(stagedRecord, "updates", "ready"), `${release.commit}\n`);
     await NodeFSP.mkdir(BUILDS_DIR, { recursive: true });
+    if (await exists(NodePath.join(record, "build.log"))) {
+      await NodeFSP.rename(
+        NodePath.join(record, "build.log"),
+        NodePath.join(stagedRecord, "build.log"),
+      );
+      await NodeFSP.rmdir(record);
+    }
     await NodeFSP.rename(stagedRecord, record);
     return { record, zip, manifest, ...connect };
   } finally {
@@ -943,6 +1002,7 @@ async function enable() {
   }
   await NodeFSP.mkdir(NodePath.dirname(PLIST_PATH), { recursive: true });
   await NodeFSP.mkdir(NodePath.dirname(LOG_PATH), { recursive: true });
+  await capPublisherLog(LOG_PATH);
   if (await exists(PLIST_PATH))
     run("launchctl", ["bootout", `gui/${NodeProcess.getuid!()}`, PLIST_PATH]);
   await NodeFSP.writeFile(PLIST_PATH, launchAgent(NodeProcess.execPath, script, LOG_PATH));
@@ -1202,7 +1262,7 @@ async function publishIos(release: Release) {
           ? { LOOM_MOBILE_LIBRARY_PUSH_ENABLED: config.libraryPush ? "1" : "0" }
           : {}),
       },
-      stdio: "inherit",
+      stdio: buildLogFd === undefined ? "pipe" : ["ignore", buildLogFd, buildLogFd],
     },
   );
   if (result.error) throw new Error("Could not start Loom iOS delivery.", { cause: result.error });
@@ -1295,7 +1355,11 @@ export function assertReleasePin(release: Release, expected: ReleasePin | undefi
   return release;
 }
 
-export async function main(command: string | undefined, args: readonly string[] = []) {
+export async function main(
+  command: string | undefined,
+  args: readonly string[] = [],
+  logging: { withBuildLog: typeof withBuildLog } = { withBuildLog },
+) {
   const options = parseUpdateArgs(command, args);
   if (options.command === "next-version") {
     // loom.sh tags fork changes on main with this, so they join the same release train.
@@ -1333,23 +1397,27 @@ export async function main(command: string | undefined, args: readonly string[] 
     const state = await releaseState(release);
     console.log(`${new Date().toISOString()} ${release.tag}: ${state}`);
     if (options.command === "check") return;
-    if (options.command === "publish" && state === "published") {
-      await publishIos(release);
-      return;
-    }
-    if (options.command === "publish") reservePublication(release);
-    const prepared = await prepare(release);
-    console.log(`Prepared ${prepared.record}/Loom.app`);
-    if (options.command === "publish") {
-      await publish(release, prepared);
-      await publishIos(release);
-    }
+    await logging.withBuildLog(NodePath.join(BUILDS_DIR, release.recordName), async () => {
+      if (options.command === "publish" && state === "published") {
+        await publishIos(release);
+        return;
+      }
+      if (options.command === "publish") reservePublication(release);
+      const prepared = await prepare(release);
+      console.log(`Prepared ${prepared.record}/Loom.app`);
+      if (options.command === "publish") {
+        await publish(release, prepared);
+        await publishIos(release);
+      }
+    });
   }, options.wait);
 }
 
 if (import.meta.main) {
-  await main(NodeProcess.argv[2], NodeProcess.argv.slice(3)).catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  });
+  await capPublisherLog(LOG_PATH)
+    .then(() => main(NodeProcess.argv[2], NodeProcess.argv.slice(3)))
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
 }

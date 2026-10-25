@@ -1,3 +1,5 @@
+// fork: server-weight
+import { ProviderProcesses } from "@t3tools/shared/AgentScope";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -509,6 +511,7 @@ const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
 
 const make = Effect.gen(function* () {
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+  const processes = yield* ProviderProcesses; // fork: server-weight
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const layerScope = yield* Effect.scope;
@@ -710,6 +713,10 @@ const make = Effect.gen(function* () {
       Effect.andThen(assertDispatchTargetEnabled(command)),
       Effect.andThen(assertLibraryFolder(command)), // fork: library-projects
       Effect.andThen(orchestrator.dispatch(command)),
+      // fork: server-weight -- recovered threads may have no live session left to detach.
+      Effect.tap(() =>
+        command.type === "thread.stop" ? processes.stop(command.threadId) : Effect.void,
+      ),
     );
 
   const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>

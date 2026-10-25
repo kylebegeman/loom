@@ -1,12 +1,18 @@
 import { useAtomValue } from "@effect/atom-react";
 import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { EnvironmentId, type AuthEnvironmentScope } from "@t3tools/contracts";
-import { LibraryId, PROJECT_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
+import {
+  LibraryId,
+  PROJECT_LIBRARY_FEATURE,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useEffect } from "react";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
   projectEnvironmentPresentation,
   usePrimaryEnvironmentId,
@@ -83,9 +89,92 @@ export function useSelectedLibraryProject() {
   return useLocalStorage(SELECTED_PROJECT_KEY, null, SelectedProject);
 }
 
+const localCatalogAtoms = Atom.family((key: string) => {
+  const { authorityId, environmentIds } = JSON.parse(key) as {
+    authorityId: EnvironmentId;
+    environmentIds: EnvironmentId[];
+  };
+  return Atom.make((get) => {
+    const results = environmentIds.map((environmentId) =>
+      AsyncResult.flatMap(
+        get(projectLibrary.info({ environmentId, input: {} })),
+        (info, current) =>
+          current.waiting
+            ? AsyncResult.initial(true)
+            : info.destination?.environmentId === authorityId
+              ? AsyncResult.all({
+                  projects: get(
+                    projectLibrary.projects({ environmentId, input: { includeArchived: true } }),
+                  ),
+                  copies: get(
+                    projectLibrary.copies({ environmentId, input: { includeReleased: true } }),
+                  ),
+                })
+              : AsyncResult.success({ projects: [], copies: [] }),
+      ),
+    );
+    const successes = results.filter(AsyncResult.isSuccess);
+    if (!successes.length && results.length)
+      return results.find(AsyncResult.isFailure) ?? AsyncResult.initial(true);
+    const projects = new Map<string, LibraryProject>();
+    const copies: LibraryWorkingCopy[] = [];
+    for (const { value } of successes) {
+      for (const project of value.projects) {
+        const previous = projects.get(project.id);
+        if (!previous || previous.revision < project.revision) projects.set(project.id, project);
+      }
+      copies.push(...value.copies);
+    }
+    return AsyncResult.success(
+      { projects: [...projects.values()], copies },
+      {
+        waiting: results.some((result) => result.waiting || AsyncResult.isInitial(result)),
+      },
+    );
+  });
+});
+
+/** Reads the computers' persisted receipts during an outage; the selected authority stays put. */
+export function useLibraryLocalCatalog(enabled: boolean, authorityId: EnvironmentId | null) {
+  const { environments } = useEnvironments();
+  const ids = enabled
+    ? environments
+        .filter(
+          (entry) =>
+            entry.entry.enabled &&
+            entry.connection.phase === "connected" &&
+            entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
+            supportsLoomFeature(
+              entry.serverConfig?.environment.capabilities,
+              PROJECT_LIBRARY_FEATURE,
+            ),
+        )
+        .map((entry) => entry.environmentId)
+    : [];
+  const query = useEnvironmentQuery(
+    enabled ? localCatalogAtoms(JSON.stringify({ authorityId, environmentIds: ids })) : null,
+  );
+  return {
+    ...query,
+    refresh: () => {
+      for (const environmentId of ids) {
+        appAtomRegistry.refresh(projectLibrary.info({ environmentId, input: {} }));
+        appAtomRegistry.refresh(
+          projectLibrary.projects({ environmentId, input: { includeArchived: true } }),
+        );
+        appAtomRegistry.refresh(
+          projectLibrary.copies({ environmentId, input: { includeReleased: true } }),
+        );
+      }
+    },
+  };
+}
+
 export function useLibraryProjects(includeArchived = false) {
   const authority = useLibraryAuthority();
-  const query = useEnvironmentQuery(
+  const offline = authority.authorityId !== null && !authority.connected;
+  const local = useLibraryLocalCatalog(offline, authority.authorityId);
+  const remote = useEnvironmentQuery(
     authority.authorityId
       ? projectLibrary.projects({
           environmentId: authority.authorityId,
@@ -93,31 +182,73 @@ export function useLibraryProjects(includeArchived = false) {
         })
       : null,
   );
-  return { ...authority, query };
+  const offlineProjects = new Map((remote.data ?? []).map((project) => [project.id, project]));
+  for (const project of local.data?.projects ?? []) offlineProjects.set(project.id, project);
+  const query = offline
+    ? {
+        ...local,
+        // Existing cached records remain readable; only host receipts supply launchable files.
+        data:
+          local.data || remote.data
+            ? [...offlineProjects.values()].filter(
+                (project) => includeArchived || !project.archived,
+              )
+            : null,
+      }
+    : remote;
+  return { ...authority, offline, query };
 }
 
 export function useLibraryProject(projectId: string, includeReleased = false) {
   const authority = useLibraryAuthority();
+  const offline = authority.authorityId !== null && !authority.connected;
+  const local = useLibraryLocalCatalog(offline, authority.authorityId);
   const target =
     authority.authorityId && projectId
       ? { environmentId: authority.authorityId, input: { projectId } }
       : null;
-  const project = useEnvironmentQuery(target ? projectLibrary.project(target) : null);
-  const copies = useEnvironmentQuery(
-    target
+  const remoteProject = useEnvironmentQuery(target ? projectLibrary.project(target) : null);
+  const remoteCopies = useEnvironmentQuery(
+    target && !offline
       ? projectLibrary.copies({
           ...target,
           input: { ...target.input, ...(includeReleased ? { includeReleased: true } : {}) },
         })
       : null,
   );
+  const project = offline
+    ? {
+        ...local,
+        data:
+          local.data?.projects.find((project) => project.id === projectId) ?? remoteProject.data,
+        error:
+          local.error ??
+          (local.isSuccess &&
+          !local.isPending &&
+          !local.data?.projects.some((project) => project.id === projectId) &&
+          remoteProject.data === null
+            ? "Connect a computer with registered files for this project, or reconnect the Library."
+            : null),
+      }
+    : remoteProject;
+  const copies = offline
+    ? {
+        ...local,
+        data:
+          local.data?.copies.filter(
+            (copy) =>
+              copy.projectId === projectId &&
+              (includeReleased || (copy.registered !== false && copy.state !== "released")),
+          ) ?? null,
+      }
+    : remoteCopies;
   const threads = useEnvironmentQuery(target ? projectLibrary.threads(target) : null);
   const refresh = () => {
     project.refresh();
     copies.refresh();
     threads.refresh();
   };
-  return { ...authority, project, copies, threads, refresh };
+  return { ...authority, offline, project, copies, threads, refresh };
 }
 
 export function useLibraryPermission(

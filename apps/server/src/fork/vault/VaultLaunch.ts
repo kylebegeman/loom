@@ -244,10 +244,10 @@ const make = Effect.gen(function* () {
         operation.kind === "ssh"
           ? operation.input.command.expectedVersion
           : operation.input.expectedVersion;
+      if (info.item.state !== "active" || info.item.version !== version) return yield* denied();
+      if (!info.target.hostKey)
+        return yield* new VaultError({ reason: "denied", detail: "untrusted-host" });
       if (
-        info.item.state !== "active" ||
-        info.item.version !== version ||
-        !info.target.hostKey ||
         info.target.hostKey !== operation.target.hostKey ||
         info.destination !== vaultSshDestination(operation.target)
       )

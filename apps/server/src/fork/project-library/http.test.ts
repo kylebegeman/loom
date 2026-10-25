@@ -40,6 +40,13 @@ const fixture = Effect.gen(function* () {
   const library = yield* Library.LibraryService.pipe(
     Effect.provide(
       Layer.mock(Library.LibraryService)({
+        projects: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as([])),
+        threadIndex: (input) =>
+          Ref.update(calls, (count) => count + 1).pipe(
+            Effect.as({ threads: [], nextOffset: input.offset ?? null }),
+          ),
+        search: () =>
+          Ref.update(calls, (count) => count + 1).pipe(Effect.as({ hits: [], nextCursor: null })),
         publishDocuments: () =>
           Ref.update(calls, (count) => count + 1).pipe(Effect.as({ published: 1, removed: 0 })),
         decisions: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as({ hits: [] })),
@@ -125,6 +132,33 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
     return yield* use(yield* fixture);
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 describe("Library host HTTP publishing boundaries", () => {
+  it.effect("allows owner Library catalog reads only for enrolled computers or operators", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        for (const [path, input] of [
+          ["projects/list", {}],
+          ["conversations/list", { projectId: "project", offset: 1, limit: 1 }],
+          ["history/search", { query: "fix", limit: 1 }],
+        ] as const)
+          expect((yield* f.request(path, yield* encodeJson(input))).status).toBe(200);
+        expect(
+          (yield* f.request("conversations/list", yield* encodeJson({ limit: 201 }))).status,
+        ).toBe(400);
+        expect(yield* Ref.get(f.calls)).toBe(3);
+        for (const subject of ["mcp-client", "other-client"]) {
+          yield* Ref.update(f.session, (session) => ({ ...session, subject }));
+          expect((yield* f.request("projects/list", "{}")).status).toBe(403);
+        }
+        yield* Ref.update(f.session, (session) => ({
+          ...session,
+          subject: `loom-host:${source}`,
+          scopes: [AuthLibraryRecoveryReadScope],
+        }));
+        expect((yield* f.request("projects/list", "{}")).status).toBe(403);
+        expect(yield* Ref.get(f.calls)).toBe(3);
+      }),
+    ),
+  );
   it.effect(
     "authenticates document publication against the enrolled source and authority fence",
     () =>

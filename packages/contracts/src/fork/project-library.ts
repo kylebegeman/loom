@@ -20,6 +20,33 @@ export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
+/** A computer that can start a Library conversation in its own new worktree. */
+export const LIBRARY_WORKTREE_STARTS_FEATURE = "library-worktree-starts";
+/**
+ * Where a new Library conversation works: the copy's own folder, or a new worktree made from it
+ * on a branch of its own, so conversations running at once do not change each other's files.
+ */
+export const LibraryLaunchWorkspace = Schema.Literals(["folder", "worktree"]);
+export type LibraryLaunchWorkspace = typeof LibraryLaunchWorkspace.Type;
+
+/** The title a Library conversation starts with when none is typed, on every client. */
+export const LIBRARY_DEFAULT_CONVERSATION_TITLE = "New conversation";
+
+// Upstream's default, the Library's, the iPhone continuation's, and the two Library defaults
+// conversations started with before the clients agreed on one.
+const DEFAULT_THREAD_TITLES: ReadonlySet<string> = new Set([
+  "New thread",
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
+  "Linked continuation",
+  "New project conversation",
+  "Project discussion",
+]);
+
+/**
+ * Whether a thread still holds a title nobody chose, which its first message may replace. A title
+ * typed when a Library conversation starts, or a rename before the first message, is kept.
+ */
+export const isDefaultThreadTitle = (title: string) => DEFAULT_THREAD_TITLES.has(title.trim());
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -265,6 +292,15 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
     "not-managed",
     "io",
   ]),
+  repair: Schema.optionalKey(
+    Schema.Struct({
+      kind: Schema.Literal("github-host-setup"),
+      environmentId: EnvironmentId,
+      label: Schema.String,
+      agentTool: Schema.Literal("loom_github_host_setup"),
+      action: Schema.Literal("start"),
+    }),
+  ),
   detail: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
   /** For `invalid`, a string is what to fix, written for the person or agent who asked. */
   cause: Schema.optional(Schema.Defect()),
@@ -479,6 +515,15 @@ export const LibraryCopyStatus = Schema.Struct({
    * stop a snapshot, which never deletes anything. Absent from computers that predate them.
    */
   releaseBlockers: Schema.optional(Schema.Array(Schema.String)),
+  releaseBlockerThreads: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        threadId: ThreadId,
+        title: Schema.String,
+        worktreePath: Schema.String,
+      }),
+    ),
+  ),
   reviewToken: Schema.NullOr(Schema.String),
   /** Per-repository health, present when the copy's computer can read it. */
   health: Schema.optional(LibraryCopyHealth),
@@ -508,6 +553,11 @@ export type LibraryResolveBindingRequest = typeof LibraryResolveBindingRequest.T
 export const LibraryResolvedBinding = Schema.Struct({
   /** Migration-only base repository for native checkout recovery at the original cwd. */
   legacyWorktreeRoot: Schema.optional(Schema.String),
+  /**
+   * The copy folder a conversation's own worktree was made from. `cwd` is then that worktree,
+   * a linked worktree of this folder's repository, and `repositoryPaths` still names the folder.
+   */
+  worktreeOf: Schema.optional(Schema.String),
   project: Schema.optional(LibraryProject),
   cwd: Schema.String,
   localProjectId: ProjectId,

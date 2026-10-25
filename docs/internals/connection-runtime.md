@@ -25,6 +25,14 @@ until it times out. That fresh attempt runs even while the network reports
 offline. Foregrounding also wakes a pending retry immediately and
 leaves an ordinary in-flight attempt alone.
 
+<!-- fork: fleet-connections -->
+The supervisor also records when the current run of failed attempts began, and an
+explicit retry keeps that time. Once a run outlasts `CONNECTION_STALL_MS` in
+[connection health](../../packages/client-runtime/src/fork/connection-health.ts),
+clients stop showing progress and say since when the computer has been unreachable.
+With retries up to five minutes apart, a spinner would otherwise promise a
+connection that is not coming.
+
 The [registry](../../packages/client-runtime/src/connection/registry.ts) scopes
 connections by environment. An involuntary disconnect retains the registration
 and cached data. Explicit removal closes the scope and clears credentials,

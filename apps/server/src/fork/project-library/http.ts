@@ -5,6 +5,14 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  LibraryProjectsRead,
+  LibraryConversationsRead,
+  LibraryConversationLookup,
+  LibraryHistoryRead,
+  LibraryThreadArchive,
+  LibrarySearchRequest,
+  LibraryTimelineRequest,
+  LibraryLaunchCandidatesRequest,
   LibraryConversationBriefProposal,
   LibraryDocumentsPublishRequest,
   LibraryDecisionsSearchInput,
@@ -30,6 +38,8 @@ import {
 import { LIBRARY_HISTORY_MAX_BYTES, readLibraryJson } from "./transfer.ts";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as Timeline from "./LibraryTimeline.ts";
+import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as LibraryService from "./LibraryService.ts";
 
 // Large established threads retain complete tool history. Clients browse bounded windows.
@@ -46,8 +56,23 @@ const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityRequest);
 const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
+const decodeProjectsRead = Schema.decodeUnknownEffect(LibraryProjectsRead);
+const decodeConversationsRead = Schema.decodeUnknownEffect(LibraryConversationsRead);
+const decodeConversationLookup = Schema.decodeUnknownEffect(LibraryConversationLookup);
+const decodeHistoryRead = Schema.decodeUnknownEffect(LibraryHistoryRead);
+const decodeSearch = Schema.decodeUnknownEffect(LibrarySearchRequest);
+const decodeTimeline = Schema.decodeUnknownEffect(LibraryTimelineRequest);
+const decodeLaunchCandidates = Schema.decodeUnknownEffect(LibraryLaunchCandidatesRequest);
+const encodeHistory = Schema.encodeEffect(Schema.toCodecJson(LibraryThreadArchive));
 const handler = (
   operation:
+    | "projects"
+    | "conversations"
+    | "lookup"
+    | "history"
+    | "search"
+    | "timeline"
+    | "candidates"
     | "decisions"
     | "documents"
     | "info"
@@ -103,6 +128,69 @@ const handler = (
             Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
           )
         : readLibraryJson(request);
+      if (operation === "projects") {
+        const input = yield* decodeProjectsRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.projects(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "conversations") {
+        const input = yield* decodeConversationsRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.threadIndex(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "lookup") {
+        const input = yield* decodeConversationLookup(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.lookupThread(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "history") {
+        const input = yield* decodeHistoryRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(
+          yield* library
+            .history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 })
+            .pipe(Effect.flatMap(encodeHistory)),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
+      if (operation === "search") {
+        const input = yield* decodeSearch(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.search(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "timeline") {
+        const input = yield* decodeTimeline(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(
+          yield* Effect.flatMap(Timeline.LibraryTimeline, (service) => service.page(input)),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
+      if (operation === "candidates") {
+        const input = yield* decodeLaunchCandidates(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(
+          yield* Effect.flatMap(Launch.LibraryLaunchCandidates, (service) =>
+            service.candidates(input),
+          ),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
       if (operation === "decisions") {
         const input = yield* decodeDecisions(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
@@ -217,6 +305,42 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/projects/list",
+        handler("projects").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/conversations/list",
+        handler("conversations").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/conversations/lookup",
+        handler("lookup").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/history/read",
+        handler("history").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/history/search",
+        handler("search").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/timeline/read",
+        handler("timeline").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/launch-candidates",
+        handler("candidates").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+
       HttpRouter.add(
         "POST",
         "/api/loom/library/documents/search",

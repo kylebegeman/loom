@@ -3,8 +3,16 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Pressable, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { BOTS_LIST_RUNS_MAX_LIMIT, type BotRun } from "@t3tools/contracts/fork";
-import { applyInboxChanges, dismissRunIdBatches } from "@t3tools/client-runtime/fork";
+import {
+  BOTS_LIST_RUNS_MAX_LIMIT,
+  isBotRunHandledByCaller,
+  type BotRun,
+} from "@t3tools/contracts/fork";
+import {
+  applyInboxChanges,
+  dismissRunIdBatches,
+  inboxNeedsPersonCount,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/cn";
@@ -98,6 +106,36 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
     setEarlier([]);
   };
   const canAct = allowed && capabilities.connected && !busy;
+  // Runs whose calling agent already has the outcome need no one, so they wait folded below.
+  const [showHandled, setShowHandled] = useState(false);
+  const handled = dismissed || !page ? [] : page.runs.filter(isBotRunHandledByCaller);
+  const shown = !page
+    ? []
+    : handled.length
+      ? page.runs.filter((run) => !handled.includes(run))
+      : page.runs;
+  const shownTotal = !page ? 0 : dismissed ? page.total : inboxNeedsPersonCount(page);
+  const runRows = (runs: ReadonlyArray<BotRun>) => (
+    <BotsOutline>
+      {runs.map((run, index) => (
+        <BotRunRow
+          key={run.id}
+          run={run}
+          separated={index > 0}
+          onOpen={() => navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })}
+          actions={
+            <Button
+              label={dismissed ? "Restore" : "Dismiss"}
+              accessibilityLabel={`${dismissed ? "Restore" : "Dismiss"} ${run.botName} run`}
+              tone="text"
+              disabled={!canAct}
+              onPress={() => void update([run.id], !dismissed)}
+            />
+          }
+        />
+      ))}
+    </BotsOutline>
+  );
   return (
     <BotPage
       title="Bots inbox"
@@ -204,52 +242,34 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
       {capabilities.inboxSupported ? (
         <BotsSection
           title={dismissed ? "Dismissed" : "Needs attention"}
-          detail={page?.runs.length ? `${page.runs.length} of ${page.total}` : undefined}
+          detail={shown.length ? `${shown.length} of ${shownTotal}` : undefined}
         >
           {!page ? (
             query.isPending ? (
               <BotRowsSkeleton label="Loading inbox" />
             ) : null
-          ) : !page.runs.length ? (
-            <BotsEmptyList
-              message={
-                dismissed
-                  ? "No dismissed runs."
-                  : "Nothing needs you. Failed, timed out and undecided runs land here."
-              }
-            />
           ) : (
             <>
-              <BotsOutline>
-                {page.runs.map((run, index) => (
-                  <BotRunRow
-                    key={run.id}
-                    run={run}
-                    separated={index > 0}
-                    onOpen={() =>
-                      navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })
-                    }
-                    actions={
-                      <Button
-                        label={dismissed ? "Restore" : "Dismiss"}
-                        accessibilityLabel={`${dismissed ? "Restore" : "Dismiss"} ${run.botName} run`}
-                        tone="text"
-                        disabled={!canAct}
-                        onPress={() => void update([run.id], !dismissed)}
-                      />
-                    }
-                  />
-                ))}
-              </BotsOutline>
+              {shown.length ? (
+                runRows(shown)
+              ) : (
+                <BotsEmptyList
+                  message={
+                    dismissed
+                      ? "No dismissed runs."
+                      : "Nothing needs you. Failed, timed out and undecided runs land here."
+                  }
+                />
+              )}
               <View className="flex-row flex-wrap gap-2">
-                {!dismissed && page.runs.length > 1 ? (
+                {!dismissed && shown.length > 1 ? (
                   <Button
                     label="Dismiss all shown"
                     tone="text"
                     disabled={!canAct}
                     onPress={() =>
                       void update(
-                        page.runs.map((run) => run.id),
+                        shown.map((run) => run.id),
                         true,
                       )
                     }
@@ -271,6 +291,40 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
               </View>
             </>
           )}
+        </BotsSection>
+      ) : null}
+      {handled.length ? (
+        <BotsSection
+          title="Handled by the calling agent"
+          detail={`${handled.length} of ${page?.handled ?? handled.length}`}
+          trailing={
+            <Button
+              label={showHandled ? "Hide" : "Show"}
+              accessibilityLabel={`${showHandled ? "Hide" : "Show"} runs handled by the calling agent`}
+              accessibilityHint="Their results went back to the agent that started them"
+              tone="text"
+              onPress={() => setShowHandled((value) => !value)}
+            />
+          }
+        >
+          {showHandled ? (
+            <>
+              {runRows(handled)}
+              {handled.length > 1 ? (
+                <Button
+                  label={`Dismiss all ${handled.length}`}
+                  tone="text"
+                  disabled={!canAct}
+                  onPress={() =>
+                    void update(
+                      handled.map((run) => run.id),
+                      true,
+                    )
+                  }
+                />
+              ) : null}
+            </>
+          ) : null}
         </BotsSection>
       ) : null}
     </BotPage>

@@ -88,6 +88,25 @@ Any agent that supports remote MCP servers over HTTP with OAuth can connect. Giv
 it the MCP URL and choose OAuth, and the agent finds the sign-in settings itself.
 Agents without OAuth support cannot connect.
 
+<!-- fork: library-projects -->
+
+## Start and find Library work
+
+On a computer enrolled with your Library, agents can list Library projects, search saved
+history and read timelines, including history from computers that are offline. The computer
+and Library both need a version that supports these reads. Ask the agent to use
+`loom_library_projects`, `loom_library_search` or `loom_library_conversations`.
+
+To start a conversation in a registered local Library copy, use `t3_thread_launch` with that
+copy's local project id and the root workspace strategy. Loom binds the conversation before
+starting work. Library copies do not support separate worktree launches. Pass a
+`clientRequestId` and reuse it when retrying after a lost response to recover the same
+conversation and first turn.
+
+An interrupted operation started by an agent belongs to its conversation. Ask that agent to
+resume or cancel it with `loom_library_operation_control` during a new full-access turn.
+Signing in again from another client does not transfer ownership.
+
 ## Remove an agent
 
 Approved agents appear under **Settings → Connections** like other clients.

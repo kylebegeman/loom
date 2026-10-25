@@ -1,5 +1,9 @@
 # Mobile notifications
 
+<!-- fork: library-push -->
+
+In Loom, your Library can send agent alerts to your iPhone without T3 Connect. See [Notifications from your Library](../fork/user/connections.md#notifications-from-your-library).
+
 Sign in to T3 Connect, link your environments, and enable **Device Notifications** in **Settings → Notifications** to receive alerts when an agent finishes, fails, needs approval, or asks for input. Tap a notification to open its thread. Your environment must have agent activity publishing enabled.
 
 Enable **Ongoing Agent Activity** on Android or **Live Activity Updates** on iOS to follow work without opening the app. Finished results remain visible for up to 15 minutes. You can dismiss an Android activity card without disabling alerts; turn off ongoing activity in Settings to stop future cards.

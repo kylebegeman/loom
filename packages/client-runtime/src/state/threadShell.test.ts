@@ -10,7 +10,8 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
-import { describe, expect, it } from "vite-plus/test";
+// fork: attention-status
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PrimaryConnectionTarget } from "../connection/model.ts";
 import { v2Now, v2ShellSnapshot, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
@@ -392,4 +393,55 @@ describe("v2 thread shell lists", () => {
       harness.registry.dispose();
     }
   });
+});
+
+// fork: attention-status
+it("counts only enabled environments and wakes paused attention at its snooze deadline", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(DateTime.toEpochMillis(v2Now));
+  const { registry, threads, snapshotAtom, catalogValueAtom } = makeHarness([
+    environmentId,
+    remoteEnvironmentId,
+  ]);
+  const paused = {
+    ...v2ThreadShell,
+    queueHeld: true,
+    snoozedAt: v2Now,
+    snoozedUntil: DateTime.add(v2Now, { hours: 1 }),
+  };
+  registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [paused] });
+  registry.set(snapshotAtom(remoteEnvironmentId), {
+    ...v2ShellSnapshot,
+    threads: [{ ...v2ThreadShell, queueHeld: true }],
+  });
+  const dispose = registry.mount(threads.attentionThreadShellsAtom);
+  try {
+    expect(
+      registry.get(threads.attentionThreadShellsAtom).map((thread) => thread.environmentId),
+    ).toEqual([remoteEnvironmentId]);
+    const catalog = registry.get(catalogValueAtom);
+    registry.set(catalogValueAtom, {
+      ...catalog,
+      entries: new Map(
+        [...catalog.entries].map(([id, entry]) => [
+          id,
+          { ...entry, enabled: id !== remoteEnvironmentId },
+        ]),
+      ),
+    });
+    expect(registry.get(threads.attentionThreadShellsAtom)).toEqual([]);
+    vi.advanceTimersByTime(3_600_000);
+    expect(
+      registry.get(threads.attentionThreadShellsAtom).map((thread) => thread.environmentId),
+    ).toEqual([environmentId]);
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [{ ...v2ThreadShell, queueHeld: false }],
+    });
+    expect(registry.get(threads.attentionThreadShellsAtom)).toEqual([]);
+  } finally {
+    dispose();
+    registry.dispose();
+    vi.useRealTimers();
+  }
 });

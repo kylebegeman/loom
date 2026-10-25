@@ -16,14 +16,14 @@ it("normalizes portable repository input and redacts private form data", () => {
   expect(save.repositories).toEqual(["owner/repo", "owner/other", "team/source"]);
   expect(save.label).toBe("Developer GitHub");
   expect(JSON.stringify(save)).not.toContain("synthetic_private_token");
-  expect(save.credential.type).toBe("token");
-  if (save.credential.type === "token")
+  expect(save.credential?.type).toBe("token");
+  if (save.credential?.type === "token")
     expect(Redacted.value(save.credential.token)).toBe("synthetic_private_token");
   const app = makeVaultGitHubSave(
     { ...draft, type: "app", secret: " first\\nsecond " },
     "b".repeat(32),
   )!;
-  if (app.credential.type === "app")
+  if (app.credential?.type === "app")
     expect(Redacted.value(app.credential.privateKey)).toBe("first\nsecond");
 });
 it("rejects empty or excessive allowlists, invalid identity fields and missing private data", () => {
@@ -59,4 +59,23 @@ it("refuses credential-bearing URLs, another host, and repository subpages", () 
   ]) {
     expect(makeVaultGitHubSave({ ...draft, repositories }, "b".repeat(32))).toBeNull();
   }
+});
+
+it("keeps stored credentials only on edits and applies the personal repository cap", () => {
+  const edit = { ...draft, expectedVersion: 1, secret: "", appId: "", installationId: "" };
+  expect(makeVaultGitHubSave(edit, "b".repeat(32))?.credential).toBeUndefined();
+  expect(makeVaultGitHubSave({ ...edit, type: "app" }, "b".repeat(32))?.credential).toBeUndefined();
+  expect(makeVaultGitHubSave({ ...edit, expectedVersion: 0 }, "b".repeat(32))).toBeNull();
+  const repositories = Array.from({ length: 100 }, (_, i) => `owner/repo${i}`).join(",");
+  expect(makeVaultGitHubSave({ ...edit, repositories }, "b".repeat(32))).toBeNull();
+  expect(
+    makeVaultGitHubSave({ ...edit, repositories }, "b".repeat(32), true)?.repositories,
+  ).toHaveLength(100);
+  expect(
+    makeVaultGitHubSave(
+      { ...edit, repositories: repositories + ",owner/overflow" },
+      "b".repeat(32),
+      true,
+    ),
+  ).toBeNull();
 });

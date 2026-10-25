@@ -108,7 +108,13 @@ const make = Effect.gen(function* () {
           );
           await NodeFSP.writeFile(
             launcher,
-            renderAgentSshLauncher(session, { socket: socketPath, identity, knownHosts }),
+            renderAgentSshLauncher(
+              session,
+              { socket: socketPath, identity, knownHosts },
+              "connection" in input && "resource" in input.connection
+                ? [input.connection.resource]
+                : [],
+            ),
             { mode: 0o700 },
           );
         },

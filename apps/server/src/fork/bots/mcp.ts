@@ -1,3 +1,4 @@
+import { BotInboxSummary, botInboxSummary } from "../../mcp/botInboxSummary.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   BotBatch,
@@ -126,15 +127,16 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_inbox", {
     description:
-      "List bot runs that need a person, newest first: failed and timed-out runs, and verdict runs that ended needs_attention. Each run carries its error or verdict, inputs and the model it used. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
+      "List a compact inbox of bot runs, newest first: ids, bot name, status, one-line reason, failure class, times and caller thread. A run marked handled already delivered its result to the agent that started it and needs no person; the top-level handled counts them. Full inputs, reply and verdict are available from loom_bots_run_status with the run id. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
     parameters: Schema.Struct({
       limit: Schema.optionalKey(
         Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
       ),
     }),
     success: Schema.Struct({
-      runs: Schema.Array(BotRun),
+      runs: Schema.Array(BotInboxSummary),
       total: Schema.Int,
+      handled: Schema.optionalKey(Schema.Int),
       hasMore: Schema.Boolean,
     }),
     failure,
@@ -432,7 +434,9 @@ export const botsHandlers = McpToolAccess.toLayer(
       ),
       loom_bots_inbox: McpToolAccess.reads((input) =>
         onHost(
-          Effect.flatMap(BotsService, (service) => service.inbox({ limit: input.limit ?? 20 })),
+          Effect.flatMap(BotsService, (service) =>
+            service.inbox({ limit: input.limit ?? 20 }),
+          ).pipe(Effect.map((page) => ({ ...page, runs: page.runs.map(botInboxSummary) }))),
         ),
       ),
       loom_bots_usage: McpToolAccess.reads((input) =>

@@ -4,6 +4,7 @@ import {
   type VaultSshGenerate,
   type VaultSshTrust,
   type VaultSshProbe,
+  type VaultSshPinnedKeysInput,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
@@ -18,6 +19,8 @@ export const makeVaultSshRpcHandlers = Effect.fn("VaultSsh.makeRpcHandlers")(fun
       Effect.mapError(() => new VaultError({ reason: "denied" })),
     );
   return {
+    [V.pinnedKeys]: (input: VaultSshPinnedKeysInput) =>
+      auth.effect(V.pinnedKeys, service.pinnedKeys(input)),
     [V.info]: (input: { id: string }) => auth.effect(V.info, service.info(input.id)),
     [V.generate]: (input: VaultSshGenerate) =>
       auth.effect(V.generate, service.generate(input, actor, authorize(V.generate))),

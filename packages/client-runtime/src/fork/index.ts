@@ -24,6 +24,7 @@ export * from "./code-graph.ts";
 export * from "./workspace-handoff.ts";
 
 export * from "./workspace-handoff-flow.ts";
+export * from "./workspace-handoff-preflight.ts";
 
 export * from "./github-host-setup.ts";
 export * from "./mini-offload.ts";
@@ -70,6 +71,7 @@ export * from "./library-brief-suggestions.ts";
 export * from "./library-profile-readiness.ts";
 export * from "./library-launch-choice.ts";
 export * from "./library-launch-defaults.ts";
+export * from "./library-empty-conversation.ts";
 export * from "./library-launch-inputs.ts";
 export * from "./directory.ts";
 export * from "./directory-cache.ts";
@@ -80,6 +82,8 @@ export * from "./reach.ts";
 export * from "./library-push.ts";
 export * from "./identity-renewal.ts";
 export * from "./identity-renewal-worker.ts";
+export * from "./identity-renewal-policy.ts";
+export * from "./connection-health.ts";
 export * from "./no-project-target.ts";
 export * from "./library-tidy.ts";
 export * from "./library-timeline.ts";
@@ -105,3 +109,7 @@ export * from "./bots-presentation.ts";
 export * from "./library-start-intent.ts";
 export * from "./library-attention.ts";
 export * from "./library-workflows.ts";
+
+export * from "./thread-attention.ts";
+export * from "./restart-impact.ts";
+export * from "./database-compaction.ts";

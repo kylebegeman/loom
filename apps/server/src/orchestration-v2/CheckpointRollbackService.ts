@@ -1,3 +1,13 @@
+// fork: project-lifecycle
+import {
+  CheckpointRef,
+  CheckpointRestoreActionError,
+  type CheckpointRestoreState,
+  type CommandId,
+  type OrchestrationV2CheckpointScope,
+} from "@t3tools/contracts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import {
   CheckpointId,
   CheckpointScopeId,
@@ -35,6 +45,9 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+
+// fork: project-lifecycle
+const isCheckpointRestoreActionError = Schema.is(CheckpointRestoreActionError);
 
 export const ROLLBACK_FAILED_MESSAGE =
   "The provider could not roll back this conversation. Try again; if it keeps failing, check the provider and server logs.";
@@ -88,12 +101,23 @@ export function rollbackFailureClientMessage(error: CheckpointRollbackExecutionE
 }
 
 export interface CheckpointRollbackServiceV2Shape {
+  // fork: project-lifecycle
+  readonly restoreState: (input: {
+    readonly threadId: ThreadId;
+    readonly scopeId?: CheckpointScopeId | undefined;
+  }) => Effect.Effect<CheckpointRestoreState, CheckpointRestoreActionError>;
+  readonly undoRestore: (input: {
+    readonly threadId: ThreadId;
+    readonly undoToken: string;
+  }) => Effect.Effect<void, CheckpointRestoreActionError>;
   readonly execute: (input: {
     readonly threadId: ThreadId;
     readonly providerThreadId: ProviderThreadId;
     readonly checkpointId: CheckpointId;
     readonly scopeId: CheckpointScopeId;
     readonly restoreFiles?: boolean;
+    // fork: project-lifecycle
+    readonly requestId?: CommandId;
   }) => Effect.Effect<void, CheckpointRollbackExecutionError>;
 }
 
@@ -106,6 +130,8 @@ export const layer: Layer.Layer<
   CheckpointRollbackServiceV2,
   never,
   | CheckpointServiceV2
+  // fork: project-lifecycle
+  | CheckpointStore.CheckpointStore
   | GitWorkflowService.GitWorkflowService
   | EventSinkV2
   | IdAllocator.IdAllocatorV2
@@ -122,6 +148,17 @@ export const layer: Layer.Layer<
   CheckpointRollbackServiceV2,
   Effect.gen(function* () {
     const checkpoints = yield* CheckpointServiceV2;
+    // fork: project-lifecycle
+    const checkpointStore = yield* CheckpointStore.CheckpointStore;
+    const undoStates = new Map<
+      ThreadId,
+      {
+        token: string;
+        scope: OrchestrationV2CheckpointScope;
+        beforeRef: CheckpointRef;
+        restoredRef: CheckpointRef;
+      }
+    >();
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const eventSink = yield* EventSinkV2;
     const ids = yield* IdAllocator.IdAllocatorV2;
@@ -134,13 +171,10 @@ export const layer: Layer.Layer<
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
-    const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly providerThreadId: ProviderThreadId;
-      readonly checkpointId: CheckpointId;
-      readonly scopeId: CheckpointScopeId;
-      readonly restoreFiles?: boolean;
-    }) {
+    // fork: project-lifecycle
+    const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (
+      input: Parameters<CheckpointRollbackServiceV2Shape["execute"]>[0],
+    ) {
       const context = yield* projections.getCheckpointRollbackContext(input.threadId, input);
       const { providerThread, checkpoint, scope, targetAttempt, runsToRollback, staleCheckpoints } =
         context;
@@ -275,6 +309,14 @@ export const layer: Layer.Layer<
           (turn.runAttemptId === null || !rolledBackAttemptIds.has(turn.runAttemptId)),
       );
 
+      // fork: project-lifecycle -- capture local edits before either provider or files move.
+      const undoToken = input.restoreFiles === false ? null : yield* randomUuidV4;
+      const beforeRef =
+        undoToken === null
+          ? null
+          : CheckpointRef.make(`${checkpoint.ref}-before-restore-${undoToken}`);
+      if (beforeRef !== null)
+        yield* checkpointStore.captureCheckpoint({ cwd: scope.cwd, checkpointRef: beforeRef });
       const snapshot =
         runsToRollback.length === 0
           ? { providerThread }
@@ -283,9 +325,15 @@ export const layer: Layer.Layer<
               target: rollbackTarget,
               providerThreadTurns,
             });
-      if (input.restoreFiles !== false) yield* checkpoints.restore({ scope, checkpoint });
-      if (staleCheckpoints.length > 0) {
-        yield* checkpoints.deleteStaleRefs({ scope, checkpoints: staleCheckpoints });
+      // fork: project-lifecycle -- stale checkpoint refs remain available for recovery and forks.
+      if (input.restoreFiles !== false) {
+        yield* checkpoints.restore({ scope, checkpoint });
+        undoStates.set(input.threadId, {
+          token: undoToken!,
+          scope,
+          beforeRef: beforeRef!,
+          restoredRef: checkpoint.ref,
+        });
       }
 
       // Thread commands write full provider thread rows under this lock. Without
@@ -359,12 +407,153 @@ export const layer: Layer.Layer<
               );
             }
           }
+          // fork: project-lifecycle -- also acknowledge restores at the latest checkpoint.
+          if (input.requestId !== undefined) {
+            const current = yield* projections.getThread(input.threadId);
+            events.push(
+              yield* makeEvent({
+                type: "thread.metadata-updated",
+                threadId: input.threadId,
+                providerInstanceId: providerThread.providerInstanceId,
+                occurredAt: now,
+                payload: {
+                  ...current,
+                  rollbackCompletedRequestId: input.requestId,
+                  updatedAt: now,
+                },
+              }),
+            );
+          }
           yield* eventSink.write({ events });
         }),
       );
     });
 
+    // fork: project-lifecycle
+    const restoreState = Effect.fn("CheckpointRollback.restoreState")(
+      function* (input: Parameters<CheckpointRollbackServiceV2Shape["restoreState"]>[0]) {
+        const thread = yield* projections.getThread(input.threadId);
+        const context = yield* projections.getCheckpointContext(input.threadId);
+        const scope =
+          input.scopeId === undefined
+            ? context.checkpointScopes.at(-1)
+            : context.checkpointScopes.find((scope) => scope.id === input.scopeId);
+        const isolated =
+          scope !== undefined &&
+          (yield* isCheckpointRestoreIsolated(thread, scope, {
+            fileSystem,
+            projections,
+            projects,
+            path,
+          }));
+        return {
+          threadId: input.threadId,
+          canRestoreFiles: isolated,
+          reason: isolated
+            ? null
+            : scope === undefined
+              ? "No file checkpoint is available for this conversation."
+              : SHARED_WORKSPACE_RESTORE_MESSAGE,
+          undoToken: undoStates.get(input.threadId)?.token ?? null,
+        };
+      },
+      Effect.mapError(
+        (cause) =>
+          new CheckpointRestoreActionError({
+            message: "Could not check whether these files can be restored. Try again.",
+            cause,
+          }),
+      ),
+    );
+
+    const undoRestore = Effect.fn("CheckpointRollback.undoRestore")(
+      function* (input: { readonly threadId: ThreadId; readonly undoToken: string }) {
+        const saved = undoStates.get(input.threadId);
+        if (!saved || saved.token !== input.undoToken)
+          return yield* new CheckpointRestoreActionError({
+            message: "This restore can no longer be undone in this session.",
+          });
+        yield* withWorkspaceLease(
+          path.resolve(saved.scope.cwd),
+          threadCommands.withLock(
+            input.threadId,
+            Effect.gen(function* () {
+              if (undoStates.get(input.threadId) !== saved)
+                return yield* new CheckpointRestoreActionError({
+                  message: "Another restore replaced this undo.",
+                });
+              const thread = yield* projections.getThread(input.threadId);
+              const shell = yield* projections.getThreadShell(input.threadId);
+              if (shell === null || shell.activeRunId !== null)
+                return yield* new CheckpointRestoreActionError({
+                  message: "Stop the current turn before undoing a file restore.",
+                });
+              if (
+                !(yield* isCheckpointRestoreIsolated(thread, saved.scope, {
+                  fileSystem,
+                  projections,
+                  projects,
+                  path,
+                }))
+              )
+                return yield* new CheckpointRestoreActionError({
+                  message: SHARED_WORKSPACE_RESTORE_MESSAGE,
+                });
+              const probeRef = CheckpointRef.make(`${saved.beforeRef}-check`);
+              yield* checkpointStore.captureCheckpoint({
+                cwd: saved.scope.cwd,
+                checkpointRef: probeRef,
+              });
+              yield* Effect.gen(function* () {
+                const changed = yield* checkpointStore.diffCheckpoints({
+                  cwd: saved.scope.cwd,
+                  fromCheckpointRef: saved.restoredRef,
+                  toCheckpointRef: probeRef,
+                  ignoreWhitespace: false,
+                  format: "numstat",
+                  maxOutputBytes: 1024 * 1024,
+                });
+                if (changed.trim())
+                  return yield* new CheckpointRestoreActionError({
+                    message:
+                      "Files changed after the restore. Undo would overwrite them, so it was stopped.",
+                  });
+                if (
+                  !(yield* checkpointStore.restoreCheckpoint({
+                    cwd: saved.scope.cwd,
+                    checkpointRef: saved.beforeRef,
+                    fallbackToHead: false,
+                  }))
+                )
+                  return yield* new CheckpointRestoreActionError({
+                    message: "The saved files for this undo are unavailable.",
+                  });
+                undoStates.delete(input.threadId);
+              }).pipe(
+                Effect.ensuring(
+                  checkpointStore
+                    .deleteCheckpointRefs({ cwd: saved.scope.cwd, checkpointRefs: [probeRef] })
+                    .pipe(Effect.ignore),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+      Effect.mapError((cause) =>
+        isCheckpointRestoreActionError(cause)
+          ? cause
+          : new CheckpointRestoreActionError({
+              message: "Could not undo the file restore. Your recovery checkpoint is preserved.",
+              cause,
+            }),
+      ),
+    );
+
     return CheckpointRollbackServiceV2.of({
+      // fork: project-lifecycle
+      restoreState,
+      undoRestore,
       // The inner execute owns the rollback span; this wrapper selects the workspace lease.
       execute: Effect.fnUntraced(
         function* (input) {

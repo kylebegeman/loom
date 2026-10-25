@@ -24,7 +24,6 @@ import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { openCommandPalette } from "~/commandPaletteBus";
 import { environmentCatalog } from "~/connection/catalog";
 import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
-import { useLibraryLocalProjectStart } from "~/fork/project-library/libraryLocalProjectStart";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -36,7 +35,6 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
   const setEnabled = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
   const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const { handleNewThread } = useHandleNewThread();
-  const startLibraryFolder = useLibraryLocalProjectStart();
   const { startScratchThread, scratchWorkspaceRootFor } = useScratchProject();
   const canStartWork = useEnvironmentScope(
     environment.environmentId,
@@ -70,7 +68,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
     openCommandPalette({ open: "add-project", environmentId: environment.environmentId });
   const startInProject = async (projectId: ProjectId) => {
     const projectRef = scopeProjectRef(environment.environmentId, projectId);
-    if (!startLibraryFolder(projectRef)) await handleNewThread(projectRef);
+    await handleNewThread(projectRef);
   };
 
   return (

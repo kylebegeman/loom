@@ -47,6 +47,9 @@ import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore"
 import { useClientSettings } from "./useSettings";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 
+// fork: library-projects
+import { useLibraryLocalProjectStart } from "../fork/project-library/libraryLocalProjectStart";
+
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
   worktreePath?: string | null;
@@ -66,13 +69,14 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
 export function useNewThreadHandler() {
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
+  const startLibraryFolder = useLibraryLocalProjectStart(); // fork: library-projects
   const getCurrentRouteTarget = () => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteTarget(currentRouteParams);
   };
 
-  return (
-    projectRef: ScopedProjectRef,
+  return async (
+    projectRef: ScopedProjectRef, // fork: library-projects
     options?: {
       branch?: string | null;
       worktreePath?: string | null;
@@ -87,6 +91,22 @@ export function useNewThreadHandler() {
       >;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+    // fork: library-projects - Every local-project entry point waits for its Library identity.
+    const startingHref = router.state.location.href;
+    const startingProject = readProject(projectRef);
+    if (
+      await startLibraryFolder(
+        projectRef,
+        () => router.state.location.href === startingHref,
+        options?.sourceSettings,
+      )
+    )
+      return null;
+    if (
+      router.state.location.href !== startingHref ||
+      (startingProject !== null && readProject(projectRef) === null)
+    )
+      return null;
     // fork: project-home routing intent is independent of workspace-default resolution.
     const explicitEnvironmentContext = options?.environmentSelection
       ? { environmentSelection: options.environmentSelection, loadBalancedEnvironmentId: null }

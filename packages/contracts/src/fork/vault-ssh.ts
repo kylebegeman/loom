@@ -116,8 +116,23 @@ export const VaultSshProbeResult = Schema.Struct({
   authenticated: Schema.Literal(true),
 });
 export type VaultSshProbeResult = typeof VaultSshProbeResult.Type;
+export const VaultSshPinnedKeysInput = Schema.Struct({
+  hostname: VaultSshTarget.fields.hostname,
+  port: VaultSshTarget.fields.port,
+});
+export type VaultSshPinnedKeysInput = typeof VaultSshPinnedKeysInput.Type;
+export const VaultSshPinnedKey = Schema.Struct({
+  publicKey: VaultSshPublicKey,
+  fingerprint: Schema.String,
+  sourceFile: Schema.String,
+  source: Schema.Literals(["global", "user"]),
+  hostname: VaultSshTarget.fields.hostname,
+  port: VaultSshTarget.fields.port,
+});
+export type VaultSshPinnedKey = typeof VaultSshPinnedKey.Type;
 export const VAULT_SSH_WS_METHODS = {
   info: "loom.vault-ssh.info",
+  pinnedKeys: "loom.vault-ssh.pinnedKeys",
   generate: "loom.vault-ssh.generate",
   trust: "loom.vault-ssh.trust",
   probe: "loom.vault-ssh.probe",
@@ -129,6 +144,11 @@ const rpcError = Schema.Union([
   EnvironmentAuthorizationError,
 ]);
 export const VaultSshRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_SSH_WS_METHODS.pinnedKeys, {
+    payload: VaultSshPinnedKeysInput,
+    success: Schema.Array(VaultSshPinnedKey),
+    error: rpcError,
+  }),
   Rpc.make(VAULT_SSH_WS_METHODS.info, {
     payload: Schema.Struct({ id: VaultItemId }),
     success: VaultSshInfo,

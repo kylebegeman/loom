@@ -67,6 +67,34 @@ reached, Loom says so and shows the last list it read. Connected computers keep
 their own addresses, and a computer you remove from this device returns to the
 list.
 
+If a computer has no published address, choose **Pair instead** and enter a
+reachable address and pairing code. Loom checks that it is the computer you
+selected. On that computer, **Connection details** shows the addresses it last
+reported to your Library. If there are none, enable **Tailscale HTTPS** on desktop
+or **Reach from anywhere** below the connection settings.
+
+## Keep a computer signed in to its Library
+
+A computer renews its Library sign-in automatically before it expires. In
+**Settings > Connections > Connection details**, check **Library sign-in and
+directory** for its expiry, reporting state and any repair. The same status is
+available in the computer's details on iPhone. This sign-in is separate from
+your devices' Identity sign-ins.
+
+If automatic renewal is unavailable, update Loom on your Library before the
+shown expiry. An expired or refused sign-in needs your Library administrator to
+issue a replacement publisher credential for this computer and replace its
+private credential file. Loom reloads the replacement automatically. Until
+then, Library publishing, directory reporting and remote bot requests cannot
+use that sign-in. A Library outage is retried automatically.
+
+The administrator issues credentials on the Library with
+`loom auth library-publisher --source-environment-id <computer-id> --library-url <https-origin>`.
+If replacing a credential, revoke its old publisher session and retire its old
+issuer-side credential file first. Transfer the generated file privately to
+that computer's configured publisher credential path and keep its permissions
+at `0600`. Do not paste its contents into a conversation.
+
 ## Stay signed in with Identity
 
 Each Identity sign-in to a computer lasts up to an hour. When the computer sets
@@ -112,17 +140,21 @@ your Library, and your Library computer itself cannot use reach. Once the
 address appears, **Copy address** copies it.
 
 Other devices pick the address up the next time they connect to the computer.
-A device that saved the computer before reach was on, and is now away from home
-without Tailscale, has to connect once from home or reconnect the computer from
-your Library's list.
+A device that saved the computer earlier and can't reach it now, such as a
+phone away from home without Tailscale, gets the address from your Library and
+tries it on its own. It checks while it is connected to your Library, when you
+open your computers in Settings or when a conversation on that computer can't
+connect. You never need to remove the computer to pick up a new address, and
+removing it deletes its drafts and unsent messages on that device.
 
-When your Library has prepared Loom sign-in for the computer, its Reach section
-on that computer lists four settings. Copy them into the computer's server
-environment and restart Loom. Until then, devices that find the computer through
-your Library pair instead. While reach and Loom sign-in are both on, Loom also
-suggests setting
-`LOOM_IDENTITY_REQUIRE_PASSKEY=true`, which makes the computer accept passkey
-sign-ins only. If a sign-in is refused for that reason, sign out of Loom
+When your Library has prepared Loom sign-in for the computer, open its own
+Connections settings and choose **Use these values**. The session must allow
+settings changes. Enter the allowed Loom account IDs if they are not already
+configured, and choose whether to **Require passkey**. Loom saves these values
+privately on that computer and restarts its backend. Active connections
+reconnect afterward; server environment variables take precedence over the
+saved values. Until sign-in is configured, devices that find the computer through
+your Library pair instead. If passkey sign-in is refused, sign out of Loom
 Identity in your browser, then sign in with your passkey.
 
 Turning reach off and **Remove address** are different:
@@ -153,15 +185,17 @@ that option and changes nothing; retire without it, or fix the key and try
 again. Your Library asks you to retire a computer's reach address before you can
 forget the computer.
 
-Agents can check reach and can turn it off or remove an address. They cannot
+Agents can check reach from any computer signed in to the Library, including connector counts and sign-in state, and can turn reach off or remove an address. They cannot
 turn it on.
 
 ## Notifications from your Library
 
 Your Library can send notifications to Loom on your iPhone without a Connect
-account. For now it sends only test notifications. This needs a Loom build for
-iPhone that supports Library notifications, a Library with notifications turned
-on, and an iPhone signed in to the Library with Loom Identity.
+account. With agent alerts on, it tells your iPhone when an agent needs your
+approval or an answer, fails, reaches a usage limit or finishes. This needs a
+Loom build for iPhone that supports Library notifications, a Library with
+notifications turned on, and an iPhone signed in to the Library with Loom
+Identity.
 
 To turn them on, open **Settings > Notifications** on iPhone and turn on
 **Notifications from** your Library. iOS asks for permission the first time.
@@ -172,11 +206,25 @@ accepted its notification token, Loom registers the phone again; try the test
 again in a moment. Your Library turns notifications on with
 `LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
 **Push notifications** section in **Settings > Connections** on desktop or in a
-browser shows whether they are on, which Loom builds it sends to, and the
-iPhones that turned them on. If the iPhone says your Library doesn't send
-notifications to this build of Loom, add that build to `LOOM_LIBRARY_PUSH_TOPICS`
-on the Library. To have an agent send a test, choose **Copy ID** on the phone's row
-there and give the ID to the agent.
+browser shows whether they are on, whether it sends agent alerts, which Loom
+builds it sends to, and the iPhones that turned them on. If the iPhone says your
+Library doesn't send notifications to this build of Loom, add that build to
+`LOOM_LIBRARY_PUSH_TOPICS` on the Library. To have an agent send a test, choose
+**Copy ID** on the phone's row there and give the ID to the agent.
+
+Agent alerts have a switch of their own, `LOOM_LIBRARY_PUSH_ACTIVITY` in the
+Library's server environment. When more than one account can sign in to your
+Library, it sends alerts only to the accounts named in
+`LOOM_LIBRARY_PUSH_RECIPIENTS`. Alerts come from the Library's own conversations
+and from each computer your Library lists that has a Library connection and runs
+a Loom version with agent alerts. A computer connected to your Library after it
+started sends alerts once it restarts. An alert names no conversation, project
+or computer. Tap it to open the conversation, which needs a connection to that
+computer on this iPhone. Each conversation keeps one notification, the latest.
+Subagents, bot runs, and archived or settled conversations never alert. A
+snoozed conversation stays quiet when its agent finishes, but still alerts when
+it fails or asks you something. A computer sends at most 20 alerts an hour, and
+an iPhone gets at most 30.
 
 Turning the switch off on iPhone tells your Library to forget the phone. If the
 Library cannot be reached, the phone keeps your choice and tells it on the next

@@ -51,7 +51,13 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
-import type { LibraryResolvedBinding } from "@t3tools/contracts/fork"; // fork: library-projects
+import type { LibraryProject, LibraryResolvedBinding } from "@t3tools/contracts/fork"; // fork: library-projects
+// fork: library-projects
+import * as Context from "effect/Context";
+import * as OrchestratorMcp from "../mcp/OrchestratorMcpService.ts"; // fork: library-projects
+import { ForkRuntime, type ForkServices } from "../fork/ForkRuntime.ts";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
+import * as LibraryOperations from "../fork/project-library/ProjectOperations.ts";
 import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 import { LibraryWorkspaceStore } from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -143,6 +149,7 @@ interface HarnessOptions {
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly libraryWorkspaceStore?: Layer.Layer<LibraryWorkspaceStore>; // fork: library-projects
   readonly libraryFolderGuard?: Layer.Layer<LibraryFolderGuard.LibraryFolderGuard>; // fork: library-projects
 }
 
@@ -249,6 +256,7 @@ function makeHarness(options: HarnessOptions = {}) {
         layerThreadManagement,
         layerReceipts,
         IdAllocator.layer,
+        options.libraryWorkspaceStore ?? Layer.empty, // fork: library-projects
         options.libraryFolderGuard ?? Layer.empty, // fork: library-projects
       ),
     ),
@@ -1219,6 +1227,62 @@ it.effect("arms durable title generation after accepting the first message", () 
         DateTime.toEpochMillis(afterStaleCompletion.thread.updatedAt),
         DateTime.toEpochMillis(renamed.thread.updatedAt),
       );
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+// fork: library-projects
+it.effect("keeps a title chosen before the first message and replaces a default one", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    yield* Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const firstMessage = Effect.fn("test.firstMessage")(function* (title: string) {
+        const threadId = ThreadId.make(`thread:first-title:${title}`);
+        yield* threads.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          projectId,
+          title,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const commandId = CommandId.make(`${threadId}:message`);
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId,
+          threadId,
+          messageId: MessageId.make(`${threadId}:message`),
+          createdBy: "user",
+          creationSource: "web",
+          text: "Fix the failing parser",
+          attachments: [],
+          titleSeed: "Fix the failing parser",
+          dispatchMode: { type: "defer_start" },
+        });
+        return {
+          title: (yield* threads.getThreadProjection(threadId)).thread.title,
+          generates: (yield* outbox.listByCommandId(commandId)).some(
+            (effect) => effect.request.type === "thread-title.generate",
+          ),
+        };
+      });
+      assert.deepEqual(yield* firstMessage("Release checklist"), {
+        title: "Release checklist",
+        generates: false,
+      });
+      for (const title of ["New conversation", "Project discussion", "New thread"])
+        assert.deepEqual(yield* firstMessage(title), {
+          title: "Fix the failing parser",
+          generates: true,
+        });
     }).pipe(Effect.provide(harness.layer));
   }),
 );
@@ -3178,6 +3242,8 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
               }),
             ),
           ),
+        resolveLibraryBinding: launches.resolveLibraryBinding,
+        bindLibraryThread: launches.bindLibraryThread, // fork: library-projects
         checkWorktreeBase: launches.checkWorktreeBase,
         retryPreparation: launches.retryPreparation,
         prepareRun: launches.prepareRun,
@@ -4006,4 +4072,365 @@ it.effect.each(
         }
       }).pipe(Effect.provide(Layer.merge(harness.layer, layerService)));
     }),
+);
+
+// fork: library-projects
+const launchLibraryProject: LibraryProject = {
+  id: "library-launch-project",
+  title: "Library project",
+  brief: "Pinned brief",
+  revision: 2,
+  resources: [],
+  archived: false,
+  createdAt: "2026-10-25T00:00:00Z",
+  updatedAt: "2026-10-25T00:00:00Z",
+};
+const launchLibraryReceipt = {
+  requestId: "copy",
+  fingerprint: "copy",
+  project: launchLibraryProject,
+  copy: {
+    id: "library-copy",
+    projectId: launchLibraryProject.id,
+    projectRevision: 2,
+    environmentId: EnvironmentId.make("library-computer"),
+    rootPath: project.workspaceRoot,
+    repositories: [],
+    ownership: "managed" as const,
+    state: "ready" as const,
+    createdAt: launchLibraryProject.createdAt,
+    updatedAt: launchLibraryProject.updatedAt,
+  },
+  rootLocalProjectId: projectId,
+  rootCheckpointRepository: false,
+  legacyThreadIds: [],
+  rootIdentity: null,
+  releaseRequestId: null,
+  releaseReviewToken: null,
+  removalPath: null,
+  archivePath: null,
+  archiveDigest: null,
+};
+const launchLibraryStore = Layer.mock(LibraryWorkspaceStore)({
+  receipts: Effect.succeed([launchLibraryReceipt]),
+  get: () => Effect.succeed(launchLibraryReceipt),
+  getBinding: () => Effect.succeed(null),
+});
+
+// fork: library-projects
+it.effect(
+  "refuses both worktree strategies for a Library copy before creating a conversation",
+  () => {
+    const harness = makeHarness({ libraryWorkspaceStore: launchLibraryStore });
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      for (const workspace of [
+        { type: "worktree", baseRef: "main" },
+        { type: "existing_worktree", worktreePath: "/elsewhere" },
+      ] as const) {
+        const input = launchInput({
+          command: `library-refusal:${workspace.type}`,
+          thread: `library-refusal:${workspace.type}`,
+          workspace,
+        });
+        const error = yield* launches.launch(input).pipe(Effect.flip);
+        assert.equal(error._tag, "ThreadLaunchError");
+        if (error._tag === "ThreadLaunchError")
+          assert.equal(
+            (error.cause as Error).message,
+            LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
+          );
+        assert.isNull(yield* threads.getThreadShell(input.threadId));
+      }
+      assert.equal(harness.createWorktree.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
+// fork: library-projects
+it.effect(
+  "uses the Library launch receipt and binding before starting or replaying a message",
+  () => {
+    const harness = makeHarness({
+      libraryWorkspaceStore: launchLibraryStore,
+      providers: [
+        {
+          instanceId: modelSelection.instanceId,
+          driver: ProviderDriverKind.make("codex"),
+          enabled: true,
+          installed: true,
+          version: "test",
+          status: "ready",
+          auth: { status: "authenticated" },
+          checkedAt: "2026-10-25T00:00:00Z",
+          models: [
+            { slug: modelSelection.model, name: "Test", isCustom: false, capabilities: null },
+          ],
+          slashCommands: [],
+          skills: [],
+        },
+      ],
+    });
+    return Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const bindings = new Map<ThreadId, LibraryResolvedBinding>();
+      const expectedBinding = {
+        projectId: launchLibraryProject.id,
+        projectRevision: 2,
+        environmentId: launchLibraryReceipt.copy.environmentId,
+        workingCopyId: "library-copy",
+        resourceIds: [],
+      };
+      const resolved = {
+        localProjectId: projectId,
+        cwd: project.workspaceRoot,
+        repositoryPaths: [],
+        binding: expectedBinding,
+      };
+      const executeLibrary = Effect.fn("test.LibraryLaunch.execute")(function* (
+        id: string,
+        request: Parameters<LibraryOperations.ProjectOperations["Service"]["executeClient"]>[1],
+      ) {
+        if (request.kind !== "launch") return yield* Effect.die("Expected a Library launch");
+        const input = request.input;
+        yield* threads
+          .dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(`${id}:create`),
+            threadId: input.threadId,
+            projectId,
+            title: input.title,
+            modelSelection: input.modelSelection,
+            runtimeMode: input.runtimeMode,
+            interactionMode: input.interactionMode,
+            branch: null,
+            worktreePath: resolved.cwd,
+            createdBy: "user",
+            creationSource: "web",
+          })
+          .pipe(Effect.orDie);
+        if (!bindings.has(input.threadId)) {
+          assert.equal(yield* threads.getMessageCount(input.threadId).pipe(Effect.orDie), 0);
+          bindings.set(input.threadId, resolved);
+        }
+        return {
+          id,
+          kind: "launch" as const,
+          projectId: launchLibraryProject.id,
+          environmentId: expectedBinding.environmentId,
+          state: "succeeded" as const,
+          phase: "Done",
+          attempt: 1,
+          error: null,
+          result: { threadId: input.threadId },
+          createdAt: launchLibraryProject.createdAt,
+          updatedAt: launchLibraryProject.updatedAt,
+        };
+      });
+      const services = Layer.mergeAll(
+        Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+          resolveBinding: (input) => {
+            assert.deepEqual(input.binding, expectedBinding);
+            return Effect.succeed(resolved);
+          },
+        }),
+        Layer.mock(LibraryOperations.ProjectOperations)({
+          operationId: (request, kind) => Effect.succeed(`${request}:${kind}`),
+          executeAgent: executeLibrary,
+          executeClient: (id, request, sessionId) => {
+            assert.equal(sessionId, "launch-session");
+            return executeLibrary(id, request);
+          },
+        }),
+      );
+      const runtime = yield* Effect.context<
+        LibraryWorkspace.LibraryWorkspace | LibraryOperations.ProjectOperations
+      >().pipe(Effect.provide(services));
+      const { threadId: _id, ...input } = launchInput({
+        command: "library:retry",
+        thread: "unused",
+        message: "Only once",
+      });
+      const launch = (yield* ThreadLaunch.ThreadLaunchService)
+        .launch({
+          ...input,
+          libraryCaller: { sessionId: "launch-session" },
+          waitForPreparation: true,
+        })
+        .pipe(Effect.provideService(ForkRuntime, runtime as Context.Context<ForkServices>));
+      const first = yield* launch;
+      const second = yield* launch;
+      assert.equal(first.threadId, second.threadId);
+      assert.isTrue(second.resumed);
+      assert.deepEqual(bindings.get(first.threadId)?.binding, expectedBinding);
+      assert.equal(second.projection.messages.length, 1);
+      assert.equal(second.projection.runs.length, 1);
+      const service = yield* OrchestratorMcp.OrchestratorMcpService.pipe(
+        Effect.provide(
+          OrchestratorMcp.layer.pipe(
+            Layer.provide(NodeServices.layer),
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
+              ),
+            ),
+          ),
+        ),
+      );
+      const scope = {
+        environmentId: expectedBinding.environmentId,
+        requestNamespace: "library-batch",
+        issuedAt: 0,
+        capabilities: new Set(["orchestration" as const]),
+        client: undefined,
+        thread: {
+          threadId: first.threadId,
+          providerInstanceId: modelSelection.instanceId,
+          providerSessionId: "library-parent",
+        },
+      };
+      const batch = service
+        .createThreads(scope, {
+          clientRequestId: "library-siblings",
+          threads: [{ prompt: "Sibling task" }],
+        })
+        .pipe(Effect.provideService(ForkRuntime, runtime as Context.Context<ForkServices>));
+      const created = yield* batch;
+      const retried = yield* batch;
+      assert.equal(created.threads[0]?.threadId, retried.threads[0]?.threadId);
+      const sibling = yield* threads.getThreadProjection(created.threads[0]!.threadId);
+      assert.deepEqual(bindings.get(sibling.thread.id)?.binding, expectedBinding);
+      assert.equal(sibling.messages.length, 1);
+      assert.equal(sibling.messages[0]?.text, "Sibling task");
+      assert.equal(sibling.runs.length, 1);
+      assert.equal(harness.createWorktree.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
+// fork: library-projects
+it.effect("recovers a held Library delegation whose caller stopped before binding it", () =>
+  Effect.gen(function* () {
+    const parentId = ThreadId.make("library-recovery-parent");
+    const bindings = new Map<ThreadId, LibraryResolvedBinding>();
+    const parentBinding: LibraryResolvedBinding = {
+      localProjectId: projectId,
+      cwd: project.workspaceRoot,
+      repositoryPaths: [],
+      binding: {
+        projectId: launchLibraryProject.id,
+        projectRevision: 2,
+        workingCopyId: launchLibraryReceipt.copy.id,
+        environmentId: launchLibraryReceipt.copy.environmentId,
+        resourceIds: [],
+      },
+    };
+    bindings.set(parentId, parentBinding);
+    const setupEntered = yield* Deferred.make<void>();
+    const harness = makeHarness({
+      libraryWorkspaceStore: Layer.mock(LibraryWorkspaceStore)({
+        receipts: Effect.succeed([launchLibraryReceipt]),
+        get: () => Effect.succeed(launchLibraryReceipt),
+        getBinding: (id) => Effect.sync(() => bindings.get(id) ?? null),
+        getBoundProject: () => Effect.succeed(launchLibraryProject),
+      }),
+      runSetup: (input) =>
+        Effect.gen(function* () {
+          assert.deepEqual(
+            bindings.get(ThreadId.make(input.threadId))?.binding,
+            parentBinding.binding,
+          );
+          yield* Deferred.succeed(setupEntered, undefined);
+          return { status: "no-script" as const };
+        }),
+    });
+    yield* Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      yield* threads.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("library-parent:create"),
+        threadId: parentId,
+        projectId,
+        title: "Parent",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: project.workspaceRoot,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* threads.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("library-parent:start"),
+        threadId: parentId,
+        messageId: MessageId.make("library-parent:message"),
+        text: "Delegate",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const parent = yield* threads.getThreadProjection(parentId);
+      const run = parent.runs[0]!;
+      const commandId = CommandId.make("library-recovery:delegate");
+      const result = yield* threads.dispatch({
+        type: "delegated_task.request",
+        commandId,
+        parentThreadId: parentId,
+        parentRunId: run.id,
+        parentNodeId: run.rootNodeId!,
+        task: "Continue",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        workspaceStrategy: { type: "root" },
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+      const child = result.storedEvents.find((stored) => stored.event.type === "run.created");
+      assert.isDefined(child);
+      if (child?.event.type !== "run.created") return;
+      const childThreadId = child.event.threadId;
+      assert.isFalse(bindings.has(childThreadId));
+      const workspace = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(
+          Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+            resolveBinding: (input) => Effect.succeed({ ...parentBinding, binding: input.binding }),
+            bindThread: (input) =>
+              Effect.sync(() => {
+                const resolved = { ...parentBinding, binding: input.binding };
+                bindings.set(input.threadId, resolved);
+                return resolved;
+              }),
+          }),
+        ),
+      );
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      yield* launches
+        .prepareRun({ commandId, threadId: childThreadId, runId: child.event.payload.id })
+        .pipe(
+          Effect.provideService(
+            ForkRuntime,
+            Context.make(
+              LibraryWorkspace.LibraryWorkspace,
+              workspace,
+            ) as Context.Context<ForkServices>,
+          ),
+        );
+      yield* Deferred.await(setupEntered);
+      yield* threads.streamStoredEventsFrom({ threadId: childThreadId }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.commandId === CommandId.make(`${commandId}:release`) &&
+            stored.event.type === "run.updated",
+        ),
+        Stream.runHead,
+      );
+      assert.deepEqual(bindings.get(childThreadId)?.binding, parentBinding.binding);
+    }).pipe(Effect.provide(harness.layer));
+  }),
 );

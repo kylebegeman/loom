@@ -34,6 +34,12 @@ it.effect(
         expect(first.terminalConnectionFile).toBeTruthy();
         const env = vaultTerminalEnvironment(first);
         expect(JSON.stringify(env)).not.toContain("synthetic-only");
+        // Agents inherit the server's environment; these overrides drop its OpenBao token path.
+        expect(env).toMatchObject({
+          LOOM_VAULT_OPENBAO_URL: "",
+          LOOM_VAULT_OPENBAO_TOKEN_FILE: "",
+          LOOM_VAULT_OPENBAO_MOUNT: "",
+        });
         expect((yield* fs.stat(first.terminalConnectionFile!)).mode & 0o077).toBe(0);
         expect(yield* readTerminalConnection(env)).toEqual({
           endpoint: config.endpoint,

@@ -16,6 +16,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+// fork: server-weight
+import * as ProviderProcessesLive from "./fork/providerProcesses.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
 const AGENT_SLICE = "app-t3code-agents.slice";
@@ -348,4 +350,8 @@ export const make = Effect.gen(function* () {
   } satisfies AgentScopeShape;
 });
 
-export const layer = Layer.effect(AgentScope, make).pipe(Layer.provide(ProcessRunner.layer));
+// fork: server-weight -- every host reaps its recorded agents before recovery starts.
+export const layer = Layer.merge(
+  Layer.effect(AgentScope, make).pipe(Layer.provide(ProcessRunner.layer)),
+  ProviderProcessesLive.layer,
+);

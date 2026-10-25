@@ -1,3 +1,9 @@
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
+// fork: attention-status
+import {
+  selectAttentionThreadShells,
+  pendingSubagentAttentionRequests,
+} from "@t3tools/contracts/fork";
 import {
   CommandId,
   type RunId,
@@ -13,7 +19,9 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
   OrchestratorMcpFailure,
+  type OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   type OrchestratorMcpCapabilitiesResult,
+  type OrchestratorMcpModelCatalog, // fork: agent-catalog
   type OrchestratorMcpCreateThreadsInput,
   type OrchestratorMcpCreateThreadsResult,
   type OrchestratorMcpCreatedThread,
@@ -135,6 +143,7 @@ type TerminalTaskStatus = Extract<
 export interface OrchestratorMcpServiceShape {
   readonly capabilities: (
     scope: McpInvocationScope,
+    input?: OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   ) => Effect.Effect<OrchestratorMcpCapabilitiesResult, OrchestratorMcpFailure>;
   readonly delegateTask: (
     scope: McpInvocationScope,
@@ -202,6 +211,7 @@ export class OrchestratorMcpService extends Context.Service<
   OrchestratorMcpServiceShape
 >()("t3/mcp/OrchestratorMcpService") {}
 
+const isLibraryLaunchError = Schema.is(LibraryError); // fork: library-projects
 const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManagementError);
 
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
@@ -230,6 +240,11 @@ export const isLiveCallerShell = (
       (task) => task.kind === "subagent" && task.providerInstanceId === providerInstanceId,
     ) ??
       false));
+
+// fork: mcp-refusals -- a provider process can outlive its turn, as a background subagent or one
+// left over from before a restart does, and only the thread's next turn gives it a run to act for.
+export const ENDED_RUN_REPAIR =
+  "Your turn has ended: put what you need in your final reply, and call this tool again in the thread's next turn.";
 
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
@@ -308,6 +323,29 @@ function providerConstraints(
     constraints.push("Provider is not authenticated.");
   }
   return constraints;
+}
+
+// fork: agent-catalog -- instances share a catalog only when their model lists match exactly,
+// so every instance still reports its own hidden models, options and current values. The first
+// list for a driver is keyed by the driver kind; a different one gets a numbered key.
+function shareModelCatalogs<
+  Provider extends { readonly driverKind: string; readonly models: OrchestratorMcpModelCatalog },
+>(providers: ReadonlyArray<Provider>) {
+  const catalogs = new Map<string, OrchestratorMcpModelCatalog>();
+  const keysByContent = new Map<string, string>();
+  const shared = providers.map(({ models, ...provider }) => {
+    if (models.length === 0) return { ...provider, modelCatalog: null };
+    const content = JSON.stringify(models);
+    let key = keysByContent.get(content);
+    if (key === undefined) {
+      key = provider.driverKind;
+      for (let suffix = 2; catalogs.has(key); suffix += 1) key = `${provider.driverKind}-${suffix}`;
+      keysByContent.set(content, key);
+      catalogs.set(key, models);
+    }
+    return { ...provider, modelCatalog: key };
+  });
+  return { providers: shared, modelCatalogs: Object.fromEntries(catalogs) };
 }
 
 /**
@@ -779,9 +817,23 @@ function threadPullRequests(
 function listItemFromShell(
   shell: OrchestrationV2ThreadShell,
   nowMs: number,
+  // fork: attention-status
+  pendingRequest = shell.pendingRuntimeRequest,
 ): OrchestratorMcpThreadListItem {
   return {
     threadId: shell.id,
+    // fork: attention-status
+    projectId: shell.projectId,
+    archived: shell.archivedAt !== null,
+    queueHeld: shell.queueHeld ?? false,
+    lastErrorClass: shell.lastErrorClass ?? null,
+    pendingRequest:
+      pendingRequest === null
+        ? null
+        : {
+            kind: pendingRequest.kind,
+            createdAt: DateTime.formatIso(pendingRequest.createdAt),
+          },
     title: shell.title,
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
@@ -794,7 +846,8 @@ function listItemFromShell(
     linkedPullRequest: shell.linkedPullRequest ?? null,
     pullRequests: threadPullRequests(shell.pullRequests),
     ...threadSettlement(shell),
-    ...threadSnooze(shell, nowMs),
+    // fork: attention-status
+    ...threadSnooze({ ...shell, pendingRuntimeRequest: pendingRequest }, nowMs),
     parentThreadId: shell.lineage.parentThreadId,
     relationshipToParent: shell.lineage.relationshipToParent,
     itemCount: shell.visibleItemCount,
@@ -1168,7 +1221,7 @@ const make = Effect.gen(function* () {
   ) => {
     const notActive = failure(
       "parent_not_active",
-      "The calling provider no longer owns an active thread run.",
+      `The calling provider no longer owns an active thread run. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
     );
     const activeRun = ThreadManagementService.latestActiveRun(parent);
     if (parent.thread.archivedAt === null && activeRun === undefined) {
@@ -1873,7 +1926,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Asking for a secret requires an active run owned by this MCP provider session.",
+          `Asking for a secret requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const runId = run.id;
@@ -1986,9 +2039,20 @@ const make = Effect.gen(function* () {
       return { status, secretRef: secretRef.value };
     }),
 
-    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope) {
+    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope, input = {}) {
       const { parent, limits } = yield* loadCaller(scope);
-      const providers = yield* loadProviders;
+      // fork: agent-catalog
+      const providers = (yield* loadProviders).filter(
+        (provider) =>
+          (input.providerInstanceId === undefined ||
+            provider.instanceId === input.providerInstanceId) &&
+          (input.driverKind === undefined || provider.driver === input.driverKind),
+      );
+      if (providers.length === 0 && (input.providerInstanceId ?? input.driverKind) !== undefined)
+        return yield* failure(
+          "invalid_request",
+          "No provider instance matches providerInstanceId or driverKind. Call orchestrator_capabilities without them to list every instance.",
+        );
       const orchestrationCapableInstanceIds = yield* loadOrchestrationCapableInstanceIds();
       const modelPreferences = yield* serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providerModelPreferences ?? {}),
@@ -2001,38 +2065,41 @@ const make = Effect.gen(function* () {
         inheritedOptions: parent?.thread.modelSelection.options ?? [],
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
-        providers: providers.map((provider) => {
-          const constraints = providerConstraints(
-            provider,
-            orchestrationCapableInstanceIds.has(provider.instanceId),
-          );
-          return {
-            providerInstanceId: provider.instanceId,
-            driverKind: provider.driver,
-            displayName: provider?.displayName ?? null,
-            models:
-              provider?.models
-                .filter(
-                  (model) =>
-                    model.isCustom ||
-                    !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
-                )
-                .map((model) => ({
-                  id: model.slug,
-                  label: model.name ?? null,
-                  ...(model.capabilities?.optionDescriptors === undefined
-                    ? {}
-                    : { options: model.capabilities.optionDescriptors }),
-                })) ?? [],
-            ...(provider.supportedRuntimeModes === undefined ||
-            provider.supportedRuntimeModes.length === 0
-              ? {}
-              : { runtimeModes: [...provider.supportedRuntimeModes] }),
-            canRunChildTask: constraints.length === 0,
-            canRunCrossProviderChildTask: constraints.length === 0,
-            constraints: [...constraints],
-          };
-        }),
+        // fork: agent-catalog -- sets providers and modelCatalogs.
+        ...shareModelCatalogs(
+          providers.map((provider) => {
+            const constraints = providerConstraints(
+              provider,
+              orchestrationCapableInstanceIds.has(provider.instanceId),
+            );
+            return {
+              providerInstanceId: provider.instanceId,
+              driverKind: provider.driver,
+              displayName: provider?.displayName ?? null,
+              models:
+                provider?.models
+                  .filter(
+                    (model) =>
+                      model.isCustom ||
+                      !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
+                  )
+                  .map((model) => ({
+                    id: model.slug,
+                    label: model.name ?? null,
+                    ...(model.capabilities?.optionDescriptors === undefined
+                      ? {}
+                      : { options: model.capabilities.optionDescriptors }),
+                  })) ?? [],
+              ...(provider.supportedRuntimeModes === undefined ||
+              provider.supportedRuntimeModes.length === 0
+                ? {}
+                : { runtimeModes: [...provider.supportedRuntimeModes] }),
+              canRunChildTask: constraints.length === 0,
+              canRunCrossProviderChildTask: constraints.length === 0,
+              constraints: [...constraints],
+            };
+          }),
+        ),
         features: {
           appOwnedSubagents: true,
           asyncPolling: true,
@@ -2057,7 +2124,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Delegated tasks require an active run owned by this MCP provider session.",
+          `Delegated tasks require an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const providers = yield* loadProviders;
@@ -2083,7 +2150,19 @@ const make = Effect.gen(function* () {
         parent.thread.interactionMode,
         input.interactionMode,
       );
-      let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
+      // fork: library-projects -- hold shared children until the Library binding is durable.
+      const libraryBinding = yield* threadLaunch
+        .resolveLibraryBinding({
+          projectId: parent.thread.projectId,
+          callerThreadId: scope.thread.threadId,
+          workspaceStrategy:
+            input.isolation === "worktree"
+              ? { type: "worktree", baseRef: "HEAD" }
+              : { type: "root" },
+        })
+        .pipe(Effect.mapError((error) => failure("invalid_request", error.message)));
+      let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined =
+        libraryBinding === null ? undefined : { type: "root" };
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
         const base = yield* gitDriver
@@ -2161,6 +2240,11 @@ const make = Effect.gen(function* () {
       const childRunEvent = result.storedEvents.find(
         (stored) => stored.event.type === "run.created" && stored.event.threadId === childThreadId,
       );
+      // fork: library-projects -- a failed bind leaves the child held, never running unbound.
+      if (childThreadId !== null && libraryBinding !== null)
+        yield* threadLaunch
+          .bindLibraryThread(childThreadId, libraryBinding)
+          .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
       if (
         childThreadId !== null &&
         childRunEvent?.event.type === "run.created" &&
@@ -2405,12 +2489,20 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Thread creation requires an active run owned by this MCP provider session.",
+            `Thread creation requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
           );
         }
         const parentNodeId = parentRun.rootNodeId;
         const providers = yield* loadProviders;
         const key = yield* requestKey(input.clientRequestId);
+        // fork: library-projects -- check the entire batch's shared folder before creating siblings.
+        const libraryBinding = yield* threadLaunch
+          .resolveLibraryBinding({
+            projectId: parent.thread.projectId,
+            callerThreadId: scope.thread.threadId,
+            workspaceStrategy: { type: "root" },
+          })
+          .pipe(Effect.mapError((error) => failure("invalid_request", error.message)));
         const created = yield* Effect.forEach(
           input.threads,
           (request, index) =>
@@ -2426,12 +2518,16 @@ const make = Effect.gen(function* () {
                 requestKey: key,
                 index,
               });
-              const isRetryOfAcceptedCreation = yield* threadManagement.hasReceipt(commandId);
-              const committedThread = isRetryOfAcceptedCreation
-                ? yield* threadManagement
-                    .getThreadShell(threadId)
-                    .pipe(Effect.mapError(threadManagementFailure))
-                : null;
+              // fork: library-projects -- the Library operation owns a separate create receipt.
+              let isRetryOfAcceptedCreation = yield* threadManagement.hasReceipt(commandId);
+              const committedThread =
+                isRetryOfAcceptedCreation || libraryBinding !== null
+                  ? yield* threadManagement
+                      .getThreadShell(threadId)
+                      .pipe(Effect.mapError(threadManagementFailure))
+                  : null;
+              if (libraryBinding !== null && committedThread !== null)
+                isRetryOfAcceptedCreation = true;
               const target = yield* resolveTargetRechecking({
                 parent,
                 target:
@@ -2453,41 +2549,82 @@ const make = Effect.gen(function* () {
                 parent.thread.interactionMode,
                 request.interactionMode,
               );
-              yield* assertTargetEnabledForProject(parent, commandId, target);
+              // fork: library-projects -- launch checks enablement against its accepted create receipt.
+              if (libraryBinding === null)
+                yield* assertTargetEnabledForProject(parent, commandId, target);
               const title = threadTitle({
                 parentTitle: parent.thread.title,
                 prompt: request.prompt,
                 title: request.title,
                 index,
               });
-              yield* threadManagement
-                .dispatch({
-                  type: "thread.create",
-                  createdBy: "agent",
-                  creationSource: "mcp",
-                  commandId,
-                  threadId,
-                  projectId: parent.thread.projectId,
-                  title,
-                  modelSelection: target.modelSelection,
-                  runtimeMode,
-                  interactionMode,
-                  branch: parent.thread.branch,
-                  worktreePath: parent.thread.worktreePath,
-                })
-                .pipe(
-                  Effect.mapError((error) =>
-                    failure(
-                      "orchestration_error",
-                      `Unable to create thread ${index + 1}: ${errorMessage(error)}`,
+              // fork: library-projects -- use the durable create/bind path before dispatching a prompt.
+              if (libraryBinding !== null) {
+                yield* threadLaunch
+                  .launch({
+                    commandId,
+                    threadId,
+                    projectId: parent.thread.projectId,
+                    title,
+                    modelSelection: target.modelSelection,
+                    runtimeMode,
+                    interactionMode,
+                    workspaceStrategy: { type: "root" },
+                    libraryCaller: scope.thread,
+                    ...(request.prompt === undefined
+                      ? {}
+                      : {
+                          initialMessage: {
+                            messageId: stableMessageId({ scope, requestKey: key, index }),
+                            senderThreadId: scope.thread.threadId,
+                            text: request.prompt,
+                            attachments: [],
+                          },
+                        }),
+                    createdBy: "agent",
+                    creationSource: "mcp",
+                  })
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        error._tag === "ThreadLaunchError" && isLibraryLaunchError(error.cause)
+                          ? error.cause.message
+                          : error.message,
+                      ),
                     ),
-                  ),
-                );
+                  );
+              } else
+                yield* threadManagement
+                  .dispatch({
+                    type: "thread.create",
+                    createdBy: "agent",
+                    creationSource: "mcp",
+                    commandId,
+                    threadId,
+                    projectId: parent.thread.projectId,
+                    title,
+                    modelSelection: target.modelSelection,
+                    runtimeMode,
+                    interactionMode,
+                    branch: parent.thread.branch,
+                    worktreePath: parent.thread.worktreePath,
+                  })
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        `Unable to create thread ${index + 1}: ${errorMessage(error)}`,
+                      ),
+                    ),
+                  );
               // A receipt can appear after target resolution; use the committed thread's selection.
               const resolvedModelSelection = (yield* threadManagement
                 .getThreadRecords(threadId, [])
                 .pipe(Effect.mapError(threadManagementFailure))).thread.modelSelection;
-              if (request.prompt !== undefined) {
+              if (request.prompt !== undefined && libraryBinding === null) {
+                // fork: library-projects
+
                 yield* threadManagement
                   .dispatch({
                     type: "message.dispatch",
@@ -2565,18 +2702,47 @@ const make = Effect.gen(function* () {
     ),
     listThreads: Effect.fn("OrchestratorMcpService.listThreads")(function* (scope, input) {
       const { parent } = yield* loadCaller(scope);
-      const projectId = yield* resolveProjectTarget(parent, input.projectId);
-      const projectThreads = yield* threadManagement
-        .listProjectThreads({
-          projectId,
-          includeSubagents: input.includeSubagents !== false,
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`),
-          ),
+      // fork: attention-status
+      if (input.allProjects && input.projectId !== undefined) {
+        return yield* failure("invalid_request", "Choose projectId or allProjects, not both.");
+      }
+      const projectId = input.allProjects
+        ? null
+        : yield* resolveProjectTarget(parent, input.projectId);
+      const archived = input.archived ?? "exclude";
+      const allThreads = yield* Effect.gen(function* () {
+        if (projectId !== null && archived === "exclude") {
+          return yield* threadManagement.listProjectThreads({ projectId, includeSubagents: true });
+        }
+        const locations: ReadonlyArray<"active" | "archive"> =
+          archived === "include"
+            ? ["active", "archive"]
+            : [archived === "only" ? "archive" : "active"];
+        const snapshots = yield* Effect.forEach(locations, (location) =>
+          threadManagement.getShellSnapshot({ location }),
         );
+        return snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]);
+      }).pipe(
+        Effect.mapError((error) =>
+          failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`),
+        ),
+      );
       const nowMs = yield* Clock.currentTimeMillis;
+      const projectThreads = (
+        input.attention
+          ? selectAttentionThreadShells(allThreads, nowMs)
+          : allThreads.toSorted(
+              (left, right) =>
+                DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt) ||
+                right.id.localeCompare(left.id),
+            )
+      ).filter(
+        (thread) =>
+          (projectId === null || thread.projectId === projectId) &&
+          (input.includeSubagents === true || thread.lineage.relationshipToParent !== "subagent"),
+      );
+      // fork: attention-status
+      const childRequests = pendingSubagentAttentionRequests(allThreads);
       const statuses = input.statuses === undefined ? null : new Set(input.statuses);
       const titleContains = input.titleContains?.toLocaleLowerCase();
       const filtered = projectThreads
@@ -2588,7 +2754,17 @@ const make = Effect.gen(function* () {
             input.settled === undefined || threadSettlement(thread).settled === input.settled,
         )
         .filter(
-          (thread) => input.snoozed === undefined || isSnoozed(thread, nowMs) === input.snoozed,
+          // fork: attention-status
+          (thread) =>
+            input.snoozed === undefined ||
+            isSnoozed(
+              {
+                ...thread,
+                pendingRuntimeRequest:
+                  thread.pendingRuntimeRequest ?? childRequests.get(thread.id) ?? null,
+              },
+              nowMs,
+            ) === input.snoozed,
         )
         .filter(
           (thread) =>
@@ -2601,7 +2777,14 @@ const make = Effect.gen(function* () {
       return {
         projectId,
         currentThreadId: parent?.thread.id ?? null,
-        threads: page.map((shell) => listItemFromShell(shell, nowMs)),
+        // fork: attention-status
+        threads: page.map((shell) =>
+          listItemFromShell(
+            shell,
+            nowMs,
+            shell.pendingRuntimeRequest ?? childRequests.get(shell.id) ?? null,
+          ),
+        ),
         nextCursor,
         total: filtered.length,
       } satisfies OrchestratorMcpThreadListResult;

@@ -7,6 +7,7 @@ import { View } from "react-native";
 
 import { AppText } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { useComputerConnectionHealth } from "../../fork/connection-health/useComputerConnectionHealth";
 import { useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { threadOutboxDeliveryAtom } from "../../state/thread-outbox-delivery";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
@@ -14,6 +15,11 @@ import {
   resolveThreadRecoveryPresentation,
   resolveWorkspacePreparationError,
 } from "./threadRecoveryPresentation";
+
+export interface ContinuableRunAction {
+  readonly failed: boolean;
+  readonly onContinue: () => Promise<void>;
+}
 
 export function ThreadRecoveryNotice(props: {
   readonly threadRef: ScopedThreadRef;
@@ -28,9 +34,12 @@ export function ThreadRecoveryNotice(props: {
   readonly onOpenConnection: () => void;
   readonly onReviewFiles?: () => void;
   readonly onResumeQueue: (() => Promise<void>) | null;
+  /** Present while the latest run stopped or failed in a way it can continue from. */
+  readonly continuableRun?: ContinuableRunAction | null;
 }) {
   const delivery = useAtomValue(threadOutboxDeliveryAtom);
   const items = useThreadVisibleTurnItems(props.threadRef);
+  const computer = useComputerConnectionHealth(props.threadRef.environmentId);
   const presentation = resolveThreadRecoveryPresentation({
     connectionState: props.connectionState,
     queuedMessages: props.queuedMessages,
@@ -45,19 +54,31 @@ export function ThreadRecoveryNotice(props: {
     }),
     queueHeld: props.onResumeQueue !== null,
     canOperate: props.canOperate,
+    computer: { ...computer, signIn: computer.signIn !== null },
+    stoppedRun: props.continuableRun
+      ? props.continuableRun.failed
+        ? "failed"
+        : "interrupted"
+      : null,
   });
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   if (presentation === null) return null;
+  const continuesRun = presentation.action === "resume-run" || presentation.action === "retry-run";
   const resume = async () => {
-    if (resuming || props.onResumeQueue === null) return;
+    const start = continuesRun ? (props.continuableRun?.onContinue ?? null) : props.onResumeQueue;
+    if (resuming || start === null) return;
     setResuming(true);
     setResumeError(null);
     try {
-      await props.onResumeQueue();
+      await start();
     } catch (error) {
       setResumeError(
-        error instanceof Error ? error.message : "Could not resume the queue. Try again.",
+        error instanceof Error
+          ? error.message
+          : continuesRun
+            ? "Could not continue the run. Try again."
+            : "Could not resume the queue. Try again.",
       );
     }
     setResuming(false);
@@ -89,22 +110,32 @@ export function ThreadRecoveryNotice(props: {
             label={
               presentation.action === "resume"
                 ? "Resume queue"
-                : presentation.action === "connection"
-                  ? "Connection settings"
-                  : presentation.action === "files"
-                    ? "Review files"
-                    : "Reconnect"
+                : presentation.action === "retry-run"
+                  ? "Retry"
+                  : presentation.action === "resume-run"
+                    ? "Resume"
+                    : presentation.action === "connection"
+                      ? "Connection settings"
+                      : presentation.action === "files"
+                        ? "Review files"
+                        : presentation.action === "identity"
+                          ? "Sign in again"
+                          : presentation.action === "retry"
+                            ? "Retry now"
+                            : "Reconnect"
             }
             tone="text"
-            loading={presentation.action === "resume" && resuming}
+            loading={(presentation.action === "resume" || continuesRun) && resuming}
             onPress={
-              presentation.action === "resume"
+              presentation.action === "resume" || continuesRun
                 ? () => void resume()
                 : presentation.action === "connection"
                   ? props.onOpenConnection
                   : presentation.action === "files"
                     ? () => props.onReviewFiles?.()
-                    : props.onReconnect
+                    : presentation.action === "identity"
+                      ? () => computer.signIn?.()
+                      : props.onReconnect
             }
           />
         </View>

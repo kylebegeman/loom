@@ -41,6 +41,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
 import { REACH_WS_METHODS as REACH } from "@t3tools/contracts/fork";
 import { AuthRelayReadScope, AuthRelayWriteScope } from "@t3tools/contracts";
 import { LIBRARY_PUSH_WS_METHODS as PUSH } from "@t3tools/contracts/fork";
+import { DATABASE_COMPACTION_WS_METHODS as DBC } from "@t3tools/contracts/fork";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -130,6 +131,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [VP.retirePin]: AuthAccessWriteScope,
   [VR.search]: AuthAccessReadScope,
   [VR.describe]: AuthAccessReadScope,
+  [VS.pinnedKeys]: AuthAccessReadScope,
   [VS.info]: AuthAccessReadScope,
   [VB.snapshot]: AuthAccessReadScope,
   [VS.generate]: AuthAccessWriteScope,
@@ -471,6 +473,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [REACH.watch]: AuthRelayReadScope,
   // Upstream's tunnel grant. Identity sessions hold it only with LOOM_IDENTITY_ALLOW_ADMIN, and
   // terminal or full-access agent rights reach the same switch another way (D9).
+  [REACH.applyIdentity]: AuthSettingsWriteScope,
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
   [REACH.forget]: AuthRelayWriteScope,
@@ -482,6 +485,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [PUSH.register]: AuthSettingsWriteScope,
   [PUSH.unregister]: AuthSettingsWriteScope,
   [PUSH.test]: AuthSettingsWriteScope,
+  // The desktop rewrites the database file at its next launch, a storage setting.
+  [DBC.setRequest]: AuthSettingsWriteScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

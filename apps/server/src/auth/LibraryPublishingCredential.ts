@@ -1,6 +1,8 @@
 import { AuthLibraryPublishScope, AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
+// fork: project-library
+import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -9,6 +11,9 @@ import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+// fork: project-library
+import * as Semaphore from "effect/Semaphore";
+import { LibraryPublisherRenewal } from "@t3tools/contracts/fork";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
@@ -21,6 +26,7 @@ export const LibraryPublishingCredentialFile = Schema.Struct({
   sessionId: AuthSessionId,
   accessToken: Schema.String,
   expiresAt: Schema.String,
+  issuedAt: Schema.optional(Schema.String), // fork: project-library
 });
 const encodeCredential = Schema.encodeEffect(
   Schema.fromJsonString(LibraryPublishingCredentialFile),
@@ -41,6 +47,10 @@ export class LibraryPublishingCredentialError extends Schema.TaggedError<Library
 export class LibraryPublishingCredential extends Context.Service<
   LibraryPublishingCredential,
   {
+    // fork: project-library
+    readonly renew: (
+      token: string,
+    ) => Effect.Effect<typeof LibraryPublisherRenewal.Type, LibraryPublishingCredentialError>;
     readonly issue: (input: {
       readonly sourceEnvironmentId: EnvironmentId;
       readonly libraryUrl: string;
@@ -62,7 +72,99 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const sessions = yield* SessionStore.SessionStore;
+  // fork: project-library
+  const renewalLock = yield* Semaphore.make(1);
+  const RenewalReceipt = Schema.Struct({
+    predecessor: AuthSessionId,
+    retryUntil: Schema.Number,
+    successor: LibraryPublisherRenewal,
+  });
+  const receiptJson = Schema.fromJsonString(RenewalReceipt);
+  const finishRenewal = Effect.fn("LibraryPublishingCredential.finishRenewal")(function* (
+    receipt: typeof RenewalReceipt.Type,
+  ) {
+    // A cached response never restores a successor the operator has since revoked.
+    yield* sessions
+      .verify(receipt.successor.accessToken)
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })));
+    yield* sessions
+      .revoke(receipt.predecessor)
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })));
+    return receipt.successor;
+  });
+  const renew = Effect.fn("LibraryPublishingCredential.renew")(function* (token: string) {
+    const now = yield* DateTime.now;
+    const key = Hex.encode(
+      yield* crypto.digest("SHA-256", new TextEncoder().encode(token)).pipe(Effect.orDie),
+    );
+    const receiptPath = path.join(config.secretsDir, `library-renewal-${key}.json`);
+    const cached = yield* fs
+      .readFileString(receiptPath)
+      .pipe(Effect.flatMap(Schema.decodeEffect(receiptJson)), Effect.option);
+    if (Option.isSome(cached) && cached.value.retryUntil > now.epochMilliseconds)
+      return yield* finishRenewal(cached.value);
+    const current = yield* sessions
+      .verify(token)
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })));
+    if (
+      current.method !== "bearer-access-token" ||
+      !current.subject.startsWith("loom-host:") ||
+      current.subject === "loom-host:" ||
+      current.scopes.length !== 1 ||
+      current.scopes[0] !== AuthLibraryPublishScope
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    const issuedAt = DateTime.formatIso(yield* DateTime.now);
+    // Save the reply before revoking the predecessor so a lost reply or authority restart can replay it.
+    const successor = yield* sessions
+      .issue({
+        subject: current.subject,
+        method: current.method,
+        client: current.client,
+        scopes: [AuthLibraryPublishScope],
+        ttl: Duration.days(30),
+      })
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })));
+    const receipt = {
+      predecessor: current.sessionId,
+      retryUntil: Math.min(
+        now.epochMilliseconds + Duration.toMillis(Duration.minutes(15)),
+        current.expiresAt?.epochMilliseconds ?? now.epochMilliseconds,
+      ),
+      successor: {
+        sessionId: successor.sessionId,
+        accessToken: successor.token,
+        issuedAt,
+        expiresAt: DateTime.formatIso(successor.expiresAt),
+      },
+    };
+    const written = yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+        const directory = yield* Effect.acquireRelease(
+          fs.makeTempDirectory({ directory: config.secretsDir, prefix: ".renewal-" }),
+          (dir) => fs.remove(dir, { recursive: true }).pipe(Effect.ignore),
+        );
+        const file = path.join(directory, "receipt.json");
+        yield* fs.writeFileString(file, yield* Schema.encodeEffect(receiptJson)(receipt), {
+          mode: 0o600,
+          flag: "wx",
+        });
+        yield* Effect.scoped(fs.open(file).pipe(Effect.flatMap((handle) => handle.sync)));
+        yield* fs.rename(file, receiptPath);
+        yield* Effect.scoped(
+          fs.open(config.secretsDir).pipe(Effect.flatMap((handle) => handle.sync)),
+        );
+      }),
+    ).pipe(Effect.result);
+    if (written._tag === "Failure") {
+      yield* sessions.revoke(successor.sessionId).pipe(Effect.ignore);
+      return yield* new LibraryPublishingCredentialError({ reason: "write" });
+    }
+    return yield* finishRenewal(receipt);
+  }, renewalLock.withPermit);
   return LibraryPublishingCredential.of({
+    renew, // fork: project-library
     issue: Effect.fn("LibraryPublishingCredential.issue")(function* (input) {
       const url = yield* Effect.try({
         try: () => new URL(input.libraryUrl),
@@ -121,6 +223,7 @@ const make = Effect.gen(function* () {
               sessionId: session.sessionId,
               accessToken: session.token,
               expiresAt: DateTime.formatIso(session.expiresAt),
+              issuedAt: DateTime.formatIso(yield* DateTime.now), // fork: project-library
             }),
             { flag: "wx", mode: 0o600 },
           );

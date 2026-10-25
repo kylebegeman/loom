@@ -7,12 +7,15 @@ import {
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
+  REACH_IDENTITY_APPLY_FEATURE,
   REACH_LIBRARY_FEATURE,
   LIBRARY_PUSH_FEATURE,
+  LIBRARY_PUSH_ACTIVITY_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
-import { libraryPushAdvertised } from "./library-push/config.ts";
+import { libraryPushActivityAdvertised, libraryPushAdvertised } from "./library-push/config.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
@@ -114,6 +117,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "library-launch-candidates",
   "library-timeline-activity",
   "library-brief-suggestions",
+  LIBRARY_WORKTREE_STARTS_FEATURE,
   "preview-links",
   "preview-tickets",
   "preview-pages",
@@ -134,6 +138,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   DIRECTORY_REPORTING_FEATURE,
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
+  REACH_IDENTITY_APPLY_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).
@@ -142,4 +147,6 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   ...(reachLibraryAdvertised(process.env) ? [REACH_LIBRARY_FEATURE] : []),
   // Only a Library whose push switch, Identity and APNs key settings are all set (K1).
   ...(libraryPushAdvertised(process.env) ? [LIBRARY_PUSH_FEATURE] : []),
+  // Only that Library once its alert switch is on and someone can receive alerts (C04-10).
+  ...(libraryPushActivityAdvertised(process.env) ? [LIBRARY_PUSH_ACTIVITY_FEATURE] : []),
 ];

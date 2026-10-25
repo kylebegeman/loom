@@ -10,6 +10,7 @@ import {
   runRanAfter,
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
+import { isRetryableProviderFailure } from "@t3tools/shared/fork/run-continuation"; // fork: failed-run-retry
 import { threadPullRequestsOf } from "@t3tools/shared/threadPullRequests";
 import {
   normalizeThreadPullRequestKey,
@@ -146,6 +147,7 @@ import {
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import { refuseDeleted } from "../fork/deleted-history/deletedHistory.ts"; // fork: deleted-history
+import { isDefaultThreadTitle } from "@t3tools/contracts/fork"; // fork: library-projects
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -4800,12 +4802,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     let projection = yield* getProjectionWithPendingEvents(command.threadId, events);
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
-      const limited = latestRootProviderFailure(source ?? null, projection.turnItems);
+      const failure = latestRootProviderFailure(source ?? null, projection.turnItems); // fork: failed-run-retry
       if (
         command.dispatchMode.type !== "start_immediately" ||
         source === undefined ||
         (source.status !== "interrupted" &&
-          !(source.status === "failed" && limited?.class === "usage_limit")) ||
+          // fork: failed-run-retry
+          !(source.status === "failed" && isRetryableProviderFailure(failure))) ||
         latestExecutedRun(projection.runs)?.id !== source.id ||
         projection.thread.archivedAt !== null ||
         projection.thread.deletedAt !== null ||
@@ -4970,9 +4973,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const userMessages = projection.messages.filter((message) => message.role === "user");
     const onlyMaintenanceHistory =
       userMessages.length > 0 && userMessages.every(isNativeMaintenanceCommand);
+    // fork: library-projects: a title chosen before the first message, such as one typed when a
+    // Library conversation starts, survives it. A seed equal to the title still names the thread.
+    const titleChosen =
+      command.titleSeed !== projection.thread.title &&
+      !isDefaultThreadTitle(projection.thread.title); // fork: library-projects
     if (
       !isNativeMaintenanceCommand(command) &&
       ((command.titleSeed !== undefined &&
+        !titleChosen && // fork: library-projects
         (yield* projectionStore
           .getMessageCount(command.threadId)
           .pipe(mapDispatchError(command))) === 0) ||

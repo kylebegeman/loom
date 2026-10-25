@@ -32,6 +32,9 @@ import {
 } from "./threadPullRequest.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
+  // fork: attention-status
+  OrchestrationV2ProviderFailureClass,
+  OrchestrationV2RuntimeRequest,
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
@@ -50,7 +53,8 @@ const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120
 const OrchestratorMcpTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(512)).annotate({
   description: "Optional concise display title.",
 });
-const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(
+// fork: library-projects -- top-level launches use the same retry key contract.
+export const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(256),
 ).annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
 
@@ -312,6 +316,10 @@ const OrchestratorMcpProjectTarget = Schema.optional(
 
 export const OrchestratorMcpThreadListInput = Schema.Struct({
   projectId: OrchestratorMcpProjectTarget,
+  // fork: attention-status
+  allProjects: Schema.optional(Schema.Boolean),
+  attention: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(Schema.Literals(["exclude", "include", "only"])),
   statuses: Schema.optional(
     Schema.Array(OrchestratorMcpThreadStatus).check(Schema.isMaxLength(10)),
   ),
@@ -335,6 +343,17 @@ export type OrchestratorMcpThreadPullRequest = typeof OrchestratorMcpThreadPullR
 
 export const OrchestratorMcpThreadListItem = Schema.Struct({
   threadId: ThreadId,
+  // fork: attention-status
+  projectId: ProjectId,
+  archived: Schema.Boolean,
+  queueHeld: Schema.Boolean,
+  lastErrorClass: Schema.NullOr(OrchestrationV2ProviderFailureClass),
+  pendingRequest: Schema.NullOr(
+    Schema.Struct({
+      kind: OrchestrationV2RuntimeRequest.fields.kind,
+      createdAt: IsoDateTime,
+    }),
+  ),
   title: Schema.String,
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
@@ -360,7 +379,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
 export type OrchestratorMcpThreadListItem = typeof OrchestratorMcpThreadListItem.Type;
 
 export const OrchestratorMcpThreadListResult = Schema.Struct({
-  projectId: ProjectId,
+  // fork: attention-status - Null identifies an all-projects result.
+  projectId: Schema.NullOr(ProjectId),
   currentThreadId: Schema.NullOr(ThreadId),
   threads: Schema.Array(OrchestratorMcpThreadListItem),
   nextCursor: Schema.NullOr(NonNegativeInt),
@@ -508,17 +528,32 @@ export const OrchestratorMcpThreadInterruptResult = Schema.Struct({
 });
 export type OrchestratorMcpThreadInterruptResult = typeof OrchestratorMcpThreadInterruptResult.Type;
 
+// fork: agent-catalog -- accounts of one driver usually list identical models, so each distinct
+// list is sent once and providers name theirs; one copy per account made the result ~70k chars.
+export const OrchestratorMcpModelCatalog = Schema.Array(
+  Schema.Struct({
+    id: Schema.String,
+    label: Schema.NullOr(Schema.String),
+    options: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
+  }),
+);
+export type OrchestratorMcpModelCatalog = typeof OrchestratorMcpModelCatalog.Type;
+
+export const OrchestratorMcpCapabilitiesInput = Schema.Struct({
+  providerInstanceId: Schema.optional(
+    ProviderInstanceId.annotate({ description: "Only report this provider instance." }),
+  ),
+  driverKind: Schema.optional(
+    ProviderDriverKind.annotate({ description: "Only report instances of this driver kind." }),
+  ),
+});
+export type OrchestratorMcpCapabilitiesInput = typeof OrchestratorMcpCapabilitiesInput.Type;
+
 export const OrchestratorMcpProviderCapability = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   driverKind: ProviderDriverKind,
   displayName: Schema.NullOr(Schema.String),
-  models: Schema.Array(
-    Schema.Struct({
-      id: Schema.String,
-      label: Schema.NullOr(Schema.String),
-      options: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
-    }),
-  ),
+  modelCatalog: Schema.NullOr(Schema.String), // fork: agent-catalog
   runtimeModes: Schema.optional(Schema.Array(RuntimeMode)),
   canRunChildTask: Schema.Boolean,
   canRunCrossProviderChildTask: Schema.Boolean,
@@ -534,6 +569,7 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   providers: Schema.Array(OrchestratorMcpProviderCapability),
+  modelCatalogs: Schema.Record(Schema.String, OrchestratorMcpModelCatalog), // fork: agent-catalog
   features: Schema.Struct({
     appOwnedSubagents: Schema.Boolean,
     asyncPolling: Schema.Boolean,

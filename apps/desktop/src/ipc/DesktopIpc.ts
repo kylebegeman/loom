@@ -66,6 +66,10 @@ export interface DesktopIpcMethod<E, R> {
 export interface DesktopSyncIpcMethod<E, R> {
   readonly channel: string;
   readonly handler: () => Effect.Effect<unknown, E, R>;
+  // fork: server-weight: the renderer polls some sync reads on every render
+  // path; their spans were about 96% of desktop.trace bytes.
+  /** Runs with the tracer off, so spans nested inside the handler are skipped too. */
+  readonly untraced?: boolean;
 }
 
 export class DesktopIpc extends Context.Service<
@@ -118,6 +122,7 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
     handleSync: Effect.fn("desktop.ipc.registerSync")(function* <E, R>({
       channel,
       handler,
+      untraced, // fork: server-weight
     }: DesktopSyncIpcMethod<E, R>) {
       yield* Effect.annotateCurrentSpan({ channel });
       const context = yield* Effect.context<R>();
@@ -129,13 +134,16 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
             ipcMain.removeAllListeners(channel);
             ipcMain.on(channel, (event) => {
               event.returnValue = runSync(
-                Effect.gen(function* () {
-                  yield* Effect.annotateCurrentSpan({ channel });
-                  return yield* handler();
-                }).pipe(
-                  Effect.annotateLogs({ channel }),
-                  Effect.withSpan("desktop.ipc.invokeSync"),
-                ),
+                // fork: server-weight
+                untraced === true
+                  ? handler().pipe(Effect.annotateLogs({ channel }), Effect.withTracerEnabled(false))
+                  : Effect.gen(function* () {
+                      yield* Effect.annotateCurrentSpan({ channel });
+                      return yield* handler();
+                    }).pipe(
+                      Effect.annotateLogs({ channel }),
+                      Effect.withSpan("desktop.ipc.invokeSync"),
+                    ),
               );
             });
           },
@@ -240,6 +248,7 @@ export interface DesktopSyncIpcMethodRegistration<
     ResultEncodingServices
   >;
   readonly handler: () => Effect.Effect<Result, E, R>;
+  readonly untraced?: boolean; // fork: server-weight
 }
 
 export const makeSyncIpcMethod = <
@@ -261,6 +270,14 @@ export const makeSyncIpcMethod = <
 ): DesktopSyncIpcMethod<E | Schema.SchemaError, R | ResultEncodingServices> => {
   const encode = Schema.encodeUnknownEffect(method.result);
 
+  // fork: server-weight
+  if (method.untraced === true) {
+    return {
+      channel: method.channel,
+      untraced: true,
+      handler: () => method.handler().pipe(Effect.flatMap(encode)),
+    };
+  }
   return {
     channel: method.channel,
     handler: () =>

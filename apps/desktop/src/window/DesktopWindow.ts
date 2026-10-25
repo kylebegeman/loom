@@ -98,6 +98,11 @@ export class DesktopWindow extends Context.Service<
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
     readonly showConnectingSplash: Effect.Effect<void>;
+    // fork: restart-compaction: a splash with any page, which the main window
+    // dismisses when it reveals and which never counts as the main window.
+    readonly showSplash: (
+      page: (shouldUseDarkColors: boolean) => string,
+    ) => Effect.Effect<Option.Option<Electron.BrowserWindow>>;
     readonly handleBackendReady: (httpBaseUrl: URL) => Effect.Effect<void, DesktopWindowError>;
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
@@ -225,6 +230,20 @@ export function concealPendingQuitWindow(
   // Electron implements window opacity on macOS and Windows. Linux keeps the
   // release-gated quit behavior but cannot make the pending window disappear.
   window.setOpacity(0);
+}
+
+// fork: restart-continuity: a closed macOS main window stays alive while hidden,
+// so its renderer keeps raising notifications and the Dock reopens it at once.
+export function hideClosingMacosWindow(
+  window: Pick<Electron.BrowserWindow, "isFullScreen" | "setFullScreen" | "once" | "hide">,
+): void {
+  if (window.isFullScreen()) {
+    // Hiding a fullscreen window would leave its empty Space behind.
+    window.once("leave-full-screen", () => window.hide());
+    window.setFullScreen(false);
+    return;
+  }
+  window.hide();
 }
 
 function getWindowTitleBarOptions(
@@ -689,8 +708,15 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
+    window.on("close", (event) => {
       runFork(flushBoundsPersist);
+      // fork: restart-continuity: Cmd+Q, signals, relaunches and update installs
+      // set quitting or destroy the windows before any close event arrives, so a
+      // close here comes from the user. Activate reveals the hidden window.
+      if (environment.platform === "darwin" && !Ref.getUnsafe(desktopState.quitting)) {
+        event.preventDefault();
+        hideClosingMacosWindow(window);
+      }
     });
 
     if (environment.platform === "darwin") {
@@ -894,15 +920,19 @@ export const make = Effect.gen(function* () {
     yield* createMain;
   }).pipe(Effect.withSpan("desktop.window.createMainIfBackendReady"));
 
-  const showConnectingSplash = Effect.gen(function* () {
-    if (yield* Ref.get(desktopState.quitting)) return;
+  // fork: restart-compaction: parameterized by page; the connecting splash is one.
+  const showSplash = Effect.fn("desktop.window.showSplash")(function* (
+    page: (shouldUseDarkColors: boolean) => string,
+  ) {
+    const none = Option.none<Electron.BrowserWindow>();
+    if (yield* Ref.get(desktopState.quitting)) return none;
     const existingSplash = yield* Ref.get(splashWindowRef);
-    if (Option.isSome(existingSplash)) return;
+    if (Option.isSome(existingSplash)) return none;
     const existingWindow = yield* electronWindow.currentMainOrFirst;
-    if (Option.isSome(existingWindow)) return;
+    if (Option.isSome(existingWindow)) return none;
 
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
-    if (yield* Ref.get(desktopState.quitting)) return;
+    if (yield* Ref.get(desktopState.quitting)) return none;
     const splash = yield* electronWindow.create({
       width: 360,
       height: 220,
@@ -924,7 +954,7 @@ export const make = Effect.gen(function* () {
     });
     if (yield* Ref.get(desktopState.quitting)) {
       yield* electronWindow.destroyAll;
-      return;
+      return none; // fork: restart-compaction
     }
     yield* rendererHistory.register(splash.webContents, { surface: "splash" });
     yield* Ref.set(splashWindowRef, Option.some(splash));
@@ -936,12 +966,18 @@ export const make = Effect.gen(function* () {
         splash.show();
       }
     });
-    void splash.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors));
-    yield* logWindowInfo("connecting splash shown");
-  }).pipe(
-    Effect.catch((error) =>
-      logWindowWarning("failed to show connecting splash", { message: error.message }),
+    // fork: restart-compaction
+    void splash.loadURL(page(shouldUseDarkColors));
+    yield* logWindowInfo("splash shown");
+    return Option.some(splash);
+  }, Effect.catch((error) =>
+    logWindowWarning("failed to show splash", { message: error.message }).pipe(
+      Effect.as(Option.none<Electron.BrowserWindow>()),
     ),
+  ));
+  // fork: restart-compaction
+  const showConnectingSplash = showSplash(buildConnectingSplashDataUrl).pipe(
+    Effect.asVoid,
     Effect.withSpan("desktop.window.showConnectingSplash"),
   );
 
@@ -1000,6 +1036,7 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
+    showSplash, // fork: restart-compaction
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });

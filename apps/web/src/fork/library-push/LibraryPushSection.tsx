@@ -2,7 +2,11 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { LIBRARY_PUSH_FEATURE, type LibraryPushDeviceRowId } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PUSH_ACTIVITY_FEATURE,
+  LIBRARY_PUSH_FEATURE,
+  type LibraryPushDeviceRowId,
+} from "@t3tools/contracts/fork";
 import { useState } from "react";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
@@ -64,22 +68,23 @@ function CopyDeviceId({ id, label }: { id: LibraryPushDeviceRowId; label: string
 
 /**
  * The chosen Library's push notifications: whether it can send, which Apple key it signs with,
- * which app builds it sends to, and the iPhones registered with it. Push is switched on in the
- * Library's server environment, so there is no on/off control here. The status reads when the
- * section mounts and on Refresh.
+ * which app builds it sends to, whether it sends agent alerts, and the iPhones registered with
+ * it. Push is switched on in the Library's server environment, so there is no on/off control
+ * here. The status reads when the section mounts and on Refresh.
  */
 export function LibraryPushSection() {
   const authority = useLibraryAuthority();
   if (authority.authorityId === null) return null;
-  const serverConfig = authority.environment?.serverConfig ?? null;
+  const capabilities = authority.environment?.serverConfig?.environment.capabilities ?? null;
   return (
     <LibraryPushBody
       libraryId={authority.authorityId}
       connected={authority.connected}
       supported={
-        serverConfig === null
-          ? null
-          : supportsLoomFeature(serverConfig.environment.capabilities, LIBRARY_PUSH_FEATURE)
+        capabilities === null ? null : supportsLoomFeature(capabilities, LIBRARY_PUSH_FEATURE)
+      }
+      alerts={
+        capabilities !== null && supportsLoomFeature(capabilities, LIBRARY_PUSH_ACTIVITY_FEATURE)
       }
     />
   );
@@ -89,10 +94,12 @@ function LibraryPushBody({
   libraryId,
   connected,
   supported,
+  alerts,
 }: {
   readonly libraryId: EnvironmentId;
   readonly connected: boolean;
   readonly supported: boolean | null;
+  readonly alerts: boolean;
 }) {
   const statusAtom = libraryPush.status(connected && supported === true ? libraryId : null);
   const result = useAtomValue(statusAtom);
@@ -109,6 +116,7 @@ function LibraryPushBody({
     libraryId,
     connected,
     supported,
+    alerts,
     result,
     canTest,
     canRemove,
@@ -182,6 +190,9 @@ function LibraryPushBody({
           ) : null}
           {view.builds ? (
             <p className="text-xs leading-relaxed text-muted-foreground">{view.builds}</p>
+          ) : null}
+          {view.alerts ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">{view.alerts}</p>
           ) : null}
           {view.error ? (
             <p role="alert" className="text-xs leading-relaxed text-destructive-foreground">

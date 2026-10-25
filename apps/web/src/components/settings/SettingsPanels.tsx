@@ -63,10 +63,14 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
-  getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
+// fork: machine-updates
+import {
+  requestLocalUpdateInstall,
+  setLocalInstallWhenIdle,
+} from "~/fork/connections/localUpdateInstall";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -338,43 +342,16 @@ function AboutVersionSection() {
       return;
     }
 
+    // fork: machine-updates: the shared in-app dialog shows the work a restart would interrupt.
+    // The sidebar pill is hidden in Settings, so a waiting install is cancelled here too.
     if (action === "install") {
       if (isUpdateActionPending) return;
+      if (updateState?.installWhenIdle !== true) {
+        requestLocalUpdateInstall();
+        return;
+      }
       setIsUpdateActionPending(true);
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(
-            updateState ?? { availableVersion: null, downloadedVersion: null },
-          ),
-        );
-      } catch (error) {
-        setIsUpdateActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsUpdateActionPending(false);
-        return;
-      }
-      void bridge
-        .installUpdate()
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "Install failed.",
-            }),
-          );
-        })
-        .finally(() => setIsUpdateActionPending(false));
+      void setLocalInstallWhenIdle(bridge, false).finally(() => setIsUpdateActionPending(false));
       return;
     }
 
@@ -411,7 +388,11 @@ function AboutVersionSection() {
       ? !canCheckForUpdate(updateState)
       : isDesktopUpdateButtonDisabled(updateState);
 
-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+  const installsWhenIdle = action === "install" && updateState?.installWhenIdle === true; // fork: machine-updates
+  const actionLabel: Record<string, string> = {
+    download: "Download",
+    install: installsWhenIdle ? "Cancel" : "Install", // fork: machine-updates
+  };
   const statusLabel: Record<string, string> = {
     checking: "Checking…",
     downloading: "Downloading…",
@@ -419,8 +400,9 @@ function AboutVersionSection() {
   };
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
-  const description =
-    action === "download" || action === "install"
+  const description = installsWhenIdle
+    ? "Installs when agents finish." // fork: machine-updates
+    : action === "download" || action === "install"
       ? "Update available."
       : (getDesktopUpdateDisabledReason(updateState) ?? "Current version of the application.");
 
@@ -3366,6 +3348,8 @@ export function GeneralSettingsPanel() {
 }
 
 export function ArchivedThreadsPanel() {
+  // fork: attention-status
+  const [titleFilter, setTitleFilter] = useState("");
   const { scope, groups: projectGroups, environments } = useSettingsScope();
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const {
@@ -3400,10 +3384,15 @@ export function ArchivedThreadsPanel() {
       }),
     );
     const threads = archivedSnapshots.flatMap(({ environmentId, snapshot }) =>
-      snapshot.threads.map((thread) => ({
-        ...presentThreadShell(environmentId, thread),
-        environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
-      })),
+      // fork: attention-status
+      snapshot.threads
+        .filter((thread) =>
+          thread.title.toLocaleLowerCase().includes(titleFilter.trim().toLocaleLowerCase()),
+        )
+        .map((thread) => ({
+          ...presentThreadShell(environmentId, thread),
+          environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
+        })),
     );
     const hasMultipleEnvironments =
       new Set(
@@ -3475,14 +3464,16 @@ export function ArchivedThreadsPanel() {
     if (!api) return;
     const clicked = await api.contextMenu.show(
       [
-        { id: "unarchive", label: "Unarchive" },
+        // fork: attention-status
+        { id: "unarchive", label: "Unarchive and open" },
         { id: "delete", label: "Delete", destructive: true },
       ],
       position,
     );
 
     if (clicked === "unarchive") {
-      const result = await unarchiveThread(threadRef);
+      // fork: attention-status
+      const result = await unarchiveThread(threadRef, { navigate: true });
       if (result._tag === "Success") {
         refreshArchivedThreads();
       } else if (!isAtomCommandInterrupted(result)) {
@@ -3517,6 +3508,14 @@ export function ArchivedThreadsPanel() {
 
   return (
     <SettingsPageContainer>
+      {/* fork: attention-status */}
+      <Input
+        type="search"
+        aria-label="Search archived thread titles"
+        placeholder="Search archived threads"
+        value={titleFilter}
+        onChange={(event) => setTitleFilter(event.currentTarget.value)}
+      />
       {archivedGroups.length === 0 ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
@@ -3524,6 +3523,7 @@ export function ArchivedThreadsPanel() {
         >
           <SettingsRow
             title={
+              // fork: attention-status
               <span className="inline-flex items-center gap-2">
                 {isLoadingArchive ? (
                   <Spinner size="sm" tone="muted" />
@@ -3534,13 +3534,19 @@ export function ArchivedThreadsPanel() {
                   ? "Loading archived threads"
                   : archiveError
                     ? "Could not load archived threads"
-                    : "No archived threads"}
+                    : titleFilter.trim()
+                      ? "No archived threads match this search"
+                      : "No archived threads"}
               </span>
             }
             description={
+              // fork: attention-status
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+                : (archiveError ??
+                  (titleFilter.trim()
+                    ? "Try a different title."
+                    : "Archived threads will appear here."))
             }
           />
         </SettingsSection>
@@ -3597,8 +3603,10 @@ export function ArchivedThreadsPanel() {
                     className="shrink-0"
                     onClick={() => {
                       void (async () => {
+                        // fork: attention-status
                         const result = await unarchiveThread(
                           scopeThreadRef(thread.environmentId, thread.id),
+                          { navigate: true },
                         );
                         if (result._tag === "Success") {
                           refreshArchivedThreads();
@@ -3619,7 +3627,8 @@ export function ArchivedThreadsPanel() {
                     }}
                   >
                     <ArchiveX className="size-3.5" />
-                    <span>Unarchive</span>
+                    {/* fork: attention-status */}
+                    <span>Unarchive and open</span>
                   </Button>
                 }
               />

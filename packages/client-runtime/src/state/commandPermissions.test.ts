@@ -327,6 +327,21 @@ it.effect(
           }),
         );
         yield* git.authorize(registry, env);
+        // fork: source-control-cockpit -- continue/abort need the same source-control grant as commit.
+        const recovery = createCommandPermissions(runtime, WS_METHODS.gitResolveOperation);
+        yield* recovery.authorize(registry, env);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(
+          (yield* recovery.authorize(registry, env).pipe(Effect.flip)).requiredPermission,
+        ).toBe(AuthSourceControlWriteScope);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSourceControlWriteScope],
+            permissions: [AuthSourceControlWriteScope],
+          }),
+        );
         const prepare = createCommandPermissions(runtime, WS_METHODS.gitPreparePullRequestThread);
         const input = {
           cwd: "/repo",
@@ -535,6 +550,31 @@ it.effect("interrupts document-lived commands when their final reader closes", (
       close();
       yield* Effect.promise(() => vi.runAllTimersAsync());
       yield* Deferred.await(interrupted);
+    }),
+  ),
+);
+
+// fork: project-lifecycle
+it.effect.each([
+  [WS_METHODS.checkpointRestoreState, AuthOrchestrationReadScope],
+  [WS_METHODS.checkpointUndoRestore, AuthOrchestrationOperateScope],
+] as const)("guards checkpoint operation %s", ([method, scope]) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const policy = createCommandPermissions(runtime, method);
+      expect(policy.requiredScopes()).toEqual([scope]);
+      registry.set(sessions(env), AsyncResult.success(grant(false)));
+      expect(registry.get(policy.permissionAtom(env))).toBe(false);
+      expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+        "EnvironmentAuthorizationError",
+      );
+      registry.set(
+        sessions(env),
+        AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
+      );
+      yield* policy.authorize(registry, env);
+      expect(registry.get(policy.permissionAtom(env))).toBe(true);
     }),
   ),
 );

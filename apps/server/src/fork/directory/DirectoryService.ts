@@ -1,3 +1,5 @@
+import { REACH_LIST_ROUTE, ReachLibraryListing, ReachLibraryError } from "@t3tools/contracts/fork";
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   DIRECTORY_MAX_PROVIDERS,
@@ -33,7 +35,6 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
-import { resolveLibraryConnection } from "../project-library/LibraryConnection.ts";
 import {
   ReachStore,
   type ReachStoredComputer,
@@ -82,6 +83,7 @@ export class DirectoryService extends Context.Service<
     ) => Effect.Effect<DirectoryPin | null, DirectoryError>;
     /** The listing wherever the directory runs: here on the authority, else asked of it. */
     readonly computers: Effect.Effect<DirectoryListing, DirectoryError>;
+    readonly reachComputers: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
   }
 >()("t3/fork/directory/DirectoryService") {}
 
@@ -154,12 +156,7 @@ const make = Effect.gen(function* () {
   const providers = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
   // Optional, so the directory runs without reach; reach depends on the directory, not back.
   const reach = yield* Effect.serviceOption(ReachStore);
-  // Resolved once, as the publisher does; a broken Library URL leaves the forwarded tool off.
-  const connection = authority
-    ? null
-    : yield* resolveLibraryConnection.pipe(
-        Effect.orElseSucceed(() => ({ kind: "unavailable" }) as const),
-      );
+  const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
 
   const running = audience === null ? Effect.fail(directoryError("not-authority")) : Effect.void;
   const io = (cause: unknown) => directoryError("io", cause);
@@ -390,6 +387,7 @@ const make = Effect.gen(function* () {
   });
 
   const forwarded = Effect.gen(function* () {
+    const connection = yield* libraryConnection.current;
     if (connection === null || connection.kind === "none")
       return yield* directoryError("not-authority");
     if (connection.kind !== "remote") return yield* directoryError("io");
@@ -416,7 +414,24 @@ const make = Effect.gen(function* () {
     forget,
     pinned,
     computers: authority ? list : forwarded,
+    reachComputers: Effect.gen(function* () {
+      const connection = yield* libraryConnection.current;
+      if (connection.kind !== "remote")
+        return yield* new ReachLibraryError({ reason: "not-authority" });
+      const response = yield* connection
+        .send(HttpClientRequest.post(connection.endpoint(REACH_LIST_ROUTE)))
+        .pipe(Effect.mapError(() => new ReachLibraryError({ reason: "io" })));
+      if (response.status === 404)
+        return yield* new ReachLibraryError({ reason: "not-configured" });
+      if (response.status !== 200) return yield* new ReachLibraryError({ reason: "io" });
+      return yield* response.json.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(ReachLibraryListing)),
+        Effect.mapError(() => new ReachLibraryError({ reason: "io" })),
+      );
+    }),
   });
 });
 
-export const layer = Layer.effect(DirectoryService, make);
+export const layer = Layer.effect(DirectoryService, make).pipe(
+  Layer.provide(LibraryConnection.layer),
+);

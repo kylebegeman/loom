@@ -188,6 +188,39 @@ describe("New task Library project defaults", () => {
     expect(libraryStartDefaults(input({ terminal: new Set() }))).not.toBeNull();
   });
 
+  it("says a tap starts in a new worktree while another conversation works in the files", () => {
+    const worktrees = input().hosts.map((host) => ({
+      ...host,
+      capabilities: {
+        repositoryIdentity: false,
+        loomFeatures: ["project-library", "library-worktree-starts"],
+      },
+    }));
+    const working = {
+      environmentId: dorothy,
+      worktreePath: "/Projects/files/app",
+      archivedAt: null,
+      runtime: {
+        status: "running" as const,
+        activeRunId: null,
+        providerInstanceId: instanceId,
+        providerName: null,
+        lastError: null,
+        updatedAt: project.updatedAt,
+      },
+    };
+    expect(libraryStartDefaults(input({ hosts: worktrees, shells: [working] }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access · New worktree",
+    );
+    expect(libraryStartDefaults(input({ hosts: worktrees }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access",
+    );
+    // A computer that cannot start one keeps the shared folder, and the row says nothing more.
+    expect(libraryStartDefaults(input({ shells: [working] }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access",
+    );
+  });
+
   it("leaves the start to the settings screen when it needs a decision first", () => {
     const offline = input().hosts.map((host) => ({ ...host, online: false }));
     expect(libraryStartDefaults(input({ hosts: offline }))).toBeNull();
@@ -198,6 +231,32 @@ describe("New task Library project defaults", () => {
       libraryStartDefaults(
         input({ project: { ...project, profile: { requiredTools: [{ id: "node" }] } } }),
       ),
+    ).toBeNull();
+  });
+  it("can start from registered files during a Library outage using a durable host operation", () => {
+    const hosts = input().hosts.map((host) => ({
+      ...host,
+      capabilities: {
+        repositoryIdentity: false,
+        loomFeatures: ["project-library", "project-workflows"],
+      },
+    }));
+    const offline = input({ hosts, offline: true, libraryOperable: false });
+    expect(libraryStartDefaults(offline)).toMatchObject({
+      environmentId: dorothy,
+      copyId: "files",
+    });
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), ownership: "borrowed" }] }),
+    ).not.toBeNull();
+    expect(libraryStartDefaults({ ...offline, terminal: new Set() })).toBeNull();
+    expect(libraryStartDefaults({ ...offline, hosts: input().hosts })).toBeNull();
+    expect(libraryStartDefaults({ ...offline, copies: [] })).toBeNull();
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), registered: false }] }),
+    ).toBeNull();
+    expect(
+      libraryStartDefaults({ ...offline, copies: [{ ...copy("files"), state: "released" }] }),
     ).toBeNull();
   });
 });

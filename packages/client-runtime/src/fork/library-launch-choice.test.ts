@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
   LibraryProfileReadiness,
@@ -9,10 +9,14 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
+import type { ThreadRuntimeSummary } from "../state/models.ts";
 import {
+  libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchChoice,
   libraryLaunchRanking,
   libraryLaunchWarning,
+  libraryLaunchWorkspace,
 } from "./library-launch-choice.ts";
 
 const MINI = EnvironmentId.make("mini");
@@ -255,6 +259,7 @@ describe("libraryLaunchWarning", () => {
   const warningFor = (
     repositories: readonly LibraryRepositoryHealth[],
     resourceId: string | null = null,
+    sharedFolder?: { conversations: number; workspace: "folder" | "worktree" | null },
   ) => {
     const entry = copy("mini-copy", MINI);
     const ranking = libraryLaunchRanking({
@@ -265,7 +270,7 @@ describe("libraryLaunchWarning", () => {
       resourceId,
       liveHealth: live(health(entry.id, MINI, repositories)),
     });
-    return libraryLaunchWarning(ranking.preselected, entry, resourceId);
+    return libraryLaunchWarning(ranking.preselected, entry, resourceId, sharedFolder);
   };
 
   it("says nothing for an up-to-date copy or one never checked", () => {
@@ -288,9 +293,34 @@ describe("libraryLaunchWarning", () => {
     });
   });
 
-  it("warns about uncommitted files without offering a pull", () => {
-    expect(warningFor([repository("app", { uncommittedFiles: 1 }), repository("docs")])).toEqual({
-      message: "This copy has 1 uncommitted file.",
+  it("says nothing about uncommitted files alone", () => {
+    expect(warningFor([repository("app", { uncommittedFiles: 1 }), repository("docs")])).toBeNull();
+  });
+
+  it("warns when other conversations work in the same folder, pointing to a worktree", () => {
+    const changed = [repository("app", { uncommittedFiles: 1 }), repository("docs")];
+    expect(warningFor(changed, null, { conversations: 1, workspace: "folder" })).toEqual({
+      message:
+        "Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
+      pullPaths: null,
+    });
+    expect(warningFor(changed, null, { conversations: 2, workspace: null })).toEqual({
+      message: "2 other conversations are working in this folder and changing the same files.",
+      pullPaths: null,
+    });
+    expect(warningFor(changed, null, { conversations: 0, workspace: "folder" })).toBeNull();
+    expect(warningFor(changed, null, { conversations: 1, workspace: "worktree" })).toBeNull();
+  });
+
+  it("never offers a pull under another conversation's work", () => {
+    const behind = [repository("app", { behind: 3 }), repository("docs")];
+    expect(warningFor(behind, null, { conversations: 1, workspace: "folder" })).toEqual({
+      message:
+        "This copy is 3 commits behind. Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
+      pullPaths: null,
+    });
+    expect(warningFor(behind, null, { conversations: 1, workspace: "worktree" })).toEqual({
+      message: "This copy is 3 commits behind.",
       pullPaths: null,
     });
   });
@@ -342,5 +372,99 @@ describe("libraryLaunchWarning", () => {
       resourceId: null,
     });
     expect(libraryLaunchWarning(ranking.preselected, null, null)).toBeNull();
+  });
+});
+
+describe("libraryLaunchCanUseWorktree", () => {
+  const root = {
+    id: "site",
+    title: "Site",
+    remoteUrl: null,
+    relativePath: ".",
+    defaultBranch: null,
+  };
+  const link = {
+    id: "spec",
+    title: "Spec",
+    kind: "link" as const,
+    url: "https://example.com/spec",
+    remoteUrl: null,
+    relativePath: "",
+    defaultBranch: null,
+  };
+
+  it("allows one chosen repository, or a project that is one repository at its root", () => {
+    expect(libraryLaunchCanUseWorktree(project, "app")).toBe(true);
+    expect(libraryLaunchCanUseWorktree({ resources: [root, link] }, null)).toBe(true);
+  });
+
+  it("refuses a whole project of several repositories or one in a subfolder", () => {
+    expect(libraryLaunchCanUseWorktree(project, null)).toBe(false);
+    expect(libraryLaunchCanUseWorktree({ resources: [project.resources[0]!] }, null)).toBe(false);
+  });
+});
+
+describe("libraryLaunchWorkspace", () => {
+  it("defaults to a new worktree only while others work in the folder", () => {
+    expect(libraryLaunchWorkspace({ available: true, chosen: null, conversations: 0 })).toBe(
+      "folder",
+    );
+    expect(libraryLaunchWorkspace({ available: true, chosen: null, conversations: 1 })).toBe(
+      "worktree",
+    );
+  });
+
+  it("keeps the user's choice, and has none when worktrees are unavailable", () => {
+    expect(libraryLaunchWorkspace({ available: true, chosen: "folder", conversations: 2 })).toBe(
+      "folder",
+    );
+    expect(libraryLaunchWorkspace({ available: false, chosen: "worktree", conversations: 2 })).toBe(
+      null,
+    );
+  });
+});
+
+describe("libraryCopyFolderConversations", () => {
+  const entry = copy("mini-copy", MINI);
+  const shell = (
+    worktreePath: string | null,
+    status: ThreadRuntimeSummary["status"] = "running",
+  ) => ({
+    environmentId: MINI,
+    worktreePath,
+    archivedAt: null as string | null,
+    runtime: {
+      status,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: null,
+      lastError: null,
+      updatedAt: CHECKED,
+    } satisfies ThreadRuntimeSummary,
+  });
+
+  it("counts working conversations in the copy folder and its component folders", () => {
+    expect(
+      libraryCopyFolderConversations(
+        [shell("/work/mini-copy"), shell("/work/mini-copy/app/"), shell("/work/mini-copy-2")],
+        entry,
+      ),
+    ).toBe(2);
+  });
+
+  it("leaves out worktrees, idle and archived conversations, and other computers", () => {
+    expect(
+      libraryCopyFolderConversations(
+        [
+          shell("/home/.t3/worktrees/loom/t3-1"),
+          shell("/work/mini-copy", "idle"),
+          { ...shell("/work/mini-copy"), archivedAt: CHECKED },
+          { ...shell("/work/mini-copy"), environmentId: BOOK },
+          shell(null),
+        ],
+        entry,
+      ),
+    ).toBe(0);
+    expect(libraryCopyFolderConversations([shell("/work/mini-copy")], null)).toBe(0);
   });
 });

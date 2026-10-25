@@ -35,6 +35,15 @@ also instruments it
 ([`RpcInstrumentation.ts`](../../apps/server/src/observability/RpcInstrumentation.ts)). A handler
 with per-call context, such as a thread id, adds it with `Effect.annotateCurrentSpan`.
 
+<!-- fork: source-control-cockpit -->
+
+`layerWsRpc` returns its handler map through `boundHandlers`, a mapped type that gives every
+handler one shared requirements union. Without that annotation the inferred map is past the
+compiler's instantiation limit: `Ws.layer` becomes `Layer<never, never, any>` and the only visible
+error is `TS377030` (any in the requirements channel) in `server.ts`. The real `TS2589` appears only
+with `tsc --checkers 1`, because the checker that infers the type does not own `ws.ts` and drops
+the error. Keep new handlers inside the bounded map.
+
 ## Shape of a service module
 
 One module per service, in this order: imports, errors and schemas, the `Context.Service` tag with

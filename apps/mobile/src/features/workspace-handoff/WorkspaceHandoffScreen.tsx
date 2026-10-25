@@ -4,8 +4,9 @@ import { View, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { AuthSourceControlWriteScope, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import {
   WorkspaceHandoffAttemptRecord,
   type WorkspaceHandoffAttemptRecord as Attempt,
@@ -17,6 +18,9 @@ import {
   selectWorkspaceHandoffDestination,
   supportsLoomFeature,
   WORKSPACE_HANDOFF_LABELS,
+  workspaceHandoffCanReconnect,
+  workspaceHandoffCheckoutProblem,
+  type WorkspaceHandoffCheckoutFix,
   type WorkspaceHandoffDestinationGroup,
   type WorkspaceHandoffPhase,
 } from "@t3tools/client-runtime/fork";
@@ -28,11 +32,16 @@ import { Atom } from "effect/reactivity";
 import { AppText } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { environmentCatalog } from "../../connection/catalog";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useProjects, useServerConfigs, useThreadShell } from "../../state/entities";
-import { useEnvironments } from "../../state/environments";
+import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
+import { useEnvironmentQuery } from "../../state/query";
+import { useEnvironmentScope } from "../../state/session";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { vcsActionManager, vcsEnvironment } from "../../state/vcs";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { runtime } from "../../lib/runtime";
@@ -46,6 +55,64 @@ const encodeRecord = Schema.encodeSync(JsonRecord);
 const pendingOperation = Atom.family((_threadKey: string) =>
   Atom.make<"saving" | "moving" | null>(null).pipe(Atom.keepAlive),
 );
+
+/**
+ * The source checkout as the offer will judge it, from the git status the thread screen already
+ * subscribes to for the same folder. Unknown status never blocks; the server still decides.
+ */
+function useSourceCheckout(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly cwd: string | null;
+}) {
+  const status = useEnvironmentQuery(
+    input.cwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId: input.environmentId, input: { cwd: input.cwd } }),
+  );
+  const runStackedAction = useAtomCommand(
+    vcsActionManager.runStackedAction({ environmentId: input.environmentId, cwd: input.cwd }),
+    { reportFailure: false },
+  );
+  const canFix = useEnvironmentScope(input.environmentId, AuthSourceControlWriteScope);
+  const [fixing, setFixing] = useState<WorkspaceHandoffCheckoutFix | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const problem =
+    input.cwd !== null && status.data ? workspaceHandoffCheckoutProblem(status.data) : null;
+  /** Resolves true once the fix lands, so the caller can drop the refusal it answered. */
+  const fix = async () => {
+    if (!problem?.fix || fixing || !canFix) return false;
+    const running = problem.fix;
+    setFixing(running);
+    setError(null);
+    const result = await runStackedAction({
+      actionId: uuidv4(),
+      action: running.action,
+      threadId: input.threadId,
+    });
+    setFixing(null);
+    if (result._tag === "Success") {
+      status.refresh();
+      return true;
+    }
+    if (!isAtomCommandInterrupted(result)) {
+      const cause = Cause.squash(result.cause);
+      setError(cause instanceof Error ? cause.message : `${running.label} didn't finish.`);
+    }
+    return false;
+  };
+  return {
+    known: input.cwd !== null && status.data !== null,
+    problem,
+    canFix,
+    fixing,
+    error,
+    fix,
+  };
+}
+
+const reconnectable = (computer: EnvironmentPresentation | undefined) =>
+  computer && workspaceHandoffCanReconnect(computer) ? computer : undefined;
 
 export function WorkspaceHandoffScreen({
   route,
@@ -83,6 +150,7 @@ function WorkspaceHandoffContent({
   const savingSelection = operation === "saving";
   const mounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
+  const retryNow = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const sourceComputer = environments.find(
     (environment) => environment.environmentId === sourceEnvironmentId,
   );
@@ -160,8 +228,19 @@ function WorkspaceHandoffContent({
   const sourceRemoved = sourceShell?.archivedAt != null || sourceShell?.deletedAt != null;
   const sourceReady =
     sourceConnected && sourceSupported && sourceShell !== null && !sourceBusy && !sourceRemoved;
+  // Only a move the source hasn't accepted yet depends on its checkout.
+  const checkout = useSourceCheckout({
+    environmentId: sourceEnvironmentId,
+    threadId: sourceThreadId,
+    cwd:
+      attempt !== null && !attempt.offer && !attempt.sourceResult && sourceAllowed && sourceReady
+        ? (sourceShell?.worktreePath ?? sourceProject?.workspaceRoot ?? null)
+        : null,
+  });
   const allowed =
     (attempt?.sourceResult != null || (sourceAllowed && sourceReady)) &&
+    checkout.problem === null &&
+    checkout.fixing === null &&
     destination !== undefined &&
     destinationGroup?.connected === true &&
     destinationGroup.supportsHandoff &&
@@ -195,6 +274,17 @@ function WorkspaceHandoffContent({
                           : !destinationAllowed
                             ? "Workspace operation permission is required on the destination computer."
                             : null;
+  const destinationComputer = environments.find(
+    (environment) => environment.environmentId === destinationGroup?.environmentId,
+  );
+  const reconnectComputer =
+    blockedReason === null
+      ? undefined
+      : attempt?.sourceResult == null && !sourceConnected
+        ? reconnectable(sourceComputer)
+        : destination && destinationGroup?.connected !== true
+          ? reconnectable(destinationComputer)
+          : undefined;
 
   useEffect(() => {
     mounted.current = true;
@@ -454,8 +544,8 @@ function WorkspaceHandoffContent({
         )}
         {!attempt?.offer && phase !== "done" && (
           <AppText className="text-sm text-foreground-muted">
-            Publish your latest commits first. Loom prepares the destination before settling this
-            conversation.
+            {checkout.known ? "" : "Publish your latest commits first. "}Loom prepares the
+            destination before settling this conversation.
           </AppText>
         )}
       </ScreenScrollView>
@@ -473,10 +563,46 @@ function WorkspaceHandoffContent({
               {phase === "idle" ? "Moving work…" : WORKSPACE_HANDOFF_LABELS[phase]}
             </AppText>
           )}
+          {checkout.problem && !running && (
+            <>
+              <AppText accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
+                {checkout.problem.reason}
+              </AppText>
+              {checkout.problem.fix && checkout.canFix ? (
+                <Button
+                  label={checkout.fixing?.pendingLabel ?? checkout.problem.fix.label}
+                  fullWidth
+                  loading={checkout.fixing !== null}
+                  onPress={() =>
+                    void checkout.fix().then((fixed) => {
+                      if (fixed && mounted.current) setError(null);
+                    })
+                  }
+                />
+              ) : null}
+              {checkout.error && (
+                <AppText accessibilityRole="alert" className="text-sm text-danger">
+                  {checkout.error}
+                </AppText>
+              )}
+            </>
+          )}
           {blockedReason && (
             <AppText accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
               {blockedReason}
             </AppText>
+          )}
+          {reconnectComputer && (
+            <Button
+              label={
+                reconnectComputer.connection.phase === "connecting"
+                  ? `Connecting to ${reconnectComputer.label}…`
+                  : `Reconnect ${reconnectComputer.label}`
+              }
+              fullWidth
+              loading={reconnectComputer.connection.phase === "connecting"}
+              onPress={() => void retryNow(reconnectComputer.environmentId)}
+            />
           )}
           {phase !== "done" && (
             <Button

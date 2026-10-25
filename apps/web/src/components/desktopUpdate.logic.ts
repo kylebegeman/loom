@@ -127,12 +127,13 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
   return "Up to date";
 }
 
-export function getDesktopUpdateInstallConfirmationMessage(
+// fork: machine-updates: the in-app install dialog lists the work a restart would interrupt.
+export function getDesktopUpdateInstallConfirmationTitle(
   state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
 ): string {
   const version = state.downloadedVersion ?? state.availableVersion;
   // fork: brand
-  return `Install update${version ? ` ${version}` : ""} and restart Loom?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`;
+  return `Install update${version ? ` ${version}` : ""} and restart Loom`;
 }
 
 export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {

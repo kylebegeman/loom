@@ -55,6 +55,9 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverCommitDesktopUpdate]: "server",
   [WS_METHODS.serverUpsertKeybinding]: "server",
   [WS_METHODS.serverRemoveKeybinding]: "server",
+  // fork: project-lifecycle
+  [WS_METHODS.checkpointRestoreState]: "orchestrationV2",
+  [WS_METHODS.checkpointUndoRestore]: "orchestrationV2",
   [WS_METHODS.serverRunStorageCleanup]: "server",
   [WS_METHODS.serverGetStorageCleanupReport]: "server",
   [WS_METHODS.serverGetDatabaseStorage]: "server",
@@ -166,6 +169,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.vcsRefreshStatus]: "vcs",
   [WS_METHODS.vcsPull]: "git",
   [WS_METHODS.gitRunStackedAction]: "vcs",
+  [WS_METHODS.gitResolveOperation]: "git", // fork: source-control-cockpit
   [WS_METHODS.gitResolvePullRequest]: "git",
   [WS_METHODS.gitPreparePullRequestThread]: "git",
   [WS_METHODS.vcsListRefs]: "vcs",

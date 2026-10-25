@@ -39,6 +39,7 @@ import * as ThreadSettlement from "../../orchestration-v2/ThreadSettlementServic
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../../processRunner.ts";
+import { pruneLaneTmp } from "./tmpCleanup.ts";
 import { forkParked } from "../../serverActivation.ts";
 import {
   DOCKER_LABEL,
@@ -209,7 +210,7 @@ ${ports === null ? "" : `Ports: ${ports.first} to ${ports.last}\n`}
 Shells inside the checkout get \`TMPDIR=${space}/tmp/\`, \`LOOM_LANE_BUILD\` / \`LOOM_LANE_DATA\`,
 \`LOOM_LANE_ID\` and \`LOOM_LANE_PORT\` (the first of the lane's ports).
 
-- \`space/tmp\`: scratch. Loom clears it when the lane is idle and nearly full.
+- \`space/tmp\`: scratch. Loom removes unused entries older than 24 hours, including while the lane is active.
 - \`space/build\`: DerivedData, package checkouts and other build output.
 - \`space/data\`: files worth keeping while the thread is active.
 
@@ -1274,6 +1275,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       })
       .pipe(Effect.ignore({ log: true }));
 
+  let lastTmpSweep = 0;
   const tick = Effect.fn("ProjectLifecycle.tick")(function* () {
     const settings = yield* getSettings;
     if (!settings.enabled) return yield* publish();
@@ -1282,6 +1284,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return yield* publish();
     const reserveBytes = settings.reserveGb * GB;
+    const now = yield* Clock.currentTimeMillis;
+    const sweepTmp = now - lastTmpSweep >= 60 * 60 * 1000;
+    if (sweepTmp) lastTmpSweep = now;
 
     yield* mutate.withPermits(1)(
       Effect.forEach(
@@ -1295,6 +1300,13 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             if (!entry.mounted && lane.backend === "image") {
               yield* attach(lane);
               entry = yield* measure(lane, true);
+            }
+            if (sweepTmp && entry.mounted) {
+              yield* pruneLaneTmp({
+                spacePath: lanePaths(lane).spacePath,
+                protectedPaths: yield* checkoutPathsWithin(lane.laneDir),
+                lsofPath: options.lsofPath ?? "lsof",
+              }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
             }
             const running = holders.filter(threadRunning);
             const wasSteered = entry.steered;
@@ -1323,8 +1335,13 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
                   { discard: true },
                 );
               } else if (action.type === "clear-tmp") {
-                yield* clear(lane, "tmp");
-                yield* remount(lane);
+                // Automatic pressure relief follows the same age and open-file checks as the hourly sweep.
+                if (!sweepTmp)
+                  yield* pruneLaneTmp({
+                    spacePath: lanePaths(lane).spacePath,
+                    protectedPaths: yield* checkoutPathsWithin(lane.laneDir),
+                    lsofPath: options.lsofPath ?? "lsof",
+                  }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
                 entry = yield* measure(lanes.get(lane.id) ?? lane, true);
                 const current = lanes.get(lane.id) ?? lane;
                 if (

@@ -139,12 +139,10 @@ function layerExecutorFor(input: {
       RunFinalizationService.RunFinalizationService,
       RunFinalizationService.RunFinalizationService.of({ finalize: () => Effect.void }),
     ),
-    Layer.succeed(
-      CheckpointRollbackService.CheckpointRollbackServiceV2,
-      CheckpointRollbackService.CheckpointRollbackServiceV2.of({
-        execute: input.rollback ?? (() => Effect.void),
-      }),
-    ),
+    // fork: project-lifecycle -- this worker fixture only exercises rollback execution.
+    Layer.mock(CheckpointRollbackService.CheckpointRollbackServiceV2)({
+      execute: input.rollback ?? (() => Effect.void),
+    }),
     Layer.succeed(
       RuntimeRequestService.RuntimeRequestServiceV2,
       RuntimeRequestService.RuntimeRequestServiceV2.of({ respond: () => Effect.void }),

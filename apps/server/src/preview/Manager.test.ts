@@ -408,6 +408,37 @@ it.layer(layer)("PreviewManager", (it) => {
     }),
   );
 
+  // fork: preview-status-guard
+  it.effect("keeps the last good status when a server report has a blank URL", () =>
+    Effect.gen(function* () {
+      const threadId = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+      const opened = yield* manager.open({
+        threadId,
+        url: "http://localhost:5173",
+        runtime: "server",
+        reveal: false,
+      });
+      const collector = yield* collectEvents;
+      const before = yield* manager.list({ threadId });
+      const report = { threadId, tabId: opened.tabId, serverControlled: true, canGoBack: false };
+
+      yield* manager.reportStatus({
+        ...report,
+        navStatus: { _tag: "Loading", url: "", title: "" },
+        canGoForward: true,
+      });
+      expect(yield* manager.list({ threadId })).toEqual(before);
+      expect(yield* collector.drain).toEqual([]);
+
+      const loaded = { _tag: "Success" as const, url: "http://localhost:5173/", title: "Dev" };
+      yield* manager.reportStatus({ ...report, navStatus: loaded, canGoForward: false });
+      const events = yield* collector.drain;
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "navigated", snapshot: { navStatus: loaded } });
+    }),
+  );
+
   it.effect("close removes the session and emits closed", () =>
     Effect.gen(function* () {
       const threadId = freshThreadId();

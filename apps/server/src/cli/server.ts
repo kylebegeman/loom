@@ -1,3 +1,4 @@
+import { withHostIdentity } from "../fork/reach/HostIdentity.ts"; // fork: reach
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -23,7 +24,10 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveServerConfig(flags, logLevel, options);
-  const run = runServer.pipe(Effect.provideService(ServerConfig.ServerConfig, config));
+  // fork: reach
+  const run = withHostIdentity(runServer).pipe(
+    Effect.provideService(ServerConfig.ServerConfig, config),
+  );
   if (config.mode !== "desktop" || config.desktopBootstrapToken === undefined) return yield* run;
   return yield* Effect.raceFirst(
     run,

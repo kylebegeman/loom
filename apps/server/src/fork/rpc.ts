@@ -1,4 +1,5 @@
 import { PROJECT_WORKFLOW_WS_METHODS, ProjectWorkflowsRpcGroup } from "@t3tools/contracts/fork";
+import { DATABASE_COMPACTION_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeProjectWorkflowRpcHandlers } from "./project-library/workflow-rpc.ts";
 import { ProjectProfilesRpcGroup, PROJECT_PROFILES_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeProjectProfilesRpcHandlers } from "./project-profiles/rpc.ts";
@@ -125,6 +126,8 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(BOTS_ANYWHERE_WS_METHODS),
   ...Object.values(REACH_WS_METHODS),
   ...Object.values(LIBRARY_PUSH_WS_METHODS),
+  // Served by makeDatabaseCompactionRpcLayer, which needs DatabaseStorage.
+  ...Object.values(DATABASE_COMPACTION_WS_METHODS),
 );
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */

@@ -425,6 +425,91 @@ const withGitSource = <A, E, R>(
   );
 
 describe("committed document source", () => {
+  it.effect("limits tree reads to the manifest and literal source directories", () =>
+    withGitSource(({ cwd, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.writeFileString(
+          `${cwd}/loom-documents.json`,
+          JSON.stringify({
+            version: 1,
+            sources: [{ glob: "docs/decis*/[0-9]*.md", kind: "decision" }],
+          }),
+        );
+        yield* git(["add", "."]);
+        yield* git(["commit", "-m", "partial directory glob"]);
+        const runner = yield* ProcessRunner.ProcessRunner;
+        const listings: ReadonlyArray<string>[] = [];
+        const reader = yield* Publication.LibraryDocumentSource.pipe(
+          Effect.provide(Publication.layerSource),
+          Effect.provideService(ProcessRunner.ProcessRunner, {
+            run: (input) => {
+              if (input.args.includes("ls-tree")) {
+                listings.push(input.args.slice(input.args.indexOf("--") + 1));
+                if (!input.args.includes("--"))
+                  return Effect.fail(
+                    new ProcessRunner.ProcessOutputLimitError({
+                      command: "git",
+                      argumentCount: input.args.length,
+                      cwd,
+                      stream: "stdout",
+                      maxBytes: 2097152,
+                      observedBytes: 2097153,
+                    }),
+                  );
+              }
+              return runner.run(input);
+            },
+          }),
+        );
+        const snapshot = yield* reader.read({ projectId: project.id, resource, cwd });
+        expect(snapshot.documents.map((item) => item.path)).toEqual([
+          "docs/decisions/0001-recovery.md",
+        ]);
+        expect(listings).toEqual([["loom-documents.json"], ["docs/"]]);
+        yield* fs.writeFileString(`${cwd}/loom-documents.json`, '{"version":1,"sources":[]}');
+        yield* git(["add", "."]);
+        yield* git(["commit", "-m", "no sources"]);
+        listings.length = 0;
+        expect((yield* reader.read({ projectId: project.id, resource, cwd })).documents).toEqual(
+          [],
+        );
+        expect(listings).toEqual([["loom-documents.json"]]);
+      }),
+    ),
+  );
+  it.effect(
+    "explains an oversized source listing instead of reporting a retryable IO failure",
+    () =>
+      withGitSource(({ cwd }) =>
+        Effect.gen(function* () {
+          const runner = yield* ProcessRunner.ProcessRunner;
+          const reader = yield* Publication.LibraryDocumentSource.pipe(
+            Effect.provide(Publication.layerSource),
+            Effect.provideService(ProcessRunner.ProcessRunner, {
+              run: (input) =>
+                input.args.includes("ls-tree") && input.args.includes("-r")
+                  ? Effect.fail(
+                      new ProcessRunner.ProcessOutputLimitError({
+                        command: "git",
+                        argumentCount: input.args.length,
+                        cwd,
+                        stream: "stdout",
+                        maxBytes: 2097152,
+                        observedBytes: 2097153,
+                      }),
+                    )
+                  : runner.run(input),
+            }),
+          );
+          const error = yield* reader
+            .read({ projectId: project.id, resource, cwd })
+            .pipe(Effect.flip);
+          expect(error.reason).toBe("invalid");
+          expect(error.detail).toContain("Narrow the sources in loom-documents.json");
+        }),
+      ),
+  );
   it.effect(
     "reads only default branch objects, including each catalogue heading, with no dirty bytes",
     () =>

@@ -16,6 +16,9 @@ import { WS_METHODS } from "./rpc.ts";
 export const CORE_CLIENT_GUARDED_RPC_SCOPES = {
   // fork: ext-core
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
+  // fork: project-lifecycle
+  [WS_METHODS.checkpointRestoreState]: AuthOrchestrationReadScope,
+  [WS_METHODS.checkpointUndoRestore]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
@@ -38,6 +41,7 @@ export const CORE_CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.projectCloneRetry]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsPull]: AuthSourceControlWriteScope,
   [WS_METHODS.gitRunStackedAction]: AuthSourceControlWriteScope,
+  [WS_METHODS.gitResolveOperation]: AuthSourceControlWriteScope, // fork: source-control-cockpit
   [WS_METHODS.gitPreparePullRequestThread]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsCreateWorktree]: AuthSourceControlWriteScope,
   [WS_METHODS.vcsRemoveWorktree]: AuthSourceControlWriteScope,

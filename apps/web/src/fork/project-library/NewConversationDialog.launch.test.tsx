@@ -40,8 +40,10 @@ const state = vi.hoisted(() => ({
     pull: { run: vi.fn() },
   },
   authority: vi.fn(),
+  permission: vi.fn(),
   providers: vi.fn(),
   projects: vi.fn(),
+  shells: vi.fn(),
   registryGet: vi.fn(),
   waitForProject: vi.fn(),
   query: vi.fn(),
@@ -65,7 +67,7 @@ vi.mock("./state", () => ({
     operations: () => state.operationsQuery,
   },
   useLibraryAuthority: state.authority,
-  useLibraryPermission: () => true,
+  useLibraryPermission: state.permission,
 }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: { run: unknown }) => command.run,
@@ -82,6 +84,7 @@ vi.mock("~/state/query", () => ({ useEnvironmentQuery: state.query }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: state.providers }));
 vi.mock("~/state/entities", () => ({
   useProjects: state.projects,
+  useThreadShells: state.shells,
   waitForProject: state.waitForProject,
 }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: state.registryGet } }));
@@ -94,9 +97,15 @@ vi.mock("~/hooks/useSettings", () => ({
   mergeEnvironmentSettings: (settings: unknown) => settings,
 }));
 vi.mock("~/modelSelection", () => ({ getCustomModelOptionsByInstance: () => new Map() }));
-vi.mock("~/composerDraftStore", () => ({
-  useComposerDraftStore: { getState: () => ({ setPrompt: vi.fn() }) },
-}));
+vi.mock("~/composerDraftStore", () => {
+  const sticky = { stickyActiveProvider: null, stickyModelSelectionByProvider: {} };
+  return {
+    useComposerDraftStore: Object.assign(
+      (select: (store: typeof sticky) => unknown) => select(sticky),
+      { getState: () => ({ ...sticky, setPrompt: vi.fn() }) },
+    ),
+  };
+});
 vi.mock("~/lib/utils", () => ({
   newThreadId: () => state.threadIds.shift() ?? "new-thread",
   randomUUID: () => `launch-request-${++state.nextId}`,
@@ -105,6 +114,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: "a",
   useNavigate: () => state.navigate,
 }));
+vi.mock("../vault/LibraryCloneRepair", () => ({ LibraryCloneRepair: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
 vi.mock("~/fork/switchboard/switchboardPicker", () => ({
@@ -299,6 +309,7 @@ beforeEach(() => {
   });
   for (const key of savedKeys) saveLibraryAttempt(key, null, storage);
   for (const command of Object.values(commands)) command.run.mockReset();
+  state.permission.mockReset().mockReturnValue(true);
   state.nextId = 0;
   state.threadIds = [];
   const serverConfig = {
@@ -330,6 +341,7 @@ beforeEach(() => {
   });
   state.providers.mockReturnValue(new Map([[environmentId, [provider]]]));
   state.projects.mockReturnValue([]);
+  state.shells.mockReturnValue([]);
   state.registryGet.mockImplementation((atom: unknown) =>
     atom === state.configsAtom ? new Map([[environmentId, serverConfig]]) : [provider],
   );
@@ -530,7 +542,7 @@ describe("new conversations with source settings", () => {
       input: {
         threadId,
         projectId: localProjectId,
-        title: "New project conversation",
+        title: "New conversation",
         modelSelection: sourceSelection,
         runtimeMode: "auto",
         interactionMode: "plan",
@@ -1547,6 +1559,32 @@ describe("held attempts and one-step starts", () => {
     expectOpened();
   });
 
+  it("keeps the clone repair pinned to the failed preparation computer", async () => {
+    withCapabilities("project-workflows");
+    const repair = {
+      kind: "github-host-setup" as const,
+      environmentId,
+      label: "Computer",
+      agentTool: "loom_github_host_setup" as const,
+      action: "start" as const,
+    };
+    commands.executeOperation.run.mockResolvedValueOnce(
+      AsyncResult.failure(
+        Cause.fail(
+          new LibraryError({
+            reason: "blocked",
+            detail: "Git authentication failed on Computer.",
+            repair,
+          }),
+        ),
+      ),
+    );
+    await mount();
+    await click("Start conversation");
+    expect(launch.cloneRepair).toEqual(repair);
+    expect(launch.error).toBe("Git authentication failed on Computer.");
+  });
+
   it("keeps a retry whose conversation was deleted, says so, and starts a new operation after Start over", async () => {
     withCapabilities("project-workflows");
     const detail =
@@ -1576,6 +1614,59 @@ describe("held attempts and one-step starts", () => {
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId: "second-thread" },
     });
+  });
+
+  it("starts in a new worktree while another conversation works in the folder, and a retry keeps it", async () => {
+    withCapabilities("project-workflows", "library-worktree-starts");
+    const site = {
+      id: "site",
+      title: "Site",
+      remoteUrl: null,
+      relativePath: ".",
+      defaultBranch: null,
+    };
+    const siteProject = { ...project, resources: [site] };
+    const siteCopy: LibraryWorkingCopy = {
+      ...restoredCopy,
+      repositories: [
+        { resourceId: site.id, path: "/work/project", localProjectId, head: null, branch: "main" },
+      ],
+    };
+    state.shells.mockReturnValue([
+      {
+        environmentId,
+        worktreePath: siteCopy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: instanceId,
+          providerName: null,
+          lastError: null,
+          updatedAt: provider.checkedAt,
+        },
+      },
+    ]);
+    commands.executeOperation.run
+      .mockResolvedValueOnce(failure("Disconnected"))
+      .mockResolvedValueOnce(AsyncResult.success({ result: { threadId } }));
+    await mount([siteCopy], { project: siteProject });
+    expect(launch.workspace).toBe("worktree");
+    expect(launch.warning).toBeNull();
+    await click("Start conversation");
+    expect(savedAttempt()).toMatchObject({ workspace: "worktree" });
+
+    // The other conversation finishing must not move the retry back into the shared folder.
+    state.shells.mockReturnValue([]);
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([siteCopy], { project: siteProject });
+    expect(launch.workspace).toBe("worktree");
+    await click("Retry conversation");
+    const [first, retried] = commands.executeOperation.run.mock.calls.map(([call]) => call.input);
+    expect(first.request.input.workspace).toBe("worktree");
+    expect(retried.operationId).toBe(first.operationId);
+    expect(retried.request.input.workspace).toBe("worktree");
   });
 
   it("creates one conversation when started twice before the next render", async () => {
@@ -1671,5 +1762,101 @@ describe("held attempts and one-step starts", () => {
     await act(() => renderer!.update(tree()));
     expect(launch.checking).toBe(false);
     expect(launch.blocker).toBe("Reconnect the selected computer before starting.");
+  });
+});
+
+describe("Library offline starts", () => {
+  function offline(copies: readonly LibraryWorkingCopy[], durable = true) {
+    const previous = state.authority();
+    const host = previous.environments[0];
+    state.authority.mockReturnValue({
+      ...previous,
+      connected: false,
+      environments: [
+        {
+          ...host,
+          serverConfig: {
+            ...host.serverConfig,
+            environment: {
+              capabilities: {
+                supportsExecution: true,
+                loomFeatures: [
+                  "project-library",
+                  "library-file-lifecycle",
+                  ...(durable ? ["project-workflows"] : []),
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+    // Library grants are unavailable during the outage; the host still checks its own grants.
+    state.permission.mockImplementation((_command, environment) => environment !== authorityId);
+    state.query.mockImplementation((query: unknown) => ({
+      data: query === state.retainedQuery ? copies : undefined,
+      isPending: false,
+      isSuccess: true,
+      error: null,
+      refresh: vi.fn(),
+    }));
+    commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
+  }
+
+  it.each(["managed", "borrowed"] as const)(
+    "starts once on a registered %s copy without an authority request",
+    async (ownership) => {
+      const copy = { ...restoredCopy, ownership };
+      offline([copy]);
+      await mount([copy]);
+      expect(launch.offlineNotice).toContain("Library offline; starting from this computer's copy");
+      await click("Start conversation");
+      expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+      expect(commands.registerCopy.run).not.toHaveBeenCalled();
+      expect(commands.registerThread.run).not.toHaveBeenCalled();
+      expect(commands.executeOperation.run).toHaveBeenCalledExactlyOnceWith({
+        environmentId,
+        input: {
+          operationId: expect.any(String),
+          request: {
+            kind: "launch",
+            input: expect.objectContaining({ project, binding, threadId }),
+          },
+        },
+      });
+      expect(
+        commands.executeOperation.run.mock.calls[0]![0].input.request.input,
+      ).not.toHaveProperty("keepOnComputer");
+      expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId },
+      });
+    },
+  );
+
+  it("keeps preparation, unregistered folders, old hosts and retention changes blocked offline", async () => {
+    offline([restoredCopy]);
+    await mount([restoredCopy]);
+    expect(launch.canCreate).toBe(true);
+    await act(() => launch.setKeepChoice(false));
+    expect(launch.canCreate).toBe(false);
+    await act(() => launch.submit());
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
+    await act(() => renderer!.unmount());
+    for (const [copies, durable] of [
+      [[], true],
+      [[releasedCopy], true],
+      [[{ ...restoredCopy, registered: false }], true],
+      [[restoredCopy], false],
+    ] as const) {
+      offline(copies, durable);
+      await mount(copies);
+      expect(launch.canCreate).toBe(false);
+      await act(() => launch.submit());
+      expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+      expect(commands.executeOperation.run).not.toHaveBeenCalled();
+      await act(() => renderer!.unmount());
+      renderer = undefined;
+    }
   });
 });

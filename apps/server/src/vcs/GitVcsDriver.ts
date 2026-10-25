@@ -12,6 +12,8 @@ import { ChildProcessSpawner } from "effect/process";
 
 import {
   GitCommandError,
+  type GitResolveOperationInput,
+  type GitResolveOperationResult, // fork: source-control-cockpit
   VcsProcessExitError,
   VcsUnsupportedOperationError,
   type VcsSwitchRefInput,
@@ -72,6 +74,11 @@ export interface ExecuteGitResult {
 }
 
 export interface GitStatusDetails {
+  // fork: source-control-cockpit
+  operation?: VcsStatusResult["operation"];
+  unmergedCount?: number;
+  unmergedPaths?: readonly string[];
+  headSha?: string | null;
   isRepo: boolean;
   sourceControlProvider?: VcsStatusResult["sourceControlProvider"];
   hasOriginRemote: boolean;
@@ -93,6 +100,9 @@ export interface GitLocalStatusOptions {
 }
 
 export interface GitRemoteStatusDetails {
+  // fork: source-control-cockpit
+  landedOnDefault?: string | null;
+  landedHeadSha?: string | null;
   isRepo: boolean;
   defaultBranch: string | null;
   isDefaultBranch: boolean;
@@ -323,10 +333,15 @@ export class GitVcsDriver extends Context.Service<
       body: string,
       options?: GitCommitOptions,
     ) => Effect.Effect<{ commitSha: string }, GitCommandError>;
+    // fork: source-control-cockpit
+    readonly resolveOperation: (
+      input: GitResolveOperationInput,
+    ) => Effect.Effect<GitResolveOperationResult, GitCommandError>;
     readonly pushCurrentBranch: (
       cwd: string,
       fallbackBranch: string | null,
-      options?: { readonly remoteName?: string | null },
+      // fork: source-control-cockpit
+      options?: { readonly remoteName?: string | null; readonly progress?: GitCommitProgress },
     ) => Effect.Effect<GitPushResult, GitCommandError>;
     readonly readRangeContext: (
       cwd: string,

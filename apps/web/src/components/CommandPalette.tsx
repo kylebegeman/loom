@@ -1,12 +1,18 @@
 "use client";
 
+// fork: attention-status
+import { useThreadAttention } from "../fork/attention/ThreadAttention";
+// fork: source-control-cockpit
+import { requestGitAction } from "~/fork/source-control-cockpit/commands";
+import { gitPaletteActionHint } from "./GitActionsControl.logic";
+import { vcsEnvironment, vcsActionManager } from "~/state/vcs";
+
 import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation"; // fork: library-palette
 import {
   LibraryActionHost,
   useLibraryPaletteSession,
 } from "~/fork/project-library/LibraryActionHost"; // fork: library-palette
 import { openLibraryAction } from "~/fork/project-library/actions"; // fork: library-palette
-import { useLibraryLocalProjectStart } from "~/fork/project-library/libraryLocalProjectStart"; // fork: library-palette
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -593,6 +599,19 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           modelPickerOpen: composerHandleRef.current?.isModelPickerOpen() ?? false,
         },
       });
+      // fork: source-control-cockpit
+      if (
+        (command === "git.commit" || command === "git.commitPush") &&
+        routeThreadRef &&
+        !state.open &&
+        !isTerminalFocused()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat)
+          requestGitAction(routeThreadRef, command === "git.commit" ? "commit" : "commit_push");
+        return;
+      }
       if (command === "appearance.cycle") {
         event.preventDefault();
         event.stopPropagation();
@@ -652,6 +671,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    routeThreadRef,
+    state.open, // fork: source-control-cockpit
     appearanceMode,
     keybindings,
     navigate,
@@ -832,7 +853,6 @@ function OpenCommandPaletteDialog(props: {
   const [linkedThreadSearch, setLinkedThreadSearch] = useState(initialSearch.linkedThreadSearch);
   const deferredQuery = useDeferredValue(query);
   const tryLibraryConversation = useLibraryNewConversation(); // fork: library-palette
-  const startLibraryFolder = useLibraryLocalProjectStart(); // fork: library-palette
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
@@ -869,7 +889,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const forkPaletteItems = useForkCommandPaletteItems(); // fork: ext-palette
+  const forkPaletteItems = useForkCommandPaletteItems(query); // fork: ext-palette
   const canRegisterSite = useCanRegisterSite(); // fork: sites
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -921,6 +941,8 @@ function OpenCommandPaletteDialog(props: {
       );
     }
   };
+  // fork: attention-status
+  const attention = useThreadAttention();
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
@@ -1125,6 +1147,22 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
+  // fork: source-control-cockpit
+  const gitCwd = activeThread?.worktreePath ?? activeDraftThread?.worktreePath ?? currentProjectCwd;
+  const gitTarget = { environmentId: currentProjectEnvironmentId, cwd: gitCwd };
+  const gitStatus = useEnvironmentQuery(
+    currentProjectEnvironmentId && gitCwd
+      ? vcsEnvironment.status({
+          environmentId: currentProjectEnvironmentId,
+          input: { cwd: gitCwd },
+        })
+      : null,
+  ).data;
+  const gitActionState = useAtomValue(vcsActionManager.stateAtom(gitTarget));
+  const canRunGitActions = useEnvironmentScope(
+    currentProjectEnvironmentId,
+    AuthSourceControlWriteScope,
+  );
   const currentProjectCwdForBrowse =
     browseEnvironmentId && currentProjectEnvironmentId === browseEnvironmentId
       ? currentProjectCwd
@@ -1231,8 +1269,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    if (startLibraryFolder(scopeProjectRef(project.environmentId, project.id))) return; // fork: library-palette
-    await handleNewThread(scopeProjectRef(project.environmentId, project.id));
+    await handleNewThread(scopeProjectRef(project.environmentId, project.id)); // fork: library-palette
   };
 
   const projectSearchItems = buildProjectActionItems({
@@ -1323,8 +1360,8 @@ function OpenCommandPaletteDialog(props: {
           const startRef = contextualRefBelongsToGroup // fork: library-palette
             ? contextualProjectRef // fork: library-palette
             : scopeProjectRef(project.environmentId, project.id); // fork: library-palette
-          if (startLibraryFolder(startRef)) return; // fork: library-palette
           await handleNewThread(
+            // fork: library-palette
             startRef, // fork: library-palette
             projectHomeContext && contextualRefBelongsToGroup // fork: project-home
               ? { environmentSelection: "manual" }
@@ -1773,6 +1810,54 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  // fork: attention-status
+  actionItems.push({
+    kind: "action",
+    value: "action:next-attention",
+    title: "Go to next thread that needs you",
+    searchTerms: ["attention", "approval", "input", "paused", "needs you"],
+    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "thread.nextAttention",
+    run: async () => {
+      setOpen(false);
+      await attention.goNext();
+    },
+  });
+  const waitingThreads = attention.threads.filter(
+    (thread) =>
+      thread.hasPendingApprovals ||
+      thread.hasPendingUserInput ||
+      thread.pendingSubagentRequest != null,
+  );
+  if (waitingThreads.length > 0)
+    actionItems.push({
+      kind: "submenu",
+      value: "action:waiting-on-you",
+      title: "Waiting on you",
+      addonIcon: <MessageSquareIcon className={ADDON_ICON_CLASS} />,
+      searchTerms: ["questions", "approval", "pending", "human steps"],
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      groups: [
+        {
+          value: "waiting-on-you",
+          label: "Waiting on you",
+          items: waitingThreads.map((thread) => ({
+            kind: "action",
+            value: `attention:${thread.environmentId}:${thread.id}`,
+            title: thread.title,
+            searchTerms: [thread.title],
+            icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              setOpen(false);
+              await navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId: thread.environmentId, threadId: thread.id },
+              });
+            },
+          })),
+        },
+      ],
+    });
 
   // fork: library-palette
   actionItems.push({
@@ -2391,6 +2476,31 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  // fork: source-control-cockpit
+  if (activeThread) {
+    for (const [action, title, shortcutCommand] of [
+      ["commit", "Commit", "git.commit"],
+      ["commit_push", "Commit & push", "git.commitPush"],
+      ["create_pr", "Create pull request", undefined],
+    ] as const) {
+      const hint = canRunGitActions
+        ? gitPaletteActionHint(gitStatus, gitActionState.isRunning, action)
+        : "This connection cannot change source control.";
+      actionItems.push({
+        kind: "action",
+        value: `action:git:${action}`,
+        title,
+        searchTerms: ["git", "commit", "push", "pull request"],
+        icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+        disabled: hint !== null,
+        description: hint ?? undefined,
+        ...(shortcutCommand ? { shortcutCommand } : {}),
+        run: async () =>
+          requestGitAction(scopeThreadRef(activeThread.environmentId, activeThread.id), action),
+      });
+    }
+  }
+
   actionItems.push(...forkPaletteItems.items); // fork: ext-palette
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
@@ -2516,10 +2626,11 @@ function OpenCommandPaletteDialog(props: {
             scopeThreadRef(latestThread.environmentId, latestThread.id),
           ),
         });
-      } else if (!startLibraryFolder(scopeProjectRef(existing.environmentId, existing.id))) {
+      } else {
+        // fork: library-palette - The shared handler resolves Library folders.
         // fork: library-palette - Only a plain local project starts a bare thread here.
-        const navigationResult = await settlePromise(() =>
-          handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
+        const navigationResult = await settlePromise(
+          () => handleNewThread(scopeProjectRef(existing.environmentId, existing.id)), // fork: library-palette
         );
         if (navigationResult._tag === "Failure") {
           const error = squashAtomCommandFailure(navigationResult);
@@ -3228,6 +3339,14 @@ function OpenCommandPaletteDialog(props: {
       if (matchingItem) {
         executeItem(matchingItem);
       }
+      return;
+    }
+    // fork: attention-status
+    if (command === "thread.nextAttention") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      void attention.goNext();
       return;
     }
     if (command === "thread.copyReference") {

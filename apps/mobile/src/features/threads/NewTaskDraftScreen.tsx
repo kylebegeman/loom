@@ -1625,7 +1625,8 @@ export function NewTaskDraftScreen(props: {
       {flow.canChooseWorkspace ? <View className="pb-1">{workspaceControls}</View> : null}
 
       {taskPermissionReason ? (
-        <Text className="px-3 py-2 text-xs text-muted-foreground">{taskPermissionReason}</Text>
+        // fork: mobile-muted-text: the mobile theme names this token foreground-muted.
+        <Text className="px-3 py-2 text-xs text-foreground-muted">{taskPermissionReason}</Text>
       ) : null}
 
       {modelUnavailable ? (

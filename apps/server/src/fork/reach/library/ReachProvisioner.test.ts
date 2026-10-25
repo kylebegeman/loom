@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
 import { hasExtraReachConnector } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -885,6 +885,14 @@ describe("ReachProvisioner admin", () => {
         const later = yield* fixture.provisioner.list;
         expect(later.computers[0]).toMatchObject({ connection: "unknown", signIn: "ended" });
         expect(later.setup.cloudflare).toBe("refused");
+        fixture.sessions.set("session-renewed", {
+          ...sessionRecord("session-renewed", "active"),
+          subject: `loom-host:${STUDIO}`,
+          scopes: [AuthLibraryPublishScope],
+        });
+        expect((yield* fixture.provisioner.list).computers[0]?.signIn).toBe("active");
+        fixture.sessions.delete("session-studio");
+        expect((yield* fixture.provisioner.list).computers[0]?.signIn).toBe("active");
       }),
     ),
   );

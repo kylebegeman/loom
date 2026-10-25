@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   authorityId: "library" as string | null,
+  offline: false,
   projects: [] as LibraryProject[],
   copies: [] as LibraryWorkingCopy[],
   libraryCopies: [] as LibraryWorkingCopy[],
@@ -43,7 +44,7 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: () => new Map() }));
-vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
+vi.mock("~/state/entities", () => ({ useProjects: () => [], useThreadShells: () => [] }));
 vi.mock("./ConversationPalette", async () => {
   const { createContext } = await import("react");
   return { ConversationAutoStartContext: createContext(null) };
@@ -76,10 +77,14 @@ vi.mock("./state", async () => {
       registerCopy: guarded("registerCopy"),
     },
     useSelectedLibraryProject: () => [null, state.select],
+    useLibraryLocalCatalog: () => ({
+      data: { projects: state.projects, copies: state.libraryCopies },
+    }),
     useLibraryProject: (id: string) => {
       useRevision();
       return {
         authorityId: state.authorityId,
+        offline: state.offline,
         project: {
           data: state.projects.find((project) => project.id === id) ?? null,
           isPending: state.pending,
@@ -97,6 +102,7 @@ vi.mock("./state", async () => {
       useRevision();
       return {
         authorityId: state.authorityId,
+        offline: state.offline,
         environments: [
           {
             environmentId: "dorothy",
@@ -187,6 +193,7 @@ vi.mock("./ImportProjectDialog", () => ({
 vi.mock("./NewConversationDialog", async () => {
   const { ConversationAutoStartContext } = await import("./ConversationPalette");
   return {
+    selectLastUsedModel: () => null,
     libraryConversationDefaults: () => ({
       entries: [{ instanceId: "codex", models: [{ slug: "gpt-6", name: "GPT 6.0 Astra" }] }],
       providers: [],
@@ -320,6 +327,7 @@ async function update(change: () => void) {
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.authorityId = "library";
+  state.offline = false;
   state.projects = [project, second, { ...project, id: "old", title: "Archived", archived: true }];
   state.copies = [copy];
   state.libraryCopies = [];
@@ -457,6 +465,7 @@ it("resumes the requested action after connecting the Library", async () => {
   expect(container.textContent).toContain("Connect Library");
   await update(() => {
     state.authorityId = "library";
+    state.offline = false;
   });
   expect(input("Project name")).not.toBeNull();
 });
@@ -498,6 +507,7 @@ it("keeps No project during Library setup and leaves it out when no computer can
   expect(button("No project")).toBeDefined();
   state.noProject = null;
   state.authorityId = "library";
+  state.offline = false;
   await act(() => openLibraryAction("new-conversation"));
   expect(button("No project")).toBeUndefined();
   expect(button("Alpha")).toBeDefined();
@@ -685,4 +695,19 @@ it("never lets the computer a start runs on decide which project a search finds"
   await type("Search projects", "dor");
   expect(button("Beta")).toBeUndefined();
   expect(button("Dorothy notes")).toBeDefined();
+});
+
+it("offers an offline quick start using the host's files and grants", async () => {
+  state.offline = true;
+  state.features = ["project-library", "project-workflows"];
+  state.libraryCopies = [{ ...copy, id: "beta-copy", projectId: second.id }];
+  state.denied.add("registerThread:library");
+  state.denied.add("registerCopy:library");
+  state.denied.add("prepareCopy:dorothy");
+  await act(() => openLibraryAction("new-conversation"));
+  expect(button("Beta").dataset.enter).toBe("Start");
+  await click("Beta");
+  expect(launch().autoStart).toMatchObject({
+    launch: { environmentId: "dorothy", workingCopyId: "beta-copy" },
+  });
 });

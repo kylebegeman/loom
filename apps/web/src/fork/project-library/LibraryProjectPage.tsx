@@ -1,3 +1,5 @@
+import { TidyProjectDialog } from "./TidyProjectDialog";
+import { projectEntries } from "@t3tools/client-runtime/fork";
 import { ProjectWorkstreams } from "./ProjectWorkstreams";
 import { ProjectBlueprint } from "./ProjectBlueprint";
 import { ProjectAttention } from "./ProjectAttention";
@@ -62,6 +64,8 @@ import {
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
+import { useQuickStarts } from "./LibraryActionHost";
+import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
@@ -87,6 +91,7 @@ const LONG_BRIEF_LINES = 4;
 /** A fine dot grid fading out from the hero's far corner, for texture behind the title. */
 type LibraryProjectView = ReturnType<typeof useLibraryProject>;
 type ConversationRequest = {
+  readonly quick?: ConversationQuickStart | undefined;
   readonly hostId?: EnvironmentId;
   readonly copyId?: string;
   readonly resourceId?: string;
@@ -125,7 +130,7 @@ export function LibraryProjectPage({
         <p role="status" className="text-sm text-muted-foreground">
           {library.project.isPending
             ? "Loading project..."
-            : "This project is not saved on this device yet. Connect your Library to load it."}
+            : "Connect the Library or a computer with registered files for this project."}
         </p>
       </LibraryPageFrame>
     );
@@ -160,6 +165,7 @@ function ProjectView({
 }) {
   const navigate = useNavigate();
   const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
+  const [tidying, setTidying] = useState(false);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
@@ -217,7 +223,23 @@ function ProjectView({
     LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
   );
   const canWork = library.connected && !project.archived;
-  const canStart = canRegister && canWork;
+  const quickStarts = useQuickStarts({
+    enabled: !project.archived,
+    authorityId,
+    offline: library.offline,
+    copies,
+    environments: library.environments,
+    computers: library.computers,
+    projects: [project],
+    threads: library.threads.data ?? undefined,
+  });
+  const quickStart = quickStarts.starts.get(project.id)?.launch;
+  const canStart =
+    !project.archived &&
+    (library.offline
+      ? activeCopies.some((copy) => copy.state === "ready")
+      : canRegister && canWork);
+  const startConversation = () => setConversation(quickStart ? { quick: quickStart } : {});
   const threads = (library.threads.data ?? [])
     .filter((thread) => !thread.deleted)
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -272,7 +294,9 @@ function ProjectView({
         proposesBrief={proposesBrief}
         hostLabel={hostLabel}
         onSaved={library.refresh}
-        onNewConversation={() => setConversation({})}
+        onNewConversation={startConversation}
+        onConversationOptions={() => setConversation({})}
+        onTidy={() => setTidying(true)}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
@@ -321,7 +345,7 @@ function ProjectView({
                     show("computers");
                   }}
                   onGetCopy={setCopyRequest}
-                  onStart={() => setConversation({})}
+                  onStart={startConversation}
                 />
               ) : (
                 <RecentConversations
@@ -498,6 +522,16 @@ function ProjectView({
           }}
         />
       ) : null}
+      {tidying ? (
+        <TidyProjectDialog
+          entry={
+            projectEntries([project], copies, { threads, nextOffset: null }, localProjects)[0]!
+          }
+          now={now}
+          onChanged={library.refresh}
+          onClose={() => setTidying(false)}
+        />
+      ) : null}
       {releasing ? (
         <ReleaseCopyDialog
           copy={releasing}
@@ -509,16 +543,36 @@ function ProjectView({
         />
       ) : null}
       {conversation ? (
-        <NewConversationDialog
-          project={project}
-          copies={copies}
-          copiesQuery={library.copies}
-          {...(conversation.hostId ? { initialHostId: conversation.hostId } : {})}
-          {...(conversation.copyId ? { initialCopyId: conversation.copyId } : {})}
-          {...(conversation.resourceId ? { initialResourceId: conversation.resourceId } : {})}
-          onChanged={library.refresh}
-          onClose={() => setConversation(null)}
-        />
+        <ConversationAutoStartContext
+          value={
+            conversation.quick
+              ? {
+                  launch: conversation.quick,
+                  settle: () =>
+                    setConversation((current) =>
+                      current ? { ...current, quick: undefined } : null,
+                    ),
+                }
+              : null
+          }
+        >
+          <NewConversationDialog
+            project={project}
+            copies={copies}
+            copiesQuery={library.copies}
+            {...(conversation.quick
+              ? {
+                  initialHostId: conversation.quick.environmentId,
+                  initialCopyId: conversation.quick.workingCopyId,
+                }
+              : {})}
+            {...(conversation.hostId ? { initialHostId: conversation.hostId } : {})}
+            {...(conversation.copyId ? { initialCopyId: conversation.copyId } : {})}
+            {...(conversation.resourceId ? { initialResourceId: conversation.resourceId } : {})}
+            onChanged={library.refresh}
+            onClose={() => setConversation(null)}
+          />
+        </ConversationAutoStartContext>
       ) : null}
     </div>
   );
@@ -541,6 +595,8 @@ function ProjectHero({
   hostLabel,
   onSaved,
   onNewConversation,
+  onConversationOptions,
+  onTidy,
 }: {
   readonly project: LibraryProject;
   readonly localIcon: LocalProjectIcon | null;
@@ -557,6 +613,8 @@ function ProjectHero({
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly onSaved: () => void;
   readonly onNewConversation: () => void;
+  readonly onConversationOptions: () => void;
+  readonly onTidy: () => void;
 }) {
   const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
   const canArchive = useLibraryPermission(projectLibrary.archiveProject, authorityId);
@@ -642,6 +700,14 @@ function ProjectHero({
               <PlusIcon />
               New conversation
             </Button>
+            <Button
+              shape="pill"
+              variant="outline"
+              disabled={!canStart}
+              onClick={onConversationOptions}
+            >
+              Options
+            </Button>
             <Menu>
               <MenuTrigger
                 render={
@@ -657,6 +723,7 @@ function ProjectHero({
                 <MenuItem disabled={!update.canEdit} onClick={() => onEditingBriefChange(true)}>
                   Edit brief
                 </MenuItem>
+                <MenuItem onClick={onTidy}>Tidy...</MenuItem>
                 <MenuSeparator />
                 <MenuItem
                   disabled={!canArchive || !connected}

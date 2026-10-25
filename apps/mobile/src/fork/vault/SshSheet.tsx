@@ -1,3 +1,4 @@
+import { PinnedHostKeys } from "./PinnedHostKeys";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -342,6 +343,17 @@ function SshDetails({
         {info.hostFingerprint ? <Text selectable>Current: {info.hostFingerprint}</Text> : null}
         {!removing ? (
           <>
+            <PinnedHostKeys
+              environmentId={environmentId}
+              target={info.target}
+              disabled={!writable || busy}
+              onSelect={(key) => {
+                setHostKey(key.publicKey);
+                setConfirmed(false);
+                setOperationId(newId());
+                setError(null);
+              }}
+            />
             <Text>Verified host public key</Text>
             <TextInput
               accessibilityLabel="Verified host public key"

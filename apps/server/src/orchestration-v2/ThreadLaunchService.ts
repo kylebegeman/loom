@@ -39,7 +39,16 @@ import {
   WORKTREE_BRANCH_PREFIX,
 } from "@t3tools/shared/git";
 
-import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
+import {
+  LibraryError,
+  type LibraryProject,
+  type LibraryThreadBinding,
+} from "@t3tools/contracts/fork"; // fork: library-projects
+// fork: library-projects
+import { ForkRuntime, withForkRuntime } from "../fork/ForkRuntime.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
+import * as ProjectOperations from "../fork/project-library/ProjectOperations.ts";
 import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -78,7 +87,21 @@ export interface ThreadLaunchInitialMessage {
   readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
 }
 
+// fork: library-projects -- the initiating session owns the durable Library launch as well.
+type LibraryLaunchCaller =
+  | {
+      readonly threadId: ThreadId;
+      readonly providerInstanceId: import("@t3tools/contracts").ProviderInstanceId;
+    }
+  | { readonly sessionId: string };
+type LibraryLaunchBinding = {
+  readonly project: LibraryProject;
+  readonly binding: LibraryThreadBinding;
+  readonly cwd: string;
+};
+
 export interface ThreadLaunchInput {
+  readonly libraryCaller?: LibraryLaunchCaller; // fork: library-projects
   readonly commandId: CommandId;
   readonly threadId?: ThreadId;
   readonly reuseExistingThread?: boolean;
@@ -166,6 +189,16 @@ export class ThreadLaunchBaseRefError extends Schema.TaggedError<ThreadLaunchBas
 export class ThreadLaunchService extends Context.Service<
   ThreadLaunchService,
   {
+    // fork: library-projects -- direct batch/delegation dispatches share the launch preflight.
+    readonly resolveLibraryBinding: (input: {
+      readonly projectId: ProjectId;
+      readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
+      readonly callerThreadId?: ThreadId;
+    }) => Effect.Effect<LibraryLaunchBinding | null, LibraryError>;
+    readonly bindLibraryThread: (
+      threadId: ThreadId,
+      launch: LibraryLaunchBinding,
+    ) => Effect.Effect<void, LibraryError>;
     readonly launch: (
       input: ThreadLaunchInput,
     ) => Effect.Effect<
@@ -221,6 +254,7 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const libraryStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore); // fork: library-projects
   const libraryFolders = yield* Effect.serviceOption(LibraryFolderGuard.LibraryFolderGuard); // fork: library-projects
   const preparationScope = yield* Scope.make("sequential");
   const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
@@ -241,6 +275,95 @@ const make = Effect.gen(function* () {
     receipts
       .getByCommandId(commandId)
       .pipe(Effect.mapError(mapError(input, "read-receipt", input.threadId)));
+
+  // fork: library-projects -- use local receipts and pinned scope, including while the Library is offline.
+  const resolveLibraryBinding: ThreadLaunchService["Service"]["resolveLibraryBinding"] = Effect.fn(
+    "ThreadLaunchService.resolveLibraryBinding",
+  )(function* (input) {
+    const missing = () =>
+      new LibraryError({
+        reason: "blocked",
+        detail:
+          "This Library project's files are not registered on this computer. Prepare or reopen its copy from the Library project, then retry.",
+      });
+    if (Option.isNone(libraryStore)) {
+      if (input.projectId.startsWith("library-copy:")) return yield* missing();
+      return null;
+    }
+    const store = libraryStore.value;
+    const parent =
+      input.callerThreadId === undefined ? null : yield* store.getBinding(input.callerThreadId);
+    const inherited = parent?.localProjectId === input.projectId ? parent : null;
+    const receipt =
+      inherited !== null
+        ? yield* store.get(inherited.binding.workingCopyId)
+        : (yield* store.receipts).find(
+            (row) =>
+              (input.projectId.startsWith("library-copy:") || row.copy.ownership === "managed") &&
+              (row.rootLocalProjectId === input.projectId ||
+                row.copy.repositories.some((repo) => repo.localProjectId === input.projectId)),
+          );
+    if (!receipt) {
+      if (input.projectId.startsWith("library-copy:")) return yield* missing();
+      return null;
+    }
+    if (input.workspaceStrategy.type !== "root")
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
+      });
+    const project =
+      (inherited !== null && input.callerThreadId !== undefined
+        ? yield* store.getBoundProject(input.callerThreadId)
+        : null) ?? receipt.project;
+    const binding = inherited?.binding ?? {
+      projectId: receipt.copy.projectId,
+      projectRevision: receipt.copy.projectRevision,
+      environmentId: receipt.copy.environmentId,
+      workingCopyId: receipt.copy.id,
+      resourceIds:
+        receipt.rootLocalProjectId === input.projectId
+          ? []
+          : receipt.copy.repositories
+              .filter((repo) => repo.localProjectId === input.projectId)
+              .map((repo) => repo.resourceId),
+    };
+    if ((yield* ForkRuntime) === undefined)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Library launch services are unavailable on this computer. Restart Loom, then retry.",
+      });
+    const resolved = yield* withForkRuntime(
+      Effect.flatMap(LibraryWorkspace.LibraryWorkspace, (workspace) =>
+        workspace.resolveBinding({ project, binding }),
+      ),
+    );
+    const local = yield* projects
+      .getById(input.projectId)
+      .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+    if (
+      resolved.localProjectId !== input.projectId ||
+      Option.isNone(local) ||
+      resolved.cwd !== local.value.workspaceRoot
+    )
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "The Library copy no longer matches this project's folder. Reopen the copy from the Library project, then retry.",
+      });
+    return { project, binding, cwd: resolved.cwd };
+  });
+  // fork: library-projects -- deferred delegated runs cannot start before their binding is durable.
+  const bindLibraryThread: ThreadLaunchService["Service"]["bindLibraryThread"] = Effect.fn(
+    "ThreadLaunchService.bindLibraryThread",
+  )(function* (threadId, launch) {
+    yield* withForkRuntime(
+      Effect.flatMap(LibraryWorkspace.LibraryWorkspace, (workspace) =>
+        workspace.bindThread({ threadId, project: launch.project, binding: launch.binding }),
+      ),
+    );
+  });
 
   const validateReusableThread = Effect.fn("ThreadLaunchService.validateReusableThread")(function* (
     input: ThreadLaunchInput,
@@ -881,10 +1004,44 @@ const make = Effect.gen(function* () {
         )("Reusing an existing thread requires a thread id.");
       }
 
-      const launchReceipt = yield* readReceipt(input, input.commandId);
+      // fork: library-projects -- refuse unsupported folders before thread or worktree creation.
+      const libraryLaunch = yield* resolveLibraryBinding({
+        projectId: input.projectId,
+        workspaceStrategy: input.workspaceStrategy,
+        ...(input.libraryCaller && "threadId" in input.libraryCaller
+          ? { callerThreadId: input.libraryCaller.threadId }
+          : {}),
+      }).pipe(Effect.mapError(mapError(input, "resolve-project")));
+      if (
+        libraryLaunch !== null &&
+        (input.libraryCaller === undefined || input.reuseExistingThread === true)
+      )
+        return yield* mapError(
+          input,
+          "create-thread",
+        )(
+          new LibraryError({
+            reason: "blocked",
+            detail:
+              "Start a new Library conversation from an active agent turn or a signed-in client.",
+          }),
+        );
+      const libraryOperationId =
+        libraryLaunch === null
+          ? null
+          : yield* withForkRuntime(
+              Effect.flatMap(ProjectOperations.ProjectOperations, (operations) =>
+                operations.operationId(input.commandId, "launch"),
+              ),
+            ).pipe(Effect.mapError(mapError(input, "create-thread")));
+      const createCommandId =
+        libraryOperationId === null
+          ? input.commandId
+          : CommandId.make(`${libraryOperationId}:create`);
+      const launchReceipt = yield* readReceipt(input, createCommandId);
       yield* threads.assertProviderInstanceEnabled({
         projectId: input.projectId,
-        commandId: input.commandId,
+        commandId: createCommandId, // fork: library-projects
         instanceId: input.modelSelection.instanceId,
       });
       return yield* Effect.gen(function* () {
@@ -927,21 +1084,31 @@ const make = Effect.gen(function* () {
         }
 
         const workspaceStrategy: ThreadLaunchWorkspaceStrategy =
-          input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
-            ? Option.match(
-                yield* managedFolders
-                  .folderForThread({
-                    projectId: input.projectId,
-                    threadId: candidateThreadId,
-                    text: input.initialMessage?.text ?? input.title,
-                  })
-                  .pipe(Effect.mapError(mapError(input, "provision-worktree", candidateThreadId))),
-                {
-                  onNone: () => input.workspaceStrategy,
-                  onSome: (worktreePath) => ({ type: "existing_worktree", worktreePath }),
-                },
-              )
-            : input.workspaceStrategy;
+          libraryLaunch !== null
+            ? {
+                type: "existing_worktree",
+                worktreePath: libraryLaunch.cwd,
+                ...(input.workspaceStrategy.branch === undefined
+                  ? {}
+                  : { branch: input.workspaceStrategy.branch }),
+              } // fork: library-projects
+            : input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
+              ? Option.match(
+                  yield* managedFolders
+                    .folderForThread({
+                      projectId: input.projectId,
+                      threadId: candidateThreadId,
+                      text: input.initialMessage?.text ?? input.title,
+                    })
+                    .pipe(
+                      Effect.mapError(mapError(input, "provision-worktree", candidateThreadId)),
+                    ),
+                  {
+                    onNone: () => input.workspaceStrategy,
+                    onSome: (worktreePath) => ({ type: "existing_worktree", worktreePath }),
+                  },
+                )
+              : input.workspaceStrategy;
         const initialBranch = workspaceStrategy.branch ?? null;
         const initialWorktreePath =
           workspaceStrategy.type === "existing_worktree" ? workspaceStrategy.worktreePath : null;
@@ -970,17 +1137,47 @@ const make = Effect.gen(function* () {
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });
-        const claimed = yield* claimDispatch.pipe(
-          Effect.mapError(
-            mapError(
-              input,
-              input.reuseExistingThread === true ? "update-thread" : "create-thread",
-              candidateThreadId,
-            ),
-          ),
-        );
+        // fork: library-projects -- the existing operation owns create/bind and its retry receipt.
+        const libraryCaller = input.libraryCaller;
+        const claimed =
+          libraryLaunch !== null && libraryOperationId !== null && libraryCaller !== undefined
+            ? yield* withForkRuntime(
+                Effect.flatMap(ProjectOperations.ProjectOperations, (operations) => {
+                  const request = {
+                    kind: "launch" as const,
+                    input: {
+                      project: libraryLaunch.project,
+                      binding: libraryLaunch.binding,
+                      threadId: candidateThreadId,
+                      title: input.title,
+                      modelSelection: input.modelSelection,
+                      runtimeMode: input.runtimeMode,
+                      interactionMode: input.interactionMode,
+                    },
+                  };
+                  return "threadId" in libraryCaller
+                    ? operations.executeAgent(libraryOperationId, request, libraryCaller)
+                    : operations.executeClient(
+                        libraryOperationId,
+                        request,
+                        libraryCaller.sessionId,
+                      );
+                }),
+              ).pipe(
+                Effect.as(null),
+                Effect.mapError(mapError(input, "create-thread", candidateThreadId)),
+              )
+            : yield* claimDispatch.pipe(
+                Effect.mapError(
+                  mapError(
+                    input,
+                    input.reuseExistingThread === true ? "update-thread" : "create-thread",
+                    candidateThreadId,
+                  ),
+                ),
+              );
         const threadId =
-          claimed.storedEvents.find((stored) => stored.event.type.startsWith("thread."))?.event
+          claimed?.storedEvents.find((stored) => stored.event.type.startsWith("thread."))?.event
             .threadId ?? candidateThreadId;
         if (project.id !== input.projectId) {
           return yield* mapError(input, "resolve-project", threadId)("Project identity changed.");
@@ -1116,6 +1313,19 @@ const make = Effect.gen(function* () {
       const run = projection.runs.find((candidate) => candidate.id === input.runId);
       const workspacePreparation = run?.workspacePreparation;
       if (run?.status !== "preparing" || workspacePreparation === undefined) return;
+      // fork: library-projects -- recover a delegation interrupted between its accepted command and binding.
+      if (
+        projection.thread.lineage.parentThreadId !== null &&
+        Option.isSome(libraryStore) &&
+        (yield* libraryStore.value.getBinding(input.threadId)) === null
+      ) {
+        const binding = yield* resolveLibraryBinding({
+          projectId: projection.thread.projectId,
+          callerThreadId: projection.thread.lineage.parentThreadId,
+          workspaceStrategy: workspacePreparation,
+        });
+        if (binding !== null) yield* bindLibraryThread(input.threadId, binding);
+      }
       if (!(yield* reservePreparation(input.commandId))) return;
       yield* scheduleRunPreparation(input, projection, run, workspacePreparation).pipe(
         Effect.onError(() => releasePreparation(input.commandId)),
@@ -1180,7 +1390,14 @@ const make = Effect.gen(function* () {
     );
   };
 
-  return ThreadLaunchService.of({ launch, checkWorktreeBase, retryPreparation, prepareRun });
+  return ThreadLaunchService.of({
+    resolveLibraryBinding,
+    bindLibraryThread, // fork: library-projects
+    launch,
+    checkWorktreeBase,
+    retryPreparation,
+    prepareRun,
+  });
 });
 
 export const layer = Layer.effect(ThreadLaunchService, make);

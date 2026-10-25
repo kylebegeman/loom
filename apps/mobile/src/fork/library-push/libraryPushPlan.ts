@@ -79,6 +79,8 @@ export interface LibraryPushLibrary {
   readonly connected: boolean;
   /** Whether the Library advertises `library-push`; null while its config is unknown. */
   readonly advertised: boolean | null;
+  /** Whether it also sends agent alerts (`library-push-activity`); null while unknown. */
+  readonly alerts: boolean | null;
   /** The session holds the scope register and unregister need. */
   readonly canChange: boolean;
   readonly account: LoomIdentityAccount | null;
@@ -112,6 +114,7 @@ const sameLibrary = (a: LibraryPushLibrary | null, b: LibraryPushLibrary | null)
     a.configured === b.configured &&
     a.connected === b.connected &&
     a.advertised === b.advertised &&
+    a.alerts === b.alerts &&
     a.canChange === b.canChange &&
     sameAccount(a.account, b.account));
 

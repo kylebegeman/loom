@@ -1,3 +1,6 @@
+// fork: source-control-cockpit
+import { useGitRecoveryPrompt } from "../../fork/source-control-cockpit/GitRecovery";
+import { useThreadSelection } from "../../state/use-thread-selection";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -19,7 +22,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 
 import { useEnvironmentScope } from "../../state/session";
-import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
+// fork: source-control-cockpit -- context transfer belongs beside the conversation, outside Git.
 import {
   basename,
   getTerminalStatusLabel,
@@ -90,7 +93,7 @@ export type ThreadGitMenuProps = {
   readonly gitOperationLabel: string | null;
   readonly onOpenFilesInspector?: () => void;
   readonly onOpenGitInspector?: () => void;
-  readonly onMergeBack?: () => void;
+  // fork: source-control-cockpit -- latest-turn transfer is a conversation action.
   readonly onPull: () => Promise<void>;
   readonly onRunAction: (input: GitActionRequestInput) => Promise<GitRunStackedActionResult | null>;
 };
@@ -114,6 +117,14 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
 
 function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const navigation = useNavigation();
+  // fork: source-control-cockpit
+  const askAgent = useGitRecoveryPrompt();
+  const { selectedThreadProject, selectedEnvironmentRuntime } = useThreadSelection();
+  const skipDefaultBranchConfirmation = selectedThreadProject
+    ? selectedEnvironmentRuntime?.serverConfig?.settings.projectSettingsOverrides[
+        selectedThreadProject.id
+      ]?.skipDefaultBranchConfirmation === true
+    : false;
   const openPullRequest = useOpenPullRequest();
   const environmentId = props.environmentId;
   const canWriteSourceControl = useEnvironmentScope(
@@ -189,7 +200,11 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
       branchName &&
       confirmableAction &&
       !input.featureBranch &&
-      requiresDefaultBranchConfirmation(input.action, isDefaultRef)
+      requiresDefaultBranchConfirmation(
+        input.action,
+        isDefaultRef,
+        skipDefaultBranchConfirmation,
+      ) /* fork: source-control-cockpit */
     ) {
       navigation.navigate("GitConfirm", {
         environmentId: String(environmentId),
@@ -206,6 +221,11 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
 
   const runQuickAction = async () => {
     if (quickAction.disabled) return;
+    // fork: source-control-cockpit
+    if (quickAction.kind === "ask_agent" && gitStatus) {
+      askAgent(gitStatus);
+      return;
+    }
     if (quickAction.kind === "open_pr") {
       await openExistingPr();
       return;
@@ -369,17 +389,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
             onPress: model.openReview,
             type: "action",
           },
-          ...(props.onMergeBack
-            ? [
-                {
-                  description: "Bring this thread's latest turn into its source",
-                  icon: { name: PullRequestGlyph.merged, type: "sfSymbol" as const },
-                  label: "Merge back to source",
-                  onPress: props.onMergeBack,
-                  type: "action" as const,
-                },
-              ]
-            : []),
+          // fork: source-control-cockpit -- latest-turn transfer moved to the conversation.
           {
             description: "Commit, files, branches",
             icon: { name: "ellipsis", type: "sfSymbol" },

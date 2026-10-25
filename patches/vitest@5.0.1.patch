@@ -1,0 +1,16 @@
+--- a/dist/chunks/index.DzobfTyw.js
++++ b/dist/chunks/index.DzobfTyw.js
+@@ -21433,7 +21433,12 @@
+ 				for (const error of errors) this.logger.error("error during close", error);
+ 				this._checkUnhandledErrors(errors);
+ 			});
+-			await this._traces?.finish();
++			// fork: project-lifecycle -- the transformed module cache belongs to this run.
++			try {
++				await this._traces?.finish();
++			} finally {
++				await rm(this._tmpDir, { recursive: true, force: true });
++			}
+ 		})();
+ 		return this.closingPromise;
+ 	}

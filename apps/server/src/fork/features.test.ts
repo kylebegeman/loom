@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  LIBRARY_PUSH_ACTIVITY_FEATURE,
   LIBRARY_PUSH_FEATURE,
   REACH_FEATURE,
   REACH_LIBRARY_FEATURE,
@@ -28,7 +29,12 @@ const LIBRARY_PUSH = {
   LOOM_LIBRARY_PUSH_APNS_KEY_ID: "KEY1234567",
   LOOM_LIBRARY_PUSH_APNS_KEY_FILE: "/srv/loom/apns.p8",
 };
-const GATING_KEYS = Object.keys({ ...REACH_LIBRARY, ...LIBRARY_PUSH });
+const LIBRARY_PUSH_ACTIVITY = {
+  ...LIBRARY_PUSH,
+  LOOM_LIBRARY_PUSH_ACTIVITY: "true",
+  LOOM_LIBRARY_PUSH_RECIPIENTS: "",
+};
+const GATING_KEYS = Object.keys({ ...REACH_LIBRARY, ...LIBRARY_PUSH_ACTIVITY });
 
 /** The list is computed when the module loads, so each env needs a fresh copy. */
 const featuresWith = async (env: Readonly<Record<string, string>>) => {
@@ -60,6 +66,20 @@ describe("LOOM_SERVER_FEATURES", () => {
     const push = await featuresWith(LIBRARY_PUSH);
     expect(push).toContain(LIBRARY_PUSH_FEATURE);
     expect(push).not.toContain(REACH_LIBRARY_FEATURE);
+    expect(push).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+  });
+
+  it("advertises agent alerts only when the Library has someone to send them to", async () => {
+    expect(await featuresWith(LIBRARY_PUSH_ACTIVITY)).toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+
+    const shared = { ...LIBRARY_PUSH_ACTIVITY, LOOM_IDENTITY_ALLOWED_SUBJECTS: "alice,bob" };
+    expect(await featuresWith(shared)).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+    expect(
+      await featuresWith({ ...shared, LOOM_LIBRARY_PUSH_RECIPIENTS: "bob" }),
+    ).toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+
+    const withoutPush = { ...LIBRARY_PUSH_ACTIVITY, LOOM_LIBRARY_PUSH_ENABLED: "false" };
+    expect(await featuresWith(withoutPush)).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
   });
 });
 

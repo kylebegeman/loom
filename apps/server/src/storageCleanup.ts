@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - rmdir atomically refuses nonempty project folders.
+// fork: project-lifecycle
+import * as NodeFSP from "node:fs/promises";
 // fork: mini-native-retention
 import {
   GitCommandError,
@@ -243,6 +246,10 @@ export class StorageCleanup extends Context.Service<
   {
     readonly requestSweep: Effect.Effect<void>;
     readonly runNow: Effect.Effect<StorageCleanupReport, ServerSettingsError>;
+    // fork: project-lifecycle
+    readonly removeOrphan: (
+      worktreePath: string,
+    ) => Effect.Effect<StorageCleanupReport, ServerSettingsError>;
     readonly latestReport: Effect.Effect<StorageCleanupReport | null>;
     readonly reports: Stream.Stream<StorageCleanupReport | null>;
     readonly drain: Effect.Effect<void>;
@@ -546,6 +553,17 @@ const make = Effect.gen(function* () {
     return false;
   });
 
+  // fork: project-lifecycle
+  const pruneEmptyProjectFolder = Effect.fn("StorageCleanup.pruneEmptyProjectFolder")(function* (
+    directory: string,
+    roots: ReadonlyArray<string>,
+  ) {
+    if (!roots.some((root) => pathKey(path.dirname(directory)) === pathKey(root))) return;
+    if (yield* containsProjectRoot(directory, yield* projectStore.listShells())) return;
+    if (pathKey(yield* fs.realPath(directory)) !== pathKey(directory)) return;
+    yield* Effect.tryPromise(() => NodeFSP.rmdir(directory)).pipe(Effect.ignore);
+  });
+
   const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (
     roots: ReadonlyArray<string>,
     projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
@@ -634,7 +652,11 @@ const make = Effect.gen(function* () {
           if (Option.isSome(measured)) orphanSizes.set(key, measured.value);
         }
         const bytes = orphanSizes.get(key) ?? null;
+        // fork: project-lifecycle
+        const canRemove = linked && (yield* orphanRemovalReason(worktreePath, roots)) === null;
         entries.push({
+          // fork: project-lifecycle
+          ...(canRemove ? { canRemove: true } : {}),
           kind: "worktree",
           outcome: "kept",
           reason: linked
@@ -663,6 +685,8 @@ const make = Effect.gen(function* () {
           for (const worktreePath of yield* directories(projectDirectory, root)) {
             yield* report(worktreePath);
           }
+          // fork: project-lifecycle -- rmdir cannot remove a folder that acquired new files.
+          yield* pruneEmptyProjectFolder(projectDirectory, roots);
         }).pipe(Effect.orElseSucceed(() => undefined));
       }
     }
@@ -802,6 +826,65 @@ const make = Effect.gen(function* () {
       .find((entry) => entry !== "" && !/(^|\/)node_modules\/$/.test(entry));
     return file === undefined ? null : `has ignored files (${file})`;
   });
+
+  // fork: project-lifecycle -- manual orphan removal keeps every safety gate, independent of retention settings.
+  const orphanRemovalReason = Effect.fn("StorageCleanup.orphanRemovalReason")(
+    function* (cwd: string, roots: ReadonlyArray<string>) {
+      const real = yield* fs.realPath(cwd);
+      if (pathKey(real) !== pathKey(cwd) || !roots.some((root) => inside(root, real)))
+        return "Outside the managed worktree folder or a symbolic link";
+      const owner = yield* HostProcess.UserId;
+      if (owner !== undefined && Option.getOrNull((yield* fs.stat(real)).uid) !== owner)
+        return "Worktree is owned by another user";
+      if (yield* containsProjectRoot(real, yield* projectStore.listShells()))
+        return "Contains a project checkout";
+      if ((yield* fs.stat(path.join(real, ".git"))).type !== "File") return "Not a linked worktree";
+      if (yield* fs.exists(`${real}.t3-setup-pending`)) return "Workspace preparation is pending";
+      const references = yield* sql<{
+        worktreePath: string;
+      }>`SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath" FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL`;
+      for (const reference of references) {
+        const other = yield* fs
+          .realPath(reference.worktreePath)
+          .pipe(Effect.orElseSucceed(() => path.resolve(reference.worktreePath)));
+        if (pathKey(other) === pathKey(real) || inside(real, other) || inside(other, real))
+          return "A conversation uses this worktree";
+      }
+      if (hasTerminal(real)) return "Open terminal";
+      const libraryReason = yield* libraryCleanupBlocker(real, yield* Clock.currentTimeMillis);
+      if (libraryReason !== null) return libraryReason;
+      const sessions = yield* sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
+      for (const row of sessions) {
+        const session = yield* decodeCleanupSession(row.payload_json);
+        if (
+          (pathKey(session.cwd) === pathKey(real) || inside(real, session.cwd)) &&
+          (yield* providerSessions.isLive(session.id))
+        )
+          return "Provider session is still open";
+      }
+      yield* assertScratchUnmounted(real);
+      const branch = yield* git.execute({
+        operation: "StorageCleanup.orphanBranch",
+        cwd: real,
+        args: ["symbolic-ref", "--quiet", "HEAD"],
+      });
+      if (!branch.stdout.trim())
+        return "Keep detached work until its commits are saved on a branch";
+      const changes = yield* localChangesReason(real, { worktreeKeepWhen: "any-local-files" });
+      if (changes !== null) return changes;
+      const submodules = yield* git.execute({
+        operation: "StorageCleanup.orphanSubmodules",
+        cwd: real,
+        args: ["submodule", "status", "--recursive"],
+      });
+      if (submodules.stdout.trim() || submodules.stdoutTruncated)
+        return "Worktree contains submodules";
+      return yield* managedProjectProcessReason(real);
+    },
+    Effect.orElseSucceed(() => "Could not safely inspect this worktree"),
+  );
 
   const submoduleRemoval = Effect.fn("StorageCleanup.submoduleRemoval")(
     // fork: project-lifecycle
@@ -2185,8 +2268,97 @@ const make = Effect.gen(function* () {
       ),
     );
   });
+  // fork: project-lifecycle
+  const removeOrphan = Effect.fn("StorageCleanup.removeOrphan")(
+    function* (target: string) {
+      const cwd = path.resolve(target);
+      const now = DateTime.formatIso(yield* DateTime.now);
+      const entries: StorageCleanupReportEntry[] = [];
+      const settings = yield* settingsService.getSettings;
+      const roots = yield* Effect.forEach(
+        managedWorktreesDirectories(
+          settings,
+          config.worktreesDir,
+          path,
+          yield* HostProcess.HomeDirectory,
+        ),
+        (root) => fs.realPath(root).pipe(Effect.orElseSucceed(() => null)),
+      );
+      const managed = roots.filter(
+        (root): root is string => root !== null && !isFilesystemRoot(root, path),
+      );
+      let entry: StorageCleanupReportEntry = {
+        kind: "worktree",
+        outcome: "kept",
+        reason: "This worktree is not an orphan eligible for removal",
+        path: cwd,
+        projectPath: null,
+        threadId: null,
+        threadTitle: null,
+        bytes: null,
+        files: null,
+      };
+      yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          yield* reportOrphanWorktrees(managed, yield* projectStore.listShells(), entries);
+          const reviewed = entries.find((candidate) => candidate.path === cwd);
+          if (!reviewed) return;
+          entry = reviewed;
+          const reason = yield* orphanRemovalReason(cwd, managed);
+          if (reason !== null) {
+            entry = { ...entry, reason, canRemove: false };
+            return;
+          }
+          yield* cleanupGit(cwd, ["worktree", "remove", "--", cwd], "git worktree remove");
+          entry = {
+            ...entry,
+            outcome: "removed",
+            reason: "Removed clean orphan worktree; its branch is preserved",
+            canRemove: false,
+          };
+          yield* pruneEmptyProjectFolder(path.dirname(cwd), managed).pipe(Effect.ignore);
+        }),
+      ).pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            entry = {
+              ...entry,
+              outcome: "failed",
+              reason: "Could not safely remove this worktree. Refresh and try again.",
+              canRemove: false,
+            };
+          }),
+        ),
+      );
+      const previous = yield* SubscriptionRef.get(reportRef);
+      const updated = [entry, ...(previous?.entries ?? []).filter((row) => row.path !== cwd)];
+      const report: StorageCleanupReport = {
+        trigger: "manual",
+        startedAt: now,
+        finishedAt: DateTime.formatIso(yield* DateTime.now),
+        entries: updated,
+        counts: {
+          removed: updated.filter((row) => row.outcome === "removed").length,
+          kept: updated.filter((row) => row.outcome === "kept").length,
+          failed: updated.filter((row) => row.outcome === "failed").length,
+        },
+        omittedCount: previous?.omittedCount ?? 0,
+        bytesFreed: updated.reduce(
+          (sum, row) => sum + (row.outcome === "removed" ? (row.bytes ?? 0) : 0),
+          0,
+        ),
+      };
+      yield* SubscriptionRef.set(reportRef, report);
+      return report;
+    },
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.provideService(Path.Path, path),
+  );
   yield* start();
   return StorageCleanup.of({
+    // fork: project-lifecycle
+    removeOrphan,
     requestSweep: worker.requestSweep,
     runNow: worker.runNow,
     latestReport: SubscriptionRef.get(reportRef),

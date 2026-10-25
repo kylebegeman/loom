@@ -64,7 +64,14 @@ export function GitActionProgressOverlay(props: {
               : "default"
         }
         busy={progress.phase === "running"}
-        action={progress.prUrl ? { label: "Open PR", onPress: handlePress } : undefined}
+        // fork: source-control-cockpit
+        action={
+          progress.onCancel
+            ? { label: "Cancel", onPress: progress.onCancel }
+            : progress.prUrl
+              ? { label: "Open PR", onPress: handlePress }
+              : undefined
+        }
         onDismiss={progress.phase === "running" ? undefined : onDismiss}
       />
     </Animated.View>

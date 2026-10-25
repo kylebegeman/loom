@@ -34,6 +34,9 @@ export const DesktopBackendBootstrap = Schema.Struct({
   desktopBrowserFd: Schema.optionalKey(PositiveInt),
   desktopBrowserControlFd: Schema.optionalKey(PositiveInt),
   resourceMonitorPath: Schema.optionalKey(TrimmedNonEmptyString),
+  // fork: restart-compaction: set when this desktop compacts the backend's
+  // database before it starts it, so Settings can ask for that at restart.
+  restartCompaction: Schema.optionalKey(Schema.Boolean),
 });
 
 export type DesktopBackendBootstrap = typeof DesktopBackendBootstrap.Type;

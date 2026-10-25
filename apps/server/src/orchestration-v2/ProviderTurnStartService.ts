@@ -98,6 +98,11 @@ const refusedBeforePrompt = (error: unknown): boolean =>
 export const libraryBriefProposalHint = (projectId: string) =>
   `To suggest a change to this brief, call loom_library_brief_propose for project ${projectId} with the full new brief and why; a person reviews it.`;
 
+// fork: mobile-surface-hint -- a phone cannot open the host's localhost. Only the mobile client
+// marks its messages; a remote browser and the desktop app both send "web".
+export const PHONE_VIEWER_NOTE =
+  "Note: the user sent this from the Loom phone app and cannot open localhost URLs. Share visual results as loom_preview_link_share links or html_render pages.";
+
 export interface ProviderTurnStartServiceV2Shape {
   readonly start: (input: {
     readonly threadId: ThreadId;
@@ -1150,6 +1155,9 @@ export const layer: Layer.Layer<
           userText = `${context}\n\nUser message:\n${userText}`;
         }
       }
+      // fork: mobile-surface-hint -- a native slash command must stay at the start of the text.
+      if (message.creationSource === "mobile" && !message.text.trimStart().startsWith("/"))
+        userText = `${PHONE_VIEWER_NOTE}\n\n${userText}`;
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(

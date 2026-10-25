@@ -1,3 +1,18 @@
+// fork: source-control-cockpit
+import { GitRecovery } from "~/fork/source-control-cockpit/GitRecovery";
+import {
+  useGitActionRequestStore,
+  type GitActionRequest,
+} from "~/fork/source-control-cockpit/commands";
+import { gitPaletteActionHint } from "./GitActionsControl.logic";
+import {
+  buildGitRecoveryPrompt,
+  gitWaitingLabel,
+  gitOperationLabel,
+} from "@t3tools/client-runtime/state/vcs";
+import type { VcsActionState } from "@t3tools/client-runtime/state/vcs";
+import { useStableCallback } from "~/hooks/useStableCallback";
+import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -98,7 +113,12 @@ import {
   useVcsInitAction,
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
-import { useThreadProjection, useQuietThreadShell } from "~/state/entities";
+import {
+  useThreadProjection,
+  useQuietThreadShell,
+  useProject,
+  useThreadShellsForProjectRefs,
+} from "~/state/entities"; // fork: source-control-cockpit
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
@@ -235,6 +255,9 @@ function getMenuActionDisabledReason({
   if (!item.disabled) return null;
   if (isBusy) return "Git action in progress.";
   if (!gitStatus) return "Git status is unavailable.";
+  // fork: source-control-cockpit
+  const operation = gitOperationLabel(gitStatus);
+  if (operation) return operation;
 
   const hasBranch = gitStatus.refName !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
@@ -350,10 +373,44 @@ function GitActionElapsedTime({
   return <p className={className}>{elapsed}</p>;
 }
 
+// fork: source-control-cockpit -- a one-shot timer changes only the stalled label.
+function GitProgressLabel({
+  state,
+  computer,
+  fallback,
+}: {
+  state: VcsActionState;
+  computer: string;
+  fallback: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!state.isRunning || state.phase !== "push" || state.hookName) return;
+    const last = state.lastProgressAtMs ?? state.phaseStartedAtMs;
+    if (last === null) return;
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.max(0, last + 20_000 - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    state.isRunning,
+    state.phase,
+    state.hookName,
+    state.lastProgressAtMs,
+    state.phaseStartedAtMs,
+  ]);
+  return <>{gitWaitingLabel(state, now, computer) ?? fallback}</>;
+}
+
 function GitActionProgressButtonContent({
   progress,
   isPanel,
+  state,
+  computer, // fork: source-control-cockpit
 }: {
+  state: VcsActionState;
+  computer: string; // fork: source-control-cockpit
   progress: GitActionProgressPresentation;
   isPanel: boolean;
 }) {
@@ -378,7 +435,8 @@ function GitActionProgressButtonContent({
           isPanel && THREAD_DETAILS_PANEL_LABEL_CLASS,
         )}
       >
-        {progress.status}
+        {/* fork: source-control-cockpit */}
+        <GitProgressLabel state={state} computer={computer} fallback={progress.status} />
       </p>
       {!isPanel ? (
         <GitActionElapsedTime
@@ -999,6 +1057,43 @@ export default function GitActionsControl({
     activeServerThreadShell ?? activeServerThreadProjection?.projection.thread ?? null;
   const isLocalDraftThread = activeDraftThread !== null && activeServerThread === null;
   const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
+  // fork: source-control-cockpit
+  const projectId = activeServerThread?.projectId ?? activeDraftThread?.projectId;
+  const project = useProject(
+    projectId && activeEnvironmentId ? { environmentId: activeEnvironmentId, projectId } : null,
+  );
+  const projectThreads = useThreadShellsForProjectRefs(
+    projectId && activeEnvironmentId ? [{ environmentId: activeEnvironmentId, projectId }] : [],
+  );
+  const checkoutThreads = projectThreads.filter(
+    (thread) => (thread.worktreePath ?? project?.workspaceRoot) === gitCwd,
+  );
+  const otherCheckoutThreadCount = checkoutThreads.filter(
+    (thread) => thread.id !== activeThreadRef?.threadId,
+  ).length;
+  const checkoutBusy = checkoutThreads.some((thread) => thread.runtime?.activeRunId != null);
+  const projectOverrides = projectId
+    ? serverConfig?.settings.projectSettingsOverrides[projectId]
+    : undefined;
+  const skipDefaultConfirmation = projectOverrides?.skipDefaultBranchConfirmation === true;
+  const canRememberConfirmation = useEnvironmentScope(activeEnvironmentId, AuthSettingsWriteScope);
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
+  const [rememberDefaultBranch, setRememberDefaultBranch] = useState(false);
+  const cancelGitAction = useAtomCommand(vcsActionManager.cancelStackedAction);
+  const rememberConfirmation = async (skip: boolean) => {
+    if (!projectId || !activeEnvironmentId || !canRememberConfirmation) return true;
+    const result = await updateSettings({
+      environmentId: activeEnvironmentId,
+      input: {
+        patch: {
+          projectSettingsOverrides: {
+            [projectId]: { ...projectOverrides, skipDefaultBranchConfirmation: skip },
+          },
+        },
+      },
+    });
+    return result._tag === "Success";
+  };
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
@@ -1234,7 +1329,11 @@ export default function GitActionsControl({
       (action === "commit" || !!actionStatus?.hasWorkingTreeChanges || featureBranch);
     if (
       !skipDefaultBranchPrompt &&
-      requiresDefaultBranchConfirmation(action, actionIsDefaultBranch) &&
+      requiresDefaultBranchConfirmation(
+        action,
+        actionIsDefaultBranch,
+        skipDefaultConfirmation,
+      ) /* fork: source-control-cockpit */ &&
       actionBranch
     ) {
       if (
@@ -1245,6 +1344,7 @@ export default function GitActionsControl({
       ) {
         return;
       }
+      setRememberDefaultBranch(false); // fork: source-control-cockpit
       setPendingDefaultBranchAction({
         action,
         branchName: actionBranch,
@@ -1274,6 +1374,7 @@ export default function GitActionsControl({
 
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) {
+        requestVcsStatusRefresh(refreshVcsStatus, activeEnvironmentId, gitCwd); // fork: source-control-cockpit
         return;
       }
 
@@ -1363,10 +1464,13 @@ export default function GitActionsControl({
     }
   }
 
-  const continuePendingDefaultBranchAction = (featureBranch: boolean) => {
+  const continuePendingDefaultBranchAction = async (featureBranch: boolean) => {
+    // fork: source-control-cockpit
     if (!isDefaultBranchDialogOpen || !pendingDefaultBranchAction || !canWriteSourceControl) return;
     if (featureBranch && (!canChangeThreadBranch || featureBranchUnavailableReason !== null))
       return;
+    // fork: source-control-cockpit -- remember only the direct action, never a feature-branch choice.
+    if (!featureBranch && rememberDefaultBranch && !(await rememberConfirmation(true))) return;
     const { action, commitMessage, onConfirmed, filePaths } = pendingDefaultBranchAction;
     setIsDefaultBranchDialogOpen(false);
     void runGitActionWithToast({
@@ -1397,7 +1501,51 @@ export default function GitActionsControl({
     });
   };
 
+  // fork: source-control-cockpit -- preserve existing drafts; the user reviews and sends the prompt.
+  const askAgent = () => {
+    if (!activeThreadRef || !gitStatusForActions) return;
+    const store = useComposerDraftStore.getState();
+    const draft = store.getComposerDraft(draftId ?? activeThreadRef)?.prompt ?? "";
+    store.setPrompt(
+      draftId ?? activeThreadRef,
+      [draft, buildGitRecoveryPrompt(gitStatusForActions)].filter(Boolean).join("\n\n"),
+    );
+  };
+  const requestedGitAction = useGitActionRequestStore((store) => store.pending);
+  const handleGitActionRequest = useStableCallback((request: GitActionRequest) => {
+    if (!useGitActionRequestStore.getState().consume(request)) return;
+    const hint = !canWriteSourceControl
+      ? "This connection cannot change source control."
+      : gitPaletteActionHint(gitStatusForActions, isGitActionRunning, request.action);
+    if (hint) {
+      toastManager.add({ type: "info", title: "Git action unavailable", description: hint });
+      return;
+    }
+    if (request.action === "commit") {
+      setIsCommitDialogOpen(true);
+      return;
+    }
+    void runGitActionWithToast({ action: request.action });
+  });
+  useEffect(() => {
+    if (
+      !requestedGitAction ||
+      !activeThreadRef ||
+      !gitStatusForActions ||
+      requestedGitAction.threadRef.environmentId !== activeThreadRef.environmentId ||
+      requestedGitAction.threadRef.threadId !== activeThreadRef.threadId
+    )
+      return;
+    // Details may mount only after the palette opens them. Consume once after status is ready.
+    queueMicrotask(() => handleGitActionRequest(requestedGitAction));
+  }, [requestedGitAction, activeThreadRef, gitStatusForActions, handleGitActionRequest]);
+
   const runQuickAction = () => {
+    // fork: source-control-cockpit
+    if (quickAction.kind === "ask_agent") {
+      askAgent();
+      return;
+    }
     if (quickAction.kind === "open_publish") {
       setIsPublishDialogOpen(true);
       return;
@@ -1630,6 +1778,37 @@ export default function GitActionsControl({
 
   return (
     <>
+      {/* fork: source-control-cockpit */}
+      {presentation !== "menu" && (
+        <GitRecovery
+          status={gitStatusForActions}
+          threadRef={activeThreadRef ?? null}
+          cwd={gitCwd}
+          worktree={!!activeServerThread?.worktreePath}
+          busy={
+            isGitActionRunning || checkoutBusy || !!activeServerThreadShell?.runtime?.activeRunId
+          }
+          canWrite={canWriteSourceControl}
+          canSettle={canOperateThread}
+          onAsk={askAgent}
+        />
+      )}
+      {skipDefaultConfirmation && canRememberConfirmation && presentation !== "menu" && (
+        <Button size="xs" variant="ghost" onClick={() => void rememberConfirmation(false)}>
+          Ask before default branch actions
+        </Button>
+      )}
+      {vcsActionState.isRunning && vcsActionState.actionId && (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() =>
+            void cancelGitAction({ target: sourceControlScope, actionId: vcsActionState.actionId! })
+          }
+        >
+          Cancel git action
+        </Button>
+      )}
       {presentation === "menu" ? (
         isProjectCheckpointParent ? (
           <MenuItem density="touch" disabled={!onOpenChanges} onClick={onOpenChanges}>
@@ -1721,7 +1900,13 @@ export default function GitActionsControl({
               size="xs"
               variant={isPanel ? "ghost" : "outline"}
             >
-              <GitActionProgressButtonContent isPanel={isPanel} progress={gitActionProgress} />
+              {/* fork: source-control-cockpit */}
+              <GitActionProgressButtonContent
+                isPanel={isPanel}
+                progress={gitActionProgress}
+                state={vcsActionState}
+                computer={serverConfig?.environment.label ?? "the host computer"}
+              />
             </ThreadDetailsControl>
           ) : isPanel && visibleInlineSuccess ? (
             <ThreadDetailsControl part="primary" multiline disabled size="xs" variant="ghost">
@@ -2055,6 +2240,19 @@ export default function GitActionsControl({
               {pendingDefaultBranchActionCopy?.title ?? "Run action on default branch?"}
             </DialogTitle>
             <DialogDescription>{pendingDefaultBranchActionCopy?.description}</DialogDescription>
+            {/* fork: source-control-cockpit */}
+            <p className="text-xs text-muted-foreground">
+              Checking out a feature branch switches this folder for every conversation using it.
+            </p>
+            {projectId && canRememberConfirmation && (
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={rememberDefaultBranch}
+                  onCheckedChange={(checked) => setRememberDefaultBranch(checked === true)}
+                />
+                Don't ask again for this project
+              </label>
+            )}
             {featureBranchUnavailableReason && (
               <p className="text-xs text-muted-foreground">{featureBranchUnavailableReason}</p>
             )}
@@ -2070,9 +2268,9 @@ export default function GitActionsControl({
             </Button>
             <Button
               className="w-full max-w-full sm:w-auto"
-              variant="outline"
+              variant="default" // fork: source-control-cockpit -- keep shared checkouts on their current branch.
               size="sm-multiline"
-              onClick={() => continuePendingDefaultBranchAction(false)}
+              onClick={() => void continuePendingDefaultBranchAction(false)}
               disabled={!canWriteSourceControl}
             >
               {pendingDefaultBranchActionCopy?.continueLabel ?? "Continue"}
@@ -2080,10 +2278,14 @@ export default function GitActionsControl({
             <Button
               className="w-full max-w-full sm:w-auto"
               size="sm-multiline"
-              onClick={() => continuePendingDefaultBranchAction(true)}
+              variant="outline" // fork: source-control-cockpit
+              onClick={() => void continuePendingDefaultBranchAction(true)}
               disabled={!canChangeThreadBranch || featureBranchUnavailableReason !== null}
             >
-              Check out feature branch & continue
+              {otherCheckoutThreadCount > 0
+                ? `Check out feature branch (switches ${otherCheckoutThreadCount} other conversation${otherCheckoutThreadCount === 1 ? "" : "s"})`
+                : "Check out feature branch (switches this folder)"}{" "}
+              {/* fork: source-control-cockpit */}
             </Button>
           </DialogFooter>
         </DialogPopup>

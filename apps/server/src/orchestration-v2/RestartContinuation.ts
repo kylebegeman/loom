@@ -1,3 +1,5 @@
+// fork: server-weight
+import { ProviderProcesses } from "@t3tools/shared/AgentScope";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
@@ -227,6 +229,17 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     )
       return;
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
+    // fork: server-weight -- a refused cleanup must never start a second writer in this folder.
+    const processes = yield* ProviderProcesses;
+    if (
+      processes.blocker(input.threadId, projection.thread.worktreePath ?? undefined) !== undefined
+    ) {
+      yield* Effect.logWarning("A previous agent is still running in this folder", {
+        threadId: input.threadId,
+      });
+      return;
+    }
+
     // A turn that keeps crashing the server would otherwise restart it forever.
     let chainLength = 0;
     const loopWindowStart =

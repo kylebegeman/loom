@@ -7,6 +7,7 @@ import {
   applyInboxChanges,
   applyPipelineChanges,
   type BotsChanges,
+  inboxNeedsPersonCount,
   createBotsAtoms,
   EMPTY_BOT_BATCH_CHANGES,
   EMPTY_BOT_PIPELINE_CHANGES,
@@ -38,7 +39,7 @@ import { usePrimaryEnvironment } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { environmentThreadShells } from "~/state/threads";
 import { useLibraryPermission } from "../project-library/state";
-import { triageItems, type TriageItem } from "./inboxWaiting";
+import { needsPerson, triageItems, type TriageItem } from "./inboxWaiting";
 
 export const bots = createBotsAtoms(connectionAtomRuntime);
 const waitingBotRunsAtom = makeWaitingBotRunsAtom(environmentThreadShells.threadShellsAtom);
@@ -266,8 +267,8 @@ export function useWaitingBotRuns(environmentId: EnvironmentId | null) {
 
 /**
  * The Needs you queue as the band lists it: inbox runs plus runs paused on an approval or a
- * question, across every bot or for one. `runs` are runs the caller already holds, which name a
- * waiting run's bot without a request of their own.
+ * question, across every bot or for one, less runs their calling agent already has. `runs` are
+ * runs the caller already holds, which name a waiting run's bot without a request of their own.
  */
 export function useNeedsYouItems(
   bot: Pick<BotDefinition, "id" | "name"> | null,
@@ -286,12 +287,15 @@ export function useNeedsYouItems(
     waiting,
     findRun: (runId) => changes.runs.get(runId) ?? runs.find((run) => run.id === runId),
     bot,
-  });
+  }).filter(needsPerson);
 }
 
 const noRun = () => undefined;
 
-/** Runs that need a person: the inbox total plus runs waiting on an answer. */
+/**
+ * Runs that need a person: the inbox total, less runs whose calling agent already has the
+ * outcome, plus runs waiting on an answer.
+ */
 export function useBotsAttentionCount() {
   const host = useBotsHost();
   const live = Boolean(host.environmentId && host.supported);
@@ -315,5 +319,5 @@ export function useBotsAttentionCount() {
     findRun: noRun,
     bot: null,
   }).filter((item) => item.kind === "waiting").length;
-  return (page?.total ?? 0) + waitingOnly;
+  return (page === null ? 0 : inboxNeedsPersonCount(page)) + waitingOnly;
 }

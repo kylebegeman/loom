@@ -81,7 +81,8 @@ export const ModelPreview3dToolkit = Toolkit.make(
       cursor: W.ModelHistoryInput.fields.cursor,
       limit: W.ModelHistoryInput.fields.limit,
     }),
-    success: W.ModelHistory,
+    // MCP structured content must be plain JSON; capturedAt is a DateTime.
+    success: Schema.toCodecJson(W.ModelHistory),
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext],
   })

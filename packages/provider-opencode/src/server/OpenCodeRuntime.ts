@@ -1,3 +1,5 @@
+// fork: server-weight
+import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 import * as NodeURL from "node:url";
 
 import type { ChatAttachment, ProviderApprovalDecision, RuntimeMode } from "@t3tools/contracts";
@@ -619,6 +621,8 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           ...(input.environment ? { env: input.environment } : { extendEnv: true }),
         }),
       );
+      // fork: server-weight
+      yield* trackProviderProcess(child, { cwd: input.cwd });
       const terminateCommandGroup =
         hostPlatform === "win32"
           ? child.kill({ killSignal: "SIGKILL" }).pipe(Effect.asVoid)
@@ -742,6 +746,10 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         ),
       );
 
+    // fork: server-weight
+    yield* trackProviderProcess(child, { shared: true }).pipe(
+      Effect.provideService(Scope.Scope, runtimeScope),
+    );
     const killOpenCodeProcessGroup = (signal: NodeJS.Signals) =>
       hostPlatform === "win32"
         ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid)
