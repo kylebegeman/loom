@@ -173,6 +173,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
         return {
           scope,
           localVersion,
+          installWhenIdle: installLocalWhenIdle !== undefined, // fork: machine-updates
           phase: "providers",
           restartAt: null,
           machines: Array.from(machinesById.values()),

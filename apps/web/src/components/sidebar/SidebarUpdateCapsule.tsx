@@ -52,6 +52,7 @@ function localStatusLabel(run: UpdateEverythingRun, local: UpdateRunLocalState, 
   if (local?.status === "downloading") {
     return `downloading${local.percent === null ? "" : ` ${Math.floor(local.percent)}%`}`;
   }
+  if (run.installWhenIdle) return "installs when agents finish"; // fork: machine-updates
   return "restarts after the servers";
 }
 
