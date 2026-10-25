@@ -1,3 +1,5 @@
+import { DirectoryReporting } from "../directory-computers/DirectoryReporting";
+import { Input } from "~/components/ui/input";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   reachChangeErrorText,
@@ -9,7 +11,11 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthRelayReadScope, sessionGrantsScope, type EnvironmentId } from "@t3tools/contracts";
-import { REACH_FEATURE, REACH_FORGET_FEATURE } from "@t3tools/contracts/fork";
+import {
+  REACH_FEATURE,
+  REACH_FORGET_FEATURE,
+  REACH_IDENTITY_APPLY_FEATURE,
+} from "@t3tools/contracts/fork";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { type ReactNode, useState } from "react";
@@ -27,7 +33,7 @@ import { reach } from "./state";
 
 const TITLE = "Reach from anywhere";
 
-type PendingChange = "on" | "off" | "remove" | "forget";
+type PendingChange = "on" | "off" | "remove" | "forget" | "identity";
 
 const REACH_TONE_CLASS: Readonly<Record<ReachTone, string>> = {
   neutral: "text-muted-foreground",
@@ -106,11 +112,14 @@ export function ComputerReachSection({
   readonly environment: EnvironmentPresentation;
 }) {
   return (
-    <SettingsSection title={TITLE}>
-      <div className="space-y-2 px-3 py-3 sm:px-4">
-        <ComputerReachBody environment={environment} isThisComputer heading={null} />
-      </div>
-    </SettingsSection>
+    <>
+      <DirectoryReporting environment={environment} />
+      <SettingsSection title={TITLE}>
+        <div className="space-y-2 px-3 py-3 sm:px-4">
+          <ComputerReachBody environment={environment} isThisComputer heading={null} />
+        </div>
+      </SettingsSection>
+    </>
   );
 }
 
@@ -145,6 +154,13 @@ function ComputerReachBody({
     onNone: () => null,
     onSome: (prepared) => prepared.httpBaseUrl,
   });
+  const canApplyIdentity = useAtomValue(reach.applyIdentity.permissionAtom(environmentId));
+  const applyIdentity = useAtomCommand(reach.applyIdentity, { reportFailure: false });
+  const [allowedSubjects, setAllowedSubjects] = useState("");
+  const [requirePasskey, setRequirePasskey] = useState(true);
+  const identityApplySupported =
+    serverConfig !== null &&
+    supportsLoomFeature(serverConfig.environment.capabilities, REACH_IDENTITY_APPLY_FEATURE);
   const set = useAtomCommand(reach.set, { reportFailure: false });
   const remove = useAtomCommand(reach.remove, { reportFailure: false });
   const forget = useAtomCommand(reach.forget, { reportFailure: false });
@@ -262,6 +278,49 @@ function ComputerReachBody({
               <pre className="overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xs">
                 {view.signIn.copyText}
               </pre>
+              {isThisComputer && canApplyIdentity && identityApplySupported ? (
+                <div className="space-y-2">
+                  <label className="block space-y-1 text-xs">
+                    Allowed Loom account IDs, if not already configured
+                    <Input
+                      value={allowedSubjects}
+                      onChange={(event) => setAllowedSubjects(event.target.value)}
+                      placeholder="Account IDs, separated by commas"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <Switch checked={requirePasskey} onCheckedChange={setRequirePasskey} />
+                    Require passkey
+                  </label>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={pending !== null}
+                    onClick={async () => {
+                      if (
+                        (await requestConfirmDialog(
+                          "Save these sign-in values on this computer and restart its backend? Devices will reconnect. Running agent turns may stop.",
+                          { confirmLabel: "Use these values" },
+                        )) !== true
+                      )
+                        return;
+                      await run("identity", () =>
+                        applyIdentity({
+                          environmentId,
+                          input: {
+                            requirePasskey,
+                            ...(allowedSubjects.trim()
+                              ? { allowedSubjects: allowedSubjects.trim() }
+                              : {}),
+                          },
+                        }),
+                      );
+                    }}
+                  >
+                    Use these values
+                  </Button>
+                </div>
+              ) : null}
               <CopyAction
                 value={view.signIn.copyText}
                 label="Copy values"

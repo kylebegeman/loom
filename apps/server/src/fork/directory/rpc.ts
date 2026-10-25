@@ -10,7 +10,7 @@ export const makeDirectoryRpcHandlers = Effect.fn("Directory.makeRpcHandlers")(f
   const service = yield* DirectoryService;
   const reporter = yield* DirectoryReporter;
   return {
-    [DIR.list]: () => auth.effect(DIR.list, service.list),
+    [DIR.list]: () => auth.effect(DIR.list, service.computers),
     [DIR.forget]: (input: DirectoryForgetRequest) => auth.effect(DIR.forget, service.forget(input)),
     [DIR.reporting]: () => auth.effect(DIR.reporting, reporter.status),
   };

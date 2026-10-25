@@ -8,7 +8,7 @@ export const makeReachLibraryRpcHandlers = Effect.fn("ReachLibrary.makeRpcHandle
 ) {
   const provisioner = yield* ReachProvisioner;
   return {
-    [REACH.libraryList]: () => auth.effect(REACH.libraryList, provisioner.list),
+    [REACH.libraryList]: () => auth.effect(REACH.libraryList, provisioner.computers),
     [REACH.libraryRetire]: (input: ReachRetireInput) =>
       auth.effect(REACH.libraryRetire, provisioner.retire(input)),
   };

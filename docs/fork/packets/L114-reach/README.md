@@ -16,7 +16,10 @@ credential: a pairing, a Loom Identity sign-in or a paired device's session.
 - In: the Library's provisioning service and signed `/api/loom/reach/*` routes; the computer's
   connector, request guard and published route; the Library's computer list with Retire; reach
   switches on desktop, web and iPhone; MCP tools; Pocket ID resource preparation; the sign-in
-  refusal of another computer's resource; the passkey-only Identity policy.
+  refusal of another computer's resource; the passkey-only Identity policy; applying prepared
+  Identity values from the computer's own admin session to private host configuration, then
+  restarting the backend. Environment variables take precedence. Read-only reach listings
+  forward through the publisher connection when the tool runs on another computer.
 - Out: an MCP tool that turns reach on, callback drift checks on Pocket ID, Cloudflare Access in
   front of the address, and a Command Palette entry and Settings search.
 
@@ -62,7 +65,7 @@ guide section is
 | Agents          | `loom_reach_status`, `loom_reach_off`, `loom_reach_remove`, `loom_reach_forget`, `loom_reach_computers`, `loom_reach_retire`. No tool turns reach on. |
 | Older clients   | Drop the `public` endpoint. They cannot decode a `reach-active` refusal or reach states they do not know.                                             |
 
-The switch needs `relay:write`; Retire needs `settings:write`. A device without them sees "Turn
+The switch needs `relay:write`; Retire and applying prepared Identity values need `settings:write`. A device without them sees "Turn
 reach on or off from the computer itself or from a device paired with full access."
 
 ## Decisions (defaults pending Kyle)

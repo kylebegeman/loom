@@ -1,3 +1,4 @@
+import type { LibraryPublishingCredential } from "../auth/LibraryPublishingCredential.ts";
 import type { ProjectWorkflows } from "./project-library/ProjectWorkflows.ts";
 import type { ProjectOperations } from "./project-library/ProjectOperations.ts";
 import type { ProjectProfileService } from "./project-profiles/ProjectProfileService.ts";
@@ -69,6 +70,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | LibraryPublishingCredential
   | ProjectProfileService
   | VaultConnections
   | VaultAccessInspector

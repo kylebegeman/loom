@@ -326,7 +326,7 @@ describe("DirectoryReporter", () => {
         });
         expect(first.report.workers).toBeUndefined();
         expect(yield* h.nextSleep).toBe(30_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "reporting",
           lastReportedAt: iso(NOW),
         });
@@ -410,7 +410,10 @@ describe("DirectoryReporter", () => {
       Effect.gen(function* () {
         expect((yield* h.nextPost).status).toBe(409);
         expect(yield* h.nextSleep).toBe(15 * 60_000);
-        expect(yield* h.reporter.status).toEqual({ state: "key-changed", lastReportedAt: null });
+        expect(yield* h.reporter.status).toMatchObject({
+          state: "key-changed",
+          lastReportedAt: null,
+        });
 
         yield* TestClock.adjust("15 minutes");
         expect((yield* h.nextPost).status).toBe(409);
@@ -421,7 +424,7 @@ describe("DirectoryReporter", () => {
         yield* TestClock.adjust("15 minutes");
         expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(30_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "reporting",
           lastReportedAt: iso(NOW + 30 * 60_000),
         });
@@ -441,7 +444,7 @@ describe("DirectoryReporter", () => {
         h.library.answers.push(refusal(503, "io"), refusal(503, "io"));
         expect((yield* h.nextPost).status).toBe(503);
         expect(yield* h.nextSleep).toBe(30_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "retrying",
           reason: "io",
           lastReportedAt: null,
@@ -467,7 +470,10 @@ describe("DirectoryReporter", () => {
         // The descriptor is public, so the publisher token never goes with it.
         expect(descriptor).toEqual({ kind: "descriptor", authorization: undefined });
         expect(yield* h.nextSleep).toBe(10 * 60_000);
-        expect(yield* h.reporter.status).toEqual({ state: "unsupported", lastReportedAt: null });
+        expect(yield* h.reporter.status).toMatchObject({
+          state: "unsupported",
+          lastReportedAt: null,
+        });
 
         h.library.features = ["core", "directory"];
         yield* TestClock.adjust("10 minutes");
@@ -484,7 +490,7 @@ describe("DirectoryReporter", () => {
           authorization: undefined,
         });
         expect(yield* h.nextSleep).toBe(30_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "retrying",
           reason: "io",
           lastReportedAt: null,
@@ -498,7 +504,7 @@ describe("DirectoryReporter", () => {
         yield* TestClock.adjust("1 minute");
         expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(120_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "retrying",
           reason: "io",
           lastReportedAt: null,
@@ -507,7 +513,7 @@ describe("DirectoryReporter", () => {
         yield* TestClock.adjust("2 minutes");
         expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(30_000);
-        expect(yield* h.reporter.status).toEqual({
+        expect(yield* h.reporter.status).toMatchObject({
           state: "reporting",
           lastReportedAt: iso(NOW + 210_000),
         });
@@ -528,7 +534,10 @@ describe("DirectoryReporter", () => {
         Effect.gen(function* () {
           expect((yield* h.nextPost).status).toBe(401);
           expect(yield* h.nextSleep).toBe(15 * 60_000);
-          expect(yield* h.reporter.status).toEqual({ state: "signed-out", lastReportedAt: null });
+          expect(yield* h.reporter.status).toMatchObject({
+            state: "signed-out",
+            lastReportedAt: null,
+          });
 
           yield* TestClock.adjust("15 minutes");
           expect((yield* h.nextPost).status).toBe(401);
@@ -548,8 +557,11 @@ describe("DirectoryReporter", () => {
   it.effect("says it is signed out when its Library sign-in expired, and sends nothing", () =>
     withReporter({ expiredSignIn: true }, (h) =>
       Effect.gen(function* () {
-        yield* Fiber.join(h.fiber);
-        expect(yield* h.reporter.status).toEqual({ state: "signed-out", lastReportedAt: null });
+        expect(yield* h.nextSleep).toBe(30_000);
+        expect(yield* h.reporter.status).toMatchObject({
+          state: "signed-out",
+          lastReportedAt: null,
+        });
         expect(yield* Queue.size(h.events)).toBe(0);
         const logged = h.logs.join("\n");
         expect(logged.split("sign-in is missing, expired or refused")).toHaveLength(2);
@@ -562,7 +574,7 @@ describe("DirectoryReporter", () => {
     withReporter({ env: {} }, (h) =>
       Effect.gen(function* () {
         yield* Fiber.join(h.fiber);
-        expect(yield* h.reporter.status).toEqual({ state: "off", lastReportedAt: null });
+        expect(yield* h.reporter.status).toMatchObject({ state: "off", lastReportedAt: null });
         expect(yield* Queue.size(h.events)).toBe(0);
       }),
     ),

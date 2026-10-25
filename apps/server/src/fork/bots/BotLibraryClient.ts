@@ -1,3 +1,4 @@
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOT_LIBRARY_ROUTE,
@@ -129,6 +130,7 @@ export const inProcessClient = (
   });
 
 const make = Effect.gen(function* () {
+  const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
   const connection = yield* resolveLibraryConnection.pipe(
     Effect.orElseSucceed(() => ({ kind: "unavailable" }) as const),
   );
@@ -141,7 +143,7 @@ const make = Effect.gen(function* () {
   if (connection.kind === "authority")
     return inProcessClient(yield* BotLibraryService, environmentId, label);
 
-  if (connection.kind !== "remote") {
+  if (connection.kind === "none") {
     const none = Effect.fail(noLibrary());
     return BotLibraryClient.of({
       environmentId,
@@ -162,7 +164,8 @@ const make = Effect.gen(function* () {
     });
   }
 
-  const { endpoint, send } = connection;
+  const endpoint = (route: string) => route;
+  const send = libraryConnection.send;
   /** A Library without shared bots answers 404; it explains every other refusal in a 409. */
   const execute = Effect.fnUntraced(function* (request: HttpClientRequest.HttpClientRequest) {
     const response = yield* send(request).pipe(
@@ -295,4 +298,6 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(BotLibraryClient, make);
+export const layer = Layer.effect(BotLibraryClient, make).pipe(
+  Layer.provide(LibraryConnection.layer),
+);

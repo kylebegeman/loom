@@ -153,7 +153,8 @@ describe("Library computers section", () => {
       live: AsyncResult.success(kept([reported(BOOK, { label: "Book", routes: [] })])),
     });
     expect(listed.kind === "computers" && listed.computers[0]).toMatchObject({
-      description: "macOS · Reported 2 min ago · No address to connect to",
+      description:
+        "macOS · Reported 2 min ago · Turn on Tailscale HTTPS or Reach on Book, or pair instead",
       connectable: false,
     });
   });

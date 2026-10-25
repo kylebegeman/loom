@@ -49,6 +49,7 @@ it.effect("lists reach to read-only agents and retires only with full access", (
       ensure: () => Effect.die(new Error("Agents never provision reach.")),
       remove: () => Effect.die(new Error("Agents never call the computer's remove.")),
       list: Effect.succeed(LISTING),
+      computers: Effect.succeed(LISTING),
       retire: (input) =>
         input.environmentId === "environment-unknown"
           ? Effect.fail(new ReachLibraryError({ reason: "not-found" }))

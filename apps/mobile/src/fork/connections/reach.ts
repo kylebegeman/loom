@@ -1,4 +1,8 @@
-import { createReachAtoms, type ReachTone } from "@t3tools/client-runtime/fork";
+import {
+  createReachAtoms,
+  createDirectoryReportingAtoms,
+  type ReachTone,
+} from "@t3tools/client-runtime/fork";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
 
@@ -11,3 +15,5 @@ export const REACH_INK: Readonly<Record<ReachTone, string>> = {
   warning: "text-warning-foreground",
   danger: "text-danger-foreground",
 };
+
+export const directoryReporting = createDirectoryReportingAtoms(connectionAtomRuntime);

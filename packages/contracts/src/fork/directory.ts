@@ -221,6 +221,22 @@ export const DirectoryForgetRequest = Schema.Union([
 ]);
 export type DirectoryForgetRequest = typeof DirectoryForgetRequest.Type;
 
+export const LIBRARY_PUBLISHER_RENEW_ROUTE = "/api/loom/library/publisher/renew";
+export const LibraryPublisherRenewal = Schema.Struct({
+  sessionId: Schema.String,
+  accessToken: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(16384)),
+  issuedAt: IsoDateTime,
+  expiresAt: IsoDateTime,
+});
+export const LibrarySignInStatus = Schema.Struct({
+  state: Schema.Literals(["none", "authority", "ready", "expiring", "expired", "unavailable"]),
+  expiresAt: Schema.NullOr(IsoDateTime),
+  renewsAt: Schema.NullOr(IsoDateTime),
+  renewal: Schema.Literals(["automatic", "unsupported", "retrying", "unavailable"]),
+  repair: Schema.NullOr(Schema.String),
+});
+export type LibrarySignInStatus = typeof LibrarySignInStatus.Type;
+
 /**
  * How this computer's reports to its Library's directory are going. `off` has no Library to
  * report to or is the directory itself, `unsupported` has a Library without the directory,
@@ -228,6 +244,8 @@ export type DirectoryForgetRequest = typeof DirectoryForgetRequest.Type;
  * stopped because the computer's Library sign-in is missing, expired or refused.
  */
 export const DirectoryReporting = Schema.Struct({
+  routes: Schema.optional(Schema.Array(DirectoryRoute)),
+  signIn: Schema.optional(LibrarySignInStatus),
   state: Schema.Literals([
     "off",
     "unsupported",

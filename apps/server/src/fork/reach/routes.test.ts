@@ -29,6 +29,7 @@ const INITIALIZE = JSON.stringify({
 it.effect("the fork routes keep /mcp off the reach host and leave /ws and other hosts alone", () =>
   Effect.gen(function* () {
     const reach = ReachService.of({
+      applyIdentity: () => Effect.void,
       status: Effect.die("unused"),
       changes: Effect.die("unused") as never,
       setEnabled: () => Effect.die("unused"),

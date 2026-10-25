@@ -33,7 +33,9 @@ vocabulary gives these grants a familiar meaning.
 
 [Identity verification](../../apps/server/src/auth/PocketId.ts) accepts only the issuer,
 audience, clients and immutable subjects enrolled through the host's trusted process
-configuration. The Library's issuer or directory never delegates access to another
+configuration or private host configuration explicitly saved by its own settings administrator.
+Reach's **Use these values** writes a 0600 host file and restarts the backend; process
+environment variables take precedence. The Library's issuer or directory never delegates access to another
 computer. Each execution host needs its own explicitly accepted API resource; reusing a
 Library audience silently widens the trust boundary. Sessions are bounded by the accepted
 token's expiry, one hour and, when the host sets `LOOM_IDENTITY_MAX_SESSION_AGE`, that age

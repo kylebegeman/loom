@@ -63,6 +63,10 @@ export function createReachAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegi
       environmentId: EnvironmentId | null,
     ): Atom.Atom<AsyncResult.AsyncResult<ReachStatus, unknown>> =>
       environmentId === null ? IDLE_STATUS : status({ environmentId, input: {} }),
+    applyIdentity: createEnvironmentRpcCommand(runtime, {
+      label: "loom:reach:apply-identity",
+      tag: REACH_WS_METHODS.applyIdentity,
+    }),
     /** Answers once the intent is stored; `status` shows the provisioning that follows. */
     set: createEnvironmentRpcCommand(runtime, {
       label: "loom:reach:set",
@@ -119,7 +123,7 @@ export const REACH_BLOCKED_TEXT: Readonly<Record<ReachBlocked, string>> = {
   "no-library": "Sign this computer in to your Library to turn this on.",
   "is-library": "This computer is your Library. Turn reach on from your other computers.",
   "library-signed-out":
-    "This computer's Library sign-in ended. Sign it in to its Library again, then restart Loom.",
+    "This computer's Library sign-in ended. Open Settings > Connections on this computer for its sign-in repair. A replaced credential is picked up automatically.",
   "library-not-ready":
     "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file. Turn this on again once it has them.",
   "library-outdated": "Update Loom on your Library, then turn this on again.",
@@ -129,7 +133,7 @@ type RetryableBlock = Extract<ReachBlocked, "library-not-ready" | "library-outda
 
 /**
  * Blocks a refused ensure taught the computer. Turning reach on asks the Library again, so the
- * switch stays usable; the other blocks come from the Library connection and need a restart. A
+ * switch stays usable; the other blocks come from the reloaded Library connection. A
  * refusal at start keeps reach on, so then the way back is turning it off and on.
  */
 const BLOCKED_WHILE_ON_TEXT: Readonly<Record<RetryableBlock, string>> = {
@@ -150,9 +154,9 @@ const FAILURE_WARNINGS: ReadonlySet<ReachWarning> = new Set([
 const IDENTITY_OFF_TEXT =
   "Loom sign-in is off on this computer, so only paired devices can connect.";
 const PREPARED_HERE_TEXT =
-  "Your Library prepared Loom sign-in for this computer. Set these values in its server environment and restart Loom.";
+  "Your Library prepared Loom sign-in for this computer. Use these values to save them on this computer and restart its backend. Server environment variables still take precedence.";
 const PREPARED_ELSEWHERE_TEXT =
-  "Your Library prepared Loom sign-in for this computer. Open its own Connections settings to copy the values.";
+  "Your Library prepared Loom sign-in for this computer. Open its own Connections settings and choose Use these values.";
 
 const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, string>> = {
   "library-unreachable": "Your Library is not reachable right now. Loom keeps trying.",
@@ -162,7 +166,7 @@ const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, strin
   "identity-resource-differs":
     "This computer's Loom sign-in differs from what your Library prepared, so devices that find it through your Library pair instead.",
   "passkey-not-required":
-    "Loom sign-in here does not require a passkey. Set LOOM_IDENTITY_REQUIRE_PASSKEY=true in this computer's server environment and restart Loom to require one.",
+    "Loom sign-in here does not require a passkey. In this computer's own Connections settings, select Require passkey and use the prepared sign-in values.",
 };
 
 export interface ReachViewInput {
@@ -323,7 +327,13 @@ function signInHint(
   warnings: ReadonlySet<ReachWarning>,
 ): ReachView["signIn"] {
   const off = warnings.has("identity-off");
-  const prepared = off || warnings.has("identity-resource-differs") ? status.prepared : null;
+  const prepared =
+    isThisComputer ||
+    off ||
+    warnings.has("identity-resource-differs") ||
+    warnings.has("passkey-not-required")
+      ? status.prepared
+      : null;
   if (prepared !== null && isThisComputer)
     return {
       text: PREPARED_HERE_TEXT,
@@ -417,7 +427,9 @@ export function reachView(input: ReachViewInput): ReachView {
       copyAddress: url !== null,
       remove: canRemove,
       forget: canForget,
-      retry: readFailed && (gate === READ_FAILED_TEXT || live),
+      retry:
+        (readFailed && (gate === READ_FAILED_TEXT || live)) ||
+        status?.blocked === "library-signed-out",
     },
     throughAddress,
     confirmOff:

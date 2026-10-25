@@ -67,6 +67,34 @@ reached, Loom says so and shows the last list it read. Connected computers keep
 their own addresses, and a computer you remove from this device returns to the
 list.
 
+If a computer has no published address, choose **Pair instead** and enter a
+reachable address and pairing code. Loom checks that it is the computer you
+selected. On that computer, **Connection details** shows the addresses it last
+reported to your Library. If there are none, enable **Tailscale HTTPS** on desktop
+or **Reach from anywhere** below the connection settings.
+
+## Keep a computer signed in to its Library
+
+A computer renews its Library sign-in automatically before it expires. In
+**Settings > Connections > Connection details**, check **Library sign-in and
+directory** for its expiry, reporting state and any repair. The same status is
+available in the computer's details on iPhone. This sign-in is separate from
+your devices' Identity sign-ins.
+
+If automatic renewal is unavailable, update Loom on your Library before the
+shown expiry. An expired or refused sign-in needs your Library administrator to
+issue a replacement publisher credential for this computer and replace its
+private credential file. Loom reloads the replacement automatically. Until
+then, Library publishing, directory reporting and remote bot requests cannot
+use that sign-in. A Library outage is retried automatically.
+
+The administrator issues credentials on the Library with
+`loom auth library-publisher --source-environment-id <computer-id> --library-url <https-origin>`.
+If replacing a credential, revoke its old publisher session and retire its old
+issuer-side credential file first. Transfer the generated file privately to
+that computer's configured publisher credential path and keep its permissions
+at `0600`. Do not paste its contents into a conversation.
+
 ## Stay signed in with Identity
 
 Each Identity sign-in to a computer lasts up to an hour. When the computer sets
@@ -116,13 +144,14 @@ A device that saved the computer before reach was on, and is now away from home
 without Tailscale, has to connect once from home or reconnect the computer from
 your Library's list.
 
-When your Library has prepared Loom sign-in for the computer, its Reach section
-on that computer lists four settings. Copy them into the computer's server
-environment and restart Loom. Until then, devices that find the computer through
-your Library pair instead. While reach and Loom sign-in are both on, Loom also
-suggests setting
-`LOOM_IDENTITY_REQUIRE_PASSKEY=true`, which makes the computer accept passkey
-sign-ins only. If a sign-in is refused for that reason, sign out of Loom
+When your Library has prepared Loom sign-in for the computer, open its own
+Connections settings and choose **Use these values**. The session must allow
+settings changes. Enter the allowed Loom account IDs if they are not already
+configured, and choose whether to **Require passkey**. Loom saves these values
+privately on that computer and restarts its backend. Active connections
+reconnect afterward; server environment variables take precedence over the
+saved values. Until sign-in is configured, devices that find the computer through
+your Library pair instead. If passkey sign-in is refused, sign out of Loom
 Identity in your browser, then sign in with your passkey.
 
 Turning reach off and **Remove address** are different:
@@ -153,7 +182,7 @@ that option and changes nothing; retire without it, or fix the key and try
 again. Your Library asks you to retire a computer's reach address before you can
 forget the computer.
 
-Agents can check reach and can turn it off or remove an address. They cannot
+Agents can check reach from any computer signed in to the Library, including connector counts and sign-in state, and can turn reach off or remove an address. They cannot
 turn it on.
 
 ## Notifications from your Library

@@ -1,10 +1,14 @@
 import type { EnvironmentAuthorizationError } from "@t3tools/contracts";
-import { REACH_WS_METHODS as REACH, type ReachSetInput } from "@t3tools/contracts/fork";
+import {
+  REACH_WS_METHODS as REACH,
+  type ReachApplyIdentityInput,
+  type ReachSetInput,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import { ReachService } from "./ReachService.ts";
 
-type ReachMethod = (typeof REACH)["watch" | "set" | "remove" | "forget"];
+type ReachMethod = (typeof REACH)["watch" | "set" | "remove" | "forget" | "applyIdentity"];
 
 /** The part of `ForkRpcAuth` these handlers use, which it satisfies once it lists the reach methods. */
 export interface ReachRpcAuth {
@@ -23,6 +27,8 @@ export const makeReachRpcHandlers = Effect.fn("Reach.makeRpcHandlers")(function*
 ) {
   const service = yield* ReachService;
   return {
+    [REACH.applyIdentity]: (input: ReachApplyIdentityInput) =>
+      auth.effect(REACH.applyIdentity, service.applyIdentity(input)),
     [REACH.watch]: () => auth.stream(REACH.watch, service.changes),
     [REACH.set]: (input: ReachSetInput) =>
       auth.effect(REACH.set, service.setEnabled(input.enabled)),

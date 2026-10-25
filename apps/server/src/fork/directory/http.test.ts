@@ -9,12 +9,15 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  LIBRARY_PUBLISHER_RENEW_ROUTE,
   DIRECTORY_REPORT_TOKEN_MAX_LENGTH,
   DirectoryEnvironment,
   DirectoryError,
   DirectoryListing,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as PublisherCredential from "../../auth/LibraryPublishingCredential.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -72,61 +75,90 @@ const sessionFor = (
 const PUBLISHER = sessionFor(`loom-host:${STUDIO}`, [AuthLibraryPublishScope]);
 const OPERATOR = sessionFor("owner", [AuthOrchestrationReadScope, AuthOrchestrationOperateScope]);
 
-const fixture = Effect.gen(function* () {
-  const caller = yield* Ref.make<EnvironmentAuth.AuthenticatedSession | null>(PUBLISHER);
-  const refusal = yield* Ref.make<DirectoryError["reason"] | null>(null);
-  const reportedFor = yield* Ref.make<ReadonlyArray<EnvironmentId>>([]);
-  const refuse = Ref.get(refusal).pipe(
-    Effect.flatMap((reason) =>
-      reason === null ? Effect.void : Effect.fail(new DirectoryError({ reason })),
-    ),
-  );
-  const context = yield* Layer.build(
-    Layer.mock(DirectoryService)({
-      report: ({ environmentId }) =>
-        refuse.pipe(
-          Effect.andThen(Ref.update(reportedFor, (ids) => [...ids, environmentId])),
-          Effect.as(STORED),
-        ),
-      list: refuse.pipe(Effect.as(LISTING)),
-    }),
-  );
-  const app = DirectoryHttpRoutes.pipe(
-    Layer.provide(Layer.succeed(ForkRuntime, context as unknown as Context.Context<ForkServices>)),
-    HttpRouter.provideRequest(
-      Layer.mergeAll(
-        NodeHttpPlatform.layer,
-        Layer.succeedContext(context),
-        Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-          authenticateHttpRequest: () =>
-            Ref.get(caller).pipe(
-              Effect.filterOrFail(
-                (session): session is EnvironmentAuth.AuthenticatedSession => session !== null,
-                () => new EnvironmentAuth.ServerAuthMissingCredentialError(),
-              ),
-            ),
-        }),
+const fixture = (authority = true) =>
+  Effect.gen(function* () {
+    const caller = yield* Ref.make<EnvironmentAuth.AuthenticatedSession | null>(PUBLISHER);
+    const refusal = yield* Ref.make<DirectoryError["reason"] | null>(null);
+    const reportedFor = yield* Ref.make<ReadonlyArray<EnvironmentId>>([]);
+    const refuse = Ref.get(refusal).pipe(
+      Effect.flatMap((reason) =>
+        reason === null ? Effect.void : Effect.fail(new DirectoryError({ reason })),
       ),
-    ),
-    Layer.provide(NodeServices.layer),
-  );
-  const web = HttpRouter.toWebHandler(app, { disableLogger: true });
-  yield* Effect.addFinalizer(() => Effect.promise(() => web.dispose()));
-  const post = (route: string, body: string, headers: Record<string, string> = {}) =>
-    Effect.promise(() =>
-      web.handler(
-        new Request(`${ORIGIN}${route}`, {
-          method: "POST",
-          body,
-          headers: { "content-type": "application/json", ...headers },
+    );
+    const renewals = yield* Ref.make(0);
+    const context = yield* Layer.build(
+      Layer.mergeAll(
+        Layer.mock(PublisherCredential.LibraryPublishingCredential)({
+          renew: (token) =>
+            token === "publisher-test"
+              ? Ref.update(renewals, (count) => count + 1).pipe(
+                  Effect.as({
+                    sessionId: "successor",
+                    accessToken: "successor-test",
+                    issuedAt: "2026-10-25T00:00:00.000Z",
+                    expiresAt: "2026-11-24T00:00:00.000Z",
+                  }),
+                )
+              : Effect.fail(
+                  new PublisherCredential.LibraryPublishingCredentialError({ reason: "invalid" }),
+                ),
+        }),
+        Layer.mock(DirectoryService)({
+          report: ({ environmentId }) =>
+            refuse.pipe(
+              Effect.andThen(Ref.update(reportedFor, (ids) => [...ids, environmentId])),
+              Effect.as(STORED),
+            ),
+          list: refuse.pipe(Effect.as(LISTING)),
         }),
       ),
     );
-  return { caller, refusal, reportedFor, post };
-});
+    const app = DirectoryHttpRoutes.pipe(
+      Layer.provide(
+        Layer.succeed(ForkRuntime, context as unknown as Context.Context<ForkServices>),
+      ),
+      HttpRouter.provideRequest(
+        Layer.mergeAll(
+          NodeHttpPlatform.layer,
+          Layer.succeed(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromEnv({
+              env: { LOOM_LIBRARY_AUTHORITY: String(authority) },
+            }),
+          ),
+          Layer.succeedContext(context),
+          Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+            authenticateHttpRequest: () =>
+              Ref.get(caller).pipe(
+                Effect.filterOrFail(
+                  (session): session is EnvironmentAuth.AuthenticatedSession => session !== null,
+                  () => new EnvironmentAuth.ServerAuthMissingCredentialError(),
+                ),
+              ),
+          }),
+        ),
+      ),
+      Layer.provide(NodeServices.layer),
+    );
+    const web = HttpRouter.toWebHandler(app, { disableLogger: true });
+    yield* Effect.addFinalizer(() => Effect.promise(() => web.dispose()));
+    const post = (route: string, body: string, headers: Record<string, string> = {}) =>
+      Effect.promise(() =>
+        web.handler(
+          new Request(`${ORIGIN}${route}`, {
+            method: "POST",
+            body,
+            headers: { "content-type": "application/json", ...headers },
+          }),
+        ),
+      );
+    return { caller, refusal, reportedFor, post, renewals };
+  });
 
-const run = <A, E>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E>) =>
-  fixture.pipe(Effect.flatMap(use), Effect.scoped);
+const run = <A, E>(
+  use: (f: Effect.Success<ReturnType<typeof fixture>>) => Effect.Effect<A, E>,
+  authority = true,
+) => fixture(authority).pipe(Effect.flatMap(use), Effect.scoped);
 
 const bodyOf = (response: Response) => Effect.promise(() => response.json());
 const textOf = (response: Response) => Effect.promise(() => response.text());
@@ -232,3 +264,40 @@ describe("directory routes", () => {
     ),
   );
 });
+
+it.effect("renews only an HTTPS publisher bearer and never caches the response", () =>
+  run((f) =>
+    Effect.gen(function* () {
+      const headers = { authorization: "Bearer publisher-test", "x-forwarded-proto": "https" };
+      const renewed = yield* f.post(LIBRARY_PUBLISHER_RENEW_ROUTE, "", headers);
+      expect(renewed.status).toBe(200);
+      expect(renewed.headers.get("cache-control")).toBe("no-store");
+      expect(yield* bodyOf(renewed)).toMatchObject({ sessionId: "successor" });
+      for (const [requestHeaders, status] of [
+        [{ ...headers, "x-forwarded-proto": "http" }, 403],
+        [{ ...headers, authorization: "" }, 403],
+        [{ ...headers, authorization: "Bearer invalid-test" }, 401],
+      ] as const) {
+        const denied = yield* f.post(LIBRARY_PUBLISHER_RENEW_ROUTE, "", requestHeaders);
+        expect(denied.status).toBe(status);
+        expect(denied.headers.get("cache-control")).toBe("no-store");
+        expect(yield* textOf(denied)).not.toContain("test");
+      }
+      expect(yield* Ref.get(f.renewals)).toBe(1);
+    }),
+  ),
+);
+it.effect("does not issue a publisher successor on another computer", () =>
+  run(
+    (f) =>
+      Effect.gen(function* () {
+        const denied = yield* f.post(LIBRARY_PUBLISHER_RENEW_ROUTE, "", {
+          authorization: "Bearer publisher-test",
+          "x-forwarded-proto": "https",
+        });
+        expect(denied.status).toBe(404);
+        expect(yield* Ref.get(f.renewals)).toBe(0);
+      }),
+    false,
+  ),
+);

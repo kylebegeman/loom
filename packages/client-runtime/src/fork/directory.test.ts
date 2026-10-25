@@ -186,14 +186,14 @@ describe("directoryCatalogRows", () => {
     ]);
   });
 
-  it("offers no Connect action when no route survives", () => {
+  it("offers pairing when no route survives", () => {
     const [row] = directoryCatalogRows({
       listing: listing([reported(BOOK, { routes: [{ kind: "public", url: "https://10.0.0.4" }] })]),
       saved: [],
       connected: [],
       now: NOW,
     });
-    expect(row).toMatchObject({ routes: [], action: null });
+    expect(row).toMatchObject({ routes: [], action: "pair" });
     expect(row && directoryConnectPlan(row, null, native)).toBeNull();
   });
 

@@ -1,3 +1,7 @@
+import { LIBRARY_PUBLISHER_RENEW_ROUTE } from "@t3tools/contracts/fork";
+import * as PublisherCredential from "../../auth/LibraryPublishingCredential.ts";
+import * as Config from "effect/Config";
+import { isHttpsRequest } from "../../auth/utils.ts";
 import {
   AuthLibraryPublishScope,
   AuthOrchestrationOperateScope,
@@ -139,6 +143,24 @@ const list = directoryRoute((directory, caller) =>
   }),
 );
 
+const renewPublisher = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    if (!(yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(Config.withDefault(false))))
+      return json({ reason: "not-authority" }, 404);
+    if (!isHttpsRequest(request)) return denied();
+    const token = /^Bearer (\S+)$/i.exec(request.headers.authorization ?? "")?.[1];
+    if (token === undefined) return denied();
+    return json(yield* (yield* PublisherCredential.LibraryPublishingCredential).renew(token));
+  }),
+).pipe(
+  Effect.catchTags({
+    LibraryPublishingCredentialError: (error) =>
+      Effect.succeed(json({ reason: error.reason }, error.reason === "invalid" ? 401 : 503)),
+  }),
+  Effect.orElseSucceed(() => json({ reason: "unavailable" }, 503)),
+);
+
 export const DirectoryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
@@ -146,6 +168,10 @@ export const DirectoryHttpRoutes = Layer.unwrap(
       path: HttpRouter.PathInput,
       handler: Effect.Effect<HttpServerResponse.HttpServerResponse, never, R>,
     ) => HttpRouter.add("POST", path, handler.pipe(Effect.provideService(ForkRuntime, runtime)));
-    return Layer.mergeAll(route(DIRECTORY_REPORT_ROUTE, report), route(DIRECTORY_LIST_ROUTE, list));
+    return Layer.mergeAll(
+      route(DIRECTORY_REPORT_ROUTE, report),
+      route(DIRECTORY_LIST_ROUTE, list),
+      route(LIBRARY_PUBLISHER_RENEW_ROUTE, renewPublisher),
+    );
   }),
 );

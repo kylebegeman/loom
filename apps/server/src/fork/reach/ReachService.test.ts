@@ -840,7 +840,7 @@ describe("ReachService", () => {
           expect(yield* h.service.status).toMatchObject({
             state: "removing",
             message:
-              "Sign this computer in to its Library again, then restart Loom to finish removing reach.",
+              "Replace this computer's Library credential to finish removing reach. Loom reloads it automatically.",
             warnings: ["library-signed-out"],
           });
           const busy = yield* Effect.flip(h.service.setEnabled(true));

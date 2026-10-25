@@ -1,3 +1,4 @@
+import { AuthLibraryPublishScope } from "@t3tools/contracts";
 import { AuthSessionId, EnvironmentId, PositiveInt } from "@t3tools/contracts";
 import {
   type ReachAction,
@@ -100,6 +101,7 @@ export class ReachProvisioner extends Context.Service<
       input: ReachCallInput,
     ) => Effect.Effect<ReachRemoveReply, ReachProvisionError>;
     readonly list: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
+    readonly computers: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
     /**
      * An admin's removal without the computer. It also releases the key pin. Ending a sign-in
      * Pocket ID holds while the admin key file is not ready is refused before anything changes.
@@ -821,21 +823,28 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.annotateLogs({ environmentId: input.environmentId }));
   });
 
-  const signInState = (sessionId: string | null, now: number) =>
-    sessionId === null
-      ? Effect.succeed("unknown" as const)
-      : sessions.getById({ sessionId: AuthSessionId.make(sessionId) }).pipe(
-          Effect.map(
-            Option.match({
-              onNone: () => "ended" as const,
-              onSome: (session) =>
-                session.revokedAt === null && DateTime.toEpochMillis(session.expiresAt) > now
-                  ? ("active" as const)
-                  : ("ended" as const),
-            }),
-          ),
-          Effect.orElseSucceed(() => "unknown" as const),
-        );
+  const signInState = Effect.fn("ReachProvisioner.signInState")(
+    function* (sessionId: string | null, environmentId: string, now: number) {
+      if (sessionId === null) return "unknown" as const;
+      const previous = yield* sessions.getById({ sessionId: AuthSessionId.make(sessionId) });
+      if (
+        Option.isSome(previous) &&
+        previous.value.revokedAt === null &&
+        DateTime.toEpochMillis(previous.value.expiresAt) > now
+      )
+        return "active" as const;
+      // Renewing a publisher replaces its session without reprovisioning the tunnel.
+      const active = yield* sessions.listActive({ now: DateTime.makeUnsafe(now) });
+      return active.some(
+        (session) =>
+          session.subject === `loom-host:${environmentId}` &&
+          session.scopes.includes(AuthLibraryPublishScope),
+      )
+        ? ("active" as const)
+        : ("ended" as const);
+    },
+    Effect.orElseSucceed(() => "unknown" as const),
+  );
 
   const describe = Effect.fnUntraced(function* (
     environmentId: string,
@@ -880,7 +889,7 @@ const make = Effect.gen(function* () {
               state: record.identity.state,
               lastError: record.identity.lastError,
             },
-      signIn: yield* signInState(record.publisherSessionId, now),
+      signIn: yield* signInState(record.publisherSessionId, environmentId, now),
       updatedAt: record.updatedAt,
       lastEnsuredAt: record.lastEnsuredAt,
     } satisfies ReachLibraryComputer;
@@ -1018,7 +1027,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.annotateLogs({ environmentId: input.environmentId }));
   });
 
-  return ReachProvisioner.of({ ensure, remove, list, retire });
+  return ReachProvisioner.of({
+    ensure,
+    remove,
+    list,
+    retire,
+    computers: config.audience === null ? directory.reachComputers : list,
+  });
 });
 
 export const layer = Layer.effect(ReachProvisioner, make);

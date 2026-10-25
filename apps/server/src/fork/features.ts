@@ -7,6 +7,7 @@ import {
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
+  REACH_IDENTITY_APPLY_FEATURE,
   REACH_LIBRARY_FEATURE,
   LIBRARY_PUSH_FEATURE,
 } from "@t3tools/contracts/fork";
@@ -134,6 +135,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   DIRECTORY_REPORTING_FEATURE,
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
+  REACH_IDENTITY_APPLY_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).

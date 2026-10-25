@@ -1,5 +1,6 @@
 import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
 import {
+  REACH_LIST_ROUTE,
   REACH_ENSURE_ROUTE,
   REACH_REMOVE_ROUTE,
   REACH_REQUEST_MAX_BYTES,
@@ -126,6 +127,28 @@ const reachRoute = (action: ReachAction) =>
     Effect.orElseSucceed(() => text("Reach request unavailable", 503)),
   );
 
+const list = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const session = yield* (yield* EnvironmentAuth.EnvironmentAuth).authenticateHttpRequest(
+      request,
+    );
+    if (publisherOf(session) === null) return text("Access denied", 403);
+    return json(yield* (yield* ReachProvisioner).list);
+  }),
+).pipe(
+  Effect.catchTags({
+    ReachLibraryError: (error) =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          { reason: error.reason },
+          { status: error.reason === "not-authority" ? 404 : 503, headers: NO_STORE },
+        ),
+      ),
+  }),
+  Effect.orElseSucceed(() => text("Authentication required", 401)),
+);
+
 export const ReachHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
@@ -134,6 +157,7 @@ export const ReachHttpRoutes = Layer.unwrap(
       handler: Effect.Effect<HttpServerResponse.HttpServerResponse, never, R>,
     ) => HttpRouter.add("POST", path, handler.pipe(Effect.provideService(ForkRuntime, runtime)));
     return Layer.mergeAll(
+      route(REACH_LIST_ROUTE, list),
       route(REACH_ENSURE_ROUTE, reachRoute("ensure")),
       route(REACH_REMOVE_ROUTE, reachRoute("remove")),
     );

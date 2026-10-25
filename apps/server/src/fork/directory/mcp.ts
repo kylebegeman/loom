@@ -19,7 +19,7 @@ export const DirectoryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_directory_reporting", {
     description:
-      "Read how this computer's reports to its Library's directory are going: off, unsupported by the Library, reporting, retrying with a reason, or stopped because the computer's key changed or its Library sign-in is missing, expired or refused. A changed key reports again once the computer is forgotten in the directory; a new sign-in takes effect after Loom restarts.",
+      "Read how this computer's reports to its Library's directory are going: off, unsupported by the Library, reporting, retrying with a reason, or stopped because the computer's key changed or its Library sign-in is missing, expired or refused. A changed key reports again once the computer is forgotten in the directory; a replaced sign-in is reloaded automatically. Includes the last published routes and Library sign-in expiry, automatic renewal state and repair text. When there are no routes, turn on Tailscale HTTPS or Reach on that computer, or use Pair instead on the new device.",
     success: DirectoryReporting,
     failure: OrchestratorMcpFailure,
   })

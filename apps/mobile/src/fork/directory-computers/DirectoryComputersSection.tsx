@@ -272,10 +272,14 @@ export function DirectoryComputersSection({
                 key={row.environmentId}
                 label={row.label}
                 description={description}
-                detail={progress ?? (connectable ? "Connect" : undefined)}
+                detail={progress ?? (connectable ? "Connect" : "Pair instead")}
                 loading={progress !== null}
-                disabled={!connectable || (active !== null && progress === null)}
-                onPress={() => connect(row)}
+                disabled={active !== null && progress === null}
+                onPress={() =>
+                  row.action === "pair"
+                    ? onPair({ httpBaseUrl: "", params: { libraryComputer: row.environmentId } })
+                    : connect(row)
+                }
               />
             );
           })}
