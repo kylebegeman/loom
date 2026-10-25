@@ -241,6 +241,7 @@ export function resolveWorktreeCleanup(
       worktreeOnDelete: false,
       worktreeOnSettle: false,
       worktreeUnchanged: false,
+      worktreeOnLand: false, // fork: project-lifecycle
     };
   const {
     worktreeKeepWhen,
@@ -250,6 +251,7 @@ export function resolveWorktreeCleanup(
     worktreeOnDelete,
     worktreeOnSettle,
     worktreeUnchanged,
+    worktreeOnLand, // fork: project-lifecycle
   } = settings.storageCleanup;
   return {
     worktreeKeepWhen,
@@ -259,5 +261,6 @@ export function resolveWorktreeCleanup(
     worktreeOnDelete,
     worktreeOnSettle,
     worktreeUnchanged,
+    worktreeOnLand, // fork: project-lifecycle
   };
 }

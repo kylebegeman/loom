@@ -40,6 +40,8 @@ export function useSelectedThreadGitActions() {
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const createRef = useAtomCommand(vcsEnvironment.createRef, { reportFailure: false });
   const createWorktree = useAtomCommand(vcsEnvironment.createWorktree, { reportFailure: false });
+  // fork: library-projects
+  const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const { selectedThread, selectedThreadProject, selectedEnvironmentRuntime } =
     useThreadSelection();
@@ -317,6 +319,18 @@ export function useSelectedThreadGitActions() {
     ],
   );
 
+  // fork: library-projects -- the worktree was created moments earlier and holds no work, so when
+  // a plain remove fails on what creation added (initialized submodules need --force) forcing is
+  // safe. Cleanup is best effort and never replaces the attach failure the user needs to see.
+  const removeUnattachedWorktree = useCallback(
+    async (thread: EnvironmentThreadShell, cwd: string, path: string) => {
+      const remove = (force: boolean) =>
+        removeWorktree({ environmentId: thread.environmentId, input: { cwd, path, force } });
+      if (AsyncResult.isFailure(await remove(false))) await remove(true);
+    },
+    [removeWorktree],
+  );
+
   const onCreateSelectedThreadWorktree = useCallback(
     async (nextWorktree: { readonly baseBranch: string; readonly newBranch: string }) => {
       return runSelectedThreadGitMutation(
@@ -343,12 +357,26 @@ export function useSelectedThreadGitActions() {
               worktreePath: result.value.worktree.path,
             },
           });
+          // fork: library-projects -- the server refuses to move a Library conversation out of its
+          // copy folder, and a refused attach would strand the new worktree. Its branch stays
+          // because clients have no RPC to delete one.
+          if (AsyncResult.isFailure(syncResult))
+            await removeUnattachedWorktree(
+              thread,
+              project.workspaceRoot,
+              result.value.worktree.path,
+            ).catch(() => undefined);
           return AsyncResult.isFailure(syncResult) ? AsyncResult.failure(syncResult.cause) : result;
         },
         { changesThreadBranch: true },
       );
     },
-    [createWorktree, runSelectedThreadGitMutation, syncSelectedThreadBranchState],
+    [
+      createWorktree,
+      removeUnattachedWorktree, // fork: library-projects
+      runSelectedThreadGitMutation,
+      syncSelectedThreadBranchState,
+    ],
   );
 
   const onPullSelectedThreadBranch = useCallback(async () => {

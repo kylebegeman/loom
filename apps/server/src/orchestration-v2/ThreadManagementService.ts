@@ -56,6 +56,7 @@ import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimi
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -514,6 +515,7 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+  const libraryFolders = yield* Effect.serviceOption(LibraryFolderGuard.LibraryFolderGuard); // fork: library-projects
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -669,9 +671,44 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // fork: library-projects -- the decider stays pure, so the Library binding is read here. An
+  // unchanged folder skips the read, which also lets replayed updates through.
+  const assertLibraryFolder = (command: OrchestrationV2ServerCommand) => {
+    if (
+      command.type !== "thread.metadata.update" ||
+      command.worktreePath === undefined ||
+      Option.isNone(libraryFolders)
+    )
+      return Effect.void;
+    const worktreePath = command.worktreePath;
+    return orchestrator.getThreadRecords(command.threadId, []).pipe(
+      Effect.flatMap(({ thread }) =>
+        thread.worktreePath === worktreePath
+          ? Effect.void
+          : libraryFolders.value
+              .assertFolderChange({
+                threadId: thread.id,
+                projectId: thread.projectId,
+                worktreePath,
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new Orchestrator.OrchestratorCommandRejectedError({
+                      commandId: command.commandId,
+                      commandType: command.type,
+                      cause,
+                    }),
+                ),
+              ),
+      ),
+    );
+  }; // fork: library-projects
+
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
     ensureCommandTranscripts(command).pipe(
       Effect.andThen(assertDispatchTargetEnabled(command)),
+      Effect.andThen(assertLibraryFolder(command)), // fork: library-projects
       Effect.andThen(orchestrator.dispatch(command)),
     );
 

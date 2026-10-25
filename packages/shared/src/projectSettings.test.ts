@@ -438,6 +438,7 @@ describe("resolveWorktreeCleanup", () => {
       worktreeOnSettle: false,
       worktreeOnMerge: false,
       worktreeUnchanged: false,
+      worktreeOnLand: false, // fork: project-lifecycle
       worktreeKeepWhen: "any-local-files",
     });
     expect(resolveWorktreeCleanup(off, otherProjectId)).toEqual(inherited);
@@ -479,6 +480,7 @@ describe("resolveWorktreeCleanup", () => {
       worktreeOnSettle: false,
       worktreeOnMerge: true,
       worktreeUnchanged: false,
+      worktreeOnLand: true, // fork: project-lifecycle
       worktreeKeepWhen: "uncommitted-changes",
     });
     expect(

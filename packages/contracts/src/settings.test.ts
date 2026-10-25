@@ -64,7 +64,8 @@ describe("storage cleanup settings", () => {
   });
 
   // fork: retention-defaults
-  it("keeps cleanup other than browser artifacts off for existing installations", () => {
+  // fork: project-lifecycle -- landed worktrees are released by default too.
+  it("keeps cleanup other than browser artifacts and landed worktrees off for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
@@ -73,6 +74,7 @@ describe("storage cleanup settings", () => {
       worktreeOnDelete: false,
       worktreeOnSettle: false,
       worktreeUnchanged: false,
+      worktreeOnLand: true, // fork: project-lifecycle
       worktreeKeepWhen: "uncommitted-changes",
       projectAfterDays: null,
       projectOnSettle: false,
@@ -154,7 +156,11 @@ describe("storage cleanup settings", () => {
       },
     });
     expect(settings.worktreeCleanup).toMatchObject({
-      rules: { worktreeKeepWhen: "uncommitted-changes", worktreeOnSettle: false },
+      rules: {
+        worktreeKeepWhen: "uncommitted-changes",
+        worktreeOnSettle: false,
+        worktreeOnLand: true, // fork: project-lifecycle
+      },
     });
     expect(
       decodeServerSettingsPatch({ storageCleanup: { worktreeKeepWhen: "tracked-changes" } }),

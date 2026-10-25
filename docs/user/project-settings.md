@@ -388,8 +388,9 @@ are, and cleanup covers both the default folder and the custom one.
 
 Open **Settings → Storage** to enable automatic cleanup on one machine or all connected
 environments. Loom deletes browser captures after 14 days unless you choose another period or
-Off. Other policies are off by default. Policies run on the server at startup, when changed, and
-hourly. Offline machines keep their existing policies.
+Off. **Delete landed worktrees** is also on; other policies are off by default. <!-- fork: project-lifecycle -->
+Policies run on the server at startup, when changed, and hourly. Offline machines keep their
+existing policies.
 
 Select a project to set **Automatic worktree cleanup** to **Inherit**, **Off**, or **Custom**.
 Inherit follows each machine's rules; Off keeps that project's worktrees until you remove them
@@ -399,11 +400,15 @@ captures and log retention remain machine-wide.
 Worktrees can be removed after a chosen number of inactive days, after a thread settles, after
 merging, or when they have no commits beyond the default branch. Set settled retention to 0 days
 to remove a worktree at the next cleanup after settlement. Only T3-managed worktrees are eligible.
-Active sessions prevent removal. Shared worktrees stay while any thread using them is active. **Keep worktrees with local changes** defaults
+Active sessions prevent removal. <!-- fork: project-lifecycle -->
+Other rules keep a worktree that several threads share. **Release settled worktrees** removes it
+once every thread using it is settled, and **Delete landed worktrees** once each is settled or
+archived. A thread and its subagents count as one. **Keep worktrees with local changes** defaults
 to **Uncommitted changes**, which protects tracked edits and untracked files but deletes ignored
 files such as `.env` and build output. **Any local files** also protects ignored files other than
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
-ignored files to be deleted. Branches and thread history stay; starting another turn recreates the checkout.
+ignored files to be deleted. Branches and thread history stay, except for the landed rule below; <!-- fork: project-lifecycle -->
+starting another turn recreates the checkout.
 Merge cleanup requires a merged pull request whose commits are included in the remote default
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default
 branch and the worktree is still at the pull request's last commit.
@@ -415,6 +420,18 @@ always protects local files, including ignored data other than `node_modules`, r
 local-change setting above. This rule keeps the project's main checkout. Continuing a released
 conversation recreates its worktree checkout and waits for workspace setup before starting the agent.
 Failed setup keeps the checkout and retries when you continue again, including after a restart.
+
+<!-- fork: project-lifecycle -->
+
+**Delete landed worktrees** is on by default. Once a managed worktree's commits are in the remote
+default branch and every thread using it is settled or archived, cleanup removes the worktree and
+deletes its local branch. It uses the default branch as of your last fetch, pull or push and never
+fetches by itself. It keeps worktrees with uncommitted changes, untracked files, ignored files
+such as `.env` (dependencies and build output excepted), open terminals, or other programs using
+the folder. The branch stays if it moved since the check, is the default branch, another checkout
+uses it, or a conversation's latest checkpoint is missing or older than the branch. Continuing a
+conversation recreates the branch from its latest checkpoint. Turn the rule off in
+**Settings → Storage**, or for one project with **Off** or **Custom**.
 
 Enable **Release settled project checkouts** or **Release inactive project checkouts**
 to set this computer's defaults for managed primary project folders. Every conversation must

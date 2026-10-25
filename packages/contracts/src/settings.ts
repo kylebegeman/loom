@@ -924,6 +924,8 @@ export const WorktreeCleanupRules = Schema.Struct({
   worktreeOnDelete: Schema.Boolean,
   worktreeOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeUnchanged: Schema.Boolean,
+  // fork: project-lifecycle -- landed work cleans up after itself unless a project opts out.
+  worktreeOnLand: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type WorktreeCleanupRules = typeof WorktreeCleanupRules.Type;
 
@@ -1089,6 +1091,7 @@ export const StorageCleanupSettings = Schema.Struct({
   worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeUnchanged: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  worktreeOnLand: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))), // fork: project-lifecycle
   projectAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   projectOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   scratchAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -1428,6 +1431,7 @@ export const ServerSettingsPatch = Schema.Struct({
             worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
             worktreeOnSettle: Schema.optionalKey(Schema.Boolean),
             worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+            worktreeOnLand: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
           }),
         }),
       ]),
@@ -1442,6 +1446,7 @@ export const ServerSettingsPatch = Schema.Struct({
       worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
       worktreeOnSettle: Schema.optionalKey(Schema.Boolean),
       worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+      worktreeOnLand: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
       projectAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: project-lifecycle
       projectOnSettle: Schema.optionalKey(Schema.Boolean),
       scratchAfterDays: Schema.optionalKey(StorageRetentionDays),

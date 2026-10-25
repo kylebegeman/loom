@@ -1,6 +1,7 @@
 import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
+import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -258,7 +259,13 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
   ),
 );
 
+// fork: library-projects -- also a runtime output, so MCP tools that create folders can ask first.
+const layerLibraryFolderGuardProvided = LibraryFolderGuard.layer.pipe(
+  Layer.provide(Layer.merge(LibraryWorkspaceStore.layer, ProjectStore.layer)),
+); // fork: library-projects
+
 export const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
+  Layer.provide(layerLibraryFolderGuardProvided), // fork: library-projects
   Layer.provide(
     Layer.mergeAll(
       layerOrchestratorProvided,
@@ -296,6 +303,7 @@ const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
+  Layer.provide(layerLibraryFolderGuardProvided), // fork: library-projects
   Layer.provide(
     Layer.mergeAll(
       layerProjectService,
@@ -415,6 +423,7 @@ export const layerProduction = Layer.mergeAll(
   ),
   layerProviderContinuationWorkerProvided,
   layerAgentSessionImporterProvided,
+  layerLibraryFolderGuardProvided, // fork: library-projects
   EffectOutbox.layerPruneWorker.pipe(Layer.provide(EffectOutbox.layer)),
 ).pipe(
   Layer.provide(ResourceCleanupService.layer.pipe(Layer.provide(layerScheduledTaskProvided))),

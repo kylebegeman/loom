@@ -137,10 +137,10 @@ apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	3
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	2
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	2
-apps/server/src/storageCleanup.test.ts	project-lifecycle	13
-packages/contracts/src/settings.test.ts	project-lifecycle	1
+apps/server/src/storageCleanup.test.ts	project-lifecycle	14
+packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
-packages/contracts/src/settings.ts	project-lifecycle	1
+packages/contracts/src/settings.ts	project-lifecycle	5
 apps/mobile/app.config.ts	fleet-connect	1
 apps/mobile/app.config.ts	library-push	2
 apps/mobile/src/App.tsx	library-push	2
@@ -295,7 +295,7 @@ apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecyc
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	9
 apps/server/src/orchestration-v2/Orchestrator.ts	deleted-history	4
 apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
-apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	3
+apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	9
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	2
 apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	1
@@ -303,7 +303,7 @@ apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	2
 apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	4
 apps/server/src/storageCleanup.ts	project-checkout-management	1
-apps/server/src/storageCleanup.ts	project-lifecycle	12
+apps/server/src/storageCleanup.ts	project-lifecycle	51
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	7
 apps/web/src/components/CommandPalette.tsx	fleet-connections	30
@@ -315,7 +315,7 @@ apps/web/src/components/auth/PairingRouteSurface.tsx	library-sign-in	6
 apps/web/src/components/chat/composerFocusRedirect.ts	ext-panels	1
 apps/web/src/components/settings/ConnectionsSettings.tsx	library-setup	2
 apps/web/src/components/settings/SourceControlSettings.tsx	github-host-setup	11
-apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	2
+apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	4
 apps/web/src/components/settings/settingsSearch.ts	ext-keybindings	4
 apps/web/src/components/settings/settingsSearch.ts	github-host-setup	2
 apps/web/src/components/sidebar/mainAppLocation.ts	fleet-connections	1
@@ -742,3 +742,15 @@ apps/server/src/git/GitWorkflowService.test.ts	project-root-worktree	5
 apps/server/src/server.ts	project-root-worktree	1
 apps/server/src/git/GitManager.test.ts	test-temp-isolation	9
 packages/shared/package.json	-	"./fork/reach"
+packages/shared/src/projectSettings.ts	project-lifecycle	3
+packages/shared/src/serverSettings.ts	project-lifecycle	1
+docs/user/project-settings.md	project-lifecycle	4
+packages/shared/src/projectSettings.test.ts	project-lifecycle	2
+packages/shared/src/serverSettings.test.ts	project-lifecycle	1
+apps/web/src/components/settings/scopedSettings.test.ts	project-lifecycle	6
+apps/server/src/orchestration-v2/ThreadManagementService.ts	library-projects	5
+apps/server/src/mcp/WorktreeMcpService.ts	library-projects	4
+apps/web/src/components/BranchToolbarBranchSelector.tsx	library-projects	2
+apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	4
+apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	7
+apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	library-projects	6

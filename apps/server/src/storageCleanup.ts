@@ -82,6 +82,47 @@ const SETTLE_SCRIPT_GRACE_MS = 60_000;
 // Worktree creation can precede its thread row, including review-guide checkouts.
 const ORPHAN_WORKTREE_GRACE_MS = 60 * 60 * 1_000;
 
+// fork: project-lifecycle -- dependency, build and tool output that installs and builds recreate,
+// so the landing rule deletes it with the worktree. Any other ignored path (.env files, local
+// databases, notes) keeps the worktree. Matched per path segment; "*." entries match file suffixes.
+const REGENERABLE_IGNORED_NAMES = [
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  "target",
+  ".turbo",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".vite",
+  ".cache",
+  ".parcel-cache",
+  ".expo",
+  ".gradle",
+  "DerivedData",
+  "__pycache__",
+  ".pytest_cache",
+  ".build",
+  ".generated",
+  ".vite-hooks",
+  ".DS_Store",
+  "*.tsbuildinfo",
+];
+// fork: project-lifecycle
+const regenerableIgnoredPath = (entry: string) => {
+  const segments = entry.split("/").filter(Boolean);
+  const name = segments.at(-1) ?? "";
+  return REGENERABLE_IGNORED_NAMES.some((pattern) =>
+    pattern.startsWith("*") ? name.endsWith(pattern.slice(1)) : segments.includes(pattern),
+  );
+};
+// fork: project-lifecycle -- "landed" protects ignored files except regenerable output.
+type LocalFileRules = {
+  readonly worktreeKeepWhen: WorktreeCleanupRules["worktreeKeepWhen"] | "landed";
+};
+
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
 const isGitCommandError = Schema.is(GitCommandError);
@@ -98,7 +139,8 @@ const worktreeCleanupEnabled = (rules: WorktreeCleanupRules) =>
   rules.worktreeOnMerge ||
   rules.worktreeOnDelete ||
   rules.worktreeOnSettle ||
-  rules.worktreeUnchanged;
+  rules.worktreeUnchanged ||
+  rules.worktreeOnLand; // fork: project-lifecycle
 
 function anyWorktreePolicy(
   settings: ServerSettings,
@@ -685,7 +727,7 @@ const make = Effect.gen(function* () {
 
   const localChangesReason = Effect.fn("StorageCleanup.localChangesReason")(function* (
     cwd: string,
-    rules: WorktreeCleanupRules,
+    rules: LocalFileRules, // fork: project-lifecycle
   ) {
     const status = yield* git.execute({
       operation: "StorageCleanup.localChanges",
@@ -709,7 +751,8 @@ const make = Effect.gen(function* () {
       if (/^[RC]|^.[RC]/.test(records[i]!)) i++;
     }
     if (count > 0) return `has uncommitted changes (${count} ${count === 1 ? "file" : "files"})`;
-    if (rules.worktreeKeepWhen !== "any-local-files") return null;
+    if (rules.worktreeKeepWhen !== "any-local-files" && rules.worktreeKeepWhen !== "landed")
+      return null; // fork: project-lifecycle
     const ignored = yield* git.execute({
       operation: "StorageCleanup.ignoredFiles",
       cwd,
@@ -717,6 +760,43 @@ const make = Effect.gen(function* () {
       maxOutputBytes: 64 * 1024,
     });
     if (ignored.stdoutTruncated) return "ignored files exceed the inspection limit";
+    // fork: project-lifecycle
+    if (rules.worktreeKeepWhen === "landed") {
+      const listed = ignored.stdout.split("\0").filter(Boolean);
+      // Git also lists the untracked folders that hold ignored entries; judge their contents.
+      const containers = new Set<string>();
+      for (const entry of listed) {
+        let end = entry.indexOf("/");
+        while (end !== -1 && end < entry.length - 1) {
+          containers.add(entry.slice(0, end + 1));
+          end = entry.indexOf("/", end + 1);
+        }
+      }
+      for (const entry of listed) {
+        if (containers.has(entry) || regenerableIgnoredPath(entry)) continue;
+        if (entry.endsWith("/")) {
+          // Git lists empty ignored folders too, and those hold nothing to lose.
+          const contents = yield* git.execute({
+            operation: "StorageCleanup.ignoredFolderFiles",
+            cwd,
+            args: [
+              "--literal-pathspecs",
+              "ls-files",
+              "--others",
+              "--ignored",
+              "--exclude-standard",
+              "-z",
+              "--",
+              entry,
+            ],
+            maxOutputBytes: 4 * 1024,
+          });
+          if (contents.stdout === "" && !contents.stdoutTruncated) continue;
+        }
+        return `has ignored local files such as ${entry}`;
+      }
+      return null;
+    }
     const file = ignored.stdout
       .split("\0")
       .find((entry) => entry !== "" && !/(^|\/)node_modules\/$/.test(entry));
@@ -724,7 +804,8 @@ const make = Effect.gen(function* () {
   });
 
   const submoduleRemoval = Effect.fn("StorageCleanup.submoduleRemoval")(
-    function* (cwd: string, rules: WorktreeCleanupRules) {
+    // fork: project-lifecycle
+    function* (cwd: string, rules: LocalFileRules) {
       const inspect = (args: string[], maxOutputBytes = 64 * 1024) =>
         git.execute({
           operation: "StorageCleanup.submodules",
@@ -828,7 +909,12 @@ const make = Effect.gen(function* () {
             (yield* fs.stat(target)).type !== "Directory"
           )
             return { force: false, reason: "submodule has local files" };
-          if (path.basename(target) === "node_modules") continue;
+          if (
+            rules.worktreeKeepWhen === "landed" // fork: project-lifecycle
+              ? regenerableIgnoredPath(path.basename(target)) // fork: project-lifecycle
+              : path.basename(target) === "node_modules"
+          )
+            continue;
           const names = yield* fs.readDirectory(target);
           inspected += names.length;
           for (const name of names) unchecked.push(path.join(target, name));
@@ -863,6 +949,98 @@ const make = Effect.gen(function* () {
     return result;
   });
 
+  // fork: project-lifecycle -- compare-and-delete at the verified head, so a branch that moved or
+  // is still checked out elsewhere survives. Failures keep the branch and explain why.
+  const deleteLandedBranch = Effect.fn("StorageCleanup.deleteLandedBranch")(
+    function* (input: {
+      readonly repositoryCwd: string;
+      readonly worktreePath: string;
+      readonly branch: string;
+      readonly defaultBranch: string;
+      readonly verifiedHead: string;
+      readonly holders: ReadonlyArray<OrchestrationV2ThreadShell["id"]>;
+    }) {
+      const { repositoryCwd, branch, verifiedHead } = input;
+      // A managed worktree can check out the default branch itself while the root sits elsewhere.
+      if (branch === input.defaultBranch) return "branch kept because it is the default branch";
+      // Removal can take minutes, and a thread that started on this path meanwhile needs the branch.
+      const holders = (yield* projections.getThreadWorktreePaths({ includeArchived: true }))
+        .filter((entry) => path.resolve(entry.worktreePath) === input.worktreePath)
+        .map((entry) => entry.threadId);
+      if (
+        holders.length !== input.holders.length ||
+        holders.some((threadId) => !input.holders.includes(threadId))
+      )
+        return "branch kept because the threads using it changed during cleanup";
+      // Continuing a thread recreates a missing branch at the parent of its latest ready checkpoint
+      // (restoreWorktree), so that parent must be the head being deleted. Same selection as there.
+      for (const threadId of holders) {
+        const saved = yield* projections.getCheckpointContext(threadId);
+        const scopes = new Set(
+          saved.checkpointScopes
+            .filter(
+              (scope) =>
+                scope.kind === "root_run" && path.resolve(scope.cwd) === input.worktreePath,
+            )
+            .map((scope) => scope.id),
+        );
+        const checkpoint = saved.checkpoints
+          .filter((checkpoint) => checkpoint.status === "ready" && scopes.has(checkpoint.scopeId))
+          .toSorted((left, right) => (right.appRunOrdinal ?? 0) - (left.appRunOrdinal ?? 0))[0];
+        const parent =
+          checkpoint === undefined
+            ? null
+            : yield* git.execute({
+                operation: "StorageCleanup.landedCheckpointParent",
+                cwd: repositoryCwd,
+                args: ["rev-parse", "--verify", "--quiet", `${checkpoint.ref}^^{commit}`],
+                allowNonZeroExit: true,
+              });
+        if (parent === null || parent.exitCode !== 0)
+          return "branch kept because a thread has no checkpoint to restore it from";
+        if (parent.stdout.trim() !== verifiedHead)
+          return "branch kept because its latest checkpoint is older than the branch";
+      }
+      const ref = `refs/heads/${branch}`;
+      const worktrees = yield* git.execute({
+        operation: "StorageCleanup.landedBranchWorktrees",
+        cwd: repositoryCwd,
+        args: ["worktree", "list", "--porcelain"],
+        maxOutputBytes: 1024 * 1024,
+      });
+      if (worktrees.stdoutTruncated) return "branch kept because its worktrees could not be listed";
+      if (worktrees.stdout.split(/\r?\n/).includes(`branch ${ref}`))
+        return "branch kept because another worktree has it checked out";
+      const deleted = yield* git.execute({
+        operation: "StorageCleanup.deleteLandedBranch",
+        cwd: repositoryCwd,
+        args: ["update-ref", "-d", ref, verifiedHead],
+        allowNonZeroExit: true,
+      });
+      if (deleted.exitCode !== 0) {
+        const current = yield* git.execute({
+          operation: "StorageCleanup.landedBranchHead",
+          cwd: repositoryCwd,
+          args: ["rev-parse", "--verify", "--quiet", ref],
+          allowNonZeroExit: true,
+        });
+        if (current.exitCode !== 0) return "branch was already deleted";
+        return current.stdout.trim() === verifiedHead
+          ? `branch kept (${deleted.stderr.trim().split(/\r?\n/)[0] || "update-ref failed"})`
+          : "branch kept because it moved after the check";
+      }
+      // Matches `git branch -d`, which also drops the branch's upstream configuration.
+      yield* git.execute({
+        operation: "StorageCleanup.landedBranchConfig",
+        cwd: repositoryCwd,
+        args: ["config", "--remove-section", `branch.${branch}`],
+        allowNonZeroExit: true,
+      });
+      return "branch deleted";
+    },
+    Effect.catch((error) => Effect.succeed(`branch kept (${cleanupFailureReason(error)})`)),
+  );
+
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
     now: number,
@@ -894,8 +1072,103 @@ const make = Effect.gen(function* () {
       ),
     )).filter((thread) => thread.worktreePath !== null && thread.branch !== null);
     const snapshot = yield* readThreads();
-    const refreshedDefaultRefs = new Map<string, Set<string>>();
+    // fork: project-lifecycle -- failed refreshes are remembered too (an Exit replays its
+    // result), so a sweep fetches each repository's default ref at most once.
+    const refreshedDefaultRefs = new Map<string, Effect.Effect<void, GitCommandError>>();
     const defaultBranches = new Map<string, string | null>();
+    // fork: project-lifecycle -- shared by the opt-in unchanged and merged rules, which refresh the
+    // default branch first. Null when the remote default branch cannot be identified.
+    const defaultBranchIntegration = Effect.fn("StorageCleanup.defaultBranchIntegration")(
+      function* (repositoryCwd: string, worktreePath: string, headSha: string) {
+        const remote = yield* git.resolvePrimaryRemoteName(repositoryCwd);
+        const defaultBranchKey = `${repositoryCwd}\0${remote}`;
+        let branch = defaultBranches.get(defaultBranchKey);
+        if (branch === undefined) {
+          branch = yield* git.resolveDefaultBranchName(repositoryCwd, remote);
+          // Without a local HEAD ref, only the remote can identify its default;
+          // a conventional name may be a feature branch.
+          if (branch === null) {
+            branch = yield* git
+              .execute({
+                operation: "StorageCleanup.resolveDefaultBranch",
+                cwd: repositoryCwd,
+                args: ["ls-remote", "--symref", "--", remote, "HEAD"],
+                timeoutMs: 20_000,
+              })
+              .pipe(
+                Effect.map(
+                  (result) => /^ref: refs\/heads\/(.+)\tHEAD\r?$/m.exec(result.stdout)?.[1] ?? null,
+                ),
+                Effect.orElseSucceed(() => null),
+              );
+          }
+          defaultBranches.set(defaultBranchKey, branch);
+        }
+        if (branch === null) return null;
+        const defaultRef = `refs/remotes/${remote}/${branch}`;
+        const refreshKey = `${repositoryCwd}\0${defaultRef}`;
+        let refreshed = refreshedDefaultRefs.get(refreshKey);
+        if (refreshed === undefined) {
+          refreshed = yield* Effect.exit(
+            git.fetchRemoteTrackingBranch({
+              cwd: repositoryCwd,
+              remoteName: remote,
+              remoteBranch: branch,
+            }),
+          );
+          refreshedDefaultRefs.set(refreshKey, refreshed);
+        }
+        yield* refreshed;
+        const base = yield* git.resolveCommit({ cwd: worktreePath, revision: defaultRef });
+        const ancestor = yield* git.execute({
+          operation: "StorageCleanup.integratedBranch",
+          cwd: worktreePath,
+          args: ["merge-base", "--is-ancestor", headSha, base.commitSha],
+          allowNonZeroExit: true,
+        });
+        return { branch, integrated: ancestor.exitCode === 0 };
+      },
+    );
+    // fork: project-lifecycle -- the landing rule is on by default, so it never contacts the
+    // remote: a background fetch can prompt for SSH key approval or stall. It reads the default
+    // branch as the user's own fetch, pull or push last recorded it. Null when that is unknown.
+    const localDefaultBranches = new Map<string, { remote: string; branch: string } | null>();
+    const landedOnDefaultBranch = Effect.fn("StorageCleanup.landedOnDefaultBranch")(function* (
+      repositoryCwd: string,
+      worktreePath: string,
+      headSha: string,
+    ) {
+      let target = localDefaultBranches.get(repositoryCwd);
+      if (target === undefined) {
+        const remote = yield* git
+          .resolvePrimaryRemoteName(repositoryCwd)
+          .pipe(Effect.orElseSucceed(() => null));
+        const branch =
+          remote === null ? null : yield* git.resolveDefaultBranchName(repositoryCwd, remote);
+        target = remote === null || branch === null ? null : { remote, branch };
+        localDefaultBranches.set(repositoryCwd, target);
+      }
+      if (target === null) return null;
+      const base = yield* git.execute({
+        operation: "StorageCleanup.landedDefaultRef",
+        cwd: worktreePath,
+        args: [
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          `refs/remotes/${target.remote}/${target.branch}^{commit}`,
+        ],
+        allowNonZeroExit: true,
+      });
+      if (base.exitCode !== 0) return null;
+      const ancestor = yield* git.execute({
+        operation: "StorageCleanup.landedBranch",
+        cwd: worktreePath,
+        args: ["merge-base", "--is-ancestor", headSha, base.stdout.trim()],
+        allowNonZeroExit: true,
+      });
+      return { branch: target.branch, landed: ancestor.exitCode === 0 };
+    });
     const groups = Map.groupBy(
       snapshot.threads.filter((thread) => thread.worktreePath !== null),
       (thread) => path.resolve(thread.worktreePath!),
@@ -928,9 +1201,26 @@ const make = Effect.gen(function* () {
       const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
       yield* Effect.gen(function* () {
         if (!(yield* fs.exists(worktreePath))) return;
+        // fork: project-lifecycle -- landed work needs every holder settled or archived. A subagent
+        // chain follows its owner, as settled retention does. Deleted holders are gone from the
+        // group, so a deleted thread's worktree qualifies.
+        const chainOwner = worktreeOwner(group);
+        const deciders = chainOwner === undefined ? group : [chainOwner];
+        const unfinished = deciders.filter(
+          (holder) => holder.settledOverride !== "settled" && holder.archivedAt == null,
+        ).length;
+        const landing = settings.worktreeOnLand && unfinished === 0;
+        const unfinishedReason =
+          deciders.length > 1
+            ? `${unfinished} of ${deciders.length} threads are not settled or archived`
+            : "thread is not settled or archived";
+        // fork: project-lifecycle -- skip the guard chain while the landing rule is the only one on
+        // and cannot apply yet.
+        if (!landing && !worktreeCleanupEnabled({ ...settings, worktreeOnLand: false }))
+          return keep(unfinishedReason);
         const libraryReason = yield* libraryCleanupBlocker(worktreePath, now);
         if (libraryReason !== null) return keep(libraryReason);
-        if (deleted && !settings.worktreeOnDelete) return keep("no rules apply");
+        if (deleted && !settings.worktreeOnDelete && !landing) return keep("no rules apply"); // fork: project-lifecycle
         // fork: project-lifecycle -- holders all settled on this branch release a shared worktree.
         const settled =
           !deleted &&
@@ -944,7 +1234,8 @@ const make = Effect.gen(function* () {
           );
         // fork: project-lifecycle
         if (group.some((holder) => holder.pinnedAt != null)) return keep("thread is pinned");
-        if (group.length > 1 && !settled && worktreeOwner(group) === undefined)
+        if (group.length > 1 && !settled && !landing && worktreeOwner(group) === undefined)
+          // fork: project-lifecycle -- landed shared worktrees are released once every holder is done.
           return keep(`shared by ${group.length} threads`);
         if (yield* fs.exists(`${worktreePath}.t3-setup-pending`))
           return keep("workspace preparation is pending");
@@ -975,10 +1266,35 @@ const make = Effect.gen(function* () {
           return keep("not a linked worktree");
         if (yield* branchChanged(worktreePath, thread.branch))
           return keep("repository or branch changed");
+        // fork: project-lifecycle -- landing is checked first: its branch deletion wins over rules
+        // that keep the branch, a landed head is already published on the default branch, and the
+        // landing rule's own file protection depends on it.
+        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+        let landedOn: string | null = null;
+        let landingReason: string | null = null;
+        if (landing) {
+          const checked = yield* Effect.result(
+            landedOnDefaultBranch(
+              path.resolve(project.workspaceRoot),
+              worktreePath,
+              head.commitSha,
+            ),
+          );
+          if (checked._tag === "Failure")
+            landingReason = `could not check whether it landed (${cleanupFailureReason(checked.failure)})`;
+          else if (checked.success === null) landingReason = "default branch is unknown locally";
+          else if (checked.success.landed) landedOn = checked.success.branch;
+          else landingReason = `has commits not on ${checked.success.branch}`;
+        }
+        // fork: project-lifecycle -- otherwise only the deletion rule handles deleted threads.
+        if (deleted && !settings.worktreeOnDelete && landedOn === null)
+          return keep(landingReason ?? "no rules apply");
         // Settlement never discards local data, even if older cleanup rules allow it.
         const fileRules = settled
           ? { ...settings, worktreeKeepWhen: "any-local-files" as const }
-          : settings;
+          : landedOn !== null && settings.worktreeKeepWhen !== "any-local-files" // fork: project-lifecycle
+            ? { worktreeKeepWhen: "landed" as const } // fork: project-lifecycle
+            : settings;
         const changes = yield* localChangesReason(worktreePath, fileRules);
         if (changes !== null) return keep(changes);
         // fork: project-lifecycle -- settle cleanup runs only after the settle script finished.
@@ -993,13 +1309,12 @@ const make = Effect.gen(function* () {
           )
         )
           return keep("settled moments ago");
-        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
         const old =
           !deleted &&
           settings.worktreeAfterDays !== null &&
           activityAt < now - settings.worktreeAfterDays * DAY_MS;
         // fork: project-lifecycle -- a settled release requires the branch head to be published.
-        if (settled) {
+        if (settled && landedOn === null) {
           const upstream = yield* git.execute({
             operation: "StorageCleanup.publishedBranch",
             cwd: worktreePath,
@@ -1034,64 +1349,31 @@ const make = Effect.gen(function* () {
           settledFor !== null &&
           settings.worktreeSettledAfterDays !== null &&
           settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
-        let eligible = deleted || old || settled || settledElapsed;
-        let removalReason = deleted
-          ? "thread was deleted"
-          : settled // fork: project-lifecycle
-            ? "all threads settled; branch is published"
-            : old
-              ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
-              : `settled for ${settledDays} days`;
+        let eligible =
+          landedOn !== null ||
+          (deleted && settings.worktreeOnDelete) ||
+          old ||
+          settled ||
+          settledElapsed; // fork: project-lifecycle
+        let removalReason =
+          landedOn !== null // fork: project-lifecycle
+            ? `landed on ${landedOn}`
+            : deleted
+              ? "thread was deleted"
+              : settled // fork: project-lifecycle
+                ? "all threads settled; branch is published"
+                : old
+                  ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
+                  : `settled for ${settledDays} days`;
         if (!eligible && (settings.worktreeUnchanged || settings.worktreeOnMerge)) {
-          const repositoryCwd = path.resolve(project.workspaceRoot);
-          const remote = yield* git.resolvePrimaryRemoteName(repositoryCwd);
-          const defaultBranchKey = `${repositoryCwd}\0${remote}`;
-          let branch = defaultBranches.get(defaultBranchKey);
-          if (branch === undefined) {
-            branch = yield* git.resolveDefaultBranchName(repositoryCwd, remote);
-            // Without a local HEAD ref, only the remote can identify its default;
-            // a conventional name may be a feature branch.
-            if (branch === null) {
-              branch = yield* git
-                .execute({
-                  operation: "StorageCleanup.resolveDefaultBranch",
-                  cwd: repositoryCwd,
-                  args: ["ls-remote", "--symref", "--", remote, "HEAD"],
-                  timeoutMs: 20_000,
-                })
-                .pipe(
-                  Effect.map(
-                    (result) =>
-                      /^ref: refs\/heads\/(.+)\tHEAD\r?$/m.exec(result.stdout)?.[1] ?? null,
-                  ),
-                  Effect.orElseSucceed(() => null),
-                );
-            }
-            defaultBranches.set(defaultBranchKey, branch);
-          }
-          if (branch === null) return keep("default branch is unavailable");
-          const defaultRef = `refs/remotes/${remote}/${branch}`;
-          const refreshed = refreshedDefaultRefs.get(repositoryCwd) ?? new Set<string>();
-          if (!refreshed.has(defaultRef)) {
-            yield* git.fetchRemoteTrackingBranch({
-              cwd: repositoryCwd,
-              remoteName: remote,
-              remoteBranch: branch,
-            });
-            refreshed.add(defaultRef);
-            refreshedDefaultRefs.set(repositoryCwd, refreshed);
-          }
-          const base = yield* git.resolveCommit({
-            cwd: worktreePath,
-            revision: defaultRef,
-          });
-          const ancestor = yield* git.execute({
-            operation: "StorageCleanup.integratedBranch",
-            cwd: worktreePath,
-            args: ["merge-base", "--is-ancestor", head.commitSha, base.commitSha],
-            allowNonZeroExit: true,
-          });
-          const integrated = ancestor.exitCode === 0;
+          // fork: project-lifecycle -- refreshed, unlike the landing check's local-only result.
+          const integration = yield* defaultBranchIntegration(
+            path.resolve(project.workspaceRoot),
+            worktreePath,
+            head.commitSha,
+          );
+          if (integration === null) return keep("default branch is unavailable");
+          const { branch, integrated } = integration; // fork: project-lifecycle
           eligible = integrated && settings.worktreeUnchanged;
           if (eligible) removalReason = "no commits beyond the default branch";
           if (!eligible && settings.worktreeOnMerge && thread.branch !== null) {
@@ -1110,15 +1392,18 @@ const make = Effect.gen(function* () {
         }
         if (!eligible)
           return keep(
-            !deleted && settings.worktreeAfterDays !== null
-              ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} of ${settings.worktreeAfterDays} days`
-              : settings.worktreeSettledAfterDays !== null
-                ? settledFor === null
-                  ? "not settled"
-                  : `settled for ${settledDays} of ${settings.worktreeSettledAfterDays} days`
-                : settings.worktreeOnMerge
-                  ? "not merged"
-                  : "has commits beyond the default branch",
+            landingReason ?? // fork: project-lifecycle
+              (!deleted && settings.worktreeAfterDays !== null
+                ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} of ${settings.worktreeAfterDays} days`
+                : settings.worktreeSettledAfterDays !== null
+                  ? settledFor === null
+                    ? "not settled"
+                    : `settled for ${settledDays} of ${settings.worktreeSettledAfterDays} days`
+                  : settings.worktreeOnMerge
+                    ? "not merged"
+                    : settings.worktreeOnLand && !settings.worktreeUnchanged // fork: project-lifecycle
+                      ? unfinishedReason
+                      : "has commits beyond the default branch"),
           );
         // Threads, queued deletion work and provider sessions as they are now, so a
         // queued turn, resumed session or new thread sharing this path cancels
@@ -1135,10 +1420,14 @@ const make = Effect.gen(function* () {
           })).filter((entry) => path.resolve(entry.worktreePath) === worktreePath);
           if (hasTerminal(worktreePath)) return "open terminal";
           if (deleted) {
+            // fork: project-lifecycle -- either rule that found the deleted thread's worktree.
+            const rules = resolveWorktreeCleanup(
+              yield* settingsService.getSettings,
+              thread.projectId,
+            );
             if (
               latest.length > 0 ||
-              !resolveWorktreeCleanup(yield* settingsService.getSettings, thread.projectId)
-                .worktreeOnDelete
+              !(rules.worktreeOnDelete || (landedOn !== null && rules.worktreeOnLand)) // fork: project-lifecycle
             )
               return "thread or cleanup settings changed since check";
             // V2 deletion queues durable cleanup. Do not remove its checkout until
@@ -1158,8 +1447,9 @@ const make = Effect.gen(function* () {
             if (latestGroup.some((shell) => shell.pinnedAt != null)) return "thread is pinned";
             if (
               latestGroup.length !== group.length ||
-              // fork: project-lifecycle -- settled holders need no single owner.
+              // fork: project-lifecycle -- settled or landed holders need no single owner.
               (!settled &&
+                landedOn === null &&
                 (latestOwner?.id !== thread.id || latestOwner?.branch !== thread.branch)) ||
               latestGroup.some((shell) => {
                 const previous = group.find((member) => member.id === shell.id);
@@ -1168,6 +1458,10 @@ const make = Effect.gen(function* () {
                   shell.branch !== thread.branch ||
                   shell.projectId !== previous.projectId || // fork: project-lifecycle
                   (settled && shell.settledOverride !== "settled") || // fork: project-lifecycle
+                  (landedOn !== null && // fork: project-lifecycle
+                    deciders.some((decider) => decider.id === shell.id) && // fork: project-lifecycle
+                    shell.settledOverride !== "settled" && // fork: project-lifecycle
+                    shell.archivedAt == null) || // fork: project-lifecycle
                   !Equal.equals(shell.settledAt, previous.settledAt) ||
                   (shell.settledAt !== null &&
                     !Equal.equals(shell.updatedAt, previous.updatedAt)) ||
@@ -1239,6 +1533,12 @@ const make = Effect.gen(function* () {
           const changes = yield* localChangesReason(worktreePath, fileRules);
           if (changes !== null) return keep(changes);
         }
+        // fork: project-lifecycle -- the default-on landing rule also waits for programs (dev
+        // servers, editors, shells outside Loom) whose working directory is in the worktree.
+        if (landedOn !== null) {
+          const processReason = yield* managedProjectProcessReason(realPath);
+          if (processReason !== null) return keep(processReason);
+        }
         yield* assertScratchUnmounted(realPath);
         yield* cleanupGit(
           project.workspaceRoot,
@@ -1254,10 +1554,28 @@ const make = Effect.gen(function* () {
           ],
           "git worktree remove",
         );
-        entries.push({ ...entry, outcome: "removed", reason: sentence(removalReason), bytes });
+        // fork: project-lifecycle -- only the landing rule deletes the branch.
+        const branchNote =
+          landedOn === null || thread.branch === null
+            ? null
+            : yield* deleteLandedBranch({
+                repositoryCwd: project.workspaceRoot,
+                worktreePath,
+                branch: thread.branch,
+                defaultBranch: landedOn,
+                verifiedHead: head.commitSha,
+                holders: group.map((holder) => holder.id),
+              });
+        entries.push({
+          ...entry,
+          outcome: "removed",
+          reason: sentence(branchNote === null ? removalReason : `${removalReason}; ${branchNote}`), // fork: project-lifecycle
+          bytes,
+        });
         yield* gitManager.invalidateStatus(project.workspaceRoot);
         // Preserve branch and path: ProviderTurnStartService recreates the checkout
         // from that branch when the thread is resumed.
+        // fork: project-lifecycle -- a deleted landed branch is recreated from the latest checkpoint.
         yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
       }).pipe(
         (effect) => withWorkspaceLease(worktreePath, effect),
@@ -1853,7 +2171,11 @@ const make = Effect.gen(function* () {
             (event.payload.status === "stopped" || event.payload.status === "error"))) &&
         (settlementCleanupEnabled() ||
           lastSettings.storageCleanup.projectAfterDays !== null ||
-          anyWorktreePolicy(lastSettings, worktreeCleanupEnabled))
+          // fork: project-lifecycle -- the default-on landing rule waits for the startup,
+          // settings and hourly sweeps, so ordinary thread events do not each start a sweep.
+          anyWorktreePolicy(lastSettings, (rules) =>
+            worktreeCleanupEnabled({ ...rules, worktreeOnLand: false }),
+          ))
           ? worker.requestSweep
           : Effect.void,
       ).pipe(

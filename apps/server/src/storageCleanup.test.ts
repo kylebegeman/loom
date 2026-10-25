@@ -578,6 +578,7 @@ const cleanupFixture = (
             ...settings.storageCleanup,
             worktreeAfterDays: null,
             worktreeOnDelete: false,
+            worktreeOnLand: false, // fork: project-lifecycle
           },
         };
       },

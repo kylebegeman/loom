@@ -69,6 +69,7 @@ describe("serverSettings helpers", () => {
       worktreeOnDelete: false,
       worktreeOnSettle: false,
       worktreeUnchanged: false,
+      worktreeOnLand: true, // fork: project-lifecycle
       worktreeKeepWhen: "uncommitted-changes",
       projectAfterDays: null,
       projectOnSettle: false,

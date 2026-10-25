@@ -71,6 +71,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "mini-worker-edit",
   "managed-project-checkouts",
   "project-checkout-management",
+  "landed-worktree-cleanup",
   "switchboard",
   "model-preview-3d",
   "model-ortho-camera",

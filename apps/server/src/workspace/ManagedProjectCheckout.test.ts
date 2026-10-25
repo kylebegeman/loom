@@ -184,6 +184,68 @@ describe("Managed primary project checkouts", () => {
       }),
     ),
   );
+  it.live("refuses release while a worktree made from the checkout still exists elsewhere", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const receipt = (yield* readManagedProjectCheckout(f.cwd))!;
+        const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+        const linked = `${f.parent}/linked`;
+        const gone = `${f.parent}/gone`;
+        yield* f.command(["worktree", "add", "-b", "linked", linked]);
+        yield* f.command(["worktree", "add", "-b", "gone", gone]);
+        yield* f.command(["worktree", "add", "-b", "inner", `${f.cwd}/inner`]);
+        yield* f.fs.remove(gone, { recursive: true });
+        const refused = yield* releaseManagedProjectCheckout(
+          receipt,
+          projectId,
+          recovery.archive,
+        ).pipe(Effect.flip);
+        expect(refused.message).toBe(
+          `Worktrees made from this project still exist: ${linked}. Land or remove them first. Releasing the project would break them.`,
+        );
+        const kept = (yield* readManagedProjectCheckout(f.cwd))!;
+        expect(kept.released).toBe(false);
+        expect(kept.removalPath).toBeNull();
+        expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("published content\n");
+        const branch = yield* runCheckoutProcess({
+          command: "git",
+          args: ["-C", linked, "rev-parse", "--abbrev-ref", "HEAD"],
+        });
+        expect(branch.stdout.trim()).toBe("linked");
+      }),
+    ),
+  );
+  it.live("refuses release while a locked worktree made from the checkout is unplugged", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const receipt = (yield* readManagedProjectCheckout(f.cwd))!;
+        const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+        const unplugged = `${f.parent}/volume/locked`;
+        const gone = `${f.parent}/gone`;
+        yield* f.command(["worktree", "add", "-b", "locked", unplugged]);
+        yield* f.command(["worktree", "lock", "--reason", "removable drive", unplugged]);
+        yield* f.command(["worktree", "add", "-b", "gone", gone]);
+        // Git reports a locked worktree whose drive is gone as locked, never as prunable.
+        yield* f.fs.rename(`${f.parent}/volume`, `${f.parent}/ejected`);
+        yield* f.fs.remove(gone, { recursive: true });
+        const refused = yield* releaseManagedProjectCheckout(
+          receipt,
+          projectId,
+          recovery.archive,
+        ).pipe(Effect.flip);
+        expect(refused.message).toBe(
+          `Worktrees made from this project still exist: ${unplugged}. Land or remove them first. Releasing the project would break them.`,
+        );
+        const kept = (yield* readManagedProjectCheckout(f.cwd))!;
+        expect(kept.released).toBe(false);
+        expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("published content\n");
+      }),
+    ),
+  );
   it.live("recovers after interrupted removal while preserving the remaining original folder", () =>
     run(
       Effect.gen(function* () {

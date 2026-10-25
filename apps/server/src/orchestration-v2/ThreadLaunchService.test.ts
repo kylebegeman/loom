@@ -51,6 +51,9 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
+import type { LibraryResolvedBinding } from "@t3tools/contracts/fork"; // fork: library-projects
+import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
+import { LibraryWorkspaceStore } from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -140,6 +143,7 @@ interface HarnessOptions {
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly libraryFolderGuard?: Layer.Layer<LibraryFolderGuard.LibraryFolderGuard>; // fork: library-projects
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -245,6 +249,7 @@ function makeHarness(options: HarnessOptions = {}) {
         layerThreadManagement,
         layerReceipts,
         IdAllocator.layer,
+        options.libraryFolderGuard ?? Layer.empty, // fork: library-projects
       ),
     ),
   );
@@ -2170,6 +2175,83 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
     );
     assert.equal(harness.createWorktree.mock.calls.length, 0);
     assert.equal(harness.runSetup.mock.calls.length, 0);
+  }).pipe(Effect.provide(harness.layer));
+});
+
+// fork: library-projects
+it.effect("refuses a worktree for a Library conversation before creating it", () => {
+  const boundThreadId = ThreadId.make("thread:launch:library-bound");
+  const binding: LibraryResolvedBinding = {
+    cwd: "/library/copy",
+    localProjectId: projectId,
+    repositoryPaths: ["/library/copy"],
+    binding: {
+      projectId: "library-project",
+      projectRevision: 1,
+      workingCopyId: "copy",
+      environmentId: EnvironmentId.make("environment:launch-test"),
+      resourceIds: [],
+    },
+  };
+  const harness = makeHarness({
+    libraryFolderGuard: LibraryFolderGuard.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(LibraryWorkspaceStore)({
+            getBinding: (threadId) => Effect.succeed(threadId === boundThreadId ? binding : null),
+          }),
+          Layer.mock(ProjectStore.ProjectStoreV2)({}),
+          NodeServices.layer,
+        ),
+      ),
+    ),
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const launchInto = Effect.fnUntraced(function* (threadId: ThreadId, command: string) {
+      yield* threads.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`${command}:create`),
+        threadId,
+        projectId,
+        title: "Conversation",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* launches.launch({
+        ...launchInput({
+          command,
+          thread: threadId,
+          message: "Work on a branch",
+          workspace: { type: "worktree", baseRef: "main" },
+        }),
+        reuseExistingThread: true,
+      });
+      return yield* preparationSettled(threadId);
+    });
+
+    const bound = yield* launchInto(boundThreadId, "command:launch:library-bound");
+    assert.equal(bound.runs[0]?.status, "failed");
+    assert.equal(
+      bound.turnItems.find((item) => item.type === "error")?.failure.message,
+      LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
+    );
+    assert.isNull(bound.thread.worktreePath);
+    assert.equal(harness.createWorktree.mock.calls.length, 0);
+
+    const unbound = yield* launchInto(
+      ThreadId.make("thread:launch:library-unbound"),
+      "command:launch:library-unbound",
+    );
+    assert.equal(unbound.runs[0]?.status, "starting");
+    assert.equal(unbound.thread.worktreePath, "/repo-worktrees/feature");
+    assert.equal(harness.createWorktree.mock.calls.length, 1);
   }).pipe(Effect.provide(harness.layer));
 });
 

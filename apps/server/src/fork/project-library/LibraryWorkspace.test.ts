@@ -2039,6 +2039,167 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(yield* fs.readFileString(path.join(rootPath, "notes.md"))).toBe("work to preserve");
     }),
   );
+  it.effect("keeps managed files while a Git worktree made from them exists outside", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const webSource = path.join(parent, "web-source");
+      yield* initRepo(webSource);
+      cloneSources.set("https://example.test/linked/web.git", webSource);
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const rootPath = path.join(parent, "copy");
+      const copy = yield* service.prepareCopy({
+        requestId: "linked-worktree-prepare",
+        project: makeProject([
+          {
+            id: "web",
+            title: "Web",
+            relativePath: "web",
+            remoteUrl: "https://example.test/linked/web.git",
+            defaultBranch: "main",
+          },
+        ]),
+        rootPath,
+        strategy: "clone",
+      });
+      expect(copy.ownership).toBe("managed");
+      const repository = copy.repositories[0]!.path;
+      const outside = path.join(parent, "worktrees", "web", "feature");
+      const inside = path.join(rootPath, "inside");
+      yield* git(repository, ["worktree", "add", "-b", "feature", outside]);
+      yield* git(repository, ["worktree", "add", "-b", "inside", inside]);
+
+      const blocked = yield* service.status({ workingCopyId: copy.id });
+      expect(blocked.blockers).toEqual([]);
+      expect(blocked.releaseBlockers).toHaveLength(1);
+      expect(blocked.releaseBlockers![0]).toContain(outside);
+      expect(blocked.releaseBlockers![0]).not.toContain(inside);
+      // Saving never deletes, so the worktree only stops removal.
+      const saved = yield* service.snapshotCopy({
+        requestId: "linked-worktree-snapshot",
+        workingCopyId: copy.id,
+        reviewToken: blocked.reviewToken!,
+      });
+      expect(saved.recovery).toBeDefined();
+      const refused = yield* service
+        .release({
+          requestId: "linked-worktree-release",
+          workingCopyId: copy.id,
+          reviewToken: blocked.reviewToken!,
+        })
+        .pipe(Effect.flip);
+      expect(refused).toMatchObject({ reason: "blocked", detail: blocked.releaseBlockers![0] });
+      expect(yield* fs.exists(path.join(repository, ".git"))).toBe(true);
+      expect(yield* git(outside, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("feature");
+
+      // A removed worktree leaves only prunable metadata, which removal cannot break further.
+      yield* fs.remove(outside, { recursive: true });
+      const cleared = yield* service.status({ workingCopyId: copy.id });
+      expect(cleared.blockers).toEqual([]);
+      expect(cleared.releaseBlockers).toEqual([]);
+      const released = yield* service.release({
+        requestId: "linked-worktree-release-cleared",
+        workingCopyId: copy.id,
+        reviewToken: cleared.reviewToken!,
+      });
+      expect(released.state).toBe("released");
+      expect(yield* fs.exists(rootPath)).toBe(false);
+    }),
+  );
+  const prepareManagedWeb = Effect.fnUntraced(function* (name: string) {
+    const parent = yield* makeTemp;
+    const path = yield* Path.Path;
+    const webSource = path.join(parent, "web-source");
+    yield* initRepo(webSource);
+    const remoteUrl = `https://example.test/${name}/web.git`;
+    cloneSources.set(remoteUrl, webSource);
+    const service = yield* LibraryWorkspace.LibraryWorkspace;
+    const rootPath = path.join(parent, "copy");
+    const copy = yield* service.prepareCopy({
+      requestId: `${name}-prepare`,
+      project: makeProject([
+        { id: "web", title: "Web", relativePath: "web", remoteUrl, defaultBranch: "main" },
+      ]),
+      rootPath,
+      strategy: "clone",
+    });
+    expect(copy.ownership).toBe("managed");
+    return { parent, rootPath, copy, service };
+  });
+  it.effect("keeps managed files while a locked worktree made from them is unplugged", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const { parent, copy, service } = yield* prepareManagedWeb("locked-worktree");
+      const repository = copy.repositories[0]!.path;
+      const unplugged = path.join(parent, "volume", "feature");
+      const gone = path.join(parent, "gone");
+      yield* git(repository, ["worktree", "add", "-b", "feature", unplugged]);
+      yield* git(repository, ["worktree", "lock", "--reason", "removable drive", unplugged]);
+      yield* git(repository, ["worktree", "add", "-b", "gone", gone]);
+      // Git reports a locked worktree whose drive is gone as locked, never as prunable.
+      yield* fs.rename(path.join(parent, "volume"), path.join(parent, "ejected"));
+      yield* fs.remove(gone, { recursive: true });
+
+      const blocked = yield* service.status({ workingCopyId: copy.id });
+      expect(blocked.blockers).toEqual([]);
+      expect(blocked.releaseBlockers).toHaveLength(1);
+      expect(blocked.releaseBlockers![0]).toContain(unplugged);
+      expect(blocked.releaseBlockers![0]).not.toContain(gone);
+      const refused = yield* service
+        .release({
+          requestId: "locked-worktree-release",
+          workingCopyId: copy.id,
+          reviewToken: blocked.reviewToken!,
+        })
+        .pipe(Effect.flip);
+      expect(refused).toMatchObject({ reason: "blocked", detail: blocked.releaseBlockers![0] });
+      expect(yield* fs.exists(path.join(repository, ".git"))).toBe(true);
+
+      // Unlocked, the missing worktree is prunable like any other removed one.
+      yield* git(repository, ["worktree", "unlock", unplugged]);
+      const cleared = yield* service.status({ workingCopyId: copy.id });
+      expect(cleared.releaseBlockers).toEqual([]);
+    }),
+  );
+  it.effect("keeps managed files while a clone nested inside them has a worktree outside", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const { parent, rootPath, copy, service } = yield* prepareManagedWeb("nested-worktree");
+      const nested = path.join(rootPath, "vendor", "lib");
+      const outside = path.join(parent, "lib-feature");
+      yield* initRepo(nested);
+      yield* git(nested, ["worktree", "add", "-b", "feature", outside]);
+
+      const blocked = yield* service.status({ workingCopyId: copy.id });
+      expect(blocked.blockers).toEqual([]);
+      expect(blocked.releaseBlockers).toHaveLength(1);
+      expect(blocked.releaseBlockers![0]).toContain(outside);
+      const refused = yield* service
+        .release({
+          requestId: "nested-worktree-release",
+          workingCopyId: copy.id,
+          reviewToken: blocked.reviewToken!,
+        })
+        .pipe(Effect.flip);
+      expect(refused).toMatchObject({ reason: "blocked", detail: blocked.releaseBlockers![0] });
+      expect(yield* git(outside, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("feature");
+
+      yield* git(nested, ["worktree", "remove", outside]);
+      const cleared = yield* service.status({ workingCopyId: copy.id });
+      expect(cleared.blockers).toEqual([]);
+      expect(cleared.releaseBlockers).toEqual([]);
+      const released = yield* service.release({
+        requestId: "nested-worktree-release-cleared",
+        workingCopyId: copy.id,
+        reviewToken: cleared.reviewToken!,
+      });
+      expect(released.state).toBe("released");
+      expect(yield* fs.exists(rootPath)).toBe(false);
+    }),
+  );
   it.effect("names why new files cannot be prepared", () =>
     Effect.gen(function* () {
       const rootPath = yield* makeTemp;

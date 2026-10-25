@@ -246,6 +246,61 @@ export const archiveManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.a
   return { input, archive };
 }, mapFailure);
 
+const LISTED_WORKTREES = 3;
+
+/**
+ * Linked worktrees outside the checkout keep their Git metadata inside it, so removing the
+ * checkout breaks them and strands their work. Only an entry Git marks prunable is already
+ * broken. A locked one may sit on unplugged media, which Git never calls prunable, so a locked
+ * or unreadable entry counts as outside.
+ */
+const externalLinkedWorktrees = Effect.fn("ManagedProjectCheckout.externalWorktrees")(function* (
+  workspaceRoot: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const list = (format: ReadonlyArray<string>) =>
+    runCheckoutProcess({
+      command: "git",
+      args: ["-C", workspaceRoot, "worktree", "list", "--porcelain", ...format],
+      timeout: "30 seconds",
+      maxOutputBytes: 1024 * 1024,
+      outputMode: "truncate",
+    });
+  // Git before 2.36 rejects -z; its line form differs only in the separator.
+  const terminated = yield* list(["-z"]);
+  const listed = terminated.code === 0 ? terminated : yield* list([]);
+  if (listed.code !== 0 || listed.stdoutTruncated)
+    return yield* fail("The project's linked worktrees could not be listed.");
+  const entries: Array<{ path: string; prunable: boolean; locked: boolean }> = [];
+  for (const field of listed.stdout.split(terminated.code === 0 ? "\0" : "\n")) {
+    const entry = entries.at(-1);
+    if (field.startsWith("worktree "))
+      entries.push({ path: field.slice("worktree ".length), prunable: false, locked: false });
+    else if (entry === undefined) continue;
+    else if (field === "prunable" || field.startsWith("prunable ")) entry.prunable = true;
+    else if (field === "locked" || field.startsWith("locked ")) entry.locked = true;
+  }
+  const external: string[] = [];
+  for (const entry of entries) {
+    if (entry.locked) {
+      external.push(entry.path);
+      continue;
+    }
+    if (entry.prunable) continue;
+    const actual = yield* fs.realPath(entry.path).pipe(Effect.orElseSucceed(() => null));
+    const relative = actual === null ? null : path.relative(workspaceRoot, actual);
+    if (
+      relative === null ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    )
+      external.push(entry.path);
+  }
+  return external.toSorted();
+});
+
 /** A durable tombstone makes a crash during recursive removal recoverable. */
 export const releaseManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.release")(function* (
   receipt: ManagedProjectCheckoutReceipt,
@@ -260,6 +315,13 @@ export const releaseManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
     return yield* fail(
       "A previous project recovery folder is retained; inspect it before releasing again.",
     );
+  const linked = yield* externalLinkedWorktrees(receipt.workspaceRoot);
+  if (linked.length > 0) {
+    const more = linked.length - LISTED_WORKTREES;
+    return yield* fail(
+      `Worktrees made from this project still exist: ${linked.slice(0, LISTED_WORKTREES).join(", ")}${more > 0 ? ` and ${more} more` : ""}. Land or remove them first. Releasing the project would break them.`,
+    );
+  }
   if (!(yield* scratchArchiveMatches(archive)))
     return yield* fail("The project changed while archiving.");
   const removalPath = `${receipt.workspaceRoot}.t3-released-${yield* randomUuidV4}`;
