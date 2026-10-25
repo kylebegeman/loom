@@ -289,6 +289,7 @@ export const make = Effect.gen(function* () {
     threadId?: ThreadId,
   ) {
     const sweepGeneration = settingsGeneration; // fork: server-weight
+    yield* Effect.annotateCurrentSpan({ candidates: 0, settled: 0 }); // fork: server-weight
     const settings = yield* settingsService.getSettings;
     // fork: server-weight
     const decisionSettings = Effect.suspend(() =>
@@ -310,7 +311,10 @@ export const make = Effect.gen(function* () {
     // sweep on a possibly stale cached answer.
     const candidates = threads.filter((thread) => isAutoSettlementCandidate(thread, nowMs));
 
-    const settleThread = Effect.fn("ThreadSettlementServiceV2.settleThread")(
+    // fork: server-weight -- the sweep covers hundreds of cheap candidate decisions.
+    let settledCount = 0;
+    yield* Effect.annotateCurrentSpan({ candidates: candidates.length });
+    const settleThread = Effect.fnUntraced(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {
         const currentSettings = resolveProjectSettings(
           yield* decisionSettings, // fork: server-weight
@@ -334,6 +338,8 @@ export const make = Effect.gen(function* () {
           snapshotAt: thread.updatedAt,
           settledAt,
         });
+        // fork: server-weight
+        settledCount += 1;
         return null;
       },
       (effect, thread) =>
@@ -512,6 +518,8 @@ export const make = Effect.gen(function* () {
         ),
       { concurrency: 8, discard: true },
     );
+    // fork: server-weight
+    yield* Effect.annotateCurrentSpan({ settled: settledCount });
   });
 
   const runSweep = (

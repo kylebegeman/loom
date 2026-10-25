@@ -1,3 +1,5 @@
+// fork: server-weight
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -129,6 +131,14 @@ export const SecretStoreError = Schema.Union([
 export type SecretStoreError = typeof SecretStoreError.Type;
 export const isSecretStoreError = Schema.is(SecretStoreError);
 
+// fork: server-weight -- only descriptor readiness values are cached; other secrets stay disk-backed.
+const READINESS_SECRET_NAMES = [
+  "cloud-publish-agent-activity",
+  "cloud-relay-url",
+  "cloud-relay-environment-credential",
+];
+const READINESS_SECRET_TTL_MS = 5_000;
+
 const isPlatformError = (value: unknown): value is PlatformError.PlatformError =>
   Predicate.isTagged(value, "PlatformError");
 
@@ -170,7 +180,8 @@ export const make = Effect.gen(function* () {
 
   const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
 
-  const get: ServerSecretStore["Service"]["get"] = (name) =>
+  // fork: server-weight -- per-read spans obscure the operations that consume secrets.
+  const read: ServerSecretStore["Service"]["get"] = (name) =>
     fileSystem.readFile(resolveSecretPath(name)).pipe(
       Effect.map((bytes) => Option.some(Uint8Array.from(bytes))),
       Effect.catch((cause) =>
@@ -183,8 +194,62 @@ export const make = Effect.gen(function* () {
               }),
             ),
       ),
-      Effect.withSpan("ServerSecretStore.get"),
     );
+
+  // fork: server-weight -- stale reads refresh off the readiness path. Generation checks prevent
+  // a read already in flight from undoing a successful local write or removal.
+  const clock = yield* Clock.Clock;
+  const scope = yield* Effect.scope;
+  const cached = new Map<string, { value: Option.Option<Uint8Array>; expiresAt: number }>();
+  const refreshing = new Set<string>();
+  const copy = (value: Option.Option<Uint8Array>) =>
+    Option.map(value, (bytes) => Uint8Array.from(bytes));
+  const updateCached = (name: string, value: Option.Option<Uint8Array>) => {
+    if (READINESS_SECRET_NAMES.includes(name)) {
+      cached.set(name, {
+        value: copy(value),
+        expiresAt: clock.currentTimeMillisUnsafe() + READINESS_SECRET_TTL_MS,
+      });
+    }
+  };
+  yield* Effect.forEach(
+    READINESS_SECRET_NAMES,
+    (name) =>
+      read(name).pipe(
+        Effect.tap((value) => Effect.sync(() => updateCached(name, value))),
+        Effect.ignore,
+      ),
+    { concurrency: "unbounded", discard: true },
+  );
+  const get: ServerSecretStore["Service"]["get"] = Effect.fnUntraced(function* (name) {
+    if (!READINESS_SECRET_NAMES.includes(name)) return yield* read(name);
+    const entry = cached.get(name);
+    if (entry === undefined) {
+      const value = yield* read(name);
+      if (!cached.has(name)) updateCached(name, value);
+      return copy(cached.get(name)?.value ?? value);
+    }
+    if (entry.expiresAt <= clock.currentTimeMillisUnsafe() && !refreshing.has(name)) {
+      refreshing.add(name);
+      yield* read(name).pipe(
+        Effect.tap((value) =>
+          Effect.sync(() => {
+            if (cached.get(name) === entry) updateCached(name, value);
+          }),
+        ),
+        Effect.ignore,
+        Effect.ensuring(
+          Effect.sync(() => {
+            refreshing.delete(name);
+            if (cached.get(name) === entry)
+              entry.expiresAt = clock.currentTimeMillisUnsafe() + READINESS_SECRET_TTL_MS;
+          }),
+        ),
+        Effect.forkIn(scope),
+      );
+    }
+    return copy(entry.value);
+  });
 
   const set: ServerSecretStore["Service"]["set"] = (name, value) => {
     const secretPath = resolveSecretPath(name);
@@ -219,6 +284,8 @@ export const make = Effect.gen(function* () {
           ),
         );
       }),
+      // fork: server-weight
+      Effect.tap(() => Effect.sync(() => updateCached(name, Option.some(value)))),
       Effect.withSpan("ServerSecretStore.set"),
     );
   };
@@ -243,6 +310,8 @@ export const make = Effect.gen(function* () {
             cause,
           }),
       ),
+      // fork: server-weight
+      Effect.tap(() => Effect.sync(() => updateCached(name, Option.some(value)))),
     );
   };
 
@@ -300,6 +369,8 @@ export const make = Effect.gen(function* () {
               }),
             ),
       ),
+      // fork: server-weight
+      Effect.tap(() => Effect.sync(() => updateCached(name, Option.none()))),
       Effect.withSpan("ServerSecretStore.remove"),
     );
 
