@@ -1,4 +1,9 @@
-import { ModelSelection, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  OrchestrationV2ProviderFailureClass,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   BotDefinitionInput,
   BotLibraryLink,
@@ -94,6 +99,8 @@ export interface RunRow {
   readonly remote_request_id?: string | null;
   readonly ran_on_json?: string | null;
   readonly requested_by_json?: string | null;
+  readonly delivered_at?: string | null;
+  readonly failure_class?: string | null;
 }
 
 /** The definition as stored: what a client may send, plus the server-owned origin. */
@@ -141,6 +148,7 @@ const isSavedBy = Schema.is(BotVersionSavedBy);
 const isRating = Schema.is(BotRunRating);
 const isStatus = Schema.is(BotRunStatus);
 const isUsageStatus = Schema.is(BotRunUsage.fields.status);
+const isFailureClass = Schema.is(OrchestrationV2ProviderFailureClass);
 
 const toUsage = (row: RunRow): BotRunUsage | null =>
   isUsageStatus(row.usage_status)
@@ -219,7 +227,9 @@ export const toRun = (row: RunRow): BotRun | null => {
     result: row.result,
     resultTruncated: Number(row.result_truncated) === 1,
     error: row.error,
+    ...(isFailureClass(row.failure_class) ? { failureClass: row.failure_class } : {}),
     ...(Number(row.notify) === 1 ? { notify: true } : {}),
+    ...(row.delivered_at == null ? {} : { deliveredAt: row.delivered_at }),
     // A verdict this version cannot read leaves the run without one; the run itself still stands.
     ...(row.verdict_json === null
       ? {}
@@ -264,6 +274,10 @@ const inboxCondition = (sql: SqlClient.SqlClient, dismissed: boolean) =>
     dismissed ? sql`dismissed_at IS NOT NULL` : sql`dismissed_at IS NULL`,
     sql`((pipeline_run_id IS NULL AND (status IN ('failed', 'timed_out') OR (status = 'completed' AND verdict = 'needs_attention'))) OR (pipeline_run_id IS NOT NULL AND pipeline_stopped = 1))`,
   ]);
+
+/** `isBotRunHandledByCaller` in SQL. */
+const handledCondition = (sql: SqlClient.SqlClient) =>
+  sql`started_by = 'agent' AND notify = 1 AND caller_thread_id IS NOT NULL AND delivered_at IS NOT NULL`;
 
 const definitionFields = ({
   version: _version,
@@ -466,7 +480,7 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
     saveRun: Effect.fn("BotsStore.saveRun")(function* (run: BotRun) {
-      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)}, input_tokens = ${run.usage?.inputTokens ?? null}, cached_input_tokens = ${run.usage?.cachedInputTokens ?? null}, output_tokens = ${run.usage?.outputTokens ?? null}, usage_status = ${run.usage?.status ?? null} WHERE id = ${run.id}`;
+      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, failure_class = ${run.failureClass ?? null}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)}, input_tokens = ${run.usage?.inputTokens ?? null}, cached_input_tokens = ${run.usage?.cachedInputTokens ?? null}, output_tokens = ${run.usage?.outputTokens ?? null}, usage_status = ${run.usage?.status ?? null} WHERE id = ${run.id}`;
     }),
 
     /** Records that the result was posted, or why it was not, so it is attempted once. */
@@ -474,8 +488,9 @@ export const makeBotsStore = Effect.gen(function* () {
       id: string,
       at: string,
       error: string | null,
+      delivered: boolean,
     ) {
-      yield* sql`UPDATE fork_bots_runs SET notified_at = ${at}, error = ${error} WHERE id = ${id}`;
+      yield* sql`UPDATE fork_bots_runs SET notified_at = ${at}, delivered_at = ${delivered ? at : null}, error = ${error} WHERE id = ${id}`;
     }),
 
     /** Finished runs that asked for their result to be posted and were never delivered. */
@@ -525,10 +540,12 @@ export const makeBotsStore = Effect.gen(function* () {
         yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE ${page} ORDER BY created_at DESC, id DESC LIMIT ${input.limit + 1}`;
       const counted = yield* sql<{
         total: number;
-      }>`SELECT COUNT(*) AS total FROM fork_bots_runs WHERE ${matches}`;
+        handled: number | null;
+      }>`SELECT COUNT(*) AS total, SUM(CASE WHEN ${handledCondition(sql)} THEN 1 ELSE 0 END) AS handled FROM fork_bots_runs WHERE ${matches}`;
       return {
         runs: rows.slice(0, input.limit).flatMap((row) => toRun(row) ?? []),
         total: Number(counted[0]?.total ?? 0),
+        handled: Number(counted[0]?.handled ?? 0),
         hasMore: rows.length > input.limit,
       };
     }),

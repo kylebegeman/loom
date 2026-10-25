@@ -86,7 +86,8 @@ Open a bot and choose **Run**. The form asks for each input and, when the bot do
 project, which project to run in. A bot that runs in the checkout it is run for also asks which
 checkout: the project root or the worktree of one of the project's threads.
 
-Bot runs stay out of the thread list and do not send completion notifications.
+Bot runs stay out of the thread list and do not send completion or failure notifications. A run
+that stops to ask for an approval or an answer does notify you.
 
 ## Runs
 
@@ -142,6 +143,11 @@ footer says there are some.
 
 - A run that stops to ask for an approval or an answer is **Waiting on you**, because nobody would
   see the question otherwise. **Answer** opens its thread.
+- A failed run names how its provider failed when it said, such as **Usage limit** or
+  **Connection dropped**, and its error gives the provider's reason.
+- A run an agent started that posted its result back to that agent's thread is **Handled by the
+  calling agent**: the agent already has the outcome. The group stays folded at the bottom and
+  does not count toward the sidebar dot. **Dismiss N** clears it.
 - **Retry** runs the bot again with the same inputs. **Retry on another model…** in a run's side
   panel does the same on a model you choose for that one retry; the bot keeps its own model. A
   retried run leaves Needs you, and a run from a batch hands its place in the batch to the retry.

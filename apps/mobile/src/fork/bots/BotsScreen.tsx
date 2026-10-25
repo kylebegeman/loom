@@ -11,6 +11,7 @@ import {
 import {
   applyInboxChanges,
   botVersionLabel,
+  inboxNeedsPersonCount,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -170,9 +171,12 @@ function BotsCatalog({
   );
   useBotsReconnect(capabilities.connected, inbox.refresh);
   useBotsReconnect(capabilities.connected, starters.refresh);
+  // Runs their calling agent already has stay in the inbox but need no one.
   const attention =
     (inbox.data
-      ? applyInboxChanges(inbox.data, collection.changes, { dismissed: false }).total
+      ? inboxNeedsPersonCount(
+          applyInboxChanges(inbox.data, collection.changes, { dismissed: false }),
+        )
       : 0) + waiting.length;
   const filtered = collection.bots.filter(
     (bot) =>

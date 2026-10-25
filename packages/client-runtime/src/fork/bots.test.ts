@@ -39,6 +39,7 @@ import {
   foldBotTriggerChange,
   foldBotsChange,
   formatReplaySummary,
+  inboxNeedsPersonCount,
   isBotTriageRun,
   makeThreadBotRunsAtom,
   type BotsChanges,
@@ -427,6 +428,36 @@ describe("bots inbox", () => {
       { dismissed: true },
     );
     expect(dismissed).toMatchObject({ total: 1, runs: [{ id: "r1" }] });
+  });
+
+  it("keeps the handled count current as an agent's result reaches it or the run leaves", () => {
+    const agent = (id: string, fields: Partial<BotRun> = {}) =>
+      failed(id, "2026-10-20T11:00:00.000Z", {
+        startedBy: "agent",
+        callerThreadId: ThreadId.make("chat"),
+        notify: true,
+        ...fields,
+      });
+    const page = {
+      runs: [agent("handled", { deliveredAt: "x" }), agent("pending")],
+      total: 2,
+      handled: 1,
+      hasMore: false,
+    };
+    const inbox = applyInboxChanges(
+      page,
+      fold(
+        { _tag: "run", run: agent("pending", { deliveredAt: "y" }) },
+        { _tag: "run", run: agent("handled", { deliveredAt: "x", dismissedAt: "z" }) },
+      ),
+      { dismissed: false },
+    );
+    expect(inbox).toMatchObject({ total: 1, handled: 1, runs: [{ id: "pending" }] });
+    expect(inboxNeedsPersonCount(inbox)).toBe(0);
+    // An older server sends no handled count, so every run still asks someone.
+    const { handled: _handled, ...older } = page;
+    expect(applyInboxChanges(older, fold(), { dismissed: false }).handled).toBeUndefined();
+    expect(inboxNeedsPersonCount(older)).toBe(2);
   });
 
   it("keeps a dismissed step that stopped its pipeline in Dismissed, whatever its verdict", () => {

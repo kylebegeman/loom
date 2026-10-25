@@ -126,7 +126,7 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_inbox", {
     description:
-      "List bot runs that need a person, newest first: failed and timed-out runs, and verdict runs that ended needs_attention. Each run carries its error or verdict, inputs and the model it used. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
+      "List bot runs that need a person, newest first: failed and timed-out runs, and verdict runs that ended needs_attention. Each run carries its error or verdict, inputs and the model it used. handled counts the runs whose result already reached the agent that started them (deliveredAt is set). Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
     parameters: Schema.Struct({
       limit: Schema.optionalKey(
         Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
@@ -135,6 +135,7 @@ export const BotsToolkit = Toolkit.make(
     success: Schema.Struct({
       runs: Schema.Array(BotRun),
       total: Schema.Int,
+      handled: Schema.optionalKey(Schema.Int),
       hasMore: Schema.Boolean,
     }),
     failure,

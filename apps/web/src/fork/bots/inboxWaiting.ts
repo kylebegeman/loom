@@ -1,5 +1,7 @@
+import type { OrchestrationV2ProviderFailureClass } from "@t3tools/contracts";
 import {
   BOT_RUN_THREAD_PREFIX,
+  isBotRunHandledByCaller,
   isBotRunThreadId,
   isTerminalBotRunStatus,
   type BotDefinition,
@@ -28,6 +30,7 @@ export const combineTriagePages = (
   return {
     runs,
     total: first.total,
+    ...(first.handled === undefined ? {} : { handled: first.handled }),
     hasMore: older.before === null ? first.hasMore : (older.page?.hasMore ?? true),
   };
 };
@@ -42,10 +45,17 @@ export type TriageReason =
   | "invalid"
   | "pipeline";
 
-export type TriageGroup = "waiting" | "failed" | "undecided" | "pipeline";
+/** `handled` holds runs whose calling agent already has the outcome; they need no one. */
+export type TriageGroup = "waiting" | "failed" | "undecided" | "pipeline" | "handled";
 
 /** Most urgent first: a run paused on a person blocks work that is otherwise going. */
-export const TRIAGE_GROUPS: readonly TriageGroup[] = ["waiting", "failed", "undecided", "pipeline"];
+export const TRIAGE_GROUPS: readonly TriageGroup[] = [
+  "waiting",
+  "failed",
+  "undecided",
+  "pipeline",
+  "handled",
+];
 
 type RunReason = Exclude<TriageReason, "approval" | "question">;
 
@@ -103,7 +113,7 @@ export const triageRunItem = (run: BotRun): TriageItem => {
     kind: "run",
     key: `run:${run.id}`,
     reason,
-    group: GROUP_OF[reason],
+    group: isBotRunHandledByCaller(run) ? "handled" : GROUP_OF[reason],
     run,
     botId: run.botId,
     botName: run.botName,
@@ -176,6 +186,9 @@ export function groupTriage(items: readonly TriageItem[]): TriageSection[] {
 /** The queue in reading order across groups, for a band that shows only its head. */
 export const orderTriage = (items: readonly TriageItem[]): TriageItem[] =>
   groupTriage(items).flatMap((section) => section.items);
+
+/** Whether the item still asks a person, unlike a run its calling agent already has. */
+export const needsPerson = (item: TriageItem) => item.group !== "handled";
 
 export interface TriageEntry {
   readonly lead: TriageItem;
@@ -273,7 +286,20 @@ const REASON_LABELS: Record<TriageReason, string> = {
   pipeline: "Stopped its pipeline",
 };
 
-export const triageReasonLabel = (reason: TriageReason) => REASON_LABELS[reason];
+const FAILURE_LABELS: Record<OrchestrationV2ProviderFailureClass, string> = {
+  usage_limit: "Usage limit",
+  provider_error: "Provider error",
+  transport_error: "Connection dropped",
+  permission_error: "Permission refused",
+  validation_error: "Request rejected",
+  unknown: "Failed",
+};
+
+/** The item's reason word; a failed run names how its provider failed, when that is known. */
+export const triageReasonLabel = (item: TriageItem) =>
+  item.kind === "run" && item.reason === "failed" && item.run.failureClass != null
+    ? FAILURE_LABELS[item.run.failureClass]
+    : REASON_LABELS[item.reason];
 
 const FALLBACK_EVIDENCE: Record<RunReason, string> = {
   failed: "No error was recorded.",
