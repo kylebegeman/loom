@@ -35,6 +35,14 @@ also instruments it
 ([`RpcInstrumentation.ts`](../../apps/server/src/observability/RpcInstrumentation.ts)). A handler
 with per-call context, such as a thread id, adds it with `Effect.annotateCurrentSpan`.
 
+<!-- fork: project-lifecycle -->
+
+The core handler map in `ws.ts` sits at the compiler's instantiation limit. One more handler makes
+`Ws.layer` infer as `Layer<never, never, any>`, and the only visible error is `TS377030` (any in the
+requirements channel) in `server.ts`. The real `TS2589` shows only with `tsc --checkers 1`, because
+the checker that infers the type does not own `ws.ts` and drops the error. Serve a new RPC from its
+own group and `toLayer`, as `CheckpointRestoreRpcGroup` does, or from a fork group.
+
 ## Shape of a service module
 
 One module per service, in this order: imports, errors and schemas, the `Context.Service` tag with
