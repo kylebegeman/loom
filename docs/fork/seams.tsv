@@ -147,6 +147,7 @@ apps/mobile/src/App.tsx	library-push	2
 apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	library-push	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-push	2
 apps/mobile/src/state/use-remote-environment-registry.ts	library-push	2
+docs/user/mobile-notifications.md	library-push	1
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3

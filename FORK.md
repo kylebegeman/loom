@@ -447,8 +447,9 @@ registration coordinator next to `SubscriptionUsageCoordinator`.
 upstream's own early return in a build without Connect config, and appends the Library section
 to the Connect variant. `SettingsRouteScreen.tsx` (2) adds a Notifications row to the Local
 settings variant, which has none. `use-remote-environment-registry.ts` (2) asks the Library to
-forget the phone before the iPhone's Remove revokes the session that request needs. The Library
-server, web and the rest of the iPhone work are fork-owned. See the
+forget the phone before the iPhone's Remove revokes the session that request needs.
+`docs/user/mobile-notifications.md` (1) points Loom readers to agent alerts from their Library.
+The Library server, web and the rest of the iPhone work are fork-owned. See the
 [L115 packet](docs/fork/packets/L115-push/SEAMS.md).
 
 L116 `telemetry-off` seams stop Loom sending product analytics to T3. `AnalyticsService.ts` (1)
