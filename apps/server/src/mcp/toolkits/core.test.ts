@@ -194,13 +194,15 @@ it.effect("returns a bounded public failure without serializing storage causes",
     expect(declaredFailure(result)).toEqual({
       _tag: "OrchestratorMcpFailure",
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      message:
+        "Loom could not load the thread. Try once more, and tell the user if it fails again.", // fork: mcp-refusals
     });
     expect(result.isError).toBe(true);
     expect(result.content).toEqual([
       {
         type: "text",
-        text: '{"_tag":"OrchestratorMcpFailure","code":"orchestration_error","message":"The operation could not be completed."}',
+        // fork: mcp-refusals
+        text: '{"_tag":"OrchestratorMcpFailure","code":"orchestration_error","message":"Loom could not load the thread. Try once more, and tell the user if it fails again."}',
       },
     ]);
     const definition = server.tools.find(({ tool }) => tool.name === "t3_thread_organize");
@@ -252,20 +254,24 @@ it("bounds public command rejections and redacts internal dispatch causes", () =
   ]) {
     expect(dispatchFailure(new OrchestratorDispatchError({ ...command, cause }))).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      // fork: mcp-refusals
+      message:
+        "Loom could not save this change. Read the thread with t3_thread_read to see whether it applied before trying again.",
     });
     expect(
       dispatchFailure(new OrchestratorCommandRejectedError({ ...command, cause })),
     ).toMatchObject({
       code: "orchestration_error",
-      message: "The operation could not be completed.",
+      // fork: mcp-refusals
+      message:
+        "Loom refused this change. Read the thread's current state with t3_thread_read before trying again.",
     });
   }
   expect(
     dispatchFailure(new OrchestratorProjectionError({ threadId, cause: "private-storage-path" })),
   ).toMatchObject({
     code: "orchestration_error",
-    message: "The operation could not be completed.",
+    message: "Loom could not load the thread. Try once more, and tell the user if it fails again.", // fork: mcp-refusals
   });
 });
 

@@ -234,6 +234,11 @@ export const isLiveCallerShell = (
     ) ??
       false));
 
+// fork: mcp-refusals -- a provider process can outlive its turn, as a background subagent or one
+// left over from before a restart does, and only the thread's next turn gives it a run to act for.
+export const ENDED_RUN_REPAIR =
+  "Your turn has ended: put what you need in your final reply, and call this tool again in the thread's next turn.";
+
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
   switch (error._tag) {
@@ -1194,7 +1199,7 @@ const make = Effect.gen(function* () {
   ) => {
     const notActive = failure(
       "parent_not_active",
-      "The calling provider no longer owns an active thread run.",
+      `The calling provider no longer owns an active thread run. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
     );
     const activeRun = ThreadManagementService.latestActiveRun(parent);
     if (parent.thread.archivedAt === null && activeRun === undefined) {
@@ -1899,7 +1904,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Asking for a secret requires an active run owned by this MCP provider session.",
+          `Asking for a secret requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const runId = run.id;
@@ -2097,7 +2102,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Delegated tasks require an active run owned by this MCP provider session.",
+          `Delegated tasks require an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const providers = yield* loadProviders;
@@ -2445,7 +2450,7 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Thread creation requires an active run owned by this MCP provider session.",
+            `Thread creation requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
           );
         }
         const parentNodeId = parentRun.rootNodeId;
