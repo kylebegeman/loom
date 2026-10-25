@@ -490,6 +490,9 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
+  // fork: mobile-surface-hint
+  readonly creationSource?: OrchestrationV2ThreadProjection["messages"][number]["creationSource"];
+  readonly promptCommandHandled?: boolean;
   readonly restoredWorkspace?: {
     readonly cwd: string;
     readonly scratchRoot: string;
@@ -564,7 +567,7 @@ function makeLocalCommandHarness(input: {
     attachments: [],
     streaming: false,
     createdBy: "user",
-    creationSource: "web",
+    creationSource: input.creationSource ?? "web", // fork: mobile-surface-hint
     createdAt: now,
     updatedAt: now,
   };
@@ -848,7 +851,7 @@ function makeLocalCommandHarness(input: {
   );
   const tryHandlePromptCommand = vi.fn(() =>
     input.logoutFailure === undefined
-      ? Effect.succeed(true)
+      ? Effect.succeed(input.promptCommandHandled ?? true) // fork: mobile-surface-hint
       : Effect.fail(
           new ProviderSetupError({
             instanceId: oldInstanceId,
@@ -2052,6 +2055,27 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
     expect(hint).not.toContain("\n");
     expect(sent.split(hint)).toHaveLength(2);
     expect(sent.split("loom_library_brief_propose")).toHaveLength(2);
+  }),
+);
+
+// fork: mobile-surface-hint
+effectIt.effect.each([
+  ["mobile", "Show me the new settings screen", true],
+  ["web", "Show me the new settings screen", false],
+  ["mobile", "/review", false],
+] as const)("a %s message %j carries the phone note: %s", ([creationSource, text, noted]) =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text,
+      creationSource,
+      promptCommandHandled: false,
+      failReadsAfterRunning: true,
+    });
+    yield* harness.start;
+    expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toBe(
+      noted ? `${ProviderTurnStart.PHONE_VIEWER_NOTE}\n\n${text}` : text,
+    );
+    expect(harness.projection().messages.find((entry) => entry.role === "user")?.text).toBe(text);
   }),
 );
 
