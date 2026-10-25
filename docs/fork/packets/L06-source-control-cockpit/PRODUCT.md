@@ -1,6 +1,30 @@
 # L06 product
 
-## Problem
+## Current recovery slice
+
+The existing Git control, including mobile, shows the current operation and conflict files.
+Ask the agent appends a draft with the file names and never sends it. Continue uses only
+already-staged resolutions; Abort restores the operation's starting point. Both ask for
+confirmation and are blocked while a conversation on the checkout is running. A rebase
+that stops at its next conflict stays visible for another resolution.
+
+Commit cannot stage an unmerged index. A diverged branch offers an upstream sync prompt.
+Cancel interrupts the running Git action; it does not undo a completed commit or a push
+that already reached the remote. After twenty seconds of push silence, Loom names
+possible SSH approval on the host. Running hooks retain their own label. A push stops after
+ten minutes, including hook time, with a message to inspect the host and refresh status.
+
+Default-branch confirmation asks until the user selects Don't ask again for this project.
+The direct action is primary; feature-branch checkout explains that it switches the folder
+for other conversations using it. The choice can be restored in the Git controls.
+
+A clean worktree shows Landed on the fetched remote default only after an ancestry check
+for the same HEAD. Settle is explicit; reused integration conversations stay open. Send
+latest turn to source thread transfers conversation context and lives outside the Git menu.
+The web palette offers Commit, Commit & push and Create pull request. The first two have
+unbound shortcut commands.
+
+## Remaining panel design
 
 When several agents work in one project, the state that matters for the current thread is
 spread out: the branch in the composer toolbar, the PR in its own panel, CI only when a PR
@@ -99,7 +123,7 @@ No em dashes in product copy.
 ## Surfaces and connection modes
 
 - Web and desktop: full feature.
-- Mobile: none.
+- Mobile: the recovery slice above; Graph, Checks and Switch remain web/desktop work.
 - Remote: supported; the environment that owns the thread runs every command. Logs and
   graph data travel over the WebSocket with explicit size caps.
 - Upstream T3 server: panel entry disabled with "Needs a Loom server"; no fork RPC is sent.
@@ -121,8 +145,8 @@ No em dashes in product copy.
 - "Ask the agent to fix" and "Ask the agent to resolve" fill the composer and never send.
   Reason: the user reviews what goes to the agent (a log tail can mislead), and a draft is
   easy to edit or discard.
-- Continue and Abort buttons for in-progress merges, rebases, cherry-picks, reverts and
-  `git am` ship in v1, each behind a confirmation. Reason: finishing a resolved rebase
+- Continue and Abort for merges, rebases, cherry-picks and reverts are implemented in the
+  Git control, each behind a confirmation. `git am` remains part of the future panel. Reason: finishing a resolved rebase
   should not need a terminal; the confirmation keeps it an explicit, informed step. Git is
   never continued or aborted automatically (old ledger 1000: leave the worktree as git left
   it until the user decides), and the buttons stay disabled while an agent on the checkout

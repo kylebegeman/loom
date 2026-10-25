@@ -4,7 +4,7 @@ import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { CollapsibleSectionHeader, SectionHeaderStatus } from "../ui/collapsible-section-header";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
-import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+// fork: source-control-cockpit -- this control transfers context, not Git commits.
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   deriveWorkflowGroups,
@@ -631,8 +631,8 @@ export function ThreadRelationshipsPanel(props: {
                               part="secondary"
                               aria-label={
                                 parentTitle
-                                  ? `Merge back to ${parentTitle}`
-                                  : "Merge back to source conversation"
+                                  ? `Send latest turn to source thread: ${parentTitle}` /* fork: source-control-cockpit */
+                                  : "Send latest turn to source thread"
                               }
                               disabled={!canMerge || busyAction !== null}
                               onClick={() => void merge()}
@@ -640,17 +640,17 @@ export function ThreadRelationshipsPanel(props: {
                               {busyAction === "merge" ? (
                                 <LoaderCircleIcon className="size-3 animate-spin" />
                               ) : (
-                                <PullRequestGlyph.merged className="size-3" />
+                                <CornerLeftUpIcon className="size-3" /> /* fork: source-control-cockpit */
                               )}
                             </ThreadDetailsControl>
                           }
                         />
                         <TooltipPopup side="left">
                           {latestMergeBackRun === null
-                            ? "Complete a run in this fork before merging it back"
+                            ? "Complete a run in this fork before sending its latest turn" /* fork: source-control-cockpit */
                             : parentTitle
-                              ? `Merge this conversation back into ${parentTitle}`
-                              : "Merge this conversation back into its source"}
+                              ? `Send the latest turn to ${parentTitle}`
+                              : "Send the latest turn to its source thread"}
                         </TooltipPopup>
                       </Tooltip>
                       <span className="shrink-0 border border-transparent ps-1 pe-2.5 text-2xs font-medium text-muted-foreground">

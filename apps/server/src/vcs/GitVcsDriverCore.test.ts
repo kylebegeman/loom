@@ -22,6 +22,9 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+// fork: source-control-cockpit
+import { Rpc, RpcGroup, RpcMessage, RpcServer } from "effect/rpc";
+import { Headers } from "effect/http";
 
 import {
   GitCommandError,
@@ -157,6 +160,147 @@ const initRepoWithCommit = (
     const initialBranch = yield* git(cwd, ["branch", "--show-current"]);
     return { initialBranch };
   });
+
+// fork: source-control-cockpit -- unresolved index entries must survive a refused commit.
+it.effect("refuses to stage or commit unresolved merge paths", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const { initialBranch } = yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["checkout", "-b", "feature"]);
+    yield* writeTextFile(cwd, "README.md", "feature\n");
+    yield* git(cwd, ["commit", "-am", "feature"]);
+    yield* git(cwd, ["checkout", initialBranch]);
+    yield* writeTextFile(cwd, "README.md", "main\n");
+    yield* git(cwd, ["commit", "-am", "main"]);
+    yield* driver.execute({
+      operation: "test.conflict",
+      cwd,
+      args: ["merge", "feature"],
+      allowNonZeroExit: true,
+    });
+    const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+    for (const filePaths of [undefined, ["README.md"]]) {
+      const error = yield* Effect.flip(
+        driver.commit(cwd, "unsafe", "", { stage: filePaths ? { filePaths } : {} }),
+      );
+      assert.equal(error.reason, "unresolved_conflicts");
+      assert.equal(yield* git(cwd, ["diff", "--name-only", "--diff-filter=U"]), "README.md");
+      assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), head);
+    }
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: source-control-cockpit -- real worktree markers, staged continuation, stale confirmation and abort.
+it.effect.each(["merge", "rebase", "cherry-pick", "revert"] as const)(
+  "recovers a conflicted %s in a linked worktree",
+  (operation) =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTmpDir();
+      const fs = yield* FileSystem.FileSystem;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const { initialBranch } = yield* initRepoWithCommit(cwd);
+      yield* git(cwd, ["checkout", "-b", "feature"]);
+      yield* writeTextFile(cwd, "README.md", "feature\n");
+      yield* git(cwd, ["commit", "-am", "feature"]);
+      const feature = yield* git(cwd, ["rev-parse", "HEAD"]);
+      yield* git(cwd, ["checkout", initialBranch]);
+      yield* writeTextFile(cwd, "README.md", "main\n");
+      yield* git(cwd, ["commit", "-am", "main"]);
+      const base = yield* git(cwd, ["rev-parse", "HEAD"]);
+      const worktree = `${cwd}/linked`;
+      yield* git(cwd, ["worktree", "add", "-b", "conflicts", worktree]);
+      const args = operation === "rebase" ? ["rebase", "feature"] : [operation, feature];
+      yield* driver.execute({
+        operation: "test.conflict",
+        cwd: worktree,
+        args,
+        allowNonZeroExit: true,
+      });
+      const status = yield* driver.statusDetailsLocal(worktree);
+      assert.equal(status.operation, operation);
+      assert.equal(status.unmergedCount, 1);
+      assert.deepEqual(status.unmergedPaths, ["README.md"]);
+      const input = {
+        cwd: worktree,
+        operation,
+        expectedHead: status.headSha!,
+        resolution: "continue" as const,
+      };
+      assert.equal(
+        (yield* Effect.flip(driver.resolveOperation(input))).reason,
+        "unresolved_conflicts",
+      );
+      assert.equal(
+        (yield* Effect.flip(driver.resolveOperation({ ...input, expectedHead: "0".repeat(40) })))
+          .reason,
+        "operation_changed",
+      );
+      assert.equal(
+        (yield* Effect.flip(driver.prepareCommitContext(worktree))).reason,
+        "unresolved_conflicts",
+      );
+      yield* fs.writeFileString(`${worktree}/README.md`, "resolved\n");
+      yield* git(worktree, ["add", "README.md"]);
+      yield* driver.resolveOperation(input);
+      assert.equal((yield* driver.statusDetailsLocal(worktree)).operation, null);
+      assert.equal(yield* git(worktree, ["show", "HEAD:README.md"]), "resolved");
+      yield* git(worktree, ["reset", "--hard", base]);
+      yield* driver.execute({
+        operation: "test.conflict",
+        cwd: worktree,
+        args,
+        allowNonZeroExit: true,
+      });
+      const again = yield* driver.statusDetailsLocal(worktree);
+      yield* driver.resolveOperation({
+        ...input,
+        expectedHead: again.headSha!,
+        resolution: "abort",
+      });
+      assert.equal(yield* git(worktree, ["rev-parse", "HEAD"]), base);
+      assert.equal((yield* driver.statusDetailsLocal(worktree)).operation, null);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: source-control-cockpit -- observe the real process exit, not just a cancelled promise.
+it.effect("interrupting the git RPC stream terminates its scoped child", () =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const cwd = yield* makeTmpDir();
+    const probe = yield* makeProcessProbe;
+    writeFakeCli({ directory: cwd, name: "git", source: processProbeSource(probe.port) });
+    const stream = Stream.callback<string>((queue) =>
+      driver
+        .execute({
+          operation: "test.cancelledPush",
+          cwd,
+          args: ["push"],
+          env: { PATH: `${cwd}:${process.env.PATH ?? ""}` },
+          timeoutMs: 600_000,
+          forceKillAfterMs: 100,
+        })
+        .pipe(Effect.andThen(Queue.end(queue)), Effect.orDie),
+    );
+    const group = RpcGroup.make(
+      Rpc.make("gitCancellationProbe", { success: Schema.String, stream: true }),
+    );
+    const server = yield* RpcServer.makeNoSerialization(group, {
+      onFromServer: () => Effect.void,
+    }).pipe(Effect.provide(group.toLayer({ gitCancellationProbe: () => stream })));
+    const requestId = RpcMessage.RequestId("push-cancel");
+    yield* server.write(0, {
+      _tag: "Request",
+      id: requestId,
+      tag: "gitCancellationProbe",
+      payload: undefined,
+      headers: Headers.empty,
+    });
+    yield* probe.started;
+    yield* server.write(0, { _tag: "Interrupt", requestId, interruptors: [] });
+    yield* probe.exited;
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
 
 it.effect("bounds Git bursts across drivers without timing out queued commands", () =>
   Effect.gen(function* () {
@@ -2608,6 +2752,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
+        // fork: source-control-cockpit -- this fixture changes the index mode without chmod on disk.
+        yield* git(cwd, ["config", "core.filemode", "false"]);
         const driver = yield* GitVcsDriver.GitVcsDriver;
         yield* writeTextFile(cwd, "mode-only.sh", "echo unchanged\n");
         yield* git(cwd, ["add", "mode-only.sh"]);
@@ -5343,7 +5489,14 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["add", "upstream.txt"]);
         yield* git(cwd, ["commit", "-m", "source advance"]);
         const remoteHead = yield* git(cwd, ["rev-parse", "HEAD"]);
-        yield* git(source, ["--git-dir=.", "fetch", cwd, "stable:refs/heads/release"]);
+        // fork: source-control-cockpit -- ambient fetch.prune must not delete the fixture's destination ref.
+        yield* git(source, [
+          "--git-dir=.",
+          "fetch",
+          "--no-prune",
+          cwd,
+          "stable:refs/heads/release",
+        ]);
         yield* git(cwd, ["reset", "--hard", localHead]);
         const driver = yield* GitVcsDriver.GitVcsDriver;
 
@@ -5883,3 +6036,110 @@ describe("Windows long path configuration", () => {
     }
   });
 });
+
+// fork: source-control-cockpit -- the deadline owns the push process scope, including hook cleanup.
+it.effect("stops a silent push at ten minutes and releases the child scope", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    const { initialBranch } = yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["remote", "add", "origin", cwd]);
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const started = yield* Deferred.make<void>();
+    const finalized = yield* Deferred.make<void>();
+    const driver = yield* makeGitVcsDriverCore().pipe(
+      Effect.provideService(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) =>
+          ChildProcess.isStandardCommand(command) && command.args[0] === "push"
+            ? Effect.acquireRelease(
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.as(
+                    ChildProcessSpawner.makeHandle({
+                      ...makeSuccessfulHandle(""),
+                      exitCode: Effect.never,
+                    }),
+                  ),
+                ),
+                () => Deferred.succeed(finalized, undefined),
+              )
+            : spawner.spawn(command),
+        ),
+      ),
+      Effect.provide(layerServerConfig),
+    );
+    const push = yield* driver
+      .pushCurrentBranch(cwd, initialBranch, { remoteName: "origin" })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(started);
+    yield* TestClock.adjust("9 minutes");
+    assert.isFalse(yield* Deferred.isDone(finalized));
+    yield* TestClock.adjust("1 minute");
+    const error = yield* Effect.flip(Fiber.join(push));
+    assert.equal(error.reason, "push_timed_out");
+    assert.include(error.message, "10 minutes");
+    assert.isTrue(yield* Deferred.isDone(finalized));
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: source-control-cockpit -- local main is not proof that a branch landed remotely.
+it.effect("reports landed only against the remote default and pins its compared HEAD", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const { initialBranch } = yield* initRepoWithCommit(cwd);
+    yield* git(cwd, [
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      `refs/remotes/origin/${initialBranch}`,
+    ]);
+    yield* git(cwd, ["update-ref", `refs/remotes/origin/${initialBranch}`, "HEAD"]);
+    yield* git(cwd, ["checkout", "-b", "feature"]);
+    yield* writeTextFile(cwd, "feature.txt", "feature\n");
+    yield* git(cwd, ["add", "feature.txt"]);
+    yield* git(cwd, ["commit", "-m", "feature"]);
+    const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+    yield* git(cwd, ["update-ref", `refs/heads/${initialBranch}`, head]);
+    const localOnly = yield* driver.statusDetailsRemote(cwd);
+    assert.equal(localOnly.landedOnDefault, null);
+    yield* git(cwd, ["update-ref", `refs/remotes/origin/${initialBranch}`, head]);
+    const landed = yield* driver.statusDetailsRemote(cwd);
+    assert.equal(landed.landedOnDefault, initialBranch);
+    assert.equal(landed.landedHeadSha, head);
+    yield* git(cwd, ["update-ref", "-d", `refs/remotes/origin/${initialBranch}`]);
+    assert.equal((yield* driver.statusDetailsRemote(cwd)).landedOnDefault, null);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: source-control-cockpit -- continuing a multi-commit rebase may stop normally at the next conflict.
+it.effect("returns the next conflict after continuing a rebase", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const { initialBranch } = yield* initRepoWithCommit(cwd);
+    yield* git(cwd, ["checkout", "-b", "feature"]);
+    yield* writeTextFile(cwd, "README.md", "feature 1\n");
+    yield* git(cwd, ["commit", "-am", "first"]);
+    yield* writeTextFile(cwd, "README.md", "feature 2\n");
+    yield* git(cwd, ["commit", "-am", "second"]);
+    yield* git(cwd, ["checkout", initialBranch]);
+    yield* writeTextFile(cwd, "README.md", "main\n");
+    yield* git(cwd, ["commit", "-am", "main"]);
+    yield* git(cwd, ["checkout", "feature"]);
+    yield* driver.execute({
+      operation: "test.rebase",
+      cwd,
+      args: ["rebase", initialBranch],
+      allowNonZeroExit: true,
+    });
+    const before = yield* driver.statusDetailsLocal(cwd);
+    yield* writeTextFile(cwd, "README.md", "first resolution\n");
+    yield* git(cwd, ["add", "README.md"]);
+    const next = yield* driver.resolveOperation({
+      cwd,
+      operation: "rebase",
+      expectedHead: before.headSha!,
+      resolution: "continue",
+    });
+    assert.deepEqual(next, { operation: "rebase", unmergedCount: 1 });
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);

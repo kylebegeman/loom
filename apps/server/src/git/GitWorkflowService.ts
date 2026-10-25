@@ -11,6 +11,8 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: pr
 import {
   GitManagerError,
   GitCommandError,
+  type GitResolveOperationInput,
+  type GitResolveOperationResult, // fork: source-control-cockpit
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
@@ -65,6 +67,10 @@ export class GitWorkflowService extends Context.Service<
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+    // fork: source-control-cockpit
+    readonly resolveOperation: (
+      input: GitResolveOperationInput,
+    ) => Effect.Effect<GitResolveOperationResult, GitManagerServiceError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
@@ -493,6 +499,17 @@ export const make = Effect.gen(function* () {
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
       ),
+    // fork: source-control-cockpit
+    resolveOperation: Effect.fn("GitWorkflowService.resolveOperation")((input) =>
+      ensureGit("GitWorkflowService.resolveOperation", input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          withCheckoutLease(
+            handle.repository.rootPath,
+            gitManager.resolveOperation({ ...input, cwd: handle.repository.rootPath }),
+          ),
+        ),
+      ),
+    ),
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
         Effect.flatMap((handle) =>

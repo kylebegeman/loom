@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useEffectEvent, useMemo } from "react";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  type AtomCommandResult,
+} from "@t3tools/client-runtime/state/runtime"; // fork: source-control-cockpit
 import {
   type GitActionRequestInput,
   type VcsActionOperation,
@@ -209,6 +212,11 @@ export function useSelectedThreadGitActions() {
           ? await run()
           : await vcsActionManager.track(appAtomRegistry, target, { operation, label }, run);
       if (AsyncResult.isFailure(result)) {
+        // fork: source-control-cockpit
+        if (isAtomCommandInterrupted(result)) {
+          await refreshSelectedThreadGitStatus({ quiet: true });
+          return null;
+        }
         const error = Cause.squash(result.cause);
         const message = error instanceof Error ? error.message : "Git action failed.";
         setPendingConnectionError(message);
@@ -217,7 +225,7 @@ export function useSelectedThreadGitActions() {
       }
       return result.value;
     },
-    [selectedThread, selectedThreadCwd, selectedThreadProject],
+    [selectedThread, selectedThreadCwd, selectedThreadProject, refreshSelectedThreadGitStatus], // fork: source-control-cockpit
   );
 
   const refreshSelectedThreadBranches = useCallback(async (): Promise<ReadonlyArray<VcsRef>> => {
@@ -460,6 +468,12 @@ export function useSelectedThreadGitActions() {
   );
 
   return {
+    // fork: source-control-cockpit
+    skipDefaultBranchConfirmation: selectedThreadProject
+      ? selectedEnvironmentRuntime?.serverConfig?.settings.projectSettingsOverrides[
+          selectedThreadProject.id
+        ]?.skipDefaultBranchConfirmation === true
+      : false,
     canWriteSourceControl,
     canChangeThreadBranch,
     refreshSelectedThreadGitStatus,

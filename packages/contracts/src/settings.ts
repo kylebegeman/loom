@@ -981,6 +981,8 @@ export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOver
  * settings.json shape but overrides field by field, per `ProviderInstanceId`.
  */
 export const ProjectSettingsOverrides = Schema.Struct({
+  // fork: source-control-cockpit -- project-only consent, absent means ask on every client.
+  skipDefaultBranchConfirmation: Schema.optionalKey(Schema.Boolean),
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -1009,7 +1011,11 @@ export const ProjectSettingsOverrides = Schema.Struct({
   providerInstances: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
-} satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
+  // fork: source-control-cockpit -- this consent is project-only, never inherited from a server default.
+} satisfies Record<
+  ProjectScopedServerSettingKey | "providerInstances" | "skipDefaultBranchConfirmation",
+  unknown
+>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 /**

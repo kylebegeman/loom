@@ -1,3 +1,4 @@
+import { gitOperationLabel } from "@t3tools/client-runtime/state/vcs"; // fork: source-control-cockpit
 import type {
   GitRunStackedActionResult,
   GitStackedAction,
@@ -23,7 +24,7 @@ export interface GitActionMenuItem {
 export interface GitQuickAction {
   label: string;
   disabled: boolean;
-  kind: "run_action" | "run_pull" | "open_publish" | "show_hint";
+  kind: "run_action" | "run_pull" | "open_publish" | "show_hint" | "ask_agent"; // fork: source-control-cockpit
   action?: GitStackedAction;
   hint?: string;
 }
@@ -169,15 +170,19 @@ export function buildMenuItems(
   const isBehind = gitStatus.behindCount > 0;
   const hasDefaultBranchDelta = (gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) > 0;
   const canPushWithoutUpstream = hasPrimaryRemote && !gitStatus.hasUpstream;
-  const canCommit = !isBusy && hasChanges;
+  // fork: source-control-cockpit
+  const operationActive = !!gitOperationLabel(gitStatus);
+  const canCommit = !isBusy && !operationActive && hasChanges;
   const canPush =
     !isBusy &&
+    !operationActive && // fork: source-control-cockpit
     hasBranch &&
     !isBehind &&
     gitStatus.aheadCount > 0 &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canCreatePr =
     !isBusy &&
+    !operationActive && // fork: source-control-cockpit
     hasBranch &&
     !hasOpenPr &&
     hasDefaultBranchDelta &&
@@ -252,6 +257,20 @@ export function resolveQuickAction(
   const isDiverged = isAhead && isBehind;
   const terminology = resolveChangeRequestTerminology(gitStatus);
 
+  // fork: source-control-cockpit
+  const operationLabel = gitOperationLabel(gitStatus);
+  if (operationLabel) {
+    return {
+      label: operationLabel,
+      disabled: false,
+      kind: "ask_agent",
+      hint: "Resolve the conflicts, then continue or abort the operation.",
+    };
+  }
+  if (isDiverged) {
+    return { label: "Ask the agent to sync with upstream", disabled: false, kind: "ask_agent" };
+  }
+
   if (!hasBranch) {
     return {
       label: "Commit",
@@ -316,15 +335,6 @@ export function resolveQuickAction(
     };
   }
 
-  if (isDiverged) {
-    return {
-      label: "Sync ref",
-      disabled: true,
-      kind: "show_hint",
-      hint: "Branch has diverged from upstream. Rebase/merge first.",
-    };
-  }
-
   if (isBehind) {
     return {
       label: "Pull",
@@ -379,8 +389,9 @@ export function resolveQuickAction(
 export function requiresDefaultBranchConfirmation(
   action: GitStackedAction,
   isDefaultRef: boolean,
+  skipConfirmation = false, // fork: source-control-cockpit
 ): boolean {
-  if (!isDefaultRef) return false;
+  if (!isDefaultRef || skipConfirmation) return false; // fork: source-control-cockpit
   return (
     action === "push" ||
     action === "create_pr" ||
@@ -493,3 +504,29 @@ export function resolveLiveThreadBranchUpdate(input: {
 }
 
 export { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
+
+// fork: source-control-cockpit -- palette and shortcuts use the same repository guards as the Git control.
+export function gitPaletteActionHint(
+  status: VcsStatusResult | null,
+  busy: boolean,
+  action: "commit" | "commit_push" | "create_pr",
+): string | null {
+  if (busy) return "Git action in progress.";
+  if (!status?.isRepo) return "Git status is unavailable.";
+  const operation = gitOperationLabel(status);
+  if (operation) return operation;
+  if (action === "commit")
+    return status.hasWorkingTreeChanges
+      ? null
+      : "Worktree is clean. Make changes before committing.";
+  if (!status.refName) return "Check out a branch first.";
+  if (!status.hasPrimaryRemote && !status.hasUpstream) return "Add a remote before pushing.";
+  if (status.behindCount > 0) return "Sync with upstream before pushing.";
+  if (action === "create_pr") {
+    if (status.pr?.state === "open") return "This branch already has an open pull request.";
+    if ((status.aheadOfDefaultCount ?? status.aheadCount) <= 0)
+      return "No local commits to include in a pull request.";
+  } else if (!status.hasWorkingTreeChanges && status.aheadCount === 0)
+    return "No changes or local commits to push.";
+  return null;
+}

@@ -343,6 +343,9 @@ export function mergeGitStatusParts(
 
 function toRemoteStatusPart(status: VcsStatusResult): VcsStatusRemoteResult {
   return {
+    // fork: source-control-cockpit -- preserve recovery and landed facts across partial status updates.
+    ...(status.landedOnDefault === undefined ? {} : { landedOnDefault: status.landedOnDefault }),
+    ...(status.landedHeadSha === undefined ? {} : { landedHeadSha: status.landedHeadSha }),
     hasUpstream: status.hasUpstream,
     aheadCount: status.aheadCount,
     behindCount: status.behindCount,
@@ -355,6 +358,11 @@ function toRemoteStatusPart(status: VcsStatusResult): VcsStatusRemoteResult {
 
 function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
   return {
+    // fork: source-control-cockpit
+    ...(status.operation === undefined ? {} : { operation: status.operation }),
+    ...(status.unmergedCount === undefined ? {} : { unmergedCount: status.unmergedCount }),
+    ...(status.unmergedPaths === undefined ? {} : { unmergedPaths: status.unmergedPaths }),
+    ...(status.headSha === undefined ? {} : { headSha: status.headSha }),
     isRepo: status.isRepo,
     ...(status.checkpointCapable === undefined
       ? {}

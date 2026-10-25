@@ -213,7 +213,28 @@ const VcsStatusChangeRequest = Schema.Struct({
   updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+// fork: source-control-cockpit -- optional status fields preserve older-server compatibility.
+export const GitOperation = Schema.Literals(["merge", "rebase", "cherry-pick", "revert"]);
+export type GitOperation = typeof GitOperation.Type;
+export const GitResolveOperationInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  operation: GitOperation,
+  expectedHead: TrimmedNonEmptyStringSchema,
+  resolution: Schema.Literals(["continue", "abort"]),
+});
+export type GitResolveOperationInput = typeof GitResolveOperationInput.Type;
+export const GitResolveOperationResult = Schema.Struct({
+  operation: Schema.NullOr(GitOperation),
+  unmergedCount: NonNegativeInt,
+});
+export type GitResolveOperationResult = typeof GitResolveOperationResult.Type;
+
 const VcsStatusLocalShape = {
+  // fork: source-control-cockpit
+  operation: Schema.optional(Schema.NullOr(GitOperation)),
+  unmergedCount: Schema.optional(NonNegativeInt),
+  unmergedPaths: Schema.optional(Schema.Array(GitFilePath)),
+  headSha: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
   isRepo: Schema.Boolean,
   /** Project parents may support checkpoints through their registered repositories. */
   checkpointCapable: Schema.optional(Schema.Boolean),
@@ -246,6 +267,9 @@ const VcsStatusLocalShape = {
 };
 
 const VcsStatusRemoteShape = {
+  // fork: source-control-cockpit -- set only after an ancestry check against the fetched remote default.
+  landedOnDefault: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  landedHeadSha: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
   hasUpstream: Schema.Boolean,
   aheadCount: NonNegativeInt,
   behindCount: NonNegativeInt,
@@ -357,6 +381,10 @@ export type VcsPullResult = typeof VcsPullResult.Type;
 // reason reaches the error and its diagnostic suffix; newer, unknown reasons
 // decode as absent through GitCommandError.
 export const GitCommandFailureReason = Schema.Literals([
+  // fork: source-control-cockpit
+  "unresolved_conflicts",
+  "operation_changed",
+  "push_timed_out",
   "authentication_failed",
   "branch_already_exists",
   "branch_checked_out_in_worktree",

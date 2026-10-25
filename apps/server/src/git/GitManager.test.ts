@@ -38,6 +38,7 @@ import {
   EventId,
   GitCommandError,
   MessageId,
+  NodeId, // fork: source-control-cockpit
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -908,6 +909,115 @@ const layerGitManagerTest = GitVcsDriver.layer.pipe(
 );
 
 it.layer(layerGitManagerTest)("GitManager", (it) => {
+  // fork: source-control-cockpit -- service entry points must enforce the same recovery guards as clients.
+  it.effect.each([false, true])("recovery refuses an active checkout owner: %s", (active) =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTempDir("git-recovery-owner-");
+      yield* initRepo(cwd);
+      yield* runGit(cwd, ["checkout", "-b", "feature"]);
+      NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "feature\n");
+      yield* runGit(cwd, ["commit", "-am", "feature"]);
+      yield* runGit(cwd, ["checkout", "main"]);
+      NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "main\n");
+      yield* runGit(cwd, ["commit", "-am", "main"]);
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      yield* driver.execute({
+        operation: "test.conflict",
+        cwd,
+        args: ["merge", "feature"],
+        allowNonZeroExit: true,
+      });
+      const before = yield* driver.statusDetailsLocal(cwd);
+      const { manager } = yield* makeManager({
+        seed: Effect.gen(function* () {
+          if (!active) return;
+          const store = yield* ProjectionStore.ProjectionStoreV2;
+          const now = yield* DateTime.now;
+          const threadId = ThreadId.make("thread:recovery-owner");
+          const instance = ProviderInstanceId.make("codex");
+          const runId = RunId.make("run:recovery-owner");
+          const nodeId = NodeId.make("node:recovery-owner");
+          yield* store.apply({
+            id: EventId.make("event:recovery-thread"),
+            type: "thread.created",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: threadId,
+              projectId: ProjectId.make("project:recovery"),
+              title: "Other conversation",
+              createdBy: "user",
+              creationSource: "web",
+              providerInstanceId: instance,
+              modelSelection: { instanceId: instance, model: "gpt-5" },
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: "main",
+              worktreePath: cwd,
+              activeProviderThreadId: null,
+              lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+              forkedFrom: null,
+              createdAt: now,
+              updatedAt: now,
+              archivedAt: null,
+              settledOverride: null,
+              settledAt: null,
+              lastVisitedAt: null,
+              deletedAt: null,
+            },
+          });
+          yield* store.apply({
+            id: EventId.make("event:recovery-run"),
+            type: "run.created",
+            threadId,
+            runId,
+            nodeId,
+            driver: ProviderDriverKind.make("codex"),
+            providerInstanceId: instance,
+            occurredAt: now,
+            payload: {
+              id: runId,
+              threadId,
+              ordinal: 1,
+              providerInstanceId: instance,
+              modelSelection: { instanceId: instance, model: "gpt-5" },
+              providerThreadId: null,
+              userMessageId: MessageId.make("message:recovery"),
+              rootNodeId: nodeId,
+              activeAttemptId: null,
+              status: "running",
+              requestedAt: now,
+              startedAt: now,
+              completedAt: null,
+              checkpointId: null,
+              contextHandoffId: null,
+            },
+          });
+        }),
+      });
+      const refusedCommit = yield* Effect.flip(
+        runStackedAction(manager, { cwd, action: "commit" }),
+      );
+      expect(refusedCommit).toMatchObject({ reason: "unresolved_conflicts" });
+      const input = {
+        cwd,
+        operation: "merge" as const,
+        expectedHead: before.headSha!,
+        resolution: "abort" as const,
+      };
+      if (active) {
+        const error = yield* Effect.flip(manager.resolveOperation(input));
+        expect(error.message).toContain("conversation is working");
+        expect((yield* driver.statusDetailsLocal(cwd)).operation).toBe("merge");
+      } else {
+        expect(yield* manager.resolveOperation(input)).toEqual({
+          operation: null,
+          unmergedCount: 0,
+        });
+      }
+    }),
+  );
+
   it.effect("passive worktree status streams do not start remote refreshes", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-passive-vcs-");

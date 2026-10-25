@@ -58,6 +58,8 @@ const MODEL_PICKER_KEYBINDING_COMMANDS = [
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
 export const STATIC_KEYBINDING_COMMANDS = [
+  "git.commit",
+  "git.commitPush", // fork: source-control-cockpit -- deliberately unbound.
   ...FORK_KEYBINDING_COMMANDS, // fork: ext-keybindings
   "sidebar.toggle",
   "navigation.back",

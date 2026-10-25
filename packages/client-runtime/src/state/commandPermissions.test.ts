@@ -327,6 +327,21 @@ it.effect(
           }),
         );
         yield* git.authorize(registry, env);
+        // fork: source-control-cockpit -- continue/abort need the same source-control grant as commit.
+        const recovery = createCommandPermissions(runtime, WS_METHODS.gitResolveOperation);
+        yield* recovery.authorize(registry, env);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(
+          (yield* recovery.authorize(registry, env).pipe(Effect.flip)).requiredPermission,
+        ).toBe(AuthSourceControlWriteScope);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSourceControlWriteScope],
+            permissions: [AuthSourceControlWriteScope],
+          }),
+        );
         const prepare = createCommandPermissions(runtime, WS_METHODS.gitPreparePullRequestThread);
         const input = {
           cwd: "/repo",

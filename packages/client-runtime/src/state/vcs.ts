@@ -297,6 +297,14 @@ export function createVcsEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    // fork: source-control-cockpit
+    resolveOperation: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:resolve-operation",
+      tag: WS_METHODS.gitResolveOperation,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     pull: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:pull",
       tag: WS_METHODS.vcsPull,

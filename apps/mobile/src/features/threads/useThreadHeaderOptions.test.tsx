@@ -9,6 +9,10 @@ const harness = vi.hoisted(() => ({
   setOptionsCalls: 0,
   renderedRightItems: [] as Array<ReadonlyArray<Record<string, unknown>>>,
   navigatedRoutes: [] as string[],
+  // fork: source-control-cockpit
+  skipDefaultBranchConfirmation: false,
+  runActions: [] as string[],
+  recoveryRequests: [] as VcsStatusResult[],
 }));
 
 vi.mock("@react-navigation/native", () => {
@@ -30,6 +34,25 @@ vi.mock("@react-navigation/native", () => {
     useNavigation: () => navigation,
   };
 });
+// fork: source-control-cockpit -- the native-header harness owns selection and composer boundaries.
+vi.mock("../../state/use-thread-selection", () => ({
+  useThreadSelection: () => ({
+    selectedThreadProject: { id: "project-1" },
+    selectedEnvironmentRuntime: {
+      serverConfig: {
+        settings: {
+          projectSettingsOverrides: {
+            "project-1": { skipDefaultBranchConfirmation: harness.skipDefaultBranchConfirmation },
+          },
+        },
+      },
+    },
+  }),
+}));
+vi.mock("../../fork/source-control-cockpit/GitRecovery", () => ({
+  useGitRecoveryPrompt: () => (status: VcsStatusResult) => harness.recoveryRequests.push(status),
+}));
+
 vi.mock("../../native/useOpenPullRequest", () => ({ useOpenPullRequest: () => () => {} }));
 
 vi.mock("../../state/session", () => ({ useEnvironmentScope: () => true }));
@@ -104,7 +127,11 @@ function Header(props: {
         gitStatus: props.gitStatus,
         gitOperationLabel: null,
         onPull: async () => {},
-        onRunAction: async () => null,
+        // fork: source-control-cockpit
+        onRunAction: async (input) => {
+          harness.runActions.push(input.action);
+          return null;
+        },
         canOpenTerminal: true,
         canOperateTerminal: true,
         canOpenFiles: true,
@@ -165,9 +192,39 @@ afterEach(() => {
   harness.setOptionsCalls = 0;
   harness.renderedRightItems = [];
   harness.navigatedRoutes = [];
+  // fork: source-control-cockpit
+  harness.skipDefaultBranchConfirmation = false;
+  harness.runActions = [];
+  harness.recoveryRequests = [];
 });
 
 describe("ThreadHeader", () => {
+  // fork: source-control-cockpit
+  it("runs a default-branch push directly after the project remembers consent", async () => {
+    harness.skipDefaultBranchConfirmation = true;
+    render(<Header gitStatus={status([], { aheadCount: 1, hasPrimaryRemote: true })} />);
+    await act(async () => renderedGitMenuItems()[1]?.onPress?.());
+    expect(harness.navigatedRoutes).toEqual([]);
+    expect(harness.runActions).toEqual(["commit_push"]);
+  });
+
+  it("offers recovery while a rebase has detached HEAD", async () => {
+    const conflicts = status(["conflict.ts"], {
+      refName: null,
+      operation: "rebase",
+      unmergedCount: 1,
+      unmergedPaths: ["conflict.ts"],
+    });
+    render(<Header gitStatus={conflicts} />);
+    const recovery = renderedGitMenuItems().find(
+      (item) => item.label === "Rebase in progress, 1 conflict",
+    );
+    expect(recovery?.disabled).toBe(false);
+    await act(async () => recovery?.onPress?.());
+    expect(harness.recoveryRequests).toEqual([conflicts]);
+    expect(harness.runActions).toEqual([]);
+  });
+
   it("keeps conversation details reachable without files or Git status", () => {
     const open = vi.fn();
     render(<Header gitStatus={null} onOpenDetails={open} />);

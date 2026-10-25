@@ -1,3 +1,6 @@
+// fork: source-control-cockpit
+import { GitRecovery } from "../../fork/source-control-cockpit/GitRecovery";
+import { Button as GitSummaryButton } from "../../components/ui/Button";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState"; // fork: library
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -752,10 +755,7 @@ function ThreadRouteContent(
     onOpenFilesInspector:
       fileInspector.supported && selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
     onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
-    onMergeBack:
-      mergeBackTargetThreadId !== null && mergeBackRun !== null
-        ? () => void handleMergeBack()
-        : undefined,
+    // fork: source-control-cockpit -- latest-turn transfer stays outside the Git control.
     currentBranch: selectedThread?.branch ?? null,
     gitStatus: gitStatus.data,
     gitOperationLabel: gitState.gitOperationLabel,
@@ -932,6 +932,17 @@ function ThreadRouteContent(
         onOpenPullRequest={openPullRequest}
       />
 
+      {/* fork: source-control-cockpit */}
+      <GitRecovery status={gitStatus.data} />
+      {mergeBackTargetThreadId !== null && mergeBackRun !== null && (
+        <GitSummaryButton
+          disabled={!canOperateThread}
+          label="Send latest turn to source thread"
+          icon="text.bubble"
+          tone="text"
+          onPress={() => void handleMergeBack()}
+        />
+      )}
       <ThreadPane>
         <ThreadDetailScreen
           onOpenConversationDetails={openConversationDetails}

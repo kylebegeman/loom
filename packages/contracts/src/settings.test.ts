@@ -1322,3 +1322,16 @@ describe("server model preferences", () => {
     });
   });
 });
+
+// fork: source-control-cockpit -- consent belongs only to the selected project and survives serialization.
+it("round-trips project default-branch consent without changing other projects", () => {
+  const input = {
+    projectSettingsOverrides: {
+      first: { skipDefaultBranchConfirmation: true, defaultAutoPull: false },
+      second: { defaultAutoPull: true },
+    },
+  };
+  expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
+  expect(decodeServerSettingsPatch(input)).toEqual(input);
+  expect(decodeServerSettings({}).projectSettingsOverrides).toEqual({});
+});

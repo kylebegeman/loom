@@ -1,3 +1,5 @@
+import { DefaultBranchPreference } from "../../../fork/source-control-cockpit/DefaultBranchPreference"; // fork: source-control-cockpit
+import { GitRecovery } from "../../../fork/source-control-cockpit/GitRecovery"; // fork: source-control-cockpit
 import * as Dialog from "../../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../../native/useOpenPullRequest";
 import {
@@ -158,7 +160,11 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       branchName &&
       confirmableAction &&
       !input.featureBranch &&
-      requiresDefaultBranchConfirmation(input.action, isDefaultRef)
+      requiresDefaultBranchConfirmation(
+        input.action,
+        isDefaultRef,
+        gitActions.skipDefaultBranchConfirmation,
+      ) /* fork: source-control-cockpit */
     ) {
       navigation.navigate("GitConfirm", {
         environmentId: String(environmentId),
@@ -248,6 +254,9 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
         ) : undefined
       }
     >
+      {/* fork: source-control-cockpit */}
+      <GitRecovery status={gitStatus.data} />
+      <DefaultBranchPreference />
       <ListSection>
         {sheetMenuItems.map(({ item, disabledReason }) => (
           <ListRow
