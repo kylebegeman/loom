@@ -20,12 +20,15 @@ import { libraryFolderResources, libraryProjectsForFolder } from "./libraryFolde
 
 export type ExistingLibraryFolder = ReturnType<typeof libraryFolderResources> & {
   environmentId: EnvironmentId;
+  registration: LibraryFolderInspection["registration"];
 };
 
 export function LibraryExistingFolder(props: {
   initialRootPath?: string | undefined;
   disabled: boolean;
   folder: ExistingLibraryFolder | null;
+  /** A project the form offers to add the folder to, so it is not suggested twice. */
+  offeredProjectId: string | null;
   onClear: () => void;
   onPending: (pending: boolean) => void;
   onChoose: (folder: ExistingLibraryFolder) => void;
@@ -67,11 +70,14 @@ export function LibraryExistingFolder(props: {
           inspection.rootPath,
         )
       : [];
-  const suggestions = exact.length
-    ? exact
-    : inspection
-      ? libraryProjectsForFolder(inspection, catalog.data ?? [])
-      : [];
+  // The catalog includes archived projects, which cannot take a folder, so they are not suggested.
+  const suggestions = (
+    exact.length
+      ? exact
+      : inspection
+        ? libraryProjectsForFolder(inspection, catalog.data ?? [])
+        : []
+  ).filter((project) => !project.archived && project.id !== props.offeredProjectId);
   const known = projects.filter(
     (project, index) =>
       !project.isScratch &&
@@ -97,7 +103,11 @@ export function LibraryExistingFolder(props: {
         setInspection(result.value);
         setInspectionEnvironmentId(environmentId);
         setSelectedSource(`${environmentId}:${rootPath}`);
-        props.onChoose({ ...inferred, environmentId });
+        props.onChoose({
+          ...inferred,
+          environmentId,
+          registration: result.value.registration,
+        });
       })
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : "The folder could not be inspected.");

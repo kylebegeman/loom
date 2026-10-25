@@ -17,28 +17,47 @@ const state = vi.hoisted(() => ({
     label: string;
     start: () => Promise<void>;
   } | null,
+  revision: 0,
+  listeners: new Set<() => void>(),
 }));
 vi.mock("./useNoProjectStart", () => ({ useNoProjectStart: () => state.noProject }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
   useRouterState: () => ({}),
 }));
-vi.mock("./state", () => ({
-  useSelectedLibraryProject: () => [null, state.select],
-  useLibraryProject: (id: string) => ({
-    authorityId: state.authorityId,
-    project: {
-      data: state.projects.find((project) => project.id === id) ?? null,
-      isPending: state.pending,
+vi.mock("./state", async () => {
+  const { useSyncExternalStore } = await import("react");
+  // The real hooks read atoms that re-render their reader. Compiled, the harness hands back the
+  // same host element when only this state changes, so the mocks must subscribe the same way.
+  const useRevision = () =>
+    useSyncExternalStore(
+      (listener) => {
+        state.listeners.add(listener);
+        return () => state.listeners.delete(listener);
+      },
+      () => state.revision,
+    );
+  return {
+    useSelectedLibraryProject: () => [null, state.select],
+    useLibraryProject: (id: string) => {
+      useRevision();
+      return {
+        authorityId: state.authorityId,
+        project: {
+          data: state.projects.find((project) => project.id === id) ?? null,
+          isPending: state.pending,
+        },
+        threads: { data: [] },
+        copies: { data: state.copies },
+        refresh: state.refresh,
+      };
     },
-    threads: { data: [] },
-    copies: { data: state.copies },
-    refresh: state.refresh,
-  }),
-  useLibraryProjects: () => ({
-    query: { data: state.projects, isPending: false, refresh: state.refresh },
-  }),
-}));
+    useLibraryProjects: () => {
+      useRevision();
+      return { query: { data: state.projects, isPending: false, refresh: state.refresh } };
+    },
+  };
+});
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("./LibraryPalette", () => ({
   LibraryPaletteView: (
@@ -204,6 +223,13 @@ async function type(label: string, value: string) {
   });
 }
 const launch = () => JSON.parse(container.querySelector("output")!.textContent!);
+async function update(change: () => void) {
+  await act(() => {
+    change();
+    state.revision += 1;
+    for (const listener of state.listeners) listener();
+  });
+}
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.authorityId = "library";
@@ -296,8 +322,9 @@ it("resumes the requested action after connecting the Library", async () => {
   state.authorityId = null;
   await act(() => openLibraryAction("create-project"));
   expect(container.textContent).toContain("Connect Library");
-  state.authorityId = "library";
-  await act(() => root.render(<HostHarness />));
+  await update(() => {
+    state.authorityId = "library";
+  });
   expect(input("Project name")).not.toBeNull();
 });
 it("waits for a requested project instead of flashing the project chooser", async () => {
@@ -306,9 +333,10 @@ it("waits for a requested project instead of flashing the project chooser", asyn
   await act(() => openLibraryAction("new-conversation", project.id, defaults));
   expect(container.textContent).toContain("Loading project...");
   expect(button("New project")).toBeUndefined();
-  state.pending = false;
-  state.projects = [project];
-  await act(() => root.render(<HostHarness />));
+  await update(() => {
+    state.pending = false;
+    state.projects = [project];
+  });
   expect(launch().initialCopyId).toBe(copy.id);
 });
 

@@ -9,7 +9,8 @@ import {
   type WorkspacePageWidth,
 } from "~/components/WorkspacePageContainer";
 import { isElectron } from "~/env";
-import { useLibraryAuthority } from "./state";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
+import { useLibraryAccessBlock, useLibraryAuthority } from "./state";
 
 const PROJECTS_SECTION = { label: "Projects", to: "/projects" } as const;
 
@@ -27,7 +28,7 @@ export function LibraryPageFrame({
   readonly section?: { readonly label: string; readonly to: "/projects" | "/sites" | "/loom/bots" };
   /** What still works while the Library server is away. */
   readonly offlineNotice?: string;
-  /** Off for pages served by another server, which report their own connection. */
+  /** Off for pages that report their own connection, such as one served by another server. */
   readonly libraryStatus?: boolean;
   readonly width?: WorkspacePageWidth;
   /** Scopes `--project-color` for pages that are not about one project. */
@@ -35,6 +36,12 @@ export function LibraryPageFrame({
   readonly children: ReactNode;
 }) {
   const authority = useLibraryAuthority();
+  // No commands, so this asks only whether the Library session works. An expired session can keep
+  // the socket connected while every guarded action on the page turns off.
+  const access = useLibraryAccessBlock(libraryStatus ? authority.authorityId : null, []);
+  // An expired Identity sign-in can also fail the socket, so sign-in is offered here either way. Any
+  // other disconnect keeps the offline line, which says what still works.
+  const repairHere = !!access?.repair && (access.repair === "sign-in" || authority.connected);
   return (
     <SidebarInset style={style} className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
@@ -56,7 +63,9 @@ export function LibraryPageFrame({
       </WorkspacePageHeader>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <WorkspacePageContainer width={width}>
-          {libraryStatus && authority.authorityId && !authority.connected ? (
+          {repairHere ? (
+            <LibraryAccessNotice block={access} />
+          ) : libraryStatus && authority.authorityId && !authority.connected ? (
             <p role="status" className="text-xs text-muted-foreground">
               Library offline. {offlineNotice ?? "Saved projects and history remain available."}{" "}
               Reconnect {authority.environment?.label ?? "your Library server"} to save changes.

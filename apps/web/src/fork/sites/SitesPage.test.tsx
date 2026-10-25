@@ -27,6 +27,7 @@ vi.mock("../project-library/state", async () => {
     }),
     useLibraryProjects: () => ({ query: { data: [] } }),
     useLibraryPermission: () => true,
+    useLibraryAccessBlock: () => null,
   };
 });
 vi.mock("./state", () => ({

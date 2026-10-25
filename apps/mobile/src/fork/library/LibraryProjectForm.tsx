@@ -33,6 +33,11 @@ import {
 } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
 import { LibraryExistingFolder, type ExistingLibraryFolder } from "./LibraryExistingFolder";
+import {
+  libraryExistingFolderTarget,
+  rememberLibraryFolderProject,
+  rememberedLibraryFolderProject,
+} from "./libraryExistingFolderTarget";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import {
@@ -165,7 +170,32 @@ function LibraryProjectForm({
     busy = useRef(false);
   const [showSetup, setShowSetup] = useState(false);
   const [existingFolder, setExistingFolder] = useState<ExistingLibraryFolder | null>(null),
-    [inspectingFolder, setInspectingFolder] = useState(false);
+    [inspectingFolder, setInspectingFolder] = useState(false),
+    [folderProject, setFolderProject] = useState<LibraryProject | null>(null);
+  // Archived projects tell a folder's archived owner apart from one the Library no longer has.
+  const catalog = useEnvironmentQuery(
+    existingFolder && authority.environmentId
+      ? library.projects({
+          environmentId: authority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
+  // Latched on the first answer from the connected Library. A persisted catalog can still show an
+  // owner as current or archived after that changed elsewhere, and a wrong call here either
+  // creates a project the computer then refuses or offers a project that cannot take the folder.
+  const [catalogSettled, setCatalogSettled] = useState(false);
+  if (!catalogSettled && authority.connected && catalog.isSuccess && !catalog.isPending)
+    setCatalogSettled(true);
+  const folderTarget = existingFolder
+    ? libraryExistingFolderTarget({
+        registration: existingFolder.registration,
+        projects: catalogSettled && catalog.error === null ? catalog.data : null,
+        loading: catalog.isPending,
+        created: folderProject,
+      })
+    : null;
+  const offeredProject = folderTarget?.project ?? null;
   const folderDraftIds = useRef<ReadonlySet<string>>(new Set());
   const [pasted, setPasted] = useState(""),
     [pasteProblem, setPasteProblem] = useState<string | null>(null);
@@ -214,7 +244,8 @@ function LibraryProjectForm({
       !authority.environmentId ||
       !authority.ready ||
       !canSave ||
-      !title.trim()
+      !title.trim() ||
+      (folderTarget !== null && !folderTarget.canCreate)
     )
       return;
     let parsed: LibraryResource[];
@@ -292,6 +323,8 @@ function LibraryProjectForm({
             },
           });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+      if (existingFolder && !initial)
+        rememberLibraryFolderProject(authority.environmentId, existingFolder, result.value);
       refreshLibraryProject(authority.environmentId, result.value.id);
       setAwaitingResult(false);
       navigation.dispatch(
@@ -527,8 +560,12 @@ function LibraryProjectForm({
           initialRootPath={intent.kind === "folder" ? intent.path : undefined}
           disabled={pending || awaitingResult || !authority.ready || !canSave}
           folder={existingFolder}
+          offeredProjectId={offeredProject?.id ?? null}
           onPending={setInspectingFolder}
-          onClear={() => setExistingFolder(null)}
+          onClear={() => {
+            setExistingFolder(null);
+            setFolderProject(null);
+          }}
           onChoose={(folder) => {
             const previousIds = folderDraftIds.current;
             const drafts: ResourceDraft[] = folder.resources.map((entry) => ({
@@ -544,6 +581,7 @@ function LibraryProjectForm({
               !current.trim() || current === existingFolder?.title ? folder.title : current,
             );
             setExistingFolder(folder);
+            setFolderProject(rememberedLibraryFolderProject(authority.environmentId, folder));
             setResources((current) => {
               const retained = current
                 .filter((entry) => !previousIds.has(entry.id))
@@ -625,10 +663,42 @@ function LibraryProjectForm({
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
+      {folderTarget && (folderTarget.error || folderTarget.detail) ? (
+        <LibraryNotice
+          error={folderTarget.error}
+          detail={folderTarget.detail}
+          onRetry={catalog.error ? catalog.refresh : undefined}
+        />
+      ) : null}
+      {existingFolder && offeredProject ? (
+        <Button
+          label={`Add folder to ${offeredProject.title}`}
+          tone="primary"
+          disabled={pending || awaitingResult || inspectingFolder}
+          onPress={() =>
+            navigation.dispatch(
+              StackActions.replace("LibraryStart", {
+                projectId: offeredProject.id,
+                reuseEnvironmentId: existingFolder.environmentId,
+                ...(folderTarget?.copyId
+                  ? { initialCopyId: folderTarget.copyId }
+                  : { reuseRootPath: existingFolder.rootPath }),
+              }),
+            )
+          }
+        />
+      ) : null}
       <Button
         label={pending ? "Saving…" : initial ? "Save project" : "Create project"}
         tone="primary"
-        disabled={pending || inspectingFolder || !authority.ready || !canSave || !title.trim()}
+        disabled={
+          pending ||
+          inspectingFolder ||
+          !authority.ready ||
+          !canSave ||
+          !title.trim() ||
+          (folderTarget !== null && !folderTarget.canCreate)
+        }
         onPress={() => {
           void save();
         }}

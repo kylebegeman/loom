@@ -7,6 +7,8 @@ import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
 import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
 
+const NO_HIGHLIGHT = { id: null, choice: null } as const;
+
 export interface LibraryPaletteItem {
   readonly id: string;
   readonly title: string;
@@ -79,7 +81,14 @@ export function LibraryPaletteView({
   readonly children?: ReactNode;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const [highlighted, setHighlighted] = useState<string | null>(null);
+  // Base UI also moves the highlight itself (reason "none"): to the first row on open and after
+  // typing, and to whatever row lands under its index when rows change. Only keyboard and pointer
+  // make a choice. Base UI also clears the highlight on blur and restores it on focus, so switching
+  // windows must not forget the choice.
+  const [highlight, setHighlight] = useState<{
+    readonly id: string | null;
+    readonly choice: string | null;
+  }>(NO_HIGHLIGHT);
   const term = query.trim().toLocaleLowerCase();
   const visible = items.filter(
     (item) =>
@@ -89,7 +98,13 @@ export function LibraryPaletteView({
       ),
   );
   const enabled = visible.filter((item) => !item.disabled && !busy);
-  const selected = enabled.find((item) => item.id === highlighted) ?? enabled[0];
+  // Without a choice, Enter runs the first row only while it is enabled, so a disabled primary
+  // action, such as Create before a name, never hands Enter to the row below it.
+  const lead = enabled[0] === visible[0] ? enabled[0] : undefined;
+  const selected =
+    enabled.find(
+      (item) => item.id === highlight.id && (lead !== undefined || item.id === highlight.choice),
+    ) ?? lead;
   const actions: CommandPaletteActionItem[] = visible.map((item) => ({
     kind: "action",
     value: item.id,
@@ -113,12 +128,19 @@ export function LibraryPaletteView({
       value={query}
       onValueChange={(value) => {
         if (!busy && !readOnly) {
-          setHighlighted(null);
+          setHighlight(NO_HIGHLIGHT);
           onQueryChange(value);
         }
       }}
       items={enabled.map((item) => item.id)}
-      onItemHighlighted={(value) => setHighlighted(typeof value === "string" ? value : null)}
+      // Base UI would otherwise pre-highlight the first enabled row under a disabled lead, and the
+      // first arrow press would then skip that row. Off, arrows also pass through no highlight, the
+      // state the palette opened in, when wrapping between the last and first rows.
+      autoHighlight={lead ? "always" : false}
+      onItemHighlighted={(value, { reason }) => {
+        const id = typeof value === "string" ? value : null;
+        setHighlight((previous) => ({ id, choice: reason === "none" ? previous.choice : id }));
+      }}
       footerActionLabel="Select"
       footerHints={footerHints}
       showBackHint={!!onBack}

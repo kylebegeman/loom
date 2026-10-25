@@ -40,6 +40,39 @@ function Palette() {
     </LibraryPaletteDialog>
   );
 }
+function Draft({ blueprint = true }: { readonly blueprint?: boolean }) {
+  const [name, setName] = useState("");
+  return (
+    <LibraryPaletteDialog title="New project" onClose={closed}>
+      <LibraryPaletteView
+        title="New project"
+        placeholder="Search choices..."
+        query={name}
+        onQueryChange={setName}
+        onClose={closed}
+        filter={false}
+        items={[
+          {
+            id: "create",
+            title: name ? `Create ${name}` : "Enter a project name",
+            disabled: !name,
+            select: () => selected("create"),
+          },
+          ...(blueprint
+            ? [
+                {
+                  id: "blueprint",
+                  title: "Use a project blueprint",
+                  select: () => selected("blueprint"),
+                },
+              ]
+            : []),
+          { id: "repository", title: "Add a repository", select: () => selected("repository") },
+        ]}
+      />
+    </LibraryPaletteDialog>
+  );
+}
 const input = () =>
   document.querySelector<HTMLInputElement>('input[aria-label="Search choices..."]')!;
 async function press(key: string) {
@@ -78,6 +111,7 @@ it("keeps focus in the original palette and executes the highlighted enabled row
   expect(document.activeElement).toBe(input());
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
   await press("ArrowDown");
+  await press("ArrowDown");
   await press("Enter");
   expect(selected).toHaveBeenCalledExactlyOnceWith("beta");
 });
@@ -87,7 +121,43 @@ it("searches connection metadata and resets selection when the search changes", 
   expect(selected).toHaveBeenLastCalledWith("beta");
   await type("");
   await press("Enter");
-  expect(selected.mock.calls).toEqual([["beta"], ["alpha"]]);
+  expect(selected.mock.calls).toEqual([["beta"]]);
+});
+it("runs the first row on Enter only while it is enabled", async () => {
+  await act(() => root.render(<Draft />));
+  await act(() => vi.advanceTimersToNextFrame());
+  await press("Enter");
+  expect(selected).not.toHaveBeenCalled();
+  // A row the user moves to still runs, and the first press reaches the first enabled row.
+  await press("ArrowDown");
+  await press("Enter");
+  await type("Atlas");
+  await press("Enter");
+  // Clearing the name leaves Base UI's index on the blueprint row, which is not a choice.
+  await type("");
+  await press("Enter");
+  expect(selected.mock.calls).toEqual([["blueprint"], ["create"]]);
+});
+it("keeps the row the user moved to when the palette loses and regains focus", async () => {
+  await act(() => root.render(<Draft />));
+  await act(() => vi.advanceTimersToNextFrame());
+  await press("ArrowDown");
+  // Switching windows blurs the input; Base UI clears its highlight then and restores it on focus.
+  await act(() => input().blur());
+  await act(() => input().focus());
+  await press("Enter");
+  await press("ArrowDown");
+  await press("Enter");
+  expect(selected.mock.calls).toEqual([["blueprint"], ["repository"]]);
+});
+it("never runs a row Base UI moves onto after the chosen row leaves", async () => {
+  await act(() => root.render(<Draft />));
+  await act(() => vi.advanceTimersToNextFrame());
+  await press("ArrowDown");
+  // Base UI keeps its index, so the next row slides under it without the user picking it.
+  await act(() => root.render(<Draft blueprint={false} />));
+  await press("Enter");
+  expect(selected).not.toHaveBeenCalled();
 });
 it("uses empty Backspace and Escape for Back without closing the popup or submitting", async () => {
   await type("missing");
