@@ -22,6 +22,10 @@ const state = vi.hoisted(() => ({
   subagent: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
   delegatedChild: null as "running" | "approval" | null,
+  // fork: respectful-notifications
+  settled: false,
+  snoozedUntil: null as string | null,
+  botRun: false, // fork: bots
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -38,9 +42,9 @@ const SHELL_NOW = DateTime.makeUnsafe("2026-09-13T09:00:00.000Z");
 
 function mockThreadShell() {
   return {
-    id: "thread-1",
+    id: state.botRun ? "bot-run-1" : "thread-1", // fork: bots
     projectId: "project-1",
-    title: "Fix the login form",
+    title: state.botRun ? "Review bot" : "Fix the login form", // fork: bots
     providerInstanceId: "codex",
     modelSelection: { instanceId: "codex", model: "gpt-5.4" },
     runtimeMode: "full-access",
@@ -81,7 +85,9 @@ function mockThreadShell() {
     latestRunStartedAt: SHELL_NOW,
     latestRunCompletedAt: state.completedAt ? DateTime.makeUnsafe(state.completedAt) : undefined,
     archivedAt: state.archivedAt ? DateTime.makeUnsafe(state.archivedAt) : null,
-    settledOverride: null,
+    settledOverride: state.settled ? "settled" : null, // fork: respectful-notifications
+    // fork: respectful-notifications
+    snoozedUntil: state.snoozedUntil ? DateTime.makeUnsafe(state.snoozedUntil) : null,
     settledAt: null,
     lastVisitedAt: null,
     deletedAt: null,
@@ -193,6 +199,10 @@ beforeEach(() => {
     subagent: false,
     background: [],
     delegatedChild: null,
+    // fork: respectful-notifications
+    settled: false,
+    snoozedUntil: null,
+    botRun: false, // fork: bots
   });
   stableParent = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -351,6 +361,94 @@ describe("thread notifications", () => {
     state.live = true;
     await render();
     expect(state.add).not.toHaveBeenCalled();
+  });
+
+  // fork: respectful-notifications
+  it("announces an approval that arrived while the shell was away, once", async () => {
+    await render();
+    state.live = false;
+    await render();
+    state.approval = true;
+    await render();
+    expect(state.add).not.toHaveBeenCalled();
+    state.live = true;
+    await render();
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Approval needed", description: "Fix the login form" }),
+    );
+  });
+
+  // fork: respectful-notifications
+  it("seeds from the cached snapshot at launch and announces only what is new since", async () => {
+    state.live = false;
+    await render();
+    state.input = true;
+    state.live = true;
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Input needed" }));
+
+    await act(() => root.unmount());
+    root = createRoot(document.createElement("div"));
+    state.live = false;
+    await render();
+    state.live = true;
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
+  });
+
+  // fork: respectful-notifications
+  it.each([
+    ["2026-09-13T10:05:00.000Z", 1],
+    ["2026-09-13T10:30:00.000Z", 0],
+  ])("after a gap, at %s, announces a completion only while it is recent", async (now, count) => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse(now));
+    await render();
+    state.live = false;
+    await render();
+    state.live = true;
+    await complete();
+    expect(state.add).toHaveBeenCalledTimes(count);
+  });
+
+  // fork: respectful-notifications
+  it.each(["snoozed", "settled"])(
+    "keeps a %s thread's completions quiet but still asks for approvals",
+    async (parked) => {
+      vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-13T10:00:00.000Z"));
+      if (parked === "snoozed") state.snoozedUntil = "2026-09-13T12:00:00.000Z";
+      else state.settled = true;
+      await render();
+      await complete();
+      expect(state.add).not.toHaveBeenCalled();
+      state.completedAt = null;
+      state.approval = true;
+      await render();
+      expect(state.add).toHaveBeenCalledTimes(1);
+      expect(state.add).toHaveBeenLastCalledWith(
+        expect.objectContaining({ title: "Approval needed" }),
+      );
+    },
+  );
+
+  // fork: bots
+  it("alerts a bot run waiting on a person by its bot, and never its completion or failure", async () => {
+    state.botRun = true;
+    await render();
+    state.approval = true;
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Bot needs approval", description: "Review bot" }),
+    );
+    state.approval = false;
+    await complete();
+    state.completedAt = null;
+    state.turnError = true;
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
   });
 
   it("keeps sound but replaces the system popup when showing a toast", async () => {

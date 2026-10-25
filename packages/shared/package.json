@@ -527,6 +527,10 @@
       "types": "./src/fork/reach.ts",
       "import": "./src/fork/reach.ts"
     },
+    "./fork/thread-alerts": {
+      "types": "./src/fork/thread-alerts.ts",
+      "import": "./src/fork/thread-alerts.ts"
+    },
     "./markdownMath": {
       "types": "./src/markdownMath.ts",
       "import": "./src/markdownMath.ts"

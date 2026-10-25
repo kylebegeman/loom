@@ -280,6 +280,21 @@ it("does not badge old completions on first load or reconnect", async () => {
   expect(state.badge.mock.calls.every(([count]) => count === 0)).toBe(true);
 });
 
+// fork: respectful-notifications
+it("badges an approval that arrived while closed, seeding from the cached snapshot", async () => {
+  state.shells.set("one", { ...shell(), status: "cached" });
+  await render();
+  state.shells.set("one", { ...shell({ hasPendingApprovals: true }), status: "synchronizing" });
+  await render();
+  expect(TestNotification.sent).toHaveLength(0);
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+  await render();
+  expect(TestNotification.sent.map((notification) => notification.title)).toEqual([
+    "Approval needed",
+  ]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+});
+
 it("removes alerts only from environments that leave the client", async () => {
   await render();
   complete("one");
