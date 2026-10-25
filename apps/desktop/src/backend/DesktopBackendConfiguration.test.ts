@@ -247,6 +247,7 @@ describe("DesktopBackendConfiguration", () => {
         const second = yield* configuration.resolvePrimary;
 
         assert.equal(first.executablePath, process.execPath);
+        // fork: restart-continuity: the report flags lead the args.
         assert.deepEqual(first.args, [
           "--report-on-fatalerror",
           `--report-directory=${environment.logDir}`,

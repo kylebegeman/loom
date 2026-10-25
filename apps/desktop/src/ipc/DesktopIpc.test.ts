@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import * as Tracer from "effect/Tracer";
+import * as Schema from "effect/Schema"; // fork: server-weight
+import * as Tracer from "effect/Tracer"; // fork: server-weight
 import { vi } from "vite-plus/test";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
@@ -107,6 +107,7 @@ describe("DesktopIpc", () => {
     }),
   );
 
+  // fork: server-weight
   it.effect("records no spans for an untraced sync read, including nested ones", () =>
     Effect.gen(function* () {
       const ended: Array<string> = [];
