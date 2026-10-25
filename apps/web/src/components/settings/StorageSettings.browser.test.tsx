@@ -105,8 +105,9 @@ beforeEach(() => {
       worktreeOnMerge: false,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
-      // fork: project-lifecycle. Loom's settle, project and Scratch rules stay off here.
+      // fork: project-lifecycle. Loom's settle, land, project and Scratch rules stay off here.
       worktreeOnSettle: false,
+      worktreeOnLand: false,
       projectAfterDays: null,
       projectOnSettle: false,
       scratchAfterDays: null,

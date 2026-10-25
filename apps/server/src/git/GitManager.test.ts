@@ -7140,8 +7140,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["commit", "-m", "Existing worktree branch"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-existing-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-existing-worktree"]);
@@ -7197,8 +7196,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-reused-stale"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-reused-stale-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-stale"]);
@@ -7252,8 +7250,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-reused-setup"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-reused-setup-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-setup"]);
@@ -7317,8 +7314,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-reused-current"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-reused-current-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-current"]);
@@ -7372,8 +7368,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-force-pushed"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-force-pushed-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-force-pushed"]);
@@ -7446,8 +7441,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-local-commit"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-local-commit-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-local-commit"]);
@@ -7524,8 +7518,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-dirty-worktree"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-dirty-worktree-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-dirty-worktree"]);
@@ -7744,8 +7737,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "fork-main-collision:main"]);
       yield* runGit(repoDir, ["checkout", "-b", "feature/root-work", "main"]);
       const mainWorktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `local-main-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, ["worktree", "add", mainWorktreePath, "main"]);
@@ -7967,8 +7959,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "feature/pr-reused-fork"]);
       yield* runGit(repoDir, ["checkout", "main"]);
       const worktreePath = NodePath.join(
-        repoDir,
-        "..",
+        yield* makeTempDir("t3code-git-worktree-"), // fork: test-temp-isolation
         `pr-reused-fork-${NodePath.basename(repoDir)}`,
       );
       yield* runGit(repoDir, [

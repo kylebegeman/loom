@@ -20,7 +20,13 @@ on narrow upstream integrations, so this packet can conflict during an upstream 
 - Setup and settlement script terminals accept an internal held lease; clients cannot supply
   that bypass through RPC.
 - Settings decoding supplies disabled defaults for older hosts, and client controls respect
-  the advertised capability.
+  the advertised capability. The landed-worktree rule is the exception: it decodes on, and the
+  Storage toggle appears only when every connected host advertises `landed-worktree-cleanup`.
+- The landed rule never contacts a remote; it trusts the last fetched remote default ref. It
+  deletes a branch only by compare-and-delete, never the default branch, and only when the
+  checkpoint `restoreWorktree` would use has the deleted head as its parent.
+- Releasing a managed checkout or Library copy refuses while a linked worktree made from it
+  exists outside it. Locked or unreadable entries count; only prunable ones are skipped.
 
 [docs/fork/seams.tsv](../../seams.tsv) is the executable marker manifest. It covers actual
 `project-lifecycle` markers in the recovery helpers and focused integration tests, alongside

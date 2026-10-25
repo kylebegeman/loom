@@ -434,6 +434,10 @@ opened through a symlink or with different case is still recognised, and also re
 worktree that holds any project's folder. `server.ts` (1) gives it `ProjectStore` for that list,
 and `GitWorkflowService.test.ts` (5) marks its cases.
 
+The `test-temp-isolation` seam in `apps/server/src/git/GitManager.test.ts` (9) creates each
+test's extra worktree inside its own scoped temp directory. Upstream placed them beside the
+scoped repository, so every run left orphaned worktree folders in `$TMPDIR`.
+
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
 `aps-environment` when `LOOM_MOBILE_LIBRARY_PUSH_ENABLED=1` and exposes `extra.loomLibraryPush`,

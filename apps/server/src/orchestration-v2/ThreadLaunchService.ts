@@ -39,6 +39,8 @@ import {
   WORKTREE_BRANCH_PREFIX,
 } from "@t3tools/shared/git";
 
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
+import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -189,10 +191,13 @@ export class ThreadLaunchService extends Context.Service<
 >()("t3/orchestration-v2/ThreadLaunchService") {}
 
 const isThreadLaunchError = Schema.is(ThreadLaunchError);
+const isLibraryError = Schema.is(LibraryError); // fork: library-projects
 
 function failureDetail(error: unknown): string {
   if (isThreadLaunchError(error)) {
     const cause = error.cause;
+    // fork: library-projects -- a Library refusal already says why and what to do instead.
+    if (isLibraryError(cause) && cause.reason === "blocked") return cause.message;
     const detail = cause instanceof Error ? cause.message : String(cause);
     return `Workspace preparation failed during ${error.operation.replaceAll("-", " ")}: ${detail}`;
   }
@@ -216,6 +221,7 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const libraryFolders = yield* Effect.serviceOption(LibraryFolderGuard.LibraryFolderGuard); // fork: library-projects
   const preparationScope = yield* Scope.make("sequential");
   const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
   yield* Effect.addFinalizer(() => Scope.close(preparationScope, Exit.void));
@@ -390,6 +396,13 @@ const make = Effect.gen(function* () {
           ? input.workspaceStrategy.worktreePath
           : null;
       if (input.workspaceStrategy.type === "worktree") {
+        // fork: library-projects -- the thread exists by now, also on a retry. Recording the
+        // worktree on a Library-bound thread is refused only after the worktree and branch
+        // exist, and that rejection never says why.
+        if (Option.isSome(libraryFolders))
+          yield* libraryFolders.value
+            .assertMayLeaveFolder(threadId)
+            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))); // fork: library-projects
         if (runId !== null) {
           yield* threads
             .dispatch({

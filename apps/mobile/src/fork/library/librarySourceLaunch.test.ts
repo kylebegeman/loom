@@ -66,9 +66,11 @@ describe("new conversations from mobile source settings", () => {
     { branch: "feature/source", worktreePath: null },
     { branch: "feature/source", worktreePath: "/worktrees/source-lane" },
     { branch: null, worktreePath: "/worktrees/source-lane" },
-  ])("keeps explicit checkouts on the legacy launch path: %j", (checkout) => {
+  ])("starts in the Library project's folder whatever checkout the source used: %j", (checkout) => {
     const thread = { ...source, ...checkout };
-    expect(librarySourceLaunchParams(thread, binding, project)).toBeNull();
+    expect(librarySourceLaunchParams(thread, binding, project)).toEqual(
+      librarySourceLaunchParams(source, binding, project),
+    );
     expect(sourceConversationSettings(thread)).toEqual({
       modelSelection: source.modelSelection,
       runtimeMode: source.runtimeMode,

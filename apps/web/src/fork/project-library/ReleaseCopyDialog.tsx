@@ -1,6 +1,7 @@
 import { randomUUID } from "~/lib/utils";
 import { useRef, useState } from "react";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import { libraryCopyRemovalBlockers } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
@@ -26,6 +27,8 @@ export function ReleaseCopyDialog({
     }),
   );
   const borrowed = copy.ownership === "borrowed";
+  // Forgetting a borrowed folder never deletes its files, so removal blockers do not apply.
+  const removalBlockers = !borrowed && status.data ? libraryCopyRemovalBlockers(status.data) : [];
   const removeCommand = borrowed ? projectLibrary.unregisterCopy : projectLibrary.releaseCopy;
   const remove = useAtomCommand(removeCommand, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
@@ -43,7 +46,7 @@ export function ReleaseCopyDialog({
     const releaseCopy = async () => {
       let released = data.copy;
       if (released.state !== "released" && released.registered !== false) {
-        if (!data.reviewToken) return;
+        if (!data.reviewToken || removalBlockers.length) return;
         const result = await remove({
           environmentId: copy.environmentId,
           input: {
@@ -104,6 +107,7 @@ export function ReleaseCopyDialog({
               !authority.connected ||
               host?.connection.phase !== "connected" ||
               status.isPending ||
+              removalBlockers.length > 0 ||
               (!status.data?.reviewToken &&
                 status.data?.copy.state !== "released" &&
                 status.data?.copy.registered !== false)
@@ -130,9 +134,9 @@ export function ReleaseCopyDialog({
               : "Checking for active conversations and local changes..."}
           </p>
         ) : null}
-        {!borrowed && status.data?.blockers.length ? (
+        {removalBlockers.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {status.data.blockers.map((blocker) => (
+            {removalBlockers.map((blocker) => (
               <li key={blocker}>{blocker}</li>
             ))}
           </ul>

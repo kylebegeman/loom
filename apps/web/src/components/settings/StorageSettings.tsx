@@ -318,7 +318,8 @@ function CleanupSection() {
       rules.worktreeOnMerge ||
       rules.worktreeOnDelete ||
       rules.worktreeOnSettle || // fork: project-lifecycle
-      rules.worktreeUnchanged;
+      rules.worktreeUnchanged ||
+      rules.worktreeOnLand; // fork: project-lifecycle
     return (
       // fork: project-checkout-management
       settings.storageCleanup.projectAfterDays !== null ||
@@ -584,6 +585,27 @@ export function StorageSettingsPanel() {
                 />
               }
             />
+            {/* fork: project-lifecycle - older servers decode the setting but never run it. */}
+            {connectedEnvironments.length > 0 &&
+              connectedEnvironments.every((environment) =>
+                loomFeaturesOf(environment.serverConfig?.environment.capabilities).includes(
+                  "landed-worktree-cleanup",
+                ),
+              ) && (
+                <SettingsRow
+                  title="Delete landed worktrees"
+                  status={ruleStatus("worktreeOnLand")}
+                  description="Remove a worktree and its branch once its commits are in the default branch and every thread using it is settled or archived. Worktrees with local changes are kept."
+                  serverScoped={!isProjectScope}
+                  control={
+                    <Switch
+                      aria-label="Delete landed worktrees"
+                      checked={settings.worktreeOnLand}
+                      onCheckedChange={(worktreeOnLand) => updateWorktree({ worktreeOnLand })}
+                    />
+                  }
+                />
+              )}
             <SettingsRow
               title="Delete worktrees with deleted threads"
               status={ruleStatus("worktreeOnDelete")}

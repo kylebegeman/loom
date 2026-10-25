@@ -489,6 +489,7 @@ export function applyServerSettingsPatch(
                     worktreeOnDelete: next.storageCleanup.worktreeOnDelete,
                     worktreeOnSettle: next.storageCleanup.worktreeOnSettle,
                     worktreeUnchanged: next.storageCleanup.worktreeUnchanged,
+                    worktreeOnLand: next.storageCleanup.worktreeOnLand, // fork: project-lifecycle
                     ...(current.worktreeCleanup?.mode === "custom"
                       ? current.worktreeCleanup.rules
                       : {}),

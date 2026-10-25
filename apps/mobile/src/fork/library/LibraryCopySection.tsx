@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { libraryCopyRemovalBlockers } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -108,6 +109,7 @@ export function LibraryCopySection(props: {
     review !== null ||
     error !== null ||
     recoveryProgress !== null;
+  const reviewBlockers = review ? libraryCopyRemovalBlockers(review) : [];
   const allowed =
     connected &&
     props.authorityReady &&
@@ -130,8 +132,8 @@ export function LibraryCopySection(props: {
     setError(null);
     try {
       if (!released.current) {
-        if (!review?.reviewToken || review.blockers.length)
-          throw new Error(review?.blockers[0] ?? "Review these files before removing them.");
+        if (!review?.reviewToken || reviewBlockers.length)
+          throw new Error(reviewBlockers[0] ?? "Review these files before removing them.");
         const result = await (borrowed ? unregister : release)({
           environmentId: props.copy.environmentId,
           input: {
@@ -373,7 +375,7 @@ export function LibraryCopySection(props: {
               <Text selectable className="text-xs text-foreground">
                 {review.copy.rootPath}
               </Text>
-              {review.blockers.map((blocker) => (
+              {reviewBlockers.map((blocker) => (
                 <Text key={blocker} className="text-sm text-warning-foreground">
                   {blocker}
                 </Text>
@@ -387,7 +389,7 @@ export function LibraryCopySection(props: {
                     pending ||
                     folderPending ||
                     recoveryProgress !== null ||
-                    review.blockers.length > 0 ||
+                    reviewBlockers.length > 0 ||
                     !review.reviewToken
                   }
                   onPress={() => {

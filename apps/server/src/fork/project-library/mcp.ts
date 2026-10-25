@@ -318,7 +318,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_copy_release", {
     description:
-      "Remove managed project files only after saving and verifying their full recovery archive. Review with loom_library_copy_status first and pass its current reviewToken. For an existing external folder, only removes its Library registration and preserves all files. Projects and saved conversation history persist.",
+      "Remove managed project files only after saving and verifying their full recovery archive. Review with loom_library_copy_status first and pass its current reviewToken; refuses while it lists blockers or releaseBlockers. For an existing external folder, only removes its Library registration and preserves all files. Projects and saved conversation history persist.",
     parameters: Library.LibraryReleaseCopyRequest,
     success: Library.LibraryWorkingCopy,
     failure,
@@ -328,7 +328,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, true),
   Tool.make("loom_library_copy_status", {
     description:
-      "Review working-copy ownership, active bindings, cleanup blockers and each repository's branch, ahead/behind counts and uncommitted files. A current reviewToken is needed to release.",
+      "Review working-copy ownership, active bindings, cleanup blockers and each repository's branch, ahead/behind counts and uncommitted files. releaseBlockers name what must be resolved before files can be removed, such as Git worktrees made from them that still exist elsewhere; they do not stop a snapshot. A current reviewToken is needed to release.",
     parameters: Schema.Struct({ workingCopyId: Library.LibraryId }),
     success: Library.LibraryCopyStatus,
     failure,

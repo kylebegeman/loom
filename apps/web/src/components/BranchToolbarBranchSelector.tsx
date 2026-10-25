@@ -176,13 +176,12 @@ export function BranchToolbarBranchSelector({
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
     )
       return;
-    if (serverSession && worktreePath !== activeWorktreePath) {
-      void stopThreadSession({
-        environmentId,
-        input: { threadId: activeThreadId },
-      });
-    }
     if (hasServerThread) {
+      // fork: library-projects -- the server can refuse a folder change (a Library conversation
+      // runs only in its copy folder), so the session stops only once the change lands and the
+      // label reverts when it is refused.
+      const previousBranch = activeThreadBranch;
+      const stopsSession = serverSession !== null && worktreePath !== activeWorktreePath;
       void (automatic ? updateEmptyThreadMetadata : updateThreadMetadata)({
         environmentId,
         input: {
@@ -191,9 +190,23 @@ export function BranchToolbarBranchSelector({
           worktreePath,
           ...(automatic ? { expectedEmpty: true } : {}),
         },
-      });
-    }
-    if (hasServerThread) {
+      }).then((result) => {
+        if (result._tag === "Success") {
+          if (stopsSession)
+            void stopThreadSession({ environmentId, input: { threadId: activeThreadId } });
+          return;
+        }
+        // An automatic default is retried by its effect, so reverting it would loop.
+        if (automatic || isAtomCommandInterrupted(result)) return;
+        onActiveThreadBranchOverrideChange?.(previousBranch);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not change the thread's branch",
+            description: toBranchActionErrorMessage(squashAtomCommandFailure(result)),
+          }),
+        );
+      }); // fork: library-projects
       onActiveThreadBranchOverrideChange?.(branch);
       return;
     }

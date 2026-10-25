@@ -163,6 +163,7 @@ describe("scoped settings writes", () => {
             worktreeOnSettle: false,
             worktreeOnMerge: true,
             worktreeUnchanged: false,
+            worktreeOnLand: false, // fork: project-lifecycle
             worktreeKeepWhen: "uncommitted-changes",
           },
         },
@@ -189,6 +190,7 @@ describe("scoped settings writes", () => {
         worktreeOnSettle: false,
         worktreeOnMerge: true,
         worktreeUnchanged: false,
+        worktreeOnLand: false, // fork: project-lifecycle
         worktreeKeepWhen: "uncommitted-changes",
       },
       {
@@ -198,6 +200,7 @@ describe("scoped settings writes", () => {
         worktreeOnSettle: false,
         worktreeOnMerge: false,
         worktreeUnchanged: false,
+        worktreeOnLand: false, // fork: project-lifecycle
         worktreeKeepWhen: "uncommitted-changes",
       },
     ]);
@@ -392,6 +395,7 @@ describe("scoped settings writes", () => {
                 worktreeOnSettle: false,
                 worktreeOnMerge: true,
                 worktreeUnchanged: false,
+                worktreeOnLand: false, // fork: project-lifecycle
                 worktreeKeepWhen: "uncommitted-changes",
               },
             },
@@ -424,6 +428,7 @@ describe("scoped settings writes", () => {
               worktreeOnSettle: false,
               worktreeOnMerge: true,
               worktreeUnchanged: false,
+              worktreeOnLand: false, // fork: project-lifecycle
               worktreeKeepWhen: "uncommitted-changes",
             },
           },
@@ -440,6 +445,7 @@ describe("scoped settings writes", () => {
               worktreeOnSettle: false,
               worktreeOnMerge: false,
               worktreeUnchanged: false,
+              worktreeOnLand: true, // fork: project-lifecycle
               worktreeKeepWhen: "uncommitted-changes",
             },
           },

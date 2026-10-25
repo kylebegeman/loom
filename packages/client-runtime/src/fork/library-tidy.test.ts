@@ -365,6 +365,22 @@ describe("runLibraryTidy", () => {
     ]);
   });
 
+  it("keeps a copy whose worktrees elsewhere would break, without asking the server to remove it", async () => {
+    const linked = copy({ id: "linked" });
+    const worktree =
+      "Worktrees made from these files still exist: /Users/kyle/.t3/worktrees/loom/feature. Land or remove them first. Removing these files would break them.";
+    // A snapshot still works here, so the server issues a review token alongside the blocker.
+    const run = harness({ linked: status(linked, { releaseBlockers: [worktree] }) });
+    const result = await runLibraryTidy({
+      ...run,
+      copies: [linked],
+      archive: false,
+      connected: online,
+    });
+    expect(run.calls).toEqual(["status:linked"]);
+    expect(result.copies).toEqual([{ copy: linked, outcome: "blocked", blockers: [worktree] }]);
+  });
+
   it("reports a failed copy, continues with the rest and still archives", async () => {
     const broken = copy({ id: "broken" });
     const fine = copy({ id: "fine" });

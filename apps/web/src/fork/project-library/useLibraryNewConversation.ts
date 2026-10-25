@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
-import { readProject, readThreadShell } from "~/state/entities";
+import { readThreadShell } from "~/state/entities";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useParams } from "@tanstack/react-router";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
@@ -47,18 +47,6 @@ export function libraryContextForLocalProject(
   )
     return null;
   return matches[0]!;
-}
-
-/**
- * A Library conversation runs in its project's own folder, with whatever branch is checked out
- * there, and may record that folder as its worktree. Only a different folder is a worktree of its
- * own. An unknown project counts as one, because moving work out of its worktree is the worse
- * mistake.
- */
-export function runsInSeparateWorktree(worktreePath: string, workspaceRoot: string | undefined) {
-  const folderKey = (path: string) =>
-    path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-  return workspaceRoot === undefined || folderKey(worktreePath) !== folderKey(workspaceRoot);
 }
 
 /** Resolve context on the source before choosing a new execution binding. No full history read. */
@@ -110,17 +98,6 @@ export function useLibraryNewConversation() {
     // user happens to be, so its project leads the list instead of deciding the conversation.
     const suggest = { suggest: !options?.inheritSettings };
     const sourceShell = options?.inheritSettings ? readThreadShell(thread) : null;
-    // The project form cannot select a worktree, and the Library links only conversations in the
-    // copy's own folder, so a conversation in a worktree of its own keeps that checkout and lane.
-    if (
-      sourceShell?.worktreePath &&
-      runsInSeparateWorktree(
-        sourceShell.worktreePath,
-        readProject({ environmentId: thread.environmentId, projectId: sourceShell.projectId })
-          ?.workspaceRoot,
-      )
-    )
-      return false;
     const launchDefaults = sourceShell
       ? {
           modelSelection: sourceShell.modelSelection,

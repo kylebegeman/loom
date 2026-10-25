@@ -181,6 +181,12 @@ const CHANGED_SINCE_REVIEW =
   "These files changed since they were reviewed. Review them again, then retry.";
 const EXECUTION_DISABLED =
   "This computer hosts your Library but does not run work. Choose another computer for these files.";
+// LibraryError details are length-limited and worktree paths are not.
+const LISTED_WORKTREES = 3;
+const linkedWorktreesBlocker = (paths: ReadonlyArray<string>) => {
+  const more = paths.length - LISTED_WORKTREES;
+  return `Worktrees made from these files still exist: ${paths.slice(0, LISTED_WORKTREES).join(", ")}${more > 0 ? ` and ${more} more` : ""}. Land or remove them first. Removing these files would break them.`;
+};
 const FullRecoveryManifest = Schema.Struct({
   version: Schema.Literal(1),
   project: LibraryProject,
@@ -611,10 +617,12 @@ const make = Effect.gen(function* () {
 
   const externalGitReview = Effect.fn("LibraryWorkspace.externalGitReview")(function* (
     copy: LibraryWorkingCopy,
+    /** What a caller that already walked the copy found, so one review walks it once. */
+    scanned?: ReadonlyArray<string>,
   ) {
     const roots = new Set<string>();
     const repositories: string[] = [];
-    for (const cwd of yield* workingRepositories(copy)) {
+    for (const cwd of scanned ?? (yield* workingRepositories(copy))) {
       if (!(yield* fs.exists(path.join(cwd, ".git")))) continue;
       let available = true;
       for (const args of [
@@ -1283,6 +1291,45 @@ const make = Effect.gen(function* () {
     return prepared.success;
   });
 
+  /**
+   * Linked worktrees outside the copy keep their Git metadata inside this repository, so
+   * removing the copy breaks them and strands their work. Only an entry Git marks prunable is
+   * already broken. A locked one may sit on unplugged media, which Git never calls prunable,
+   * so a locked or unreadable entry counts as outside.
+   */
+  const externalWorktrees = Effect.fn("LibraryWorkspace.externalWorktrees")(function* (
+    rootPath: string,
+    repositoryPath: string,
+  ) {
+    // Git before 2.36 rejects -z; its line form differs only in the separator.
+    const listed =
+      (yield* git(repositoryPath, ["worktree", "list", "--porcelain", "-z"], true)) ??
+      ((yield* git(repositoryPath, ["worktree", "list", "--porcelain"])) ?? "").replaceAll(
+        "\n",
+        "\0",
+      );
+    const entries: Array<{ path: string; prunable: boolean; locked: boolean }> = [];
+    for (const field of listed.split("\0")) {
+      const entry = entries.at(-1);
+      if (field.startsWith("worktree "))
+        entries.push({ path: field.slice("worktree ".length), prunable: false, locked: false });
+      else if (entry === undefined) continue;
+      else if (field === "prunable" || field.startsWith("prunable ")) entry.prunable = true;
+      else if (field === "locked" || field.startsWith("locked ")) entry.locked = true;
+    }
+    const external: string[] = [];
+    for (const entry of entries) {
+      if (entry.locked) {
+        external.push(entry.path);
+        continue;
+      }
+      if (entry.prunable) continue;
+      const actual = yield* fs.realPath(entry.path).pipe(Effect.orElseSucceed(() => null));
+      if (actual === null || !contained(rootPath, actual)) external.push(entry.path);
+    }
+    return external;
+  });
+
   const status = Effect.fn("LibraryWorkspace.status")(function* (
     input: { readonly workingCopyId: string },
     /** Borrowed folders are only read in full by a snapshot, which archives their files. */
@@ -1292,9 +1339,11 @@ const make = Effect.gen(function* () {
     const copy = receipt.copy;
     if (copy.environmentId !== environmentId) return yield* new LibraryError({ reason: "invalid" });
     const blockers: string[] = [];
+    // Only removal strands these; a snapshot still reads the same files.
+    const releaseBlockers: string[] = [];
     const facts: string[] = [];
     if (copy.state === "released" || copy.registered === false)
-      return { copy, blockers, reviewToken: null, contentsDigest: null };
+      return { copy, blockers, releaseBlockers, reviewToken: null, contentsDigest: null };
     if (copy.ownership === "borrowed") {
       // Forgetting a borrowed folder never touches its files, and unregister checks only the
       // record segment. Hashing every byte here made large folders impossible to forget.
@@ -1309,6 +1358,7 @@ const make = Effect.gen(function* () {
       return {
         copy,
         blockers,
+        releaseBlockers,
         reviewToken: `${yield* digest(`unregister:${yield* encodeWorkingCopy(copy)}`)}:${root === null ? "missing" : `${root.device ?? ""}-${root.inode ?? ""}`}:${root === null ? "" : yield* externalGitReview(copy)}`,
         contentsDigest,
       };
@@ -1318,6 +1368,7 @@ const make = Effect.gen(function* () {
       return {
         copy: { ...copy, state: "missing" as const },
         blockers: ["The working folder is unavailable."],
+        releaseBlockers,
         reviewToken: null,
         contentsDigest: null,
       };
@@ -1375,6 +1426,7 @@ const make = Effect.gen(function* () {
         blockers.push("A conversation is still running in this working folder.");
     }
     const repositories: Array<LibraryWorkingCopy["repositories"][number]> = [];
+    const linkedWorktrees = new Set<string>();
     for (const repository of copy.repositories) {
       const inspected = (yield* fs.exists(repository.path))
         ? yield* inspectRepository(copy.rootPath, repository.path)
@@ -1403,6 +1455,9 @@ const make = Effect.gen(function* () {
           (yield* fs.realPath(gitPath)) !== gitPath
         )
           blockers.push("A repository uses an external Git directory.");
+        else
+          for (const worktree of yield* externalWorktrees(copy.rootPath, repository.path))
+            linkedWorktrees.add(worktree);
       }
       repositories.push({ ...repository, head: inspected.head, branch: inspected.branch });
     }
@@ -1414,6 +1469,9 @@ const make = Effect.gen(function* () {
           (yield* fs.realPath(gitPath)) !== gitPath)
       )
         blockers.push("The project folder uses an external Git directory.");
+      else
+        for (const worktree of yield* externalWorktrees(copy.rootPath, copy.rootPath))
+          linkedWorktrees.add(worktree);
       facts.push(
         yield* encodeReviewRepository({
           resourceId: "project-root",
@@ -1423,6 +1481,22 @@ const make = Effect.gen(function* () {
         }),
       );
     }
+    // A clone the copy never registered, such as vendor/lib, can have worktrees outside too.
+    // Only a passing review needs them, and the Git review below walks the copy anyway.
+    const scanned = blockers.length === 0 ? yield* workingRepositories(copy) : null;
+    const checked = new Set(copy.repositories.map((repository) => repository.path));
+    if (receipt.rootCheckpointRepository) checked.add(copy.rootPath);
+    for (const cwd of scanned ?? []) {
+      if (checked.has(cwd)) continue;
+      // A .git file belongs to a worktree or submodule, and an unusable .git directory makes
+      // Git search parent folders and list another repository's worktrees.
+      const gitDirectory = yield* git(cwd, ["rev-parse", "--absolute-git-dir"], true);
+      if (gitDirectory !== null && (yield* fs.realPath(gitDirectory)) === path.join(cwd, ".git"))
+        for (const worktree of yield* externalWorktrees(copy.rootPath, cwd))
+          linkedWorktrees.add(worktree);
+    }
+    if (linkedWorktrees.size > 0)
+      releaseBlockers.push(linkedWorktreesBlocker([...linkedWorktrees].toSorted()));
     const state =
       repositories.length === copy.repositories.length ? copy.state : ("missing" as const);
     const current = {
@@ -1435,11 +1509,13 @@ const make = Effect.gen(function* () {
     // split-index metadata during this read and make every review immediately stale.
     const contentsDigest = blockers.length === 0 ? yield* streamWorkingCopy(copy.rootPath) : null;
     if (contentsDigest !== null) facts.push(`contents:${contentsDigest}`);
-    if (contentsDigest !== null) facts.push(`git:${yield* externalGitReview(copy)}`);
+    if (contentsDigest !== null)
+      facts.push(`git:${yield* externalGitReview(copy, scanned ?? undefined)}`);
     return {
       copy: current,
       contentsDigest,
       blockers: [...new Set(blockers)],
+      releaseBlockers,
       reviewToken:
         blockers.length === 0
           ? yield* digest(
@@ -1964,11 +2040,12 @@ const make = Effect.gen(function* () {
       if (
         reviewed.reviewToken === null ||
         reviewed.reviewToken !== input.reviewToken ||
-        reviewed.blockers.length !== 0
+        reviewed.blockers.length !== 0 ||
+        reviewed.releaseBlockers.length !== 0
       )
         return yield* new LibraryError({
           reason: "blocked",
-          detail: reviewed.blockers[0] ?? CHANGED_SINCE_REVIEW,
+          detail: reviewed.blockers[0] ?? reviewed.releaseBlockers[0] ?? CHANGED_SINCE_REVIEW,
         });
       if (receipt.copy.ownership === "managed") {
         if (Option.isNone(recoveryPublisher) || !recoveryPublisher.value.configured)
@@ -2016,8 +2093,11 @@ const make = Effect.gen(function* () {
             detail: `Something already exists at ${receipt.removalPath}, where Loom moves files before removing them. Move it, then retry.`,
           });
         const current = yield* status({ workingCopyId: input.workingCopyId });
-        if (current.reviewToken !== input.reviewToken)
-          return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
+        if (current.reviewToken !== input.reviewToken || current.releaseBlockers.length !== 0)
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: current.releaseBlockers[0] ?? CHANGED_SINCE_REVIEW,
+          });
         if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
           return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
         yield* fs.rename(receipt.copy.rootPath, receipt.removalPath);
@@ -2786,9 +2866,14 @@ const make = Effect.gen(function* () {
           if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
           const review =
             receipt.removalPath !== null && receipt.releaseReviewToken !== null
-              ? { reviewToken: receipt.releaseReviewToken, blockers: [] }
+              ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
               : yield* status({ workingCopyId: receipt.copy.id });
-          if (review.reviewToken === null || review.blockers.length > 0) return;
+          if (
+            review.reviewToken === null ||
+            review.blockers.length > 0 ||
+            review.releaseBlockers.length > 0
+          )
+            return;
           yield* withWorkspaceLease(
             receipt.copy.rootPath,
             release(

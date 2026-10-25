@@ -152,6 +152,16 @@ export type LibraryTidyResult = {
   readonly archive: { readonly ok: true } | { readonly ok: false; readonly message: string } | null;
 };
 
+/**
+ * Everything that stops these files from being removed. `releaseBlockers` stop only removal, so
+ * snapshots and starting on another computer keep reading `blockers` alone.
+ */
+export function libraryCopyRemovalBlockers(
+  status: Pick<LibraryCopyStatus, "blockers" | "releaseBlockers">,
+): readonly string[] {
+  return [...new Set([...status.blockers, ...(status.releaseBlockers ?? [])])];
+}
+
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error && cause.message ? cause.message : fallback;
 
@@ -198,8 +208,9 @@ export async function runLibraryTidy(input: {
           settle({ copy, outcome: "kept", reasons: [{ kind: "no-permission" }] });
           continue;
         }
-        if (status.blockers.length || !status.reviewToken) {
-          settle({ copy, outcome: "blocked", blockers: status.blockers });
+        const blockers = libraryCopyRemovalBlockers(status);
+        if (blockers.length || !status.reviewToken) {
+          settle({ copy, outcome: "blocked", blockers });
           continue;
         }
         removed = await input.remove(status, status.reviewToken);

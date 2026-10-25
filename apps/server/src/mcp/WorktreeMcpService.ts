@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -62,6 +63,7 @@ const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const setupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+  const libraryFolders = yield* Effect.serviceOption(LibraryFolderGuard.LibraryFolderGuard); // fork: library-projects
 
   // Serializes handoffs per thread: two concurrent calls could otherwise both
   // pass the worktreePath === null check and each create a worktree, leaving
@@ -151,6 +153,22 @@ const make = Effect.gen(function* () {
       );
 
     const projection = yield* loadThread(scope);
+    // fork: library-projects -- checked first so a bound conversation hears why, and before
+    // the worktree and branch exist, since the bind dispatch would refuse only after both.
+    if (Option.isSome(libraryFolders)) {
+      yield* libraryFolders.value
+        .assertMayLeaveFolder(scope.thread.threadId)
+        .pipe(
+          Effect.mapError((error) =>
+            error.reason === "blocked"
+              ? failure("invalid_request", error.message)
+              : failure(
+                  "operation_failed",
+                  `Unable to check the thread's Library project: ${error.message}`,
+                ),
+          ),
+        );
+    } // fork: library-projects
     if (projection.thread.worktreePath !== null) {
       return yield* alreadyInWorktree(projection.thread.worktreePath);
     }

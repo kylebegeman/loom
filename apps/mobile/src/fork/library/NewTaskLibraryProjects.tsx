@@ -240,7 +240,7 @@ export function useNewTaskFromSource() {
     opening.current = true;
     const open = async () => {
       const host = environments.find((entry) => entry.environmentId === source.environmentId);
-      if (authority.environmentId && !source.branch && !source.worktreePath) {
+      if (authority.environmentId) {
         const live =
           host?.connection.phase === "connected" &&
           supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library")
