@@ -1,7 +1,12 @@
 import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createInboxReturnTracker, sortWorkingThreadsBySend } from "./threadInbox.ts";
+// fork: attention-status
+import {
+  createInboxReturnTracker,
+  sortWorkingThreadsBySend,
+  isThreadWorking,
+} from "./threadInbox.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 
@@ -80,4 +85,11 @@ describe("sortWorkingThreadsBySend", () => {
       sortWorkingThreadsBySend([launched, sentFirst, sentLast]).map((thread) => thread.id),
     ).toEqual(["sent-last", "sent-first", "launched"]);
   });
+});
+
+// fork: attention-status
+it("returns a held queue from the Working shelf even when a run is still attached", () => {
+  const working = thread("paused", true);
+  expect(isThreadWorking(working)).toBe(true);
+  expect(isThreadWorking({ ...working, queueHeld: true })).toBe(false);
 });

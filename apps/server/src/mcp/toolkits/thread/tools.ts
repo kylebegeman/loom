@@ -93,6 +93,13 @@ const QueueListTool = Tool.make("t3_queue_list", {
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
+// fork: attention-status
+const QueueResumeTool = Tool.make("t3_queue_resume", {
+  ...commandTool,
+  description:
+    "Resume queued follow-ups paused after a restart, stop or run failure. Omit threadId for this thread.",
+  parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
+});
 const QueueReadTool = Tool.make("t3_queue_read", {
   ...commandTool,
   description: "Read up to 16,000 characters of a queued message. Omit threadId for this thread.",
@@ -286,6 +293,8 @@ export const ThreadToolkit = Toolkit.make(
   ThreadOrganizeTool,
   QueueListTool,
   QueueReadTool,
+  // fork: attention-status
+  QueueResumeTool,
   QueueEditTool,
   QueueCancelTool,
   QueueReorderTool,

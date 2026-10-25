@@ -30,7 +30,7 @@ export function projectThreadActivity(
   )
     return "settled";
   const status = resolveThreadListV2Status(thread);
-  if (status === "approval" || status === "input") return "attention";
+  if (status === "approval" || status === "input" || status === "paused") return "attention";
   if (status === "working" || status === "waiting") return "working";
   if (status === "failed" || status === "limited") return "failed";
   return "ready";

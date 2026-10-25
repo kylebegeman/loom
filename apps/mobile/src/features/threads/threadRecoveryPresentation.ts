@@ -133,7 +133,9 @@ export function resolveThreadRecoveryPresentation(input: {
   if (input.queueHeld) {
     return {
       title: "Queue paused",
-      detail: "Resume the queue when you are ready for queued messages to run.",
+      // fork: attention-status - The shell flag does not record a specific cause.
+      detail:
+        "Loom pauses queued messages after a restart, stop or run failure. Resume when you are ready for them to run.",
       action: input.canOperate ? "resume" : null,
     };
   }

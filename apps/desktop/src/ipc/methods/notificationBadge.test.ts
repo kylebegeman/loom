@@ -49,24 +49,26 @@ it.each(["darwin", "linux"] as const)("sets and clears the native %s count", (pl
   expect(native.createFromDataURL).not.toHaveBeenCalled();
 });
 
+// fork: respectful-notifications
 it("sets and clears the Windows taskbar overlay", () => {
   applyNotificationBadge("win32", badge);
-  expect(native.setOverlayIcon).toHaveBeenLastCalledWith(
-    native.image,
-    "2 threads with new notifications",
-  );
+  expect(native.setOverlayIcon).toHaveBeenLastCalledWith(native.image, "2 threads need you");
   applyNotificationBadge("win32", { count: 0, image: null });
   expect(native.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
 });
 
+// fork: respectful-notifications
 it.each(["win32", "darwin", "linux"] as const)(
-  "rejects a late positive count while %s is focused",
+  "keeps unresolved attention badged while %s is focused",
   (platform) => {
     native.getFocusedWindow.mockReturnValue({});
     applyNotificationBadge(platform, badge);
-    if (platform === "win32") expect(native.setOverlayIcon).toHaveBeenCalledWith(null, "");
-    else expect(native.setBadgeCount).toHaveBeenCalledWith(0);
-    expect(native.createFromDataURL).not.toHaveBeenCalled();
+    if (platform === "win32") {
+      expect(native.setOverlayIcon).toHaveBeenCalledWith(native.image, "2 threads need you");
+    } else {
+      expect(native.setBadgeCount).toHaveBeenCalledWith(2);
+      expect(native.createFromDataURL).not.toHaveBeenCalled();
+    }
   },
 );
 
@@ -87,7 +89,8 @@ it("keeps notifications working when the native badge API fails", () => {
   expect(() => applyNotificationBadge("linux", badge)).not.toThrow();
 });
 
-it.effect("validates IPC and clears on native focus, quit, and disposal", () =>
+// fork: respectful-notifications
+it.effect("validates IPC, preserves attention on focus, and clears on quit and disposal", () =>
   Effect.gen(function* () {
     const handlers = new Map<string, DesktopIpc.DesktopIpcHandleListener>();
     yield* Effect.scoped(
@@ -107,15 +110,15 @@ it.effect("validates IPC and clears on native focus, quit, and disposal", () =>
         expect(native.setBadgeCount).not.toHaveBeenCalled();
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));
         expect(native.setBadgeCount).toHaveBeenLastCalledWith(2);
-        native.listeners.get("browser-window-focus")!();
-        expect(native.setBadgeCount).toHaveBeenLastCalledWith(0);
-        expect(native.webContents.send).toHaveBeenCalledWith("desktop:set-notification-badge");
+        // fork: respectful-notifications
         native.getFocusedWindow.mockReturnValue({});
+        native.listeners.get("browser-window-focus")?.();
+        expect(native.setBadgeCount).toHaveBeenLastCalledWith(2);
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));
-        expect(native.setBadgeCount).toHaveBeenLastCalledWith(0);
-        expect(native.webContents.send).toHaveBeenCalledTimes(2);
+        expect(native.setBadgeCount).toHaveBeenLastCalledWith(2);
+        expect(native.webContents.send).not.toHaveBeenCalled();
         yield* Effect.promise(() => Promise.resolve(handler(event, { count: 0, image: null })));
-        expect(native.webContents.send).toHaveBeenCalledTimes(2);
+        expect(native.setBadgeCount).toHaveBeenLastCalledWith(0);
         native.getFocusedWindow.mockReturnValue(null);
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));
         native.listeners.get("before-quit")!();

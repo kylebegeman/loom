@@ -11,6 +11,8 @@ import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
+// fork: attention-status
+import { attentionThreads } from "../fork/thread-attention.ts";
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
@@ -409,7 +411,32 @@ export function createEnvironmentThreadShellAtoms(input: {
     return next;
   }).pipe(Atom.withLabel("environment-navigation-thread-shells"));
 
+  // fork: attention-status - Wake at the next snooze deadline, without a polling clock.
+  let previousAttention: ReadonlyArray<EnvironmentThreadShell> = [];
+  const attentionThreadShellsAtom = Atom.make((get) => {
+    const threads = get(threadShellsAtom);
+    // @effect-diagnostics-next-line globalDate:off -- Client timer for a persisted snooze deadline.
+    const nowMs = Date.now();
+    const next = attentionThreads(threads, nowMs);
+    const nextWake = Math.min(
+      ...threads.flatMap((thread) => {
+        const wake = Date.parse(thread.snoozedUntil ?? "");
+        return wake > nowMs ? [wake] : [];
+      }),
+    );
+    if (Number.isFinite(nextWake)) {
+      // @effect-diagnostics-next-line globalTimers:off -- Atom-owned wake timer is disposed on refresh and unmount.
+      const timer = setTimeout(() => get.refreshSelf(), Math.min(nextWake - nowMs, 2_147_483_647));
+      get.addFinalizer(() => clearTimeout(timer));
+    }
+    if (arrayElementsEqual(previousAttention, next)) return previousAttention;
+    previousAttention = next;
+    return next;
+  }).pipe(Atom.withLabel("environment-attention-threads"));
+
   return {
+    // fork: attention-status
+    attentionThreadShellsAtom,
     environmentThreadsAtom,
     environmentThreadIndexAtom,
     environmentThreadRefsAtom,

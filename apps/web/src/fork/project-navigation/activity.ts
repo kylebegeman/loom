@@ -20,6 +20,7 @@ export function resolveProjectThreadActivity(
   switch (status) {
     case "approval":
     case "input":
+    case "paused":
       return "attention" as const;
     case "working":
     case "waiting":

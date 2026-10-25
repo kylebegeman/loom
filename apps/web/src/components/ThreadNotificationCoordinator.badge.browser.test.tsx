@@ -1,5 +1,14 @@
 import { RegistryContext } from "@effect/atom-react";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+// fork: respectful-notifications
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  RuntimeRequestId,
+  ThreadId,
+  type OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -69,6 +78,30 @@ vi.mock(import("../threadNotifications"), async (original) => ({
   setNotificationBadge: state.badge,
 }));
 
+// fork: respectful-notifications
+vi.mock(import("../state/threads"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const { selectAttentionThreadShells } = await import("@t3tools/contracts/fork");
+  const { presentThreadShell } = await import("@t3tools/client-runtime/state/models");
+  return {
+    ...actual,
+    environmentThreadShells: {
+      ...actual.environmentThreadShells,
+      attentionThreadShellsAtom: Atom.make((get) =>
+        state.environmentIds.flatMap((id) => {
+          const value = get(shellAtom(id)) as ReturnType<typeof shell> | null;
+          const threads =
+            value && Option.isSome(value.snapshot) ? value.snapshot.value.threads : [];
+          return selectAttentionThreadShells(threads, Date.now()).map((thread) =>
+            presentThreadShell(EnvironmentId.make(id), thread),
+          );
+        }),
+      ),
+    },
+  };
+});
+import { environmentThreadShells } from "../state/threads";
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
 import { threadNotificationTag } from "../threadNotifications";
 
@@ -107,28 +140,33 @@ let visibility = "visible";
 
 const SHELL_NOW = DateTime.makeUnsafe("2026-09-13T07:00:00.000Z");
 
-function toV2ThreadShell(input: typeof thread) {
+// fork: respectful-notifications
+function toV2ThreadShell(input: typeof thread): OrchestrationV2ThreadShell {
   const latestTurn = input.latestTurn;
   return {
-    id: input.id,
-    projectId: "project",
+    // fork: respectful-notifications
+    id: ThreadId.make(input.id),
+    projectId: ProjectId.make("project"),
     title: input.title,
-    providerInstanceId: "codex",
-    modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+    // fork: respectful-notifications
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
     runtimeMode: "full-access",
     interactionMode: "default",
     branch: null,
     worktreePath: null,
     activeProviderThreadId: null,
     lineage: {
-      rootThreadId: input.id,
+      // fork: respectful-notifications
+      rootThreadId: ThreadId.make(input.id),
       parentThreadId: null,
       relationshipToParent: null,
     },
     forkedFrom: null,
     createdBy: "user",
     creationSource: "web",
-    latestRunId: latestTurn.turnId,
+    // fork: respectful-notifications
+    latestRunId: RunId.make(latestTurn.turnId),
     activeRunId: null,
     status:
       latestTurn.state === "completed"
@@ -136,14 +174,18 @@ function toV2ThreadShell(input: typeof thread) {
         : latestTurn.state === "error" || input.session?.status === "error"
           ? "failed"
           : "running",
+    // fork: respectful-notifications
     pendingRuntimeRequest: input.hasPendingUserInput
-      ? { id: "request-1", kind: "user_input", createdAt: SHELL_NOW }
+      ? { id: RuntimeRequestId.make("request-1"), kind: "user_input", createdAt: SHELL_NOW }
       : input.hasPendingApprovals
-        ? { id: "request-1", kind: "command", createdAt: SHELL_NOW }
+        ? { id: RuntimeRequestId.make("request-1"), kind: "command", createdAt: SHELL_NOW }
         : null,
     latestVisibleMessage: null,
     latestUserMessageAt: null,
     hasActionableProposedPlan: false,
+    // fork: respectful-notifications
+    pendingBackgroundTasks: [],
+    providerInstanceHistory: [],
     itemCount: 0,
     visibleItemCount: 0,
     createdAt: SHELL_NOW,
@@ -178,6 +220,8 @@ function complete(environment = "one", completedAt = "2026-09-13T08:00:00Z") {
   );
 }
 async function render() {
+  // fork: respectful-notifications - The test catalog is not itself an atom.
+  registry.refresh(environmentThreadShells.attentionThreadShellsAtom);
   await act(async () =>
     root.render(
       <RegistryContext.Provider value={registry}>
@@ -235,17 +279,17 @@ it("uses bounded tags across threads and environments, replaces repeat alerts, a
   await render();
   state.shells.set(environmentId, shell(completed(threadId), { id: otherThreadId }));
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   state.shells.set(environmentId, shell(completed(threadId), completed(otherThreadId)));
   state.shells.set(otherEnvironmentId, shell(completed(threadId)));
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(3);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   state.shells.set(
     environmentId,
     shell(completed(threadId, "2026-09-13T08:01:00Z"), completed(otherThreadId)),
   );
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(3);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   expect(TestNotification.sent).toHaveLength(4);
   const [first, otherThread, otherEnvironment, replacement] = TestNotification.sent;
   for (const notification of TestNotification.sent) {
@@ -266,7 +310,7 @@ it("uses bounded tags across threads and environments, replaces repeat alerts, a
   focused = false;
   state.shells.set(otherEnvironmentId, shell(completed(threadId, "2026-09-13T08:02:00Z")));
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
 });
 
 it("does not badge old completions on first load or reconnect", async () => {
@@ -285,11 +329,11 @@ it("removes alerts only from environments that leave the client", async () => {
   complete("one");
   complete("two");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(2);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   const [removed, retained] = TestNotification.sent;
   state.environmentIds = ["two"];
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   expect(removed!.close).toHaveBeenCalledOnce();
   expect(retained!.close).not.toHaveBeenCalled();
   await render();
@@ -318,7 +362,7 @@ it("starts a fresh count after another native app window gains focus", async () 
   expect(state.badge).toHaveBeenLastCalledWith(0);
   complete("two");
   await render();
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
   await act(async () => root.unmount());
   root = createRoot(document.createElement("div"));
   expect(unsubscribe).toHaveBeenCalledOnce();
@@ -348,21 +392,24 @@ it.each(["off", "sound", "focused", "denied", "archived"])(
 );
 
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
-  "badges %s and clears when notifications are disabled",
+  "keeps %s badged after focus and when notifications are disabled",
   async (flag) => {
     await render();
     state.shells.set("one", shell({ [flag]: true }));
     await render();
-    expect(state.badge).toHaveBeenLastCalledWith(1);
+    expect(state.badge).toHaveBeenLastCalledWith(1); // fork: respectful-notifications
     const notification = TestNotification.sent[0]!;
     notification.dispatchEvent(new Event("click"));
     expect(state.navigate).toHaveBeenCalledWith({
       to: "/$environmentId/$threadId",
       params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
     });
+    // fork: respectful-notifications
+    window.dispatchEvent(new Event("focus"));
+    expect(state.badge).toHaveBeenLastCalledWith(1);
     state.mode = "sound";
     await render();
-    expect(state.badge).toHaveBeenLastCalledWith(0);
+    expect(state.badge).toHaveBeenLastCalledWith(1);
     expect(notification.close).toHaveBeenCalled();
   },
 );
@@ -384,7 +431,7 @@ it("badges background failures with in-app notifications enabled", async () => {
   state.shells.set("one", shell({ latestTurn: { ...thread.latestTurn, state: "error" } }));
   await render();
   expect(TestNotification.sent[0]?.title).toBe("Thread failed");
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(1); // fork: respectful-notifications
   expect(state.toast).not.toHaveBeenCalled();
 });
 
@@ -437,7 +484,7 @@ it.each(["synchronizing", "cached"])(
     state.shells.set("one", { ...shell({ latestTurn: completed }), status });
     await render();
     expect(notification.close).not.toHaveBeenCalled();
-    expect(state.badge).toHaveBeenLastCalledWith(1);
+    expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
     notification.dispatchEvent(new Event("click"));
     expect(state.navigate).toHaveBeenCalledWith({
       to: "/$environmentId/$threadId",
@@ -476,5 +523,5 @@ it("delivers through Web Locks once granted and skips alerts answered meanwhile"
   expect(TestNotification.sent.map((notification) => notification.tag)).toEqual([
     threadNotificationTag(EnvironmentId.make("one"), ThreadId.make("thread")),
   ]);
-  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
 });

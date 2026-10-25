@@ -1,3 +1,8 @@
+// fork: attention-status
+import { useEnvironmentConnectionState } from "../../state/environments";
+// fork: attention-status
+import { useAtomCommand } from "../../state/use-atom-command";
+import { threadEnvironment } from "../../state/threads";
 // fork: bots
 import { buildThreadBotsMenuItems } from "../../fork/bots/threadMenu";
 // fork: project-home - Thread rows offer "Move work" on hosts that support workspace handoff.
@@ -74,6 +79,13 @@ interface StatusLabel {
   readonly iconTintClassName: string;
 }
 const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> = {
+  // fork: attention-status
+  paused: {
+    label: "Paused",
+    icon: "clock",
+    className: "text-warning-foreground",
+    iconTintClassName: "accent-warning-foreground",
+  },
   approval: {
     label: "Approval",
     icon: "exclamationmark.shield",
@@ -586,14 +598,29 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const selected = props.selected === true;
   const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
 
+  // fork: attention-status
+  const resumeQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
   const status = resolveThreadListV2Status(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
+  // fork: attention-status
+  const connected = useEnvironmentConnectionState(thread.environmentId).data?.phase === "connected";
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
-  const statusLabel =
+  // fork: attention-status
+  const lastKnownStatus =
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
       : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
-  const recede = shouldRecedeThreadRow({ status, selected });
+  // fork: attention-status
+  const statusLabel = connected
+    ? lastKnownStatus
+    : {
+        label: `Offline, last seen ${lastKnownStatus?.label ?? "Ready"}`,
+        icon: "wifi.slash" as const,
+        className: "text-foreground-muted",
+        iconTintClassName: "accent-foreground-muted",
+      };
+  // fork: attention-status
+  const recede = (!connected && !selected) || shouldRecedeThreadRow({ status, selected });
   const timeLabel = props.timeLabel;
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
@@ -761,6 +788,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
+      // fork: attention-status
+      ...(thread.queueHeld
+        ? [
+            {
+              id: "resume-queue",
+              title: "Resume queue",
+              image: "play",
+              attributes: { disabled: !canOperateThread },
+            },
+          ]
+        : []),
       ...botMenuItems,
       { id: "rename", title: "Rename", image: "square.and.pencil" },
       ...buildThreadTitleRegenerationMenuItems({
@@ -768,7 +806,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         isRegenerating: thread.titleRegeneration != null,
       }),
     ],
-    [botMenuItems, props.titleRegenerationSupported, thread.titleRegeneration],
+    // fork: attention-status
+    [
+      botMenuItems,
+      props.titleRegenerationSupported,
+      thread.titleRegeneration,
+      thread.queueHeld,
+      canOperateThread,
+    ],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -828,6 +873,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      // fork: attention-status
+      if (nativeEvent.event === "resume-queue" && canOperateThread) {
+        void resumeQueue({ environmentId: thread.environmentId, input: { threadId: thread.id } });
+        return;
+      }
       // fork: project-home
       if (nativeEvent.event === "workspace-handoff" && canOperateThread)
         navigation.navigate("WorkspaceHandoff", {
@@ -884,6 +934,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
     },
     [
+      // fork: attention-status
+      resumeQueue,
       onNewThreadOnBranch,
       thread,
       navigation,

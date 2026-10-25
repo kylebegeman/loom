@@ -41,6 +41,8 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.editQueuedMessage",
   "thread.previous",
   "thread.next",
+  // fork: attention-status
+  "thread.nextAttention",
   "thread.copyReference",
   "thread.settle",
   "thread.pin",

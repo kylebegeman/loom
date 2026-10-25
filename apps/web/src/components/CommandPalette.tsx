@@ -1,5 +1,8 @@
 "use client";
 
+// fork: attention-status
+import { useThreadAttention } from "../fork/attention/ThreadAttention";
+
 import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation"; // fork: library-palette
 import {
   LibraryActionHost,
@@ -921,6 +924,8 @@ function OpenCommandPaletteDialog(props: {
       );
     }
   };
+  // fork: attention-status
+  const attention = useThreadAttention();
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
@@ -1773,6 +1778,54 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  // fork: attention-status
+  actionItems.push({
+    kind: "action",
+    value: "action:next-attention",
+    title: "Go to next thread that needs you",
+    searchTerms: ["attention", "approval", "input", "paused", "needs you"],
+    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "thread.nextAttention",
+    run: async () => {
+      setOpen(false);
+      await attention.goNext();
+    },
+  });
+  const waitingThreads = attention.threads.filter(
+    (thread) =>
+      thread.hasPendingApprovals ||
+      thread.hasPendingUserInput ||
+      thread.pendingSubagentRequest != null,
+  );
+  if (waitingThreads.length > 0)
+    actionItems.push({
+      kind: "submenu",
+      value: "action:waiting-on-you",
+      title: "Waiting on you",
+      addonIcon: <MessageSquareIcon className={ADDON_ICON_CLASS} />,
+      searchTerms: ["questions", "approval", "pending", "human steps"],
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      groups: [
+        {
+          value: "waiting-on-you",
+          label: "Waiting on you",
+          items: waitingThreads.map((thread) => ({
+            kind: "action",
+            value: `attention:${thread.environmentId}:${thread.id}`,
+            title: thread.title,
+            searchTerms: [thread.title],
+            icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              setOpen(false);
+              await navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId: thread.environmentId, threadId: thread.id },
+              });
+            },
+          })),
+        },
+      ],
+    });
 
   // fork: library-palette
   actionItems.push({
@@ -3228,6 +3281,14 @@ function OpenCommandPaletteDialog(props: {
       if (matchingItem) {
         executeItem(matchingItem);
       }
+      return;
+    }
+    // fork: attention-status
+    if (command === "thread.nextAttention") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      void attention.goNext();
       return;
     }
     if (command === "thread.copyReference") {
