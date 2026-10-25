@@ -11,6 +11,7 @@ import {
 vi.mock("node:child_process", () => ({ spawnSync: vi.fn() }));
 const version = "0.0.49-nightly.20261013.3046";
 const sourceSha = "a".repeat(40);
+const workflowRef = "loom-v0.0.49-nightly.20261013.3046";
 const spawn = vi.mocked(NodeChildProcess.spawnSync);
 afterEach(() => vi.resetAllMocks());
 
@@ -95,19 +96,19 @@ describe("runtime release publication gate", () => {
   });
   it("does not dispatch or poll when all archives are already attached", async () => {
     const commands = githubFixture({ complete: true });
-    await ensureRuntimeReleaseAssets({ version, sourceSha, env: {} });
+    await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {} });
     expect(commands.map((args) => args.slice(0, 2))).toEqual([["release", "view"]]);
   });
   it("refuses to repair archives on an already published release", async () => {
     const commands = githubFixture({ published: true });
-    await expect(ensureRuntimeReleaseAssets({ version, sourceSha, env: {} })).rejects.toThrow(
-      "refusing to rewrite",
-    );
+    await expect(
+      ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {} }),
+    ).rejects.toThrow("refusing to rewrite");
     expect(commands.some((args) => args[0] === "workflow")).toBe(false);
   });
   it("resumes an exact-source running build after the publisher restarts", async () => {
     const commands = githubFixture({ prior: {} });
-    await ensureRuntimeReleaseAssets({ version, sourceSha, env: {} });
+    await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {} });
     expect(commands.some((args) => args[0] === "workflow")).toBe(false);
     expect(commands.filter((args) => args[0] === "release")).toHaveLength(2);
   });
@@ -118,11 +119,14 @@ describe("runtime release publication gate", () => {
       await ensureRuntimeReleaseAssets({
         version,
         sourceSha,
+        workflowRef,
         env: { T3CODE_RELAY_URL: "https://relay.example.test" },
       });
       const dispatches = commands.filter((args) => args[0] === "workflow");
       expect(dispatches).toHaveLength(1);
       expect(dispatches[0]).toContain(`source_sha=${sourceSha}`);
+      // The draft's version tag does not exist yet, so the build runs from the integration tag.
+      expect(dispatches[0]?.[dispatches[0].indexOf("--ref") + 1]).toBe(workflowRef);
       expect(dispatches[0]).toContain("relay_url=https://relay.example.test");
     },
   );
@@ -133,7 +137,7 @@ describe("runtime release publication gate", () => {
     "asks for retired runtimes only when the publisher %s Connect",
     async (_, env, retired) => {
       const commands = githubFixture({});
-      await ensureRuntimeReleaseAssets({ version, sourceSha, env });
+      await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env });
       const dispatch = commands.find((args) => args[0] === "workflow");
       expect(dispatch?.includes("connect_retired=1")).toBe(retired);
     },

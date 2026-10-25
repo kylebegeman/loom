@@ -34,7 +34,7 @@ import {
   releaseNotes,
   ensureUpstreamProvenance,
   restoreBuildInputs,
-  reservePublicationTag,
+  reservePublication,
   updateManifest,
   validateFeedConfig,
 } from "./updates.ts";
@@ -261,7 +261,9 @@ describe("published release history lookup", () => {
         let stdout = "";
         if (command === "git") {
           if (args[0] === "remote") stdout = "https://github.com/kylebegeman/loom.git";
-          else if (args[0] === "for-each-ref") {
+          else if (args[0] === "for-each-ref" && args[1] === "--format=%(objectname)") {
+            stdout = "";
+          } else if (args[0] === "for-each-ref") {
             stdout =
               args.at(-1) === "refs/tags/loom-v*"
                 ? tag
@@ -276,7 +278,7 @@ describe("published release history lookup", () => {
           else if (args[0] === "log") {
             expect(args.at(-1)).toBe(`${previousCommit}..${COMMIT}`);
             stdout = "feat(library): integrated feature work\nfix(desktop): include parser license";
-          } else if (!["fetch", "tag", "push"].includes(args[0]!)) {
+          } else if (!["fetch", "tag", "push", "update-ref"].includes(args[0]!)) {
             throw new Error(`Unexpected Git command: ${args.join(" ")}`);
           }
         } else if (command === "gh") {
@@ -796,14 +798,24 @@ describe("Loom update publishing", () => {
       const release = releaseFromRepository(fixture.source, integration);
       expect(release.version).toBe("0.0.48-nightly.20261013.3044");
       expect(release.upstreamTag).toBe("v0.0.46-nightly.20261013.3042");
-      reservePublicationTag(release, fixture.source);
-      expect(fixture.remoteGit("rev-parse", `${release.releaseTag}^{commit}`)).toBe(source);
+      reservePublication(release, fixture.source);
+      const reservation = `refs/loom/publications/${release.releaseTag}`;
+      expect(fixture.remoteGit("rev-parse", reservation)).toBe(source);
+      // No tag reaches origin before publication, so GitHub's release feed cannot list it early.
+      expect(fixture.remoteGit("tag", "--list")).toBe("");
       const retryTag = "loom-v0.0.46-nightly.20261014.1";
       fixture.git("tag", "-a", retryTag, "-m", "upstream=v0.0.46-nightly.20261013.3042", source);
       const retry = releaseFromRepository(fixture.source, retryTag);
       expect(retry.recordName).toBe(release.recordName);
-      reservePublicationTag(retry, fixture.source);
-      expect(fixture.remoteGit("tag", "--list")).toBe(release.releaseTag);
+      reservePublication(retry, fixture.source);
+      expect(fixture.remoteGit("for-each-ref", "--format=%(refname)", "refs/loom")).toBe(
+        reservation,
+      );
+      const next = fixture.commit("later source");
+      fixture.git("tag", "loom-v0.0.46-nightly.20261014.2", next);
+      expect(releaseFromRepository(fixture.source, "loom-v0.0.46-nightly.20261014.2").version).toBe(
+        "0.0.49-nightly.20261014.2",
+      );
     } finally {
       await NodeFSP.rm(fixture.root, { recursive: true, force: true });
     }
@@ -909,18 +921,15 @@ describe("Loom update publishing", () => {
       const other = fixture.commit("other source");
       const source = fixture.commit("selected source");
       const release = releaseForTag("loom-v0.0.48-nightly.20261013.3044", source);
-      fixture.git("push", "--quiet", "origin", `${other}:refs/tags/${release.releaseTag}`);
-      expect(() => reservePublicationTag(release, fixture.source)).toThrow();
-      expect(fixture.git("tag", "--list", release.releaseTag)).toBe("");
-      expect(fixture.remoteGit("rev-parse", `${release.releaseTag}^{commit}`)).toBe(other);
-      fixture.git(
-        "fetch",
-        "--quiet",
-        "origin",
-        `refs/tags/${release.releaseTag}:refs/tags/${release.releaseTag}`,
-      );
-      expect(() => reservePublicationTag(release, fixture.source)).toThrow("different source");
-      expect(fixture.git("rev-parse", `${release.releaseTag}^{commit}`)).toBe(other);
+      const reservation = `refs/loom/publications/${release.releaseTag}`;
+      // An ancestor of the selected source, which a plain push would fast-forward.
+      fixture.git("push", "--quiet", "origin", `${other}:${reservation}`);
+      expect(() => reservePublication(release, fixture.source)).toThrow();
+      expect(fixture.git("for-each-ref", reservation)).toBe("");
+      expect(fixture.remoteGit("rev-parse", reservation)).toBe(other);
+      fixture.git("fetch", "--quiet", "origin", `${reservation}:${reservation}`);
+      expect(() => reservePublication(release, fixture.source)).toThrow("different source");
+      expect(fixture.git("rev-parse", reservation)).toBe(other);
     } finally {
       await NodeFSP.rm(fixture.root, { recursive: true, force: true });
     }

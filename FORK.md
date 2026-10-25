@@ -698,8 +698,10 @@ not make those legacy snapshots. Do not assume every in-app update has a rollbac
 
 The automatic publisher assigns Loom an independent, increasing patch version. A
 checked `loom-v*` tag selects the source; its name does not determine the published app
-version. An immutable bare-version tag reserves that version for the source commit, so
-retries reuse it. An integration annotation can carry `loom-release=<version>` for an
+version. An immutable `refs/loom/publications/<version>` ref reserves that version for the
+source commit, so retries reuse it. GitHub creates the bare-version tag only when the release is
+published: its release feed lists every pushed tag, and the in-app updater would pick an early
+tag that has no update files yet and fail its checks until the build finishes. An integration annotation can carry `loom-release=<version>` for an
 explicit release version and `upstream=v<version>` for genuine upstream provenance.
 Minor or major version changes require Kyle's explicit approval.
 

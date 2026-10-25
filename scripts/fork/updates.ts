@@ -37,6 +37,10 @@ const STAMPED_PACKAGES = ["apps/server", "apps/desktop", "apps/web", "packages/c
 const LOOM_VERSION =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-nightly\.([1-9]\d{7})\.(0|[1-9]\d*))?$/;
 const SOURCE_COMMIT = /^[a-f0-9]{40}$/;
+// Versions are reserved here, not as bare tags: GitHub's release feed lists every tag as soon as
+// it is pushed, and the app's updater takes the newest one it lists, so a tag pushed before its
+// release has files fails every nightly update check until the build publishes.
+const RESERVATIONS = "refs/loom/publications";
 
 type PublicationTag = { readonly tag: string; readonly commit: string };
 type ReleaseContext = {
@@ -191,20 +195,24 @@ export function releaseForTag(tag: string, commit: string, context: ReleaseConte
   };
 }
 
-/** Bare-version tags reserved or published by Loom, with the commit each one released. */
+/** Versions published as bare tags or reserved by Loom, with the commit each one released. */
 function publicationTags(sourceDir: string) {
   return run(
     "git",
     [
       "for-each-ref",
-      "--format=%(refname:short)%09%(objecttype)%09%(objectname)%09%(*objecttype)%09%(*objectname)",
+      "--format=%(refname)%09%(objecttype)%09%(objectname)%09%(*objecttype)%09%(*objectname)",
       "refs/tags",
+      RESERVATIONS,
     ],
     { cwd: sourceDir },
   )
     .split("\n")
     .flatMap((line) => {
-      const [name, kind, object, peeledKind, peeled] = line.split("\t");
+      const [ref, kind, object, peeledKind, peeled] = line.split("\t");
+      const name = ref?.startsWith(`${RESERVATIONS}/`)
+        ? ref.slice(RESERVATIONS.length + 1)
+        : ref?.replace(/^refs\/tags\//, "");
       if (!name || !LOOM_VERSION.test(name)) return [];
       const sha = kind === "commit" ? object : peeledKind === "commit" ? peeled : undefined;
       if (!sha) throw new Error(`Loom publication tag does not identify a commit: ${name}`);
@@ -224,26 +232,30 @@ export function releaseFromRepository(sourceDir: string, tag: string) {
   return releaseForTag(tag, commit, { publications, annotation, upstreamTags });
 }
 
-/** Reserve the publication identity before building; failed runs retry the same immutable tag. */
-export function reservePublicationTag(release: Release, sourceDir = SOURCE_DIR) {
-  const exists = run("git", ["tag", "--list", release.releaseTag], { cwd: sourceDir }) !== "";
-  if (
-    exists &&
-    run("git", ["rev-parse", `${release.releaseTag}^{commit}`], { cwd: sourceDir }) !==
-      release.commit
-  )
-    throw new Error("The Loom publication tag already belongs to a different source.");
-  if (!exists) run("git", ["tag", release.releaseTag, release.commit], { cwd: sourceDir });
-  try {
-    run("git", ["push", "--quiet", "origin", `refs/tags/${release.releaseTag}`], {
-      cwd: sourceDir,
-    });
-  } catch (cause) {
-    // Only this attempt's local reservation can be removed. Remote and preexisting
-    // tags stay immutable; a concurrent host's winning reservation is fetched next time.
-    if (!exists) run("git", ["tag", "-d", release.releaseTag], { cwd: sourceDir });
-    throw cause;
-  }
+/**
+ * Reserve the publication version before building; failed runs retry the same version. GitHub
+ * creates the bare tag when the release is published.
+ */
+export function reservePublication(release: Release, sourceDir = SOURCE_DIR) {
+  const ref = `${RESERVATIONS}/${release.releaseTag}`;
+  const reserved = run("git", ["for-each-ref", "--format=%(objectname)", ref], { cwd: sourceDir });
+  if (reserved !== "" && reserved !== release.commit)
+    throw new Error("The Loom publication version is already reserved for a different source.");
+  // Unlike a tag, this ref would fast-forward to a newer commit, so the lease keeps it immutable:
+  // it refuses a version another host reserved since the last fetch, while pushing the same
+  // reservation again is a no-op for retries.
+  run(
+    "git",
+    [
+      "push",
+      "--quiet",
+      `--force-with-lease=${ref}:${reserved}`,
+      "origin",
+      `${release.commit}:${ref}`,
+    ],
+    { cwd: sourceDir },
+  );
+  run("git", ["update-ref", ref, release.commit], { cwd: sourceDir });
 }
 
 type Release = ReturnType<typeof releaseForTag>;
@@ -500,8 +512,9 @@ async function latestIntegration() {
       "--quiet",
       "origin",
       "+refs/heads/main:refs/remotes/origin/main",
-      // Include bare Loom publication state; missing annotated upstream refs are fetched below.
+      // Include Loom publication state; missing annotated upstream refs are fetched below.
       "refs/tags/*:refs/tags/*",
+      `${RESERVATIONS}/*:${RESERVATIONS}/*`,
     ],
     { cwd: SOURCE_DIR },
   );
@@ -860,6 +873,8 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
   await ensureRuntimeReleaseAssets({
     version: release.version,
     sourceSha: release.commit,
+    // The bare version tag exists only once the release is published.
+    workflowRef: release.tag,
     env: buildEnvironment(
       SOURCE_DIR,
       NodeProcess.env,
@@ -1314,7 +1329,7 @@ export async function main(command: string | undefined, args: readonly string[] 
       await publishIos(release);
       return;
     }
-    if (options.command === "publish") reservePublicationTag(release);
+    if (options.command === "publish") reservePublication(release);
     const prepared = await prepare(release);
     console.log(`Prepared ${prepared.record}/Loom.app`);
     if (options.command === "publish") {

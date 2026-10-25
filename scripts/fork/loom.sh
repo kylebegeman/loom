@@ -529,6 +529,11 @@ tag_main() {
   [ -z "$(git tag -l 'loom-v*' --points-at HEAD)" ] || return 0
   local upstream version
   upstream=$(upstream_at HEAD)
+  # next-version reads published tags and the publisher's reservations; a build still running
+  # has only a reservation, so a checkout without it would repeat that version. --no-prune keeps
+  # local upstream tags that origin does not mirror when fetch.prune is set.
+  git fetch -q --no-prune origin 'refs/tags/*:refs/tags/*' \
+    'refs/loom/publications/*:refs/loom/publications/*'
   version=$(node scripts/fork/updates.ts next-version "$upstream")
   say "Tagging main as Loom $version"
   git tag -a "loom-v$version" -m "Loom fork changes on main

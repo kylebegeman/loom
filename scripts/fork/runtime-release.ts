@@ -50,6 +50,8 @@ function gh(env: Readonly<Record<string, string | undefined>>, args: string[]): 
 export async function ensureRuntimeReleaseAssets(input: {
   readonly version: string;
   readonly sourceSha: string;
+  /** A branch or tag at `sourceSha` whose workflow file runs the build. */
+  readonly workflowRef: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly log?: (message: string) => void;
 }) {
@@ -120,7 +122,7 @@ export async function ensureRuntimeReleaseAssets(input: {
       "--repo",
       REPOSITORY,
       "--ref",
-      input.version,
+      input.workflowRef,
       "-f",
       `version=${input.version}`,
       "-f",

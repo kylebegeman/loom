@@ -73,7 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.version }}
+          # The version tag does not exist until the publisher publishes the draft.
+          ref: ${{ inputs.source_sha }}
           sparse-checkout: |
             /*
             !/.repos/
