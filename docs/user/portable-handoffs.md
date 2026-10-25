@@ -51,10 +51,13 @@ project yet, use **Prepare project** from Move work, or **Prepare on another com
 Project home, to review the source origin and destination folder and create its working copy.
 You do not need to add the project separately. Preparing a copy does not move the conversation.
 
-Connect both computers before continuing. Both hosts need workspace operation permission;
-preparing a new copy also needs project creation and source-control write access on the
-destination. The destination needs Git access and a working provider. Stop the source thread
-and its background work, commit local changes, and publish the branch before starting.
+Connect both computers before continuing. If one is still trying to connect, Move work offers
+**Reconnect** in place. Both hosts need workspace operation permission; preparing a new copy also
+needs project creation and source-control write access on the destination. The destination needs
+Git access and a working provider. Stop the source thread and its background work before
+starting. The source branch must be committed and published. When it has local changes or
+unpushed commits, Move work says so before you start and offers **Commit & push** or **Push**,
+which needs source-control write access on the source.
 
 Loom prepares a separate destination workspace at the published commit and waits for workspace
 setup to succeed. It checks the destination provider, model, and runtime before settling the source,

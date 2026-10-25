@@ -140,9 +140,12 @@ your Library, and your Library computer itself cannot use reach. Once the
 address appears, **Copy address** copies it.
 
 Other devices pick the address up the next time they connect to the computer.
-A device that saved the computer before reach was on, and is now away from home
-without Tailscale, has to connect once from home or reconnect the computer from
-your Library's list.
+A device that saved the computer earlier and can't reach it now, such as a
+phone away from home without Tailscale, gets the address from your Library and
+tries it on its own. It checks while it is connected to your Library, when you
+open your computers in Settings or when a conversation on that computer can't
+connect. You never need to remove the computer to pick up a new address, and
+removing it deletes its drafts and unsent messages on that device.
 
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow

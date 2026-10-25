@@ -9,6 +9,9 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+// fork: fleet-connections
+import type { EnvironmentId } from "@t3tools/contracts";
+import { useConnectionNoticeOverride } from "../../fork/connection-health/useComputerConnectionHealth";
 
 function noticeTitle(phase: EnvironmentConnectionPhase, environmentLabel: string): string {
   switch (phase) {
@@ -59,9 +62,13 @@ export function EnvironmentConnectionNotice(props: {
   readonly connection: EnvironmentConnectionPresentation;
   readonly resourceName: string;
   readonly onRetry: () => void;
+  readonly environmentId?: EnvironmentId; // fork: fleet-connections - offers an expired sign-in.
 }) {
+  // fork: fleet-connections - an expired sign-in is fixed here, and a stalled reconnect says so.
+  const override = useConnectionNoticeOverride(props);
   const isRetrying =
-    props.connection.phase === "connecting" || props.connection.phase === "reconnecting";
+    override === null && // fork: fleet-connections
+    (props.connection.phase === "connecting" || props.connection.phase === "reconnecting");
 
   return (
     <View className="flex-1 items-center justify-center px-8">
@@ -78,16 +85,24 @@ export function EnvironmentConnectionNotice(props: {
         )}
 
         <Text className="text-center text-lg font-t3-bold text-foreground">
-          {noticeTitle(props.connection.phase, props.environmentLabel)}
+          {/* fork: fleet-connections */}
+          {override?.title ?? noticeTitle(props.connection.phase, props.environmentLabel)}
         </Text>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
-          {noticeDetail(props.connection.phase, props.resourceName, props.connection.error)}
+          {/* fork: fleet-connections */}
+          {override?.detail ??
+            noticeDetail(props.connection.phase, props.resourceName, props.connection.error)}
           {props.connection.traceId ? (
             <ConnectionTraceId traceId={props.connection.traceId} />
           ) : null}
         </Text>
 
-        {props.connection.phase !== "offline" && props.connection.phase !== "unsupported" ? (
+        {/* fork: fleet-connections */}
+        {override?.signIn ? (
+          <View className="mt-1">
+            <Button label="Sign in again" tone="secondary" onPress={override.signIn} />
+          </View>
+        ) : props.connection.phase !== "offline" && props.connection.phase !== "unsupported" ? (
           <View className="mt-1">
             <Button label="Retry now" tone="secondary" onPress={props.onRetry} />
           </View>

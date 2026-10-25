@@ -37,7 +37,14 @@ function sameConnection(
   left: EnvironmentConnectionPresentation,
   right: EnvironmentConnectionPresentation,
 ): boolean {
-  return left.phase === right.phase && left.error === right.error && left.traceId === right.traceId;
+  return (
+    left.phase === right.phase &&
+    left.error === right.error &&
+    left.traceId === right.traceId &&
+    // fork: fleet-connections
+    left.blockedReason === right.blockedReason &&
+    left.failingSince === right.failingSince
+  );
 }
 
 function withoutProviders(
@@ -193,6 +200,8 @@ export interface EnvironmentConnectionSummary {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
+  // fork: fleet-connections - lets a home status stop its spinner for a stalled computer.
+  readonly connectionFailingSince?: number;
 }
 
 export function projectEnvironmentConnectionSummary(
@@ -208,6 +217,10 @@ export function projectEnvironmentConnectionSummary(
     connectionState: environment.connection.phase,
     connectionError: environment.connection.error,
     connectionErrorTraceId: environment.connection.traceId,
+    // fork: fleet-connections
+    ...(environment.connection.failingSince === undefined
+      ? {}
+      : { connectionFailingSince: environment.connection.failingSince }),
   };
 }
 
@@ -265,7 +278,8 @@ export function createEnvironmentSummaryAtoms(input: {
         previous.isEnabled === next.isEnabled &&
         previous.connectionState === next.connectionState &&
         previous.connectionError === next.connectionError &&
-        previous.connectionErrorTraceId === next.connectionErrorTraceId
+        previous.connectionErrorTraceId === next.connectionErrorTraceId &&
+        previous.connectionFailingSince === next.connectionFailingSince // fork: fleet-connections
       )
         return previous;
       return next;

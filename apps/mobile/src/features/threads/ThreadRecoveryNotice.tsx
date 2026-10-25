@@ -7,6 +7,7 @@ import { View } from "react-native";
 
 import { AppText } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { useComputerConnectionHealth } from "../../fork/connection-health/useComputerConnectionHealth";
 import { useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { threadOutboxDeliveryAtom } from "../../state/thread-outbox-delivery";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
@@ -31,6 +32,7 @@ export function ThreadRecoveryNotice(props: {
 }) {
   const delivery = useAtomValue(threadOutboxDeliveryAtom);
   const items = useThreadVisibleTurnItems(props.threadRef);
+  const computer = useComputerConnectionHealth(props.threadRef.environmentId);
   const presentation = resolveThreadRecoveryPresentation({
     connectionState: props.connectionState,
     queuedMessages: props.queuedMessages,
@@ -45,6 +47,7 @@ export function ThreadRecoveryNotice(props: {
     }),
     queueHeld: props.onResumeQueue !== null,
     canOperate: props.canOperate,
+    computer: { ...computer, signIn: computer.signIn !== null },
   });
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
@@ -93,7 +96,11 @@ export function ThreadRecoveryNotice(props: {
                   ? "Connection settings"
                   : presentation.action === "files"
                     ? "Review files"
-                    : "Reconnect"
+                    : presentation.action === "identity"
+                      ? "Sign in again"
+                      : presentation.action === "retry"
+                        ? "Retry now"
+                        : "Reconnect"
             }
             tone="text"
             loading={presentation.action === "resume" && resuming}
@@ -104,7 +111,9 @@ export function ThreadRecoveryNotice(props: {
                   ? props.onOpenConnection
                   : presentation.action === "files"
                     ? () => props.onReviewFiles?.()
-                    : props.onReconnect
+                    : presentation.action === "identity"
+                      ? () => computer.signIn?.()
+                      : props.onReconnect
             }
           />
         </View>

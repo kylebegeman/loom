@@ -73,6 +73,36 @@ describe("connection presentation", () => {
     expect(connectionStatusText(connection)).toBe("Client not supported");
   });
 
+  // fork: fleet-connections
+  it("says why a connection is blocked and since when a reconnect has been failing", () => {
+    const blocked = presentConnectionState(
+      supervisorState({
+        phase: "blocked",
+        lastFailure: new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "Identity access expired.",
+        }),
+        failingSince: 5_000,
+      }),
+    );
+    expect(blocked).toEqual({
+      phase: "error",
+      error: "Identity access expired.",
+      traceId: null,
+      blockedReason: "authentication",
+    });
+    expect(
+      presentConnectionState(
+        supervisorState({ phase: "backoff", attempt: 3, retryAt: 9_000, failingSince: 5_000 }),
+      ),
+    ).toMatchObject({ phase: "reconnecting", failingSince: 5_000 });
+    expect(presentConnectionState(supervisorState({ phase: "connected" }))).toEqual({
+      phase: "connected",
+      error: null,
+      traceId: null,
+    });
+  });
+
   it("preserves profile display information without exposing credentials", () => {
     expect(connectionCatalogDisplayUrl(ENTRY)).toBe("https://environment.example.test");
   });

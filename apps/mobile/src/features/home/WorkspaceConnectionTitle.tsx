@@ -12,6 +12,7 @@ import {
   getCompactBrandHeaderOptions,
 } from "../../components/CompactBrandTitle";
 import { useWorkspaceState } from "../../state/workspace";
+import { useWorkspaceStallClock } from "../../fork/connection-health/workspaceStall"; // fork: fleet-connections
 import {
   workspaceConnectionStatusPresentation,
   type WorkspaceConnectionStatusPresentation,
@@ -35,8 +36,10 @@ const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
  */
 export function WorkspaceConnectionStatusProvider(props: { readonly children: ReactNode }) {
   const { state } = useWorkspaceState();
+  const now = useWorkspaceStallClock(state); // fork: fleet-connections
   const presentation = workspaceConnectionStatusPresentation(state, {
     compact: Platform.OS === "ios",
+    now, // fork: fleet-connections
   });
   const hasStatus = presentation !== null;
   const [phase, setPhase] = useState<"waiting" | "fading" | "shown">("waiting");

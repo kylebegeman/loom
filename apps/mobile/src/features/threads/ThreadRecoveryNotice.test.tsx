@@ -25,6 +25,15 @@ vi.mock("../../components/ui/Button", () => ({
   ),
 }));
 
+vi.mock("../../fork/connection-health/useComputerConnectionHealth", () => ({
+  useComputerConnectionHealth: () => ({
+    label: "Computer",
+    stallTitle: null,
+    signIn: null,
+    directoryHealth: null,
+  }),
+}));
+
 vi.mock("../../components/ui/Notice", () => ({
   Notice: ({ message }: { message: string }) => <span>{message}</span>,
 }));
