@@ -96,7 +96,14 @@ export const withHostIdentity = Effect.fn("HostIdentity.withHostIdentity")(funct
 ) {
   const processEnvironment = yield* HostProcess.Environment;
   for (;;) {
-    const saved = yield* read();
+    // A damaged saved identity must not keep the server from starting; Reach reports it as missing.
+    const saved = yield* read().pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Ignoring the saved Reach identity", { reason: error.reason }).pipe(
+          Effect.as(null),
+        ),
+      ),
+    );
     const defaults: NodeJS.ProcessEnv =
       saved === null
         ? {}

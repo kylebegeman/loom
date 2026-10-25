@@ -786,3 +786,6 @@ packages/contracts/src/orchestratorMcp.ts	library-projects	1
 packages/provider-core/src/server/orchestrationInstructions.ts	library-projects	1
 docs/user/outside-agents.md	library-projects	1
 docs/user/project-settings.md	library-projects	2
+apps/server/src/auth/LibraryPublishingCredential.test.ts	project-library	3
+apps/server/src/auth/LibraryPublishingCredential.ts	project-library	7
+apps/server/src/cli/server.ts	reach	2

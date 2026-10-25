@@ -137,3 +137,20 @@ it.effect("finishes the previous backend before starting with the saved Identity
     expect(lifecycle).toEqual(["start:1", "stop:1", "start:2", "stop:2"]);
   }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),
 );
+
+it.effect("starts without saved values when the saved Identity is unreadable", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+    yield* fs.writeFileString(`${config.secretsDir}/reach-identity.json`, "{", { mode: 0o600 });
+    let started = false;
+    yield* withHostIdentity(
+      Effect.gen(function* () {
+        expect((yield* HostProcess.Environment).LOOM_IDENTITY_ISSUER).toBeUndefined();
+        started = true;
+      }),
+    );
+    expect(started).toBe(true);
+  }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),
+);
