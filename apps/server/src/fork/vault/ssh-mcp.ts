@@ -1,4 +1,5 @@
 import { objectInput } from "./mcp-input.ts";
+import { withFailureMessages } from "./mcp-failure.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
@@ -34,13 +35,15 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultAccess from "./VaultAccess.ts";
-const failure = Schema.Union([
-  VaultError,
-  VaultSshError,
-  VaultWorkloadError,
-  VaultConnectionError,
-  OrchestratorMcpFailure,
-]);
+const failure = withFailureMessages(
+  Schema.Union([
+    VaultError,
+    VaultSshError,
+    VaultWorkloadError,
+    VaultConnectionError,
+    OrchestratorMcpFailure,
+  ]),
+);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_pinned_keys", {
@@ -90,7 +93,7 @@ export const VaultSshToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_ssh_exec", {
     description:
-      "Run bounded SSH argv using a dedicated Vault item and its current version for this authenticated active thread/run. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Accepts connection:{resource:personal-vps} with command:{argv,timeoutMs}, or the existing explicit item/version. Requires current Vault policy and full-access/default mode. Owner-trusted environments need no individual grant or project profile. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
+      "Run a short SSH probe (at most 8 seconds and 2 KiB of output) using a dedicated Vault item and its current version for this authenticated active thread/run. For anything longer, file transfers or piped stdin, run `loom vault ssh-agent-exec` in the agent terminal with connection:{resource:personal-vps} and argv [\"personal-vps\", ...] instead. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Accepts connection:{resource:personal-vps} with command:{argv,timeoutMs}, or the existing explicit item/version. Requires current Vault policy and full-access/default mode. Owner-trusted environments need no individual grant or project profile. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
     parameters: VaultSshRunInput.check(objectInput),
     success: VaultSshResult,
     failure,
@@ -152,7 +155,7 @@ export const vaultSshHandlers = McpToolAccess.toLayer(
     const administrator = Effect.gen(function* () {
       const caller = yield* McpInvocationContext;
       if (caller.thread || caller.client?.access !== "full-access")
-        return yield* new VaultError({ reason: "denied" });
+        return yield* new VaultError({ reason: "denied", detail: "admin-only" });
       return `client:${caller.client.sessionId}`;
     });
     const callingThread = Effect.gen(function* () {

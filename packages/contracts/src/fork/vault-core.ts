@@ -50,13 +50,38 @@ const messages = {
   "invalid-input": "The Vault request is invalid or exceeds its size limit.",
   archived: "Restore this archived item before replacing its value.",
 } as const;
+// Agents relay these to the user, so each names the real cause, its repair and where in
+// Settings to make it. They are fixed text: never derived from an underlying failure.
+const deniedDetails = {
+  "admin-only":
+    "Only the environment owner can make this Vault change, from Loom Settings > Vault (/settings/loom?section=vault). Agents cannot change Vault policy, trust or records.",
+  "workload-inactive":
+    "Vault works only while this thread's turn is running. Background work that continues after the turn ends cannot use Vault. Continue in a new turn of this thread. Owner access is in Loom Settings > Vault (/settings/loom?section=vault).",
+  "caller-permission":
+    "Owner access works only in full access outside plan mode. Switch this thread to full access and leave plan mode, then continue. Owner access is in Loom Settings > Vault (/settings/loom?section=vault).",
+  "not-granted":
+    "No current Vault grant covers this record, action and destination for this thread. Ask the environment owner to grant it in Loom Settings > Access & permissions (/settings/loom?section=vault-access).",
+  "untrusted-host":
+    "This SSH destination has no trusted host key. The environment owner must verify and pin it in Loom Settings > Vault (/settings/loom?section=vault).",
+} as const;
+const VaultDeniedDetail = Schema.Literals(
+  Object.keys(deniedDetails) as [
+    keyof typeof deniedDetails,
+    ...Array<keyof typeof deniedDetails>,
+  ],
+);
+export type VaultDeniedDetail = typeof VaultDeniedDetail.Type;
+export const vaultDeniedMessage = (detail: VaultDeniedDetail) => deniedDetails[detail];
 export class VaultError extends Schema.TaggedError<VaultError>()("VaultError", {
   reason: Schema.Literals(
     Object.keys(messages) as [keyof typeof messages, ...Array<keyof typeof messages>],
   ),
+  detail: Schema.optionalKey(VaultDeniedDetail),
 }) {
   override get message() {
-    return messages[this.reason];
+    return this.reason === "denied" && this.detail !== undefined
+      ? vaultDeniedMessage(this.detail)
+      : messages[this.reason];
   }
 }
 export const VaultItemSave = Schema.Struct({

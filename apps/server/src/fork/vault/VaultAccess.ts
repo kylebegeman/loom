@@ -25,6 +25,7 @@ import {
   type VaultAccessAction,
   type VaultAccessDecision,
   type VaultDecisionInput,
+  type VaultDeniedDetail,
   type VaultPolicySnapshot,
   type VaultGrantPreview,
   type VaultAccessExplanation,
@@ -137,6 +138,24 @@ const UNKNOWN = [
 ];
 
 const PREVIEW_UNKNOWN = [...UNKNOWN, "Profile bindings are not tracked by this change preview."];
+const NOT_GRANTED = new Set<VaultAccessDecision["reason"]>([
+  "no-grant",
+  "scope",
+  "not-active",
+  "not-yet-valid",
+  "expired",
+  "invalid-lineage",
+]);
+// Denials name the causes an agent can act on. Unavailable items and protected credentials keep
+// the plain denial: they have their own restore and approval flows.
+const deniedDetail = (
+  reason: VaultAccessDecision["reason"],
+): { readonly detail?: VaultDeniedDetail } =>
+  reason === "workload-inactive" || reason === "caller-permission"
+    ? { detail: reason }
+    : NOT_GRANTED.has(reason)
+      ? { detail: "not-granted" }
+      : {};
 
 const RETRY_REPAIRS = {
   "refresh-request":
@@ -540,7 +559,7 @@ const make = Effect.gen(function* () {
     if (Option.isNone(decodeBatchMutation(input)) || !actor.trim() || actor.length > 256)
       return yield* new VaultError({ reason: "invalid-input" });
     if (actor.startsWith("thread:") || actor === "mcp-client")
-      return yield* new VaultError({ reason: "denied" });
+      return yield* new VaultError({ reason: "denied", detail: "admin-only" });
     const fingerprint = yield* hash(
       yield* encodeBatchMutation({ mutation: input, actor }).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
@@ -729,7 +748,8 @@ const make = Effect.gen(function* () {
         if (persisted.failure.reason === "conflict") continue;
         return yield* persisted.failure;
       }
-      if (!result.allowed) return yield* new VaultError({ reason: "denied" });
+      if (!result.allowed)
+        return yield* new VaultError({ reason: "denied", ...deniedDetail(result.reason) });
       return;
     }
     return yield* new VaultError({ reason: "conflict" });
@@ -1000,7 +1020,9 @@ const make = Effect.gen(function* () {
     };
   });
   const requireAdministrator = (actor: string) =>
-    isAdministrator(actor) ? Effect.void : Effect.fail(new VaultError({ reason: "denied" }));
+    isAdministrator(actor)
+      ? Effect.void
+      : Effect.fail(new VaultError({ reason: "denied", detail: "admin-only" }));
   const requireProtectedPolicy = (policy: Policy) =>
     policy.schemaVersion === 4
       ? Effect.succeed(policy)
@@ -1992,14 +2014,18 @@ const make = Effect.gen(function* () {
     listForThread: Effect.fn("VaultAccess.listForThread")(function* (input, threadId) {
       const { policy } = yield* load();
       const workload = yield* subject(threadId);
+      // Owner access gates the caller, not the items. Fail with the cause rather than return an
+      // empty page, which reads as "no such connection" and leads agents to recreate one.
+      if (policy.ownerPolicy?.mode === "owner-trusted") {
+        if (
+          workload.thread.runtimeMode !== "full-access" ||
+          workload.thread.interactionMode !== "default"
+        )
+          return yield* new VaultError({ reason: "denied", detail: "caller-permission" });
+        if (!(yield* isVaultRunRunning(threads, workload.thread)))
+          return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
+      }
       const page = yield* core.list(input);
-      if (
-        policy.ownerPolicy?.mode === "owner-trusted" &&
-        (workload.thread.runtimeMode !== "full-access" ||
-          workload.thread.interactionMode !== "default" ||
-          !(yield* isVaultRunRunning(threads, workload.thread)))
-      )
-        return { ...page, items: [] };
       const now = yield* Clock.currentTimeMillis;
       return {
         ...page,

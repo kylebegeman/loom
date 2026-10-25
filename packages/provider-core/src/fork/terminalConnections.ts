@@ -55,4 +55,9 @@ export const terminalEnvironmentFor = (
   T3_ACP_MCP_AUTHORIZATION: "",
   T3_MCP_URL: "",
   T3_MCP_BEARER_TOKEN: "",
+  // Where an older setup still exports the server's OpenBao settings, do not hand agents the
+  // service-token path. A same-user agent can still find the file; this is not isolation.
+  LOOM_VAULT_OPENBAO_URL: "",
+  LOOM_VAULT_OPENBAO_TOKEN_FILE: "",
+  LOOM_VAULT_OPENBAO_MOUNT: "",
 });

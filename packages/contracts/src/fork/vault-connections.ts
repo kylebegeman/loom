@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "../baseSchemas.ts";
-import { VaultItemId, VaultItemSummary } from "./vault-core.ts";
+import { VaultItemId, VaultItemSummary, vaultDeniedMessage } from "./vault-core.ts";
 
 const Resource = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1024),
@@ -48,6 +48,8 @@ export const VaultConnectionState = Schema.Literals([
   "revoked",
   "expired",
   "policy-denied",
+  "workload-inactive",
+  "caller-permission",
   "backend-unavailable",
   "backend-locked",
   "backend-unconfigured",
@@ -67,6 +69,8 @@ export const VaultConnectionRepair = Schema.NullOr(
     "restore-connection",
     "renew-access",
     "repair-policy",
+    "continue-in-active-turn",
+    "switch-to-full-access",
     "check-backend",
     "unlock-backend",
     "configure-backend",
@@ -104,12 +108,15 @@ export class VaultConnectionError extends Schema.TaggedError<VaultConnectionErro
       inactive: "Restore this inactive Vault connection before use.",
       revoked: "Access to this Vault connection was revoked. An administrator must restore access.",
       expired: "Access to this Vault connection expired. An administrator must renew access.",
-      "policy-denied": "Vault policy does not allow this connection and destination for this run.",
+      "policy-denied":
+        "Vault policy does not allow this connection and destination for this run. Review access in Loom Settings > Access & permissions (/settings/loom?section=vault-access).",
+      "workload-inactive": vaultDeniedMessage("workload-inactive"),
+      "caller-permission": vaultDeniedMessage("caller-permission"),
       "backend-unavailable": "The Vault backend is unavailable. Check its connection.",
       "backend-locked": "Unlock the Vault backend before retrying.",
       "backend-unconfigured": "Configure this environment's Vault backend before retrying.",
       "backend-denied": "The Vault backend denied access. Check its service policy.",
-      "untrusted-host": "An administrator must verify and pin this SSH host key before use.",
+      "untrusted-host": vaultDeniedMessage("untrusted-host"),
       "broker-unavailable": "Configure and reconnect the enrolled Vault execution broker.",
       "version-conflict": "The selected connection changed. Resolve it again before use.",
       incompatible: "This Vault connection does not support the requested resource or operation.",

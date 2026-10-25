@@ -10,19 +10,33 @@ The tested engine is **OpenBao 2.7.1**, MPL 2.0, with integrated Raft and a KV v
 `loom`. This release does not support the old file storage backend or `disable_mlock` option.
 Use its official operating guidance rather than adapting old Vault configuration examples.
 
-Configure these variables on the Loom server, including an Electron-bundled server if it owns
-the selected environment:
+Configure the Loom server that owns the selected environment, including an Electron-bundled
+server, with a settings file at `fork/vault/openbao.json` in its state directory. That is
+`userdata` under the Loom home, so `~/.t3/userdata/fork/vault/openbao.json` by default:
 
-| Variable                        | Meaning                                                                                                                                   |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOOM_VAULT_OPENBAO_URL`        | HTTPS origin with no path, credentials, query or fragment. Loopback HTTP is accepted for isolated tests.                                  |
-| `LOOM_VAULT_OPENBAO_TOKEN_FILE` | Path to a regular file containing the operator-provisioned service token. POSIX group/other access must be disabled, typically mode 0600. |
-| `LOOM_VAULT_OPENBAO_MOUNT`      | KV v2 mount path, default `loom`.                                                                                                         |
+```json
+{ "url": "https://openbao.example.test", "tokenFile": "/path/to/service-token", "mount": "loom" }
+```
 
-Do not put the token itself in an environment variable, command argument, repository file or
-chat. On Windows, provision an owner-restricted ACL; the adapter cannot validate POSIX mode
-bits there. It re-reads the file on every request, so operators can atomically replace it when
-rotating a token. Configuration changes require restarting the owning Loom environment.
+| Field       | Meaning                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`       | HTTPS origin with no path, credentials, query or fragment. Loopback HTTP is accepted for isolated tests.                                  |
+| `tokenFile` | Path to a regular file containing the operator-provisioned service token. POSIX group/other access must be disabled, typically mode 0600. |
+| `mount`     | KV v2 mount path, default `loom`.                                                                                                         |
+
+The settings file must be owner-only too, because whoever can change it chooses where Loom
+sends its token. A missing file leaves Vault unconfigured. Loom reports a malformed, oversized
+or group- or world-accessible file as misconfigured. The `LOOM_VAULT_OPENBAO_URL`,
+`LOOM_VAULT_OPENBAO_TOKEN_FILE` and `LOOM_VAULT_OPENBAO_MOUNT` variables still work for tests
+and older setups. When any of them is set, they replace the whole file. Do not set them with
+`launchctl setenv`: every app started in that login session inherits them. Loom clears them
+in Claude and Codex agent shells, but other providers inherit the server environment.
+
+Do not put the token itself in the settings file, an environment variable, command argument,
+repository file or chat. On Windows, provision owner-restricted ACLs on both files; the adapter
+cannot validate POSIX mode bits there. It re-reads the token file on every request, so operators
+can atomically replace it when rotating a token. Settings changes require restarting the owning
+Loom environment.
 
 The minimal engine policy needs read on `<mount>/config`, read/create/update on
 `<mount>/data/environments/<namespace>/items/*`, read/create/update on
@@ -38,6 +52,41 @@ or stores a root token. Root tokens are used only inside the disposable test fix
 Status checks health and KV v2 configuration, not all path privileges. A ready connection can
 still receive a denied item operation if its policy is incomplete. A sealed backend reports
 locked. Loom neither auto-unseals it nor asks an SSH key manager to unlock it.
+
+### Move settings out of the login environment
+
+On a Mac where these variables came from `launchctl setenv`, run this once a Loom build that
+reads the settings file is installed and running. Adjust `dir` for a non-default Loom home.
+
+1. Write the current values into the settings file:
+
+   ```sh
+   dir=~/.t3/userdata/fork/vault
+   mkdir -p "$dir" && chmod 700 "$dir"
+   printf '{"url":"%s","tokenFile":"%s","mount":"%s"}\n' \
+     "$(launchctl getenv LOOM_VAULT_OPENBAO_URL)" \
+     "$(launchctl getenv LOOM_VAULT_OPENBAO_TOKEN_FILE)" \
+     "$(launchctl getenv LOOM_VAULT_OPENBAO_MOUNT)" > "$dir/openbao.json"
+   chmod 600 "$dir/openbao.json"
+   ```
+
+2. Remove the variables, and whatever sets them at login, such as a LaunchAgent that runs
+   `launchctl setenv`:
+
+   ```sh
+   for name in LOOM_VAULT_OPENBAO_URL LOOM_VAULT_OPENBAO_TOKEN_FILE LOOM_VAULT_OPENBAO_MOUNT; do
+     launchctl unsetenv "$name"
+   done
+   ```
+
+3. Quit Loom completely and reopen it. The running server keeps the environment it started
+   with, so the file takes effect only after this restart.
+4. Confirm that **Settings → Loom → Vault** says Vault is connected, that
+   `launchctl getenv LOOM_VAULT_OPENBAO_TOKEN_FILE` prints nothing, and that a new agent
+   terminal has no `LOOM_VAULT_OPENBAO_*` values.
+
+To roll back, set the three variables again with `launchctl setenv` and restart Loom. The
+environment then replaces the file, which can stay in place.
 
 ## Personal environment access
 
@@ -431,7 +480,13 @@ redirects are disabled and repository hooks/automatic signing/maintenance are su
 
 Commands infer cwd from the authenticated thread checkout or project root. `origin` is expanded
 to the selected HTTPS URL for this invocation. Fetch without an explicit refspec also updates
-`refs/remotes/origin/*`; persisted remote configuration is untouched. CLI output is raw scrubbed
+`refs/remotes/origin/*`. Push instead names `loom-vault-origin`, a remote defined only in the
+child's configuration with the selected URL and an `origin/*` fetch refspec. Git then updates the
+pushed branches' `origin/` tracking refs and checks bare leases against them, which a push to the
+bare URL does not. Pushing to the checkout's own `origin` would also apply its push URLs, push
+refspecs and mirror setting. A checkout that defines `loom-vault-origin` is rejected, and
+upstreams recorded by `-u` or `push.autoSetupRemote` are pointed back at `origin` after the push.
+Persisted remote configuration is untouched. CLI output is raw scrubbed
 stdout/stderr with the child's exit status. Combined output is capped at 64 KiB, command time
 at 120 seconds, and connection-use concurrency at four. Cleanup removes the private directory,
 terminates the owned process group and attempts App-token release. No local secret payload is
@@ -498,10 +553,10 @@ No Library deployment is required for the implemented environment-local Vault se
    mount administration or Raft snapshot privileges to the Loom service credential.
 6. Install that policy with `bao policy write <environment-policy> <reviewed-policy.hcl>`.
    Provision a renewable narrowly scoped service token using the existing secret delivery
-   mechanism. Write it to an owner-only file outside projects, set
-   `LOOM_VAULT_OPENBAO_URL`, `LOOM_VAULT_OPENBAO_TOKEN_FILE` and
-   `LOOM_VAULT_OPENBAO_MOUNT=loom` on the owning Loom service, and restart only that service
-   in the authorized rollout. Never put the token value in argv or environment variables.
+   mechanism. Write it to an owner-only file outside projects, write the owning Loom server's
+   settings file with that `tokenFile`, the HTTPS `url` and `"mount": "loom"`, and restart only
+   that service in the authorized rollout. Never put the token value in argv, environment
+   variables or the settings file.
 7. From an authenticated administrator client, verify backend status, then create/read/archive/
    restore/delete a synthetic canary. Confirm another environment cannot list it. Enroll the
    execution computer through `loom vault broker` and the reviewed administrator flow; compare

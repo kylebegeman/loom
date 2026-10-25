@@ -14,7 +14,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import { githubTerminalArgs } from "./GitHubCommand.ts";
+import { githubTerminalArgs, VAULT_PUSH_REMOTE } from "./GitHubCommand.ts";
 
 type Output = { exitCode: number; stdout: string; stderr: string };
 export class GitHubTerminal extends Context.Service<
@@ -220,6 +220,7 @@ export const layer = Layer.effect(
           GIT_TEMPLATE_DIR: NodePath.join(directory, "templates"),
         };
         const cwd = input.cwd ?? directory;
+        const local = { ...env };
         if (input.cwd) {
           // Reject repository settings that could redirect authentication or start credential-bearing subprocesses.
           const config = yield* spawn(
@@ -229,7 +230,14 @@ export const layer = Layer.effect(
             env,
           );
           if (config.exitCode !== 0) return yield* fail("failed");
-          if (config.stdout.split(/\r?\n/).some((key) => forbiddenConfig.test(key)))
+          if (
+            config.stdout
+              .split(/\r?\n/)
+              .some(
+                (key) =>
+                  forbiddenConfig.test(key) || key.startsWith(`remote.${VAULT_PUSH_REMOTE}.`),
+              )
+          )
             return yield* fail("unsafe-git-config");
         }
         {
@@ -254,6 +262,8 @@ export const layer = Layer.effect(
             ["maintenance.auto", "false"],
             ["gc.auto", "0"],
             ["push.gpgSign", "false"],
+            [`remote.${VAULT_PUSH_REMOTE}.url`, `https://github.com/${input.repository}.git`],
+            [`remote.${VAULT_PUSH_REMOTE}.fetch`, "+refs/heads/*:refs/remotes/origin/*"],
           ];
           env.GIT_CONFIG_COUNT = String(config.length);
           for (const [index, [key, value]] of config.entries()) {
@@ -265,9 +275,30 @@ export const layer = Layer.effect(
         }
         if (input.command.tool === "gh") env.GH_TOKEN = Redacted.value(input.token);
         yield* input.authorize;
-        const output = yield* spawn(input.command.tool, args, cwd, env);
+        // --set-upstream and push.autoSetupRemote record the push remote, which exists only in this
+        // command. Point those branches at origin even after a failed or interrupted push.
+        const upstreams = Effect.gen(function* () {
+          const listed = yield* spawn(
+            "git",
+            ["config", "--null", "--get-regexp", "^branch\\..*\\.remote$"],
+            cwd,
+            local,
+          );
+          for (const entry of listed.stdout.split("\0")) {
+            const [key, value] = entry.split("\n");
+            if (key && value === VAULT_PUSH_REMOTE)
+              yield* spawn("git", ["config", key, "origin"], cwd, local);
+          }
+        }).pipe(Effect.ignore);
+        const command = spawn(input.command.tool, args, cwd, env);
+        const output = yield* input.command.tool === "git" && args[0] === "push"
+          ? command.pipe(Effect.ensuring(upstreams))
+          : command;
         const scrub = (value: string) =>
-          value.replaceAll(Redacted.value(input.token), "[redacted]");
+          value
+            .replaceAll(Redacted.value(input.token), "[redacted]")
+            .replaceAll(`'${VAULT_PUSH_REMOTE}/`, "'origin/")
+            .replaceAll(`'${VAULT_PUSH_REMOTE}'`, "'origin'");
         return { ...output, stdout: scrub(output.stdout), stderr: scrub(output.stderr) };
       }, Effect.scoped),
     });

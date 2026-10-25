@@ -15,6 +15,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
+import { readOpenBaoSettings } from "./OpenBaoSettings.ts";
 
 export class OpenBaoStore extends Context.Service<
   OpenBaoStore,
@@ -97,16 +98,13 @@ const validKey = (key: string) =>
   key.length <= 1024 && key.split("/").every((part) => /^[a-zA-Z0-9_-]+$/.test(part));
 
 const make = Effect.gen(function* () {
-  const env = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
   const fs = yield* FileSystem.FileSystem;
   const http = yield* HttpClient.HttpClient;
-  const rawOrigin = env.LOOM_VAULT_OPENBAO_URL?.trim();
-  const tokenFile = env.LOOM_VAULT_OPENBAO_TOKEN_FILE?.trim();
-  const mount = env.LOOM_VAULT_OPENBAO_MOUNT?.trim() || "loom";
+  const { url: rawOrigin, tokenFile, mount, invalid } = yield* readOpenBaoSettings();
   const origin = originFor(rawOrigin);
-  const configured = Boolean(rawOrigin || tokenFile);
-  const validConfiguration = Boolean(origin && tokenFile && validKey(mount));
+  const configured = invalid || Boolean(rawOrigin || tokenFile);
+  const validConfiguration = !invalid && Boolean(origin && tokenFile && validKey(mount));
   const requestOptions = Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" });
   const maxBody = Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(9));
 

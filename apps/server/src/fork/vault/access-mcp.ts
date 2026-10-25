@@ -159,7 +159,7 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
     const administrator = Effect.gen(function* () {
       const caller = yield* McpInvocationContext;
       if (caller.thread || caller.client?.access !== "full-access")
-        return yield* new VaultError({ reason: "denied" });
+        return yield* new VaultError({ reason: "denied", detail: "admin-only" });
       return `client:${caller.client.sessionId}`;
     });
     return {
