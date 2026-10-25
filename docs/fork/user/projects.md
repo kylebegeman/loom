@@ -21,6 +21,15 @@ A project can contain several repositories under one root, such as separate web 
 mobile applications. Adding an existing folder keeps its files in place. Loom records
 that it is a borrowed folder and will only forget it, never delete it.
 
+A folder on a computer belongs to one project at a time. If it already belongs to another
+project, add it to that project instead. A folder whose project is archived or no longer in
+your Library can move to a new one; the old project's conversations stay where they were.
+A folder holding files Loom created for another project moves only after you review and
+remove those files from that project, restoring it first if it is archived. If that project
+is no longer in your Library, choose another folder.
+Loom checks which project owns a folder with your Library, so adding one needs the Library
+connected.
+
 ## See what needs attention
 
 The project overview ranks pending decisions, failed runs, local changes, unpublished

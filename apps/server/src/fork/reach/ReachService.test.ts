@@ -79,6 +79,8 @@ interface Options {
   readonly identityEnv?: Record<string, string>;
   /** A sidecar left by an earlier run. */
   readonly sidecar?: object;
+  /** A connector token file a hard crash of an earlier run left behind. */
+  readonly leftoverTokenFile?: true;
   /** Signs the computer in to the Library with a sign-in that has already expired. */
   readonly expiredSignIn?: true;
   readonly answers?: ReadonlyArray<Response>;
@@ -136,6 +138,10 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
     if (options.sidecar !== undefined) {
       yield* fs.makeDirectory(directory, { recursive: true });
       yield* fs.writeFileString(sidecarPath, JSON.stringify(options.sidecar));
+    }
+    if (options.leftoverTokenFile) {
+      yield* fs.makeDirectory(directory, { recursive: true });
+      yield* fs.writeFileString(tokenFile, "crashed-run-token", { mode: 0o600 });
     }
     const sidecarText = fs
       .readFileString(sidecarPath)
@@ -314,7 +320,16 @@ describe("reachIngressOrigin", () => {
     expect(reachIngressOrigin(NetAddress.inetAddressFromIpStringUnsafe("0.0.0.0", 3773))).toBe(
       "http://127.0.0.1:3773",
     );
+    expect(reachIngressOrigin(NetAddress.inetAddressFromIpStringUnsafe("::", 3773))).toBe(
+      "http://127.0.0.1:3773",
+    );
     expect(reachIngressOrigin(NetAddress.unixPathAddress("/tmp/t3.sock"))).toBeNull();
+  });
+
+  it("names nothing for a server bound to one address that is not that loopback", () => {
+    for (const ip of ["192.168.1.5", "100.64.0.5", "127.0.0.2", "fd7a:115c:a1e0::1"]) {
+      expect(reachIngressOrigin(NetAddress.inetAddressFromIpStringUnsafe(ip, 3773)), ip).toBeNull();
+    }
   });
 });
 
@@ -382,6 +397,24 @@ describe("ReachService", () => {
     ),
   );
 
+  it.effect("asks the Library for nothing while the server does not listen on loopback", () =>
+    withReach({}, (h) =>
+      Effect.gen(function* () {
+        yield* Ref.set(h.origin, null);
+        yield* h.service.setEnabled(true);
+        expect(yield* h.waitFor((status) => status.state === "error")).toMatchObject({
+          enabled: true,
+          message:
+            "Reach needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
+        });
+        yield* Ref.set(h.origin, ORIGIN);
+        yield* h.service.setEnabled(true);
+        yield* expectEvent(h, { kind: "request", origin: ORIGIN });
+        yield* expectEvent(h, { kind: "start", token: "token-1" });
+      }),
+    ),
+  );
+
   it.effect("restarts the connector with each fresh token, after the old one is gone", () =>
     withReach({}, (h) =>
       Effect.gen(function* () {
@@ -405,6 +438,65 @@ describe("ReachService", () => {
         expect(yield* h.service.status).toMatchObject({ state: "connected", message: null });
       }),
     ),
+  );
+
+  it.effect("removes a token file a crashed run left behind before anything starts", () =>
+    withReach({ leftoverTokenFile: true }, (h) =>
+      Effect.gen(function* () {
+        expect(yield* h.tokenFileExists).toBe(false);
+        expect(yield* h.service.status).toMatchObject({ state: "off" });
+        // A first run has no record, which is normal and not worth a warning.
+        expect(h.logs.join("\n")).not.toContain("unreadable reach state");
+      }),
+    ),
+  );
+
+  it.effect("starts off from a record it cannot read, without printing the record", () =>
+    withReach({ sidecar: { version: 2, hostname: "kept-out-of-logs.example.com" } }, (h) =>
+      Effect.gen(function* () {
+        expect(yield* h.service.status).toMatchObject({ state: "off", enabled: false, url: null });
+        expect(h.service.guardState()).toEqual({ hostname: null, serving: false });
+        const logs = h.logs.join("\n");
+        expect(logs).toContain("Ignoring unreadable reach state; reach starts off");
+        expect(logs).not.toContain("kept-out-of-logs");
+      }),
+    ),
+  );
+
+  it.effect(
+    "explains a failed retry over the down connector, and stops it when the Library refuses",
+    () =>
+      withReach({}, (h) =>
+        Effect.gen(function* () {
+          yield* turnOn(h);
+          yield* h.connectorStatus({
+            state: "error",
+            message: "cloudflared exited",
+            metricsPort: null,
+          });
+          h.answers.push(page(502));
+          yield* h.service.setEnabled(true);
+          yield* expectEvent(h, { kind: "request", action: "ensure" });
+          yield* expectEvent(h, { kind: "sleep", millis: 30_000 });
+          expect(yield* h.service.status).toMatchObject({
+            state: "error",
+            enabled: true,
+            message: "Your Library could not be reached. Loom keeps trying.",
+          });
+
+          h.answers.push(refusal(409, "not-configured"));
+          yield* h.adjust(30_000);
+          yield* expectEvent(h, { kind: "request", action: "ensure" });
+          yield* expectEvent(h, { kind: "stop", token: "token-1", enabledOnDisk: false });
+          expect(yield* h.service.status).toMatchObject({
+            state: "unavailable",
+            enabled: false,
+            blocked: "library-not-ready",
+          });
+          expect(h.service.guardState().serving).toBe(false);
+          expect(yield* Ref.get(h.route)).toEqual(Option.none());
+        }),
+      ),
   );
 
   it.effect("treats a reply pointing at another origin as an error and tries again", () =>
@@ -725,7 +817,8 @@ describe("ReachService", () => {
           yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
           expect(yield* h.service.status).toMatchObject({
             state: "removing",
-            message: "Sign in to the Library to finish removing reach.",
+            message:
+              "Sign this computer in to its Library again, then restart Loom to finish removing reach.",
             warnings: ["library-signed-out"],
           });
           const busy = yield* Effect.flip(h.service.setEnabled(true));

@@ -20,11 +20,14 @@ const state = vi.hoisted(() => ({
   authorityId: "authority" as string | null,
   connected: true,
   pending: false,
+  access: null as { readonly message: string } | null,
 }));
 vi.mock("./state", () => ({
-  projectLibrary: { copies: (input: unknown) => state.query(input) },
+  projectLibrary: { copies: (input: unknown) => state.query(input), registerCopy: {} },
   useLibraryAuthority: () => ({ authorityId: state.authorityId, connected: state.connected }),
+  useLibraryAccessBlock: () => state.access,
 }));
+vi.mock("./LibraryAccessNotice", () => ({ LibraryAccessNotice: () => null }));
 vi.mock("~/state/query", () => ({
   useEnvironmentQuery: () => ({
     data: state.copies,
@@ -159,6 +162,7 @@ beforeEach(() => {
   state.authorityId = "authority";
   state.connected = true;
   state.pending = false;
+  state.access = null;
   state.query.mockReset();
   state.refresh.mockReset();
 });
@@ -279,6 +283,12 @@ describe("folder settings routing", () => {
     expect(state.refresh).toHaveBeenCalledOnce();
     expect(router.state.location.pathname).toBe("/library/added-project");
     expect(router.state.location.search).toEqual({ view: "setup" });
+  });
+
+  it("does not start adding while the Library refuses this device", async () => {
+    state.access = { message: "Your sign-in to Library expired. Sign in again to continue." };
+    await mount();
+    expect(button("Add folder to Projects").props.disabled).toBe(true);
   });
 
   it("keeps local settings available when no library authority is configured", async () => {

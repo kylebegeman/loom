@@ -22,13 +22,14 @@ caller passes its own `Effect.fn` builders so span names stay literal.
 | `apps/server/src/server.ts`                                                  | `fork: reach` | 2     | Provide `ReachPublicRoute` right after `DirectEndpoints.layer`.                        |
 | `apps/web/src/components/settings/ConnectionsSettings.tsx`                   | `fork: reach` | 2     | Mount `ComputerReachDetails` in a saved computer's details, after Routes.              |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fork: reach` | 2     | Mount `ComputerReachSection` after the connect section on the iPhone computer details. |
-| `packages/client-runtime/src/connection/catalog.ts`                          | `fork: reach` | 1     | `BearerConnectionProfile` gains `identityResource`, the sign-in resource it pins.      |
-| `packages/client-runtime/src/connection/routes.ts`                           | `fork: reach` | 3     | Learned and network-tagged routes keep the saved route's resource pin.                 |
 | `packages/shared/package.json`                                               | `-`           |       | `"./fork/reach"` subpath export (no marker).                                           |
 
 The request guard (`apps/server/src/fork/reach/guard.ts`) is a global `HttpRouter.middleware`
 merged into `ForkRoutesLayer`, and the Library's routes, RPC and MCP tools register through the
-fork layer, RPC group and MCP index. None of them needs an upstream line.
+fork layer, RPC group and MCP index. The sign-in refusal of another computer's resource
+(`identityResourceRefusal` in `packages/shared/src/fork/identityGrant.ts`) runs in each
+client's fork-owned Identity sign-in and stores nothing on saved connections. None of them needs
+an upstream line.
 
 ## FORK.md rows
 

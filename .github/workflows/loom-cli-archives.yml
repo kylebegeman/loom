@@ -26,6 +26,9 @@ on:
       relay_url:
         description: Public Connect relay URL
         required: false
+      connect_retired:
+        description: 1 when the publisher retired T3 Connect for this release
+        required: false
 
 concurrency:
   group: loom-runtimes-${{ inputs.version }}
@@ -41,6 +44,8 @@ env:
   T3CODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
   T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ inputs.clerk_cli_oauth_client_id }}
   T3CODE_RELAY_URL: ${{ inputs.relay_url }}
+  # apps/server/vite.config.ts bakes the retired flag only for the exact value 1.
+  LOOM_CONNECT_RETIRED: ${{ inputs.connect_retired }}
 
 jobs:
   build:

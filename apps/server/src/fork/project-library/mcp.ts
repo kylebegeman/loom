@@ -258,7 +258,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_copy_prepare", {
     description:
-      "Reuse an existing folder or clone all selected project repositories beneath one parent on this computer. Prefer reuse. Retry with the same requestId after a failure.",
+      "Reuse an existing folder or clone all selected project repositories beneath one parent on this computer. Prefer reuse. A folder still registered to an archived project, or to one the Library no longer has, moves to this project; its old conversations keep their history. A folder that belongs to a current project or holds files Loom created is refused with the reason, as is one whose owner the Library cannot confirm. Retry with the same requestId after a failure.",
     parameters: Library.LibraryPrepareCopyRequest,
     success: Library.LibraryWorkingCopy,
     failure,

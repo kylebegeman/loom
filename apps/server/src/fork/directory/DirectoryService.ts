@@ -37,7 +37,6 @@ import { resolveLibraryConnection } from "../project-library/LibraryConnection.t
 import {
   ReachStore,
   type ReachStoredComputer,
-  attestedResource,
   isReachActive,
   readyHostname,
 } from "../reach/library/ReachStore.ts";
@@ -116,23 +115,24 @@ const decodeRefusal = Schema.decodeUnknownEffect(
 
 /**
  * A computer may publish a `public` route only as the reach hostname the Library recorded ready
- * for it, so a computer cannot point clients at a host it does not answer for. The resource is
- * attested only once Pocket ID holds it.
+ * for it, so a computer cannot point clients at a host it does not answer for.
+ *
+ * It goes only to the key that holds the reach pin. Retire clears the pin and lets the computer
+ * be forgotten, so a new key that reports for the same id gets no public route until it sets
+ * reach up itself.
  */
 const withReach = (
   environment: DirectoryEnvironment,
   computer: ReachStoredComputer | undefined,
 ): DirectoryEnvironment => {
-  const hostname = readyHostname(computer);
-  const resource = attestedResource(computer);
-  // Stored reports never carry `identityResource`; only this attestation adds it.
+  const pinned = computer?.keyFingerprint === environment.keyFingerprint ? computer : undefined;
+  const hostname = readyHostname(pinned);
   return {
     ...environment,
     routes: environment.routes.filter(
       (route) =>
         route.kind !== "public" || (hostname !== null && route.url === `https://${hostname}/`),
     ),
-    ...(resource === null ? {} : { identityResource: resource }),
   };
 };
 

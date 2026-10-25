@@ -563,6 +563,14 @@ describe("ReachProvisioner Loom Identity", () => {
         });
         const listing = yield* fixture.provisioner.list;
         expect(listing.setup.identity).toBe("unavailable");
+
+        // A conflict came from Pocket ID with a working key, so the key reads ready again.
+        fixture.apis.script("api.create", { status: 400, body: { error: "name is too long" } });
+        expect((yield* ensure(fixture, 2)).identity).toEqual({
+          state: "failed",
+          reason: "conflict",
+        });
+        expect((yield* fixture.provisioner.list).setup.identity).toBe("ready");
       }),
     ),
   );
@@ -645,6 +653,45 @@ describe("ReachProvisioner.remove", () => {
           state: "removed-with-leftover",
           leftoverDnsRecordId: record!.id,
         });
+
+        // A later Retire keeps reporting it while it exists, even untagged.
+        record!.comment = null;
+        yield* fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: false });
+        expect(yield* recordOf(fixture.store)).toMatchObject({
+          state: "removed-with-leftover",
+          leftoverDnsRecordId: record!.id,
+        });
+        fixture.apis.dns.delete(record!.id);
+        yield* fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: false });
+        expect(yield* recordOf(fixture.store)).toMatchObject({
+          state: "removed",
+          leftoverDnsRecordId: null,
+        });
+      }),
+    ),
+  );
+
+  it.effect("deletes the tagged record when the stored id no longer exists", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        const [tunnel] = liveTunnels(fixture);
+        // An ensure created a replacement record but failed before storing its id.
+        const [created] = fixture.apis.dns.values();
+        fixture.apis.dns.delete(created!.id);
+        const replacement = fixture.apis.addDns({
+          type: "CNAME",
+          name: HOSTNAME,
+          content: reachTunnelTarget(tunnel!.id),
+          proxied: true,
+          comment: `loom-reach:${STUDIO}`,
+        });
+        fixture.apis.clearCalls();
+
+        yield* remove(fixture, 2);
+        expect(fixture.apis.steps.slice(-3)).toEqual(["dns.get", "dns.find", "dns.delete"]);
+        expect(fixture.apis.dns.has(replacement.id)).toBe(false);
+        expect(yield* recordOf(fixture.store)).toMatchObject({ state: "removed" });
       }),
     ),
   );
@@ -693,7 +740,7 @@ describe("ReachProvisioner admin", () => {
     ),
   );
 
-  it.effect("keeps attesting a resource Pocket ID would not delete", () =>
+  it.effect("keeps a resource Pocket ID would not delete for a later Retire", () =>
     withReach((fixture) =>
       Effect.gen(function* () {
         yield* ensure(fixture, 1);
@@ -708,6 +755,15 @@ describe("ReachProvisioner admin", () => {
           lastError: "unavailable",
         });
         expect((yield* recordOf(fixture.store))?.identity?.apiId).not.toBeNull();
+        expect((yield* fixture.provisioner.list).setup.identity).toBe("unavailable");
+
+        const again = yield* fixture.provisioner.retire({
+          environmentId: STUDIO,
+          endIdentity: true,
+        });
+        expect(again.identity).toBeNull();
+        expect(fixture.apis.apis.size).toBe(0);
+        expect((yield* fixture.provisioner.list).setup.identity).toBe("ready");
       }),
     ),
   );
@@ -757,6 +813,35 @@ describe("ReachProvisioner admin", () => {
         const later = yield* fixture.provisioner.list;
         expect(later.computers[0]).toMatchObject({ connection: "unknown", signIn: "ended" });
         expect(later.setup.cloudflare).toBe("refused");
+      }),
+    ),
+  );
+
+  it.effect("still counts connectors once Cloudflare empties the deprecated list", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        const [tunnel] = liveTunnels(fixture);
+        fixture.apis.connect(tunnel!.id, "connector-a");
+        fixture.apis.connect(tunnel!.id, "connector-b");
+        fixture.apis.deprecatedConnectionsEmpty = true;
+        fixture.apis.clearCalls();
+
+        const [computer] = (yield* fixture.provisioner.list).computers;
+        expect(fixture.apis.steps).toEqual(["tunnel.list", "connections.list"]);
+        expect(computer).toMatchObject({ connection: "connected", connectors: 2 });
+        expect(hasExtraReachConnector(computer!)).toBe(true);
+
+        // A count it cannot get is unknown, never zero.
+        fixture.apis.script("connections.list", cloudflareError(503, 0, "unavailable"));
+        const [unknown] = (yield* fixture.provisioner.list).computers;
+        expect(unknown).toMatchObject({ connection: "connected", connectors: null });
+
+        // A tunnel that is down is not asked about.
+        tunnel!.status = "down";
+        fixture.apis.clearCalls();
+        yield* fixture.provisioner.list;
+        expect(fixture.apis.steps).toEqual(["tunnel.list"]);
       }),
     ),
   );

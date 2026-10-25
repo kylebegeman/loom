@@ -16,8 +16,6 @@ interface LoomSignInProps {
   readonly baseUrl?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
   readonly expectedIdentity?: import("@t3tools/contracts/fork").LoomIdentityAccount;
-  /** A saved connection's resource pin; a computer naming another is refused before sign-in. */
-  readonly expectedResource?: string;
   readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
@@ -32,7 +30,6 @@ function LoomSignInTarget({
   baseUrl,
   expectedEnvironmentId,
   expectedIdentity,
-  expectedResource,
   description = true,
   onConnected,
   showUnavailable = false,
@@ -138,7 +135,7 @@ function LoomSignInTarget({
       setError("This address or Identity provider changed. Review the saved computer connection.");
       return;
     }
-    const resourceRefusal = identityResourceRefusal(expectedResource, active.metadata);
+    const resourceRefusal = identityResourceRefusal(active.metadata);
     if (resourceRefusal !== null) {
       setError(resourceRefusal);
       return;
@@ -164,7 +161,6 @@ function LoomSignInTarget({
       ...(popup ? { popup } : {}),
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
-      ...(expectedResource ? { expectedResource } : {}),
     });
     if (current !== attempt.current) return;
     ownedSignIn.current = null;

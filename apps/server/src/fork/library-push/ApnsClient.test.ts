@@ -226,6 +226,7 @@ describe("ApnsClient", () => {
     { status: 403, reason: "Forbidden", outcome: "key-rejected" },
     { status: 400, reason: "TopicDisallowed", outcome: "topic-disallowed" },
     { status: 400, reason: "BadTopic", outcome: "topic-disallowed" },
+    { status: 403, reason: "BadEnvironmentKeyInToken", outcome: "topic-disallowed" },
     { status: 429, reason: "TooManyRequests", outcome: "rate-limited" },
     { status: 400, reason: "BadPriority", outcome: "other" },
     { status: 413, reason: "PayloadTooLarge", outcome: "other" },

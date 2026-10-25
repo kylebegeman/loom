@@ -8,8 +8,8 @@ import {
   type ReachFailureReason,
   ReachRemoveReply,
 } from "@t3tools/contracts/fork";
-import { directoryPublicKeyFromPem, isDirectoryRouteUrl } from "@t3tools/shared/fork/directory";
-import { signReachRequest } from "@t3tools/shared/fork/reach";
+import { directoryPublicKeyFromPem } from "@t3tools/shared/fork/directory";
+import { isReachHostname, signReachRequest } from "@t3tools/shared/fork/reach";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -24,8 +24,8 @@ export type RemoteLibrary = Extract<LibraryConnection, { readonly kind: "remote"
 
 /**
  * What one signed request came to. `outdated` is a 404 without a reach reason: a Library older
- * than reach. `invalid` is a success this computer cannot use. `storage` never sent anything,
- * because the key or the next `seq` could not be read or saved.
+ * than reach. `invalid` is a success or refusal this computer cannot use. `storage` never sent
+ * anything, because the key or the next `seq` could not be read or saved.
  */
 export type ReachLibraryOutcome<A> =
   | { readonly kind: "ok"; readonly reply: A }
@@ -66,6 +66,8 @@ const isJson = (response: HttpClientResponse.HttpClientResponse) =>
 const decodeEnsure = Schema.decodeUnknownEffect(ReachEnsureReply);
 const decodeRemove = Schema.decodeUnknownEffect(ReachRemoveReply);
 const decodeFailure = Schema.decodeUnknownEffect(ReachFailureReply);
+/** Any refusal body, including a reason from a newer Library that this computer does not know. */
+const isRefusal = Schema.is(Schema.Struct({ reason: Schema.String }));
 
 /** Signs and sends ensure and remove for one Library connection. Bodies are never logged. */
 export const makeReachLibraryClient = (options: ReachLibraryClientOptions): ReachLibraryClient => {
@@ -112,15 +114,18 @@ export const makeReachLibraryClient = (options: ReachLibraryClientOptions): Reac
       const reply = yield* response.json.pipe(Effect.flatMap(decode), Effect.option);
       return Option.isNone(reply) ? failed("invalid") : { kind: "ok", reply: reply.value };
     }
-    const refusal = isJson(response)
-      ? yield* response.json.pipe(Effect.flatMap(decodeFailure), Effect.option)
-      : Option.none();
-    if (Option.isSome(refusal)) {
-      return {
-        kind: "refused",
-        reason: refusal.value.reason,
-        retryAfterSeconds: refusal.value.retryAfterSeconds ?? null,
-      };
+    const body = isJson(response) ? yield* Effect.option(response.json) : Option.none();
+    if (Option.isSome(body)) {
+      const refusal = yield* Effect.option(decodeFailure(body.value));
+      if (Option.isSome(refusal)) {
+        return {
+          kind: "refused",
+          reason: refusal.value.reason,
+          retryAfterSeconds: refusal.value.retryAfterSeconds ?? null,
+        };
+      }
+      // A Library that runs reach sent it, so its status says nothing about age or sign-in.
+      if (isRefusal(body.value)) return failed("invalid");
     }
     if (response.status === 404) return failed("outdated");
     if (response.status === 401 || response.status === 403) return failed("signed-out");
@@ -151,7 +156,8 @@ export const makeReachLibraryClient = (options: ReachLibraryClientOptions): Reac
       });
       return failed("invalid");
     }
-    if (!isDirectoryRouteUrl(`https://${outcome.reply.hostname}/`)) return failed("invalid");
+    // The guard applies the allowlist to this hostname, so it must never name another host.
+    if (!isReachHostname(outcome.reply.hostname.toLowerCase())) return failed("invalid");
     return outcome;
   });
 

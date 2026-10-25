@@ -11,7 +11,12 @@ import {
   type LoomOsSignedIdentity,
 } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { directoryPublicKeyFromPem, signDirectoryReport } from "@t3tools/shared/fork/directory";
+import {
+  decodeEd25519PublicKey,
+  directoryPublicKeyFromPem,
+  keyFingerprint,
+  signDirectoryReport,
+} from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
@@ -70,6 +75,8 @@ const keyPair = () => {
 };
 const studioKey = keyPair();
 const laptopKey = keyPair();
+const fingerprintOf = (key: ReturnType<typeof keyPair>) =>
+  keyFingerprint(decodeEd25519PublicKey(key.publicKey)!);
 const machineKey = keyPair();
 const MACHINE_FINGERPRINT = NodeCrypto.createHash("sha256")
   .update(Buffer.from(machineKey.publicKey, "base64"))
@@ -449,89 +456,87 @@ describe("DirectoryService", () => {
     ),
   );
 
-  it.effect(
-    "lists a public route only as a ready reach hostname, and attests created resources",
-    () => {
-      const studioResource = `${LIBRARY}/computers/${STUDIO}`;
-      const reach = {
-        state: {
-          ...emptyReachLibraryState,
-          computers: {
-            [STUDIO]: reachComputer({
-              hostname: "studio-loom.reach.example.test",
-              identity: {
-                apiId: "api-1",
-                resource: studioResource,
-                state: "ready",
-                lastError: null,
-              },
-            }),
-            [LAPTOP]: reachComputer({
-              state: "removed",
-              hostname: "laptop-loom.reach.example.test",
-              identity: {
-                apiId: null,
-                resource: `${LIBRARY}/computers/${LAPTOP}`,
-                state: "failed",
-                lastError: "unavailable",
-              },
-            }),
-          },
+  it.effect("lists a public route only as a ready reach hostname for the pinned key", () => {
+    const reach = {
+      state: {
+        ...emptyReachLibraryState,
+        computers: {
+          [STUDIO]: reachComputer({
+            keyFingerprint: fingerprintOf(studioKey),
+            hostname: "studio-loom.reach.example.test",
+          }),
+          // Pinned to the key that reports, so only its removed state keeps the route out.
+          [LAPTOP]: reachComputer({
+            keyFingerprint: fingerprintOf(laptopKey),
+            state: "removed",
+            hostname: "laptop-loom.reach.example.test",
+          }),
         },
-        unreadable: false,
-      };
-      const tailnet = { kind: "tailnet", url: "https://computer.example.ts.net/" } as const;
-      return run({ reach, describe: true }, (directory) =>
-        Effect.gen(function* () {
-          yield* directory.report({
-            environmentId: STUDIO,
-            request: yield* signed(
-              reportOf({
-                routes: [
-                  { kind: "public", url: "https://studio-loom.reach.example.test/" },
-                  { kind: "public", url: "https://studio.example.com/" },
-                  tailnet,
-                ],
-              }),
-            ),
-          });
-          yield* directory.report({
-            environmentId: LAPTOP,
-            request: yield* signed(
-              reportOf({
-                environmentId: LAPTOP,
-                label: "Laptop",
-                routes: [
-                  { kind: "public", url: "https://laptop-loom.reach.example.test/" },
-                  tailnet,
-                ],
-              }),
-              { key: laptopKey },
-            ),
-          });
-          const byId = (listing: DirectoryListing, environmentId: EnvironmentId) =>
-            listing.environments.find((environment) => environment.environmentId === environmentId);
+      },
+      unreadable: false,
+    };
+    const tailnet = { kind: "tailnet", url: "https://computer.example.ts.net/" } as const;
+    return run({ reach, describe: true }, (directory) =>
+      Effect.gen(function* () {
+        yield* directory.report({
+          environmentId: STUDIO,
+          request: yield* signed(
+            reportOf({
+              routes: [
+                { kind: "public", url: "https://studio-loom.reach.example.test/" },
+                { kind: "public", url: "https://studio.example.com/" },
+                tailnet,
+              ],
+            }),
+          ),
+        });
+        yield* directory.report({
+          environmentId: LAPTOP,
+          request: yield* signed(
+            reportOf({
+              environmentId: LAPTOP,
+              label: "Laptop",
+              routes: [{ kind: "public", url: "https://laptop-loom.reach.example.test/" }, tailnet],
+            }),
+            { key: laptopKey },
+          ),
+        });
+        const byId = (listing: DirectoryListing, environmentId: EnvironmentId) =>
+          listing.environments.find((environment) => environment.environmentId === environmentId);
 
-          const listing = yield* directory.list;
-          expect(byId(listing, STUDIO)).toMatchObject({
-            routes: [{ kind: "public", url: "https://studio-loom.reach.example.test/" }, tailnet],
-            identityResource: studioResource,
-          });
-          expect(byId(listing, LAPTOP)?.routes).toEqual([tailnet]);
-          expect(byId(listing, LAPTOP)).not.toHaveProperty("identityResource");
-          expect(byId(listing, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
-          expect(byId(listing, LIBRARY_ID)).not.toHaveProperty("identityResource");
+        const listing = yield* directory.list;
+        expect(byId(listing, STUDIO)).toMatchObject({
+          routes: [{ kind: "public", url: "https://studio-loom.reach.example.test/" }, tailnet],
+        });
+        expect(byId(listing, LAPTOP)?.routes).toEqual([tailnet]);
+        expect(byId(listing, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
 
-          // Records it cannot read attest nothing.
-          reach.unreadable = true;
-          const unread = yield* directory.list;
-          expect(byId(unread, STUDIO)?.routes).toEqual([tailnet]);
-          expect(byId(unread, STUDIO)).not.toHaveProperty("identityResource");
-          expect(byId(unread, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
-        }),
-      );
-    },
-  );
+        // A new key reporting for a forgotten computer gets no public route until it sets reach up.
+        const studioRecord = reach.state.computers[STUDIO]!;
+        for (const keyFingerprint of [fingerprintOf(laptopKey), null]) {
+          reach.state = {
+            ...reach.state,
+            computers: {
+              ...reach.state.computers,
+              [STUDIO]: { ...studioRecord, keyFingerprint },
+            },
+          };
+          const rekeyed = yield* directory.list;
+          expect(byId(rekeyed, STUDIO)?.routes).toEqual([tailnet]);
+        }
+        reach.state = {
+          ...reach.state,
+          computers: { ...reach.state.computers, [STUDIO]: studioRecord },
+        };
+
+        // Records it cannot read publish nothing.
+        reach.unreadable = true;
+        const unread = yield* directory.list;
+        expect(byId(unread, STUDIO)?.routes).toEqual([tailnet]);
+        expect(byId(unread, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
+      }),
+    );
+  });
 
   it.effect("keeps a computer with live reach until the Library removes its address", () => {
     const reach = {

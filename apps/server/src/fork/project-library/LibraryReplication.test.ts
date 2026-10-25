@@ -932,6 +932,48 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  it.effect("skips a copy whose project the Library no longer has and registers the rest", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const gone: WorkspaceStore.WorkspaceReceipt = {
+          ...receipt,
+          project: { ...project, id: "deleted-project" },
+          copy: { ...copy, id: "deleted-copy", projectId: "deleted-project", registered: false },
+        };
+        const cleanups = yield* Ref.make(0);
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, {
+            ...f.publisher,
+            registerCopy: (input) =>
+              input.copy.id === gone.copy.id
+                ? Effect.fail(new LibraryError({ reason: "not-found" }))
+                : f.publisher.registerCopy(input),
+          }),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            receipts: Effect.succeed([gone, receipt]),
+            bindings: Effect.succeed([]),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Ref.update(cleanups, (count) => count + 1),
+            }),
+          ),
+        );
+        yield* service.drain;
+        expect((yield* Ref.get(f.registered)).map((input) => input.copy.id)).toEqual([copy.id]);
+        expect(yield* Ref.get(cleanups)).toBe(1);
+        expect((yield* service.status).lastFailure).toBeNull();
+      }),
+    ),
+  );
   it.effect("keeps a bound conversation's baseline and removes ones no delta will use", () =>
     run((f) =>
       Effect.gen(function* () {

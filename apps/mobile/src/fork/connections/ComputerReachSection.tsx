@@ -1,23 +1,21 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
-  createReachAtoms,
   reachChangeErrorText,
   reachView,
   supportsLoomFeature,
+  type ReachConfirm,
   type ReachTone,
 } from "@t3tools/client-runtime/fork";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthRelayReadScope, sessionGrantsScope, type EnvironmentId } from "@t3tools/contracts";
 import { REACH_FEATURE, type ReachStatus } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/reactivity";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
@@ -25,25 +23,27 @@ import { cn } from "../../lib/cn";
 import { serverEnvironment } from "../../state/server";
 import { environmentSession, usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-
-const reach = createReachAtoms(connectionAtomRuntime);
+import { REACH_INK, reach } from "./reach";
 
 const FOOTER =
   "Your Library gives this computer its own address, so your devices can connect when they are away from your network and tailnet.";
 
-const INK: Readonly<Record<ReachTone, string>> = {
-  neutral: "text-foreground-muted",
-  active: "text-foreground-muted",
-  success: "text-foreground-muted",
-  warning: "text-warning-foreground",
-  danger: "text-danger-foreground",
-};
-
 type Pending = "on" | "off" | "remove";
+
+function askFirst(confirm: ReachConfirm, onConfirm: () => void) {
+  Dialog.confirm({
+    title: confirm.title,
+    message: confirm.message,
+    confirmText: confirm.action,
+    destructive: true,
+    onConfirm,
+  });
+}
 
 /**
  * One saved computer's reach. The status streams only while this screen is open and the computer
- * is connected. The phone is never a reach host, so it is never offered the prepared sign-in values.
+ * is connected. The phone is never a reach host, so the prepared sign-in values stay on the
+ * computer's own settings and this screen only points there.
  */
 export function ComputerReachSection({
   environmentId,
@@ -89,11 +89,13 @@ export function ComputerReachSection({
     setPending(kind);
     setError(null);
     setNotice(null);
+    // Read now: once the change lands, a device on the reach address loses its route.
+    const dropsRoute = kind !== "on" && view.throughAddress;
     // A promise chain, not try/finally, which the React Compiler cannot compile.
     void command().then((outcome) => {
       pendingRef.current = false;
       setPending(null);
-      if (AsyncResult.isFailure(outcome)) setError(reachChangeErrorText(outcome.cause));
+      if (outcome._tag === "Failure") setError(reachChangeErrorText(outcome.cause, dropsRoute));
     });
   }
 
@@ -101,24 +103,14 @@ export function ComputerReachSection({
     const send = () =>
       run(enabled ? "on" : "off", () => setReach({ environmentId, input: { enabled } }));
     if (enabled || view.confirmOff === null) return send();
-    Dialog.confirm({
-      title: "Turn reach off?",
-      message: view.confirmOff,
-      confirmText: "Turn off",
-      destructive: true,
-      onConfirm: send,
-    });
+    askFirst(view.confirmOff, send);
   }
 
   function confirmRemove() {
     if (view.confirmRemove === null) return;
-    Dialog.confirm({
-      title: "Remove address?",
-      message: view.confirmRemove,
-      confirmText: "Remove",
-      destructive: true,
-      onConfirm: () => run("remove", () => removeReach({ environmentId, input: {} })),
-    });
+    askFirst(view.confirmRemove, () =>
+      run("remove", () => removeReach({ environmentId, input: {} })),
+    );
   }
 
   function copyAddress(url: string) {
@@ -154,7 +146,7 @@ export function ComputerReachSection({
             <Text
               key={`${line.tone}:${line.text}`}
               selectable
-              className={cn("text-sm", INK[line.tone])}
+              className={cn("text-sm", REACH_INK[line.tone])}
             >
               {line.text}
             </Text>

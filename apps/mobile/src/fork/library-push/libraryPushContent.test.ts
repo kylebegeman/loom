@@ -7,6 +7,7 @@ import {
   type LibraryPushContent,
   type LibraryPushContentInput,
   type LibraryPushContentKind,
+  type LibraryPushTestFailure,
 } from "./libraryPushContent";
 import {
   IDLE_ACTIVITY,
@@ -221,6 +222,32 @@ describe("libraryPushContent", () => {
     ).toBe(
       `${LIBRARY_PUSH_COPY.testFailed} Wait a little before sending another test notification.`,
     );
+  });
+
+  it("says why a test did not reach this iPhone", () => {
+    const failedTest = (reason: LibraryPushTestFailure | null) =>
+      content({ record: registered, test: { phase: "failed", reason } }).test?.description;
+    expect(failedTest("not-registered")).toBe(
+      `${LIBRARY_PUSH_COPY.testFailed} ${LIBRARY_PUSH_COPY.testNotRegistered}`,
+    );
+    expect(failedTest("bad-token")).toBe(
+      `${LIBRARY_PUSH_COPY.testFailed} ${LIBRARY_PUSH_COPY.testBadToken}`,
+    );
+    expect(failedTest("topic-disallowed")).toBe(
+      `${LIBRARY_PUSH_COPY.testFailed} ${LIBRARY_PUSH_COPY.testTopicDisallowed}`,
+    );
+    expect(failedTest("other")).toBe(LIBRARY_PUSH_COPY.testFailed);
+    expect(failedTest(null)).toBe(LIBRARY_PUSH_COPY.testFailed);
+  });
+
+  it("stays on while it refreshes a registration the Library already holds", () => {
+    expect(
+      content({ record: registered, activity: { ...IDLE_ACTIVITY, running: "register" } }),
+    ).toMatchObject({
+      kind: "registered",
+      toggle: { value: true, disabled: false },
+      test: { loading: false },
+    });
   });
 
   it("names the Library generically when it has no label", () => {

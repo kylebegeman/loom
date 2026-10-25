@@ -156,6 +156,10 @@ const make = Effect.gen(function* () {
   // A restart forgets it and checks each held thread once more, which is what makes the release
   // durable without a table of its own.
   const released = new Set<string>();
+  // The newest event of each purge whose files are gone. A purge that resumes over later passes
+  // reads every message payload for attachment ids, so it does that again only after an event
+  // newer than this one, which may have added a file.
+  const filesRemovedThrough = new Map<string, number>();
   // A pass pages thousands of statements, so they run untraced and the pass span carries counts.
   // The per-thread and per-page helpers below are fnUntraced for the same reason: they run up to
   // thousands of times inside the pass span, which reports what they did.
@@ -207,13 +211,18 @@ const make = Effect.gen(function* () {
         (yield* read(sql<{ readonly sequence: number | null }>`
           SELECT MAX(sequence) AS sequence FROM orchestration_events
           WHERE application_event_version = 2 AND aggregate_kind = 'thread'`))[0]?.sequence ?? 0;
-      const bound = new Set((yield* workspaces.bindings).map((entry) => String(entry.threadId)));
-      // Read once per pass: a thread this pass may purge was deleted over a day before it started,
-      // so an export recorded during the pass, from a snapshot under a day old, saw it deleted.
-      const importing = yield* pendingImportThreadIds(config.stateDir).pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.provideService(Path.Path, path),
+      // Read before the bindings: activation binds an export's conversations before it removes
+      // their record, so one missing here is in `bound`. A thread this pass may purge was deleted
+      // over a day before it started, so an export recorded after this read, from a snapshot under
+      // a day old, saw it deleted. A record it cannot read fails the pass after the release, which
+      // needs neither.
+      const pendingImports = yield* Effect.result(
+        pendingImportThreadIds(config.stateDir).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+        ),
       );
+      const bound = new Set((yield* workspaces.bindings).map((entry) => String(entry.threadId)));
       let pages = 0;
       let maxPageMs = 0;
       let walWaits = 0;
@@ -303,6 +312,8 @@ const make = Effect.gen(function* () {
           releasedCount += 1;
         } else attachmentFailures += 1;
       }
+
+      const importing = yield* Effect.fromResult(pendingImports);
 
       // Purge: candidates are evaluated lazily, with their linked threads, until the budget ends.
       const verdicts = new Map<string, Verdict>();
@@ -457,9 +468,12 @@ const make = Effect.gen(function* () {
           recorded = true;
           return true;
         });
-        if (!(yield* removeAttachments(threadId))) {
-          attachmentFailures += 1;
-          return "kept" as const;
+        if ((filesRemovedThrough.get(threadId) ?? -1) < lastSequence) {
+          if (!(yield* removeAttachments(threadId))) {
+            attachmentFailures += 1;
+            return "kept" as const;
+          }
+          filesRemovedThrough.set(threadId, lastSequence);
         }
         released.add(threadId);
         let cursor = Math.min(highWater, lastSequence + 1);
@@ -515,6 +529,7 @@ const make = Effect.gen(function* () {
             yield* Effect.yieldNow;
           }
         }
+        filesRemovedThrough.delete(threadId);
         return "purged" as const;
       });
 

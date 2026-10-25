@@ -19,9 +19,9 @@ import {
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
 import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
-  identityMetadataResource,
   identityResourceRefusal,
   identitySignInMaxAge,
 } from "@t3tools/shared/fork/identity-grant";
@@ -210,7 +210,7 @@ export async function signInToLoom(
   signal?: AbortSignal,
   expected?: Pick<
     LoomDesktopSignInRequest,
-    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "expectedResource"
+    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer"
   >,
 ): Promise<LoomSignIn> {
   const origin = loomHostOrigin(httpBaseUrl);
@@ -246,7 +246,7 @@ export async function signInToLoom(
       );
     if (expected?.expectedIssuer !== undefined && expected.expectedIssuer !== metadata.issuer)
       throw new Error("This computer uses a different sign-in provider than your Library.");
-    const resourceRefusal = identityResourceRefusal(expected?.expectedResource, metadata);
+    const resourceRefusal = identityResourceRefusal(metadata);
     if (resourceRefusal !== null) throw new Error(resourceRefusal);
     const discovery = decodeDiscovery(
       await jsonRequest(
@@ -431,10 +431,7 @@ export async function signInToLoom(
       } catch (error) {
         // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
         if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
-          throw new Error(
-            "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.",
-            { cause: error },
-          );
+          throw new Error(IDENTITY_FRESH_SIGN_IN_TEXT, { cause: error });
         if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_PASSKEY_REQUIRED)
           throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT, { cause: error });
         // oxlint-disable-next-line preserve-caught-error -- A failed session decode can quote the issued token.
@@ -466,7 +463,6 @@ export async function signInToLoom(
             signedInAt + Math.min(session.expires_in, 3600) * 1000,
             (accessClaims.exp ?? 0) * 1000,
           ),
-          resource: identityMetadataResource(metadata),
         },
         // Renewal exchanges at the native session endpoint, which older computers lack, and only a
         // computer that caps sign-in age bounds the grant.

@@ -23,11 +23,18 @@ const SEARCH_LIMIT = "100";
 
 /**
  * Pocket ID refuses the label, prefix and id past 50 characters, so the label is cut first and
- * the id prefix keeps two computers with one label apart.
+ * the id prefix keeps two computers with one label apart. Cut by code point, as Pocket ID counts,
+ * so an emoji in a label is never split into a lone surrogate.
  */
 export const reachApiName = (label: string | null, environmentId: string) => {
-  const shown = (label ?? "").trim().slice(0, API_NAME_LABEL_MAX).trim() || "computer";
-  return `Loom ${shown} (${environmentId.slice(0, 8)})`.slice(0, API_NAME_MAX);
+  const shown =
+    Array.from((label ?? "").trim())
+      .slice(0, API_NAME_LABEL_MAX)
+      .join("")
+      .trim() || "computer";
+  return Array.from(`Loom ${shown} (${environmentId.slice(0, 8)})`)
+    .slice(0, API_NAME_MAX)
+    .join("");
 };
 
 /** `not-configured`: no admin key file right now, which is normal with an on-demand key. */
@@ -195,10 +202,9 @@ const make = Effect.gen(function* () {
             (error) => error.code === "already_in_use",
           )
             ? findByResource(resource).pipe(
-                Effect.flatMap((apiId) =>
-                  apiId === null
-                    ? Effect.fail(fail("api.search", "conflict"))
-                    : Effect.succeed(apiId),
+                Effect.filterOrFail(
+                  (apiId): apiId is string => apiId !== null,
+                  () => fail("api.search", "conflict"),
                 ),
               )
             : Effect.fail(fail("api.create", "conflict"));

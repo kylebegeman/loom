@@ -80,12 +80,6 @@ export const emptyReachLibraryState: ReachLibraryState = {
   computers: {},
 };
 
-/** The resource the Library attests for a computer: only once Pocket ID holds it. */
-export const attestedResource = (computer: ReachStoredComputer | undefined) => {
-  const identity = computer?.identity ?? null;
-  return identity === null || identity.apiId === null ? null : identity.resource;
-};
-
 /** The hostname a computer may publish as its `public` route right now. */
 export const readyHostname = (computer: ReachStoredComputer | undefined) =>
   computer?.state === "ready" ? computer.hostname : null;

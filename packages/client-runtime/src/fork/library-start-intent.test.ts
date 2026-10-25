@@ -6,6 +6,9 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
+  libraryFolderOwner,
+  libraryFolderOwnerIssue,
+  libraryFolderTakeover,
   libraryStartIntent,
   libraryStartFolderProjects,
   libraryStartRepositoryProjects,
@@ -214,6 +217,61 @@ describe("existing Start folder associations", () => {
     ).toEqual([]);
     expect(libraryStartFolderProjects(projects, copies, "computer", "/work/application")).toEqual(
       [],
+    );
+  });
+});
+
+describe("a folder's registered owner", () => {
+  const registration = (projectId: string, ownership: "borrowed" | "managed" = "borrowed") => ({
+    workingCopyId: "copy",
+    projectId,
+    projectTitle: "Recorded title",
+    ownership,
+  });
+  const projects = [
+    { ...project("current"), title: "Current app" },
+    { ...project("old"), title: "Old app", archived: true },
+  ];
+
+  it("keeps a folder with its current project and frees one whose project is archived or gone", () => {
+    expect(libraryFolderOwner(undefined, projects)).toBeNull();
+    const current = libraryFolderOwner(registration("current"), projects);
+    expect(libraryFolderOwnerIssue(current, "current")).toBeNull();
+    expect(libraryFolderOwnerIssue(current, null)).toBeNull();
+    expect(libraryFolderOwnerIssue(current, "new")).toBe(
+      "This folder already belongs to Current app. Add it to that project instead.",
+    );
+    expect(libraryFolderTakeover(current)).toBeNull();
+
+    const archived = libraryFolderOwner(registration("old"), projects);
+    expect(libraryFolderOwnerIssue(archived, "new")).toBeNull();
+    expect(libraryFolderTakeover(archived)).toBe(
+      "Takes this folder over from archived Old app. Its conversations stay in the archive.",
+    );
+    // A project the Library no longer has is named as its computer recorded it.
+    const missing = libraryFolderOwner(registration("deleted"), projects);
+    expect(libraryFolderOwnerIssue(missing, "current")).toBeNull();
+    expect(libraryFolderTakeover(missing)).toBe(
+      "Takes this folder over from Recorded title, which is no longer in your Library.",
+    );
+  });
+
+  it("refuses files Loom created and any owner it cannot check yet", () => {
+    const archived = libraryFolderOwner(registration("old", "managed"), projects);
+    expect(libraryFolderOwnerIssue(archived, "new")).toContain("Restore that project");
+    expect(libraryFolderTakeover(archived)).toBeNull();
+    const missing = libraryFolderOwner(registration("deleted", "managed"), projects);
+    expect(libraryFolderOwnerIssue(missing, "current")).toContain("Choose another folder.");
+    // Its own project still reuses a managed folder.
+    expect(
+      libraryFolderOwnerIssue(
+        libraryFolderOwner(registration("current", "managed"), projects),
+        "current",
+      ),
+    ).toBeNull();
+    const unchecked = libraryFolderOwner(registration("current"), undefined);
+    expect(libraryFolderOwnerIssue(unchecked, "current")).toBe(
+      "Loom could not check which project owns this folder. Reconnect your Library and try again.",
     );
   });
 });

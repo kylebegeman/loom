@@ -259,6 +259,7 @@ const make = Effect.gen(function* () {
     if (snapshot === null) {
       withheld.add(threadId);
       oversized.delete(threadId);
+      spacedUntil.delete(threadId);
       return { result: "withheld" as const, bytes: 0 };
     }
     if (queuedSequence !== undefined && queuedSequence >= snapshot.summary.sequence) {
@@ -424,6 +425,7 @@ const make = Effect.gen(function* () {
         if (!bound.has(threadId) || withheld.has(threadId)) {
           deferred.delete(threadId);
           oversized.delete(threadId);
+          spacedUntil.delete(threadId);
           continue;
         }
         if (flushed?.has(threadId)) continue;
@@ -627,7 +629,17 @@ const make = Effect.gen(function* () {
         copy.state === "failed"
       )
         continue;
-      yield* registerChangedCopy(current, copy);
+      yield* registerChangedCopy(current, copy).pipe(
+        // The Library cannot record a copy of a project it no longer has. Skipping it keeps one
+        // such copy from failing every later copy and the cleanup that follows.
+        Effect.catch((error) =>
+          isLibraryError(error) && error.reason === "not-found"
+            ? Effect.logDebug("The Library no longer has this copy's project.", {
+                copyId: copy.id,
+              })
+            : Effect.fail(error),
+        ),
+      );
     }
   }, mapIo);
 

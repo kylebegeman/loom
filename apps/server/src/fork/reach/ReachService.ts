@@ -28,7 +28,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpServer } from "effect/http";
-import type * as NetAddress from "effect/net/NetAddress";
+import * as NetAddress from "effect/net/NetAddress";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import {
   identityConfigured,
@@ -70,8 +70,11 @@ const MESSAGES = {
   unverified: "Your Library could not verify this computer's request. Loom keeps trying.",
   invalid: "Your Library sent an answer this computer cannot use. Loom keeps trying.",
   storage: "This computer could not save its reach settings. Loom keeps trying.",
-  noOrigin: "This computer could not tell which address its server listens on.",
-  removeSignedOut: "Sign in to the Library to finish removing reach.",
+  noOrigin:
+    "Reach needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
+  // The Library sign-in is read once at start, so a new one needs a restart to take effect.
+  removeSignedOut:
+    "Sign this computer in to its Library again, then restart Loom to finish removing reach.",
   removeOutdated: "Update Loom on your Library to finish removing reach.",
   removeNotReady: "Your Library is not set up for reach, so it cannot remove this address yet.",
 } as const;
@@ -127,13 +130,25 @@ export class ReachService extends Context.Service<
 export interface ReachServiceDependencies {
   /** Keeps one connector running until interrupted, as `runReachTunnel` does. */
   readonly runTunnel: (options: RunCloudflaredOptions) => Effect.Effect<never>;
-  /** This server's bound loopback origin, or null when it listens on no TCP port. */
+  /** This server's bound loopback origin, or null when it does not listen on one. */
   readonly ingressOrigin: Effect.Effect<string | null>;
 }
 
-/** The origin the Library points the tunnel at: the forms the shared ingress check accepts. */
-export const reachIngressOrigin = (address: NetAddress.SocketAddress): string | null =>
-  "port" in address ? `http://${loopbackUrlHostForAddress(address)}:${address.port}` : null;
+/**
+ * The origin the Library points the tunnel at: the forms the shared ingress check accepts. Null
+ * unless the server listens there, on a wildcard or that exact loopback address. A server bound to
+ * one LAN or tailnet address does not, and whatever else listens on that loopback port must never
+ * be published.
+ */
+export const reachIngressOrigin = (address: NetAddress.SocketAddress): string | null => {
+  if (!("port" in address)) return null;
+  const ip = address.address;
+  const onLoopbackHost =
+    NetAddress.isUnspecified(ip) ||
+    Equal.equals(ip, NetAddress.ipv4Loopback) ||
+    Equal.equals(ip, NetAddress.ipv6Loopback);
+  return onLoopbackHost ? `http://${loopbackUrlHostForAddress(address)}:${address.port}` : null;
+};
 
 const backoff = (failures: number) =>
   Math.min(RETRY_BASE_MS * 2 ** Math.max(failures - 1, 0), RETRY_MAX_MS);
@@ -210,15 +225,6 @@ const learnedFrom = (outcome: ReachLibraryOutcome<unknown>): LearnedBlock | null
   return outcome.reason === "is-library" ? "is-library" : null;
 };
 
-const isNotFound = (cause: unknown) =>
-  typeof cause === "object" &&
-  cause !== null &&
-  "reason" in cause &&
-  typeof cause.reason === "object" &&
-  cause.reason !== null &&
-  "_tag" in cause.reason &&
-  cause.reason._tag === "NotFound";
-
 interface ConnectorRuntime {
   readonly scope: Scope.Closeable;
   /** Completes once the child and its token file are gone. */
@@ -248,7 +254,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
 
   let saved: Sidecar = yield* fs.readFileString(sidecarPath).pipe(
     Effect.flatMap(Schema.decodeEffect(sidecarJson)),
-    Effect.catchIf(isNotFound, () => Effect.succeed(OFF)),
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(OFF)),
     // No cause: a decode issue would print the file.
     Effect.catch(() =>
       Effect.logWarning("Ignoring unreadable reach state; reach starts off", {
@@ -256,6 +262,15 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
       }).pipe(Effect.as(OFF)),
     ),
   );
+  // A hard crash leaves the last connector's token file behind, and that token works until the
+  // next ensure rotates it. No connector of this run has used the file yet.
+  yield* fs
+    .remove(tokenFile, { force: true })
+    .pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not remove a leftover reach connector token file", { cause }),
+      ),
+    );
 
   const writeLock = yield* Semaphore.make(1);
   /** Applies `update` to the latest record, so a saved `seq` and a mutation never undo each other. */
@@ -333,7 +348,8 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
       prepared: saved.prepared,
     };
     if (saved.removing) return { ...base, state: "removing", message: failure?.message ?? null };
-    if (connector !== null) {
+    // While a fresh ensure fails, its reason says more than the down connector's last line.
+    if (connector !== null && (connector.status.state !== "error" || failure === null)) {
       const { state, message } = connector.status;
       return { ...base, state, message: state === "connected" ? null : message };
     }
@@ -488,6 +504,9 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
             if (tentative) yield* persistOrRemember((current) => ({ ...current, enabled: false }));
             learned = block;
             failure = null;
+            // Turning reach on again while its connector was down asks first, so that connector
+            // still runs here. It must not outlive an intent the Library just refused.
+            yield* stopConnector;
             yield* publish;
             return null;
           }

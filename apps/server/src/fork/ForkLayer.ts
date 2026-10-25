@@ -253,6 +253,10 @@ export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
   Layer.provide(ProcessRunner.layer),
   Layer.provide(layerLibraryPublisher),
 );
+const layerLibraryHistorySource = LibraryHistorySource.layer.pipe(
+  Layer.provide(LibraryWorkspaceStore.layer),
+  Layer.provide(ProjectionStore.layer),
+);
 // One reach store, so the directory refuses to forget a computer the provisioner still serves (F2).
 const layerReachStore = ReachStore.layer;
 const layerDirectory = Directory.layer.pipe(
@@ -274,7 +278,6 @@ const layerMiniOffload = MiniOffload.layer.pipe(
   ),
 );
 
-/** Packet service layers, one line each. Keep `Layer.empty` first. */
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
@@ -302,6 +305,7 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
   ),
 );
 
+/** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
@@ -375,12 +379,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
     Layer.provide(RuntimeLayer.layerThreadManagementProvided),
-    Layer.provide(
-      LibraryHistorySource.layer.pipe(
-        Layer.provide(LibraryWorkspaceStore.layer),
-        Layer.provide(ProjectionStore.layer),
-      ),
-    ),
+    Layer.provide(layerLibraryHistorySource),
   ),
   layerLibraryPublisher,
   LibraryTimeline.layer,
@@ -389,12 +388,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(LibraryDocumentPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer))),
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
-    Layer.provide(
-      LibraryHistorySource.layer.pipe(
-        Layer.provide(LibraryWorkspaceStore.layer),
-        Layer.provide(ProjectionStore.layer),
-      ),
-    ),
+    Layer.provide(layerLibraryHistorySource),
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(
       LibraryCopyHealthPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer)),
@@ -402,10 +396,7 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   layerLibraryAssets,
   layerLibraryRecovery,
-  LibraryHistorySource.layer.pipe(
-    Layer.provide(LibraryWorkspaceStore.layer),
-    Layer.provide(ProjectionStore.layer),
-  ),
+  layerLibraryHistorySource,
   DeletedThreadHistory.layer.pipe(
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(ProjectionStore.layer),
@@ -508,14 +499,7 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(
     Layer.provideMerge(
       LibraryBriefSuggestions.layer.pipe(
-        Layer.provide(
-          LibraryPublisher.layer.pipe(
-            Layer.provide(FetchHttpClient.layer),
-            Layer.provide(layerLibraryService),
-            Layer.provide(layerLibraryAssets),
-            Layer.provide(PreviewAccess.layer),
-          ),
-        ),
+        Layer.provide(layerLibraryPublisher),
         Layer.provide(layerLibraryService),
         Layer.provide(LibraryWorkspaceStore.layer),
       ),

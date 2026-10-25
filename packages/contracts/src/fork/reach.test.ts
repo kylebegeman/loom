@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ServerConfig, ServerDirectEndpoint } from "../server.ts";
-import { DirectoryEnvironment, DirectoryEnvironmentReport, DirectoryError } from "./directory.ts";
+import { DirectoryError } from "./directory.ts";
 import {
   ReachEnsureReply,
   ReachError,
@@ -19,30 +19,12 @@ const decodeEndpoint = Schema.decodeUnknownSync(ServerDirectEndpoint);
 const decodeEndpoints = Schema.decodeUnknownSync(
   Schema.Struct({ directEndpoints: ServerConfig.fields.directEndpoints }),
 );
-const decodeEnvironment = Schema.decodeUnknownSync(DirectoryEnvironment);
-const decodeReport = Schema.decodeUnknownSync(DirectoryEnvironmentReport);
 const decodeStatus = Schema.decodeUnknownSync(ReachStatus);
 const decodeEnsureReply = Schema.decodeUnknownSync(ReachEnsureReply);
 const decodeClaims = Schema.decodeUnknownSync(ReachRequestClaims);
 const decodeFailure = Schema.decodeUnknownSync(ReachFailureReply);
 const decodeLibraryComputer = Schema.decodeUnknownSync(ReachLibraryComputer);
 const isLoopbackOrigin = Schema.is(ReachLoopbackOrigin);
-
-const environment = {
-  environmentId: "environment-a",
-  label: "Studio",
-  serverVersion: "0.0.0-test",
-  platform: { os: "darwin", arch: "arm64" },
-  supportsExecution: true,
-  loomFeatures: ["reach"],
-  routes: [{ kind: "public", url: "https://studio-loom.begam.in/" }],
-  providers: [],
-  sequence: 1,
-  reportedAt: "2026-10-24T00:00:00.000Z",
-  keyFingerprint: "a".repeat(64),
-  firstSeenAt: "2026-10-24T00:00:00.000Z",
-  receivedAt: "2026-10-24T00:00:00.000Z",
-};
 
 const status = {
   state: "connected",
@@ -90,21 +72,7 @@ describe("direct endpoints", () => {
   });
 });
 
-describe("directory attestation", () => {
-  it("decodes listings from Libraries with and without an attested resource", () => {
-    expect(decodeEnvironment(environment)).not.toHaveProperty("identityResource");
-    const resource = "https://loom.begam.in/computers/environment-a";
-    expect(decodeEnvironment({ ...environment, identityResource: resource }).identityResource).toBe(
-      resource,
-    );
-  });
-
-  it("never takes the resource from a computer's own report", () => {
-    const { keyFingerprint: _k, firstSeenAt: _f, receivedAt: _r, ...report } = environment;
-    const decoded = decodeReport({ ...report, identityResource: "https://attacker.example.com" });
-    expect(decoded).not.toHaveProperty("identityResource");
-  });
-
+describe("directory", () => {
   it("explains a forget refused while reach is active", () => {
     const message = new DirectoryError({ reason: "reach-active" }).message;
     expect(message).toContain("Retire");
@@ -127,7 +95,7 @@ describe("reach status", () => {
   });
 
   it("writes every error line without an em dash", () => {
-    const reasons = ["unavailable", "library-not-ready", "library", "busy", "storage"] as const;
+    const reasons = ["unavailable", "busy", "storage"] as const;
     for (const reason of reasons) {
       expect(new ReachError({ reason }).message).not.toContain("—");
     }

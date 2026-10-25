@@ -233,8 +233,7 @@ describe("Loom native OAuth enrollment", () => {
             .end(JSON.stringify(result));
         })().catch(() => response.writeHead(500).end());
       });
-      // Pinned to the computer's own issuer and resource, as a Library directory sign-in is. The
-      // legacy computer names no resource, so its audience is what the pin compares.
+      // Pinned to the computer's own issuer, as a Library directory sign-in is.
       const pending = signInToLoom(
         origin,
         async (authorizationUrl) => {
@@ -255,7 +254,7 @@ describe("Loom native OAuth enrollment", () => {
           return true;
         },
         undefined,
-        { expectedIssuer: `${origin}/idp`, expectedResource: modern ? `${origin}/loom` : "loom" },
+        { expectedIssuer: `${origin}/idp` },
       );
       if (refusal !== null) {
         await expect(pending).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
@@ -276,8 +275,6 @@ describe("Loom native OAuth enrollment", () => {
         accessToken: "host-session",
         identity: { issuer: `${origin}/idp`, subject: "user" },
         expiresAt: expect.any(Number),
-        // The saved connection pins this, so a later sign-in refuses another computer's resource.
-        resource: modern ? `${origin}/loom` : "loom",
       });
       expect(session.expiresAt).toBeGreaterThan(Date.now());
       expect(session.expiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
@@ -302,6 +299,7 @@ describe("Loom native OAuth enrollment", () => {
   );
   it("rejects saved environment, issuer and resource changes before opening the provider", async () => {
     let origin = "";
+    let resource: string | undefined;
     origin = await serve((_request, response) =>
       response.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
@@ -315,6 +313,7 @@ describe("Loom native OAuth enrollment", () => {
           scopes: ["openid"],
           audience: "computer",
           environmentId: "computer",
+          ...(resource === undefined ? {} : { resource }),
         }),
       ),
     );
@@ -332,11 +331,8 @@ describe("Loom native OAuth enrollment", () => {
       signInToLoom(origin, open, undefined, { expectedIssuer: "https://library-id.test" }),
     ).rejects.toThrow("different sign-in provider than your Library");
     // A computer naming another computer's resource would collect a sign-in that one accepts.
-    await expect(
-      signInToLoom(origin, open, undefined, {
-        expectedResource: "https://other.example.test/loom",
-      }),
-    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    resource = "https://library.example.test/computers/other";
+    await expect(signInToLoom(origin, open)).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
     expect(open).not.toHaveBeenCalled();
   });
 

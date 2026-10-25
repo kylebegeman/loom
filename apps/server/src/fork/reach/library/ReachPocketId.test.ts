@@ -168,5 +168,10 @@ describe("ReachPocketId", () => {
     const long = ReachPocketId.reachApiName("A".repeat(80), "0123456789");
     expect(long.length).toBeLessThanOrEqual(50);
     expect(long.endsWith("(01234567)")).toBe(true);
+    // A cut through an emoji would leave a lone surrogate that Pocket ID cannot store.
+    const desk = "\u{1F5A5}\u{FE0F}";
+    expect(ReachPocketId.reachApiName(`${"A".repeat(33)}${desk} Desk`, "0123456789")).toBe(
+      `Loom ${"A".repeat(33)}\u{1F5A5} (01234567)`,
+    );
   });
 });

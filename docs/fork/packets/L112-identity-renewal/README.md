@@ -14,9 +14,9 @@ token's `auth_time`, through `LOOM_IDENTITY_MAX_SESSION_AGE`.
   `safeStorage`, iOS Keychain); single-flight renewal before expiry and after a rejected
   credential; socket succession on the computer; the sign-in age cap; revocation that follows
   renewal links; removal that ends the grant.
-- Out: browsers keep interactive sign-in. Issuer pinning and binding the grant's resource to a
-  trusted record wait for the Library directory (C02 and C03), because today the client learns
-  both from the computer it signs in to.
+- Out: browsers keep interactive sign-in. Issuer pinning for directory computers is C02, and
+  refusing another computer's resource is C03, because this packet learns both from the
+  computer it signs in to.
 
 ## Surfaces
 

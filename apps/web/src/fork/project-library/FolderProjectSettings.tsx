@@ -5,8 +5,9 @@ import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import type { SidebarProjectGroupMember } from "~/sidebarProjectGrouping";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
-import { projectLibrary, useLibraryAuthority } from "./state";
+import { projectLibrary, useLibraryAccessBlock, useLibraryAuthority } from "./state";
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
 
 /** Removed files retain their explicit identity so settings still reach the same project. */
 export function libraryProjectForFolderSettings(
@@ -44,6 +45,8 @@ export function FolderProjectSettings({
       : null,
   );
   const projectId = libraryProjectForFolderSettings(members, copies.data ?? []);
+  // Adding ends by registering the folder with the Library.
+  const access = useLibraryAccessBlock(authority.authorityId, [projectLibrary.registerCopy]);
   const [adding, setAdding] = useState<SidebarProjectGroupMember | null>(null);
   if (projectId && !explicitFolder)
     return (
@@ -63,6 +66,7 @@ export function FolderProjectSettings({
               ? "These are this computer's folder settings. Shared project preferences and files are managed in Projects."
               : "Add this existing folder to Projects to use it from the project chooser and manage its files there."}
           </p>
+          {projectId ? null : <LibraryAccessNotice block={access} />}
           <div className="flex flex-wrap gap-2">
             {projectId ? (
               <>
@@ -99,7 +103,7 @@ export function FolderProjectSettings({
                   key={member.physicalProjectKey}
                   variant="outline"
                   size="sm"
-                  disabled={!authority.connected || copies.isPending}
+                  disabled={!authority.connected || access !== null || copies.isPending}
                   onClick={() => setAdding(member)}
                 >
                   {members.length === 1 ? "Add folder to Projects" : `Add ${member.title}`}

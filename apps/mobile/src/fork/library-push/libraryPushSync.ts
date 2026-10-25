@@ -9,7 +9,6 @@ import { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_PUSH_FEATURE,
   type LibraryPushDeviceRowId,
-  type LibraryPushErrorReason,
   type LibraryPushStatus,
 } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
@@ -57,6 +56,7 @@ import {
   type LibraryPushSnapshot,
   type LibraryPushStep,
 } from "./libraryPushPlan";
+import type { LibraryPushTestState } from "./libraryPushContent";
 import {
   libraryPushRecordAtom,
   loadLibraryPushRecord,
@@ -135,9 +135,21 @@ const failed = (
   failureReason: libraryPushErrorReason(error),
 });
 
+const TOKEN_READ_TIMEOUT_MS = 20_000;
+
 /** Never logged, not even in part. */
 async function readDevicePushToken(): Promise<string | null> {
-  const token = await Notifications.getDevicePushTokenAsync().catch(() => null);
+  // iOS settles the native request only once it hears from APNs, so offline it can stay pending.
+  // Waiting on it would hold every later sync step, an opt-out included.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), TOKEN_READ_TIMEOUT_MS);
+  });
+  const token = await Promise.race([
+    Notifications.getDevicePushTokenAsync().catch(() => null),
+    timedOut,
+  ]);
+  clearTimeout(timer);
   return token?.type === "ios" && typeof token.data === "string" && token.data.trim() !== ""
     ? token.data.trim()
     : null;
@@ -192,17 +204,45 @@ async function checkLibraryPushRow(registry: AtomRegistry.AtomRegistry, libraryI
     await reconcileLibraryPushStatus(registry, libraryId, status.value, Date.now());
 }
 
+/**
+ * One run of the sync loop, from the change that started it until nothing is left to plan. A
+ * register's own record write plans again within the same run, and that pass reuses the token
+ * instead of asking iOS twice. In a Connect build every ask also wakes upstream's token listener.
+ */
+interface SyncRun {
+  token: string | null;
+}
+
+/**
+ * Libraries whose connection is being removed. The removal's unregister answers with the record
+ * still opted in, which would otherwise plan a register that outlives the removal.
+ */
+const removingLibraries = new Set<EnvironmentId>();
+
+function planNow(registry: AtomRegistry.AtomRegistry, build: LibraryPushBuild) {
+  const snapshot = registry.get(libraryPushSnapshotAtom);
+  const step = planLibraryPush({
+    ...snapshot,
+    supported: true,
+    permission: registry.get(libraryPushPermissionAtom),
+    appVersion: build.appVersion,
+  });
+  return { planned: snapshot.record, step };
+}
+
 async function registerDevice(
   registry: AtomRegistry.AtomRegistry,
   step: Extract<LibraryPushStep, { kind: "needsToken" }>,
   planned: LibraryPushRecord,
   build: LibraryPushBuild,
+  run: SyncRun,
 ) {
-  const token = await readDevicePushToken();
+  const token = run.token ?? (await readDevicePushToken());
   if (token === null) {
     setActivity(registry, failed("token", null));
     return;
   }
+  run.token = token;
   const device = {
     bundleId: build.bundleId,
     apsEnvironment: build.apsEnvironment,
@@ -216,6 +256,18 @@ async function registerDevice(
       now >= planned.registration.registeredAt + LIBRARY_PUSH_ROW_SETTLE_MS
     )
       await checkLibraryPushRow(registry, step.libraryId);
+    setActivity(registry, IDLE_ACTIVITY);
+    return;
+  }
+  // iOS can take a while to answer. An opt-out, Library switch or removal meanwhile leaves no
+  // record to note the new row in, so it would outlive them. A removal that starts after this
+  // check waits for this run and unregisters the row itself.
+  const latest = planNow(registry, build).step;
+  if (
+    removingLibraries.has(step.libraryId) ||
+    latest.kind !== "needsToken" ||
+    latest.libraryId !== step.libraryId
+  ) {
     setActivity(registry, IDLE_ACTIVITY);
     return;
   }
@@ -264,39 +316,35 @@ async function registerDevice(
   setActivity(registry, IDLE_ACTIVITY);
 }
 
-async function syncOnce(registry: AtomRegistry.AtomRegistry) {
+async function syncOnce(registry: AtomRegistry.AtomRegistry, run: SyncRun) {
   const build = currentLibraryPushBuild();
   if (build === null) return;
-  const snapshot = registry.get(libraryPushSnapshotAtom);
-  const planned = snapshot.record;
-  const step = planLibraryPush({
-    ...snapshot,
-    supported: true,
-    permission: registry.get(libraryPushPermissionAtom),
-    appVersion: build.appVersion,
-  });
+  const { planned, step } = planNow(registry, build);
   if (step.kind === "clearLocal")
     await updateLibraryPushRecord(registry, (record) =>
       record === planned ? recordAfterClear(record, step) : record,
     );
   else if (step.kind === "unregister") await unregisterRow(registry, step);
   else if (step.kind === "needsToken" && planned !== null)
-    await registerDevice(registry, step, planned, build);
+    await registerDevice(registry, step, planned, build, run);
 }
 
 let syncing = false;
 let syncAgain = false;
+/** Settles when the current sync run ends. It never rejects. */
+let syncRunEnded: Promise<void> = Promise.resolve();
 
 /** One step at a time; a change that arrives meanwhile plans again from the latest state. */
 export function requestLibraryPushSync(registry: AtomRegistry.AtomRegistry) {
   syncAgain = true;
   if (syncing) return;
   syncing = true;
-  void (async () => {
+  syncRunEnded = (async () => {
+    const run: SyncRun = { token: null };
     while (syncAgain) {
       syncAgain = false;
       // Only keychain and device-id storage can throw here, and neither sees the token.
-      await syncOnce(registry).catch((error: unknown) => {
+      await syncOnce(registry, run).catch((error: unknown) => {
         registry.update(libraryPushActivityAtom, (activity) =>
           activity.running === null ? activity : { ...IDLE_ACTIVITY, failure: activity.running },
         );
@@ -315,8 +363,8 @@ async function refreshPermission(registry: AtomRegistry.AtomRegistry) {
 
 /**
  * Runs for the app's lifetime. Foregrounding only re-reads local state: the iOS permission and,
- * after a failed keychain read, the record. No timers and no token listener; a rotated token is
- * noticed on the next Library connect.
+ * after a failed keychain read, the record. Nothing runs on a timer and there is no token
+ * listener; a rotated token is noticed on the next Library connect.
  */
 export function startLibraryPushSync(registry: AtomRegistry.AtomRegistry): () => void {
   const refreshLocal = () => {
@@ -377,9 +425,7 @@ export function retryLibraryPush(registry: AtomRegistry.AtomRegistry) {
   );
 }
 
-export type LibraryPushTestOutcome =
-  | { readonly phase: "sent" }
-  | { readonly phase: "failed"; readonly reason: LibraryPushErrorReason | null };
+export type LibraryPushTestOutcome = Extract<LibraryPushTestState, { phase: "sent" | "failed" }>;
 
 export async function sendLibraryPushTest(
   registry: AtomRegistry.AtomRegistry,
@@ -396,35 +442,50 @@ export async function sendLibraryPushTest(
     return { phase: "failed", reason: libraryPushErrorReason(squashAtomCommandFailure(result)) };
   const delivery = result.value.deliveries.find((entry) => entry.id === id);
   if (delivery?.outcome === "sent") return { phase: "sent" };
-  if (delivery === undefined || delivery.outcome === "removed") {
-    // The Library holds no live row for this iPhone, so dropping ours registers it again.
-    const step = { kind: "unregister", libraryId, id } as const;
-    await updateLibraryPushRecord(registry, (record) =>
-      recordAfterUnregister(record, step, { kind: "answered" }),
-    ).catch(() => undefined);
-  }
-  return { phase: "failed", reason: null };
+  const reason = delivery === undefined ? "not-registered" : delivery.reason;
+  if (reason !== "not-registered" && reason !== "bad-token") return { phase: "failed", reason };
+  // The Library holds no live row for this iPhone, or one with a token Apple refuses. Dropping
+  // ours registers it again with the token iOS has now. Those reasons say Loom registered again,
+  // so a record that could not be changed reports no reason instead.
+  const step = { kind: "unregister", libraryId, id } as const;
+  const forgotten = await updateLibraryPushRecord(registry, (record) =>
+    recordAfterUnregister(record, step, { kind: "answered" }),
+  ).then(
+    () => true,
+    () => false,
+  );
+  return { phase: "failed", reason: forgotten ? reason : null };
 }
 
 const REMOVAL_UNREGISTER_TIMEOUT_MS = 3_000;
 
-/**
- * Removing a connection revokes its session, after which this phone can no longer unregister.
- * So removing the Library first asks it to forget this iPhone, briefly and best effort. A
- * Library that does not answer keeps the row until it expires.
- */
-export function forgetLibraryPushBeforeRemoval(environmentId: EnvironmentId): Promise<void> {
-  if (currentLibraryPushBuild() === null) return Promise.resolve();
+function removalUnregisterStep(
+  environmentId: EnvironmentId,
+): Extract<LibraryPushStep, { kind: "unregister" }> | null {
   const snapshot = appAtomRegistry.get(libraryPushSnapshotAtom);
   const registration =
     snapshot.record?.libraryEnvironmentId === environmentId ? snapshot.record.registration : null;
   const library = snapshot.chosen?.id === environmentId ? snapshot.chosen : snapshot.recorded;
   if (registration === null || library === null || !library.connected || !library.canChange)
-    return Promise.resolve();
-  const step = { kind: "unregister", libraryId: environmentId, id: registration.id } as const;
+    return null;
+  return { kind: "unregister", libraryId: environmentId, id: registration.id };
+}
+
+/**
+ * Removing a connection revokes its session, after which this phone can no longer unregister.
+ * So removing the Library first asks it to forget this iPhone, briefly and best effort. A
+ * register still in flight would land after the unregister and leave the row behind, so the
+ * unregister waits for the current sync run, inside the same budget. A Library that does not
+ * answer in time keeps the row until it expires.
+ */
+function forgetLibraryPushBeforeRemoval(environmentId: EnvironmentId): Promise<void> {
+  const forget = syncRunEnded.then(() => {
+    const step = removalUnregisterStep(environmentId);
+    return step === null ? undefined : unregisterRow(appAtomRegistry, step);
+  });
   return new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, REMOVAL_UNREGISTER_TIMEOUT_MS);
-    void unregisterRow(appAtomRegistry, step)
+    void forget
       .catch(() => undefined)
       .then(() => {
         clearTimeout(timer);
@@ -434,7 +495,24 @@ export function forgetLibraryPushBeforeRemoval(environmentId: EnvironmentId): Pr
 }
 
 /** Wraps the connection controller's removal, the one upstream line that calls it. */
-export const forgetPushThen = <A>(
+export async function forgetPushThen<A>(
   remove: (environmentId: EnvironmentId) => Promise<A>,
   environmentId: EnvironmentId,
-): Promise<A> => forgetLibraryPushBeforeRemoval(environmentId).then(() => remove(environmentId));
+): Promise<A> {
+  // Only the record's own Library can hold this iPhone's row, so removing a computer, or removing
+  // anything before the record has loaded, goes straight through.
+  if (
+    currentLibraryPushBuild() === null ||
+    appAtomRegistry.get(libraryPushSnapshotAtom).record?.libraryEnvironmentId !== environmentId
+  )
+    return remove(environmentId);
+  removingLibraries.add(environmentId);
+  try {
+    await forgetLibraryPushBeforeRemoval(environmentId);
+    return await remove(environmentId);
+  } finally {
+    removingLibraries.delete(environmentId);
+    // A removal that failed keeps the Library, and nothing else would plan its register again.
+    requestLibraryPushSync(appAtomRegistry);
+  }
+}

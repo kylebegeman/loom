@@ -145,6 +145,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { refuseDeleted } from "../fork/deleted-history/deletedHistory.ts"; // fork: deleted-history
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -3855,6 +3856,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
+    yield* mapDispatchError(command)(refuseDeleted(sourceProjection.thread)); // fork: deleted-history
     // The source is not under this command's lock, so check the modes this
     // command copies, not an earlier read the source's user could outrun.
     yield* refuseAboveDispatchModeLimit(command, command.sourceThreadId, sourceProjection.thread);
@@ -3947,6 +3949,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
+    yield* mapDispatchError(command)(refuseDeleted(sourceProjection.thread)); // fork: deleted-history
     // The source is not under this command's lock, so check the modes this
     // command copies, not an earlier read the source's user could outrun.
     yield* refuseAboveDispatchModeLimit(command, command.sourceThreadId, sourceProjection.thread);
@@ -3961,6 +3964,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
+    yield* mapDispatchError(command)(refuseDeleted(targetProjection.thread)); // fork: deleted-history
 
     if (
       sourceProjection.thread.lineage.relationshipToParent !== "fork" ||

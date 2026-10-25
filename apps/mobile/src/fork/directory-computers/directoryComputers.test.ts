@@ -230,29 +230,6 @@ describe("connecting a Library computer", () => {
     expect(deps.save).toHaveBeenCalledOnce();
   });
 
-  it("pins the resource the Library attested, and adds no pin when it attested none", async () => {
-    const resource = "https://library.example.com/computers/book";
-    const deps = dependencies({
-      ...signInStep,
-      request: { ...signInStep.request, expectedResource: resource },
-    });
-    await connectDirectoryComputer({ row, libraryEnvironmentId: LIBRARY }, deps);
-    expect(deps.signIn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: {
-          requireSessionExchange: true,
-          expectedIssuer: ISSUER,
-          expectedIdentity: ACCOUNT,
-          expectedResource: resource,
-        },
-      }),
-    );
-
-    const unattested = dependencies(signInStep);
-    await connectDirectoryComputer({ row, libraryEnvironmentId: LIBRARY }, unattested);
-    expect(unattested.signIn.mock.calls[0]?.[0].options).not.toHaveProperty("expectedResource");
-  });
-
   it("never saves a sign-in under another issuer, account or computer", async () => {
     for (const result of [
       signedIn({ issuer: "https://other-id.example.com", subject: "kyle" }),

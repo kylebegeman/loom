@@ -83,10 +83,7 @@ export function ComputerConnectionsHome({
                   searchTargetIds={PRIMARY_DETAIL_TARGETS}
                 >
                   {primaryDetails}
-                  <ComputerReachSection
-                    environment={primaryEnvironment}
-                    isThisComputer={window.desktopBridge !== undefined}
-                  />
+                  <ComputerReachSection environment={primaryEnvironment} />
                 </ComputerConnectionDetails>
               </>
             }

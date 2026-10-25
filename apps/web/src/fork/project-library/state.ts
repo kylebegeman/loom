@@ -7,10 +7,17 @@ import { Atom } from "effect/reactivity";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useEffect } from "react";
-import { usePrimaryEnvironmentId, useEnvironments } from "~/state/environments";
+import {
+  projectEnvironmentPresentation,
+  usePrimaryEnvironmentId,
+  useEnvironments,
+} from "~/state/environments";
+import { useEnvironmentPresentation } from "~/state/presentation";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentSessionState } from "~/state/session";
 import { identityProfile } from "~/fork/identity/identityProfile";
+import { isHostedStaticApp } from "~/hostedPairing";
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { accessBlock } from "./accessBlock";
 
 export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
@@ -120,22 +127,61 @@ export function useLibraryPermission(
   return useAtomValue(environmentId ? command.permissionAtom(environmentId) : DENIED);
 }
 
-/** Why this device cannot run `commands` on a computer, or null when it can. */
+type GuardedCommands = ReadonlyArray<{
+  readonly requiredScopes: () => ReadonlyArray<AuthEnvironmentScope>;
+}>;
+
+/** Hosted web and desktop with its local server off never register a primary environment. */
+const expectsPrimaryEnvironment = () => !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+
+/**
+ * Why this device cannot run `commands` on a computer, or null when it can. A computer this device
+ * no longer saves is only explained when `missingLabel` names it, like a saved Library.
+ */
 export function useAccessBlock(
   environmentId: EnvironmentId | null,
-  commands: ReadonlyArray<{ readonly requiredScopes: () => ReadonlyArray<AuthEnvironmentScope> }>,
+  commands: GuardedCommands,
+  missingLabel?: string,
 ) {
-  const { environments } = useEnvironments();
+  const { isReady, presentation } = useEnvironmentPresentation(environmentId);
   const session = useEnvironmentSessionState(environmentId);
-  const environment = environments.find((entry) => entry.environmentId === environmentId);
-  if (!environment) return null;
-  return accessBlock({
-    label: environment.label,
-    phase: environment.entry.enabled ? environment.connection.phase : null,
-    connectionError: environment.connection.error,
-    identity: identityProfile(environment.entry) !== undefined,
-    session: session.data,
-    sessionFailed: session.hasError,
-    requiredScopes: commands.flatMap((command) => command.requiredScopes()),
-  });
+  const primaryId = usePrimaryEnvironmentId();
+  if (environmentId === null) return null;
+  // The primary environment joins the catalog after it is ready and can be the Library itself, so
+  // a missing computer counts as removed only once the primary has registered.
+  const catalogComplete = isReady && (primaryId !== null || !expectsPrimaryEnvironment());
+  const requiredScopes = commands.flatMap((command) => command.requiredScopes());
+  const environment = presentation && projectEnvironmentPresentation(environmentId, presentation);
+  const block = environment
+    ? accessBlock({
+        label: environment.label,
+        phase: environment.entry.enabled ? environment.connection.phase : null,
+        connectionError: environment.connection.error,
+        identity: identityProfile(environment.entry) !== undefined,
+        session: session.data,
+        sessionFailed: session.hasError,
+        requiredScopes,
+      })
+    : catalogComplete && missingLabel !== undefined
+      ? accessBlock({
+          label: missingLabel,
+          phase: null,
+          connectionError: null,
+          identity: false,
+          session: null,
+          sessionFailed: false,
+          requiredScopes,
+        })
+      : null;
+  return block && { ...block, environmentId };
+}
+
+export type EnvironmentAccessBlock = NonNullable<ReturnType<typeof useAccessBlock>>;
+
+/** Why this device cannot run `commands` on its Library, or null when it can or has none. */
+export function useLibraryAccessBlock(
+  authorityId: EnvironmentId | null,
+  commands: GuardedCommands,
+) {
+  return useAccessBlock(authorityId, commands, "Your Library");
 }

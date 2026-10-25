@@ -165,30 +165,23 @@ describe("ordinary computer Identity", () => {
         expectedIssuer: identity.issuer,
       }),
     ).resolves.toMatchObject({ issuer: identity.issuer });
-    // A Library-attested or saved resource pins the computer before the provider sheet opens.
-    const pinned = "https://library.example/computers/selected-library";
-    const pinnedOptions = { expectedResource: pinned };
-    request.mockResolvedValueOnce(response({ ...modern, resource: pinned }));
+    // Its own resource and a shared audience both work, so a computer can move between them.
+    const own = "https://library.example/computers/selected-library";
+    request.mockResolvedValueOnce(response({ ...modern, resource: own }));
     await expect(
-      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
-    ).resolves.toMatchObject({ resource: pinned });
+      loadLibraryIdentity("https://computer.example", environmentId, request),
+    ).resolves.toMatchObject({ resource: own });
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request),
+    ).resolves.toMatchObject({ audience: modern.audience });
+    // Another computer's resource is refused before the provider sheet opens.
     request.mockResolvedValueOnce(
       response({ ...modern, resource: "https://library.example/computers/other" }),
     );
     await expect(
-      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
+      loadLibraryIdentity("https://computer.example", environmentId, request),
     ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
-    // A computer that names no resource is issued for its audience.
-    request.mockResolvedValueOnce(response(modern));
-    await expect(
-      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
-    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
-    request.mockResolvedValueOnce(response(modern));
-    await expect(
-      loadLibraryIdentity("https://computer.example", environmentId, request, {
-        expectedResource: modern.audience,
-      }),
-    ).resolves.toMatchObject({ audience: modern.audience });
     for (const tokenEndpoint of [
       "http://identity.example/token",
       "https://user:secret@identity.example/token",
@@ -453,24 +446,15 @@ describe("renewable native sign-in", () => {
     ).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
   });
 
-  it("never sends the account token to a computer naming another resource than the pin", async () => {
+  it("never sends the account token to a computer that now names another computer's resource", async () => {
     computer.mockClear();
-    await expect(
-      signIn({}, modern, {
-        requireSessionExchange: true,
-        expectedResource: "https://library.example/computers/other",
-      }),
-    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    computer.mockResolvedValueOnce(
+      response({ ...modern, resource: "https://library.example/computers/other" }),
+    );
+    await expect(signIn()).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
     expect(
       computer.mock.calls.some(([url]) => String(url).endsWith("/api/loom/identity/session")),
     ).toBe(false);
-    await expect(
-      signIn({}, modern, { requireSessionExchange: true, expectedResource: modern.resource }),
-    ).resolves.toMatchObject({ registration: { profile: { environmentId } } });
-  });
-
-  it("saves the resource a connection signed in with, so later sign-ins refuse another", async () => {
-    expect((await signIn()).registration.profile.identityResource).toBe(modern.resource);
   });
 
   it("still signs in when the provider issues no refresh grant", async () => {

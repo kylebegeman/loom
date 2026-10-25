@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { DirectoryError, type DirectoryRoute } from "@t3tools/contracts/fork";
-import * as Cause from "effect/Cause";
+import { type DirectoryRoute } from "@t3tools/contracts/fork";
 
 import {
   directoryAgeText,
   directoryCatalogRows,
   directoryConnectPlan,
-  directoryForgetErrorText,
   directoryProofAge,
   directoryRoutes,
   directoryUnattachedMachines,
@@ -232,7 +230,6 @@ describe("directoryCatalogRows", () => {
         connected: true,
         proof: null,
         action: null,
-        identityResourceOwners: new Map(),
       },
     ]);
   });
@@ -319,7 +316,7 @@ describe("directoryConnectPlan", () => {
   });
 });
 
-describe("directory resource pin", () => {
+describe("directory resource check", () => {
   const BOOK_RESOURCE = "https://library.example.com/computers/book";
   const DESK_RESOURCE = "https://library.example.com/computers/desk";
   const browser = {
@@ -337,47 +334,27 @@ describe("directory resource pin", () => {
     return row;
   };
 
-  it("refuses a computer whose resource differs from the one the Library attests for it", () => {
-    const row = rowFor([reported(BOOK, { identityResource: BOOK_RESOURCE })]);
-    expect(
-      directoryConnectPlan(row, identity(BOOK, { resource: BOOK_RESOURCE }), native)?.reason,
-    ).toBeNull();
-    expect(
-      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native)?.reason,
-    ).toBe("resource-mismatch");
-    // Without a resource indicator the audience is what the sign-in is for.
-    expect(
-      directoryConnectPlan(row, identity(BOOK, { audience: BOOK_RESOURCE }), native)?.reason,
-    ).toBeNull();
-    expect(directoryConnectPlan(row, identity(BOOK), native)?.reason).toBe("resource-mismatch");
+  it("signs in while a computer moves to its own resource and back", () => {
+    const row = rowFor([reported(BOOK), reported(DESK)]);
+    for (const fields of [
+      {},
+      { resource: BOOK_RESOURCE },
+      { audience: BOOK_RESOURCE, resource: BOOK_RESOURCE },
+    ]) {
+      expect(directoryConnectPlan(row, identity(BOOK, fields), native)).toMatchObject({
+        signIn: "loom-identity",
+        reason: null,
+      });
+    }
   });
 
-  it("refuses a computer naming a resource the Library attests to another computer", () => {
-    const row = rowFor([reported(BOOK), reported(DESK, { identityResource: DESK_RESOURCE })]);
+  it("pairs with a computer naming another computer's resource", () => {
+    const row = rowFor([reported(BOOK), reported(DESK)]);
     expect(
       directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native)?.reason,
     ).toBe("resource-mismatch");
     expect(directoryConnectPlan(row, identity(BOOK, { audience: DESK_RESOURCE }), browser)).toEqual(
       expect.objectContaining({ signIn: "pairing", reason: "resource-mismatch" }),
     );
-  });
-
-  it("pins nothing when the Library attests no resource", () => {
-    const row = rowFor([reported(BOOK), reported(DESK)]);
-    expect(
-      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native),
-    ).toMatchObject({ signIn: "loom-identity", reason: null });
-  });
-});
-
-describe("directoryForgetErrorText", () => {
-  it("asks to retire a live reach address first, and leaves other failures to the caller", () => {
-    expect(
-      directoryForgetErrorText(Cause.fail(new DirectoryError({ reason: "reach-active" }))),
-    ).toBe("Retire this computer's reach address first.");
-    expect(
-      directoryForgetErrorText(Cause.fail(new DirectoryError({ reason: "not-found" }))),
-    ).toBeNull();
-    expect(directoryForgetErrorText(Cause.die(new Error("boom")))).toBeNull();
   });
 });

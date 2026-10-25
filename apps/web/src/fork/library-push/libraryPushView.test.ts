@@ -241,7 +241,7 @@ describe("libraryPushView", () => {
     expect(result.status).toBe("ready");
     expect(result.devices[0]?.lastDelivery).toEqual({
       tone: "danger",
-      text: "Last test failed 2026-10-23. Apple won't accept the Library's push key for this app.",
+      text: "Last test failed 2026-10-23. Apple won't accept the Library's push key for this build of Loom.",
     });
   });
 

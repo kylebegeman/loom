@@ -60,13 +60,13 @@ APNs refuses for Loom's own app ID.
 
 ## Packets
 
-| ID  | Packet                                     | Status         | Scope                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --- | ------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C01 | L112 Identity renewal                      | Done           | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d.                                                                                                                     |
-| C02 | L113 Library computer list on every client | Done           | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes. Sign-ins are pinned to the Library's issuer. The list lives in Connections settings only, not the command palette or settings search.                                                                                                    |
-| C03 | L114 Reach from anywhere                   | Built, off     | Per-computer Cloudflare tunnel at `<computer>-loom.<zone>`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off, removing the address and retiring it from the Library. Live Cloudflare and Pocket ID checks and Kyle's Library setup are pending ([runbook](../operations/reach.md)).            |
-| C04 | L115 Push infrastructure                   | Built, off     | Library device registry and APNs sender with Kyle's team key, off at four layers (Library switch, advertised slug, iOS build flag, per-device opt-in). The iPhone registers with the Library only when all four are on, and only test notifications exist. Apple setup, a build with the flag on and the C04-10 go or no-go on agent alerts are pending Kyle.                                                       |
-| C05 | L116 Connect off in Loom builds            | Phase 1 landed | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text. Phase 1: the server cleanup behind an explicit retired flag, the relay and mobile tracing strip, and two copy fixes. The rest is the [C05 flip](#c05-flip). |
+| ID  | Packet                                     | Status         | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C01 | L112 Identity renewal                      | Done           | Desktop and iPhone keep a refresh grant per computer and renew each computer session before it expires, with the socket carried over. Computers cap sign-ins by `auth_time`. Removing a connection ends the grant. Browser clients keep manual sign-in, with the expiry notice from 5edf279f1d.                                                                                                                                            |
+| C02 | L113 Library computer list on every client | Done           | After one Library sign-in, desktop, web and iPhone list directory computers that are not yet connected and connect each one with the same Identity, without pairing codes. Sign-ins are pinned to the Library's issuer. The list lives in Connections settings only, not the command palette or settings search.                                                                                                                           |
+| C03 | L114 Reach from anywhere                   | Built, off     | Per-computer Cloudflare tunnel at `<computer>-loom.<zone>`, provisioned from the Library with a Library-held Cloudflare token, supervised by the computer's server and published as a directory route. Includes turning reach off, removing the address and retiring it from the Library. The hosted Library's credential files are installed and passed read-only checks; reach is not verified live ([runbook](../operations/reach.md)). |
+| C04 | L115 Push infrastructure                   | Built, off     | Library device registry and APNs sender with Kyle's team key, off at four layers (Library switch, advertised slug, iOS build flag, per-device opt-in). The iPhone registers with the Library only when all four are on, and only test notifications exist. Apple setup, a build with the flag on and the C04-10 go or no-go on agent alerts are pending Kyle.                                                                              |
+| C05 | L116 Connect off in Loom builds            | Phase 1 landed | Stop publishing Clerk and relay config, unlink computers and clear their relay state, turn off telemetry to T3, verify every Connect surface hides cleanly on desktop, web and iPhone, and retire the Connect-only `fleet-connect` seams and help text. Phase 1: the server cleanup behind an explicit retired flag, the relay and mobile tracing strip, and two copy fixes. The rest is the [C05 flip](#c05-flip).                        |
 
 ## Decisions
 
@@ -95,15 +95,22 @@ APNs refuses for Loom's own app ID.
   sessions whose ID token `amr` lacks a passkey (`phr`). That is a speed bump, not a wall: the
   key has full admin rights, so its holder can enroll a passkey or rewrite the native client's
   callback URLs, and one click by the account owner on a genuine authorize link then yields a
-  passkey sign-in to any computer. Keep the key off the Library except while provisioning, and
-  rotate it in Pocket ID on any suspected leak.
+  passkey sign-in to any computer. The key is a dedicated Pocket ID admin API key with a
+  one-year expiry, kept in a file on the Library, not Pocket ID's `STATIC_API_KEY`, which the
+  identity workload deliberately leaves unbound (D1). Rotate it in Pocket ID on any suspected
+  leak; replacing the file needs no restart.
 - **Identity stays the computer's setting.** The Library provisions the Pocket ID resource
   and hands back its values; the computer's own admin turns Loom Identity on, as
   [environment-auth](../../internals/environment-auth.md) requires.
-- **C03 build (2026-10-24).** Reach is built and ships off. Its defaults D1 to D13 (on-demand
-  Pocket ID key, required zone, opt-in passkey policy, agents can turn reach off but never on,
-  sticky hostnames) are reversible and wait for Kyle; see the
-  [L114 decisions](./L114-reach/README.md#decisions-defaults-pending-kyle).
+- **C03 build (2026-10-24).** Reach is built and ships off. D1 is settled: a dedicated,
+  file-based Pocket ID admin key. Its other defaults D2 to D13 (required zone, opt-in passkey
+  policy, agents can turn reach off but never on, sticky hostnames) are reversible and wait for
+  Kyle; see the [L114 decisions](./L114-reach/README.md#decisions-defaults-pending-kyle).
+- **Library reach credentials.** They are files on the hosted Library: the Cloudflare token
+  (Account Cloudflare Tunnel Edit; Zone DNS Edit, Zone WAF Edit and Zone Read on the reach zone)
+  and the dedicated Pocket ID admin key. Both are installed and passed read-only checks.
+  Rotating either one means replacing its file, with no restart. C03 and C04 are not verified
+  live.
 - **C04 build (2026-10-24).** Library push is built and off at four layers, with a secret-store
   registry and no migration. Its defaults K1 to K10 wait for Kyle, and agent alerts (C04-10)
   are not built; see the [L115 decisions](./L115-push/README.md#decisions-defaults-pending-kyle).
@@ -114,11 +121,11 @@ APNs refuses for Loom's own app ID.
   then set `7d` on the Library and each computer. The Library runs 0.0.119 since 2026-10-24
   (loom-platform pin `08094b9`). The native refresh change is on loom-platform branch
   `identity/native-refresh-7d` and waits for the admin-key apply. C02 pins directory computers
-  to the Library's issuer, and C03 directory sign-ins also require the Pocket ID resource the
-  Library attests for that computer. Saved connections still take the resource from the
-  computer until they pin the one they first signed in with (C03 F4, pending). In the
-  browser, the computer's own login page picks the provider, so the pin stops only a computer
-  that reports its provider honestly; browsers keep no refresh grant.
+  to the Library's issuer. Since C03, every sign-in also refuses a computer whose metadata names
+  another computer's per-computer resource, by a stateless rule with no saved pin (see
+  [environment-auth](../../internals/environment-auth.md)). In the browser, the computer's own
+  login page picks the provider, so both checks stop only a computer that reports honestly;
+  browsers keep no refresh grant.
 
 ## C03 constraints
 
@@ -155,8 +162,10 @@ Found while researching the Cloudflare and Pocket ID APIs; each one changes the 
 
 Phase 1 is safe while Connect is on. The publisher sets `LOOM_CONNECT_RETIRED=1` only when
 `connect.json` says `"enabled": false`, and prepared records freeze it with the Connect config.
-A missing `connect.json` does not retire, and dev runs, LoomOS custom builds, CLI runtime
-archives (until the flip work below) and other builds without the flag never clean up. At
+A missing `connect.json` does not retire, and dev runs, LoomOS custom builds and other builds
+without the flag never clean up. The publisher passes the flag to the CLI runtime archive
+workflow as its `connect_retired` input, so CLI service hosts and pinned runtimes retire with the
+same release. At
 startup, before anything reads them, a retired server clears every Connect secret except its key
 pair and replay markers and logs one warning. It also refuses new relay links. The flip waits
 until C01 to C03 work on desktop and iPhone.
@@ -185,10 +194,6 @@ Flip work, built when Kyle schedules the flip and merged in one go:
   `library`. The `app.config.ts` Connect line becomes `mobile-identity`; recount, since the file
   already has 3 such lines. Revert web `cloud/publicConfig.ts` to upstream and delete
   `connectAuthSurface.ts` and its test. Markers and manifest change in one commit.
-- **CLI runtimes.** `loom-cli-archives.yml` gets only the four Connect fields listed in
-  `scripts/fork/runtime-release.ts`, so CLI runtime archives are built without
-  `LOOM_CONNECT_RETIRED` and never clean up. Pass it as a workflow input beside those fields, so
-  CLI service hosts and pinned runtimes retire too.
 - **Webhook notes.** `packages/client-runtime/src/webhookAddress.ts` and its test drop the "Link
   ... T3 Connect for a public URL" clauses, marked `fork: connect-off`.
 - **FORK.md and help.** Rewrite the brand note, the L116 paragraph and the "Shared computer

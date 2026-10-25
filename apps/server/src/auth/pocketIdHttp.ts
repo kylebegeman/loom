@@ -9,6 +9,10 @@ import {
   LoomIdentityBrowserRequest,
   LoomIdentitySessionRequest,
 } from "@t3tools/contracts/fork";
+import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+} from "@t3tools/shared/fork/identity-grant";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -66,6 +70,39 @@ const isPocketIdError = Schema.is(PocketId.PocketIdError);
 const sessionFailed = (error: unknown) => {
   if (!isPocketIdError(error)) return failed(401);
   return signInRefused(error) ?? failed(RETRYABLE_SESSION_FAILURES.has(error.reason) ? 503 : 401);
+};
+/** What the sign-in window says, since a person reads it rather than a client. */
+const CALLBACK_REFUSAL_TEXT: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
+  expired: IDENTITY_FRESH_SIGN_IN_TEXT,
+  passkey: IDENTITY_PASSKEY_REQUIRED_TEXT,
+};
+/**
+ * The callback's failure page. A window opened by another Loom app hears the refusal's code so
+ * that app can say what to do; any other window links back to this computer's app.
+ */
+const callbackFailed = (error: unknown) => {
+  const known = isPocketIdError(error) ? error : null;
+  const code = (known && SIGN_IN_REFUSALS[known.reason]) ?? "sign_in_failed";
+  const text =
+    (known && CALLBACK_REFUSAL_TEXT[known.reason]) ?? "Loom could not complete sign-in. Try again.";
+  const handoff = known?.handoff;
+  return identityPage({
+    status: code === "sign_in_failed" ? 400 : 401,
+    body: `<p>${escapeHtml(text)}</p>${
+      handoff === undefined
+        ? '<p><a href="/">Return to Loom</a></p>'
+        : "<p>Return to Loom to try again. You can close this window.</p>"
+    }`,
+    ...(handoff === undefined
+      ? {}
+      : {
+          script: openerMessage(
+            { type: "loom:identity:failed", state: handoff.state, error: code },
+            handoff.origin,
+            false,
+          ),
+        }),
+  });
 };
 const setCookie = (
   response: HttpServerResponse.HttpServerResponse,
@@ -138,10 +175,7 @@ export const layer = Layer.unwrap(
         DateTime.toUtc(session.expiresAt),
       );
     }).pipe(
-      // A sign-in refused for its age or its method needs a different sign-in, not a retry.
-      Effect.catch((error) =>
-        Effect.succeed((isPocketIdError(error) ? signInRefused(error) : null) ?? failed(400)),
-      ),
+      Effect.catch((error) => Effect.succeed(callbackFailed(error))),
       Effect.flatMap((response) =>
         Effect.fromResult(
           Cookies.expireCookie(Cookies.empty, identity.cookieName, COOKIE_OPTIONS),
@@ -203,30 +237,68 @@ export const layer = Layer.unwrap(
   }),
 );
 
+const HTML_ESCAPES: Readonly<Record<string, string>> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/gu, (char) => HTML_ESCAPES[char] ?? char);
+
+/**
+ * Posts to the app window that opened this one, only at the origin it started from. A window that
+ * reports a failure stays open: an app that predates the failure message would otherwise close
+ * nothing and show nothing, and a current one closes it after showing the reason.
+ */
+function openerMessage(message: Record<string, string>, origin: string, close: boolean) {
+  const payload = encodeJson(message).replaceAll("<", "\\u003c");
+  const target = encodeJson(origin).replaceAll("<", "\\u003c");
+  return `if(window.opener){window.opener.postMessage(${payload},${target});${close ? "window.close();" : ""}}`;
+}
+
+function identityPage(input: {
+  readonly status?: number;
+  readonly body: string;
+  readonly script?: string;
+}) {
+  const script = input.script ?? null;
+  const scriptSource =
+    script === null
+      ? "'none'"
+      : `'sha256-${NodeCrypto.createHash("sha256").update(script).digest("base64")}'`;
+  return HttpServerResponse.text(
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Loom sign-in</title>${input.body}${script === null ? "" : `<script>${script}</script>`}</html>`,
+    {
+      ...(input.status === undefined ? {} : { status: input.status }),
+      headers: {
+        ...HEADERS,
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": `default-src 'none'; script-src ${scriptSource}; frame-ancestors 'none'; base-uri 'none'`,
+        "cross-origin-opener-policy": "unsafe-none",
+      },
+    },
+  );
+}
+
 function browserHandoffResponse(handoff: {
   readonly code: string;
   readonly state: string;
   readonly origin: string;
   readonly environmentId: string;
 }) {
-  const payload = encodeJson({
-    type: "loom:identity:complete",
-    code: handoff.code,
-    state: handoff.state,
-    environmentId: handoff.environmentId,
-  }).replaceAll("<", "\\u003c");
-  const origin = encodeJson(handoff.origin).replaceAll("<", "\\u003c");
-  const script = `if(window.opener){window.opener.postMessage(${payload},${origin});window.close();}`;
-  const hash = NodeCrypto.createHash("sha256").update(script).digest("base64");
-  return HttpServerResponse.text(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Loom sign-in</title><p>Return to Loom to finish connecting. You can close this window.</p><script>${script}</script></html>`,
-    {
-      headers: {
-        ...HEADERS,
-        "content-type": "text/html; charset=utf-8",
-        "content-security-policy": `default-src 'none'; script-src 'sha256-${hash}'; frame-ancestors 'none'; base-uri 'none'`,
-        "cross-origin-opener-policy": "unsafe-none",
+  return identityPage({
+    body: "<p>Return to Loom to finish connecting. You can close this window.</p>",
+    script: openerMessage(
+      {
+        type: "loom:identity:complete",
+        code: handoff.code,
+        state: handoff.state,
+        environmentId: handoff.environmentId,
       },
-    },
-  );
+      handoff.origin,
+      true,
+    ),
+  });
 }

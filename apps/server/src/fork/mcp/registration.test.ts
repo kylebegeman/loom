@@ -57,10 +57,23 @@ it.effect("lets agents see and take down reach but never turn it on (D10)", () =
     expect(reach.filter((tool) => JSON.stringify(tool.inputSchema).includes("enabled"))).toEqual(
       [],
     );
+  }).pipe(Effect.scoped),
+);
+
+// MCP clients treat a tool that is not read-only as destructive unless it says otherwise.
+it.effect("offers agents push status and a test send, neither of them destructive", () =>
+  Effect.gen(function* () {
+    const tools = yield* registeredTools;
     const push = tools.filter((tool) => tool.name.startsWith("loom_push_"));
-    expect(push.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-      ["loom_push_status", true],
-      ["loom_push_test", false],
+    expect(
+      push.map((tool) => [
+        tool.name,
+        tool.annotations?.readOnlyHint,
+        tool.annotations?.destructiveHint,
+      ]),
+    ).toEqual([
+      ["loom_push_status", true, false],
+      ["loom_push_test", false, false],
     ]);
   }).pipe(Effect.scoped),
 );

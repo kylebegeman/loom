@@ -443,6 +443,8 @@ const make = Effect.gen(function* () {
       HttpClientRequest.post(endpoint("/api/loom/library/copies/register")).pipe(
         HttpClientRequest.bodyText(body, "application/json"),
       ),
+      // Replication skips a copy whose project the Library no longer has, as it does locally.
+      true,
     );
     return yield* response.json.pipe(
       Effect.flatMap(decodeCopy),

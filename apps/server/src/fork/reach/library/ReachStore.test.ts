@@ -10,7 +10,6 @@ import type * as Scope from "effect/Scope";
 import {
   type ReachStoredComputer,
   ReachStore,
-  attestedResource,
   isReachActive,
   layerAt,
   readyHostname,
@@ -89,32 +88,7 @@ describe("ReachStore", () => {
     ),
   );
 
-  it("attests, publishes and pins only what the record supports", () => {
-    expect(attestedResource(undefined)).toBeNull();
-    expect(
-      attestedResource(
-        computer({
-          identity: {
-            apiId: null,
-            resource: "https://library.example.test/computers/environment-studio",
-            state: "failed",
-            lastError: "unavailable",
-          },
-        }),
-      ),
-    ).toBeNull();
-    expect(
-      attestedResource(
-        computer({
-          identity: {
-            apiId: "api-1",
-            resource: "https://library.example.test/computers/environment-studio",
-            state: "failed",
-            lastError: "denied",
-          },
-        }),
-      ),
-    ).toBe("https://library.example.test/computers/environment-studio");
+  it("publishes and pins only what the record supports", () => {
     expect(readyHostname(computer())).toBe("studio-loom.reach.example.test");
     for (const state of ["provisioning", "removing", "removed", "failed"] as const) {
       expect(readyHostname(computer({ state }))).toBeNull();

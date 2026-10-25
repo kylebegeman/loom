@@ -203,6 +203,54 @@ describe("ReachCloudflare", () => {
     ),
   );
 
+  it.effect("counts a foreign rule of an unknown shape without failing on it", () =>
+    run(({ cloudflare, apis }) =>
+      Effect.gen(function* () {
+        const odd = { description: null, expression: "true", action: "log", enabled: true };
+        apis.addRule(ReachCloudflare.WAF_PHASE, odd);
+        apis.addRule(ReachCloudflare.RATE_LIMIT_PHASE, odd);
+        const rules = yield* cloudflare.ensureEdgeRules({ zoneId: ZONE_ID, zone: ZONE });
+        expect(rules).toMatchObject({ allowlist: "ready", rateLimit: "occupied" });
+        expect(apis.rulesets.get(ReachCloudflare.WAF_PHASE)?.rules).toHaveLength(2);
+      }),
+    ),
+  );
+
+  it.effect("updates its own rule of an unknown shape instead of adding another", () =>
+    run(({ cloudflare, apis }) =>
+      Effect.gen(function* () {
+        apis.addRule(ReachCloudflare.WAF_PHASE, { ...WAF, ratelimit: { period: "ten" } });
+        const rules = yield* cloudflare.ensureEdgeRules({ zoneId: ZONE_ID, zone: ZONE });
+        expect(rules).toMatchObject({ allowlist: "ready" });
+        expect(apis.steps.slice(0, 2)).toEqual(["allowlist.get", "allowlist.update"]);
+        expect(apis.rulesets.get(ReachCloudflare.WAF_PHASE)?.rules).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("reports an empty deprecated connection list on a live tunnel as unknown", () =>
+    run(({ cloudflare, apis }) =>
+      Effect.gen(function* () {
+        const own = apis.addTunnel("loom-reach-studio");
+        apis.connect(own.id, "client-a");
+        apis.connect(own.id, "client-a");
+        apis.connect(own.id, "client-b");
+        apis.deprecatedConnectionsEmpty = true;
+        expect(yield* cloudflare.findTunnel(ACCOUNT_ID, "loom-reach-studio")).toMatchObject({
+          status: "healthy",
+          connectors: null,
+        });
+        expect(yield* cloudflare.countConnectors(ACCOUNT_ID, own.id)).toBe(2);
+        yield* cloudflare.clearConnections(ACCOUNT_ID, own.id);
+        expect(yield* cloudflare.countConnectors(ACCOUNT_ID, own.id)).toBe(0);
+        expect(yield* cloudflare.getTunnel(ACCOUNT_ID, own.id)).toMatchObject({
+          status: "down",
+          connectors: 0,
+        });
+      }),
+    ),
+  );
+
   it.effect("updates its own drifted rules and keeps the old allowlist when PATCH fails", () =>
     run(({ cloudflare, apis }) =>
       Effect.gen(function* () {

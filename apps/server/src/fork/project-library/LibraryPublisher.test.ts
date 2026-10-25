@@ -75,6 +75,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const corruptReply = yield* Ref.make(false);
   const remoteInput = yield* Ref.make<LibraryIngestHistoryRequest | null>(null);
   const previewsSupported = yield* Ref.make(true);
+  /** The Library no longer has the project a registered copy belongs to. */
+  const copyProjectGone = yield* Ref.make(false);
   const previewBodies = yield* Ref.make<unknown[]>([]);
   /** What a Library that is its own computer registers in-process. */
   const localRegistrations = yield* Ref.make<PreviewRegisterInput[]>([]);
@@ -140,8 +142,12 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
         };
       else if (pathname.endsWith("/documents/search")) response = { hits: [] };
       else if (pathname.endsWith("/documents/publish")) response = { published: 1, removed: 0 };
-      else if (pathname.endsWith("/copies/register")) response = copyFor(project);
-      else if (pathname.endsWith("/history/ingest")) {
+      else if (pathname.endsWith("/copies/register")) {
+        if (yield* Ref.get(copyProjectGone)) {
+          status = 409;
+          response = { reason: "not-found" };
+        } else response = copyFor(project);
+      } else if (pathname.endsWith("/history/ingest")) {
         const input = decodeIngest(new TextDecoder().decode(bytes));
         yield* Ref.set(remoteInput, input);
         response = {
@@ -258,6 +264,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     corruptReply,
     remoteInput,
     previewsSupported,
+    copyProjectGone,
     previewBodies,
     localRegistrations,
     pageAnswer,
@@ -372,6 +379,15 @@ describe("authenticated Library publishing", () => {
           ).toHaveLength(2);
           expect((yield* f.publisher.info).authorityId).toBe("authority");
           yield* f.publisher.registerCopy({ requestId: "copy", copy: copyFor(project) });
+          // Replication skips a copy the Library refuses for its missing project, so the reason
+          // has to survive the trip.
+          yield* Ref.set(f.copyProjectGone, true);
+          expect(
+            (yield* f.publisher
+              .registerCopy({ requestId: "gone", copy: copyFor(project) })
+              .pipe(Effect.flip)).reason,
+          ).toBe("not-found");
+          yield* Ref.set(f.copyProjectGone, false);
           expect(
             yield* f.publisher.ingest({
               requestId: "ingest",

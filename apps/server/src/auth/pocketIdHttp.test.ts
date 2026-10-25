@@ -19,6 +19,9 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as Etag from "effect/http/Etag";
 import { expect } from "vite-plus/test";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Checks the page's script against its CSP hash.
+import * as NodeCrypto from "node:crypto";
+import * as NodeVM from "node:vm";
 import * as PocketId from "./PocketId.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as PocketIdHttp from "./pocketIdHttp.ts";
@@ -99,6 +102,11 @@ const pocket = Layer.mock(PocketId.PocketId)({
         return yield* new PocketId.PocketIdError({ reason: "state" });
       if (input.code === "one-time-code-sign-in")
         return yield* new PocketId.PocketIdError({ reason: "passkey" });
+      if (input.code === "popup-sign-in")
+        return yield* new PocketId.PocketIdError({
+          reason: "passkey",
+          handoff: { origin: "https://app.example.test", state: "s".repeat(43) },
+        });
       return {
         token: "host-browser-token",
         returnTo: "/sites",
@@ -409,11 +417,17 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
                 ),
                 context,
               );
+              // A person reads the callback, so it says what to do instead of returning JSON.
               expect(callback.status).toBe(401);
-              expect(await callback.json()).toEqual({
-                error: "passkey_required",
-                message: passkey,
-              });
+              expect(callback.headers.get("content-type")).toContain("text/html");
+              expect(callback.headers.get("content-security-policy")).toContain(
+                "script-src 'none'",
+              );
+              const page = await callback.text();
+              expect(page).toContain("accepts passkey sign-ins only");
+              expect(page).toContain('href="/"');
+              expect(page).not.toContain("<script>");
+              expect(passkey).toContain("accepts passkey sign-ins only");
               expect(
                 callback.headers
                   .getSetCookie()
@@ -422,6 +436,38 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
               expect(callback.headers.getSetCookie()).toContainEqual(
                 expect.stringContaining("identity-state=;"),
               );
+
+              // The app window that opened the sign-in hears why, at its own origin only.
+              const popup = await web.handler(
+                new Request(
+                  "https://host.example.test/api/loom/identity/callback?state=verified&code=popup-sign-in",
+                  { headers: { cookie: "identity-state=signed-state" } },
+                ),
+                context,
+              );
+              expect(popup.status).toBe(401);
+              const script = /<script>(.*)<\/script>/u.exec(await popup.text())?.[1] ?? "";
+              const hash = NodeCrypto.createHash("sha256").update(script).digest("base64");
+              expect(popup.headers.get("content-security-policy")).toContain(
+                `script-src 'sha256-${hash}'`,
+              );
+              const posted: Array<unknown> = [];
+              NodeVM.runInNewContext(script, {
+                window: {
+                  opener: { postMessage: (...args: Array<unknown>) => posted.push(args) },
+                  close: () => posted.push("closed"),
+                },
+              });
+              expect(posted).toEqual([
+                [
+                  {
+                    type: "loom:identity:failed",
+                    state: "s".repeat(43),
+                    error: "passkey_required",
+                  },
+                  "https://app.example.test",
+                ],
+              ]);
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

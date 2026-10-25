@@ -2,9 +2,9 @@ import { EnvironmentHttpForbiddenError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-// Baked by apps/server/vite.config.ts from LOOM_CONNECT_RETIRED=1, which the publisher sets only
-// when connect.json says "enabled": false. Dev runs, tests and builds made outside the publisher
-// leave it undefined, and those must never clear a computer's Connect link.
+// apps/server/vite.config.ts bakes true only from LOOM_CONNECT_RETIRED=1, which the publisher sets
+// only when connect.json says "enabled": false. Other builds bake false and dev runs and tests
+// leave it undefined; none of those may clear a computer's Connect link.
 declare const __LOOM_CONNECT_RETIRED__: boolean | undefined;
 
 const isConnectRetiredBuild = () =>

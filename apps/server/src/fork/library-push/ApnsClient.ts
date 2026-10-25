@@ -159,7 +159,15 @@ const outcomeOf = (status: number, reason: ApnsReason | null): ApnsOutcome => {
   if (status === 200) return "sent";
   // Apple documents 410 with Unregistered and ExpiredToken. Either way the token is dead.
   if (status === 410) return "bad-token";
-  if (reason === "TopicDisallowed" || reason === "BadTopic") return "topic-disallowed";
+  // An environment-restricted key refuses the other APNs environment with
+  // BadEnvironmentKeyInToken. The key still serves its own environment, so like a refused topic
+  // this stays on the row instead of marking the whole Library failing.
+  if (
+    reason === "TopicDisallowed" ||
+    reason === "BadTopic" ||
+    reason === "BadEnvironmentKeyInToken"
+  )
+    return "topic-disallowed";
   if (status === 403) return "key-rejected";
   if (status === 400 && (reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic")) {
     return "bad-token";

@@ -280,6 +280,37 @@ const projectFor = (rootResource = false) =>
         ],
   );
 
+/** A workspace whose Library answers folder-owner checks with `lookup`. */
+const withOwnerLookup = (
+  lookup: (projectId: string) => Effect.Effect<LibraryProject, LibraryError>,
+) =>
+  LibraryWorkspace.LibraryWorkspace.pipe(
+    Effect.provide(
+      Layer.fresh(LibraryWorkspace.layer).pipe(
+        Layer.provide(
+          Layer.mock(LibraryPublisher.LibraryPublisher)({ enabled: true, project: lookup }),
+        ),
+      ),
+    ),
+  );
+const takenFolder = Effect.fnUntraced(function* (slug: string) {
+  const rootPath = yield* makeTemp;
+  const path = yield* Path.Path;
+  yield* initRepo(path.join(rootPath, "web"));
+  yield* initRepo(path.join(rootPath, "server"));
+  const old = { ...projectFor(), id: `project:old-${slug}`, title: "Old app" };
+  const next = {
+    ...makeProject([
+      { id: "web", title: "Web", relativePath: "web", remoteUrl: null, defaultBranch: "main" },
+    ]),
+    id: `project:new-${slug}`,
+    title: "New app",
+  };
+  return { rootPath, old, next };
+});
+const reconnectDetail =
+  "Loom could not check which project owns this folder. Reconnect your Library and try again.";
+
 it.layer(layerTest)("LibraryWorkspace", (it) => {
   it.effect(
     "portable snapshots allow idle conversations, reject active and pending work, and replay immutable results",
@@ -3271,5 +3302,246 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         expect(yield* fs.exists(pending.archivePath!)).toBe(true);
         expect(yield* fs.readFileString(notes)).toBe("newer work\n");
       }),
+  );
+
+  it.effect.each([
+    {
+      slug: "archived",
+      owner: "archived",
+      lookup: (old: LibraryProject) => Effect.succeed({ ...old, archived: true }),
+    },
+    {
+      slug: "missing",
+      owner: "no longer in the Library",
+      lookup: (_old: LibraryProject) => Effect.fail(new LibraryError({ reason: "not-found" })),
+    },
+  ])(
+    "moves a folder whose project is $owner and keeps its old conversations running",
+    ({ slug, lookup }) =>
+      Effect.gen(function* () {
+        const { rootPath, old, next } = yield* takenFolder(slug);
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const library = new Map<string, Effect.Effect<LibraryProject, LibraryError>>([
+          [old.id, lookup(old)],
+        ]);
+        const service = yield* withOwnerLookup(
+          (projectId) => library.get(projectId) ?? Effect.die(`unexpected lookup ${projectId}`),
+        );
+        const oldCopy = yield* service.prepareCopy({
+          requestId: `takeover-old-${slug}`,
+          project: old,
+          rootPath,
+          strategy: "reuse",
+        });
+        const resolved = yield* service.resolveBinding({
+          binding: {
+            projectId: old.id,
+            projectRevision: old.revision,
+            workingCopyId: oldCopy.id,
+            environmentId,
+            resourceIds: [],
+          },
+        });
+        const threadId = ThreadId.make(`takeover-old-thread-${slug}`);
+        yield* store.bind(threadId, resolved, old);
+        expect((yield* service.inspectFolder({ rootPath })).registration).toEqual({
+          workingCopyId: oldCopy.id,
+          projectId: old.id,
+          projectTitle: "Old app",
+          ownership: "borrowed",
+        });
+
+        const request = {
+          requestId: `takeover-new-${slug}`,
+          project: next,
+          rootPath,
+          strategy: "reuse" as const,
+        };
+        const copy = yield* service.prepareCopy(request);
+        expect(copy).toMatchObject({ projectId: next.id, state: "ready" });
+        expect(copy.registered).not.toBe(false);
+        expect((yield* store.get(oldCopy.id)).copy).toMatchObject({
+          registered: false,
+          state: "ready",
+        });
+        expect((yield* service.inspectFolder({ rootPath })).registration?.projectId).toBe(next.id);
+        expect(yield* service.prepareCopy(request)).toEqual(copy);
+        expect(
+          yield* store.validateThreadCwd({
+            threadId,
+            localProjectId: resolved.localProjectId,
+            cwd: resolved.cwd,
+          }),
+        ).toBe(resolved.cwd);
+        // The old conversation keeps both repositories; the folder itself now has the new layout.
+        expect(
+          (yield* store.repositoriesForRoot(rootPath, threadId))?.map(
+            (repository) => repository.relativePath,
+          ),
+        ).toEqual(["web", "server"]);
+        expect(
+          (yield* store.repositoriesForRoot(rootPath))?.map(
+            (repository) => repository.relativePath,
+          ),
+        ).toEqual(["web"]);
+
+        // Restoring the old project does not let it take the folder back from a current one.
+        library.set(old.id, Effect.succeed(old));
+        library.set(next.id, Effect.succeed(next));
+        const reclaimed = yield* service
+          .prepareCopy({ ...request, requestId: `takeover-back-${slug}`, project: old })
+          .pipe(Effect.flip);
+        expect(reclaimed).toMatchObject({
+          reason: "blocked",
+          detail: "This folder already belongs to New app. Add it to that project instead.",
+        });
+        expect((yield* store.get(oldCopy.id)).copy.registered).toBe(false);
+      }),
+  );
+
+  it.effect("reuses a folder its project still holds without asking the Library", () =>
+    Effect.gen(function* () {
+      const { rootPath, old, next } = yield* takenFolder("held");
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      let lookups = 0;
+      const service = yield* withOwnerLookup((projectId) => {
+        lookups += 1;
+        return projectId === old.id
+          ? Effect.succeed({ ...old, archived: true })
+          : Effect.die(`unexpected lookup ${projectId}`);
+      });
+      const oldCopy = yield* service.prepareCopy({
+        requestId: "held-old",
+        project: old,
+        rootPath,
+        strategy: "reuse",
+      });
+      yield* service.prepareCopy({
+        requestId: "held-new",
+        project: next,
+        rootPath,
+        strategy: "reuse",
+      });
+      // Builds before one-owner folders could leave two current projects holding one folder.
+      const retired = yield* store.get(oldCopy.id);
+      yield* store.put({ ...retired, copy: { ...retired.copy, registered: true } });
+      lookups = 0;
+      const reused = yield* service.prepareCopy({
+        requestId: "held-old-conversation",
+        project: old,
+        rootPath,
+        strategy: "reuse",
+      });
+      expect(reused.id).toBe(oldCopy.id);
+      expect(lookups).toBe(0);
+    }),
+  );
+
+  it.effect("keeps a folder whose project is current, unknown or holds Loom's files", () =>
+    Effect.gen(function* () {
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const refused = Effect.fnUntraced(function* (
+        slug: string,
+        lookup: (old: LibraryProject) => Effect.Effect<LibraryProject, LibraryError>,
+        options: { readonly managed?: boolean; readonly library?: boolean } = {},
+      ) {
+        const { rootPath, old, next } = yield* takenFolder(slug);
+        const service =
+          options.library === false
+            ? yield* LibraryWorkspace.LibraryWorkspace
+            : yield* withOwnerLookup((projectId) =>
+                projectId === old.id ? lookup(old) : Effect.die(`unexpected lookup ${projectId}`),
+              );
+        const oldCopy = yield* service.prepareCopy({
+          requestId: `kept-old-${slug}`,
+          project: old,
+          rootPath,
+          strategy: "reuse",
+        });
+        if (options.managed) {
+          const receipt = yield* store.get(oldCopy.id);
+          yield* store.put({ ...receipt, copy: { ...receipt.copy, ownership: "managed" } });
+        }
+        const failure = yield* service
+          .prepareCopy({
+            requestId: `kept-new-${slug}`,
+            project: next,
+            rootPath,
+            strategy: "reuse",
+          })
+          .pipe(Effect.flip);
+        expect((yield* store.get(oldCopy.id)).copy.registered).not.toBe(false);
+        expect((yield* service.inspectFolder({ rootPath })).registration?.projectId).toBe(old.id);
+        expect(failure.reason).toBe("blocked");
+        return failure.detail;
+      });
+      expect(
+        yield* refused("current", (old) => Effect.succeed({ ...old, title: "Current owner" })),
+      ).toBe("This folder already belongs to Current owner. Add it to that project instead.");
+      expect(
+        yield* refused("unreachable", () => Effect.fail(new LibraryError({ reason: "io" }))),
+      ).toBe(reconnectDetail);
+      expect(yield* refused("no-library", () => Effect.die("no Library"), { library: false })).toBe(
+        reconnectDetail,
+      );
+      expect(
+        yield* refused("managed", () => Effect.die("managed folders are never looked up"), {
+          managed: true,
+        }),
+      ).toBe(
+        "This folder holds files Loom created for Old app. Review and remove them from that project before adding the folder to another one. Restore that project first if it is archived.",
+      );
+    }),
+  );
+
+  it.effect("reviews a borrowed folder for removal without reading its files", () =>
+    Effect.gen(function* () {
+      const rootPath = yield* makeTemp;
+      const parent = yield* makeTemp;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* initRepo(rootPath);
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const spawned: string[] = [];
+      const service = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) => {
+            if (command._tag === "StandardCommand") spawned.push(command.command);
+            return spawner.spawn(command);
+          }),
+        ),
+      );
+      const copy = yield* service.prepareCopy({
+        requestId: "borrowed-review-without-contents",
+        project: projectFor(true),
+        rootPath,
+        strategy: "reuse",
+      });
+      spawned.length = 0;
+      const review = yield* service.status({ workingCopyId: copy.id });
+      yield* fs.writeFileString(path.join(rootPath, "README.md"), "edited after review\n");
+      expect((yield* service.status({ workingCopyId: copy.id })).reviewToken).toBe(
+        review.reviewToken,
+      );
+      expect(spawned).not.toContain("tar");
+      expect(
+        (yield* service.unregister({
+          requestId: "unregister-without-contents",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        })).registered,
+      ).toBe(false);
+      // A managed folder is still reviewed by its contents, which the spy above records.
+      const managed = yield* service.prepareCopy({
+        requestId: "managed-review-reads-contents",
+        project: makeProject([]),
+        rootPath: path.join(parent, "managed"),
+        strategy: "clone",
+      });
+      yield* service.status({ workingCopyId: managed.id });
+      expect(spawned).toContain("tar");
+    }),
   );
 });

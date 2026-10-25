@@ -92,19 +92,16 @@ export type ReachSetInput = typeof ReachSetInput.Type;
 
 /**
  * Has no cause on purpose: a Library ensure reply carries the connector token, and an error's
- * cause would cross the wire and reach logs.
+ * cause would cross the wire and reach logs. Library answers never fail a call: `set` and `remove`
+ * answer once the intent is stored, and the status carries what the Library said.
  */
 export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
-  reason: Schema.Literals(["unavailable", "library-not-ready", "library", "busy", "storage"]),
+  reason: Schema.Literals(["unavailable", "busy", "storage"]),
 }) {
   override get message(): string {
     switch (this.reason) {
       case "unavailable":
         return "Reach cannot run on this computer right now. It needs a Library that supports reach and a current sign-in to it.";
-      case "library-not-ready":
-        return "Your Library is not set up for reach yet.";
-      case "library":
-        return "Your Library could not be reached. Try again.";
       case "busy":
         return "Reach is still finishing another change on this computer. Try again in a moment.";
       case "storage":

@@ -1,5 +1,6 @@
 import {
   LibraryPushError,
+  type LibraryPushDeliveryReason,
   type LibraryPushErrorReason,
   type LibraryPushState,
   type LibraryPushStatusReason,
@@ -34,7 +35,7 @@ export const LIBRARY_PUSH_COPY = {
   permissionDenied: "Off in iOS Settings.",
   openSettings: "Open iOS Settings",
   tokenFailed: "Couldn't get a notification token from iOS. Try again later.",
-  registerFailed: "Couldn't turn on notifications.",
+  registerFailed: "Couldn't register this iPhone with the Library.",
   unregisterFailed:
     "Couldn't turn off notifications on the Library. Loom tries again when it reconnects.",
   identityRequired: "Sign in to the Library with Loom Identity to get notifications.",
@@ -48,6 +49,14 @@ export const LIBRARY_PUSH_COPY = {
   testSending: "Sending...",
   testSent: "Test sent. It should arrive in a few seconds.",
   testFailed: "Couldn't send a test notification.",
+  // Shown only once the test row is back, which takes a registration, so it has already happened.
+  testNotRegistered:
+    "The Library no longer had this iPhone, so Loom registered it again. Try again.",
+  testBadToken:
+    "Apple no longer accepted this iPhone's notification token, so Loom registered it again. Try again.",
+  testKeyRejected: "Apple refused the Library's push key.",
+  testTopicDisallowed: "Apple won't accept the Library's push key for this build of Loom.",
+  testUnavailable: "Apple did not answer. Try again later.",
   deniedAlertTitle: "Notifications are off for Loom",
   deniedAlertMessage: "Allow notifications for Loom in iOS Settings.",
   saveFailed: "Couldn't save your notification setting. Try again.",
@@ -72,11 +81,20 @@ export type LibraryPushContentKind =
   | "unregister-failed"
   | "registered";
 
+/**
+ * Why a test did not go out: the Library refused the request, Apple refused this iPhone's
+ * delivery, or the Library no longer held a row for it.
+ */
+export type LibraryPushTestFailure =
+  | LibraryPushErrorReason
+  | LibraryPushDeliveryReason
+  | "not-registered";
+
 export type LibraryPushTestState =
   | { readonly phase: "idle" }
   | { readonly phase: "sending" }
   | { readonly phase: "sent" }
-  | { readonly phase: "failed"; readonly reason: LibraryPushErrorReason | null };
+  | { readonly phase: "failed"; readonly reason: LibraryPushTestFailure | null };
 
 export interface LibraryPushContentInput {
   readonly supported: boolean;
@@ -140,6 +158,27 @@ const keyMessage = (status: LibraryPushContentInput["status"]): LibraryPushMessa
   return null;
 };
 
+const testFailureDetail = (reason: LibraryPushTestFailure | null): string | null => {
+  switch (reason) {
+    case null:
+    case "other":
+      return null;
+    case "not-registered":
+      return LIBRARY_PUSH_COPY.testNotRegistered;
+    case "bad-token":
+      return LIBRARY_PUSH_COPY.testBadToken;
+    case "key-rejected":
+      return LIBRARY_PUSH_COPY.testKeyRejected;
+    case "topic-disallowed":
+      return LIBRARY_PUSH_COPY.testTopicDisallowed;
+    case "unavailable":
+      return LIBRARY_PUSH_COPY.testUnavailable;
+    default:
+      // The Library's own refusals, `rate-limited` included, which both sides mean the same way.
+      return new LibraryPushError({ reason }).message;
+  }
+};
+
 const testDescription = (test: LibraryPushTestState): string | null => {
   switch (test.phase) {
     case "idle":
@@ -148,8 +187,12 @@ const testDescription = (test: LibraryPushTestState): string | null => {
       return LIBRARY_PUSH_COPY.testSending;
     case "sent":
       return LIBRARY_PUSH_COPY.testSent;
-    case "failed":
-      return withReason(LIBRARY_PUSH_COPY.testFailed, test.reason);
+    case "failed": {
+      const detail = testFailureDetail(test.reason);
+      return detail === null
+        ? LIBRARY_PUSH_COPY.testFailed
+        : `${LIBRARY_PUSH_COPY.testFailed} ${detail}`;
+    }
   }
 };
 
@@ -246,7 +289,8 @@ export function libraryPushContent(input: LibraryPushContentInput): LibraryPushC
       openSettings: true,
     };
   }
-  if (activity.running === "register")
+  // Refreshing a registration the Library already holds stays "registered": it is still on.
+  if (activity.running === "register" && record.registration === null)
     return { ...BASE, kind: "turning-on", toggle: toggle(LIBRARY_PUSH_COPY.turningOn, true) };
   if (record.refusal !== null) {
     return {

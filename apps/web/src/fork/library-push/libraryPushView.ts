@@ -100,7 +100,7 @@ const BUNDLE_NAMES: Readonly<Record<LibraryPushBundleId, string>> = {
 const DELIVERY_REASON_TEXT: Readonly<Record<LibraryPushDeliveryReason, string>> = {
   "bad-token": "Apple no longer accepts this iPhone's notification token.",
   "key-rejected": "Apple refused the Library's push key.",
-  "topic-disallowed": "Apple won't accept the Library's push key for this app.",
+  "topic-disallowed": "Apple won't accept the Library's push key for this build of Loom.",
   "rate-limited": "Too many notifications went out recently. Wait a few minutes and try again.",
   unavailable: "Apple did not answer. Try again later.",
   other: "Apple did not deliver it.",

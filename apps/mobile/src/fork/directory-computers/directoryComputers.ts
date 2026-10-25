@@ -166,12 +166,11 @@ const CANCELLED: DirectoryConnectOutcome = { kind: "cancelled" };
 const failed = (message: string): DirectoryConnectOutcome => ({ kind: "failed", message });
 
 /**
- * The phone signs in where the computer stays on the Library's issuer, and on the resource the
- * Library attested for it: both are checked before the provider sheet opens and again before
- * anything is saved.
+ * The phone signs in where the computer stays on the Library's issuer, checked before the provider
+ * sheet opens and again before anything is saved.
  */
 export function directorySignInRequest(step: SignInStep, label: string): DirectorySignInRequest {
-  const { expectedIdentity: account, expectedResource: resource } = step.request;
+  const account = step.request.expectedIdentity;
   return {
     httpBaseUrl: step.request.httpBaseUrl,
     expectedEnvironmentId: step.environmentId,
@@ -179,7 +178,6 @@ export function directorySignInRequest(step: SignInStep, label: string): Directo
       requireSessionExchange: true,
       expectedIssuer: step.issuer,
       ...(account === undefined ? {} : { expectedIdentity: account }),
-      ...(resource === undefined ? {} : { expectedResource: resource }),
     },
     label,
   };

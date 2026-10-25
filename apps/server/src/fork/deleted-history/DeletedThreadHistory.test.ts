@@ -307,6 +307,8 @@ const fixture = Effect.gen(function* () {
   // Each runs once, at the next binding lookup: right before an unbound thread's first delete,
   // after the pass evaluated it and loaded its links.
   const beforeFirstDelete: Array<Effect.Effect<void>> = [];
+  // Each runs once, right after a pass reads the bindings.
+  const afterBindings: Array<Effect.Effect<void>> = [];
   // A fresh service, as after a restart. Without a Library connection replication never runs.
   const historyWith = (options: { readonly replicating: boolean }) =>
     DeletedThreadHistory.DeletedThreadHistory.pipe(
@@ -317,7 +319,7 @@ const fixture = Effect.gen(function* () {
               Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
                 bindings: Effect.sync(() =>
                   [...bound].map((threadId) => ({ threadId: ThreadId.make(threadId), resolved })),
-                ),
+                ).pipe(Effect.tap(() => afterBindings.shift() ?? Effect.void)),
                 getBinding: (threadId) =>
                   Effect.suspend(() => beforeFirstDelete.shift() ?? Effect.void).pipe(
                     Effect.as(bound.has(threadId) ? resolved : null),
@@ -361,8 +363,10 @@ const fixture = Effect.gen(function* () {
     projections,
     maintenance,
     fs,
+    path,
     bound,
     beforeFirstDelete,
+    afterBindings,
     history,
     historyWith,
     service,
@@ -529,6 +533,106 @@ describe("deleted conversation history purge", () => {
         yield* f.acknowledge(exported.id, yield* f.deletion(exported.id));
         assert.equal((yield* f.service.pass()).purgedThreads, 1);
         assert.deepEqual(yield* f.eventTypes(exported.id), kept);
+      }),
+    ),
+  );
+
+  it.effect("keeps a conversation and its files when its export activates during a pass", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const exported = makeThread("thread:activated-mid-pass");
+        const attachmentId = "activated-00000000-0000-4000-8000-00000000000b";
+        yield* f.saveAttachment(attachmentId);
+        yield* f.write(
+          created(exported),
+          message(exported, "with a file", attachmentId),
+          deleted(exported),
+        );
+        yield* f.advance;
+        yield* LibraryMigration.recordPendingImport({
+          stateDir: f.stateDir,
+          requestId: "activating",
+          threadIds: [exported.id],
+        });
+        // Activation binds the conversation, then removes its record, after this pass has read
+        // the bindings.
+        const activation = Effect.gen(function* () {
+          f.bound.add(exported.id);
+          yield* LibraryMigration.clearPendingImport({
+            stateDir: f.stateDir,
+            requestId: "activating",
+          });
+        });
+        const services = yield* Effect.context<Effect.Services<typeof activation>>();
+        f.afterBindings.push(activation.pipe(Effect.provideContext(services), Effect.orDie));
+
+        assert.equal((yield* f.service.pass()).purgedThreads, 0);
+        assert.isTrue(yield* f.fs.exists(f.attachment(attachmentId)));
+        assert.deepEqual(yield* f.eventTypes(exported.id), [
+          "thread.created",
+          "message.updated",
+          "thread.deleted",
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("releases held files but purges nothing while an export record is unreadable", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const held = makeThread("thread:released-despite-record");
+        const attachmentId = "record-00000000-0000-4000-8000-000000000008";
+        yield* f.saveAttachment(attachmentId);
+        f.bound.add(held.id);
+        yield* f.write(created(held), message(held, "with a file", attachmentId), deleted(held));
+        const ordinary = makeThread("thread:kept-by-record");
+        yield* f.write(created(ordinary), message(ordinary, "kept"), deleted(ordinary));
+        yield* f.advance;
+        yield* f.acknowledge(held.id, yield* f.deletion(held.id));
+        const records = f.path.join(f.stateDir, "project-library", "host", "pending-imports");
+        yield* f.fs.makeDirectory(records, { recursive: true });
+        yield* f.fs.writeFileString(f.path.join(records, "damaged.json"), "{");
+
+        const failed = yield* Effect.flip(f.service.pass());
+        assert.equal(failed._tag, "DeletedThreadHistoryError");
+        assert.isFalse(yield* f.fs.exists(f.attachment(attachmentId)));
+        assert.deepEqual(yield* f.eventTypes(ordinary.id), [
+          "thread.created",
+          "message.updated",
+          "thread.deleted",
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("removes a file a late event added to a purge that resumes", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const thread = makeThread("thread:late-file");
+        const first = "first-00000000-0000-4000-8000-000000000009";
+        const late = "late-00000000-0000-4000-8000-00000000000a";
+        yield* f.saveAttachment(first);
+        yield* f.write(
+          created(thread),
+          message(thread, "with a file", first),
+          ...Array.from({ length: 60 }, (_, index) => message(thread, `filler ${index}`)),
+        );
+        yield* f.write(deleted(thread));
+        yield* f.advance;
+        const stopped = yield* f.service.pass({ maxPages: 1 });
+        assert.deepEqual(
+          { purged: stopped.purgedThreads, pending: stopped.pending },
+          { purged: 0, pending: true },
+        );
+        assert.isFalse(yield* f.fs.exists(f.attachment(first)));
+
+        // A draining turn can still write after the deletion.
+        yield* f.saveAttachment(late);
+        yield* f.write(message(thread, "after the deletion", late));
+        yield* f.advance;
+        assert.equal((yield* f.service.pass()).purgedThreads, 1);
+        assert.isFalse(yield* f.fs.exists(f.attachment(late)));
+        assert.deepEqual(yield* f.eventTypes(thread.id), kept);
       }),
     ),
   );

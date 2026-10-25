@@ -8,6 +8,7 @@ import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAuthority } from "../project-library/state";
@@ -42,6 +43,22 @@ function LineText({ line, role }: { line: LibraryPushLine; role?: "status" | "al
     <p role={role} className={cn("text-xs leading-relaxed", TONE_CLASS[line.tone])}>
       {line.text}
     </p>
+  );
+}
+
+/** `loom_push_test` takes a row id that agents cannot list, so a person copies it from here. */
+function CopyDeviceId({ id, label }: { id: LibraryPushDeviceRowId; label: string }) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "device ID" });
+  return (
+    <Button
+      size="xs"
+      variant="ghost-muted"
+      // Starts with the visible text, so voice control can still name the button.
+      aria-label={isCopied ? `Copied the ID of ${label}` : `Copy ID of ${label}`}
+      onClick={() => copyToClipboard(id)}
+    >
+      {isCopied ? "Copied" : "Copy ID"}
+    </Button>
   );
 }
 
@@ -195,30 +212,29 @@ function LibraryPushBody({
                 <LineText line={outcome} role={outcome.tone === "danger" ? "alert" : "status"} />
               ) : null}
             </div>
-            {device.test || device.remove ? (
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                {device.test ? (
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={pending !== null}
-                    onClick={() => void sendTest(device)}
-                  >
-                    {busy === "test" ? "Sending..." : "Send test"}
-                  </Button>
-                ) : null}
-                {device.remove ? (
-                  <Button
-                    size="xs"
-                    variant="destructive-outline"
-                    disabled={pending !== null}
-                    onClick={() => void remove(device)}
-                  >
-                    {busy === "remove" ? "Removing..." : "Remove"}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              <CopyDeviceId id={device.id} label={device.label} />
+              {device.test ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={pending !== null}
+                  onClick={() => void sendTest(device)}
+                >
+                  {busy === "test" ? "Sending..." : "Send test"}
+                </Button>
+              ) : null}
+              {device.remove ? (
+                <Button
+                  size="xs"
+                  variant="destructive-outline"
+                  disabled={pending !== null}
+                  onClick={() => void remove(device)}
+                >
+                  {busy === "remove" ? "Removing..." : "Remove"}
+                </Button>
+              ) : null}
+            </div>
           </div>
         );
       })}

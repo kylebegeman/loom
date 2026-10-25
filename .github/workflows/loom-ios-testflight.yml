@@ -96,6 +96,7 @@ jobs:
             apps/mobile/src/fork/library-push/libraryPushPlan.test.ts \
             apps/mobile/src/fork/library-push/libraryPushContent.test.ts \
             apps/mobile/src/fork/library-push/libraryPushBuild.test.ts \
+            apps/mobile/src/fork/library-push/libraryPushSync.test.ts \
             apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts \
             apps/mobile/src/features/projects/AddProjectScreen.test.ts \
             apps/mobile/src/fork/project-navigation/projectNavigation.logic.test.ts \

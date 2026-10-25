@@ -24,6 +24,7 @@ import {
   REACH_RATE_LIMITED_PATHS,
   REACH_REQUEST_TYP,
   REACH_RESERVED_SLUGS,
+  isReachHostname,
   isReachSlug,
   isReachZone,
   isUnsafeReachPath,
@@ -382,7 +383,16 @@ describe("reach allowlist", () => {
   });
 
   it("renders no rule for a zone that could break the expression", () => {
-    for (const zone of ["", "in", "Begam.in", 'begam.in" or true or "', "begam.in.", "127.0.0.1"]) {
+    for (const zone of [
+      "",
+      "in",
+      "Begam.in",
+      'begam.in" or true or "',
+      "begam.in.",
+      "127.0.0.1",
+      "begam.in:443",
+      "begam.in/x",
+    ]) {
       expect(isReachZone(zone)).toBe(false);
       expect(renderReachWafExpression(zone)).toBeNull();
       expect(reachWafRule(zone)).toBeNull();
@@ -456,9 +466,33 @@ describe("reach hostnames", () => {
       for (let attempt = 1; attempt <= REACH_HOSTNAME_MAX_ATTEMPTS; attempt++) {
         for (const zone of [ZONE, "reach.example.co.uk"]) {
           const hostname = reachHostname(reachSlug(label), attempt, zone);
-          if (hostname !== null) expect(isDirectoryRouteUrl(`https://${hostname}/`)).toBe(true);
+          if (hostname === null) continue;
+          expect(isDirectoryRouteUrl(`https://${hostname}/`)).toBe(true);
+          expect(isReachHostname(hostname)).toBe(true);
         }
       }
+    }
+  });
+
+  it("recognizes only the hostnames a Library assigns, so the guard never takes another host", () => {
+    expect(isReachHostname("studio-1-loom.begam.in")).toBe(true);
+    for (const hostname of [
+      "studio.tail1234.ts.net",
+      "loom.begam.in",
+      "studio-loom",
+      "-loom.begam.in",
+      "loom-loom.begam.in",
+      "studio-loom.begam.in.",
+      "Studio-loom.begam.in",
+      "studio--loom.begam.in",
+      "studio-loom.localhost",
+      "studio-loom.127.0.0.1",
+      // The guard compares Host without its port, so it would never match these.
+      "studio-loom.begam.in:443",
+      "studio-loom.begam.in/x",
+      "",
+    ]) {
+      expect(isReachHostname(hostname), hostname).toBe(false);
     }
   });
 

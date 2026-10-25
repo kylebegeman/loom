@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { AuthAccessTokenType, EnvironmentId } from "@t3tools/contracts";
 import {
   LOOM_IDENTITY_PASSKEY_REQUIRED,
+  LOOM_IDENTITY_SIGN_IN_EXPIRED,
   type LoomDesktopSignInRequest,
   type LoomIdentityMetadata,
 } from "@t3tools/contracts/fork";
 import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   IDENTITY_RESOURCE_MISMATCH_TEXT,
 } from "@t3tools/shared/fork/identity-grant";
@@ -98,7 +100,6 @@ describe("signInToLoomBrowser", () => {
   const computerMetadata: LoomIdentityMetadata = {
     ...metadata,
     audience: "computer",
-    resource: "https://studio.example.com/loom",
     environmentId: EnvironmentId.make("studio"),
     sessionExchangeEnabled: true,
     browserOrigins: [APP_ORIGIN],
@@ -110,10 +111,22 @@ describe("signInToLoomBrowser", () => {
   };
 
   /**
-   * A popup whose provider finishes at once: replacing its location posts the completion message
-   * the computer's callback page would send. The sign-in's timers are inert stubs.
+   * A popup whose provider finishes at once: replacing its location posts the message the
+   * computer's callback page would send. The sign-in's timers are inert stubs.
    */
-  function harness(session: () => Response) {
+  function harness(
+    session: () => Response,
+    options: {
+      readonly resource?: string;
+      readonly refusal?: string;
+      /** Failures another window or an earlier sign-in posts before the real answer. */
+      readonly strayFailures?: boolean;
+    } = {},
+  ) {
+    const served = {
+      ...computerMetadata,
+      ...(options.resource === undefined ? {} : { resource: options.resource }),
+    };
     let onMessage: ((event: unknown) => void) | null = null;
     const popup = {
       closed: false,
@@ -121,15 +134,24 @@ describe("signInToLoomBrowser", () => {
       location: {
         replace: vi.fn((href: string) => {
           const state = new URL(href).searchParams.get("state");
+          if (options.strayFailures) {
+            const failure = { type: "loom:identity:failed", state, error: "sign_in_failed" };
+            onMessage?.({ origin: "https://other.example.com", source: popup, data: failure });
+            onMessage?.({ origin: COMPUTER, source: {}, data: failure });
+            onMessage?.({ origin: COMPUTER, source: popup, data: { ...failure, state: "stale" } });
+          }
           onMessage?.({
             origin: COMPUTER,
             source: popup,
-            data: {
-              type: "loom:identity:complete",
-              state,
-              environmentId: computerMetadata.environmentId,
-              code: "c".repeat(43),
-            },
+            data:
+              options.refusal === undefined
+                ? {
+                    type: "loom:identity:complete",
+                    state,
+                    environmentId: computerMetadata.environmentId,
+                    code: "c".repeat(43),
+                  }
+                : { type: "loom:identity:failed", state, error: options.refusal },
           });
         }),
       },
@@ -147,7 +169,7 @@ describe("signInToLoomBrowser", () => {
     });
     const fetch = vi.fn(async (url: string | URL) =>
       String(url).endsWith("/api/loom/identity")
-        ? new Response(JSON.stringify(computerMetadata), { status: 200 })
+        ? new Response(JSON.stringify(served), { status: 200 })
         : session(),
     );
     vi.stubGlobal("fetch", fetch);
@@ -168,32 +190,52 @@ describe("signInToLoomBrowser", () => {
       { status: 200 },
     );
 
-  it("refuses a computer naming another resource before the provider opens", async () => {
-    const { popup, replace, fetch } = harness(issued);
-    await expect(
-      signInToLoomBrowser(
-        { ...request, expectedResource: "https://other.example.com/loom" },
-        popup,
-      ),
-    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+  it("refuses a computer naming another computer's resource before the provider opens", async () => {
+    const { popup, replace, fetch } = harness(issued, {
+      resource: "https://library.example.com/computers/desk",
+    });
+    await expect(signInToLoomBrowser(request, popup)).rejects.toThrow(
+      IDENTITY_RESOURCE_MISMATCH_TEXT,
+    );
     expect(replace).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("signs in when the computer names the pinned resource", async () => {
-    const { popup, replace } = harness(issued);
-    await expect(
-      signInToLoomBrowser(
-        { ...request, expectedResource: "https://studio.example.com/loom" },
-        popup,
-      ),
-    ).resolves.toMatchObject({
-      httpBaseUrl: COMPUTER,
-      environmentId: computerMetadata.environmentId,
-      identity: ACCOUNT,
-      resource: "https://studio.example.com/loom",
+  it("signs in to a computer naming its own resource or a shared audience", async () => {
+    for (const resource of ["https://library.example.com/computers/studio", undefined]) {
+      const { popup, replace } = harness(issued, resource === undefined ? {} : { resource });
+      await expect(signInToLoomBrowser(request, popup)).resolves.toEqual({
+        httpBaseUrl: COMPUTER,
+        environmentId: computerMetadata.environmentId,
+        accessToken: "access",
+        identity: ACCOUNT,
+        expiresAt: expect.any(Number),
+      });
+      expect(replace).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("says why when the computer's sign-in window reports a refusal", async () => {
+    for (const [refusal, text] of [
+      [LOOM_IDENTITY_PASSKEY_REQUIRED, IDENTITY_PASSKEY_REQUIRED_TEXT],
+      [LOOM_IDENTITY_SIGN_IN_EXPIRED, IDENTITY_FRESH_SIGN_IN_TEXT],
+      [
+        "sign_in_failed",
+        "This account could not sign in to the computer. Try again or use pairing.",
+      ],
+    ] as const) {
+      const { popup, fetch } = harness(issued, { refusal });
+      await expect(signInToLoomBrowser(request, popup)).rejects.toThrow(text);
+      // Nothing is exchanged after a refusal.
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("ignores a failure from another window, origin or sign-in", async () => {
+    const { popup } = harness(issued, { strayFailures: true });
+    await expect(signInToLoomBrowser(request, popup)).resolves.toMatchObject({
+      accessToken: "access",
     });
-    expect(replace).toHaveBeenCalledOnce();
   });
 
   it("says a passkey is needed when the computer refuses the sign-in method", async () => {

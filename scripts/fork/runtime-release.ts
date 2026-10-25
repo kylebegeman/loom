@@ -130,6 +130,9 @@ export async function ensureRuntimeReleaseAssets(input: {
     ];
     for (const [key, field] of Object.entries(PUBLIC_FIELDS))
       args.push("-f", `${field}=${input.env[key]?.trim() ?? ""}`);
+    // Sent only when the publisher retired Connect, so while Connect is on a retry still dispatches
+    // against a release tag whose workflow predates this input.
+    if (input.env.LOOM_CONNECT_RETIRED === "1") args.push("-f", "connect_retired=1");
     gh(input.env, args);
     input.log?.(`Building checked runtime archives for ${input.version}.`);
   }

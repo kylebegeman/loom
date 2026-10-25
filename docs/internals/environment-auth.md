@@ -53,15 +53,30 @@ until it is ended at Pocket ID or its subject leaves the allowed list.
 <!-- fork: reach -->
 
 With reach, the Library derives each computer's resource as
-`<Library origin>/computers/<environment id>`, creates it at Pocket ID only during a reach
-setup, and attests it in its directory only while Pocket ID holds it. Directory sign-ins refuse
-metadata that names any other resource, so a computer cannot obtain a token for a sibling's
-resource by naming it in its own `/api/loom/identity`. Saved connections do not pin a resource
-yet. The Pocket ID admin key that creates resources can also rewrite the native client's callback
+`<Library origin>/computers/<environment id>` and creates it at Pocket ID only during a reach
+setup. Every sign-in refuses metadata naming another computer's per-computer resource, so a
+computer cannot obtain a token for a sibling by naming the sibling's resource in its own
+`/api/loom/identity`. The rule is stateless, with no saved pin
+([identityResourceRefusal](../../packages/shared/src/fork/identityGrant.ts)): a resource, or an
+audience when there is none, refuses when it is an https `/computers/<id>` URL for another
+environment. Trailing slashes are ignored because Pocket ID trims them before its exact,
+case-sensitive lookup, so they are a stored resource's only aliases. Shared audiences pass, which
+lets a computer move to its own resource and back without stranding saved connections, and a
+hand-made per-computer resource of another shape counts as shared. Native clients enforce it
+because the device holds the token; in a browser the computer's own login page runs the exchange,
+so the check, like the issuer check, binds only a computer that reports honestly. A native first
+sign-in to a typed address trusts the environment id the computer claims.
+
+The Pocket ID admin key that creates resources can also rewrite the native client's callback
 URLs, so a leaked key plus one click by the account owner on a genuine sign-in link yields a
-sign-in to any computer. `LOOM_IDENTITY_REQUIRE_PASSKEY=true` requires an ID token on every
-native session, refuses the `/oauth/token` exchange, checks `amr` for `phr`, and rotates
-sessions once when set. It is a speed bump against an admin-key holder, who can enroll a passkey.
+sign-in to any computer. `LOOM_IDENTITY_REQUIRE_PASSKEY=true` (exactly `true`; any other
+non-empty value stops Identity from starting) refuses the `/oauth/token` exchange and rotates
+sessions once when set. The browser callback checks `amr` for `phr` after verifying the ID token.
+Native sessions, first and at every renewal, need an ID token bound to the access token by
+`at_hash` whenever a passkey or maximum age is required, then check `amr` and the age cap. The
+passkey rule is a speed bump against an admin-key holder, who can enroll a passkey. When Pocket ID
+refuses a refresh with `invalid_target` (Retire deleted the resource) or `access_denied`, the
+client asks for a new sign-in instead of retrying.
 
 <!-- fork: reach -->
 

@@ -126,4 +126,16 @@ describe("runtime release publication gate", () => {
       expect(dispatches[0]).toContain("relay_url=https://relay.example.test");
     },
   );
+  it.each([
+    ["keeps", {}, false],
+    ["retires", { LOOM_CONNECT_RETIRED: "1" }, true],
+  ] as const)(
+    "asks for retired runtimes only when the publisher %s Connect",
+    async (_, env, retired) => {
+      const commands = githubFixture({});
+      await ensureRuntimeReleaseAssets({ version, sourceSha, env });
+      const dispatch = commands.find((args) => args[0] === "workflow");
+      expect(dispatch?.includes("connect_retired=1")).toBe(retired);
+    },
+  );
 });

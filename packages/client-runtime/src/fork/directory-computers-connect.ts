@@ -14,9 +14,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
-import { savedIdentitySignInPin } from "@t3tools/shared/fork/identity-grant";
-
-import type { BearerConnectionProfile, ConnectionCatalogEntry } from "../connection/catalog.ts";
+import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import { connectionRouteKind, connectionRoutes, isLearned } from "../connection/routes.ts";
 import {
@@ -194,7 +192,6 @@ export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConn
       return pairing(row.environmentId, answered.route, plan?.reason ?? "no-sign-in");
     if (signIn.surface === "browser" && answered.route.kind === "public")
       return pairing(row.environmentId, answered.route, "reach-browser");
-    const attestedResource = row.report?.identityResource;
     return {
       kind: "sign-in",
       surface: signIn.surface,
@@ -205,7 +202,6 @@ export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConn
         expectedEnvironmentId: row.environmentId,
         expectedIssuer: libraryIssuer,
         ...(library.account === null ? {} : { expectedIdentity: library.account }),
-        ...(attestedResource === undefined ? {} : { expectedResource: attestedResource }),
       },
       issuer: libraryIssuer,
     } satisfies DirectoryConnectStep;
@@ -257,15 +253,14 @@ export function directorySignInMismatch(
 }
 
 /** Where a saved computer signs in with Loom Identity again, and what that sign-in must match. */
-export interface SavedIdentitySignIn {
-  readonly profile: BearerConnectionProfile;
-  readonly request: LoomDesktopSignInRequest;
-}
+export type SavedIdentitySignIn = LoomDesktopSignInRequest & {
+  readonly expectedIdentity: LoomIdentityAccount;
+};
 
 /**
- * The first saved route that signed in with Loom Identity, pinned to the account (and resource,
- * once recorded) it signed in with. A browser skips learned public routes: those are reach
- * addresses, which serve no browser sign-in. Null when no such route is left.
+ * The first saved route that signed in with Loom Identity, pinned to the account it signed in
+ * with. A browser skips learned public routes: those are reach addresses, which serve no browser
+ * sign-in. Null when no such route is left.
  */
 export function savedIdentitySignIn(
   entry: ConnectionCatalogEntry,
@@ -277,12 +272,9 @@ export function savedIdentitySignIn(
     if (surface === "browser" && isLearned(route) && connectionRouteKind(route) === "public")
       continue;
     return {
-      profile,
-      request: {
-        httpBaseUrl: profile.httpBaseUrl,
-        expectedEnvironmentId: entry.target.environmentId,
-        ...savedIdentitySignInPin(profile),
-      },
+      httpBaseUrl: profile.httpBaseUrl,
+      expectedEnvironmentId: entry.target.environmentId,
+      expectedIdentity: profile.identity,
     };
   }
   return null;

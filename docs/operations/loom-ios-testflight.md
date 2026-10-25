@@ -209,8 +209,8 @@ configured personal identity. Signing stays on the existing Mac; no new runner o
 publishing account is required.
 
 The fork-owned `Loom iOS TestFlight verification` workflow checks production identity,
-release boundaries, focused project/handoff tests and mobile, contracts,
-client-runtime and scripts typechecks. It runs on relevant main changes and published
+release boundaries, focused project/handoff and Library push tests (including the iPhone's
+registration sync) and mobile, contracts, client-runtime and scripts typechecks. It runs on relevant main changes and published
 releases, and supports manual dispatch. Its recorded source artifact is verification
 evidence, not a downloadable iOS binary. The workflow does not hold Apple credentials
 or upload to TestFlight. Upstream EAS workflows are separate and must remain disabled

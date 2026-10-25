@@ -45,11 +45,12 @@ import {
   type CloudflareTunnel,
   ReachCloudflare,
   type ReachCloudflareError,
+  isTunnelConnected,
   reachDnsComment,
   reachTunnelName,
   reachTunnelTarget,
 } from "./ReachCloudflare.ts";
-import { ReachPocketId, reachApiName } from "./ReachPocketId.ts";
+import { ReachPocketId, type ReachPocketIdError, reachApiName } from "./ReachPocketId.ts";
 import {
   type ReachStoreError,
   type ReachStoredComputer,
@@ -61,6 +62,8 @@ import {
 /** Per computer, so one looping computer cannot spend the Cloudflare budget of the others. */
 const REQUEST_WINDOW_MS = 10 * 60_000;
 const REQUESTS_PER_WINDOW = 10;
+/** Bounds the connector count calls one admin list has open against Cloudflare at once. */
+const DESCRIBE_CONCURRENCY = 4;
 
 /** Answered to the computer as `{ reason, retryAfterSeconds? }`; it never carries a cause. */
 export class ReachProvisionError extends Schema.TaggedError<ReachProvisionError>()(
@@ -245,6 +248,17 @@ const make = Effect.gen(function* () {
           : error.reason === "limited" || error.reason === "unavailable"
             ? "unavailable"
             : null,
+    );
+
+  // A conflict is an answer from Pocket ID with a working key, so it says nothing about the key.
+  const noteIdentity = (error: ReachPocketIdError | null) =>
+    Ref.set(
+      lastIdentity,
+      error?.reason === "denied"
+        ? "refused"
+        : error?.reason === "unavailable"
+          ? "unavailable"
+          : null,
     );
 
   /**
@@ -546,7 +560,7 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.result);
     if (Result.isSuccess(outcome)) {
-      yield* Ref.set(lastIdentity, null);
+      yield* noteIdentity(null);
       return {
         stored: { apiId: outcome.success.apiId, resource, state: "ready", lastError: null },
         reply: ready,
@@ -561,7 +575,7 @@ const make = Effect.gen(function* () {
         ? { stored: kept, reply: ready }
         : { stored: kept, reply: { state: "not-configured" } };
     }
-    yield* Ref.set(lastIdentity, error.reason === "denied" ? "refused" : "unavailable");
+    yield* noteIdentity(error);
     yield* Effect.logWarning("Reach could not set up Loom Identity.", {
       stage: error.stage,
       reason: error.reason,
@@ -708,20 +722,31 @@ const make = Effect.gen(function* () {
       found.name === record.hostname &&
       found.content !== null &&
       targets.has(found.content);
+    const storedRecord =
+      record.dnsRecordId === null
+        ? null
+        : yield* cloudflare.getDns(zone.zoneId, record.dnsRecordId);
+    // Without a live stored id, the record this computer's comment tags is the one an ensure
+    // created but could not store.
+    const comment = reachDnsComment(environmentId);
+    const candidates =
+      storedRecord !== null
+        ? [storedRecord]
+        : record.hostname === null
+          ? []
+          : (yield* cloudflare.findDns(zone.zoneId, record.hostname)).filter(
+              (found) => found.comment === comment,
+            );
     let leftover: string | null = null;
-    if (record.dnsRecordId !== null) {
-      const found = yield* cloudflare.getDns(zone.zoneId, record.dnsRecordId);
-      if (found !== null) {
-        if (matches(found)) yield* cloudflare.deleteDns(zone.zoneId, found.id);
-        else leftover = found.id;
-      }
-    } else if (record.hostname !== null) {
-      const comment = reachDnsComment(environmentId);
-      for (const found of yield* cloudflare.findDns(zone.zoneId, record.hostname)) {
-        if (found.comment !== comment) continue;
-        if (matches(found)) yield* cloudflare.deleteDns(zone.zoneId, found.id);
-        else leftover = found.id;
-      }
+    for (const found of candidates) {
+      if (matches(found)) yield* cloudflare.deleteDns(zone.zoneId, found.id);
+      else leftover = found.id;
+    }
+    // A record left at an earlier removal stays reported while it exists, so a later Retire
+    // does not hide it from the operator.
+    if (leftover === null && record.leftoverDnsRecordId !== null) {
+      const earlier = yield* cloudflare.getDns(zone.zoneId, record.leftoverDnsRecordId);
+      if (earlier !== null) leftover = earlier.id;
     }
     if (leftover !== null) {
       yield* Effect.logWarning("Reach left a DNS record that no longer matched its tunnel.", {
@@ -812,7 +837,9 @@ const make = Effect.gen(function* () {
   const describe = Effect.fnUntraced(function* (
     environmentId: string,
     record: ReachStoredComputer,
+    /** The account's tunnels from one list call, or null when that call failed. */
     tunnels: ReadonlyArray<CloudflareTunnel> | null,
+    accountId: string | null,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const id = EnvironmentId.make(environmentId);
@@ -821,19 +848,26 @@ const make = Effect.gen(function* () {
     const tunnel =
       tunnels?.find((entry) => entry.id === record.tunnelId) ??
       tunnels?.find((entry) => entry.name === name);
+    const connected = tunnel !== undefined && isTunnelConnected(tunnel);
+    // The list's own count is deprecated, so a connected tunnel it no longer counts is asked
+    // directly; the extra-connector warning then outlives Cloudflare emptying that list.
+    const connectors =
+      tunnel === undefined
+        ? null
+        : (tunnel.connectors ??
+          (connected && accountId !== null
+            ? yield* cloudflare
+                .countConnectors(accountId, tunnel.id)
+                .pipe(Effect.orElseSucceed(() => null))
+            : null));
     return {
       environmentId: id,
       label: pin?.label ?? null,
       hostname: record.hostname,
       state: record.state,
       lastError: record.lastError,
-      connection:
-        tunnels === null
-          ? "unknown"
-          : tunnel?.status === "healthy" || tunnel?.status === "degraded"
-            ? "connected"
-            : "down",
-      connectors: tunnel?.connectors ?? null,
+      connection: tunnels === null ? "unknown" : connected ? "connected" : "down",
+      connectors,
       leftoverDnsRecordId: record.leftoverDnsRecordId,
       identity:
         record.identity === null
@@ -863,14 +897,15 @@ const make = Effect.gen(function* () {
     if (config.audience === null) return yield* libraryError("not-authority");
     const state = yield* read.pipe(Effect.mapError(() => libraryError("io")));
     const entries = Object.entries(state.computers);
-    const listed =
-      state.zone === null || entries.length === 0
+    const accountId = state.zone?.accountId ?? null;
+    const outcome =
+      accountId === null || entries.length === 0
         ? null
-        : yield* cloudflare.listTunnels(state.zone.accountId).pipe(Effect.result);
-    if (listed !== null) {
-      yield* noteCloudflare(Result.isSuccess(listed) ? null : listed.failure);
+        : yield* cloudflare.listTunnels(accountId).pipe(Effect.result);
+    if (outcome !== null) {
+      yield* noteCloudflare(Result.isSuccess(outcome) ? null : outcome.failure);
     }
-    const tunnels = listed !== null && Result.isSuccess(listed) ? listed.success : null;
+    const tunnels = outcome !== null && Result.isSuccess(outcome) ? outcome.success : null;
     const cloudflareFile = yield* credentialFileState(config.cloudflareTokenFile).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
     );
@@ -880,11 +915,13 @@ const make = Effect.gen(function* () {
         : yield* credentialFileState(config.identity.adminKeyFile).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
           );
-    const computers: Array<ReachLibraryComputer> = [];
-    for (const [environmentId, record] of entries) {
-      computers.push(yield* describe(environmentId, record, tunnels));
-    }
-    computers.sort(
+    // A connected tunnel may cost a connector count call, so slow answers overlap, not add up.
+    const described = yield* Effect.forEach(
+      entries,
+      ([environmentId, record]) => describe(environmentId, record, tunnels, accountId),
+      { concurrency: DESCRIBE_CONCURRENCY },
+    );
+    const computers = described.toSorted(
       (left, right) =>
         right.updatedAt.localeCompare(left.updatedAt) ||
         left.environmentId.localeCompare(right.environmentId),
@@ -937,13 +974,15 @@ const make = Effect.gen(function* () {
             const deleted =
               apiId === null ? null : yield* pocketId.deleteApi(apiId).pipe(Effect.result);
             if (deleted === null || Result.isSuccess(deleted)) {
+              if (deleted !== null) yield* noteIdentity(null);
               identity = null;
             } else {
+              yield* noteIdentity(deleted.failure);
               yield* Effect.logWarning("Reach could not end Loom Identity for a computer.", {
                 stage: deleted.failure.stage,
                 reason: deleted.failure.reason,
               });
-              // The resource still exists, so the Library keeps attesting it.
+              // The resource still exists, so the record keeps it for a later Retire to delete.
               identity = { ...identity, state: "failed", lastError: deleted.failure.failure };
             }
           }
@@ -957,7 +996,7 @@ const make = Effect.gen(function* () {
           })).pipe(Effect.mapError(() => libraryError("io")));
           const record = state.computers[input.environmentId] ?? existing;
           // The tunnel was just deleted, so no list call is needed to know it is down.
-          return yield* describe(input.environmentId, record, []);
+          return yield* describe(input.environmentId, record, [], null);
         }),
       )
       .pipe(Effect.annotateLogs({ environmentId: input.environmentId }));

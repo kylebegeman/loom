@@ -1,7 +1,9 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
+  reachChangeErrorText,
   reachView,
   supportsLoomFeature,
+  type ReachConfirm,
   type ReachLine,
   type ReachTone,
 } from "@t3tools/client-runtime/fork";
@@ -14,18 +16,18 @@ import { type ReactNode, useState } from "react";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
+import { toastManager } from "~/components/ui/toast";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { useEnvironmentSessionState, usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { connectedThroughAddress, reachChangeFailureText } from "./reachChange";
 import { reach } from "./state";
 
 const TITLE = "Reach from anywhere";
 
-export const REACH_TONE_CLASS: Readonly<Record<ReachTone, string>> = {
+const REACH_TONE_CLASS: Readonly<Record<ReachTone, string>> = {
   neutral: "text-muted-foreground",
   active: "text-muted-foreground",
   success: "text-success-foreground",
@@ -44,8 +46,23 @@ export function ReachLineText({ line, live = false }: { line: ReachLine; live?: 
   );
 }
 
-function CopyAction({ value, label }: { value: string; label: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: label.toLowerCase() });
+/** The shared confirm dialog titles the line that ends in a question mark. */
+const askFirst = (confirm: ReachConfirm) =>
+  requestConfirmDialog(`${confirm.title}\n${confirm.message}`, { variant: "destructive" });
+
+function CopyAction({
+  value,
+  label,
+  target,
+}: {
+  readonly value: string;
+  readonly label: string;
+  readonly target: string;
+}) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target,
+    onError: () => toastManager.add({ type: "error", title: `Could not copy the ${target}` }),
+  });
   return (
     <Button size="xs" variant="outline" onClick={() => copyToClipboard(value)}>
       {isCopied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
@@ -74,22 +91,19 @@ export function ComputerReachDetails({
   );
 }
 
-/** The current computer's reach, among its own connection settings. */
+/**
+ * The primary computer's reach, among its own connection settings: the computer that serves this
+ * desktop or web app, so it is where its prepared sign-in values get set.
+ */
 export function ComputerReachSection({
   environment,
-  isThisComputer,
 }: {
   readonly environment: EnvironmentPresentation;
-  readonly isThisComputer: boolean;
 }) {
   return (
     <SettingsSection title={TITLE}>
       <div className="space-y-2 px-3 py-3 sm:px-4">
-        <ComputerReachBody
-          environment={environment}
-          isThisComputer={isThisComputer}
-          heading={null}
-        />
+        <ComputerReachBody environment={environment} isThisComputer heading={null} />
       </div>
     </SettingsSection>
   );
@@ -125,7 +139,8 @@ function ComputerReachBody({
   });
   const set = useAtomCommand(reach.set, { reportFailure: false });
   const remove = useAtomCommand(reach.remove, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
+  // The switch moves at once; the status stream confirms the change.
+  const [pending, setPending] = useState<"on" | "off" | "remove" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const view = reachView({
     result,
@@ -136,35 +151,29 @@ function ComputerReachBody({
     isThisComputer,
     activeRouteUrl,
   });
-  const dropsRoute = connectedThroughAddress(activeRouteUrl, view.address?.url ?? null);
 
   const run = async (
+    kind: "on" | "off" | "remove",
     change: () => Promise<AtomCommandResult<unknown, unknown>>,
-    lostRouteExpected: boolean,
   ) => {
-    setBusy(true);
+    setPending(kind);
     setFailure(null);
     const outcome = await change();
-    setBusy(false);
+    setPending(null);
     if (outcome._tag === "Failure")
-      setFailure(reachChangeFailureText(outcome.cause, lostRouteExpected));
+      setFailure(reachChangeErrorText(outcome.cause, kind !== "on" && view.throughAddress));
   };
 
   const toggle = async (enabled: boolean) => {
     const confirm = enabled ? null : view.confirmOff;
-    if (
-      confirm !== null &&
-      (await requestConfirmDialog(confirm, { variant: "destructive" })) !== true
-    )
-      return;
-    await run(() => set({ environmentId, input: { enabled } }), confirm !== null);
+    if (confirm !== null && (await askFirst(confirm)) !== true) return;
+    await run(enabled ? "on" : "off", () => set({ environmentId, input: { enabled } }));
   };
 
   const removeAddress = async () => {
     if (view.confirmRemove === null) return;
-    if ((await requestConfirmDialog(view.confirmRemove, { variant: "destructive" })) !== true)
-      return;
-    await run(() => remove({ environmentId, input: {} }), dropsRoute);
+    if ((await askFirst(view.confirmRemove)) !== true) return;
+    await run("remove", () => remove({ environmentId, input: {} }));
   };
 
   const disabledNote =
@@ -184,8 +193,8 @@ function ComputerReachBody({
         </div>
         <Switch
           size="sm"
-          checked={view.switch.checked}
-          disabled={view.switch.disabled || busy}
+          checked={pending === "on" ? true : pending === "off" ? false : view.switch.checked}
+          disabled={view.switch.disabled || pending !== null}
           aria-label={`${TITLE} for ${environment.label}`}
           onCheckedChange={(checked) => void toggle(checked)}
         />
@@ -196,13 +205,14 @@ function ComputerReachBody({
             {view.address.host}
           </code>
           {view.actions.copyAddress ? (
-            <CopyAction value={view.address.url} label="Copy address" />
+            <CopyAction value={view.address.url} label="Copy address" target="reach address" />
           ) : null}
           {view.actions.remove ? (
             <Button
               size="xs"
               variant="destructive-outline"
-              disabled={busy}
+              disabled={pending !== null}
+              aria-label={`Remove address ${view.address.host}`}
               onClick={() => void removeAddress()}
             >
               Remove address
@@ -226,7 +236,11 @@ function ComputerReachBody({
               <pre className="overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xs">
                 {view.signIn.copyText}
               </pre>
-              <CopyAction value={view.signIn.copyText} label="Copy values" />
+              <CopyAction
+                value={view.signIn.copyText}
+                label="Copy values"
+                target="sign-in values"
+              />
             </>
           ) : null}
         </div>

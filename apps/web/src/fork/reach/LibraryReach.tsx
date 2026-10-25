@@ -23,7 +23,6 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAuthority } from "../project-library/state";
 import { ReachLineText } from "./ComputerReach";
-import { confirmCopy } from "./reachChange";
 import { reach } from "./state";
 
 /**
@@ -118,7 +117,12 @@ function LibraryReachSection({ libraryId }: { readonly libraryId: EnvironmentId 
               ))}
             </div>
             {computer.retire ? (
-              <Button size="xs" variant="destructive-outline" onClick={() => setRetiring(computer)}>
+              <Button
+                size="xs"
+                variant="destructive-outline"
+                aria-label={`Retire ${computer.hostname ?? computer.title}`}
+                onClick={() => setRetiring(computer)}
+              >
                 Retire
               </Button>
             ) : null}
@@ -153,7 +157,6 @@ function RetireReachDialog({
   const [endIdentity, setEndIdentity] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const copy = confirmCopy(retire.confirm);
 
   const confirm = async () => {
     setBusy(true);
@@ -177,10 +180,8 @@ function RetireReachDialog({
     >
       <AlertDialogPopup>
         <AlertDialogHeader>
-          <AlertDialogTitle>{copy.title}</AlertDialogTitle>
-          {copy.description ? (
-            <AlertDialogDescription>{copy.description}</AlertDialogDescription>
-          ) : null}
+          <AlertDialogTitle>{retire.confirm.title}</AlertDialogTitle>
+          <AlertDialogDescription>{retire.confirm.message}</AlertDialogDescription>
           <label className="mt-2 flex cursor-pointer items-start gap-2.5 text-left text-sm">
             <Checkbox
               checked={endIdentity}
@@ -203,7 +204,7 @@ function RetireReachDialog({
             Cancel
           </Button>
           <Button variant="destructive" disabled={busy} onClick={() => void confirm()}>
-            {busy ? "Retiring..." : "Retire"}
+            {busy ? "Retiring..." : retire.confirm.action}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

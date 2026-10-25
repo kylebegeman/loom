@@ -116,9 +116,38 @@ export const REACH_BLOCKED_TEXT: Readonly<Record<ReachBlocked, string>> = {
   "library-signed-out":
     "This computer's Library sign-in ended. Sign it in to its Library again, then restart Loom.",
   "library-not-ready":
-    "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file.",
-  "library-outdated": "Update Loom on your Library to turn this on.",
+    "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file. Turn this on again once it has them.",
+  "library-outdated": "Update Loom on your Library, then turn this on again.",
 };
+
+type RetryableBlock = Extract<ReachBlocked, "library-not-ready" | "library-outdated">;
+
+/**
+ * Blocks a refused ensure taught the computer. Turning reach on asks the Library again, so the
+ * switch stays usable; the other blocks come from the Library connection and need a restart. A
+ * refusal at start keeps reach on, so then the way back is turning it off and on.
+ */
+const BLOCKED_WHILE_ON_TEXT: Readonly<Record<RetryableBlock, string>> = {
+  "library-not-ready":
+    "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file. Turn reach off and on again once it has them.",
+  "library-outdated": "Update Loom on your Library, then turn reach off and on again.",
+};
+
+const isRetryable = (blocked: ReachBlocked): blocked is RetryableBlock =>
+  blocked === "library-not-ready" || blocked === "library-outdated";
+
+/** Failure warnings the computer's own `message` already explains in `error` and `removing`. */
+const FAILURE_WARNINGS: ReadonlySet<ReachWarning> = new Set([
+  "library-unreachable",
+  "library-signed-out",
+]);
+
+const IDENTITY_OFF_TEXT =
+  "Loom sign-in is off on this computer, so only paired devices can connect.";
+const PREPARED_HERE_TEXT =
+  "Your Library prepared Loom sign-in for this computer. Set these values in its server environment and restart Loom.";
+const PREPARED_ELSEWHERE_TEXT =
+  "Your Library prepared Loom sign-in for this computer. Open its own Connections settings to copy the values.";
 
 const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, string>> = {
   "library-unreachable": "Your Library is not reachable right now. Loom keeps trying.",
@@ -142,10 +171,21 @@ export interface ReachViewInput {
   readonly canRead: boolean | null;
   /** The `set` command's permission atom for this computer. */
   readonly canChange: boolean;
-  /** Viewing on the computer itself, the only place its prepared sign-in values are offered. */
+  /**
+   * Viewing the computer's own settings: its desktop app or the web app it serves. Its prepared
+   * sign-in values are offered only there, where they get set; elsewhere a line points there.
+   */
   readonly isThisComputer: boolean;
   /** The address this device is connected through, or null when unknown. */
   readonly activeRouteUrl: string | null;
+}
+
+/** A question to ask before a change, the same words in the web dialog and the iPhone alert. */
+export interface ReachConfirm {
+  readonly title: string;
+  readonly message: string;
+  /** The confirm button's label. */
+  readonly action: string;
 }
 
 export interface ReachView {
@@ -165,10 +205,15 @@ export interface ReachView {
     /** The status stream failed; refresh the status atom. */
     readonly retry: boolean;
   };
+  /**
+   * This device reaches the computer through its reach address now, so turning reach off or
+   * removing it drops this connection. Pass it to `reachChangeErrorText` for those changes.
+   */
+  readonly throughAddress: boolean;
   /** Ask this before turning reach off, or null to turn it off at once. */
-  readonly confirmOff: string | null;
+  readonly confirmOff: ReachConfirm | null;
   /** Always asked before removing; null when Remove is not offered. */
-  readonly confirmRemove: string | null;
+  readonly confirmRemove: ReachConfirm | null;
   readonly notes: readonly string[];
   readonly signIn: {
     readonly text: string;
@@ -216,10 +261,18 @@ function stateLine(status: ReachStatus, host: string | null): ReachLine {
             ? "Off. Devices connect on your network or tailnet only."
             : `Off. ${host} is kept for when you turn it back on.`,
       };
-    case "unavailable":
-      return status.blocked === null
-        ? { tone: "warning", text: "Reach is not available on this computer." }
-        : { tone: "warning", text: REACH_BLOCKED_TEXT[status.blocked] };
+    case "unavailable": {
+      const { blocked } = status;
+      if (blocked === null)
+        return { tone: "warning", text: "Reach is not available on this computer." };
+      return {
+        tone: "warning",
+        text:
+          status.enabled && isRetryable(blocked)
+            ? BLOCKED_WHILE_ON_TEXT[blocked]
+            : REACH_BLOCKED_TEXT[blocked],
+      };
+    }
     case "provisioning":
       return {
         tone: "active",
@@ -255,23 +308,20 @@ function signInHint(
   warnings: ReadonlySet<ReachWarning>,
 ): ReachView["signIn"] {
   const off = warnings.has("identity-off");
-  const offerValues =
-    isThisComputer &&
-    status.prepared !== null &&
-    (off || warnings.has("identity-resource-differs"));
-  if (offerValues && status.prepared !== null)
+  const prepared = off || warnings.has("identity-resource-differs") ? status.prepared : null;
+  if (prepared !== null && isThisComputer)
     return {
-      text: "Your Library prepared Loom sign-in for this computer. Set these values in its server environment and restart Loom.",
-      values: status.prepared,
-      copyText: reachPreparedEnvironment(status.prepared),
+      text: PREPARED_HERE_TEXT,
+      values: prepared,
+      copyText: reachPreparedEnvironment(prepared),
     };
-  return off
-    ? {
-        text: "Loom sign-in is off here, so only paired devices can connect.",
-        values: null,
-        copyText: null,
-      }
-    : null;
+  const elsewhere = prepared === null ? null : PREPARED_ELSEWHERE_TEXT;
+  if (!off) return elsewhere === null ? null : { text: elsewhere, values: null, copyText: null };
+  return {
+    text: elsewhere === null ? IDENTITY_OFF_TEXT : `${IDENTITY_OFF_TEXT} ${elsewhere}`,
+    values: null,
+    copyText: null,
+  };
 }
 
 /** Why the row shows no status of its own yet; null once the computer's status applies. */
@@ -308,7 +358,10 @@ export function reachView(input: ReachViewInput): ReachView {
       ? REACH_CHANGE_ELSEWHERE_TEXT
       : removing
         ? "Loom is still removing this address."
-        : status !== null && status.blocked !== null && !status.enabled
+        : status !== null &&
+            status.blocked !== null &&
+            !status.enabled &&
+            !isRetryable(status.blocked)
           ? REACH_BLOCKED_TEXT[status.blocked]
           : null);
   const live = gate === null && status !== null;
@@ -318,14 +371,17 @@ export function reachView(input: ReachViewInput): ReachView {
   const notes = new Set<string>();
   if (live) {
     if (readFailed) notes.add(REFRESH_FAILED_TEXT);
+    const explained =
+      status.message !== null && (status.state === "error" || status.state === "removing");
     for (const warning of warnings) {
       if (warning === "identity-off") continue;
-      // An error already shows the computer's own line about the Library.
-      if (warning === "library-unreachable" && status.state === "error") continue;
+      if (explained && FAILURE_WARNINGS.has(warning)) continue;
       const text = WARNING_TEXT[warning];
       if (text !== statusLine.text) notes.add(text);
     }
   }
+  const removeEffect =
+    "Loom deletes its tunnel and DNS record. Turning reach on again brings the same address back.";
   return {
     status: statusLine,
     detail:
@@ -341,15 +397,24 @@ export function reachView(input: ReachViewInput): ReachView {
       remove: canRemove,
       retry: readFailed && (gate === READ_FAILED_TEXT || live),
     },
+    throughAddress,
     confirmOff:
       live && status.enabled && throughAddress
-        ? `You are connected through ${host}. Turn reach off and disconnect this device?`
+        ? {
+            title: "Turn reach off?",
+            message: `You are connected through ${host}, so this device disconnects.`,
+            action: "Turn off",
+          }
         : null,
     confirmRemove: !canRemove
       ? null
-      : throughAddress
-        ? `You are connected through ${host}. Remove it and disconnect this device?`
-        : `Remove ${host}? Loom deletes its tunnel and DNS record, and devices away from your network lose this route. Turning reach on again brings the same address back.`,
+      : {
+          title: `Remove ${host}?`,
+          message: throughAddress
+            ? `You are connected through it, so this device disconnects. ${removeEffect}`
+            : `Devices away from your network lose this route. ${removeEffect}`,
+          action: "Remove",
+        },
     notes: [...notes],
     signIn: live ? signInHint(status, input.isThisComputer, warnings) : null,
   };
@@ -374,13 +439,21 @@ const isUnreachable = (error: unknown) => {
 };
 
 /**
- * One short line for a failed turn on, turn off or remove. Reach errors carry only a reason, so
- * their contract message is safe; anything else gets a line of its own.
+ * One short line for a failed turn on, turn off or remove, or null when there is nothing to
+ * report. Reach errors carry only a reason, so their contract message is safe; anything else gets
+ * a line of its own. Pass `view.throughAddress` as `dropsRoute` for turning off or removing: the
+ * computer answers before it stops the tunnel, but the reply can still be lost with the route,
+ * so only a refusal the computer actually sent counts as a failure then.
  */
-export function reachChangeErrorText(cause: Cause.Cause<unknown>): string {
+export function reachChangeErrorText(
+  cause: Cause.Cause<unknown>,
+  dropsRoute = false,
+): string | null {
+  if (Cause.hasInterruptsOnly(cause)) return null;
   const error = Option.getOrNull(Cause.findErrorOption(cause));
   if (isReachError(error)) return error.message;
   if (isAuthorizationError(error)) return REACH_CHANGE_ELSEWHERE_TEXT;
+  if (dropsRoute) return null;
   if (isUnreachable(error)) return DISCONNECTED_TEXT;
   return "Loom could not change reach on this computer.";
 }
@@ -396,6 +469,9 @@ export function reachLibraryErrorText(
     return action === "retire"
       ? RETIRE_ELSEWHERE_TEXT
       : "This device is not allowed to read your Library's reach addresses.";
+  // The Library stays chosen after this device removes its connection, which these run on.
+  if (errorTag(error) === "EnvironmentNotRegisteredError")
+    return "Your Library is not saved on this device.";
   if (isUnreachable(error)) return "Your Library is not reachable right now.";
   return action === "retire"
     ? "Loom could not retire this reach address."
@@ -482,6 +558,20 @@ const IDENTITY_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> = {
   conflict: "Pocket ID already has a conflicting entry, so Loom sign-in was not prepared.",
 };
 
+/**
+ * A removed computer's failed identity may come from a failed "Also end Loom sign-in" as well as
+ * an earlier ensure, and a delete reports a missing admin key file as `unavailable`. Either way
+ * its resource can still exist, and only a Retire that ends sign-in deletes it.
+ */
+const IDENTITY_END_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> = {
+  denied:
+    "Pocket ID refused the Library's admin key, so Loom sign-in for this computer may still work. Retire it and end Loom sign-in to try again.",
+  unavailable:
+    "Pocket ID or the Library's admin key was not available, so Loom sign-in for this computer may still work. Retire it and end Loom sign-in to try again.",
+  conflict:
+    "Pocket ID refused the change, so Loom sign-in for this computer may still work. Retire it and end Loom sign-in to try again.",
+};
+
 function computerStateLine(computer: ReachLibraryComputer): ReachLine {
   switch (computer.state) {
     case "provisioning":
@@ -495,9 +585,9 @@ function computerStateLine(computer: ReachLibraryComputer): ReachLine {
     case "removing":
       return { tone: "active", text: "Removing" };
     case "removed":
-      return { tone: "neutral", text: "Removed. The address stays reserved for this computer." };
+      return { tone: "neutral", text: "Removed" };
     case "removed-with-leftover":
-      return { tone: "warning", text: "Removed, but a DNS record was left in place" };
+      return { tone: "warning", text: "Removed, DNS record left in place" };
     case "failed":
       return { tone: "danger", text: "Setup failed" };
   }
@@ -507,11 +597,12 @@ export interface ReachLibraryComputerView {
   readonly environmentId: EnvironmentId;
   readonly title: string;
   readonly hostname: string | null;
+  /** A short label, which mobile shows as a pill; `notes` carry the sentences. */
   readonly state: ReachLine;
   readonly notes: readonly string[];
   /** Null when this device cannot retire; see `retireDisabledReason`. */
   readonly retire: {
-    readonly confirm: string;
+    readonly confirm: ReachConfirm;
     /** The label of the checkbox that sets `endIdentity`. */
     readonly endIdentityLabel: string;
     readonly endIdentityHint: string;
@@ -534,8 +625,12 @@ function computerView(
     );
   const failure = computer.lastError === null ? undefined : FAILURE_TEXT[computer.lastError];
   if (failure !== undefined) notes.push(failure);
+  const removed = computer.state === "removed" || computer.state === "removed-with-leftover";
   if (computer.identity?.state === "failed" && computer.identity.lastError !== null)
-    notes.push(IDENTITY_FAILURE_TEXT[computer.identity.lastError]);
+    notes.push(
+      (removed ? IDENTITY_END_FAILURE_TEXT : IDENTITY_FAILURE_TEXT)[computer.identity.lastError],
+    );
+  if (removed) notes.push("The address stays reserved for this computer.");
   const signedIn =
     computer.signIn === "active"
       ? " This computer is still signed in to your Library and sets reach up again on its next start, so revoke its Library sign-in too."
@@ -548,7 +643,11 @@ function computerView(
     notes,
     retire: canRetire
       ? {
-          confirm: `Retire ${computer.hostname ?? title}? Loom deletes its tunnel and DNS record and forgets this computer's key.${signedIn}`,
+          confirm: {
+            title: `Retire ${computer.hostname ?? title}?`,
+            message: `Loom deletes its tunnel and DNS record and forgets this computer's key.${signedIn}`,
+            action: "Retire",
+          },
           endIdentityLabel: "Also end Loom sign-in for this computer",
           endIdentityHint:
             "Devices signed in to it with Loom lose access when their current sign-in ends.",

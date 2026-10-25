@@ -61,6 +61,10 @@ const PINNED_INSTALL_RETRY_MS = 10 * 60_000;
 // A download over a slow link can take minutes. The older binary meets the minimum, so the tunnel
 // waits this long and then runs it while the install finishes for the next start.
 const PINNED_INSTALL_WAIT = Duration.seconds(30);
+// cloudflared drains open requests for its 30 second default grace period after SIGTERM. Without
+// a bound, a child that never exits would hold its scope open, and every stop, every later
+// connector and reach removal wait on that scope.
+const STOP_FORCE_KILL_AFTER = Duration.seconds(35);
 const TOKEN_FILE_MODE = 0o600;
 const TOKEN_DIRECTORY_MODE = 0o700;
 
@@ -176,23 +180,25 @@ const runConnector = (
       }
       const spawned = yield* Effect.result(
         spawner.spawn(
-          tokenFile === undefined
-            ? ChildProcess.make(executablePath, CONNECTOR_ARGS, {
-                detached: false,
-                // `env` replaces the inherited environment unless it is spread in.
-                env: { ...process.env, TUNNEL_TOKEN: options.token },
-                shell: false,
-                stderr: "pipe",
-                stdout: "pipe",
-              })
-            : // `--token-file` arrived in cloudflared 2025.4.0, older than any RelayClient runs.
-              ChildProcess.make(executablePath, [...CONNECTOR_ARGS, "--token-file", tokenFile], {
-                detached: false,
-                env: environmentWithoutToken(),
-                shell: false,
-                stderr: "pipe",
-                stdout: "pipe",
-              }),
+          ChildProcess.make(
+            executablePath,
+            // `--token-file` arrived in cloudflared 2025.4.0, older than any RelayClient runs.
+            tokenFile === undefined
+              ? CONNECTOR_ARGS
+              : [...CONNECTOR_ARGS, "--token-file", tokenFile],
+            {
+              detached: false,
+              // `env` replaces the inherited environment unless it is spread in.
+              env:
+                tokenFile === undefined
+                  ? { ...process.env, TUNNEL_TOKEN: options.token }
+                  : environmentWithoutToken(),
+              forceKillAfter: STOP_FORCE_KILL_AFTER,
+              shell: false,
+              stderr: "pipe",
+              stdout: "pipe",
+            },
+          ),
         ),
       );
       if (Result.isFailure(spawned)) return "Could not start cloudflared";

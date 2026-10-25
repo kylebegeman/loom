@@ -152,11 +152,16 @@ on, and an iPhone signed in to the Library with Loom Identity.
 
 To turn them on, open **Settings > Notifications** on iPhone and turn on
 **Notifications from** your Library. iOS asks for permission the first time.
-Choose **Send test notification** to check that one arrives. Your Library turns
-notifications on with `LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its
-server environment; its **Push notifications** section in **Settings >
-Connections** on desktop or in a browser shows whether they are on and lists the
-iPhones that turned them on.
+Choose **Send test notification** to check that one arrives. If the test fails,
+Loom says why, such as too many tests in a short time or Apple refusing the
+Library's push key. When the Library no longer had the phone, or Apple no longer
+accepted its notification token, Loom registers the phone again; try the test
+again in a moment. Your Library turns notifications on with
+`LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
+**Push notifications** section in **Settings > Connections** on desktop or in a
+browser shows whether they are on and lists the iPhones that turned them on. To
+have an agent send a test, choose **Copy ID** on the phone's row there and give
+the ID to the agent.
 
 Turning the switch off on iPhone tells your Library to forget the phone. If the
 Library cannot be reached, the phone keeps your choice and tells it on the next

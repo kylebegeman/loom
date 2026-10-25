@@ -1,7 +1,8 @@
 # L114: Reach
 
-Status: Built, off (C03 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). Live Cloudflare
-and Pocket ID checks and Kyle's Library setup are pending.
+Status: Built, off (C03 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). The hosted Library
+holds its reach credentials, which passed read-only checks. The first live setup and the live
+Cloudflare and Pocket ID checks are pending.
 
 A computer can be reached from anywhere at `https://<name>-loom.<zone>/` without Tailscale or
 T3 Connect. Its Library holds the only Cloudflare token and sets up one remotely managed tunnel,
@@ -14,8 +15,8 @@ credential: a pairing, a Loom Identity sign-in or a paired device's session.
 
 - In: the Library's provisioning service and signed `/api/loom/reach/*` routes; the computer's
   connector, request guard and published route; the Library's computer list with Retire; reach
-  switches on desktop, web and iPhone; MCP tools; Pocket ID resource preparation and its
-  attestation in the directory; the passkey-only Identity policy.
+  switches on desktop, web and iPhone; MCP tools; Pocket ID resource preparation; the sign-in
+  refusal of another computer's resource; the passkey-only Identity policy.
 - Out: an MCP tool that turns reach on, callback drift checks on Pocket ID, Cloudflare Access in
   front of the address, and a Command Palette entry and Settings search.
 
@@ -32,14 +33,21 @@ credential: a pairing, a Loom Identity sign-in or a paired device's session.
 - **Requests.** Computers ask their Library with an Ed25519-signed request (60 seconds, strictly
   increasing sequence) from the key the directory already pinned, sent with the computer's own
   Library publisher session. The Library pins the key at the first setup and refuses any other
-  key until Retire.
+  key until Retire. The computer accepts only a reach-shaped hostname in a reply,
+  `<name>[-n]-loom.<zone>` with no port or path, because its guard trusts that name. It treats
+  any other reply, and a refusal reason it does not know, as invalid and retries, so a newer
+  Library never reads as outdated or signed out.
 - **Connector token.** Every setup rotates the tunnel secret, drops existing connections and
   returns a fresh token. The computer never stores it; it lives in memory and in a 0600 file
-  under the state directory only while cloudflared runs.
+  under the state directory only while cloudflared runs. A file left by a hard crash is deleted
+  when the server starts.
+- **Origin.** cloudflared forwards to the server over loopback, so reach refuses to run while the
+  server listens on one specific non-loopback address. A loopback or wildcard bind works.
 - **Routes.** Clients rank `public` after LAN and tailnet and pick it up on their next connect.
   Browsers sign in to a directory computer over tailnet, and pair when only the public route
   answers. The directory lists a computer's public route only while the Library's record for it
-  is ready.
+  is ready, and only to the key that holds its reach pin, so a new key reporting the same
+  environment id after Remove and forget gets none until it sets reach up itself.
 
 The operator runbook is [docs/fork/operations/reach.md](../../operations/reach.md). The user
 guide section is
@@ -59,23 +67,23 @@ reach on or off from the computer itself or from a device paired with full acces
 
 ## Decisions (defaults pending Kyle)
 
-Everything ships off, so each default is reversible.
+Everything ships off, so each default is reversible. D1 is settled; the others wait for Kyle.
 
-| ID  | Default                                                                                                                                         |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | The Pocket ID admin key is an optional file read on every call. The runbook recommends supplying it on demand during a setup, then deleting it. |
-| D2  | `LOOM_REACH_ZONE` is required and has no default. A dedicated zone, ideally in its own Cloudflare account, is recommended over `begam.in`.      |
-| D3  | `LOOM_IDENTITY_REQUIRE_PASSKEY=true` is opt-in and independent of the session age cap.                                                          |
-| D4  | Each computer's resource is `<Library origin>/computers/<environment id>`, derived by the Library.                                              |
-| D5  | One zone-wide rate-limit rule: 60 requests per 10 seconds per client and data center on four sign-in paths.                                     |
-| D6  | Webhooks (`/api/hooks/*`) stay blocked on reach addresses.                                                                                      |
-| D7  | Browser Identity sign-in stays off on reach addresses.                                                                                          |
-| D8  | Library credentials are 0600 files named by environment variables.                                                                              |
-| D9  | `relay:write` for the switch and Remove, `settings:write` for Retire. A UI gate only (F11 below).                                               |
-| D10 | Agents can read reach and turn it off or remove it, never turn it on.                                                                           |
-| D11 | The Library creates a computer's Pocket ID resource only during a reach setup.                                                                  |
-| D12 | Off is local. Remove keeps the Pocket ID resource and grant. Retire with "Also end Loom sign-in" deletes the resource.                          |
-| D13 | Edge rules stay after the last computer goes. Hostnames are sticky and never reassigned automatically.                                          |
+| ID  | Default                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Settled: a dedicated Pocket ID admin API key with a one-year expiry, in an optional file read on every call, not `STATIC_API_KEY`.         |
+| D2  | `LOOM_REACH_ZONE` is required and has no default. A dedicated zone, ideally in its own Cloudflare account, is recommended over `begam.in`. |
+| D3  | `LOOM_IDENTITY_REQUIRE_PASSKEY=true` is opt-in and independent of the session age cap.                                                     |
+| D4  | Each computer's resource is `<Library origin>/computers/<environment id>`, derived by the Library.                                         |
+| D5  | One zone-wide rate-limit rule: 60 requests per 10 seconds per client and data center on four sign-in paths.                                |
+| D6  | Webhooks (`/api/hooks/*`) stay blocked on reach addresses.                                                                                 |
+| D7  | Browser Identity sign-in stays off on reach addresses.                                                                                     |
+| D8  | Library credentials are 0600 files named by environment variables.                                                                         |
+| D9  | `relay:write` for the switch and Remove, `settings:write` for Retire. A UI gate only (F11 below).                                          |
+| D10 | Agents can read reach and turn it off or remove it, never turn it on.                                                                      |
+| D11 | The Library creates a computer's Pocket ID resource only during a reach setup.                                                             |
+| D12 | Off is local. Remove keeps the Pocket ID resource and grant. Retire with "Also end Loom sign-in" deletes the resource.                     |
+| D13 | Edge rules stay after the last computer goes. Hostnames are sticky and never reassigned automatically.                                     |
 
 Follow-up decisions for Kyle: checking the native client's callback URLs for drift (F3), an MCP
 tool that turns reach on, and Cloudflare Access as a second step in front of the address.
@@ -85,16 +93,19 @@ tool that turns reach on, and Cloudflare Access as a second step in front of the
 - **Pocket ID admin key (F3).** The key can rewrite the native client's callback URLs. A leaked
   key plus one click by the account owner on a genuine sign-in link yields a passkey sign-in to
   any computer. The passkey rule is a speed bump here, since a key holder can enroll a passkey.
+  The key is standing (D1), so this exposure lasts for its whole life.
 - **Scopes are a UI gate (D9, F11).** A device with terminal or full-access agent rights on a
   computer can change its reach anyway. `LOOM_IDENTITY_ALLOW_ADMIN=true` gives Identity sessions
   `relay:write`.
 - **Library files (F12).** They are protected by file mode only. A terminal or agent running as
-  the Library's server user can read them. Keep execution off on the Library and keep the Pocket
-  ID key on demand.
+  the Library's server user can read them. Keep execution off on the Library.
 - **Orphan connector (F7).** A connector left by a hard crash keeps forwarding until the next
-  successful setup or Remove. The guard still answers 404 while reach is off.
-- **Leftover DNS (F13).** A record whose id or content changed is left alone and reported as
-  `removed-with-leftover`. Releasing a hostname is a manual step after at least a day.
+  successful setup or Remove. The guard still answers 404 while reach is off, and the server
+  deletes the crashed run's token file when it starts.
+- **Leftover DNS (F13).** When the stored record id is gone, removal finds the CNAME by its
+  `loom-reach:<environment id>` comment. A record whose name or tunnel target no longer matches
+  is left alone and reported as `removed-with-leftover` until Cloudflare no longer has it.
+  Releasing a hostname is a manual step after at least a day.
 - **Unauthenticated surface (F6).** `/.well-known/t3/environment`, `GET /api/loom/identity`,
   `GET /api/auth/session`, the pairing-code exchange at `POST /oauth/token`, and signed asset and
   preview URLs, which work as bearer URLs.
@@ -102,20 +113,27 @@ tool that turns reach on, and Cloudflare Access as a second step in front of the
   record is not removed, including one whose first setup failed.
 - **Saved computers.** A device that saved a computer before reach was on, is away and has no
   tailnet must connect once from home or reconnect from the Library list.
-- **Resource pin (F4).** Directory sign-ins require the resource the Library attests. A saved
-  connection stores the resource it signed in with, carries it onto routes learned later, and
-  refuses a computer naming another one when it signs in again. A connection saved before this
-  pins only its account until its next sign-in records one.
-- **Browser passkey refusal.** A browser that signs in without a passkey to a computer that
-  requires one sees the callback's `passkey_required` JSON in the sign-in window.
+- **Another computer's resource (F4).** No client stores a resource. Every Identity sign-in
+  refuses metadata whose resource, or audience when it names none, is an https
+  `/computers/<id>` URL (trailing slashes ignored, as Pocket ID ignores them) for an environment
+  other than the computer's own. Shared audiences pass, so a computer can move to its own
+  resource and back without stranding saved connections. A per-computer resource configured by
+  hand outside the `/computers/<id>` shape counts as shared. The rule binds the native flows,
+  where the device holds the token; in a browser the computer's own login page runs the
+  exchange, so the check stops only a computer that reports honestly, like the issuer check.
+- **First sign-in by typed address.** A native first sign-in to an address typed by hand trusts
+  the environment id the computer claims. Only directory and saved-connection sign-ins check the
+  expected environment.
 
 ## Not verified live
 
-All Cloudflare, cloudflared, Pocket ID and client behavior was checked with fakes. Still open:
-that Cloudflare accepts the WAF expression, the rate-limit rule, DNS comments and per-rule PATCH
-on the free plan; the tunnel list filters and connection fields; Pocket ID's API search and
-whether its native ID tokens carry `amr` as an array containing `phr`, first and after a refresh;
-and an end-to-end connection from desktop and iPhone over a real address.
+All Cloudflare, cloudflared, Pocket ID and client behavior was checked with fakes. The hosted
+Library's Cloudflare token and Pocket ID key passed read-only checks only. Still open: that
+Cloudflare accepts the WAF expression, the rate-limit rule, DNS comments and per-rule PATCH on
+the free plan; the tunnel list filters, connection fields and per-tunnel connections endpoint;
+Pocket ID's API search and whether its native ID tokens carry `amr` as an array containing
+`phr`, first and after a refresh; and an end-to-end connection from desktop and iPhone over a
+real address.
 
 ## Packet seams
 

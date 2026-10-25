@@ -4,6 +4,7 @@ import {
   ReachBlocked,
   ReachError,
   ReachLibraryError,
+  ReachLibraryRecordState,
   ReachState,
   ReachWarning,
   type ReachLibraryComputer,
@@ -14,6 +15,7 @@ import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import {
   REACH_BLOCKED_TEXT,
   REACH_CHANGE_ELSEWHERE_TEXT,
@@ -152,21 +154,57 @@ describe("reachView", () => {
     expect(view.notes).toEqual([]);
   });
 
+  it("lets the computer's own line explain a Library sign-in failure while erroring or removing", () => {
+    for (const state of ["error", "removing"] as const) {
+      const view = reachView(
+        input(
+          status({
+            state,
+            enabled: state === "error",
+            message: "Sign this computer in to its Library again, then restart Loom.",
+            warnings: ["library-signed-out"],
+          }),
+        ),
+      );
+      expect(view.detail).toBe("Sign this computer in to its Library again, then restart Loom.");
+      expect(view.notes).toEqual([]);
+    }
+    // With no line of its own, the warning still says it.
+    const connected = reachView(input(status({ warnings: ["library-signed-out"] })));
+    expect(connected.notes).toEqual([REACH_BLOCKED_TEXT["library-signed-out"]]);
+  });
+
   it.each(ReachBlocked.literals)(
     "explains %s and keeps an enabled switch able to turn off",
     (blocked) => {
       const off = reachView(input(status({ state: "unavailable", enabled: false, blocked })));
       expect(off.status.text).toBe(REACH_BLOCKED_TEXT[blocked]);
-      expect(off.switch).toEqual({
-        checked: false,
-        disabled: true,
-        disabledReason: REACH_BLOCKED_TEXT[blocked],
-      });
       const on = reachView(input(status({ state: "unavailable", enabled: true, blocked })));
       expect(on.switch).toEqual({ checked: true, disabled: false, disabledReason: null });
       expect(allText([off, on])).not.toContain("—");
     },
   );
+
+  it("disables the switch only for blocks that need the computer's Library connection fixed", () => {
+    for (const blocked of ["no-library", "is-library", "library-signed-out"] as const) {
+      const view = reachView(input(status({ state: "unavailable", enabled: false, blocked })));
+      expect(view.switch).toEqual({
+        checked: false,
+        disabled: true,
+        disabledReason: REACH_BLOCKED_TEXT[blocked],
+      });
+    }
+    // A refused turn on leaves reach off; turning it on again asks the Library again.
+    for (const blocked of ["library-not-ready", "library-outdated"] as const) {
+      const view = reachView(input(status({ state: "unavailable", enabled: false, blocked })));
+      expect(view.switch).toEqual({ checked: false, disabled: false, disabledReason: null });
+      expect(view.status.text).toMatch(/turn this on again/iu);
+      // A refusal at start keeps reach on, so the way back starts with turning it off.
+      const on = reachView(input(status({ state: "unavailable", enabled: true, blocked })));
+      expect(on.switch).toEqual({ checked: true, disabled: false, disabledReason: null });
+      expect(on.status.text).toMatch(/turn reach off and on again/iu);
+    }
+  });
 
   it.each(ReachWarning.literals)("says something about %s", (warning) => {
     const view = reachView(input(status({ warnings: [warning] })));
@@ -177,11 +215,10 @@ describe("reachView", () => {
 
   it("offers the prepared sign-in values only on the computer itself", () => {
     const value = status({ warnings: ["identity-off"], prepared: PREPARED });
-    expect(reachView(input(value)).signIn).toEqual({
-      text: "Loom sign-in is off here, so only paired devices can connect.",
-      values: null,
-      copyText: null,
-    });
+    const elsewhere = reachView(input(value)).signIn;
+    expect(elsewhere).toMatchObject({ values: null, copyText: null });
+    expect(elsewhere?.text).toContain("only paired devices can connect");
+    expect(elsewhere?.text).toContain("Open its own Connections settings to copy the values.");
     const here = reachView(input(value, { isThisComputer: true })).signIn;
     expect(here?.values).toEqual(PREPARED);
     expect(here?.copyText).toBe(reachPreparedEnvironment(PREPARED));
@@ -189,18 +226,48 @@ describe("reachView", () => {
     expect(here?.copyText).toContain(`LOOM_IDENTITY_AUDIENCE=${PREPARED.resource}`);
   });
 
+  it("points elsewhere for a sign-in that differs, and says nothing extra when it matches", () => {
+    const differs = status({ warnings: ["identity-resource-differs"], prepared: PREPARED });
+    expect(reachView(input(differs)).signIn).toEqual({
+      text: "Your Library prepared Loom sign-in for this computer. Open its own Connections settings to copy the values.",
+      values: null,
+      copyText: null,
+    });
+    expect(reachView(input(differs, { isThisComputer: true })).signIn?.values).toEqual(PREPARED);
+    expect(reachView(input(status({ prepared: PREPARED }))).signIn).toBeNull();
+    expect(reachView(input(status({ warnings: ["identity-off"] }))).signIn).toEqual({
+      text: "Loom sign-in is off on this computer, so only paired devices can connect.",
+      values: null,
+      copyText: null,
+    });
+  });
+
   it("asks before turning off or removing the address this device is connected through", () => {
-    const through = reachView(input(status(), { activeRouteUrl: ADDRESS }));
-    expect(through.confirmOff).toBe(
-      `You are connected through ${HOST}. Turn reach off and disconnect this device?`,
-    );
-    expect(through.confirmRemove).toBe(
-      `You are connected through ${HOST}. Remove it and disconnect this device?`,
-    );
+    const through = reachView(input(status(), { activeRouteUrl: `${ADDRESS}ws?x=1` }));
+    expect(through.throughAddress).toBe(true);
+    expect(through.confirmOff).toEqual({
+      title: "Turn reach off?",
+      message: `You are connected through ${HOST}, so this device disconnects.`,
+      action: "Turn off",
+    });
+    expect(through.confirmRemove).toMatchObject({ title: `Remove ${HOST}?`, action: "Remove" });
+    expect(through.confirmRemove?.message).toContain("this device disconnects");
     const elsewhere = reachView(input(status()));
+    expect(elsewhere.throughAddress).toBe(false);
     expect(elsewhere.confirmOff).toBeNull();
-    expect(elsewhere.confirmRemove).toContain(`Remove ${HOST}?`);
+    expect(elsewhere.confirmRemove?.title).toBe(`Remove ${HOST}?`);
+    expect(elsewhere.confirmRemove?.message).not.toContain("this device disconnects");
+    // Same host over plain HTTP is another origin, and an unknown route never matches.
+    expect(reachView(input(status(), { activeRouteUrl: `http://${HOST}` })).throughAddress).toBe(
+      false,
+    );
     expect(reachView(input(status(), { activeRouteUrl: null })).confirmOff).toBeNull();
+    expect(reachView(input(status(), { activeRouteUrl: "not a url" })).throughAddress).toBe(false);
+    // Every question is one sentence ending in a question mark, which the dialogs title.
+    for (const confirm of [through.confirmOff, through.confirmRemove, elsewhere.confirmRemove]) {
+      expect(confirm?.title).toMatch(/^[^?]+\?$/u);
+      expect(confirm?.message).not.toContain("?");
+    }
   });
 
   it("offers a retry when the status cannot be read", () => {
@@ -251,6 +318,8 @@ describe("reachView", () => {
   });
 });
 
+const dropped = new EnvironmentRpcUnavailableError({ environmentId: "studio", message: "closed" });
+
 describe("reachChangeErrorText", () => {
   it("never says a device cannot change reach", () => {
     const denied = new EnvironmentAuthorizationError({
@@ -266,9 +335,25 @@ describe("reachChangeErrorText", () => {
     expect(reachChangeErrorText(Cause.fail(new ReachError({ reason: "busy" })))).toBe(
       new ReachError({ reason: "busy" }).message,
     );
+    expect(reachChangeErrorText(Cause.fail(dropped))).toBe(
+      "Connect this computer to change reach.",
+    );
     expect(reachChangeErrorText(Cause.die(new Error("socket body with a secret")))).toBe(
       "Loom could not change reach on this computer.",
     );
+  });
+
+  it("treats a reply lost with a confirmed route drop as the expected outcome", () => {
+    expect(reachChangeErrorText(Cause.fail(dropped), true)).toBeNull();
+    expect(reachChangeErrorText(Cause.die(new Error("socket closed")), true)).toBeNull();
+    // A refusal the computer sent before the route dropped still counts.
+    expect(reachChangeErrorText(Cause.fail(new ReachError({ reason: "busy" })), true)).toBe(
+      new ReachError({ reason: "busy" }).message,
+    );
+  });
+
+  it("stays quiet when the change was interrupted", () => {
+    expect(reachChangeErrorText(Cause.interrupt())).toBeNull();
   });
 });
 
@@ -358,15 +443,36 @@ describe("reachLibraryView", () => {
       ),
     );
     const [row] = view.computers;
-    expect(row?.notes).toHaveLength(4);
+    expect(row?.notes).toHaveLength(5);
     expect(row?.notes[0]).toContain("2 connectors are attached");
     expect(row?.notes[1]).toContain("dns-1");
-    expect(row?.retire?.confirm).toContain("revoke its Library sign-in too");
+    expect(row?.notes[4]).toBe("The address stays reserved for this computer.");
+    expect(row?.retire?.confirm).toMatchObject({ title: `Retire ${HOST}?`, action: "Retire" });
+    expect(row?.retire?.confirm.message).toContain("revoke its Library sign-in too");
     expect(row?.retire?.endIdentityLabel).toBe("Also end Loom sign-in for this computer");
     expect(view.setup.map((line) => line.text)).toContain(
       "Another rate-limit rule holds the zone's only slot, so reach addresses have no rate limit.",
     );
     expect(allText(view)).not.toContain("—");
+  });
+
+  it("says a failed end of Loom sign-in may have left it working, not that it was never prepared", () => {
+    const failed = {
+      resource: "https://r.example.com",
+      state: "failed",
+      lastError: "unavailable",
+    } as const;
+    const notesFor = (state: ReachLibraryComputer["state"]) =>
+      library(AsyncResult.success(listingOf([computer({ state, identity: failed })]))).computers[0]
+        ?.notes ?? [];
+    for (const state of ["removed", "removed-with-leftover"] as const) {
+      const [identityNote] = notesFor(state);
+      expect(identityNote).toContain("may still work");
+      expect(identityNote).toContain("Retire it and end Loom sign-in to try again.");
+    }
+    expect(notesFor("ready")).toEqual([
+      "Pocket ID did not answer, so Loom sign-in was not prepared.",
+    ]);
   });
 
   it("points a device without settings access elsewhere to retire", () => {
@@ -380,5 +486,34 @@ describe("reachLibraryView", () => {
       requiredScope: "settings:write",
     });
     expect(reachLibraryErrorText(Cause.fail(denied), "retire")).toBe(view.retireDisabledReason);
+  });
+
+  it("keeps each computer's state a short label and its sentences in notes", () => {
+    const view = library(
+      AsyncResult.success(
+        listingOf(
+          ReachLibraryRecordState.literals.map((state, index) =>
+            computer({
+              environmentId: EnvironmentId.make(`computer-${index}`),
+              label: `C${index}`,
+              state,
+            }),
+          ),
+        ),
+      ),
+    );
+    for (const row of view.computers) expect(row.state.text).not.toContain(".");
+    const removed = view.computers.find((row) => row.state.text === "Removed");
+    expect(removed?.notes).toEqual(["The address stays reserved for this computer."]);
+  });
+
+  it("says when the chosen Library is no longer saved on this device", () => {
+    const unregistered = Cause.fail({ _tag: "EnvironmentNotRegisteredError" });
+    expect(reachLibraryErrorText(unregistered, "list")).toBe(
+      "Your Library is not saved on this device.",
+    );
+    expect(reachLibraryErrorText(Cause.fail(dropped), "retire")).toBe(
+      "Your Library is not reachable right now.",
+    );
   });
 });

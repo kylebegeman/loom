@@ -3312,7 +3312,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           {...searchableSetting("privacy-policy")}
           // fork: brand
-          description="How T3 handles usage data. Loom sends none unless you turn it on."
+          description="How T3 handles usage data. Loom sends none unless you set T3CODE_TELEMETRY_ENABLED=true."
           control={
             <Button
               render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}

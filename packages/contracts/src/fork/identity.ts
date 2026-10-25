@@ -82,12 +82,6 @@ export const LoomDesktopSignInRequest = Schema.Struct({
    * A computer found through the Library's directory is pinned to the Library's own issuer.
    */
   expectedIssuer: Schema.optional(Schema.String),
-  /**
-   * The resource the computer must name (falling back to its audience) before the provider opens.
-   * Set from the Library's attested `identityResource` or a saved connection's pin, so a computer
-   * cannot collect a sign-in meant for another computer.
-   */
-  expectedResource: Schema.optional(Schema.String),
 });
 export type LoomDesktopSignInRequest = typeof LoomDesktopSignInRequest.Type;
 export const LoomDesktopSignInResult = Schema.Struct({
@@ -96,8 +90,6 @@ export const LoomDesktopSignInResult = Schema.Struct({
   accessToken: Schema.String,
   identity: Schema.optional(LoomIdentityAccount),
   expiresAt: Schema.optional(Schema.Number),
-  /** The resource this sign-in was issued for, which the saved connection pins for later ones. */
-  resource: Schema.optional(Schema.String),
 });
 export type LoomDesktopSignInResult = typeof LoomDesktopSignInResult.Type;
 

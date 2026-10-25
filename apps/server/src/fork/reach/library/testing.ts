@@ -61,7 +61,8 @@ export interface FakeCall {
 
 export interface FakeRule {
   readonly id: string;
-  description: string;
+  /** Null as a foreign rule of a shape the Library does not decode. */
+  description: string | null;
   expression: string;
   action: string;
   enabled: boolean;
@@ -124,6 +125,8 @@ export class FakeReachApis {
   readonly dns = new Map<string, FakeDnsRecord>();
   readonly apis = new Map<string, FakeApi>();
   readonly grants = new Map<string, unknown>();
+  /** Answers the deprecated per-tunnel `connections` list empty, as Cloudflare says it will. */
+  deprecatedConnectionsEmpty = false;
   private readonly scripted: Array<{ readonly step: string; readonly response: FakeResponse }> = [];
   private sequence = 0;
 
@@ -265,7 +268,8 @@ export class FakeReachApis {
         if (method === "POST") return "tunnel.create";
         return query.name === undefined ? "tunnel.list" : "tunnel.find";
       }
-      if (parts[4] === "connections") return "connections.clear";
+      if (parts[4] === "connections")
+        return method === "GET" ? "connections.list" : "connections.clear";
       if (parts[4] === "configurations") return "ingress.put";
       if (parts[4] === "token") return "token.get";
       return `tunnel.${method === "GET" ? "get" : method === "PATCH" ? "rotate" : "delete"}`;
@@ -286,7 +290,7 @@ export class FakeReachApis {
       name: tunnel.name,
       deleted_at: tunnel.deletedAt,
       status: tunnel.status,
-      connections: tunnel.connections,
+      connections: this.deprecatedConnectionsEmpty ? [] : tunnel.connections,
     };
   }
 
@@ -359,6 +363,7 @@ export class FakeReachApis {
     if (
       step.startsWith("tunnel.") ||
       step === "connections.clear" ||
+      step === "connections.list" ||
       step === "ingress.put" ||
       step === "token.get"
     ) {
@@ -372,6 +377,12 @@ export class FakeReachApis {
             return cloudflareError(400, 1001, "tunnel_secret must be 32 bytes of base64");
           tunnel.rotations += 1;
           return ok(this.publicTunnel(tunnel));
+        case "connections.list": {
+          const byClient = Map.groupBy(tunnel.connections, (connection) => connection.client_id);
+          return ok(
+            [...byClient].map(([clientId, conns]) => ({ id: clientId, conns: [...conns] })),
+          );
+        }
         case "connections.clear":
           tunnel.connections = [];
           tunnel.status = "down";

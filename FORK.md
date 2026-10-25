@@ -311,11 +311,13 @@ Web Locks so several windows on one origin show one notification. While the shel
 after a reconnect nothing is known yet, so shown notifications stay and their clicks still
 open the thread. Its two upstream tests mark the mock changes and the added cases.
 
-`apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 2 marker lines) skips the Loom
+`apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 8 marker lines) skips the Loom
 tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database. Their
 rows name the live install's lanes, run folders and graphs, and a dev server reconciling
 them would release leases, clear scratch or delete files that belong to the live install.
-Add a table there when a feature stores host resources it later cleans up.
+Add a table there when a feature stores host resources it later cleans up. The same helpers
+rebuild the Library's full-text search tables in the copy and stop copied bot work, so a dev
+server never runs the developer's bots.
 
 L05 adds the outline toggle and column to the file viewer in
 `apps/web/src/components/files/FilePreviewPanel.tsx` (`fork: file-outline`, 3 marker
@@ -373,7 +375,9 @@ marker lines) wraps the effect executor so `attachment.cleanup` waits while the 
 needs a bound thread's deletion. `apps/server/src/fork/deleted-history/` then purges each thread
 deleted more than 24 hours ago down to its `thread.created` and `thread.deleted` events and its
 thread row, once the Library has acknowledged the deletion or the thread was never bound, and
-the Library history source refuses to send a purged thread again.
+the Library history source refuses to send a purged thread again. `Orchestrator.ts` (4) refuses
+a fork or merge-back whose source or target is deleted, because a purge may already be emptying
+the runs it would copy.
 
 The `server-weight` seams cut trace volume and background database work on long-running
 computers. `serverActivation.ts` (4 marker lines) and `Scheduler.ts` (2) start each parked
@@ -408,11 +412,10 @@ connector runs. `server.ts` (2) provides that route right after `DirectEndpoints
 which sits below ForkLayer and cannot see fork services. Web `ConnectionsSettings.tsx` (2) and
 iPhone `SettingsEnvironmentDetailRouteScreen.tsx` (2) mount the reach section in a saved
 computer's details, and `packages/shared/package.json` exports `./fork/reach` (no marker).
-Client-runtime `catalog.ts` (1) adds `identityResource` to `BearerConnectionProfile`, the
-resource a saved connection signed in with, and `routes.ts` (3) carries it onto rebuilt and
-learned routes so a later sign-in over a reach address stays pinned. The request guard on the
-reach hostname is a global middleware merged into `ForkRoutesLayer`, so it needs no upstream
-line. See the [L114 packet](docs/fork/packets/L114-reach/SEAMS.md).
+Saved connections keep no resource pin: every Identity sign-in applies a stateless rule from
+`packages/shared/src/fork/identityGrant.ts`, so no connection seam is needed. The request guard
+on the reach hostname is a global middleware merged into `ForkRoutesLayer`, so it needs no
+upstream line. See the [L114 packet](docs/fork/packets/L114-reach/SEAMS.md).
 
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
@@ -441,9 +444,9 @@ Connect secret and the T3 CLI sign-in and keeps the key pair and replay markers.
 `apps/server/src/cloud/http.ts` (3) refuses `link-proof` and `relay-config` with a 403, so a
 client that still has Connect cannot re-link the computer; unlink still works. The cleanup runs
 before an update trial activates, so a retired trial that rolls back leaves the restored
-Connect-on runtime unlinked until it is linked again. CLI runtime archives do not get the
-variable yet, so CLI-hosted computers keep Connect until the flip work passes it through. See the
-[L116 packet](docs/fork/packets/L116-connect-off/SEAMS.md).
+Connect-on runtime unlinked until it is linked again. The publisher passes the flag to the CLI
+runtime archive workflow as its `connect_retired` input, so CLI-hosted computers retire with the
+same release. See the [L116 packet](docs/fork/packets/L116-connect-off/SEAMS.md).
 
 ## Loom CLI and pairing copy
 

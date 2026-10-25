@@ -89,8 +89,8 @@ The iOS side of the setup is in
   is not an Identity session acts as operator and can remove or test any row by id.
 - `loom_push_status` returns the state, reason, key IDs and a device count only. `loom_push_test`
   needs an explicit row id and full access. Both act only on the Library, never forward from a
-  computer and never return tokens. Agents cannot discover row ids, so a person supplies one from
-  the device list on web or desktop.
+  computer and never return tokens. Agents cannot discover row ids, so a person copies one with
+  **Copy ID** on the phone's row in the device list on web or desktop.
 - Limits: 10 devices per account, 50 per Library. Tests: 3 per device per 10 minutes and 1 per
   account per 10 seconds. Rate-limit state, last delivery and the failing flag live in memory
   and reset on restart.
@@ -113,25 +113,33 @@ The iOS side of the setup is in
   another account resets the switch to off.
 - Turning the switch off unregisters while connected. Offline, or if the Library refuses, the
   phone keeps the record with the switch off and retries on the next connect.
-- Removing the Library connection on the iPhone first asks the Library to forget the phone,
-  while it is connected and for at most 3 seconds, since the removal revokes the session the
-  request needs. A Library that does not answer keeps the row until it expires.
+- The phone reads its APNs token from iOS before each register and gives up after 20 seconds,
+  so an iOS that never answers (offline, for example) shows a token error with Try again and
+  holds up nothing after it. A register is not sent if the switch was turned off, the Library
+  changed or the Library connection was removed while iOS was reading the token.
+- Removing the Library connection on the iPhone waits for a registration already in flight,
+  then asks the Library to forget the phone, all within 3 seconds, since the removal revokes the
+  session the request needs. Until the removal finishes, the phone does not register with that
+  Library again; if the removal fails, it registers again. A Library that does not answer keeps
+  the row until it expires. Removing a computer does not touch Library notifications and does
+  not wait.
 
 ## APNs replies
 
-| Reply                                                  | Result                                                                                  |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| 410, or 400 `BadDeviceToken`, `DeviceTokenNotForTopic` | `bad-token`: the row is removed.                                                        |
-| Any other 403, such as `InvalidProviderToken`          | `key-rejected`: push shows failing until a later delivery succeeds.                     |
-| `TopicDisallowed`, `BadTopic`                          | `topic-disallowed`, recorded on that row only.                                          |
-| 429                                                    | `rate-limited`.                                                                         |
-| GOAWAY, reset or refused stream, 5xx                   | One immediate retry on a fresh session, so a duplicate is possible; then `unavailable`. |
-| No answer within 10 seconds                            | Not retried, because the push may have arrived.                                         |
+| Reply                                                         | Result                                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 410, or 400 `BadDeviceToken`, `DeviceTokenNotForTopic`        | `bad-token`: the row is removed.                                                                                |
+| `TopicDisallowed`, `BadTopic`, 403 `BadEnvironmentKeyInToken` | `topic-disallowed`, recorded on that row only. An environment-restricted key keeps serving its own environment. |
+| Any other 403, such as `InvalidProviderToken`                 | `key-rejected`: push shows failing until a later delivery succeeds.                                             |
+| 429                                                           | `rate-limited`.                                                                                                 |
+| GOAWAY, reset or refused stream, 5xx                          | One immediate retry on a fresh session, so a duplicate is possible; then `unavailable`.                         |
+| No answer within 10 seconds                                   | Not retried, because the push may have arrived.                                                                 |
 
 `ExpiredProviderToken` gets its own single retry with a fresh provider token.
 
 In a build with Connect config, fetching the APNs token also fires upstream's tokenless T3 relay
-listener. Removing it is a C05 cleanup item.
+listener, once per register, since each sync run reads the token from iOS at most once. Removing
+it is a C05 cleanup item.
 
 ## Decisions (defaults pending Kyle)
 

@@ -10,12 +10,12 @@ import {
   type IdentityGrantFetch,
   IdentityGrantTransientError,
   identityGrantKey,
-  identityMetadataResource,
+  identityResourceEnvironment,
   identityResourceRefusal,
   makeKeyedSingleFlight,
   renewIdentityGrant,
-  savedIdentitySignInPin,
 } from "./identityGrant.ts";
+import { reachResource } from "./reach.ts";
 
 const NOW = 1_800_000_000_000;
 const TOKEN_ENDPOINT = "https://id.example.test/api/oidc/token";
@@ -179,6 +179,36 @@ describe("renewIdentityGrant", () => {
 
     expect(result._tag).toBe("SignInRequired");
     expect(log).toEqual(["refresh"]);
+  });
+
+  it("asks for a sign-in when the computer's resource is gone or the grant was revoked", async () => {
+    // Retire with "Also end Loom sign-in" deletes the resource; removing access revokes the grant.
+    for (const [status, error, reason] of [
+      [400, "invalid_target", "This computer's Loom sign-in changed. Sign in again."],
+      [
+        403,
+        "access_denied",
+        "Loom Identity no longer accepts this device's sign-in. Sign in again.",
+      ],
+    ] as const) {
+      const log: Array<string> = [];
+      const { fetch } = fakeFetch(log, {
+        token: () => json(status, { error }),
+        session: sessionReply,
+      });
+
+      expect(await renew(fetch, log)).toEqual({ _tag: "SignInRequired", reason });
+      expect(log).toEqual(["refresh"]);
+    }
+  });
+
+  it("retries a refusal it does not recognize", async () => {
+    const { fetch } = fakeFetch([], {
+      token: () => json(403, { error: "forbidden_by_proxy" }),
+      session: sessionReply,
+    });
+
+    await expect(renew(fetch)).rejects.toBeInstanceOf(IdentityGrantTransientError);
   });
 
   it("asks for a sign-in when the refreshed reply has no ID token", async () => {
@@ -345,36 +375,58 @@ describe("identityGrantKey", () => {
   });
 });
 
-describe("identity resource pin", () => {
-  const metadata = {
-    audience: "https://computer.example.test",
-    resource: "https://lib/computers/a",
-  };
-
-  it("pins the resource indicator, else the audience", () => {
-    expect(identityMetadataResource(metadata)).toBe("https://lib/computers/a");
-    expect(identityMetadataResource({ audience: "https://computer.example.test" })).toBe(
-      "https://computer.example.test",
-    );
+describe("identityResourceRefusal", () => {
+  const LIBRARY = "https://library.example.test";
+  const BOOK = EnvironmentId.make("book");
+  const DESK = EnvironmentId.make("desk");
+  const own = reachResource(LIBRARY, BOOK)!;
+  const other = reachResource(LIBRARY, DESK)!;
+  const book = (fields: { readonly audience: string; readonly resource?: string }) => ({
+    environmentId: BOOK,
+    ...fields,
   });
 
-  it("refuses metadata naming another resource, and nothing when no pin is set", () => {
-    expect(identityResourceRefusal("https://lib/computers/a", metadata)).toBeNull();
-    expect(identityResourceRefusal(undefined, metadata)).toBeNull();
-    expect(identityResourceRefusal("https://lib/computers/b", metadata)).toBe(
+  it("reads the environment from the resource the Library derives for each computer", () => {
+    expect(identityResourceEnvironment(own)).toBe(BOOK);
+    expect(identityResourceEnvironment(`${own}/`)).toBe(BOOK);
+  });
+
+  it("accepts a computer before, during and after it moves to its own resource", () => {
+    // Before reach, while copied settings name both, after adoption, and after a revert.
+    expect(identityResourceRefusal(book({ audience: "loom" }))).toBeNull();
+    expect(identityResourceRefusal(book({ audience: "https://loom.example.test/api" }))).toBeNull();
+    expect(identityResourceRefusal(book({ audience: "loom", resource: own }))).toBeNull();
+    expect(identityResourceRefusal(book({ audience: own, resource: own }))).toBeNull();
+    expect(identityResourceRefusal(book({ audience: own }))).toBeNull();
+  });
+
+  it("refuses a computer naming another computer's resource", () => {
+    expect(identityResourceRefusal(book({ audience: other, resource: other }))).toBe(
+      IDENTITY_RESOURCE_MISMATCH_TEXT,
+    );
+    expect(identityResourceRefusal(book({ audience: "loom", resource: other }))).toBe(
+      IDENTITY_RESOURCE_MISMATCH_TEXT,
+    );
+    // Pocket ID strips trailing slashes before its lookup, so this still reaches DESK's resource.
+    expect(identityResourceRefusal(book({ audience: `${other}//` }))).toBe(
       IDENTITY_RESOURCE_MISMATCH_TEXT,
     );
     expect(
-      identityResourceRefusal("https://lib/computers/a", { audience: "https://lib/computers/b" }),
+      identityResourceRefusal(book({ audience: "https://elsewhere.example.test/computers/desk" })),
     ).toBe(IDENTITY_RESOURCE_MISMATCH_TEXT);
   });
 
-  it("pins a saved connection's account, and its resource once one was recorded", () => {
-    const identity = { issuer: grant.issuer, subject: grant.subject };
-    expect(savedIdentitySignInPin({ identity })).toEqual({ expectedIdentity: identity });
-    expect(
-      savedIdentitySignInPin({ identity, identityResource: "https://lib/computers/a" }),
-    ).toEqual({ expectedIdentity: identity, expectedResource: "https://lib/computers/a" });
-    expect(savedIdentitySignInPin({})).toEqual({});
+  it("treats values that are not a per-computer resource as shared", () => {
+    for (const audience of [
+      "",
+      "not a url",
+      "http://library.example.test/computers/desk",
+      "https://library.example.test/computers/",
+      "https://library.example.test/computers/desk/api",
+      "https://library.example.test/library/computers/desk",
+    ]) {
+      expect(identityResourceEnvironment(audience)).toBeNull();
+      expect(identityResourceRefusal(book({ audience }))).toBeNull();
+    }
   });
 });

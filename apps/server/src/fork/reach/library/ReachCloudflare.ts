@@ -70,9 +70,16 @@ export interface CloudflareTunnel {
   readonly name: string;
   readonly deletedAt: string | null;
   readonly status: string | null;
-  /** Distinct connectors from the deprecated `connections` list, or null when it is absent. */
+  /**
+   * Distinct connectors from the deprecated `connections` list, or null when it says nothing:
+   * absent, or empty while the tunnel serves traffic, as Cloudflare says it will start answering.
+   */
   readonly connectors: number | null;
 }
+
+/** `healthy` and `degraded` tunnels serve traffic; `inactive` and `down` ones do not. */
+export const isTunnelConnected = (tunnel: Pick<CloudflareTunnel, "status">) =>
+  tunnel.status === "healthy" || tunnel.status === "degraded";
 
 export interface CloudflareDnsRecord {
   readonly id: string;
@@ -119,6 +126,8 @@ export class ReachCloudflare extends Context.Service<
     readonly findTunnel: (accountId: string, name: string) => Call<CloudflareTunnel | null>;
     readonly createTunnel: (accountId: string, name: string) => Call<CloudflareTunnel>;
     readonly listTunnels: (accountId: string) => Call<ReadonlyArray<CloudflareTunnel>>;
+    /** Connectors with an edge connection, from the per-tunnel list that replaces `connections`. */
+    readonly countConnectors: (accountId: string, tunnelId: string) => Call<number>;
     readonly putIngress: (input: {
       readonly accountId: string;
       readonly tunnelId: string;
@@ -181,9 +190,20 @@ const Rule = Schema.Struct({
   ),
 });
 type Rule = typeof Rule.Type;
-const decodeRuleset = Schema.decodeUnknownOption(
-  Schema.Struct({ id: Schema.String, rules: Schema.optional(Schema.Array(Rule)) }),
+const decodeRule = Schema.decodeUnknownOption(Rule);
+/**
+ * Ownership needs only these two, so a rule of ours whose other fields Cloudflare reshapes is
+ * updated in place rather than created again on every check.
+ */
+const decodeOwnedRule = Schema.decodeUnknownOption(
+  Schema.Struct({ id: Schema.String, description: Schema.String }),
 );
+// Rules stay undecoded here, so a foreign rule of a shape this client does not know still counts
+// toward the phase but can never fail the Library's own check.
+const decodeRuleset = Schema.decodeUnknownOption(
+  Schema.Struct({ id: Schema.String, rules: Schema.optional(Schema.Array(Schema.Unknown)) }),
+);
+type Ruleset = { readonly rules?: ReadonlyArray<unknown> | undefined };
 
 const Tunnel = Schema.Struct({
   id: Schema.String,
@@ -201,6 +221,10 @@ const Tunnel = Schema.Struct({
 });
 const decodeTunnel = Schema.decodeUnknownOption(Tunnel);
 const decodeTunnels = Schema.decodeUnknownOption(Schema.Array(Tunnel));
+/** One entry per cloudflared, with its edge connections under `conns`. */
+const decodeConnectorClients = Schema.decodeUnknownOption(
+  Schema.Array(Schema.Struct({ conns: Schema.optional(Schema.Array(Schema.Unknown)) })),
+);
 
 const DnsRecord = Schema.Struct({
   id: Schema.String,
@@ -214,19 +238,23 @@ const decodeDnsRecord = Schema.decodeUnknownOption(DnsRecord);
 const decodeDnsRecords = Schema.decodeUnknownOption(Schema.Array(DnsRecord));
 const decodeToken = Schema.decodeUnknownOption(Schema.String.check(Schema.isNonEmpty()));
 
-const toTunnel = (tunnel: typeof Tunnel.Type): CloudflareTunnel => ({
-  id: tunnel.id,
-  name: tunnel.name,
-  deletedAt: tunnel.deleted_at ?? null,
-  status: tunnel.status ?? null,
+const toTunnel = (tunnel: typeof Tunnel.Type): CloudflareTunnel => {
+  const status = tunnel.status ?? null;
   // One cloudflared holds several edge connections under one client id.
-  connectors:
+  const listed =
     tunnel.connections === undefined
       ? null
       : new Set(
           tunnel.connections.flatMap((connection) => connection.client_id ?? connection.id ?? []),
-        ).size,
-});
+        ).size;
+  return {
+    id: tunnel.id,
+    name: tunnel.name,
+    deletedAt: tunnel.deleted_at ?? null,
+    status,
+    connectors: listed === 0 && isTunnelConnected({ status }) ? null : listed,
+  };
+};
 
 const toDnsRecord = (record: typeof DnsRecord.Type): CloudflareDnsRecord => ({
   id: record.id,
@@ -265,8 +293,12 @@ type DesiredRule = {
   };
 };
 
-/** Compares only what the Library sets, so fields Cloudflare adds do not force a PATCH. */
-const sameRule = (existing: Rule, desired: DesiredRule) =>
+/**
+ * Compares only what the Library sets, so fields Cloudflare adds do not force a PATCH. A rule it
+ * cannot read is never the same.
+ */
+const sameRule = (existing: Rule | undefined, desired: DesiredRule) =>
+  existing !== undefined &&
   existing.description === desired.description &&
   existing.expression === desired.expression &&
   existing.action === desired.action &&
@@ -279,8 +311,14 @@ const sameRule = (existing: Rule, desired: DesiredRule) =>
       (existing.ratelimit.characteristics ?? []).join(" ") ===
         desired.ratelimit.characteristics.join(" ")));
 
-const ownRule = (rules: ReadonlyArray<Rule>, prefix: string) =>
-  rules.find((rule) => rule.description?.startsWith(prefix) === true);
+const ownRule = (ruleset: Ruleset, prefix: string) => {
+  for (const raw of ruleset.rules ?? []) {
+    const owned = Option.getOrUndefined(decodeOwnedRule(raw));
+    if (owned?.description.startsWith(prefix) === true)
+      return { id: owned.id, rule: Option.getOrUndefined(decodeRule(raw)) };
+  }
+  return undefined;
+};
 
 const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
@@ -435,10 +473,7 @@ const make = Effect.gen(function* () {
       ),
     ).pipe(Effect.flatMap(expect(stage, decodeRuleset)));
 
-  const ruleIdIn = (
-    ruleset: { readonly rules?: ReadonlyArray<Rule> | undefined },
-    prefix: string,
-  ) => ownRule(ruleset.rules ?? [], prefix)?.id ?? null;
+  const ruleIdIn = (ruleset: Ruleset, prefix: string) => ownRule(ruleset, prefix)?.id ?? null;
 
   /** Invalid requests become a `failed` rule rather than an error; the rest propagate. */
   const refusedAsNull = <A>(effect: Call<A>): Call<A | null> =>
@@ -468,7 +503,7 @@ const make = Effect.gen(function* () {
             state: "ready" as const,
           };
     }
-    const ours = ownRule(ruleset.rules ?? [], ALLOWLIST_RULE_PREFIX);
+    const ours = ownRule(ruleset, ALLOWLIST_RULE_PREFIX);
     if (ours === undefined) {
       const created = yield* refusedAsNull(
         createRule("allowlist.create", zoneId, ruleset.id, desired, true),
@@ -479,7 +514,7 @@ const make = Effect.gen(function* () {
         state: created === null ? ("failed" as const) : ("ready" as const),
       };
     }
-    if (sameRule(ours, desired)) {
+    if (sameRule(ours.rule, desired)) {
       return { rulesetId: ruleset.id, ruleId: ours.id, state: "ready" as const };
     }
     const updated = yield* updateRule(
@@ -508,9 +543,9 @@ const make = Effect.gen(function* () {
         state: "ready" as const,
       };
     }
-    const ours = ownRule(ruleset.rules ?? [], RATE_LIMIT_RULE_PREFIX);
+    const ours = ownRule(ruleset, RATE_LIMIT_RULE_PREFIX);
     if (ours !== undefined) {
-      if (!sameRule(ours, desired)) {
+      if (!sameRule(ours.rule, desired)) {
         yield* updateRule("ratelimit.update", zoneId, ruleset.id, ours.id, desired).pipe(
           Effect.tapError(() =>
             Effect.logWarning("The reach rate-limit rule kept its older settings.", {
@@ -595,6 +630,18 @@ const make = Effect.gen(function* () {
 
   const listTunnels = Effect.fn("ReachCloudflare.listTunnels")(function* (accountId: string) {
     return yield* listMatching("tunnel.list", accountId, null);
+  });
+
+  const countConnectors = Effect.fn("ReachCloudflare.countConnectors")(function* (
+    accountId: string,
+    tunnelId: string,
+  ) {
+    const clients = yield* send(
+      "connections.list",
+      HttpClientRequest.get(`${tunnel(accountId, tunnelId)}/connections`),
+    ).pipe(Effect.flatMap(expect("connections.list", decodeConnectorClients)));
+    // A connector whose edge connections are all gone is no longer attached.
+    return clients.filter((client) => client.conns === undefined || client.conns.length > 0).length;
   });
 
   const createTunnel = Effect.fn("ReachCloudflare.createTunnel")(function* (
@@ -737,6 +784,7 @@ const make = Effect.gen(function* () {
     findTunnel,
     createTunnel,
     listTunnels,
+    countConnectors,
     putIngress,
     rotateSecret,
     clearConnections,

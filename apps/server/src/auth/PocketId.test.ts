@@ -565,16 +565,17 @@ it.effect(
           CLIENT_ID,
           "JWT",
         );
-        expect(
-          (yield* identity
-            .completeLogin({
-              state: wrongAuthorization.searchParams.get("state")!,
-              code: "idp-code",
-              cookieValue: wrongAccount.cookieValue,
-              client: CLIENT,
-            })
-            .pipe(Effect.flip)).reason,
-        ).toBe("subject");
+        const refused = yield* identity
+          .completeLogin({
+            state: wrongAuthorization.searchParams.get("state")!,
+            code: "idp-code",
+            cookieValue: wrongAccount.cookieValue,
+            client: CLIENT,
+          })
+          .pipe(Effect.flip);
+        expect(refused.reason).toBe("subject");
+        // The window that opened the sign-in can be told why, and only that window.
+        expect(refused.handoff).toEqual({ origin: browser.origin, state: browser.state });
         expect(test.issued.length).toBe(issuedCount);
       }).pipe(Effect.provide(test.layer));
     }),
@@ -794,6 +795,8 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
         });
       // No sign-in limit is set: the requirement alone makes the ID token mandatory.
       expect((yield* identity.metadata).maxSessionAgeSeconds).toBeUndefined();
+      // A same-window sign-in has no app window to tell.
+      expect((yield* browserSignIn(["otp"]).pipe(Effect.flip)).handoff).toBeUndefined();
       for (const amr of [["otp"], undefined, []]) {
         expect(yield* reasonOf(browserSignIn(amr))).toBe("passkey");
         expect(

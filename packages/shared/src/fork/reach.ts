@@ -209,7 +209,7 @@ function decodeSegment(segment: string): string | null {
 
 /**
  * True when a raw request target could resolve somewhere other than it reads: a dot segment
- * (also as `%2e` after one decode), an empty segment, a backslash, an encoded slash or backslash,
+ * (also as `%2e` after one decode), an empty segment (`//`), a backslash, an encoded slash or backslash,
  * a NUL, malformed escapes, or a target that is not origin-form. Dots inside a segment are fine,
  * so `a..b.png` passes. The query is not routed and is not checked.
  */
@@ -259,14 +259,18 @@ export const REACH_RESERVED_SLUGS = [
 const RESERVED_SLUGS: ReadonlySet<string> = new Set(REACH_RESERVED_SLUGS);
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u;
 const ENVIRONMENT_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/u;
+// The route URL check also admits a port and a path after the host, which no DNS name has.
+const ZONE_CHARACTERS = /^[a-z0-9.-]+$/u;
 
 /**
- * A valid reach zone is lowercase, has at least two labels and leaves room for every hostname.
- * It is rendered into the edge rule, so this check also keeps quotes out of the expression.
+ * A valid reach zone is a lowercase DNS name with at least two labels and room for every hostname.
+ * It is rendered into the edge rule, so this check also keeps quotes out of the expression, and
+ * the guard compares hostnames without a port, so a zone never carries one.
  */
 export function isReachZone(zone: string): boolean {
   const longest = `${"a".repeat(REACH_SLUG_MAX_LENGTH)}-${REACH_HOSTNAME_MAX_ATTEMPTS}${REACH_HOST_SUFFIX}.${zone}`;
   return (
+    ZONE_CHARACTERS.test(zone) &&
     zone.includes(".") &&
     isDirectoryRouteUrl(`https://x${REACH_HOST_SUFFIX}.${zone}/`) &&
     isDirectoryRouteUrl(`https://${longest}/`)
@@ -309,6 +313,26 @@ export function reachHostname(slug: string, attempt: number, zone: string): stri
   const label = attempt === 1 ? slug : `${slug}-${attempt}`;
   const hostname = `${label}${REACH_HOST_SUFFIX}.${zone}`;
   return isDirectoryRouteUrl(`https://${hostname}/`) ? hostname : null;
+}
+
+const NUMBERED_LABEL = /^(.+)-([1-9][0-9]?)$/u;
+
+/**
+ * Whether `hostname` is one `reachHostname` produces, in any valid zone. A computer guards the
+ * hostname its Library assigns, so it refuses any other shape, such as its own tailnet name.
+ */
+export function isReachHostname(hostname: string): boolean {
+  const dot = hostname.indexOf(".");
+  const label = hostname.slice(0, Math.max(dot, 0));
+  if (!label.endsWith(REACH_HOST_SUFFIX)) return false;
+  const zone = hostname.slice(dot + 1);
+  const name = label.slice(0, -REACH_HOST_SUFFIX.length);
+  // A slug can end in `-<n>` itself, so a numbered label is tried both ways.
+  const numbered = NUMBERED_LABEL.exec(name);
+  return (
+    reachHostname(name, 1, zone) === hostname ||
+    (numbered !== null && reachHostname(numbered[1] ?? "", Number(numbered[2]), zone) === hostname)
+  );
 }
 
 /** Environment ids that can sit in a resource URL as they are, with no case folding to collide. */

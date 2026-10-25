@@ -52,7 +52,7 @@ export function passkeyRequired(environment: NodeJS.ProcessEnv) {
   return environment.LOOM_IDENTITY_REQUIRE_PASSKEY?.trim() === "true";
 }
 
-/** The resource clients pin a sign-in to: the resource indicator, else the first audience. */
+/** What a sign-in to this computer is issued for: the resource indicator, else the first audience. */
 export function identityResource(environment: NodeJS.ProcessEnv) {
   return (
     environment.LOOM_IDENTITY_RESOURCE?.trim() ||

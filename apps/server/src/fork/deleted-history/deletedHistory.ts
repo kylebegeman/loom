@@ -1,3 +1,4 @@
+import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -103,6 +104,16 @@ export const isWithheld = (sql: SqlClient.SqlClient, threadId: string) =>
   sql<{ readonly withheld: number }>`SELECT ${withheldCondition(sql, threadId)} AS withheld`.pipe(
     Effect.map((rows) => rows[0]?.withheld === 1),
   );
+
+/**
+ * Fails when a command would copy history from, or write into, a deleted thread. A fork or
+ * merge-back reads the source's runs, which a purge may already be emptying, and anything
+ * written into a deleted thread is never shown and only postpones its purge. A command's source
+ * is checked before the dispatch mode limit, so a deleted one is never refused as needing a higher
+ * mode that a caller could then approve for nothing.
+ */
+export const refuseDeleted = (thread: Pick<OrchestrationV2AppThread, "id" | "deletedAt">) =>
+  thread.deletedAt === null ? Effect.void : Effect.fail(`Thread ${thread.id} is deleted.`);
 
 const WITHHELD_DETAIL =
   "This conversation was deleted, so its history is no longer sent to the Library.";

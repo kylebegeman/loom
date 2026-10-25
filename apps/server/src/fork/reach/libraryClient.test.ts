@@ -201,11 +201,14 @@ describe("makeReachLibraryClient", () => {
         Response.json({ hostname: "studio-loom.example.com" }),
         Response.json(ensureReply("http://127.0.0.1:9999")),
         Response.json(ensureReply(ORIGIN, "studio-loom")),
+        Response.json(ensureReply(ORIGIN, "studio.tail1234.ts.net")),
+        Response.json({ reason: "reason-from-a-newer-library" }, { status: 404 }),
+        Response.json({ reason: "reason-from-a-newer-library" }, { status: 403 }),
       ],
       (h) =>
         Effect.gen(function* () {
           const outcomes = [];
-          for (let index = 0; index < 11; index += 1) {
+          for (let index = 0; index < 14; index += 1) {
             outcomes.push(yield* h.client.ensure(ORIGIN));
           }
           expect(outcomes).toEqual([
@@ -219,6 +222,11 @@ describe("makeReachLibraryClient", () => {
             { kind: "io" },
             { kind: "invalid" },
             // The Library pointed the tunnel somewhere this server does not listen.
+            { kind: "invalid" },
+            { kind: "invalid" },
+            // The guard would take over a host that is not a reach address.
+            { kind: "invalid" },
+            // A newer Library's refusal is neither an older Library nor a lost sign-in.
             { kind: "invalid" },
             { kind: "invalid" },
           ]);

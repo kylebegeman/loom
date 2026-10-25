@@ -16,6 +16,7 @@ import {
   assertReleasePin,
   buildEnvironment,
   connectReceipt,
+  describePublisherConnect,
   main,
   parseUpdateArgs,
   installedUpdateRequirement,
@@ -343,6 +344,19 @@ describe("published release history lookup", () => {
 
 describe("prepared Connect decision", () => {
   const tag = "loom-v0.0.48-nightly.20261013.3044";
+
+  it("tells a missing connect.json apart from retirement before anything is published", () => {
+    const status = (file: unknown) =>
+      describePublisherConnect(() =>
+        file === undefined ? undefined : parseLoomConnectConfig(file),
+      );
+    expect(status(undefined)).toContain("keep a computer's existing link");
+    expect(status({ enabled: false })).toContain("retired");
+    expect(status(CONNECT_FILE)).toBe("on (relay.example.test)");
+    expect(status({ enabled: "false" })).toBe(
+      "connect.json is invalid: Loom Connect requires an explicit enabled setting.",
+    );
+  });
 
   it.each([
     ["is missing", undefined, undefined],

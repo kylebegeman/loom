@@ -32,6 +32,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Jose from "jose";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { IDENTITY_PASSKEY_REQUIRED_TEXT } from "@t3tools/shared/fork/identity-grant";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { signPayload, timingSafeEqualBase64Url } from "./utils.ts";
@@ -122,6 +123,11 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
     "passkey",
   ]),
   cause: Schema.optional(Schema.Defect()),
+  /**
+   * The app window a failed browser sign-in reports to. Set only once the callback matched its
+   * pending sign-in, so the origin is one this computer allows and the state is that window's.
+   */
+  handoff: Schema.optional(Schema.Struct({ origin: Schema.String, state: Schema.String })),
 }) {
   override get message(): string {
     switch (this.reason) {
@@ -132,7 +138,7 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
       case "expired":
         return "Your Loom sign-in reached this computer's time limit. Sign in again.";
       case "passkey":
-        return "This computer accepts passkey sign-ins only. Sign out of Loom Identity in your browser, then sign in with your passkey.";
+        return IDENTITY_PASSKEY_REQUIRED_TEXT;
       default:
         return "Loom could not complete sign-in. Try again.";
     }
@@ -706,82 +712,100 @@ const make = Effect.gen(function* () {
         ] as const;
       });
       if (entry === null) return yield* new PocketIdError({ reason: "state" });
-      const endpoints = yield* discovery;
-      const form: Record<string, string> = {
-        grant_type: "authorization_code",
-        code: input.code,
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        code_verifier: entry.verifier,
-      };
-      if (clientSecret !== null) form.client_secret = Redacted.value(clientSecret);
-      const tokens = yield* http
-        .execute(
-          HttpClientRequest.post(endpoints.token_endpoint).pipe(
-            HttpClientRequest.bodyUrlParams(form),
-          ),
-        )
-        .pipe(
-          Effect.flatMap(HttpClientResponse.filterStatusOk),
-          Effect.flatMap(readTokenResponse),
-          Effect.timeout("15 seconds"),
-          Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
-        );
-      if (tokens.token_type.toLowerCase() !== "bearer")
-        return yield* new PocketIdError({ reason: "token" });
-      const claims = yield* verifyIdToken({
-        idToken: tokens.id_token,
-        accessToken: tokens.access_token,
-        audience: clientId,
-        nonce: entry.nonce,
-        requireAtHash: false,
-      });
-      yield* checkPasskey(claims.amr);
-      const identity = yield* verifyAccessToken(tokens.access_token);
-      if (
-        identity.account.subject !== claims.sub ||
-        (entry.browser?.expectedIdentity &&
-          (entry.browser.expectedIdentity.issuer !== identity.account.issuer ||
-            entry.browser.expectedIdentity.subject !== identity.account.subject))
-      )
-        return yield* new PocketIdError({ reason: "subject" });
-      const expiration = DateTime.make(claims.exp * 1000);
-      if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
-      const acceptedIdentity = yield* capSignInAge(
-        {
-          ...identity,
-          expiresAt: DateTime.toUtc(
-            expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
-              ? expiration.value
-              : identity.expiresAt,
-          ),
-        },
-        claims.auth_time,
-      );
-      const session = yield* issue(acceptedIdentity, {
-        client: input.client,
-        method: "browser-session-cookie",
-      });
-      if (!entry.browser) return { ...session, returnTo: entry.returnTo };
-      const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
-      const accepted = yield* Ref.modify(handoffs, (current) => {
-        const next = new Map(
-          [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
-        );
-        if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
-        next.set(code, {
-          browser: entry.browser!,
-          identity: acceptedIdentity,
-          expiresAt: now.epochMilliseconds + 60_000,
+      const browser = entry.browser;
+      return yield* Effect.gen(function* () {
+        const endpoints = yield* discovery;
+        const form: Record<string, string> = {
+          grant_type: "authorization_code",
+          code: input.code,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          code_verifier: entry.verifier,
+        };
+        if (clientSecret !== null) form.client_secret = Redacted.value(clientSecret);
+        const tokens = yield* http
+          .execute(
+            HttpClientRequest.post(endpoints.token_endpoint).pipe(
+              HttpClientRequest.bodyUrlParams(form),
+            ),
+          )
+          .pipe(
+            Effect.flatMap(HttpClientResponse.filterStatusOk),
+            Effect.flatMap(readTokenResponse),
+            Effect.timeout("15 seconds"),
+            Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
+          );
+        if (tokens.token_type.toLowerCase() !== "bearer")
+          return yield* new PocketIdError({ reason: "token" });
+        const claims = yield* verifyIdToken({
+          idToken: tokens.id_token,
+          accessToken: tokens.access_token,
+          audience: clientId,
+          nonce: entry.nonce,
+          requireAtHash: false,
         });
-        return [true, next] as const;
-      });
-      if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
-      return {
-        ...session,
-        returnTo: entry.returnTo,
-        handoff: { code, origin: entry.browser.origin, state: entry.browser.state, environmentId },
-      };
+        yield* checkPasskey(claims.amr);
+        const identity = yield* verifyAccessToken(tokens.access_token);
+        if (
+          identity.account.subject !== claims.sub ||
+          (entry.browser?.expectedIdentity &&
+            (entry.browser.expectedIdentity.issuer !== identity.account.issuer ||
+              entry.browser.expectedIdentity.subject !== identity.account.subject))
+        )
+          return yield* new PocketIdError({ reason: "subject" });
+        const expiration = DateTime.make(claims.exp * 1000);
+        if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
+        const acceptedIdentity = yield* capSignInAge(
+          {
+            ...identity,
+            expiresAt: DateTime.toUtc(
+              expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
+                ? expiration.value
+                : identity.expiresAt,
+            ),
+          },
+          claims.auth_time,
+        );
+        const session = yield* issue(acceptedIdentity, {
+          client: input.client,
+          method: "browser-session-cookie",
+        });
+        if (!entry.browser) return { ...session, returnTo: entry.returnTo };
+        const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
+        const accepted = yield* Ref.modify(handoffs, (current) => {
+          const next = new Map(
+            [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
+          );
+          if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
+          next.set(code, {
+            browser: entry.browser!,
+            identity: acceptedIdentity,
+            expiresAt: now.epochMilliseconds + 60_000,
+          });
+          return [true, next] as const;
+        });
+        if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
+        return {
+          ...session,
+          returnTo: entry.returnTo,
+          handoff: {
+            code,
+            origin: entry.browser.origin,
+            state: entry.browser.state,
+            environmentId,
+          },
+        };
+      }).pipe(
+        Effect.mapError((error) =>
+          browser === undefined
+            ? error
+            : new PocketIdError({
+                reason: error.reason,
+                ...(error.cause === undefined ? {} : { cause: error.cause }),
+                handoff: { origin: browser.origin, state: browser.state },
+              }),
+        ),
+      );
     },
   );
   return PocketId.of({

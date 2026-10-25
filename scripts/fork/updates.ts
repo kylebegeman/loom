@@ -271,6 +271,24 @@ function publisherConnectConfig() {
     : undefined;
 }
 
+/**
+ * What a newly prepared build does with Connect. A missing connect.json and `"enabled": false`
+ * both drop Connect config, but only the second clears computers' links, so `status` names it.
+ */
+export function describePublisherConnect(
+  read: () => LoomConnectConfig | null | undefined = publisherConnectConfig,
+) {
+  let config: LoomConnectConfig | null | undefined;
+  try {
+    config = read();
+  } catch (error) {
+    return `connect.json is invalid: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  if (config === undefined) return "off without connect.json; they keep a computer's existing link";
+  if (config === null) return "retired; they clear a computer's Connect link and refuse a new one";
+  return `on (${new URL(config.relayUrl).host})`;
+}
+
 /** The Connect decision one prepared source was built with, replayed by every later step. */
 export type PreparedConnect = {
   readonly connectConfig: LoomConnectConfig | null;
@@ -1283,7 +1301,7 @@ export async function main(command: string | undefined, args: readonly string[] 
   }
   if (options.command === "status") {
     console.log(
-      `Scheduler: ${(await exists(PLIST_PATH)) ? "installed" : "not installed"}\nBuilds: ${BUILDS_DIR}\nLog: ${LOG_PATH}`,
+      `Scheduler: ${(await exists(PLIST_PATH)) ? "installed" : "not installed"}\nConnect for new builds: ${describePublisherConnect()}\nBuilds: ${BUILDS_DIR}\nLog: ${LOG_PATH}`,
     );
     return;
   }

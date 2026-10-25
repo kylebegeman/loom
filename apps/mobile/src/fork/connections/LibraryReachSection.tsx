@@ -1,40 +1,28 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
-  createReachAtoms,
   reachLibraryErrorText,
   reachLibraryView,
   supportsLoomFeature,
   type ReachLibraryComputerView,
-  type ReachTone,
 } from "@t3tools/client-runtime/fork";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { REACH_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
-import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryStateBadge } from "../library/LibraryStateBadge";
-
-const reach = createReachAtoms(connectionAtomRuntime);
+import { REACH_INK, reach } from "./reach";
 
 const FOOTER =
   "Addresses your Library gave your computers for connecting away from home. Retire one for a computer you lost or no longer use. Turn reach on or off in each computer's details.";
-
-const INK: Readonly<Record<ReachTone, string>> = {
-  neutral: "text-foreground-muted",
-  active: "text-foreground-muted",
-  success: "text-foreground-muted",
-  warning: "text-warning-foreground",
-  danger: "text-danger-foreground",
-};
 
 /**
  * The Library's reach records for the Connections screen. It reads when the screen opens (if the
@@ -99,7 +87,7 @@ export function LibraryReachSection({ libraryReach }: { readonly libraryReach: L
     }).then((outcome) => {
       pendingRef.current = false;
       setPending(null);
-      if (AsyncResult.isFailure(outcome))
+      if (outcome._tag === "Failure" && !isAtomCommandInterrupted(outcome))
         setError(`${computer.title}: ${reachLibraryErrorText(outcome.cause, "retire")}`);
     });
   }
@@ -109,11 +97,15 @@ export function LibraryReachSection({ libraryReach }: { readonly libraryReach: L
     const choice = computer.retire;
     if (choice === null) return;
     Dialog.alert(
-      "Retire reach address?",
-      `${choice.confirm}\n\n${choice.endIdentityLabel}? ${choice.endIdentityHint}`,
+      choice.confirm.title,
+      `${choice.confirm.message}\n\n${choice.endIdentityLabel}? ${choice.endIdentityHint}`,
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Retire", style: "destructive", onPress: () => retire(computer, false) },
+        {
+          text: choice.confirm.action,
+          style: "destructive",
+          onPress: () => retire(computer, false),
+        },
         {
           text: "Retire and end sign-in",
           style: "destructive",
@@ -141,7 +133,7 @@ export function LibraryReachSection({ libraryReach }: { readonly libraryReach: L
       {setup.length > 0 || retireNote !== null || error !== null ? (
         <View className="gap-2 p-4">
           {setup.map((line) => (
-            <Text key={line.text} selectable className={cn("text-sm", INK[line.tone])}>
+            <Text key={line.text} selectable className={cn("text-sm", REACH_INK[line.tone])}>
               {line.text}
             </Text>
           ))}
