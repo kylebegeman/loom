@@ -36,6 +36,7 @@ export function WorkspaceFilePreviewError(props: {
           }
           resourceName="preview"
           onRetry={retryConnection}
+          environmentId={environment.presentation?.entry.target.environmentId} // fork: fleet-connections
         />
       </View>
     );

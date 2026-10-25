@@ -715,6 +715,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                 }
                 resourceName="review"
                 onRetry={handleRetryEnvironment}
+                environmentId={environment.presentation?.entry.target.environmentId} // fork: fleet-connections
               />
             </View>
           ) : selectedSection && parsedDiff.kind === "files" && NativeReviewDiffView ? (

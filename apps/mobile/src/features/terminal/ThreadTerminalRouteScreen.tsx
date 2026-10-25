@@ -1215,6 +1215,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
               }
               resourceName="terminal"
               onRetry={handleRetryEnvironment}
+              environmentId={environment.presentation?.entry.target.environmentId} // fork: fleet-connections
             />
           ) : terminalSession.data === null && terminalSession.error === null ? (
             <EmptyState
