@@ -12,6 +12,7 @@ import {
   LibraryError,
   type LibraryProject,
   type LibraryWorkingCopy,
+  type LibraryThreadBinding,
 } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -28,6 +29,7 @@ type Computer = {
   serverConfig: ServerConfig;
 };
 const state = vi.hoisted(() => ({
+  libraryOnline: true,
   navigate: vi.fn(),
   dispatch: vi.fn(),
   launch: vi.fn<Launch>(),
@@ -41,6 +43,7 @@ const state = vi.hoisted(() => ({
   restore: Object.assign(vi.fn(), { permissionAtom: () => true }),
   readStatus: Object.assign(vi.fn(), { permissionAtom: () => true }),
   snapshotCopy: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  executeOperation: Object.assign(vi.fn(), { permissionAtom: () => true }),
   create: vi.fn(),
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
@@ -94,10 +97,24 @@ vi.mock("./libraryLaunch", async (importOriginal) => ({
 vi.mock("./libraryState", () => ({
   useLibraryAuthority: () => ({
     environmentId: "library",
-    ready: true,
-    connected: true,
+    ready: state.libraryOnline,
+    connected: state.libraryOnline,
     canRead: true,
     computers: [],
+  }),
+  useLibraryStartProject: () => ({
+    data: state.project,
+    error: null,
+    isPending: false,
+    isSuccess: true,
+    refresh: state.refresh,
+  }),
+  useLibraryStartCopies: () => ({
+    data: state.copies,
+    error: state.copiesError,
+    isPending: state.copiesPending,
+    isSuccess: true,
+    refresh: state.refresh,
   }),
   refreshLibraryWork: vi.fn(),
   library: {
@@ -117,6 +134,8 @@ vi.mock("./libraryState", () => ({
     snapshotCopy: state.snapshotCopy,
     resolveBinding: state.resolve,
     snapshotThread: state.snapshot,
+    executeOperation: state.executeOperation,
+    operations: () => "operations",
   },
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
@@ -456,6 +475,7 @@ async function input(label: string, text: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  state.libraryOnline = true;
   state.project = project;
   state.copies = [copy];
   state.computers = [
@@ -1166,5 +1186,74 @@ describe("portable project files on mobile", () => {
     });
     expect(state.restore).not.toHaveBeenCalled();
     expect(state.prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe("Library offline mobile starts", () => {
+  it.each(["managed", "borrowed"] as const)(
+    "launches on a registered %s copy without calling the Library",
+    async (ownership) => {
+      state.libraryOnline = false;
+      state.computers[0] = makeComputer(computerA, "MacBook", true, ["project-workflows"]);
+      state.copies = [{ ...copy, ownership }];
+      const actual = await vi.importActual<typeof import("./libraryLaunch")>("./libraryLaunch");
+      state.launch.mockImplementation(actual.launchLibraryConversation);
+      state.resolve.mockImplementation(
+        async ({ input }: { input: { binding: LibraryThreadBinding } }) =>
+          AsyncResult.success({
+            binding: input.binding,
+            cwd: copy.rootPath,
+            localProjectId,
+            repositoryPaths: [],
+          }),
+      );
+      state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+      params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id };
+      await render();
+      expect(container.textContent).toContain(
+        "Library offline; starting from this computer's copy",
+      );
+      expect(button("Start work").disabled).toBe(false);
+      await click("Start work");
+      expect(state.executeOperation).toHaveBeenCalledExactlyOnceWith({
+        environmentId: computerA,
+        input: {
+          operationId: expect.any(String),
+          request: {
+            kind: "launch",
+            input: expect.objectContaining({
+              project,
+              binding: expect.objectContaining({ workingCopyId: copy.id }),
+            }),
+          },
+        },
+      });
+      expect(state.executeOperation.mock.calls[0]![0].input.request.input).not.toHaveProperty(
+        "keepOnComputer",
+      );
+      expect(state.prepare).not.toHaveBeenCalled();
+      expect(state.registerCopy).not.toHaveBeenCalled();
+      expect(state.registerThread).not.toHaveBeenCalled();
+      expect(state.create).not.toHaveBeenCalled();
+      expect(state.dispatch).toHaveBeenCalledWith({
+        name: "Thread",
+        params: { environmentId: computerA, threadId: expect.any(String) },
+      });
+    },
+  );
+
+  it("keeps new files and retention changes blocked during an outage", async () => {
+    state.libraryOnline = false;
+    state.computers[0] = makeComputer(computerA, "MacBook", true, ["project-workflows"]);
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id };
+    await render();
+    expect(button("Start work").disabled).toBe(false);
+    await click("Files");
+    await click("Keep files on this computer");
+    expect(button("Start work").disabled).toBe(true);
+    await click("Keep files on this computer");
+    await click("Prepare files in a new folder");
+    expect(button("Start work").disabled).toBe(true);
+    expect(state.launch).not.toHaveBeenCalled();
   });
 });

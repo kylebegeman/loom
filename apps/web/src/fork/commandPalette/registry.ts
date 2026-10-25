@@ -117,7 +117,7 @@ export const forkCommandPaletteSearchItems = (context: ForkCommandPaletteContext
   FORK_COMMAND_PALETTE_SOURCES.flatMap((source) => source.searchItems?.(context) ?? []);
 
 /** Rebuilt on every render, like the palette's own action items. */
-export function useForkCommandPaletteItems(): {
+export function useForkCommandPaletteItems(query = ""): {
   readonly items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
   readonly searchItems: ReadonlyArray<CommandPaletteActionItem>;
 } {
@@ -143,7 +143,7 @@ export function useForkCommandPaletteItems(): {
   );
   const modelFiles =
     Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
-  const library = useLibraryPaletteContext(activeThreadRef);
+  const library = useLibraryPaletteContext(activeThreadRef, query);
   const bots = useBotsPaletteContext();
   const projectProfile = useProfilePaletteContext(activeThreadRef);
   const context = { activeThreadRef, loomFeatures, modelFiles, library, bots, projectProfile };

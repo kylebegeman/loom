@@ -545,6 +545,7 @@ export function LibraryProjectsPage() {
             capabilities={capabilities}
             hostLabel={hostLabel}
             query={query}
+            onQueryChange={setQuery}
             inputRef={searchRef}
             projectTitle={(id) =>
               catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"

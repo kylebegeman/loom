@@ -256,8 +256,12 @@ may be missing. Very long conversations upload less often in the background. Ope
 attachments from the Library, and use **Save pending history** to upload newer work now. A
 conversation too large for this computer's upload storage keeps waiting, and **Save pending
 history** says so.
-A disconnected Library keeps its selected identity and cached records, but
-must reconnect before you can save changes. It never silently switches to another server.
+<!-- fork: library-projects -->
+
+A disconnected Library keeps its selected identity. You can start a conversation from a ready,
+registered copy on a connected computer; its history syncs when the Library reconnects.
+Creating or registering copies, restoring files, changing retention, and editing projects still
+require the Library connection. Loom never silently switches to another Library server.
 
 ## Computer folders and earlier work
 

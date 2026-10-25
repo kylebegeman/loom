@@ -5,6 +5,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string>,
   authorityId: "library" as string | null,
+  connected: true,
   environments: [] as unknown[],
   lookup: { run: vi.fn() },
   copies: { run: vi.fn() },
@@ -18,7 +19,7 @@ vi.mock("./state", () => ({
     copies: state.copies,
     threadBinding: state.binding,
   },
-  useLibraryAuthority: () => ({ authorityId: state.authorityId }),
+  useLibraryAuthority: () => ({ authorityId: state.authorityId, connected: state.connected }),
 }));
 vi.mock("~/state/use-atom-query-runner", () => ({
   useAtomQueryRunner: (query: { run: unknown }) => query.run,
@@ -58,6 +59,7 @@ const defaults = { environmentId, workingCopyId: "source-files", resourceId: "we
 beforeEach(() => {
   vi.clearAllMocks();
   state.authorityId = "library";
+  state.connected = true;
   state.params = { projectId: "viewed-project" };
   vi.stubGlobal("window", { location: { pathname: "/library/viewed-project" } });
   state.environments = [
@@ -182,16 +184,24 @@ describe("sidebar source conversation", () => {
     expect(state.binding.run).not.toHaveBeenCalled();
   });
 
-  it("preserves a source branch and its lane through the existing checkout flow", async () => {
+  it("keeps a registered source checkout in the Library flow", async () => {
     state.shell.mockReturnValue({
       projectId: ProjectId.make("local-project"),
       ...launchSettings,
       branch: "feature/current-work",
       worktreePath: "/worktrees/current-work",
     });
-    expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(false);
-    expect(state.open).not.toHaveBeenCalled();
-    expect(state.binding.run).not.toHaveBeenCalled();
+    expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(true);
+    expect(state.open).toHaveBeenCalledExactlyOnceWith(
+      "new-conversation",
+      "source-project",
+      { ...defaults, ...launchSettings },
+      { suggest: false },
+    );
+    expect(state.binding.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { threadId: source.threadId },
+    });
   });
 
   it("uses the existing local flow for a folder with no Library project", async () => {
@@ -205,4 +215,31 @@ describe("sidebar source conversation", () => {
     await useLibraryNewConversation()(source, { inheritSettings: true });
     expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation");
   });
+});
+
+it("recovers an unbound local thread's project from the host while the Library is offline", async () => {
+  state.connected = false;
+  state.binding.run.mockResolvedValue({ _tag: "Success", value: null });
+  state.copies.run.mockResolvedValue({
+    _tag: "Success",
+    value: [
+      {
+        id: "source-files",
+        projectId: "source-project",
+        environmentId,
+        rootLocalProjectId: "local-project",
+        repositories: [],
+        state: "ready",
+      },
+    ],
+  });
+  expect(await useLibraryNewConversation()(source)).toBe(true);
+  expect(state.lookup.run).not.toHaveBeenCalled();
+  expect(state.copies.run).toHaveBeenCalledExactlyOnceWith({ environmentId, input: {} });
+  expect(state.open).toHaveBeenCalledWith(
+    "new-conversation",
+    "source-project",
+    { environmentId, workingCopyId: "source-files" },
+    { suggest: true },
+  );
 });

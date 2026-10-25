@@ -265,7 +265,7 @@ function useLibraryPaletteState() {
     catalog,
     projects,
     blocker,
-    canStart: canRegister && catalog.connected,
+    canStart: catalog.offline ? hasProjects : canRegister && catalog.connected,
     // Unknown until the first page loads; a failed load leaves nothing to pick.
     liveProjects: catalog.query.data || catalog.query.error ? liveProjects : null,
   };
@@ -274,6 +274,7 @@ function useLibraryPaletteState() {
 /** Resolves the active thread's project the way New conversation does, live or from the Library. */
 export function useLibraryPaletteContext(
   activeThreadRef: ScopedThreadRef | null,
+  query = "",
 ): LibraryPaletteContext {
   const { catalog, projects, blocker, canStart } = useLibraryPaletteState();
   const { authorityId, connected, environments } = catalog;
@@ -344,9 +345,8 @@ export function useLibraryPaletteContext(
     },
     searchHistory: canSearch
       ? async () => {
-          // Only a project page names a project; anywhere else searches every project.
-          const projectId = params.projectId;
-          requestLibraryHistorySearch(projectId);
+          const projectId = record.data?.projectId ?? params.projectId;
+          requestLibraryHistorySearch(projectId, query);
           // The project's search field lives on its Conversations view.
           await (projectId
             ? navigate({

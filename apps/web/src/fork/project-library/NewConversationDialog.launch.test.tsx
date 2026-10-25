@@ -40,6 +40,7 @@ const state = vi.hoisted(() => ({
     pull: { run: vi.fn() },
   },
   authority: vi.fn(),
+  permission: vi.fn(),
   providers: vi.fn(),
   projects: vi.fn(),
   registryGet: vi.fn(),
@@ -65,7 +66,7 @@ vi.mock("./state", () => ({
     operations: () => state.operationsQuery,
   },
   useLibraryAuthority: state.authority,
-  useLibraryPermission: () => true,
+  useLibraryPermission: state.permission,
 }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: { run: unknown }) => command.run,
@@ -299,6 +300,7 @@ beforeEach(() => {
   });
   for (const key of savedKeys) saveLibraryAttempt(key, null, storage);
   for (const command of Object.values(commands)) command.run.mockReset();
+  state.permission.mockReset().mockReturnValue(true);
   state.nextId = 0;
   state.threadIds = [];
   const serverConfig = {
@@ -1671,5 +1673,101 @@ describe("held attempts and one-step starts", () => {
     await act(() => renderer!.update(tree()));
     expect(launch.checking).toBe(false);
     expect(launch.blocker).toBe("Reconnect the selected computer before starting.");
+  });
+});
+
+describe("Library offline starts", () => {
+  function offline(copies: readonly LibraryWorkingCopy[], durable = true) {
+    const previous = state.authority();
+    const host = previous.environments[0];
+    state.authority.mockReturnValue({
+      ...previous,
+      connected: false,
+      environments: [
+        {
+          ...host,
+          serverConfig: {
+            ...host.serverConfig,
+            environment: {
+              capabilities: {
+                supportsExecution: true,
+                loomFeatures: [
+                  "project-library",
+                  "library-file-lifecycle",
+                  ...(durable ? ["project-workflows"] : []),
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+    // Library grants are unavailable during the outage; the host still checks its own grants.
+    state.permission.mockImplementation((_command, environment) => environment !== authorityId);
+    state.query.mockImplementation((query: unknown) => ({
+      data: query === state.retainedQuery ? copies : undefined,
+      isPending: false,
+      isSuccess: true,
+      error: null,
+      refresh: vi.fn(),
+    }));
+    commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
+  }
+
+  it.each(["managed", "borrowed"] as const)(
+    "starts once on a registered %s copy without an authority request",
+    async (ownership) => {
+      const copy = { ...restoredCopy, ownership };
+      offline([copy]);
+      await mount([copy]);
+      expect(launch.offlineNotice).toContain("Library offline; starting from this computer's copy");
+      await click("Start conversation");
+      expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+      expect(commands.registerCopy.run).not.toHaveBeenCalled();
+      expect(commands.registerThread.run).not.toHaveBeenCalled();
+      expect(commands.executeOperation.run).toHaveBeenCalledExactlyOnceWith({
+        environmentId,
+        input: {
+          operationId: expect.any(String),
+          request: {
+            kind: "launch",
+            input: expect.objectContaining({ project, binding, threadId }),
+          },
+        },
+      });
+      expect(
+        commands.executeOperation.run.mock.calls[0]![0].input.request.input,
+      ).not.toHaveProperty("keepOnComputer");
+      expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId },
+      });
+    },
+  );
+
+  it("keeps preparation, unregistered folders, old hosts and retention changes blocked offline", async () => {
+    offline([restoredCopy]);
+    await mount([restoredCopy]);
+    expect(launch.canCreate).toBe(true);
+    await act(() => launch.setKeepChoice(false));
+    expect(launch.canCreate).toBe(false);
+    await act(() => launch.submit());
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
+    await act(() => renderer!.unmount());
+    for (const [copies, durable] of [
+      [[], true],
+      [[releasedCopy], true],
+      [[{ ...restoredCopy, registered: false }], true],
+      [[restoredCopy], false],
+    ] as const) {
+      offline(copies, durable);
+      await mount(copies);
+      expect(launch.canCreate).toBe(false);
+      await act(() => launch.submit());
+      expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+      expect(commands.executeOperation.run).not.toHaveBeenCalled();
+      await act(() => renderer!.unmount());
+      renderer = undefined;
+    }
   });
 });

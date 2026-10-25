@@ -2,11 +2,28 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 
-vi.mock("./state", () => ({}));
+const state = vi.hoisted(() => ({ load: vi.fn(), open: vi.fn() }));
+vi.mock("./state", () => ({
+  readLibraryAuthorityId: () => "library",
+  projectLibrary: { copies: {} },
+}));
+vi.mock("~/rpc/atomRegistry", () => ({
+  appAtomRegistry: {
+    get: () => ({ entry: { enabled: true }, connection: { phase: "connected" } }),
+  },
+}));
+vi.mock("~/state/presentation", () => ({
+  environmentPresentations: { presentationAtom: (id: string) => id },
+}));
+vi.mock("~/state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.load }));
+vi.mock("./actions", () => ({ openLibraryAction: state.open }));
 vi.mock("~/state/environments", () => ({}));
 vi.mock("~/state/entities", () => ({}));
 vi.mock("~/uiStateStore", () => ({}));
-import { libraryStartForLocalProject } from "./libraryLocalProjectStart";
+import {
+  libraryStartForLocalProject,
+  useLibraryLocalProjectStart,
+} from "./libraryLocalProjectStart";
 
 const host = EnvironmentId.make("host");
 const copy: LibraryWorkingCopy = {
@@ -64,4 +81,32 @@ describe("starting in a local project that is a Library project's folder", () =>
       ]),
     ).toEqual({});
   });
+});
+
+it("waits for a live folder lookup and opens the bound form once its identity arrives", async () => {
+  let complete: (result: {
+    _tag: "Success";
+    value: readonly LibraryWorkingCopy[];
+  }) => void = () => {};
+  state.open.mockClear();
+  state.load.mockReturnValue(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const pending = useLibraryLocalProjectStart()(ref("root"));
+  expect(state.open).not.toHaveBeenCalled();
+  complete({ _tag: "Success", value: [copy] });
+  expect(await pending).toBe(true);
+  expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "project", {
+    environmentId: host,
+    workingCopyId: "files",
+  });
+});
+
+it("does not treat a failed lookup as permission to create an unbound conversation", async () => {
+  state.open.mockClear();
+  state.load.mockResolvedValue({ _tag: "Failure" });
+  expect(await useLibraryLocalProjectStart()(ref("root"))).toBe(true);
+  expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation");
 });

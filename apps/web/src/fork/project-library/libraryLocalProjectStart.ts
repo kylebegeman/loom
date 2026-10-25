@@ -1,10 +1,12 @@
-import { libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
+import { libraryHoldsLocalRefs, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { ScopedProjectRef } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 
-import { useEnvironmentQuery } from "~/state/query";
-import { openLibraryAction } from "./actions";
-import { projectLibrary, useLibraryAuthority } from "./state";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import { openLibraryAction, type LibraryConversationDefaults } from "./actions";
+import { projectLibrary, readLibraryAuthorityId } from "./state";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { environmentPresentations } from "~/state/presentation";
 import { libraryContextForLocalProject } from "./useLibraryNewConversation";
 
 /**
@@ -34,16 +36,43 @@ export function libraryStartForLocalProject(
  * replicates; a bare thread there never reaches the Library. False for a plain local project.
  */
 export function useLibraryLocalProjectStart() {
-  const { authorityId } = useLibraryAuthority();
-  // Shared with the sidebar's Library filter, so it is normally loaded already. Until it loads, a
-  // folder starts as a plain local project, as iPhone's New task also lists it.
-  const copies = useEnvironmentQuery(
-    authorityId ? projectLibrary.copies({ environmentId: authorityId, input: {} }) : null,
-  );
-  return (ref: ScopedProjectRef) => {
-    const start = libraryStartForLocalProject(ref, copies.data ?? []);
+  const load = useAtomQueryRunner(projectLibrary.copies, { refresh: true });
+  return async (
+    ref: ScopedProjectRef,
+    current: () => boolean = () => true,
+    defaults?: LibraryConversationDefaults,
+  ) => {
+    // Read connection state at invocation without subscribing every new-thread caller to it.
+    const authorityId = readLibraryAuthorityId();
+    const host = appAtomRegistry.get(environmentPresentations.presentationAtom(ref.environmentId));
+    const authority = authorityId
+      ? appAtomRegistry.get(environmentPresentations.presentationAtom(authorityId))
+      : null;
+    const connected =
+      authority?.entry.enabled === true && authority.connection.phase === "connected";
+    if (
+      !authorityId &&
+      !supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library")
+    )
+      return false;
+    const environmentId = connected && authorityId ? authorityId : ref.environmentId;
+    if (
+      environmentId === ref.environmentId &&
+      (host?.connection.phase !== "connected" || !host.entry.enabled)
+    ) {
+      if (current()) openLibraryAction("new-conversation");
+      return true;
+    }
+    // A missing answer is not evidence that the folder is outside the Library.
+    const result = await load({ environmentId, input: {} });
+    if (!current()) return true;
+    if (result._tag === "Failure") {
+      openLibraryAction("new-conversation");
+      return true;
+    }
+    const start = libraryStartForLocalProject(ref, result.value);
     if (!start) return false;
-    openLibraryAction("new-conversation", start.projectId, start.defaults);
+    openLibraryAction("new-conversation", start.projectId, { ...defaults, ...start.defaults });
     return true;
   };
 }

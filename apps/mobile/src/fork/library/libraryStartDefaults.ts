@@ -43,6 +43,7 @@ export function libraryStartDefaults(input: {
   readonly terminal: ReadonlySet<EnvironmentId>;
   /** Whether this device may register conversations and files in the Library. */
   readonly libraryOperable: boolean;
+  readonly offline?: boolean;
   readonly configs: ReadonlyMap<EnvironmentId, ServerConfig>;
   readonly localProject: (
     environmentId: EnvironmentId,
@@ -68,10 +69,11 @@ export function libraryStartDefaults(input: {
   const { environmentId, copy } = quick;
   // The start screen runs work only where this device has conversation access, and refuses to
   // start without the grants for the steps this computer and these files take.
-  if (!input.operable.has(environmentId) || !input.libraryOperable) return null;
+  if (!input.operable.has(environmentId) || (!input.offline && !input.libraryOperable)) return null;
   const capabilities = input.hosts.find(
     (host) => host.environmentId === environmentId,
   )?.capabilities;
+  if (input.offline && !supportsLoomFeature(capabilities, "project-workflows")) return null;
   if (
     (supportsLoomFeature(capabilities, "project-workflows") || copy.ownership !== "managed") &&
     !input.terminal.has(environmentId)

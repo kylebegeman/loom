@@ -203,14 +203,17 @@ describe("Library palette source", () => {
   it("hands a history search request to the field for its scope only", () => {
     const requested: string[] = [];
     window.addEventListener("loom:library:search-history", () => requested.push("event"));
-    requestLibraryHistorySearch("loom");
+    requestLibraryHistorySearch("loom", "map navigation");
     expect(requested).toEqual(["event"]);
-    expect(takeLibraryHistorySearch()).toBe(false);
-    expect(takeLibraryHistorySearch("loom")).toBe(true);
-    expect(takeLibraryHistorySearch("loom")).toBe(false);
-    requestLibraryHistorySearch();
-    expect(takeLibraryHistorySearch("loom")).toBe(false);
-    expect(takeLibraryHistorySearch()).toBe(true);
+    expect(takeLibraryHistorySearch()).toBeNull();
+    expect(takeLibraryHistorySearch("loom")).toEqual({
+      projectId: "loom",
+      query: "map navigation",
+    });
+    expect(takeLibraryHistorySearch("loom")).toBeNull();
+    requestLibraryHistorySearch(undefined, "saved history");
+    expect(takeLibraryHistorySearch("loom")).toBeNull();
+    expect(takeLibraryHistorySearch()).toEqual({ projectId: "", query: "saved history" });
   });
 
   it("offers this thread's project only for a bound thread", async () => {

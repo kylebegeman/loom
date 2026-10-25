@@ -28,6 +28,7 @@ import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryLocalCatalog from "./LibraryLocalCatalog.ts";
 import { createHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as LibraryStore from "./LibraryStore.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
@@ -168,6 +169,48 @@ describe("independent Library catalog and durable history", () => {
           expect((yield* service.info).computers).toHaveLength(1);
         }),
       ),
+  );
+  it.effect("execution hosts serve local start data without authorizing Library writes", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      const service = yield* LibraryService.LibraryService.pipe(
+        Effect.provide(
+          LibraryService.layer.pipe(
+            Layer.provide(noAssets),
+            Layer.provide(
+              Layer.succeed(ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(source),
+              }),
+            ),
+            Layer.provide(
+              Layer.succeed(LibraryLocalCatalog.LibraryLocalCatalog, {
+                projects: () => Effect.succeed([goldenProject]),
+                project: () => Effect.succeed(goldenProject),
+                copies: () => Effect.succeed([copyFor(goldenProject)]),
+              }),
+            ),
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+          ),
+        ),
+      );
+      expect(yield* service.projects({})).toEqual([goldenProject]);
+      expect(yield* service.project({ projectId: goldenProject.id })).toEqual(goldenProject);
+      expect(yield* service.copies({ projectId: goldenProject.id })).toEqual([
+        copyFor(goldenProject),
+      ]);
+      expect(yield* create(service).pipe(Effect.flip)).toMatchObject({ reason: "not-authority" });
+      expect(
+        yield* service
+          .registerCopy({ requestId: "copy", copy: copyFor(goldenProject) })
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-authority" });
+      expect(yield* service.history({ id: "missing" }).pipe(Effect.flip)).toMatchObject({
+        reason: "not-authority",
+      });
+    }).pipe(
+      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.scoped,
+    ),
   );
   it.effect("execution hosts cannot create a competing shared catalog", () =>
     Effect.gen(function* () {

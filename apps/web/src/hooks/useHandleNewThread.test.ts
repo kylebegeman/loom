@@ -39,7 +39,9 @@ const testState = vi.hoisted(() => {
     setInteractionMode: vi.fn(),
   };
 
+  const startLibraryFolder = vi.fn(async () => false); // fork: library-projects
   return {
+    startLibraryFolder, // fork: library-projects
     completeProjectFileRead: (value: null) => completeProjectFileRead(value),
     draftStore,
     get projectFileRead() {
@@ -61,6 +63,7 @@ const testState = vi.hoisted(() => {
         startFromOrigin: false,
       },
     ) {
+      startLibraryFolder.mockReset().mockResolvedValue(false); // fork: library-projects
       storedDraft = nextStoredDraft;
       projectRemoved = false;
       targetSettings = {
@@ -199,6 +202,11 @@ vi.mock("../uiStateStore", () => ({
   useUiStateStore: () => [],
 }));
 vi.mock("./useSettings", () => ({ useClientSettings: () => ({}) }));
+
+// fork: library-projects
+vi.mock("../fork/project-library/libraryLocalProjectStart", () => ({
+  useLibraryLocalProjectStart: () => testState.startLibraryFolder,
+}));
 
 import { useNewThreadHandler } from "./useHandleNewThread";
 
@@ -385,4 +393,46 @@ describe.each([
       );
     },
   );
+});
+
+// fork: library-projects
+describe("new-thread Library routing", () => {
+  it("waits for Library identity and never opens a bare draft for a registered folder", async () => {
+    testState.reset(null);
+    let resolve: (handled: boolean) => void = () => {};
+    testState.startLibraryFolder.mockReturnValue(
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useNewThreadHandler()({
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never);
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+    resolve(true);
+    expect(await pending).toBeNull();
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens an ordinary draft only after the Library lookup excludes the folder", async () => {
+    testState.reset(null);
+    let resolve: (handled: boolean) => void = () => {};
+    testState.startLibraryFolder.mockReturnValue(
+      new Promise<boolean>((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useNewThreadHandler()({
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never);
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    resolve(false);
+    testState.completeProjectFileRead(null);
+    expect(await pending).toMatchObject({ draftId: "draft-delayed" });
+    expect(testState.router.navigate).toHaveBeenCalledOnce();
+  });
 });

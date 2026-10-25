@@ -43,6 +43,7 @@ export function LibraryHistorySearch({
   hostLabel,
   projectTitle,
   query,
+  onQueryChange,
   inputRef: sharedInputRef,
 }: {
   readonly authorityId: EnvironmentId;
@@ -53,6 +54,7 @@ export function LibraryHistorySearch({
   /** Names each hit's project. Omit when every hit is in the page's own project. */
   readonly projectTitle?: (id: string) => string;
   readonly query?: string;
+  readonly onQueryChange?: (query: string) => void;
   /** The page's own field, focused by the command palette's Search project history. */
   readonly inputRef?: RefObject<HTMLInputElement | null>;
 }) {
@@ -66,11 +68,14 @@ export function LibraryHistorySearch({
   useEffect(() => {
     if (!supported) return;
     const focus = () => {
-      if (takeLibraryHistorySearch(projectId)) inputRef.current?.focus();
+      const request = takeLibraryHistorySearch(projectId);
+      if (!request) return;
+      (onQueryChange ?? setText)(request.query);
+      inputRef.current?.focus();
     };
     focus();
     return onLibraryHistorySearch(focus);
-  }, [supported, projectId, inputRef]);
+  }, [supported, projectId, inputRef, onQueryChange]);
   if (!supported) return null;
   const scope = projectId ? { projectId } : {};
   // Clearing the field hides results at once; new words wait for typing to pause.

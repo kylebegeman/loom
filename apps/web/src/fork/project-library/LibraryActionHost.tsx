@@ -25,6 +25,7 @@ import { FolderPlusIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react"
 import {
   projectLibrary,
   useLibraryProject,
+  useLibraryLocalCatalog,
   useLibraryProjects,
   useSelectedLibraryProject,
 } from "./state";
@@ -140,6 +141,7 @@ export function LibraryActionHost({
     enabled:
       action === "new-conversation" && (session.defaults === undefined || session.suggest === true),
     authorityId: catalog.authorityId,
+    offline: catalog.offline,
     environments: catalog.environments,
     computers: catalog.computers,
     projects: catalog.query.data,
@@ -459,9 +461,11 @@ type LibraryCatalog = ReturnType<typeof useLibraryProjects>;
  * What Enter starts for each project: the computer, model and permissions its settings would
  * open with, when they need no choice. Its inputs leave out the search, so typing reuses it.
  */
-function useQuickStarts({
+export function useQuickStarts({
   enabled,
   authorityId,
+  offline = false,
+  copies: suppliedCopies,
   environments,
   computers: remembered,
   projects,
@@ -469,13 +473,19 @@ function useQuickStarts({
 }: {
   readonly enabled: boolean;
   readonly authorityId: LibraryCatalog["authorityId"];
+  readonly offline?: boolean;
+  readonly copies?: readonly LibraryWorkingCopy[];
   readonly environments: LibraryCatalog["environments"];
   readonly computers: LibraryCatalog["computers"];
   readonly projects: readonly LibraryProject[] | null | undefined;
   readonly threads: readonly LibraryThreadSummary[] | undefined;
 }) {
+  const local = useLibraryLocalCatalog(
+    enabled && offline && suppliedCopies === undefined,
+    authorityId,
+  );
   const copies = useEnvironmentQuery(
-    enabled && authorityId
+    enabled && authorityId && !offline && suppliedCopies === undefined
       ? projectLibrary.copies({ environmentId: authorityId, input: { includeReleased: true } })
       : null,
   );
@@ -521,11 +531,15 @@ function useQuickStarts({
     // The settings refuse to start without these grants, so the row must not promise a start.
     const computer = quick.environmentId;
     if (
-      !grants.register ||
+      (!offline && !grants.register) ||
+      (offline &&
+        !supportsLoomFeature(host.serverConfig.environment.capabilities, "project-workflows")) ||
       !grants.bind.has(computer) ||
       (supportsLoomFeature(host.serverConfig.environment.capabilities, "project-workflows") &&
         !grants.launch.has(computer)) ||
-      (quick.copy.ownership !== "managed" && !(grants.prepare.has(computer) && grants.registerCopy))
+      (!offline &&
+        quick.copy.ownership !== "managed" &&
+        !(grants.prepare.has(computer) && grants.registerCopy))
     )
       return null;
     const localProject =
@@ -556,7 +570,7 @@ function useQuickStarts({
     };
   };
   const starts = new Map<string, NonNullable<ReturnType<typeof start>>>();
-  const library = copies.data;
+  const library = suppliedCopies ?? (offline ? local.data?.copies : copies.data);
   if (library)
     for (const project of projects ?? []) {
       const promise = start(project, library);
