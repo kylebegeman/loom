@@ -705,6 +705,46 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  // fork: fleet-connections
+  it.effect("keeps when a run of failures began across explicit retries until it connects", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: (attempt) =>
+          attempt <= 3 ? Effect.fail(transient()) : Effect.succeed(PREPARED_CONNECTION),
+      });
+      yield* TestClock.adjust("10 seconds");
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      const first = yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      expect(first.failingSince).toBe(10_000);
+      yield* TestClock.adjust("3 seconds");
+      const second = yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 2,
+      );
+      expect(second.failingSince).toBe(10_000);
+
+      yield* supervisor.retryNow;
+      const retried = yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      expect(retried.failingSince).toBe(10_000);
+
+      yield* supervisor.retryNow;
+      const connected = yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connected",
+      );
+      expect(connected.failingSince).toBeUndefined();
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("keeps blocked failures idle until an external signal requests another attempt", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({
@@ -1028,6 +1068,7 @@ describe("EnvironmentSupervisor", () => {
         phase: "reconnecting",
         error: null,
         traceId: null,
+        failingSince: expect.any(Number), // fork: fleet-connections
       });
 
       yield* harness.wake("application-active");
