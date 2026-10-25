@@ -1,4 +1,15 @@
-import { MessageId, ThreadId, OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
+import {
+  CommandId,
+  MessageId,
+  ThreadId,
+  OrchestratorMcpFailure,
+  ProjectId,
+} from "@t3tools/contracts"; // fork: library-projects
+// fork: library-projects
+import { LibraryError } from "@t3tools/contracts/fork";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -12,6 +23,12 @@ import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
+
+// fork: library-projects
+const encodeLaunchKey = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
+);
+const isLibraryError = Schema.is(LibraryError);
 
 function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable();
@@ -57,7 +74,23 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       Effect.gen(function* () {
         const context = yield* readCaller();
         const { caller } = context;
-        const commandId = yield* newCommandId();
+        // fork: library-projects -- hash tuple boundaries so different callers and keys cannot collide.
+        const requestKey =
+          input.clientRequestId === undefined
+            ? undefined
+            : yield* encodeLaunchKey([
+                context.scope.thread === undefined ? "client" : "thread",
+                context.scope.thread?.threadId ??
+                  context.scope.client?.sessionId ??
+                  context.scope.requestNamespace,
+                input.clientRequestId,
+              ]).pipe(Effect.mapError(unavailable));
+        const commandId =
+          requestKey === undefined
+            ? yield* newCommandId()
+            : CommandId.make(
+                `command:mcp-launch:${Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", new TextEncoder().encode(requestKey)).pipe(Effect.mapError(unavailable)))}`,
+              );
         const threadId = ThreadId.make(commandId);
         const messageId = MessageId.make(commandId);
         const attachments = input.attachments ?? [];
@@ -134,6 +167,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
         const result = yield* ThreadMessageIntake.launchThread({
+          // fork: library-projects -- idle launches also inherit the initiating Library scope.
+          ...(context.scope.thread
+            ? { libraryCaller: context.scope.thread }
+            : context.scope.client
+              ? { libraryCaller: { sessionId: context.scope.client.sessionId } }
+              : {}),
           commandId,
           threadId,
           projectId,
@@ -156,6 +195,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           creationSource: "mcp",
         }).pipe(
           Effect.mapError((error) => {
+            // fork: library-projects -- preserve actionable early Library refusals.
+            if (error._tag === "ThreadLaunchError" && isLibraryError(error.cause))
+              return new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: error.cause.message,
+              });
             if (error._tag === "AttachmentClaimError") {
               return new OrchestratorMcpFailure({
                 code: "orchestration_error",

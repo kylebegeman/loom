@@ -40,10 +40,19 @@ import { LibraryWorkspace } from "./LibraryWorkspace.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-const denied = () =>
+const denied = (reason: "session" | "turn" | "workload" | "owner" = "session", threadId?: string) =>
   new LibraryError({
     reason: "blocked",
-    detail: "This operation needs a current authorized session. Sign in again, then retry.",
+    detail:
+      reason === "turn"
+        ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
+        : reason === "workload"
+          ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
+          : reason === "owner"
+            ? threadId?.startsWith("workload:")
+              ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
+              : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel."
+            : "This operation needs a current authorized session. Sign in again, then retry.",
   });
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 const Workload = Schema.Struct({
@@ -170,22 +179,25 @@ const make = Effect.gen(function* () {
   ) {
     if (sessionId.startsWith("workload:")) {
       const claims = yield* Schema.decodeEffect(workloadCodec)(sessionId.slice(9)).pipe(
-        Effect.mapError(() => denied()),
+        Effect.mapError(() => denied("workload")),
       );
       const thread = yield* threads
         .getThreadShell(claims.threadId)
-        .pipe(Effect.mapError(() => denied()));
+        .pipe(Effect.mapError(() => denied("workload")));
       if (
         !thread ||
         thread.archivedAt !== null ||
         thread.deletedAt !== null ||
         thread.activeRunId !== claims.runId ||
-        thread.providerInstanceId !== claims.providerInstanceId ||
-        thread.runtimeMode !== "full-access" ||
-        thread.interactionMode !== "default" ||
         !(yield* isVaultRunRunning(threads, thread))
       )
-        return yield* denied();
+        return yield* denied("turn");
+      if (
+        thread.providerInstanceId !== claims.providerInstanceId ||
+        thread.runtimeMode !== "full-access" ||
+        thread.interactionMode !== "default"
+      )
+        return yield* denied("workload");
       return;
     }
     const active = (yield* sessions.listActive()).find(
@@ -480,7 +492,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* new LibraryError({ reason: "not-found" });
-    if (row.subject !== actor.subject) return yield* denied();
+    if (row.subject !== actor.subject) return yield* denied("owner", row.subject);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -516,8 +528,8 @@ const make = Effect.gen(function* () {
   ) {
     const thread = yield* threads
       .getThreadShell(caller.threadId)
-      .pipe(Effect.mapError(() => denied()));
-    if (!thread?.activeRunId) return yield* denied();
+      .pipe(Effect.mapError(() => denied("workload")));
+    if (!thread?.activeRunId) return yield* denied("turn");
     const claims = yield* Schema.encodeEffect(workloadCodec)({
       ...caller,
       runId: thread.activeRunId,
@@ -532,7 +544,8 @@ const make = Effect.gen(function* () {
     actor: OperationActor,
   ) {
     const row = yield* read(id);
-    if (!row || row.subject !== actor.subject) return yield* denied();
+    if (!row) return yield* denied();
+    if (row.subject !== actor.subject) return yield* denied("owner", row.subject);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -562,8 +575,8 @@ const make = Effect.gen(function* () {
   ) {
     const thread = yield* threads
       .getThreadShell(caller.threadId)
-      .pipe(Effect.mapError(() => denied()));
-    if (!thread?.activeRunId) return yield* denied();
+      .pipe(Effect.mapError(() => denied("workload")));
+    if (!thread?.activeRunId) return yield* denied("turn");
     const claims = yield* Schema.encodeEffect(workloadCodec)({
       ...caller,
       runId: thread.activeRunId,

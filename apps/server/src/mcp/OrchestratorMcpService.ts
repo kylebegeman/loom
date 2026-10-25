@@ -1,3 +1,4 @@
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
 import {
   CommandId,
   type RunId,
@@ -202,6 +203,7 @@ export class OrchestratorMcpService extends Context.Service<
   OrchestratorMcpServiceShape
 >()("t3/mcp/OrchestratorMcpService") {}
 
+const isLibraryLaunchError = Schema.is(LibraryError); // fork: library-projects
 const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManagementError);
 
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
@@ -2083,7 +2085,19 @@ const make = Effect.gen(function* () {
         parent.thread.interactionMode,
         input.interactionMode,
       );
-      let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
+      // fork: library-projects -- hold shared children until the Library binding is durable.
+      const libraryBinding = yield* threadLaunch
+        .resolveLibraryBinding({
+          projectId: parent.thread.projectId,
+          callerThreadId: scope.thread.threadId,
+          workspaceStrategy:
+            input.isolation === "worktree"
+              ? { type: "worktree", baseRef: "HEAD" }
+              : { type: "root" },
+        })
+        .pipe(Effect.mapError((error) => failure("invalid_request", error.message)));
+      let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined =
+        libraryBinding === null ? undefined : { type: "root" };
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
         const base = yield* gitDriver
@@ -2161,6 +2175,11 @@ const make = Effect.gen(function* () {
       const childRunEvent = result.storedEvents.find(
         (stored) => stored.event.type === "run.created" && stored.event.threadId === childThreadId,
       );
+      // fork: library-projects -- a failed bind leaves the child held, never running unbound.
+      if (childThreadId !== null && libraryBinding !== null)
+        yield* threadLaunch
+          .bindLibraryThread(childThreadId, libraryBinding)
+          .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
       if (
         childThreadId !== null &&
         childRunEvent?.event.type === "run.created" &&
@@ -2411,6 +2430,14 @@ const make = Effect.gen(function* () {
         const parentNodeId = parentRun.rootNodeId;
         const providers = yield* loadProviders;
         const key = yield* requestKey(input.clientRequestId);
+        // fork: library-projects -- check the entire batch's shared folder before creating siblings.
+        const libraryBinding = yield* threadLaunch
+          .resolveLibraryBinding({
+            projectId: parent.thread.projectId,
+            callerThreadId: scope.thread.threadId,
+            workspaceStrategy: { type: "root" },
+          })
+          .pipe(Effect.mapError((error) => failure("invalid_request", error.message)));
         const created = yield* Effect.forEach(
           input.threads,
           (request, index) =>
@@ -2426,12 +2453,16 @@ const make = Effect.gen(function* () {
                 requestKey: key,
                 index,
               });
-              const isRetryOfAcceptedCreation = yield* threadManagement.hasReceipt(commandId);
-              const committedThread = isRetryOfAcceptedCreation
-                ? yield* threadManagement
-                    .getThreadShell(threadId)
-                    .pipe(Effect.mapError(threadManagementFailure))
-                : null;
+              // fork: library-projects -- the Library operation owns a separate create receipt.
+              let isRetryOfAcceptedCreation = yield* threadManagement.hasReceipt(commandId);
+              const committedThread =
+                isRetryOfAcceptedCreation || libraryBinding !== null
+                  ? yield* threadManagement
+                      .getThreadShell(threadId)
+                      .pipe(Effect.mapError(threadManagementFailure))
+                  : null;
+              if (libraryBinding !== null && committedThread !== null)
+                isRetryOfAcceptedCreation = true;
               const target = yield* resolveTargetRechecking({
                 parent,
                 target:
@@ -2453,41 +2484,82 @@ const make = Effect.gen(function* () {
                 parent.thread.interactionMode,
                 request.interactionMode,
               );
-              yield* assertTargetEnabledForProject(parent, commandId, target);
+              // fork: library-projects -- launch checks enablement against its accepted create receipt.
+              if (libraryBinding === null)
+                yield* assertTargetEnabledForProject(parent, commandId, target);
               const title = threadTitle({
                 parentTitle: parent.thread.title,
                 prompt: request.prompt,
                 title: request.title,
                 index,
               });
-              yield* threadManagement
-                .dispatch({
-                  type: "thread.create",
-                  createdBy: "agent",
-                  creationSource: "mcp",
-                  commandId,
-                  threadId,
-                  projectId: parent.thread.projectId,
-                  title,
-                  modelSelection: target.modelSelection,
-                  runtimeMode,
-                  interactionMode,
-                  branch: parent.thread.branch,
-                  worktreePath: parent.thread.worktreePath,
-                })
-                .pipe(
-                  Effect.mapError((error) =>
-                    failure(
-                      "orchestration_error",
-                      `Unable to create thread ${index + 1}: ${errorMessage(error)}`,
+              // fork: library-projects -- use the durable create/bind path before dispatching a prompt.
+              if (libraryBinding !== null) {
+                yield* threadLaunch
+                  .launch({
+                    commandId,
+                    threadId,
+                    projectId: parent.thread.projectId,
+                    title,
+                    modelSelection: target.modelSelection,
+                    runtimeMode,
+                    interactionMode,
+                    workspaceStrategy: { type: "root" },
+                    libraryCaller: scope.thread,
+                    ...(request.prompt === undefined
+                      ? {}
+                      : {
+                          initialMessage: {
+                            messageId: stableMessageId({ scope, requestKey: key, index }),
+                            senderThreadId: scope.thread.threadId,
+                            text: request.prompt,
+                            attachments: [],
+                          },
+                        }),
+                    createdBy: "agent",
+                    creationSource: "mcp",
+                  })
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        error._tag === "ThreadLaunchError" && isLibraryLaunchError(error.cause)
+                          ? error.cause.message
+                          : error.message,
+                      ),
                     ),
-                  ),
-                );
+                  );
+              } else
+                yield* threadManagement
+                  .dispatch({
+                    type: "thread.create",
+                    createdBy: "agent",
+                    creationSource: "mcp",
+                    commandId,
+                    threadId,
+                    projectId: parent.thread.projectId,
+                    title,
+                    modelSelection: target.modelSelection,
+                    runtimeMode,
+                    interactionMode,
+                    branch: parent.thread.branch,
+                    worktreePath: parent.thread.worktreePath,
+                  })
+                  .pipe(
+                    Effect.mapError((error) =>
+                      failure(
+                        "orchestration_error",
+                        `Unable to create thread ${index + 1}: ${errorMessage(error)}`,
+                      ),
+                    ),
+                  );
               // A receipt can appear after target resolution; use the committed thread's selection.
               const resolvedModelSelection = (yield* threadManagement
                 .getThreadRecords(threadId, [])
                 .pipe(Effect.mapError(threadManagementFailure))).thread.modelSelection;
-              if (request.prompt !== undefined) {
+              if (request.prompt !== undefined && libraryBinding === null) {
+                // fork: library-projects
+
                 yield* threadManagement
                   .dispatch({
                     type: "message.dispatch",

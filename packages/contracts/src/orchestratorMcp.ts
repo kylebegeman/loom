@@ -50,7 +50,8 @@ const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120
 const OrchestratorMcpTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(512)).annotate({
   description: "Optional concise display title.",
 });
-const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(
+// fork: library-projects -- top-level launches use the same retry key contract.
+export const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(256),
 ).annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
 

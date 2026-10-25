@@ -412,6 +412,22 @@ describe("Project operations", () => {
         }),
       ),
   );
+  it.effect("tells a signed-in client which conversation owns an agent operation", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* state.service.execute("agent-owned", create, actor);
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE fork_library_operations SET subject=${"workload:owning-thread"} WHERE id=${"agent-owned"}`;
+        for (const action of ["resume", "cancel"] as const) {
+          const error = yield* state.service
+            .controlClient("agent-owned", action, actor.sessionId)
+            .pipe(Effect.flip);
+          expect(error.message).toContain("agent in conversation owning-thread");
+          expect(error.message).not.toContain("Sign in");
+        }
+      }),
+    ),
+  );
   it.effect("does not let an inactive workload inherit human session authorization", () =>
     run((state) =>
       Effect.gen(function* () {
@@ -422,6 +438,9 @@ describe("Project operations", () => {
           })
           .pipe(Effect.flip);
         expect(error.reason).toBe("blocked");
+        expect(error.message).toContain("no longer running a turn");
+        expect(error.message).toContain("loom_library_operation_control");
+        expect(error.message).not.toContain("Sign in");
         expect(yield* Ref.get(state.calls)).toBe(0);
       }),
     ),

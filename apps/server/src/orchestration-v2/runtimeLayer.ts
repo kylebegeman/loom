@@ -303,6 +303,7 @@ const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
+  Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
   Layer.provide(layerLibraryFolderGuardProvided), // fork: library-projects
   Layer.provide(
     Layer.mergeAll(

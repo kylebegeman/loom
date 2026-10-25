@@ -31,6 +31,8 @@ import {
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
+import * as Timeline from "./LibraryTimeline.ts";
+import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import { source, resource, archiveFor, copyFor } from "./Library.testkit.ts";
@@ -140,6 +142,15 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           authorityEpoch: 1,
           assets: "local",
         };
+      else if (pathname.endsWith("/projects/list")) response = [project];
+      else if (pathname.endsWith("/conversations/list"))
+        response = { threads: [], nextOffset: null };
+      else if (pathname.endsWith("/conversations/lookup")) response = null;
+      else if (pathname.endsWith("/history/read")) response = yield* archiveFor(project);
+      else if (pathname.endsWith("/history/search")) response = { hits: [], nextCursor: null };
+      else if (pathname.endsWith("/timeline/read")) response = { entries: [], nextBefore: null };
+      else if (pathname.endsWith("/launch-candidates"))
+        response = { projectId: project.id, candidates: [] };
       else if (pathname.endsWith("/documents/search")) response = { hits: [] };
       else if (pathname.endsWith("/documents/publish")) response = { published: 1, removed: 0 };
       else if (pathname.endsWith("/copies/register")) {
@@ -238,6 +249,8 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(LibraryService.LibraryService)({}),
+            Layer.mock(Timeline.LibraryTimeline)({}),
+            Layer.mock(Launch.LibraryLaunchCandidates)({}),
             Layer.mock(Assets.LibraryAssetService)({ mode: "local" }),
             Layer.mock(PreviewAccessService)({
               issuerOrigin: previewAccess.origin,
@@ -312,6 +325,42 @@ const pageReply: LibraryPageReply = {
 const pageReason = (error: PreviewPagesError) => ({ reason: error.reason, message: error.message });
 
 describe("authenticated Library publishing", () => {
+  it.effect(
+    "forwards bounded catalog and history reads with the enrolled computer credential",
+    () =>
+      run(configured, (f) =>
+        Effect.gen(function* () {
+          expect(yield* f.publisher.projects({})).toEqual([project]);
+          expect(yield* f.publisher.conversations({ projectId: project.id, limit: 1 })).toEqual({
+            threads: [],
+            nextOffset: null,
+          });
+          expect(
+            yield* f.publisher.lookupThread({
+              sourceEnvironmentId: source,
+              threadId: ThreadId.make("thread"),
+            }),
+          ).toBeNull();
+          expect((yield* f.publisher.history({ id: "history", limit: 1 })).summary.projectId).toBe(
+            project.id,
+          );
+          expect((yield* f.publisher.search({ query: "fixed", limit: 1 })).hits).toEqual([]);
+          expect((yield* f.publisher.timeline({ projectId: project.id })).entries).toEqual([]);
+          expect(
+            (yield* f.publisher.launchCandidates({ projectId: project.id })).candidates,
+          ).toEqual([]);
+          expect(yield* Ref.get(f.requests)).toEqual([
+            "/api/loom/library/projects/list",
+            "/api/loom/library/conversations/list",
+            "/api/loom/library/conversations/lookup",
+            "/api/loom/library/history/read",
+            "/api/loom/library/history/search",
+            "/api/loom/library/timeline/read",
+            "/api/loom/library/launch-candidates",
+          ]);
+        }),
+      ),
+  );
   it.effect("forwards decision reads and binds document publishing to this computer", () =>
     run(configured, (f) =>
       Effect.gen(function* () {
