@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
+import { identityRenewalText } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { identityResourceRefusal } from "@t3tools/shared/fork/identity-grant";
 import { Button } from "~/components/ui/button";
@@ -11,6 +12,7 @@ import { readLoomIdentity, loomBrowserLoginUrl, cancelLoomBrowserSignIn } from "
 import { useAtomCommand } from "~/state/use-atom-command";
 import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
+import { identityRenewalAvailable } from "./renewal";
 
 /** Keep Loom host authentication distinct from the existing T3 Connect account. */
 interface LoomSignInProps {
@@ -25,6 +27,8 @@ interface LoomSignInProps {
   readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
+  /** Say how long a sign-in keeps this device connected, from the computer's sign-in limit. */
+  readonly renewal?: boolean;
   readonly onConnected?: (environmentId: EnvironmentId) => void;
 }
 
@@ -40,6 +44,7 @@ function LoomSignInTarget({
   description = true,
   onConnected,
   showUnavailable = false,
+  renewal = false,
   onAvailabilityChange,
 }: LoomSignInProps) {
   const [identity, setIdentity] = useState<{
@@ -207,6 +212,11 @@ function LoomSignInTarget({
           </Button>
         ) : null}
       </div>
+      {renewal ? (
+        <p className="max-w-lg text-xs text-muted-foreground">
+          {identityRenewalText({ metadata: active.metadata, renews: identityRenewalAvailable() })}
+        </p>
+      ) : null}
       {description ? (
         <p className="max-w-lg text-xs text-muted-foreground">
           Use this computer's configured Identity account. When access expires, sign in again.
