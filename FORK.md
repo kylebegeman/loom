@@ -100,6 +100,7 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/components/RightPanelTabs.tsx`                                                    | `ext-panels`                | Fork panels in the launcher and "+" menu; their tab titles and icons.                                       |
 | `apps/web/src/components/ChatView.tsx`                                                          | `ext-panels`                | Renders fork panels, passes panel actions to both tab bars, and lets focusable canvases own keyboard input. |
 | `apps/web/src/components/CommandPaletteContent.tsx`                                             | `library-palette`           | Allow the inline text editor to show its own keyboard hints.                                                |
+| `packages/shared/src/keybindings.ts`                                                            | `library-palette`           | Default keys for Go to project and New conversation in.                                                     |
 | `apps/web/src/components/CommandPalette.tsx`                                                    | `ext-palette`               | Adds fork actions and hosts Library setup in the same searchable popup.                                     |
 | `packages/contracts/src/keybindings.ts`                                                         | `ext-keybindings`           | Fork `loom.*` commands join the static keybinding command list.                                             |
 | `apps/web/src/components/settings/KeybindingsSettings.logic.ts`                                 | `ext-keybindings`           | Fork feature names in keybinding labels, such as "Device QA".                                               |
@@ -402,6 +403,11 @@ worktree, which lets the lane watchdog cache ready lanes. `ServerBrowserContexts
 the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPersistence.test.ts`
 (8), `ThreadSettlementService.test.ts` (6), `DatabaseStorage.test.ts` (4),
 `Scheduler.test.ts` (3) and `observability.test.ts` (2).
+On desktop, `DesktopIpc.ts` (5) lets a sync IPC method run with the tracer off, so its nested
+spans are skipped too, and `ipc/methods/localEnvironment.ts` (1) and `ipc/methods/window.ts`
+(1) opt in the two reads the renderer makes on every primary target lookup, whose spans were
+about 96% of `desktop.trace` bytes; `DesktopIpc.test.ts` (3) checks that such a read records no
+span.
 
 L113 `directory-computers` seams list the Library directory's unsaved computers on desktop, web
 and iPhone and connect each with Loom Identity. `ConnectionsSettings.tsx` (7 marker lines) opens
@@ -453,6 +459,210 @@ cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 `ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
 recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
+
+The `attention-status` seams give Loom one list of work that needs the user (approvals,
+questions, paused queues, failed or limited runs) on web, desktop, mobile and agents. The rule
+lives in fork-owned `packages/contracts/src/fork/thread-attention.ts`; keep every caller on it.
+`ProjectionStore.ts` (6 marker lines) sets the shell's `queueHeld` from both the SQL row and
+`threadShellFromProjection`, which must agree, as `ProjectionStore.test.ts` (1) checks, and
+`orchestrationV2.ts` (1) keeps it optional for older servers. `orchestratorMcp.ts` (4),
+`OrchestratorMcpService.ts` (8) and the orchestrator `tools.ts` (1) add all-projects, attention
+and archive lookups to `t3_thread_list`. The thread toolkit's `tools.ts` (2) and `handlers.ts`
+(1) add `t3_queue_resume`; `core.test.ts` fails unless its work-log entries in
+`t3McpToolPresentation.ts` (2), `t3ToolSummary.ts` (1) and `presentation.ts` (1) survive.
+`botInboxSummary.ts` (1) cuts bot inbox rows to a one-line reason, and
+`orchestrationInstructions.ts` (1) has agents ask a Done / Not yet question for a human step.
+`models.ts` (2), `threadInbox.ts` (2) and `threadShell.ts` (3) carry the flag, keep held queues
+off the Working shelf and time the next snooze wake instead of polling. Web `Sidebar.logic.ts`
+(9) and mobile `threadListV2.ts` (3) rank Paused below approval and input and above every run
+state, matching the shared rule. `Sidebar.tsx` (11), `threadActionMenu.logic.ts` (3) and
+`thread-list-v2-items.tsx` (12) add the count, Resume queue and offline last-seen labels,
+`HomeScreen.tsx` (5) the mobile filter, and `CommandPalette.tsx` (4) the next-attention action
+on `mod+shift+u` from `packages/contracts/src/keybindings.ts` (1) and
+`packages/shared/src/keybindings.ts` (1). `threadRecoveryPresentation.ts` (1) and
+`ThreadComposer.tsx` (1) fix pause copy and a stuck Resume button, `SettingsPanels.tsx` (9) adds
+archive search and Unarchive and open, and `docs/user/thread-sidebar.md` (1) tells users how to
+find and resume that work. Tests carry the rest: `OrchestratorMcpToolkit.integration.test.ts`
+(4), `threadInbox.test.ts` (2), `threadShell.test.ts` (2), `threadListV2.test.ts` (1),
+`botInboxSummary.test.ts` (1), `Sidebar.logic.test.ts` (1) and
+`threadActionMenu.logic.test.ts` (1).
+
+The `source-control-cockpit` seams let the existing Git controls on web, desktop and mobile
+recover an interrupted merge, rebase, cherry-pick or revert, cancel a running action, skip
+default-branch confirmation per project, and show landed work so its thread can be settled.
+`packages/contracts/src/git.ts` (4 marker lines) keeps every new status field optional so older
+servers still decode. `rpc.ts` (4) adds `git.resolveOperation`, which `clientRpcPermissions.ts`
+(1) puts behind the source-control write scope and `RpcInstrumentation.ts` (1) traces as `git`.
+`GitVcsDriverCore.ts` (21) refuses to commit or stage while the index has unmerged paths,
+checked before `add` or `reset` can hide them, and refuses Continue or Abort when the operation
+or HEAD changed since the user confirmed. Pushes stop after the ten-minute `PUSH_TIMEOUT_MS`,
+and the error says `push_timed_out` only when the limit is that constant. Landed is set only
+when HEAD is an ancestor of the fetched remote default. `GitVcsDriver.ts` (5),
+`GitWorkflowService.ts` (3) and `GitManager.ts` (8) carry this up; GitManager refuses stacked
+actions during an operation, and Continue or Abort while any conversation runs in that
+checkout. `ws.ts` (3) registers the handler and bounds the handler map's type, as
+`docs/internals/effect-services.md` (1) explains; new handlers must stay inside that map.
+`packages/shared/src/git.ts` (2) keeps recovery and landed facts across partial status updates.
+`gitActions.ts` (10) blocks commit, push and PR during an operation and shows Landed only while
+local HEAD equals the compared `landedHeadSha`. `vcsAction.ts` (13) cancels by interrupting the
+owned stream, which stops the server's git child, and settles after its finalizers; `vcs.ts`
+(1) adds the command. `settings.ts` (2) keeps `skipDefaultBranchConfirmation` out of
+`PROJECT_SCOPED_SERVER_SETTING_KEYS`, so no server default applies, and `keybindings.ts` (1)
+adds `git.commitPush` with no default key. On web, `GitActionsControl.tsx` (21) and
+`GitActionsControl.logic.ts` (9) mount the fork recovery banner, put the agent prompt in the
+draft unsent, and make the direct default-branch action primary, since checking out a feature
+branch moves every conversation on that folder. `CommandPalette.tsx` (5) adds Commit, Commit &
+push and Create pull request under the same guards. Merge-back moves context, not commits, so
+`ThreadRelationshipsControl.tsx` (4) on web and `ThreadRouteScreen.tsx` (3), `ThreadHeader.tsx`
+(4) and `ThreadGitControls.tsx` (7) on mobile call it "Send latest turn to source thread" and
+keep it out of Git. Mobile's `GitConfirmSheet.tsx` (10), `GitOverviewSheet.tsx` (4),
+`GitActionProgressOverlay.tsx` (1), `use-vcs-action-state.ts` (4) and
+`use-selected-thread-git-actions.ts` (4) add recovery, remembered consent, Cancel and the SSH
+approval wait label. `docs/user/source-control.md` (1) adds "Finish local work", covering
+Continue and Abort, Cancel, the push limit, Landed and Settle. Tests carry the rest:
+`GitVcsDriverCore.test.ts` (9), `useThreadHeaderOptions.test.tsx` (5), `vcsAction.test.ts` (4),
+`GitActionsControl.logic.test.ts` (3), `GitManager.test.ts` (2), `commandPermissions.test.ts`
+(1), `gitActions.test.ts` (1), `settings.test.ts` (1), `packages/shared/src/git.test.ts` (1)
+and `ThreadRouteScreen.test.tsx` (1). See the
+[L06 packet](docs/fork/packets/L06-source-control-cockpit/SEAMS.md).
+
+The `agent-catalog` seams shrink what every agent reads before its first tool call: the MCP
+tool list, the `orchestrator_capabilities` result and the delegation guidance.
+`McpHttpServer.ts` (2 marker lines) passes each response through
+`apps/server/src/fork/mcp/sessionToolList.ts`, which drops the preview and device tools from
+`tools/list` when the session's credential lacks that capability. Each handler still checks
+access on a call. `packages/contracts/src/orchestratorMcp.ts` (3) replaces each provider's
+model list with a `modelCatalog` key into one `modelCatalogs` record, because a few accounts of
+one driver made the result about 70k characters. `OrchestratorMcpService.ts` (6) shares a list
+only when two instances' models match exactly, so each still reports its own hidden models and
+options, and applies the `providerInstanceId` and `driverKind` filters that the orchestrator
+toolkit's `tools.ts` (5) and `handlers.ts` (2) now accept. `tools.ts` also cuts `delegate_task`
+and `create_threads` to a routing summary, and `orchestrationInstructions.ts` (1) leaves launch
+mechanics to `t3_thread_launch`'s description. Routing policy belongs in the instructions and
+mechanics in tool descriptions; `delegate_task` keeps one routing sentence for providers that
+get tools without instructions. Tests carry the rest: `OrchestratorMcpService.test.ts` (11) and
+`OrchestratorMcpToolkit.integration.test.ts` (2).
+
+The `mcp-refusals` seams make every MCP refusal name a next step, because a bare "The
+operation could not be completed." left agents stopping or looping back to the user.
+`threadAccess.ts` (4 marker lines) turns `unavailable()` into a map from an error's `_tag` to a
+fixed sentence that names a real tool or the user. It still never repeats the error's own
+message, which can carry workspace paths, git output or the settings file location. Keys are
+plain tag strings, so an upstream rename of an error class silently falls back to the generic
+sentence. Call sites must pass the error, as the attachment `handlers.ts` (1) and project
+`handlers.ts` (2) now do. `OrchestratorMcpService.ts` (5) adds `ENDED_RUN_REPAIR`, which tells
+a provider whose turn has ended to put what it needs in its final reply and call again next
+turn, and appends it to every "no active run" refusal, including the live-caller check in
+`threadAccess.ts`. `McpToolAccess.ts` (1) tells a read-only client's user to revoke it in
+Settings → Connections and approve its next sign-in with Supervised or Full access. Tests carry
+the rest: `McpToolAccess.test.ts` (13) checks that each known error gets its own sentence
+without leaking details and names only registered tools, and `core.test.ts` (5) pins the text.
+
+The `mobile-surface-hint` seams tell an agent when the user is on the Loom phone app, so it
+stops replying with localhost links the phone cannot open. `ProviderTurnStartService.ts` (2
+marker lines) defines `PHONE_VIEWER_NOTE` and puts it at the start of the provider turn text
+when the run's user message has `creationSource` `"mobile"`, ahead of any Library project
+context. Every provider takes its turn text from here, so no adapter needs its own change, and
+the stored message keeps the user's own text. Only the mobile client marks its messages; a
+remote browser and the desktop app both send `"web"` and get no note. A message starting with
+`/` is left alone, because a native slash command must stay at the start of the text to run.
+The note names `loom_preview_link_share` and `html_render`, which must stay real tool names.
+`ProviderTurnStartService.test.ts` (4) adds a `creationSource` harness option and checks a
+mobile message, a web message and a mobile slash command.
+
+The `preview-popups` seams keep a sign-in popup from an agent's browser tab from vanishing at
+the tab limit. `ServerBrowser.ts` (9 marker lines) lets a popup use `AGENT_POPUP_HEADROOM`,
+four tabs past the eight-tab agent budget, while `SERVER_TAB_LIMIT` still caps the whole server.
+A popup that still cannot fit is closed and remembered for its agent session, then reported once
+as `blockedPopup` in the next status that agent receives, with or without an open tab, so the
+agent stops waiting on a window that no longer exists. That message names `t3_preview_close`,
+so a renamed tool must be renamed there too. Anyone watching an agent's tab now follows it into
+the popup, because the sign-in may need them; unwatched popups stay out of view as upstream
+leaves them. `packages/contracts/src/previewAutomation.ts` (1) adds the optional `blockedPopup`
+status field. `docs/user/remote-access.md` (1) tells users that a popup from an agent's tab they
+watch comes forward so they can take control and finish the sign-in. `ServerBrowser.test.ts`
+(3) fills the agent budget and the headroom with counts that must track `AGENT_TAB_LIMIT` and
+`AGENT_POPUP_HEADROOM`.
+
+The `preview-status-guard` seams stop one malformed server browser status from ending every
+preview event stream. Server browser statuses come from Playwright rather than a decoded RPC
+payload, so a popup's blank `Loading` URL once reached the `subscribePreviewEvents` encoder,
+failed it and closed the stream for every client. In `apps/server/src/preview/Manager.ts`
+(4 marker lines), `reportStatus` checks each report with `Schema.is(PreviewNavStatus)` and drops
+one the contract rejects, logging its tag and keeping the tab's last good status without
+emitting an event. The check must use the same `PreviewNavStatus` schema that encodes preview
+events, and it must run before the snapshot is rebuilt. `Manager.test.ts` (1) shows that a
+blank-URL report leaves the session and the event stream untouched and that the next good
+report still emits `navigated`.
+
+The `project-library` seams let a computer's Library publisher credential renew itself before
+its session lapses. `LibraryPublishingCredential.ts` (7 marker lines) is a fork file in
+upstream's `apps/server/src/auth` directory with no upstream counterpart, so its markers flag
+the renewal additions. The credential file gains an optional `issuedAt`, optional so files
+written before it still decode; `LibraryConnection` then falls back to the token's `iat` claim
+when it schedules renewal at two thirds of the lifetime. `renew` serves the Library authority's
+fork route `/api/loom/library/publisher/renew`. It accepts only a `loom-host:` bearer session
+with exactly the publish scope, issues a 30-day successor with the same subject and scope, and
+saves a receipt in the secrets directory before it revokes the old session, an order that must
+survive. A lost reply or an authority restart replays the receipt for up to 15 minutes but never
+restores a successor revoked since. Renewals run one at a time.
+`LibraryPublishingCredential.test.ts` (3) covers renewal, replay after a restart, and refusal
+after revocation or once the window closes.
+
+The `restart-continuity` seams let Loom quit, restart and update without cutting off a busy
+backend, and make a slow or fatal start explain itself. `DesktopBackendManager.ts` (13 marker
+lines) raises the backend's SIGTERM grace from 5 s to 15 s, because three of four measured
+install stops hit the old cap while still stopping provider sessions, and its stop budget adds
+2 s so a stop that returns has really ended the process. `DesktopBackendPool.ts` (1) re-exports
+that budget for the quit in `DesktopApp.ts` (1) and the update install in `DesktopUpdates.ts`
+(1). `serviceLauncher.ts` (1) uses the same 15 s grace, and `ProviderSessionManager.ts` (1)
+corrects a comment that names it. Keep the graces equal and the budget longer than the grace.
+The manager also records why the last readiness probe failed and logs a slow start as still
+waiting, not as a kill. `DesktopBackendConfiguration.ts` (1) adds `--report-on-fatalerror`
+with the report in the log directory; keep `--report-exclude-env`, since the environment
+carries provider keys. `DesktopConnectionCatalogStore.ts` (2) traces the startup catalog read
+apart from safe storage. `DesktopWindow.ts` (2) hides a closed macOS main window so its
+renderer keeps raising notifications. Any new quit path must set `quitting` or destroy the
+windows before a close event, or it will only hide the window. Tests carry the rest:
+`DesktopWindow.test.ts` (6), `DesktopBackendManager.test.ts` (4) and
+`DesktopBackendConfiguration.test.ts` (1).
+
+The `restart-compaction` seams let the Loom desktop app run the doctor's database repair itself
+during a restart, so desktop users never need `t3 doctor`. The repair lives in
+`apps/desktop/src/fork/database-compaction/`. `DesktopApp.ts` (2 marker lines) runs it before
+the primary backend starts, while nothing has the database open, and skips the start after a
+quit. `DesktopWindow.ts` (6) generalizes the connecting splash into `showSplash(page)`.
+`DesktopBackendConfiguration.ts` (2) exports the backend's child environment for the doctor run
+and sets `restartCompaction` only in the local primary backend's bootstrap, never WSL's.
+`packages/contracts/src/desktopBootstrap.ts` (1), `cli/config.ts` (2) and
+`apps/server/src/config.ts` (1) carry that flag to `DatabaseStorage.ts` (9), which then adds
+`restartCompaction` to the storage status in `packages/contracts/src/settings.ts` (2). It reads
+the last result and writes or removes the request in files beside the database, named in
+`@t3tools/contracts/fork` for both sides. `ws.ts` (2) serves the request RPC as its own layer
+beside `makeForkRpcLayer`, which is built beneath the core services and cannot reach
+`DatabaseStorage`. Web's `DatabaseStorageNotice.tsx` (10) and mobile's (11) offer Compact at
+next restart or Cancel compaction when that field is present, and the doctor command otherwise.
+`docs/user/background-service.md` (1) tells users the desktop repairs after an update or a
+Compact at next restart, and waits to be asked again after a failed or skipped repair. Tests
+carry the rest: `DatabaseStorage.test.ts` (6), and one each in
+`DesktopBackendConfiguration.test.ts`, `DesktopLifecycle.test.ts`, `DesktopBackendPool.test.ts`
+and `DesktopApplicationMenu.test.ts`.
+
+The `mobile-muted-text` seams fix secondary text that rendered unstyled on iPhone and Android.
+Upstream wrote the web token `text-muted-foreground`, which the mobile theme does not define;
+mobile names it `foreground-muted`. Mobile's `DatabaseStorageNotice.tsx` (1 marker line) fixes
+the doctor command description, and `NewTaskDraftScreen.tsx` (1) fixes the task permission
+note. Keep `text-foreground-muted` on both lines when upstream rewrites them, and drop the seam
+once upstream makes the same fix. New upstream mobile code that uses the web token has the same
+bug.
+
+The `test-case-folding` seams in `apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts` (3
+marker lines) let the desktop suite pass on a Mac. Two theme icon tests write both app id
+spellings, `com.t3tools.t3code.png` and `com.t3tools.T3Code.png`, into one folder and expect
+two files. macOS and Windows file systems fold case by default, so both names land on one file
+there and the tests fail. The seam skips those two tests on `darwin` and `win32`. They still
+run on Linux, the only platform that installs these icons and the one CI tests on, so the
+coverage stays. Apply the same skip to any new upstream test that writes both spellings.
 
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
