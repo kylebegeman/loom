@@ -24,6 +24,7 @@ export * from "./code-graph.ts";
 export * from "./workspace-handoff.ts";
 
 export * from "./workspace-handoff-flow.ts";
+export * from "./workspace-handoff-preflight.ts";
 
 export * from "./github-host-setup.ts";
 export * from "./mini-offload.ts";

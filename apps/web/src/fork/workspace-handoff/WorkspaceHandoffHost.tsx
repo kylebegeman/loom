@@ -5,13 +5,21 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
   buildWorkspaceHandoffDestinations,
   selectWorkspaceHandoffDestination,
   WORKSPACE_HANDOFF_LABELS,
   runWorkspaceHandoff,
   supportsLoomFeature,
+  workspaceHandoffCanReconnect,
+  workspaceHandoffCheckoutProblem,
+  type WorkspaceHandoffCheckoutFix,
   type WorkspaceHandoffDestinationGroup,
 } from "@t3tools/client-runtime/fork";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   Dialog,
   DialogPopup,
@@ -23,8 +31,13 @@ import {
 } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { RadioGroup, Radio } from "~/components/ui/radio-group";
+import { environmentCatalog } from "~/connection/catalog";
 import { useProjects, useServerConfigs, useThreadShell } from "~/state/entities";
-import { useEnvironments } from "~/state/environments";
+import { type EnvironmentPresentation, useEnvironments } from "~/state/environments";
+import { useEnvironmentQuery } from "~/state/query";
+import { useGitStackedAction } from "~/state/sourceControlActions";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { vcsEnvironment } from "~/state/vcs";
 import { runLaneCommand } from "../project-lifecycle/state";
 import { FEATURE, handoff, useWorkspaceHandoff } from "./state";
 
@@ -81,6 +94,57 @@ function DestinationComputer({
   );
 }
 
+/**
+ * The source checkout as the offer will judge it, from the git status the composer already
+ * subscribes to for the same folder. Unknown status never blocks; the server still decides.
+ */
+function useSourceCheckout(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly cwd: string | null;
+}) {
+  const status = useEnvironmentQuery(
+    input.cwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId: input.environmentId, input: { cwd: input.cwd } }),
+  );
+  const git = useGitStackedAction({ environmentId: input.environmentId, cwd: input.cwd });
+  const [fixing, setFixing] = useState<WorkspaceHandoffCheckoutFix | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const problem =
+    input.cwd !== null && status.data ? workspaceHandoffCheckoutProblem(status.data) : null;
+  /** Resolves true once the fix lands, so the caller can drop the refusal it answered. */
+  const fix = async () => {
+    if (!problem?.fix || fixing) return false;
+    const running = problem.fix;
+    setFixing(running);
+    setError(null);
+    const result = await git.run({
+      actionId: randomUUID(),
+      action: running.action,
+      threadId: input.threadId,
+    });
+    setFixing(null);
+    if (result._tag === "Success") return true;
+    if (!isAtomCommandInterrupted(result)) {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : `${running.label} didn't finish.`);
+    }
+    return false;
+  };
+  return {
+    known: input.cwd !== null && status.data !== null,
+    problem,
+    canFix: git.isAllowed,
+    fixing,
+    error,
+    fix,
+  };
+}
+
+const reconnectable = (computer: EnvironmentPresentation | undefined) =>
+  computer && workspaceHandoffCanReconnect(computer) ? computer : undefined;
+
 function HandoffContent() {
   const state = useWorkspaceHandoff();
   const source = state.source!;
@@ -90,9 +154,8 @@ function HandoffContent() {
   const { environments, isReady } = useEnvironments();
   const navigate = useNavigate();
   const [running, setRunning] = useState(false);
-  const [preparationComputer, setPreparationComputer] = useState<
-    import("@t3tools/contracts").EnvironmentId | null
-  >(null);
+  const [preparationComputer, setPreparationComputer] = useState<EnvironmentId | null>(null);
+  const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const sourceProject = projects.find(
     (project) =>
       project.environmentId === source.environmentId && project.id === sourceShell?.projectId,
@@ -164,8 +227,19 @@ function HandoffContent() {
       (destination ? configs.get(destination.environmentId)?.environment.capabilities : undefined),
     FEATURE,
   );
+  // Only a move the source hasn't accepted yet depends on its checkout.
+  const checkout = useSourceCheckout({
+    environmentId: source.environmentId,
+    threadId: source.threadId,
+    cwd:
+      state.offer === null && state.sourceResult === null && sourceAllowed && sourceReady
+        ? (sourceShell?.worktreePath ?? sourceProject?.workspaceRoot ?? null)
+        : null,
+  });
   const allowed =
     (state.sourceResult !== null || (sourceAllowed && sourceReady)) &&
+    checkout.problem === null &&
+    checkout.fixing === null &&
     destinationAllowed &&
     destinationConnected &&
     destinationSupported;
@@ -197,6 +271,14 @@ function HandoffContent() {
                       : destination && !destinationAllowed
                         ? "Workspace permission is required on the destination computer."
                         : null;
+  const reconnectComputer =
+    blockedReason === null
+      ? undefined
+      : state.sourceResult === null && !sourceConnected
+        ? reconnectable(sourceComputer)
+        : destination && !destinationConnected
+          ? reconnectable(destinationComputer)
+          : undefined;
   const locked = running || state.offer !== null;
   const go = async () => {
     if (!destination || running || !allowed) return;
@@ -340,10 +422,50 @@ function HandoffContent() {
               )}
             </div>
           )}
+          {checkout.problem && !running && (
+            <div className="space-y-2">
+              <p role="status" className="text-sm text-muted-foreground">
+                {checkout.problem.reason}
+              </p>
+              {checkout.problem.fix && checkout.canFix ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={checkout.fixing !== null}
+                  onClick={() =>
+                    void checkout.fix().then((fixed) => {
+                      if (fixed) useWorkspaceHandoff.setState({ error: null });
+                    })
+                  }
+                >
+                  {checkout.fixing?.pendingLabel ?? checkout.problem.fix.label}
+                </Button>
+              ) : null}
+              {checkout.error && (
+                <p role="alert" className="break-words text-sm text-destructive-foreground">
+                  {checkout.error}
+                </p>
+              )}
+            </div>
+          )}
           {blockedReason && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {blockedReason}
-            </p>
+            <div className="space-y-2">
+              <p role="status" className="text-sm text-muted-foreground">
+                {blockedReason}
+              </p>
+              {reconnectComputer ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={reconnectComputer.connection.phase === "connecting"}
+                  onClick={() => void retryNow(reconnectComputer.environmentId)}
+                >
+                  {reconnectComputer.connection.phase === "connecting"
+                    ? `Connecting to ${reconnectComputer.label}…`
+                    : `Reconnect ${reconnectComputer.label}`}
+                </Button>
+              ) : null}
+            </div>
           )}
           {(running || state.phase === "done") && (
             <p role="status" className="text-sm">
@@ -368,8 +490,8 @@ function HandoffContent() {
           )}
           {state.phase !== "done" && !state.sourceResult && !running && (
             <p className="text-xs text-muted-foreground">
-              Commit and push your changes first. Loom checks the new workspace before settling this
-              conversation.
+              {checkout.known ? "" : "Commit and push your changes first. "}Loom checks the new
+              workspace before settling this conversation.
             </p>
           )}
         </DialogPanel>
