@@ -12,7 +12,7 @@ import {
   CommandId,
   ThreadId,
 } from "@t3tools/contracts";
-import type { LibraryProject } from "@t3tools/contracts/fork";
+import { LIBRARY_DEFAULT_CONVERSATION_TITLE, type LibraryProject } from "@t3tools/contracts/fork";
 import { useMemo, useRef } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -312,7 +312,7 @@ export function useNewTaskFromSource() {
           commandId: CommandId.make(uuidv4()),
           threadId,
           projectId: source.projectId,
-          title: "New conversation",
+          title: LIBRARY_DEFAULT_CONVERSATION_TITLE,
           ...sourceConversationSettings(checkout),
         },
       });

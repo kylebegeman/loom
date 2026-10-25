@@ -732,7 +732,7 @@ describe("Library start progressive disclosure", () => {
             key: "codex:default",
             selection: { instanceId: ProviderInstanceId.make("codex"), model: "default" },
           },
-          title: "Project discussion",
+          title: "New conversation",
           mode: "clone",
           rootPath: prepared.rootPath,
           copy: null,

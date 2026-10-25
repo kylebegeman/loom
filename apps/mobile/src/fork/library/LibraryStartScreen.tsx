@@ -12,6 +12,7 @@ import {
   libraryLaunchDefaults,
   libraryLaunchWarning,
   libraryPortableRecoveryPlan,
+  markLibraryConversationStarted,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
@@ -31,6 +32,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   type LibraryProject,
@@ -255,7 +257,7 @@ function LibraryStartContent(props: {
       seed?.review.copy?.id ?? props.initialCopyId ?? null,
     ),
     [title, setTitle] = useState(
-      seed?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
+      seed?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : LIBRARY_DEFAULT_CONVERSATION_TITLE),
     ),
     [modelKey, setModelKey] = useState<string | null>(
       seed?.review.model.key ??
@@ -691,7 +693,7 @@ function LibraryStartContent(props: {
         model: chosenModel,
         ...(runtimeMode ? { runtimeMode } : {}),
         ...(interactionMode ? { interactionMode } : {}),
-        title: title.trim() || "Project discussion",
+        title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         mode,
         rootPath: rootPath.trim(),
         copy: selectedCopy,
@@ -942,6 +944,7 @@ function LibraryStartContent(props: {
           return { loomLibraryLaunches: next };
         },
       });
+      markLibraryConversationStarted(scopedThreadKey(target));
       setLaunchedThread(target);
     } catch (cause) {
       setError(
@@ -1565,7 +1568,7 @@ function LibraryStartContent(props: {
             value={title}
             onChangeText={setTitle}
             editable={!locked}
-            placeholder="Project discussion"
+            placeholder={LIBRARY_DEFAULT_CONVERSATION_TITLE}
             maxLength={160}
             className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
           />

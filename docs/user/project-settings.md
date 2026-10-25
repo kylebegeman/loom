@@ -79,6 +79,10 @@ to change them. A project that needs a choice opens its options instead. Loom ch
 available computer and prepares its files automatically, and you can choose another computer
 or work on one repository. If a start gets stuck, **Start over** drops that attempt and keeps
 its model, permissions and folder; a conversation it already created stays in your list.
+A title you type is kept after the first message; without one, the first message names the
+conversation. If you leave a conversation you just started without sending anything, Loom
+offers **Discard empty conversation**. You can undo it from the notice that follows; on iPhone,
+choose **Keep** to leave it in your list instead.
 The conversation uses your chosen model, then any computer folder override, the project's
 preference, the model you used last on this device if that computer can run it, and the
 computer's default. Editing the brief applies to new conversations; earlier conversations keep

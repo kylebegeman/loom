@@ -15,6 +15,7 @@ import type { ComponentType } from "react";
 
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
+import { EmptyConversationOffer } from "./project-library/EmptyConversationOffer";
 import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 
 /** Components mounted once in the authenticated app shell. One line per packet. */
@@ -38,6 +39,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "preview-links-host", Component: PreviewLinksHost },
   { id: "utilities-dialog", Component: UtilitiesDialogHost },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
+  { id: "library-empty-conversations", Component: EmptyConversationOffer },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];
 

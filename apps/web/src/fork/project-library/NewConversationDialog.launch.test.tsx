@@ -536,7 +536,7 @@ describe("new conversations with source settings", () => {
       input: {
         threadId,
         projectId: localProjectId,
-        title: "New project conversation",
+        title: "New conversation",
         modelSelection: sourceSelection,
         runtimeMode: "auto",
         interactionMode: "plan",

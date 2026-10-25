@@ -20,6 +20,25 @@ export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
+
+/** The title a Library conversation starts with when none is typed, on every client. */
+export const LIBRARY_DEFAULT_CONVERSATION_TITLE = "New conversation";
+
+// Upstream's default, the Library's, the iPhone continuation's, and the two Library defaults
+// conversations started with before the clients agreed on one.
+const DEFAULT_THREAD_TITLES: ReadonlySet<string> = new Set([
+  "New thread",
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
+  "Linked continuation",
+  "New project conversation",
+  "Project discussion",
+]);
+
+/**
+ * Whether a thread still holds a title nobody chose, which its first message may replace. A title
+ * typed when a Library conversation starts, or a rename before the first message, is kept.
+ */
+export const isDefaultThreadTitle = (title: string) => DEFAULT_THREAD_TITLES.has(title.trim());
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));

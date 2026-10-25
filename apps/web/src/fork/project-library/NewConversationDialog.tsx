@@ -11,6 +11,7 @@ import {
   libraryPortableRecoveryPlan,
   libraryLaunchDefaults,
   libraryLaunchWarning,
+  markLibraryConversationStarted,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 
@@ -30,7 +31,9 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  isDefaultThreadTitle,
   LibraryThreadBinding,
   LibraryProject,
   LibraryPrepareCopyRequest,
@@ -40,7 +43,11 @@ import {
   type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopeProjectRef,
+  scopeThreadRef,
+  scopedThreadKey,
+} from "@t3tools/client-runtime/environment";
 import * as Schema from "effect/Schema";
 
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -120,7 +127,6 @@ const ReopeningAttempt = Schema.NullOr(
     savedAt: Schema.optional(Schema.String),
   }),
 );
-const UNTITLED_CONVERSATION = "New project conversation";
 type ReopeningFiles = NonNullable<typeof ReopeningAttempt.Type>;
 
 /** Keep the restored receipt across authority failures without restoring a second workspace. */
@@ -704,7 +710,7 @@ export function useLibraryConversationSetup({
                 copy: null,
                 keepOnComputer,
                 launch: {
-                  title: title.trim() || UNTITLED_CONVERSATION,
+                  title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
                   context,
                   modelSelection,
                   runtimeMode,
@@ -920,7 +926,7 @@ export function useLibraryConversationSetup({
               }
             : {}),
         },
-        title: title.trim() || UNTITLED_CONVERSATION,
+        title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         context,
         modelSelection,
         defaultsResolved: false,
@@ -1099,6 +1105,9 @@ export function useLibraryConversationSetup({
           .getState()
           .setPrompt(scopeThreadRef(next.environmentId, next.threadId), next.context);
       saveAttempt(null);
+      markLibraryConversationStarted(
+        scopedThreadKey(scopeThreadRef(next.environmentId, next.threadId)),
+      );
       onChanged();
       onClose();
       await navigate({
@@ -1285,7 +1294,7 @@ export function useLibraryConversationSetup({
                           : null);
   // Names what Retry replays. An attempt held before the conversation step saved no title, so it
   // uses the one shown, which cannot change until Start over.
-  const heldTitle = attempt?.title ?? (title.trim() || UNTITLED_CONVERSATION);
+  const heldTitle = attempt?.title ?? (title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE);
   return {
     project,
     operationPhase,
@@ -1382,7 +1391,7 @@ export function useLibraryConversationSetup({
     locked,
     held: locked
       ? {
-          title: heldTitle === UNTITLED_CONVERSATION ? null : heldTitle,
+          title: isDefaultThreadTitle(heldTitle) ? null : heldTitle,
           savedAt: attempt?.createdAt ?? preparation?.savedAt ?? reopening?.savedAt ?? null,
         }
       : null,
