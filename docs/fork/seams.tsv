@@ -685,7 +685,7 @@ apps/desktop/src/ipc/channels.ts	identity-renewal	2
 apps/desktop/src/main.ts	identity-renewal	2
 apps/desktop/src/preload.ts	identity-renewal	2
 apps/mobile/src/connection/platform.ts	identity-renewal	2
-apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	identity-renewal	1
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	identity-renewal	2
 apps/server/src/auth/SessionStore.ts	identity-renewal	17
 apps/server/src/auth/SessionStore.test.ts	identity-renewal	5
 apps/server/src/ws.ts	identity-renewal	11
@@ -859,6 +859,7 @@ patches/vitest@5.0.1.patch	project-lifecycle	1
 pnpm-workspace.yaml	project-lifecycle	2
 docs/user/composer.md	project-lifecycle	1
 docs/internals/effect-services.md	source-control-cockpit	1
+docs/internals/connection-runtime.md	fleet-connections	1
 apps/mobile/src/features/threads/GitActionProgressOverlay.tsx	source-control-cockpit	1
 apps/mobile/src/features/threads/ThreadGitControls.tsx	source-control-cockpit	7
 apps/mobile/src/features/threads/ThreadHeader.tsx	source-control-cockpit	4
@@ -914,3 +915,18 @@ apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx	machine-updates	1
 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	machine-updates	9
 packages/contracts/src/ipc.ts	machine-updates	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	ext-vault	1
+apps/mobile/src/features/connection/EnvironmentConnectionNotice.tsx	fleet-connections	7
+apps/mobile/src/features/files/WorkspaceFilePreviewError.tsx	fleet-connections	1
+apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx	fleet-connections	3
+apps/mobile/src/features/home/workspace-connection-status.ts	fleet-connections	3
+apps/mobile/src/features/review/ReviewSheet.tsx	fleet-connections	1
+apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx	fleet-connections	1
+apps/web/src/components/ChatView.tsx	fleet-connections	13
+packages/client-runtime/src/connection/model.ts	fleet-connections	1
+packages/client-runtime/src/connection/presentation.test.ts	fleet-connections	1
+packages/client-runtime/src/connection/presentation.ts	fleet-connections	6
+packages/client-runtime/src/connection/registry.test.ts	directory-computers	1
+packages/client-runtime/src/connection/registry.ts	directory-computers	5
+packages/client-runtime/src/connection/supervisor.test.ts	fleet-connections	2
+packages/client-runtime/src/connection/supervisor.ts	fleet-connections	6
+packages/client-runtime/src/state/presentation.ts	fleet-connections	4
