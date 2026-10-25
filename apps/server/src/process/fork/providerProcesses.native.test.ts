@@ -42,7 +42,6 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         pgid: child.pid,
         owner: { pid: process.pid },
       });
-      expect(record.command).toMatch(/^[a-f0-9]{64}$/);
       yield* Effect.callback<void>((resume) => {
         const onExit = () => resume(Effect.void);
         child.once("exit", onExit);

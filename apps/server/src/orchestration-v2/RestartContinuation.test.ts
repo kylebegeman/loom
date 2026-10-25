@@ -1314,7 +1314,7 @@ it.effect("does not resume while a previous provider survives", () =>
         ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
         Layer.succeed(ProviderProcesses, {
           ...ProviderProcesses.defaultValue(),
-          blocks: () => true,
+          blocker: () => 123,
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getThreadRecords: () => Effect.succeed(projection),
@@ -1335,7 +1335,7 @@ it.effect("persists a previous-agent notice and suppresses the recovery wake", (
         ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
         Layer.succeed(ProviderProcesses, {
           ...ProviderProcesses.defaultValue(),
-          blocks: () => true,
+          blocker: () => 123,
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getRecoveryThreadIds: () => Effect.succeed([threadId]),

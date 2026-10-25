@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- synchronous spawn and signal callbacks must persist ownership before returning.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { ProviderProcesses, type ProviderProcessRegistration } from "@t3tools/shared/AgentScope";
@@ -13,9 +12,9 @@ import * as ServerConfig from "../../config.ts";
 const Identity = Schema.Struct({
   pid: Schema.Int.check(Schema.isGreaterThan(1)),
   pgid: Schema.Int.check(Schema.isGreaterThan(1)),
+  // PID, group and start second identify a process; command lines are not compared because
+  // `#!/usr/bin/env node` launchers and retitling CLIs rewrite theirs after spawn.
   lstart: Schema.String,
-  // Command digests verify ownership without persisting credentials carried in argv.
-  command: Schema.String,
 });
 const Record = Schema.Struct({
   ...Identity.fields,
@@ -39,18 +38,31 @@ export interface ProcessRegistryHost {
 }
 
 const sameProcess = (record: Identity, current: Identity) =>
-  record.pid === current.pid &&
-  record.pgid === current.pgid &&
-  record.lstart === current.lstart &&
-  record.command === current.command;
+  record.pid === current.pid && record.pgid === current.pgid && record.lstart === current.lstart;
 
-export const makeRegistry = (host: ProcessRegistryHost) => {
+// Shared providers carry no thread, so they hold every thread; a folder match keeps two
+// conversations from writing to one checkout.
+const holds = (record: Record, threadId?: string, cwd?: string) =>
+  threadId === undefined ||
+  record.threadId === undefined ||
+  record.threadId === threadId ||
+  (cwd !== undefined && record.cwd === cwd);
+
+export const makeRegistry = (
+  host: ProcessRegistryHost,
+  onUnreadable?: (cause: unknown) => void,
+) => {
   let stopping = false;
   const live = new Map<number, Record>();
   const previous = new Map<number, Record>();
-  const serialized = host.read();
-  if (serialized !== null)
-    for (const record of decode(serialized).processes) previous.set(record.pid, record);
+  try {
+    const serialized = host.read();
+    if (serialized !== null)
+      for (const record of decode(serialized).processes) previous.set(record.pid, record);
+  } catch (cause) {
+    // An unreadable ledger must not keep the server from starting; the next write replaces it.
+    onUnreadable?.(cause);
+  }
   const persist = () =>
     host.write(JSON.stringify({ version: 1, processes: [...previous.values(), ...live.values()] }));
   const inspect = (record: Record): "gone" | "owned" | "uncertain" => {
@@ -62,12 +74,11 @@ export const makeRegistry = (host: ProcessRegistryHost) => {
       return "uncertain";
     }
   };
-  const reap = Effect.fn("ProviderProcesses.reap")(function* (threadId?: string) {
+  const reap = Effect.fn("ProviderProcesses.reap")(function* (threadId?: string, cwd?: string) {
     if (previous.size === 0) return;
     const pending: Array<{ record: Record; members: ReadonlyArray<Record> }> = [];
     for (const record of previous.values()) {
-      if (threadId !== undefined && record.threadId !== undefined && record.threadId !== threadId)
-        continue;
+      if (!holds(record, threadId, cwd)) continue;
       // A second server accidentally pointed at the same state directory owns no right
       // to terminate the first server's providers, even though the child identity matches.
       try {
@@ -184,15 +195,11 @@ export const makeRegistry = (host: ProcessRegistryHost) => {
       }
     },
     reap: reap(),
-    blocks: (threadId, cwd) =>
-      [...previous.values()].some(
-        (record) =>
-          (record.threadId === undefined ||
-            record.threadId === threadId ||
-            (cwd !== undefined && record.cwd === cwd)) &&
-          inspect(record) !== "gone",
-      ),
-    stop: (threadId) => reap(threadId),
+    blocker: (threadId, cwd) =>
+      [...previous.values()].find(
+        (record) => holds(record, threadId, cwd) && inspect(record) !== "gone",
+      )?.pid,
+    stop: (threadId, cwd) => reap(threadId, cwd),
   });
 };
 
@@ -201,7 +208,7 @@ const inspectProcess = (pid: number): Identity | null => {
   try {
     output = NodeChildProcess.execFileSync(
       "/bin/ps",
-      ["-ww", "-p", String(pid), "-o", "pgid=", "-o", "lstart=", "-o", "command="],
+      ["-p", String(pid), "-o", "pgid=", "-o", "lstart="],
       {
         encoding: "utf8",
         timeout: 1000,
@@ -214,14 +221,9 @@ const inspectProcess = (pid: number): Identity | null => {
       return null;
     throw cause;
   }
-  const match = /^(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/s.exec(output);
+  const match = /^(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})$/.exec(output);
   if (!match) throw new Error("Could not verify provider process identity");
-  return {
-    pid,
-    pgid: Number(match[1]),
-    lstart: match[2]!,
-    command: NodeCrypto.createHash("sha256").update(match[3]!).digest("hex"),
-  };
+  return { pid, pgid: Number(match[1]), lstart: match[2]! };
 };
 
 export const layer = Layer.effect(
@@ -231,49 +233,67 @@ export const layer = Layer.effect(
     const { stateDir } = yield* ServerConfig.ServerConfig;
     const directory = NodePath.join(stateDir, "runtime");
     const path = NodePath.join(directory, "provider-processes.json");
+    let unreadable: unknown;
     const registry = yield* Effect.try(() => {
       NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
       const owner = inspectProcess(process.pid);
       if (owner === null) throw new Error("Could not verify server process identity");
-      return makeRegistry({
-        owner,
-        inspect: inspectProcess,
-        members: (pgid) => {
-          // Enumerate only numeric group membership; inspect commands only in the owned group.
-          const output = NodeChildProcess.execFileSync(
-            "/bin/ps",
-            ["-A", "-o", "pid=", "-o", "pgid="],
-            { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
-          );
-          return output.split("\n").flatMap((line) => {
-            const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
-            if (!match || Number(match[2]) !== pgid) return [];
-            const member = inspectProcess(Number(match[1]));
-            return member !== null && member.pgid === pgid ? [member] : [];
-          });
+      return makeRegistry(
+        {
+          owner,
+          inspect: inspectProcess,
+          members: (pgid) => {
+            // Enumerate only numeric group membership; inspect only members of the owned group.
+            const output = NodeChildProcess.execFileSync(
+              "/bin/ps",
+              ["-A", "-o", "pid=", "-o", "pgid="],
+              { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
+            );
+            return output.split("\n").flatMap((line) => {
+              const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+              if (!match || Number(match[2]) !== pgid) return [];
+              const member = inspectProcess(Number(match[1]));
+              return member !== null && member.pgid === pgid ? [member] : [];
+            });
+          },
+          signal: (pgid, signal) => process.kill(-pgid, signal),
+          read: () => {
+            try {
+              return NodeFS.readFileSync(path, "utf8");
+            } catch (cause) {
+              if (
+                typeof cause === "object" &&
+                cause !== null &&
+                "code" in cause &&
+                cause.code === "ENOENT"
+              )
+                return null;
+              throw cause;
+            }
+          },
+          write: (contents) => {
+            const temporary = `${path}.${process.pid}.tmp`;
+            NodeFS.writeFileSync(temporary, contents, { mode: 0o600 });
+            NodeFS.renameSync(temporary, path);
+          },
         },
-        signal: (pgid, signal) => process.kill(-pgid, signal),
-        read: () => {
-          try {
-            return NodeFS.readFileSync(path, "utf8");
-          } catch (cause) {
-            if (
-              typeof cause === "object" &&
-              cause !== null &&
-              "code" in cause &&
-              cause.code === "ENOENT"
-            )
-              return null;
-            throw cause;
-          }
+        (cause) => {
+          unreadable = cause;
         },
-        write: (contents) => {
-          const temporary = `${path}.${process.pid}.tmp`;
-          NodeFS.writeFileSync(temporary, contents, { mode: 0o600 });
-          NodeFS.renameSync(temporary, path);
-        },
+      );
+    }).pipe(
+      // Without a verified server identity nothing can be proven owned, so nothing is reaped;
+      // the server still starts.
+      Effect.catch((cause) =>
+        Effect.logWarning("Provider process ownership is unavailable", { cause }).pipe(
+          Effect.as(ProviderProcesses.defaultValue()),
+        ),
+      ),
+    );
+    if (unreadable !== undefined)
+      yield* Effect.logWarning("Discarded an unreadable provider process ledger", {
+        cause: unreadable,
       });
-    }).pipe(Effect.orDie);
     yield* registry.reap;
     return registry;
   }),

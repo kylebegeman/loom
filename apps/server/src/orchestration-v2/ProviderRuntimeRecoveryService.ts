@@ -269,7 +269,8 @@ export const make = Effect.gen(function* () {
       // fork: server-weight -- persist the refusal for every client before the effect worker starts.
       const previousAgentRunning =
         trigger === "startup" &&
-        processes.blocks(projection.thread.id, projection.thread.worktreePath ?? undefined);
+        processes.blocker(projection.thread.id, projection.thread.worktreePath ?? undefined) !==
+          undefined;
       if (previousAgentRunning)
         events.push({
           id: yield* allocateEventId(),
@@ -290,7 +291,7 @@ export const make = Effect.gen(function* () {
             status: "completed",
             title: "A previous agent is still running in this folder",
             message:
-              "A previous agent is still running in this folder. Use Stop to retry cleanup before continuing.",
+              "An agent from before the restart is still running in this folder, so Loom did not resume this conversation. Send a message to stop it and continue.",
             startedAt: now,
             completedAt: now,
             updatedAt: now,

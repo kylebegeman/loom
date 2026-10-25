@@ -2191,13 +2191,17 @@ export const layerWithOptions = (
             input.providerSessionId,
             Effect.gen(function* () {
               const cwd = input.runtimePolicy.cwd;
-              // fork: server-weight -- manual starts must not race a refused restart cleanup either.
-              if (providerProcesses.blocks(input.threadId, cwd ?? undefined)) {
+              // fork: server-weight -- a new start retries the restart cleanup, then refuses to
+              // race a provider it still could not stop.
+              if (providerProcesses.blocker(input.threadId, cwd ?? undefined) !== undefined)
+                yield* providerProcesses.stop(input.threadId, cwd ?? undefined);
+              const blocker = providerProcesses.blocker(input.threadId, cwd ?? undefined); // fork: server-weight
+              if (blocker !== undefined) {
+                // fork: server-weight
                 return yield* new ProviderSessionOpenError({
                   instanceId: input.modelSelection.instanceId,
                   providerSessionId: input.providerSessionId,
-                  cause:
-                    "A previous agent is still running in this folder. Stop it before continuing.",
+                  cause: `Loom could not stop an agent the previous server left running in this folder (process ${blocker}). End that process, then try again.`,
                 });
               }
               if (cwd !== null) {

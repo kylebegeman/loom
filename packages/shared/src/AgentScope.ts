@@ -119,14 +119,15 @@ export const ProviderProcesses = Context.Reference<{
   readonly register: (input: ProviderProcessRegistration) => () => void;
   readonly signalAll: () => void;
   readonly reap: Effect.Effect<void>;
-  readonly blocks: (threadId: string, cwd?: string) => boolean;
-  readonly stop: (threadId: string) => Effect.Effect<void>;
+  /** The PID of a previous server's provider still holding this thread or folder. */
+  readonly blocker: (threadId: string, cwd?: string) => number | undefined;
+  readonly stop: (threadId: string, cwd?: string) => Effect.Effect<void>;
 }>("@t3tools/shared/ProviderProcesses", {
   defaultValue: () => ({
     register: () => () => {},
     signalAll: () => {},
     reap: Effect.void,
-    blocks: () => false,
+    blocker: () => undefined,
     stop: () => Effect.void,
   }),
 });

@@ -231,7 +231,9 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
     // fork: server-weight -- a refused cleanup must never start a second writer in this folder.
     const processes = yield* ProviderProcesses;
-    if (processes.blocks(input.threadId, projection.thread.worktreePath ?? undefined)) {
+    if (
+      processes.blocker(input.threadId, projection.thread.worktreePath ?? undefined) !== undefined
+    ) {
       yield* Effect.logWarning("A previous agent is still running in this folder", {
         threadId: input.threadId,
       });
