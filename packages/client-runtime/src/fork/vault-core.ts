@@ -29,7 +29,7 @@ export const vaultStatusMessage = (status: VaultCoreStatus) =>
     unavailable: "Your Vault backend is unavailable. Check its connection, then retry.",
     denied: "The Vault service connection needs access to its configured storage mount.",
     misconfigured:
-      "The Vault connection needs repair. Check its origin, private token file and KV v2 mount.",
+      "The Vault connection needs repair. Check the origin, private token file and KV v2 mount in fork/vault/openbao.json or the server environment.",
   })[status.state];
 export const vaultItemChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
 export const refreshVaultItems = (
