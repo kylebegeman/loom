@@ -119,6 +119,11 @@ vi.mock("./libraryState", () => ({
     snapshotThread: state.snapshot,
   },
 }));
+vi.mock("../../features/settings/components/GitHubHostSetupSettings", () => ({
+  GitHubHostSetupSettings: ({ environmentId }: { environmentId: string }) => (
+    <div>GitHub setup for {environmentId}</div>
+  ),
+}));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
 vi.mock("../../state/preferences", () => ({
   mobilePreferencesAtom: state.preferenceAtom,
@@ -524,6 +529,29 @@ afterEach(async () => {
 });
 
 describe("Library start progressive disclosure", () => {
+  it("offers GitHub repair on the computer whose clone failed", async () => {
+    state.copies = [];
+    params = { ...params, reuseEnvironmentId: computerA };
+    const repair = {
+      kind: "github-host-setup" as const,
+      environmentId: computerA,
+      label: "MacBook",
+      agentTool: "loom_github_host_setup" as const,
+      action: "start" as const,
+    };
+    state.launch.mockRejectedValueOnce(
+      new LibraryError({
+        reason: "blocked",
+        detail: "Git authentication failed on MacBook.",
+        repair,
+      }),
+    );
+    await render();
+    await click("Start work");
+    expect(container.textContent).toContain("Git authentication failed on MacBook.");
+    await click("Set up GitHub on MacBook");
+    expect(container.textContent).toContain(`GitHub setup for ${computerA}`);
+  });
   it.each([0, 1])(
     "keeps the launch essentials visible without a redundant scope choice for %i repositories",
     async (count) => {

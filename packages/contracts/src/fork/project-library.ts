@@ -265,6 +265,15 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
     "not-managed",
     "io",
   ]),
+  repair: Schema.optionalKey(
+    Schema.Struct({
+      kind: Schema.Literal("github-host-setup"),
+      environmentId: EnvironmentId,
+      label: Schema.String,
+      agentTool: Schema.Literal("loom_github_host_setup"),
+      action: Schema.Literal("start"),
+    }),
+  ),
   detail: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
   /** For `invalid`, a string is what to fix, written for the person or agent who asked. */
   cause: Schema.optional(Schema.Defect()),

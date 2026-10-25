@@ -335,12 +335,13 @@ const make = Effect.gen(function* () {
       Effect.catchCause((cause) =>
         Effect.gen(function* () {
           if (Cause.hasInterrupts(cause)) return yield* Effect.failCause(cause);
-          const error = Cause.squash(cause);
+          const error = io(Cause.squash(cause));
           return yield* save({
             ...operation,
-            state: io(error).reason === "blocked" ? "needs-input" : "failed",
-            error: io(error).message,
-            failureReason: io(error).reason,
+            state: error.reason === "blocked" ? "needs-input" : "failed",
+            error: error.message,
+            failureReason: error.reason,
+            ...(error.repair ? { repair: error.repair } : {}),
             updatedAt: yield* now,
           });
         }),
@@ -457,6 +458,7 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({
         reason: result.failureReason ?? "blocked",
         detail: result.error ?? "Review the interrupted operation, then retry.",
+        ...(result.repair ? { repair: result.repair } : {}),
       });
     return result;
   });

@@ -345,6 +345,7 @@ export function useLibraryConversationSetup({
   const [pulling, setPulling] = useState(false);
   const [reviewingFiles, setReviewingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
   const copiesReadiness = libraryCopyReadiness(copiesQuery);
   const knownCopies = [
     ...copies.filter((entry) => entry.id !== preparedCopy?.id),
@@ -1083,6 +1084,7 @@ export function useLibraryConversationSetup({
     try {
       await launch();
     } catch (cause) {
+      setCloneRepair(isLibraryError(cause) ? cause.repair : undefined);
       if (submittedPreparation) {
         const receipt = await recoverPreparation({
           environmentId: submittedPreparation.environmentId,
@@ -1368,6 +1370,7 @@ export function useLibraryConversationSetup({
     pullThenSubmit,
     submit,
     error,
+    cloneRepair: error && cloneRepair?.environmentId === hostId ? cloneRepair : null,
     blocker,
     refreshFiles: () => {
       copiesQuery.refresh();

@@ -121,6 +121,7 @@ const projections = Layer.mock(ProjectionStore.ProjectionStoreV2)({
     Effect.succeed({ schemaVersion: 1, snapshotSequence: 0, threads: [], archivedThreads: [] }),
 });
 const cloneSources = new Map<string, string>();
+const cloneFailures = new Map<string, string>();
 const publisherFailures = new Set<string>();
 const publisherEdits = new Map<string, { path: string; contents: string }>();
 const recoveryArchivePath = Effect.fnUntraced(function* (sha256: string) {
@@ -137,6 +138,19 @@ const runnerLayer = Layer.effect(
         return Effect.gen(function* () {
           const remoteIndex = input.args.indexOf("--") + 1;
           const remoteUrl = input.args[remoteIndex]!;
+          expect(input.env?.GIT_TERMINAL_PROMPT).toBe("0");
+          const failure = cloneFailures.get(remoteUrl);
+          if (failure)
+            return {
+              code: 128,
+              stdout: "",
+              stderr: failure,
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            } as ProcessRunner.ProcessRunOutput;
           const source = cloneSources.get(remoteUrl);
           if (source === undefined) return yield* Effect.die("Unexpected clone fixture");
           const args = [...input.args];
@@ -313,6 +327,36 @@ const reconnectDetail =
   "Loom could not check which project owns this folder. Reconnect your Library and try again.";
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
+  it.effect("reports clone authentication with a computer-specific setup repair", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const remoteUrl = "https://github.com/team/clone-auth-test.git";
+      cloneFailures.set(
+        remoteUrl,
+        "fatal: Authentication failed for 'https://private@github.com/team/clone-auth-test'",
+      );
+      const project = makeProject(
+        projectFor()
+          .resources.slice(0, 1)
+          .map((resource) => ({ ...resource, remoteUrl })),
+      );
+      const failure = yield* service
+        .prepareCopy({
+          requestId: "clone-auth-failure",
+          project,
+          rootPath: path.join(parent, "clone-auth"),
+          strategy: "clone",
+        })
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("blocked");
+      expect(failure.repair).toMatchObject({ kind: "github-host-setup", environmentId });
+      expect(failure.message).toContain("Git authentication failed");
+      expect(failure.message).not.toContain("private@");
+      cloneFailures.delete(remoteUrl);
+    }),
+  );
   it.effect(
     "portable snapshots allow idle conversations, reject active and pending work, and replay immutable results",
     () =>

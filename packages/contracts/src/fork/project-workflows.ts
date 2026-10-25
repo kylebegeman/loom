@@ -155,6 +155,7 @@ export const LibraryOperation = Schema.Struct({
   attempt: NonNegativeInt,
   error: Schema.NullOr(Schema.String),
   failureReason: Schema.optional(LibraryError.fields.reason),
+  repair: LibraryError.fields.repair,
   result: Schema.NullOr(
     Schema.Union([LibraryProject, LibraryWorkingCopy, Schema.Struct({ threadId: ThreadId })]),
   ),
