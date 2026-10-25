@@ -12,13 +12,13 @@ import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
   type AuthClientSession,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import {
   LibraryError,
   LibraryOperation,
   LibraryOperationInput,
   type LibraryProject,
-  type LibraryWorkingCopy,
   type LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
@@ -38,10 +38,8 @@ import { ProjectLibraryMigrations } from "./migrations.ts";
 import { LibraryService } from "./LibraryService.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
-import { LibraryPublisher } from "./LibraryPublisher.ts";
-import { LibraryHistorySource } from "./LibraryHistorySource.ts";
 import * as ProjectOperations from "./ProjectOperations.ts";
-import { archiveFor, copyFor, resource } from "./Library.testkit.ts";
+import { copyFor, resource } from "./Library.testkit.ts";
 
 const encodeRequest = Schema.encodeEffect(Schema.fromJsonString(LibraryOperationInput));
 const encodeOperation = Schema.encodeEffect(Schema.fromJsonString(LibraryOperation));
@@ -88,12 +86,10 @@ const fixture = Effect.gen(function* () {
   const pause = yield* Ref.make(false);
   const revokeAfterRead = yield* Ref.make(false);
   const dispatched = yield* Ref.make<string[]>([]);
-  const snapshots = yield* Ref.make(0);
   const retentionSaves = yield* Ref.make(0);
-  const publishedRetentions = yield* Ref.make<readonly LibraryWorkingCopy[]>([]);
-  const failPublish = yield* Ref.make(false);
-  const revokeAtAttachments = yield* Ref.make(false);
-  const ingests = yield* Ref.make(0);
+  const failBind = yield* Ref.make(false);
+  const threadDeleted = yield* Ref.make(false);
+  const revokeAtResolve = yield* Ref.make(false);
   const observedToken = yield* Ref.make<string | null>(null);
   const external = Layer.mergeAll(
     Layer.mock(ProjectWorkflows)({ changed: Effect.void, changes: Stream.empty }),
@@ -133,19 +129,28 @@ const fixture = Effect.gen(function* () {
           Effect.as({ ...copyFor(project), environmentId, keepOnComputer: input.keepOnComputer }),
         ),
       resolveBinding: (input) =>
-        Effect.succeed({
-          binding: input.binding,
-          localProjectId: ProjectId.make("local"),
-          cwd: "/work/project",
-          repositoryPaths: [],
-        }),
+        Ref.get(revokeAtResolve).pipe(
+          Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
+          Effect.as({
+            binding: input.binding,
+            localProjectId: ProjectId.make("local"),
+            cwd: "/work/project",
+            repositoryPaths: [],
+          }),
+        ),
       bindThread: (input) =>
-        Effect.succeed({
-          binding: input.binding,
-          localProjectId: ProjectId.make("local"),
-          cwd: "/work/project",
-          repositoryPaths: [],
-        }),
+        Ref.get(failBind).pipe(
+          Effect.flatMap((fail) =>
+            fail
+              ? Effect.fail(new LibraryError({ reason: "io", detail: "Reconnect the computer." }))
+              : Effect.succeed({
+                  binding: input.binding,
+                  localProjectId: ProjectId.make("local"),
+                  cwd: "/work/project",
+                  repositoryPaths: [],
+                }),
+          ),
+        ),
       prepareCopy: () => Effect.succeed({ ...copyFor(project), environmentId }),
       restoreCopy: (input) =>
         Ref.set(observedToken, input.grant.accessToken).pipe(
@@ -154,36 +159,17 @@ const fixture = Effect.gen(function* () {
       release: () =>
         Effect.fail(new LibraryError({ reason: "blocked", detail: "The reviewed files changed." })),
     }),
-    Layer.mock(LibraryPublisher)({
-      enabled: true,
-      registerCopy: (input) =>
-        Ref.update(publishedRetentions, (copies) => [...copies, input.copy]).pipe(
-          Effect.as(input.copy),
-        ),
-      publishAttachments: () =>
-        Ref.get(revokeAtAttachments).pipe(
-          Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
-          Effect.as(new Set<string>()),
-        ),
-      ingest: () =>
-        Effect.gen(function* () {
-          yield* Ref.update(ingests, (count) => count + 1);
-          if (yield* Ref.get(failPublish))
-            return yield* new LibraryError({ reason: "blocked", detail: "Reconnect the Library." });
-          return {
-            sourceEnvironmentId: environmentId,
-            journalId: "launch",
-            lastSequence: 1,
-            applied: 1,
-          };
-        }),
-    }),
-    Layer.mock(LibraryHistorySource)({
-      snapshotThread: () =>
-        Ref.update(snapshots, (count) => count + 1).pipe(Effect.andThen(archiveFor(project))),
-    }),
     Layer.mock(ThreadManagementService)({
-      getThreadShell: () => Effect.succeed(null),
+      // Only what the launch reads: whether the conversation it created still exists.
+      getThreadShell: () =>
+        Ref.get(threadDeleted).pipe(
+          Effect.map(
+            (deleted) =>
+              ({
+                deletedAt: deleted ? DateTime.makeUnsafe("2026-10-25T00:00:00Z") : null,
+              }) as OrchestrationV2ThreadShell,
+          ),
+        ),
       dispatch: (command) =>
         Ref.update(dispatched, (ids) => [...ids, command.commandId]).pipe(
           Effect.as({ sequence: 1, storedEvents: [] }),
@@ -203,12 +189,10 @@ const fixture = Effect.gen(function* () {
   );
   return {
     retentionSaves,
-    publishedRetentions,
     dispatched,
-    snapshots,
-    failPublish,
-    revokeAtAttachments,
-    ingests,
+    failBind,
+    threadDeleted,
+    revokeAtResolve,
     active,
     calls,
     failure,
@@ -483,59 +467,84 @@ describe("Project operations", () => {
       }),
     ),
   );
-  it.effect(
-    "retains project links and retries launch publication with the same thread command and archive",
-    () =>
-      run((state) =>
-        Effect.gen(function* () {
-          const request: LibraryOperationInput = {
-            kind: "launch",
-            input: {
-              project,
-              keepOnComputer: true,
-              binding: {
-                projectId: project.id,
-                projectRevision: project.revision,
-                environmentId,
-                workingCopyId: "copy",
-                resourceIds: [],
-              },
-              threadId: ThreadId.make("new-thread"),
-              title: "Review",
-              modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
-              runtimeMode: "approval-required",
-              interactionMode: "plan",
-            },
-          };
-          yield* Ref.set(state.failPublish, true);
-          expect(
-            (yield* state.service.execute("launch", request, actor).pipe(Effect.flip)).message,
-          ).toContain("Reconnect");
-          expect((yield* state.service.list({ projectId: project.id }))[0]?.state).toBe(
-            "needs-input",
-          );
-          yield* Ref.set(state.failPublish, false);
-          expect((yield* state.service.execute("launch", request, actor)).result).toEqual({
-            threadId: "new-thread",
-          });
-          expect(yield* Ref.get(state.dispatched)).toEqual(["launch:create", "launch:create"]);
-          expect(yield* Ref.get(state.snapshots)).toBe(1);
-          expect(yield* Ref.get(state.retentionSaves)).toBe(1);
-          const retentions = yield* Ref.get(state.publishedRetentions);
-          expect(retentions).toHaveLength(2);
-          expect(retentions[1]).toEqual(retentions[0]);
-          yield* state.service.execute("create-project", create, actor);
-          expect(
-            (yield* state.service.list({ projectId: project.id })).map((operation) => operation.id),
-          ).toContain("create-project");
-        }),
-      ),
-  );
-
-  it.effect("rechecks launch authorization after attachments before publishing history", () =>
+  it.effect("retries a launch with the same thread command, saving retention once", () =>
     run((state) =>
       Effect.gen(function* () {
-        yield* Ref.set(state.revokeAtAttachments, true);
+        const request: LibraryOperationInput = {
+          kind: "launch",
+          input: {
+            project,
+            keepOnComputer: true,
+            binding: {
+              projectId: project.id,
+              projectRevision: project.revision,
+              environmentId,
+              workingCopyId: "copy",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("new-thread"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+          },
+        };
+        yield* Ref.set(state.failBind, true);
+        expect(
+          (yield* state.service.execute("launch", request, actor).pipe(Effect.flip)).message,
+        ).toContain("Reconnect");
+        expect((yield* state.service.list({ projectId: project.id }))[0]?.state).toBe("failed");
+        yield* Ref.set(state.failBind, false);
+        expect((yield* state.service.execute("launch", request, actor)).result).toEqual({
+          threadId: "new-thread",
+        });
+        expect(yield* Ref.get(state.dispatched)).toEqual(["launch:create", "launch:create"]);
+        expect(yield* Ref.get(state.retentionSaves)).toBe(1);
+        yield* state.service.execute("create-project", create, actor);
+        expect(
+          (yield* state.service.list({ projectId: project.id })).map((operation) => operation.id),
+        ).toContain("create-project");
+      }),
+    ),
+  );
+
+  it.effect("stops a retry whose conversation was deleted since the first try", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.threadDeleted, true);
+        const request: LibraryOperationInput = {
+          kind: "launch",
+          input: {
+            project,
+            binding: {
+              projectId: project.id,
+              projectRevision: 1,
+              environmentId,
+              workingCopyId: "copy",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("deleted-launch"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+          },
+        };
+        expect(
+          (yield* state.service.execute("deleted-launch", request, actor).pipe(Effect.flip))
+            .message,
+        ).toContain("Start over");
+        expect((yield* state.service.list({ projectId: project.id }))[0]?.state).toBe(
+          "needs-input",
+        );
+      }),
+    ),
+  );
+
+  it.effect("rechecks launch authorization before creating the conversation", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.revokeAtResolve, true);
         const request: LibraryOperationInput = {
           kind: "launch",
           input: {
@@ -557,7 +566,7 @@ describe("Project operations", () => {
         expect(
           (yield* state.service.execute("revoked-launch", request, actor).pipe(Effect.flip)).reason,
         ).toBe("blocked");
-        expect(yield* Ref.get(state.ingests)).toBe(0);
+        expect(yield* Ref.get(state.dispatched)).toEqual([]);
         expect((yield* state.service.list({}))[0]?.state).toBe("needs-input");
       }),
     ),

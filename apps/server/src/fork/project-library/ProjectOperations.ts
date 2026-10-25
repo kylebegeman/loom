@@ -13,7 +13,6 @@ import {
   LibraryError,
   LibraryOperation,
   LibraryOperationInput,
-  LibraryThreadArchive,
   LibraryWorkingCopy,
   type LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
@@ -37,8 +36,6 @@ import { forkParked } from "../../serverActivation.ts";
 import { LibraryService } from "./LibraryService.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
-import { LibraryPublisher } from "./LibraryPublisher.ts";
-import { LibraryHistorySource } from "./LibraryHistorySource.ts";
 
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
@@ -58,7 +55,6 @@ const workloadCodec = Schema.fromJsonString(Workload);
 const operationCodec = Schema.fromJsonString(LibraryOperation);
 const requestCodec = Schema.fromJsonString(LibraryOperationInput);
 const copyCodec = Schema.fromJsonString(LibraryWorkingCopy);
-const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive));
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
   return kind === "create"
     ? [AuthSettingsWriteScope]
@@ -139,8 +135,6 @@ const make = Effect.gen(function* () {
   const workflows = yield* ProjectWorkflows;
   const workspace = yield* LibraryWorkspace;
   const workspaceStore = yield* LibraryWorkspaceStore;
-  const publisher = yield* LibraryPublisher;
-  const history = yield* LibraryHistorySource;
   const threads = yield* ThreadManagementService;
   const sessions = yield* SessionStore;
   const identity = yield* ServerEnvironmentIdentity;
@@ -285,6 +279,15 @@ const make = Effect.gen(function* () {
               creationSource: row.session_id.startsWith("workload:") ? "mcp" : "web",
             })
             .pipe(Effect.mapError(io));
+          // A retry reuses the first try's create, which does nothing for a conversation deleted
+          // since. Binding files to it would end at a conversation nobody can open.
+          const created = yield* threads.getThreadShell(input.threadId).pipe(Effect.mapError(io));
+          if (created === null || created.deletedAt !== null)
+            return yield* new LibraryError({
+              reason: "blocked",
+              detail:
+                "The conversation from an earlier try was deleted. Start over to begin a new one.",
+            });
           yield* phase("Binding conversation to files");
           yield* workspace.bindThread({
             threadId: input.threadId,
@@ -293,52 +296,24 @@ const make = Effect.gen(function* () {
           });
           if (input.keepOnComputer !== undefined) {
             yield* phase("Saving file retention");
+            // The receipt keeps a retried launch from undoing a change made since the first try.
             const saved = yield* sql<{
-              result_json: string;
-            }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${`${id}:retention`}`;
-            const copy = saved[0]
-              ? yield* Schema.decodeEffect(copyCodec)(saved[0].result_json).pipe(
-                  Effect.mapError(io),
-                )
-              : yield* workspace.setCopyRetention({
-                  workingCopyId: input.binding.workingCopyId,
-                  keepOnComputer: input.keepOnComputer,
-                });
+              id: string;
+            }>`SELECT id FROM fork_library_workflow_receipts WHERE id=${`${id}:retention`}`;
             if (!saved[0]) {
+              const copy = yield* workspace.setCopyRetention({
+                workingCopyId: input.binding.workingCopyId,
+                keepOnComputer: input.keepOnComputer,
+              });
               const payload = yield* Schema.encodeEffect(copyCodec)(copy).pipe(Effect.mapError(io));
               yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${`${id}:retention`},${"retention"},${payload})`.pipe(
                 Effect.mapError(io),
               );
             }
-            yield* publisher.registerCopy({ requestId: `${id}:retention`, copy });
           }
-          yield* phase("Saving conversation in Library");
-          const snapshots = yield* sql<{
-            result_json: string;
-          }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${`${id}:snapshot`}`;
-          const archive = snapshots[0]
-            ? yield* Schema.decodeEffect(archiveCodec)(snapshots[0].result_json).pipe(
-                Effect.mapError(io),
-              )
-            : yield* history.snapshotThread({ threadId: input.threadId });
-          if (!snapshots[0]) {
-            const payload = yield* Schema.encodeEffect(archiveCodec)(archive).pipe(
-              Effect.mapError(io),
-            );
-            yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${"" + id + ":snapshot"},${"snapshot"},${payload})`.pipe(
-              Effect.mapError(io),
-            );
-          }
-          yield* phase("Publishing conversation attachments");
-          yield* publisher.publishAttachments(archive);
-          yield* phase("Publishing conversation history");
-          yield* publisher.ingest({
-            requestId: `${id}:publish`,
-            sourceEnvironmentId: environmentId,
-            journalId: `launch:${id}`,
-            fromSequence: 0,
-            entries: [{ sequence: 1, thread: archive }],
-          });
+          // Replication publishes the new conversation and the copy's retention within seconds
+          // through this computer's fenced journal. A separate upload here would lack that fence,
+          // which a hosted Library refuses, and would fail a launch whose conversation exists.
           result = { threadId: input.threadId };
           break;
         }

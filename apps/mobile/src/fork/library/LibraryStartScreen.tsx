@@ -104,6 +104,8 @@ export function LibraryStartRouteScreen({
   readonly sourceArchiveId?: string;
   readonly reuseEnvironmentId?: EnvironmentId;
   readonly reuseRootPath?: string;
+  /** Start as soon as this screen agrees the handed-in computer and files are ready. */
+  readonly startNow?: boolean;
 }>) {
   const authority = useLibraryAuthority();
   const preferences = useAtomValue(mobilePreferencesAtom);
@@ -157,6 +159,7 @@ export function LibraryStartRouteScreen({
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
+      startNow={route.params.startNow}
     />
   ) : (
     <LibraryPage title="New conversation" back>
@@ -181,6 +184,7 @@ function LibraryStartContent(props: {
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
+  startNow?: boolean | undefined;
 }) {
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
@@ -203,6 +207,8 @@ function LibraryStartContent(props: {
         : undefined,
     ),
   );
+  // Decided once, when the files are known. A saved attempt or any change here leaves it to Start.
+  const autoStart = useRef(props.startNow === true && !saved);
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const [selectedScope, setScope] = useState<string | null>(
@@ -350,6 +356,7 @@ function LibraryStartContent(props: {
   // Acting on anything that depends on the computer makes the suggestion an explicit choice, so a
   // later ranking update cannot move that input to another computer.
   const pin = () => {
+    autoStart.current = false;
     if (selectedExecution === null && execution !== null) setExecution(execution);
   };
   const rankOf = (environmentId: EnvironmentId, id?: string) => {
@@ -598,7 +605,6 @@ function LibraryStartContent(props: {
     (!props.sourceArchiveId ||
       progress.intent !== null ||
       (source.data !== null && source.isSuccess && !source.isPending && source.error === null));
-  if (!authority.environmentId) return <LibraryAuthorityScreen />;
   async function persistAttempt() {
     const review = reviewed.current;
     if (!review) throw new Error("Review this preparation before saving it.");
@@ -925,6 +931,27 @@ function LibraryStartContent(props: {
       setPending(null);
     }
   }
+  /**
+   * Forgets a saved attempt whose retry keeps failing, so the settings unlock. Work it finished
+   * stays: a conversation it created remains in the list, and prepared files remain registered.
+   */
+  async function startOver() {
+    if (busy.current || folderBusy.current) return;
+    await savePreferences({
+      transform: (current) => {
+        const next = { ...current.loomLibraryLaunches };
+        delete next[attemptKey];
+        return { loomLibraryLaunches: next };
+      },
+    });
+    receipt.current = emptyLibraryLaunchReceipt();
+    requestId.current = uuidv4();
+    threadId.current = ThreadId.make(uuidv4());
+    reviewed.current = null;
+    setReviewState(null);
+    setProgress(emptyLibraryLaunchReceipt());
+    setError(null);
+  }
   async function reviewLatestSourceFiles() {
     if (
       busy.current ||
@@ -982,6 +1009,14 @@ function LibraryStartContent(props: {
     }
     if (pulled) await start();
   }
+  const warned = warning !== null;
+  useEffect(() => {
+    if (!autoStart.current || !copiesKnown || !props.projectReady) return;
+    autoStart.current = false;
+    // oxlint-disable-next-line react/set-state-in-effect -- The tapped row asked for this launch; it runs once the files are known.
+    if (canStart && !warned) void start();
+  }, [copiesKnown, props.projectReady, canStart, warned, start]);
+  if (!authority.environmentId) return <LibraryAuthorityScreen />;
   const computerLabel =
     selectedHost?.label ??
     authority.computers.find((computer) => computer.environmentId === execution)?.label ??
@@ -1122,6 +1157,7 @@ function LibraryStartContent(props: {
                             : "Connected"
                   }
                   onPress={() => {
+                    autoStart.current = false;
                     // Choices made for this computer, including a folder handed in, outlive a tap on it.
                     if (env.environmentId !== execution) {
                       setCopyId(null);
@@ -1347,6 +1383,7 @@ function LibraryStartContent(props: {
             selected={scope === "all"}
             disabled={locked}
             onPress={() => {
+              autoStart.current = false;
               setScope("all");
               setCopyId(null);
               setRecoverySourceId(null);
@@ -1360,6 +1397,7 @@ function LibraryStartContent(props: {
               disabled={locked}
               separated
               onPress={() => {
+                autoStart.current = false;
                 setScope(resource.id);
                 setCopyId(null);
                 setRecoverySourceId(null);
@@ -1423,6 +1461,19 @@ function LibraryStartContent(props: {
           void start();
         }}
       />
+      {error && progress.intent && pending === null ? (
+        <Button
+          label="Start over"
+          tone="text"
+          onPress={() => {
+            void startOver().catch((cause: unknown) =>
+              setError(
+                cause instanceof Error ? cause.message : "This attempt could not be cleared.",
+              ),
+            );
+          }}
+        />
+      ) : null}
       <SettingsSection>
         <ListRow
           label="Conversation options"

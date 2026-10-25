@@ -349,10 +349,15 @@ const make = Effect.gen(function* () {
     }
     if (notFound && response.status === 404)
       return yield* new LibraryError({ reason: "not-found" });
-    if (response.status < 200 || response.status >= 300)
+    // Without a detail, "blocked" reads as a busy working copy, which this refusal never is.
+    if (response.status === 401 || response.status === 403)
       return yield* new LibraryError({
-        reason: response.status === 401 || response.status === 403 ? "blocked" : "io",
+        reason: "blocked",
+        detail:
+          "Your Library refused this request from this computer. Reconnect this computer to your Library, then try again.",
       });
+    if (response.status < 200 || response.status >= 300)
+      return yield* new LibraryError({ reason: "io" });
     return response;
   });
   /** A Library without pages answers their routes 404; it explains every other refusal. */

@@ -1237,6 +1237,7 @@ export type ConfirmDialogVariant = "default" | "destructive";
 export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
   readonly confirmLabel?: string; // fork: confirm-label: the button reads "Confirm" when unset
+  readonly cancelLabel?: string; // fork: confirm-label: the button reads "Cancel" when unset
 }
 
 export interface LocalApi {

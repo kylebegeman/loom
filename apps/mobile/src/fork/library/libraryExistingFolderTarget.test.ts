@@ -2,6 +2,8 @@ import type { LibraryProject } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "vite-plus/test";
 import {
   libraryExistingFolderTarget,
+  libraryFolderActionOutcome,
+  libraryFolderRowAction,
   rememberLibraryFolderProject,
   rememberedLibraryFolderProject,
 } from "./libraryExistingFolderTarget";
@@ -181,5 +183,128 @@ describe("adding an existing folder from New project", () => {
         created,
       }),
     ).toMatchObject({ canCreate: true, project: null, detail: null });
+  });
+});
+
+describe("a folder row that adds the folder in one tap", () => {
+  const settled = { projects, loading: false, created: null, matches: [] };
+
+  it("names the project the folder's files are registered to, else a new project", () => {
+    expect(
+      libraryFolderRowAction({
+        registered: [projects[0]!],
+        created: null,
+        rootPath: "/Projects/app",
+        title: null,
+      }),
+    ).toEqual({ kind: "add", project: projects[0] });
+    // A retry adds to the project an earlier attempt created rather than naming another one.
+    const created = project("retry", "Retry");
+    expect(
+      libraryFolderRowAction({ registered: [], created, rootPath: "/Projects/app", title: null }),
+    ).toEqual({ kind: "add", project: created });
+    expect(
+      libraryFolderRowAction({
+        registered: [],
+        created: null,
+        rootPath: "/Projects/app/",
+        title: null,
+      }),
+    ).toEqual({ kind: "create", title: "app" });
+    expect(
+      libraryFolderRowAction({
+        registered: [],
+        created: null,
+        rootPath: "C:\\Work\\site",
+        title: "Typed name",
+      }),
+    ).toEqual({ kind: "create", title: "Typed name" });
+  });
+
+  it("names nothing until the Library answers or when several projects hold the folder", () => {
+    expect(
+      libraryFolderRowAction({ registered: null, created: null, rootPath: "/a", title: null }),
+    ).toBeNull();
+    expect(
+      libraryFolderRowAction({
+        registered: [projects[0]!, project("other", "Other")],
+        created: null,
+        rootPath: "/a",
+        title: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("adds to the named project, reopening files Loom created for it as their saved copy", () => {
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        action: { kind: "add", project: projects[0]! },
+        registrations: [registration("current", "managed")],
+      }),
+    ).toEqual({ kind: "add", project: projects[0], copyId: "copy-1" });
+    // A chosen project takes a folder over from an archived owner, as a new one would.
+    const chosen = project("chosen", "Chosen");
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        projects: [...projects, chosen],
+        action: { kind: "add", project: chosen },
+        registrations: [registration("old")],
+      }),
+    ).toEqual({ kind: "add", project: chosen, copyId: null });
+  });
+
+  it("stops on the form when the folder belongs elsewhere or its owner is unknown", () => {
+    const chosen = project("chosen", "Chosen");
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        action: { kind: "add", project: chosen },
+        registrations: [registration("current")],
+      }).kind,
+    ).toBe("review");
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        projects: null,
+        loading: true,
+        action: { kind: "add", project: chosen },
+        registrations: [registration("current")],
+      }).kind,
+    ).toBe("wait");
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        projects: null,
+        action: { kind: "add", project: chosen },
+        registrations: [registration("current")],
+      }).kind,
+    ).toBe("review");
+  });
+
+  it("creates only when nothing holds the folder or already uses its repositories", () => {
+    const create = { kind: "create", title: "app" } as const;
+    expect(libraryFolderActionOutcome({ ...settled, action: create, registrations: [] }).kind).toBe(
+      "create",
+    );
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        action: create,
+        registrations: [],
+        matches: [projects[0]!],
+      }).kind,
+    ).toBe("review");
+    expect(
+      libraryFolderActionOutcome({
+        ...settled,
+        action: create,
+        registrations: [registration("current")],
+      }).kind,
+    ).toBe("review");
+    expect(libraryFolderActionOutcome({ ...settled, action: null, registrations: [] }).kind).toBe(
+      "review",
+    );
   });
 });

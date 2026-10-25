@@ -50,7 +50,11 @@ vi.mock("../../state/environments", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [{ environmentId: "computer", id: "local-project", workspaceRoot: "/repo" }],
+  useServerConfigs: () => new Map(),
+  useThreadShells: () => [],
 }));
+vi.mock("../../state/session", () => ({ useEnvironmentsWithScope: () => new Set() }));
+vi.mock("../../components/ui/IconButton", () => ({ IconButton: () => null }));
 vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => ({ data: [] }) }));
 vi.mock("../../state/use-atom-query-runner", () => ({
   useAtomQueryRunner: (query: unknown) => query,
@@ -314,7 +318,11 @@ describe("mobile source launch actions", () => {
   });
 
   it("keeps ordinary New task project selection independent of source settings", async () => {
-    await act(() => root.render(<NewTaskLibraryProjectChoices choices={[project]} error={null} />));
+    await act(() =>
+      root.render(
+        <NewTaskLibraryProjectChoices choices={[{ project, start: null }]} error={null} />,
+      ),
+    );
     await act(() => container.querySelector("button")!.click());
     expect(state.dispatch).toHaveBeenCalledExactlyOnceWith({
       name: "LibraryStart",

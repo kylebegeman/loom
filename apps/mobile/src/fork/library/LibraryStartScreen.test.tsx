@@ -593,6 +593,28 @@ describe("Library start progressive disclosure", () => {
     expect(state.launch.mock.calls[0]![0].resourceIds).toEqual(["server"]);
   });
 
+  it("starts a project tapped in New task once, on the computer and files its row named", async () => {
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+    expect(state.launch.mock.calls[0]![0].executionEnvironmentId).toBe(computerA);
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Preparation interrupted");
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a tapped project to the Start button when its files need a decision", async () => {
+    state.warning = { message: "This copy is 2 commits behind.", pullPaths: ["/Projects/Loom"] };
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(state.launch).not.toHaveBeenCalled();
+    state.warning = null;
+    await render();
+    expect(state.launch).not.toHaveBeenCalled();
+    expect(button("Start work").disabled).toBe(false);
+  });
+
   it("keeps launch warnings and explicit safety actions visible while options are collapsed", async () => {
     state.warning = { message: "This copy is 2 commits behind.", pullPaths: ["/Projects/Loom"] };
     await render();

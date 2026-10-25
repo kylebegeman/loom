@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
-import { useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -32,9 +32,14 @@ import {
   useLoomFeature,
 } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
-import { LibraryExistingFolder, type ExistingLibraryFolder } from "./LibraryExistingFolder";
+import {
+  LibraryExistingFolder,
+  type ExistingLibraryFolder,
+  type ExistingLibraryFolderRequest,
+} from "./LibraryExistingFolder";
 import {
   libraryExistingFolderTarget,
+  libraryFolderActionOutcome,
   rememberLibraryFolderProject,
   rememberedLibraryFolderProject,
 } from "./libraryExistingFolderTarget";
@@ -172,6 +177,11 @@ function LibraryProjectForm({
   const [existingFolder, setExistingFolder] = useState<ExistingLibraryFolder | null>(null),
     [inspectingFolder, setInspectingFolder] = useState(false),
     [folderProject, setFolderProject] = useState<LibraryProject | null>(null);
+  // What the last folder row tapped said it would do. It runs once the folder's owner is known.
+  const [folderRequest, setFolderRequest] = useState<ExistingLibraryFolderRequest | null>(null),
+    decidedFolderRequest = useRef<ExistingLibraryFolderRequest | null>(null);
+  // A save a folder row asked for reports beside that folder rather than at the end of the form.
+  const savingFromFolder = folderRequest?.action?.kind === "create";
   // Archived projects tell a folder's archived owner apart from one the Library no longer has.
   const catalog = useEnvironmentQuery(
     existingFolder && authority.environmentId
@@ -196,6 +206,8 @@ function LibraryProjectForm({
       })
     : null;
   const offeredProject = folderTarget?.project ?? null;
+  // A name typed before choosing a folder, rather than one the folder filled in.
+  const typedTitle = title.trim() && title !== existingFolder?.title ? title.trim() : null;
   const folderDraftIds = useRef<ReadonlySet<string>>(new Set());
   const [pasted, setPasted] = useState(""),
     [pasteProblem, setPasteProblem] = useState<string | null>(null);
@@ -348,6 +360,38 @@ function LibraryProjectForm({
       setPending(false);
     }
   }
+  const addFolderTo = (project: LibraryProject, copyId: string | null) => {
+    if (!existingFolder) return;
+    navigation.dispatch(
+      StackActions.replace("LibraryStart", {
+        projectId: project.id,
+        reuseEnvironmentId: existingFolder.environmentId,
+        ...(copyId ? { initialCopyId: copyId } : { reuseRootPath: existingFolder.rootPath }),
+      }),
+    );
+  };
+  const folderOutcome =
+    existingFolder && folderRequest && !inspectingFolder
+      ? libraryFolderActionOutcome({
+          ...folderRequest,
+          registrations: existingFolder.registrations,
+          projects: catalogSettled && catalog.error === null ? catalog.data : null,
+          loading: catalog.isPending,
+          created: folderProject,
+        })
+      : null;
+  const finishFolderAction = useEffectEvent((outcome: NonNullable<typeof folderOutcome>) => {
+    if (outcome.kind === "add") addFolderTo(outcome.project, outcome.copyId);
+    else if (outcome.kind === "create") void save();
+  });
+  // Runs after the chosen folder's state has rendered, so Create saves the resources it filled in.
+  // Each tap is decided once, so a later catalog refresh never acts on it again.
+  useEffect(() => {
+    if (!folderOutcome || folderOutcome.kind === "wait") return;
+    if (decidedFolderRequest.current === folderRequest) return;
+    decidedFolderRequest.current = folderRequest;
+    finishFolderAction(folderOutcome);
+  }, [folderOutcome, folderRequest]);
   return (
     <LibraryPage title={initial ? "Edit project" : "New project"} back>
       {awaitingResult && !pending ? (
@@ -561,12 +605,14 @@ function LibraryProjectForm({
           disabled={pending || awaitingResult || !authority.ready || !canSave}
           folder={existingFolder}
           offeredProjectId={offeredProject?.id ?? null}
+          projectTitle={typedTitle}
           onPending={setInspectingFolder}
           onClear={() => {
             setExistingFolder(null);
             setFolderProject(null);
+            setFolderRequest(null);
           }}
-          onChoose={(folder) => {
+          onChoose={(folder, request) => {
             const previousIds = folderDraftIds.current;
             const drafts: ResourceDraft[] = folder.resources.map((entry) => ({
               id: uuidv4(),
@@ -582,6 +628,7 @@ function LibraryProjectForm({
             );
             setExistingFolder(folder);
             setFolderProject(rememberedLibraryFolderProject(authority.environmentId, folder));
+            setFolderRequest(request.action ? request : null);
             setResources((current) => {
               const retained = current
                 .filter((entry) => !previousIds.has(entry.id))
@@ -612,7 +659,25 @@ function LibraryProjectForm({
               ];
             });
           }}
-        />
+        >
+          {savingFromFolder && pending ? <LibraryNotice detail="Creating project…" /> : null}
+          {savingFromFolder && error ? <LibraryNotice error={error} /> : null}
+          {folderTarget && (folderTarget.error || folderTarget.detail) ? (
+            <LibraryNotice
+              error={folderTarget.error}
+              detail={folderTarget.detail}
+              onRetry={catalog.error ? catalog.refresh : undefined}
+            />
+          ) : null}
+          {existingFolder && offeredProject ? (
+            <Button
+              label={`Add folder to ${offeredProject.title}`}
+              tone="primary"
+              disabled={pending || awaitingResult || inspectingFolder}
+              onPress={() => addFolderTo(offeredProject, folderTarget?.copyId ?? null)}
+            />
+          ) : null}
+        </LibraryExistingFolder>
       ) : null}
       {editsProfile ? (
         <View className="gap-2">
@@ -662,32 +727,7 @@ function LibraryProjectForm({
       ) : !canSave ? (
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}
-      {error ? <LibraryNotice error={error} /> : null}
-      {folderTarget && (folderTarget.error || folderTarget.detail) ? (
-        <LibraryNotice
-          error={folderTarget.error}
-          detail={folderTarget.detail}
-          onRetry={catalog.error ? catalog.refresh : undefined}
-        />
-      ) : null}
-      {existingFolder && offeredProject ? (
-        <Button
-          label={`Add folder to ${offeredProject.title}`}
-          tone="primary"
-          disabled={pending || awaitingResult || inspectingFolder}
-          onPress={() =>
-            navigation.dispatch(
-              StackActions.replace("LibraryStart", {
-                projectId: offeredProject.id,
-                reuseEnvironmentId: existingFolder.environmentId,
-                ...(folderTarget?.copyId
-                  ? { initialCopyId: folderTarget.copyId }
-                  : { reuseRootPath: existingFolder.rootPath }),
-              }),
-            )
-          }
-        />
-      ) : null}
+      {error && !savingFromFolder ? <LibraryNotice error={error} /> : null}
       <Button
         label={pending ? "Saving…" : initial ? "Save project" : "Create project"}
         tone="primary"
@@ -700,6 +740,7 @@ function LibraryProjectForm({
           (folderTarget !== null && !folderTarget.canCreate)
         }
         onPress={() => {
+          setFolderRequest(null);
           void save();
         }}
       />

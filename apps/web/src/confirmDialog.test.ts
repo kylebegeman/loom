@@ -109,14 +109,25 @@ describe("confirm dialog coordinator", () => {
   it("keeps each confirmation's button label through closing and the queue", async () => {
     const unregister = registerConfirmDialogHost();
     const first = requireConfirmation(
-      requestConfirmDialog("Turn reach off?", { variant: "destructive", confirmLabel: "Turn off" }),
+      requestConfirmDialog("Turn reach off?", {
+        variant: "destructive",
+        confirmLabel: "Turn off",
+        cancelLabel: "Keep on",
+      }),
     );
     const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
-    expect(readConfirmDialogState()).toMatchObject({ confirmLabel: "Turn off" });
+    expect(readConfirmDialogState()).toMatchObject({
+      confirmLabel: "Turn off",
+      cancelLabel: "Keep on",
+    });
 
     respondToConfirmDialog(true);
     await expect(first).resolves.toBe(true);
-    expect(readConfirmDialogState()).toMatchObject({ status: "closing", confirmLabel: "Turn off" });
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "closing",
+      confirmLabel: "Turn off",
+      cancelLabel: "Keep on",
+    });
 
     completeConfirmDialogClose();
     expect(readConfirmDialogState()).toEqual({

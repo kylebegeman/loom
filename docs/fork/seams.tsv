@@ -729,8 +729,10 @@ apps/server/src/environment/DirectEndpoints.ts	reach	3
 apps/server/src/server.ts	reach	2
 apps/web/src/components/settings/ConnectionsSettings.tsx	reach	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	reach	2
-packages/contracts/src/ipc.ts	confirm-label	1
-apps/web/src/confirmDialog.ts	confirm-label	7
+packages/contracts/src/ipc.ts	confirm-label	2
+apps/web/src/confirmDialog.ts	confirm-label	13
 apps/web/src/confirmDialog.test.ts	confirm-label	1
-apps/web/src/components/ConfirmDialogHost.tsx	confirm-label	2
+apps/web/src/components/ConfirmDialogHost.tsx	confirm-label	4
+apps/web/src/hooks/useThreadActions.ts	confirm-label	1
+apps/web/src/hooks/useThreadActions.ts	project-root-worktree	2
 packages/shared/package.json	-	"./fork/reach"

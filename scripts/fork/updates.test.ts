@@ -1131,6 +1131,13 @@ describe("optional Loom iOS delivery", () => {
     expect(() =>
       iosPublishConfig({ ...ownConfig, ...signing, signingKeychain: "relative" }),
     ).toThrow("paired absolute paths");
+    expect(iosPublishConfig({ ...ownConfig, libraryPush: true })).toMatchObject({
+      libraryPush: true,
+    });
+    expect(iosPublishConfig(ownConfig)?.libraryPush).toBeUndefined();
+    expect(() => iosPublishConfig({ ...ownConfig, libraryPush: "1" })).toThrow(
+      "libraryPush must be true or false",
+    );
   });
 
   it("rejects exposed or symlinked keychain password files before accessing a keychain", async () => {

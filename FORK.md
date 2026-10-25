@@ -417,10 +417,15 @@ Saved connections keep no resource pin: every Identity sign-in applies a statele
 on the reach hostname is a global middleware merged into `ForkRoutesLayer`, so it needs no
 upstream line. See the [L114 packet](docs/fork/packets/L114-reach/SEAMS.md).
 
-`confirm-label` seams let a confirmation name its action ("Turn off", "Remove") instead of
-"Confirm": `ConfirmDialogOptions.confirmLabel` in `packages/contracts/src/ipc.ts` (1), carried
-through `apps/web/src/confirmDialog.ts` (7) and rendered by `ConfirmDialogHost.tsx` (2). Desktop
-uses the same in-app dialog, so it needs no seam. Unset keeps "Confirm".
+`confirm-label` seams let a confirmation name its buttons ("Turn off", "Keep worktree") instead
+of "Confirm" and "Cancel": `confirmLabel` and `cancelLabel` in `packages/contracts/src/ipc.ts`
+(2), carried through `apps/web/src/confirmDialog.ts` (13) and rendered by `ConfirmDialogHost.tsx`
+(4). `useThreadActions.ts` (1) names the worktree prompt's buttons, since the thread is deleted
+either way. Desktop uses the same in-app dialog, so it needs no seam. Unset keeps the defaults.
+
+The `project-root-worktree` seam in `useThreadActions.ts` (2) keeps thread deletion from offering
+to remove a project's own folder. Library conversations record that folder as their worktree
+path, so upstream's check alone would treat it as a worktree only that thread uses.
 
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
