@@ -147,6 +147,7 @@ import {
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import { refuseDeleted } from "../fork/deleted-history/deletedHistory.ts"; // fork: deleted-history
+import { isDefaultThreadTitle } from "@t3tools/contracts/fork"; // fork: library-projects
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -4972,9 +4973,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const userMessages = projection.messages.filter((message) => message.role === "user");
     const onlyMaintenanceHistory =
       userMessages.length > 0 && userMessages.every(isNativeMaintenanceCommand);
+    // fork: library-projects: a title chosen before the first message, such as one typed when a
+    // Library conversation starts, survives it. A seed equal to the title still names the thread.
+    const titleChosen =
+      command.titleSeed !== projection.thread.title &&
+      !isDefaultThreadTitle(projection.thread.title); // fork: library-projects
     if (
       !isNativeMaintenanceCommand(command) &&
       ((command.titleSeed !== undefined &&
+        !titleChosen && // fork: library-projects
         (yield* projectionStore
           .getMessageCount(command.threadId)
           .pipe(mapDispatchError(command))) === 0) ||

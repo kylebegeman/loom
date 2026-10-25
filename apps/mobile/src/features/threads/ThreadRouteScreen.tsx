@@ -2,6 +2,7 @@
 import { GitRecovery } from "../../fork/source-control-cockpit/GitRecovery";
 import { Button as GitSummaryButton } from "../../components/ui/Button";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState"; // fork: library
+import { useEmptyConversationLeave } from "../../fork/library/useEmptyConversationLeave"; // fork: library
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
@@ -245,6 +246,7 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       );
   }, [canUseArchive, saved.data, navigation]);
   useThreadPromptLink(params, routeThreadKey);
+  useEmptyConversationLeave(environmentId, threadIdRaw); // fork: library
 
   if (environmentId === null || threadIdRaw === null) {
     return <OpeningThreadLoadingScreen />;

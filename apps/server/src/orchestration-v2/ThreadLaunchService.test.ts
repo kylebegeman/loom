@@ -1231,6 +1231,62 @@ it.effect("arms durable title generation after accepting the first message", () 
   }),
 );
 
+// fork: library-projects
+it.effect("keeps a title chosen before the first message and replaces a default one", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    yield* Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const firstMessage = Effect.fn("test.firstMessage")(function* (title: string) {
+        const threadId = ThreadId.make(`thread:first-title:${title}`);
+        yield* threads.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          projectId,
+          title,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const commandId = CommandId.make(`${threadId}:message`);
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId,
+          threadId,
+          messageId: MessageId.make(`${threadId}:message`),
+          createdBy: "user",
+          creationSource: "web",
+          text: "Fix the failing parser",
+          attachments: [],
+          titleSeed: "Fix the failing parser",
+          dispatchMode: { type: "defer_start" },
+        });
+        return {
+          title: (yield* threads.getThreadProjection(threadId)).thread.title,
+          generates: (yield* outbox.listByCommandId(commandId)).some(
+            (effect) => effect.request.type === "thread-title.generate",
+          ),
+        };
+      });
+      assert.deepEqual(yield* firstMessage("Release checklist"), {
+        title: "Release checklist",
+        generates: false,
+      });
+      for (const title of ["New conversation", "Project discussion", "New thread"])
+        assert.deepEqual(yield* firstMessage(title), {
+          title: "Fix the failing parser",
+          generates: true,
+        });
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
 it.effect("does not update a reused thread title when the initial message is rejected", () =>
   Effect.gen(function* () {
     const harness = makeHarness();

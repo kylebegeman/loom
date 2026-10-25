@@ -7,7 +7,8 @@ import {
   ThreadId,
   type ServerConfig,
 } from "@t3tools/contracts";
-import { libraryLaunchRanking } from "@t3tools/client-runtime/fork";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { libraryLaunchRanking, takeEmptyLibraryConversation } from "@t3tools/client-runtime/fork";
 import {
   LibraryError,
   type LibraryProject,
@@ -19,6 +20,7 @@ import { AsyncResult } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { IncomingShareDraft } from "../../features/sharing/incoming-share-model";
 
 type Launch = typeof import("./libraryLaunch").launchLibraryConversation;
 type Computer = {
@@ -48,6 +50,13 @@ const state = vi.hoisted(() => ({
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
   snapshot: vi.fn(),
+  shells: [] as unknown[],
+  alert: vi.fn(),
+  shares: [] as IncomingShareDraft[],
+  consumeShare: vi.fn(),
+  mergeDraft: vi.fn(),
+  draftAttachments: [] as unknown[],
+  releaseAttachments: vi.fn(),
   savePreferences: vi.fn(),
   preferenceAtom: {},
   preferences: {} as Record<string, string>,
@@ -160,6 +169,7 @@ vi.mock("../../state/entities", () => ({
       ["library", state.computers[0]?.serverConfig],
     ]),
   useProject: () => null,
+  useThreadShells: () => state.shells,
 }));
 vi.mock("../../state/session", () => ({
   useEnvironmentsWithScope: () =>
@@ -214,6 +224,17 @@ vi.mock("../../state/vcs", () => ({ vcsEnvironment: { pull: state.pull } }));
 vi.mock("../../state/use-composer-drafts", () => ({
   setComposerDraftText: vi.fn(),
   flushComposerDrafts: vi.fn(),
+  mergeComposerDraftContent: state.mergeDraft,
+  getComposerDraftSnapshot: () => ({ attachments: state.draftAttachments }),
+  scheduleUnusedComposerAttachmentCleanup: state.releaseAttachments,
+  useStickyComposerModelSelection: () => null,
+}));
+vi.mock("../../components/ui/Dialog", () => ({ alert: state.alert }));
+vi.mock("../../features/sharing/IncomingShareProvider", () => ({
+  useIncomingShare: () => ({
+    getShare: (id: string) => state.shares.find((share) => share.id === id) ?? null,
+    consumeShare: state.consumeShare,
+  }),
 }));
 vi.mock("./useLibraryLaunchRanking", () => ({
   useLibraryLaunchRanking: (input: {
@@ -496,6 +517,13 @@ beforeEach(() => {
   state.healthPending = false;
   state.source = null;
   state.warning = null;
+  state.shells = [];
+  state.shares = [];
+  state.draftAttachments = [];
+  state.mergeDraft.mockImplementation(async (_key, content: { attachments: unknown[] }) => {
+    state.draftAttachments = content.attachments;
+    return { skippedAttachmentCount: 0 };
+  });
   // Applies each update the way the preferences store does, so a remounted screen reads it.
   state.savePreferences.mockImplementation(
     async (update: {
@@ -779,7 +807,7 @@ describe("Library start progressive disclosure", () => {
             key: "codex:default",
             selection: { instanceId: ProviderInstanceId.make("codex"), model: "default" },
           },
-          title: "Project discussion",
+          title: "New conversation",
           mode: "clone",
           rootPath: prepared.rootPath,
           copy: null,
@@ -870,6 +898,222 @@ describe("Library start progressive disclosure", () => {
         runtimeMode: "approval-required",
         interactionMode: "plan",
       }),
+    });
+  });
+
+  it("starts in a new worktree while another conversation works in the files, and a retry keeps it", async () => {
+    const app = {
+      id: "app",
+      title: "App",
+      relativePath: ".",
+      remoteUrl: "https://github.com/team/app",
+      defaultBranch: null,
+    };
+    state.project = { ...project, resources: [app] };
+    const files = {
+      ...copy,
+      repositories: [
+        { resourceId: app.id, path: copy.rootPath, localProjectId, head: null, branch: "main" },
+      ],
+    };
+    state.copies = [files];
+    state.computers[0] = makeComputer(computerA, "MacBook", true, [
+      "project-workflows",
+      "library-worktree-starts",
+    ]);
+    state.shells = [
+      {
+        environmentId: computerA,
+        worktreePath: copy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: null,
+          lastError: null,
+          updatedAt: project.updatedAt,
+        },
+      },
+    ];
+    state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+    state.launch.mockImplementation(async (intent, receipt, ports) => {
+      receipt.intent = intent;
+      receipt.resolved = {
+        cwd: copy.rootPath,
+        localProjectId,
+        repositoryPaths: [copy.rootPath],
+        binding: {
+          projectId: project.id,
+          projectRevision: project.revision,
+          workingCopyId: files.id,
+          environmentId: computerA,
+          resourceIds: [app.id],
+        },
+      };
+      await ports.persist!();
+      await ports.durableLaunch!({
+        threadId: intent.threadId,
+        binding: receipt.resolved.binding,
+        project: intent.project,
+      });
+      throw new Error("Preparation interrupted");
+    });
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: files.id };
+    await render();
+    expect(button("Workspace").textContent).toContain("New worktree");
+    await click("Start work");
+    expect(state.executeOperation.mock.calls[0]![0].input.request.input.workspace).toBe("worktree");
+
+    // The other conversation finishing must not move the retry back into the shared folder.
+    state.shells = [];
+    await act(() => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(container.textContent).toContain("An unfinished preparation is saved");
+    expect(button("Workspace").textContent).toContain("New worktree");
+    await click("Resume starting work");
+    expect(state.executeOperation.mock.calls[1]![0].input.request.input.workspace).toBe("worktree");
+  });
+
+  it("starts in the project folder when chosen, even while another conversation works there", async () => {
+    state.project = {
+      ...project,
+      resources: [
+        {
+          id: "app",
+          title: "App",
+          relativePath: ".",
+          remoteUrl: "https://github.com/team/app",
+          defaultBranch: null,
+        },
+      ],
+    };
+    state.copies = [
+      {
+        ...copy,
+        repositories: [
+          { resourceId: "app", path: copy.rootPath, localProjectId, head: null, branch: "main" },
+        ],
+      },
+    ];
+    state.computers[0] = makeComputer(computerA, "MacBook", true, ["library-worktree-starts"]);
+    state.shells = [
+      {
+        environmentId: computerA,
+        worktreePath: copy.rootPath,
+        archivedAt: null,
+        runtime: {
+          status: "running",
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerName: null,
+          lastError: null,
+          updatedAt: project.updatedAt,
+        },
+      },
+    ];
+    state.launch.mockImplementation(async (intent, receipt, ports) => {
+      receipt.intent = intent;
+      await ports.persist!();
+      throw new Error("Preparation interrupted");
+    });
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id };
+    await render();
+    await click("Workspace");
+    await click("Project folder");
+    expect(button("Workspace").textContent).toContain("Project folder");
+    await click("Start work");
+    expect(state.launch).toHaveBeenCalledOnce();
+    expect(state.preferences[JSON.stringify(["library", project.id, "new"])]).toContain(
+      '"workspace":"folder"',
+    );
+  });
+
+  describe("content shared from another app", () => {
+    const image = {
+      id: "screenshot",
+      type: "image",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+      previewUri: "file:///shared/screenshot.png",
+      fileUri: "file:///shared/screenshot.png",
+    } as const;
+    const log = {
+      id: "log",
+      type: "file",
+      name: "build.log",
+      mimeType: "text/plain",
+      sizeBytes: 2048,
+      fileUri: "file:///shared/build.log",
+    } as const;
+    const startedThread = () => {
+      const intent = state.launch.mock.calls[0]![0];
+      return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
+    };
+    const empty = { itemCount: 0, latestRun: null, runtime: null, archivedAt: null };
+    beforeEach(() => {
+      state.shares = [
+        {
+          schemaVersion: 1,
+          id: "share",
+          createdAt: project.createdAt,
+          text: "Why does the build fail?",
+          attachments: [image, log],
+          warnings: [],
+        },
+      ];
+      state.launch.mockImplementation(async (intent) => ({
+        environmentId: intent.executionEnvironmentId,
+        threadId: intent.threadId,
+      }));
+      params = {
+        ...params,
+        reuseEnvironmentId: computerA,
+        initialCopyId: copy.id,
+        incomingShareId: "share",
+      };
+    });
+
+    it("goes into the started conversation's first message and leaves the inbox", async () => {
+      await render();
+      expect(container.textContent).toContain(
+        "The new conversation's first message includes the 2 files you shared.",
+      );
+      await click("Start work");
+      const thread = startedThread();
+      const key = scopedThreadKey(thread);
+      // This computer takes no files, so only the image goes in and the log is released.
+      expect(state.mergeDraft).toHaveBeenCalledExactlyOnceWith(key, {
+        text: "Why does the build fail?",
+        attachments: [image],
+        sourceShareId: "share",
+      });
+      expect(state.consumeShare).toHaveBeenCalledExactlyOnceWith("share");
+      expect(state.releaseAttachments).toHaveBeenCalledExactlyOnceWith([log]);
+      expect(state.alert).toHaveBeenCalledExactlyOnceWith(
+        "Some shared content was skipped",
+        "'build.log' was skipped because this server does not support files.",
+      );
+      expect(state.dispatch).toHaveBeenCalledWith({ name: "Thread", params: thread });
+      // Discarding it as empty would delete the shared content with its draft.
+      expect(takeEmptyLibraryConversation(key, empty)).toBe(false);
+    });
+
+    it("stays in the inbox when it cannot be added, and the conversation still opens", async () => {
+      state.mergeDraft.mockRejectedValue(new Error("Storage is full."));
+      await render();
+      await click("Start work");
+      const thread = startedThread();
+      expect(state.alert).toHaveBeenCalledExactlyOnceWith(
+        "Could not add what you shared",
+        "Storage is full.",
+      );
+      expect(state.consumeShare).not.toHaveBeenCalled();
+      expect(state.releaseAttachments).not.toHaveBeenCalled();
+      expect(state.dispatch).toHaveBeenCalledWith({ name: "Thread", params: thread });
+      expect(takeEmptyLibraryConversation(scopedThreadKey(thread), empty)).toBe(true);
     });
   });
 

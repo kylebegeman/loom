@@ -15,6 +15,7 @@ import type { ComponentType } from "react";
 
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
+import { EmptyConversationOffer } from "./project-library/EmptyConversationOffer";
 import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 import { LocalUpdateInstallHost } from "./connections/LocalUpdateInstallHost";
 
@@ -40,6 +41,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "utilities-dialog", Component: UtilitiesDialogHost },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   { id: "local-update-install", Component: LocalUpdateInstallHost },
+  { id: "library-empty-conversations", Component: EmptyConversationOffer },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];
 

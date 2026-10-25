@@ -102,6 +102,9 @@ vi.mock("@react-navigation/native", () => ({
   StackActions: {},
 }));
 vi.mock("../../components/ui/Dialog", () => ({}));
+vi.mock("../../fork/library/useEmptyConversationLeave", () => ({
+  useEmptyConversationLeave: () => undefined, // fork: library
+}));
 vi.mock("../../components/ui/AppBar", () => ({ AppBar: () => null }));
 vi.mock("../../components/ui/EmptyState", () => ({ EmptyState: () => null }));
 vi.mock("../../components/LoadingScreen", () => ({ LoadingScreen: () => null }));

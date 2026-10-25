@@ -12,10 +12,11 @@ import {
   CommandId,
   ThreadId,
 } from "@t3tools/contracts";
-import type {
-  LibraryProject,
-  LibraryWorkingCopy,
-  LibraryThreadSummary,
+import {
+  LIBRARY_DEFAULT_CONVERSATION_TITLE,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+  type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
 import { useMemo, useRef } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -26,9 +27,10 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { useEnvironmentQuery } from "../../state/query";
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentsWithScope } from "../../state/session";
+import { useStickyComposerModelSelection } from "../../state/use-composer-drafts";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
@@ -118,6 +120,8 @@ export function useLibraryProjectStarts(
     useEnvironmentsWithScope(libraryRef, AuthOrchestrationOperateScope).size > 0;
   const configs = useServerConfigs();
   const localProjects = useProjects();
+  const lastUsedSelection = useStickyComposerModelSelection();
+  const shells = useThreadShells();
   // Keyed by project and independent of the search text, so typing only filters. The computers
   // are listed as web lists them, so both promise the same computer for a project.
   const starts = useMemo(() => {
@@ -151,6 +155,8 @@ export function useLibraryProjectStarts(
             localProjects.find(
               (entry) => entry.environmentId === environmentId && entry.id === projectId,
             ) ?? null,
+          lastUsedSelection,
+          shells,
         }),
       ]),
     );
@@ -166,6 +172,8 @@ export function useLibraryProjectStarts(
     localProjects,
     authority.computers,
     authority.connected,
+    lastUsedSelection,
+    shells,
   ]);
 
   return starts;
@@ -181,8 +189,13 @@ export function NewTaskLibraryProjectChoices(props: {
     readonly start: LibraryStartDefaults | null;
   }[];
   readonly error: string | null;
+  /** Content shared from another app, which the started conversation's first message takes. */
+  readonly incomingShareId?: string | undefined;
+  /** Set while that content waits in another project's task draft, as the local rows are. */
+  readonly disabled?: boolean;
 }) {
   const navigation = useNavigation();
+  const share = props.incomingShareId ? { incomingShareId: props.incomingShareId } : {};
   // Options open on the computer and files the row named, so both show the same defaults.
   const open = (project: LibraryProject, start: LibraryStartDefaults | null, startNow: boolean) =>
     navigation.getParent()?.dispatch(
@@ -194,8 +207,9 @@ export function NewTaskLibraryProjectChoices(props: {
               reuseEnvironmentId: start.environmentId,
               initialCopyId: start.copyId,
               startNow,
+              ...share,
             }
-          : { projectId: project.id },
+          : { projectId: project.id, ...share },
       ),
     );
   return (
@@ -211,12 +225,14 @@ export function NewTaskLibraryProjectChoices(props: {
                 (project.brief.trim().split("\n")[0] ||
                   `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`)
               }
+              disabled={props.disabled}
               onPress={() => open(project, start, true)}
               trailing={
                 start ? (
                   <IconButton
                     accessibilityLabel={`Conversation options for ${project.title}`}
                     icon="slider.horizontal.3"
+                    disabled={props.disabled}
                     onPress={() => open(project, start, false)}
                   />
                 ) : undefined
@@ -331,7 +347,7 @@ export function useNewTaskFromSource() {
           commandId: CommandId.make(uuidv4()),
           threadId,
           projectId: source.projectId,
-          title: "New conversation",
+          title: LIBRARY_DEFAULT_CONVERSATION_TITLE,
           ...sourceConversationSettings(checkout),
         },
       });

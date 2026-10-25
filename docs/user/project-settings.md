@@ -73,15 +73,28 @@ The Projects page lists each computer folder still waiting to be added, so you c
 through existing projects without losing your place.
 
 **New conversation** lists your projects, with the project you are in first. A project that
-can start right away shows the computer, model and permissions it will use. Press Enter, or
+can start right away shows the computer, model and permissions it will use, and New worktree
+when it will start in one. Press Enter, or
 tap it on iPhone, to start with them, or open its options first (Right Arrow on a keyboard)
 to change them. A project that needs a choice opens its options instead. Loom chooses an
 available computer and prepares its files automatically, and you can choose another computer
 or work on one repository. If a start gets stuck, **Start over** drops that attempt and keeps
 its model, permissions and folder; a conversation it already created stays in your list.
+A title you type is kept after the first message; without one, the first message names the
+conversation. If you leave a conversation you just started without sending anything, Loom
+offers **Discard empty conversation**, unless it holds something you shared to Loom from another
+app. You can undo it from the notice that follows; on iPhone, choose **Keep** to leave it in your
+list instead.
+Conversations share the project's folder unless you choose **Workspace → New worktree** before
+starting, which gives the conversation a branch and folder of its own so other conversations'
+changes stay apart. Loom picks New worktree while another conversation is working in the folder.
+A new worktree needs a project with one repository, or one repository chosen to work on.
+**Remove files** stays unavailable until worktrees made from the files are landed or removed.
+Continuing on another computer brings a worktree's commits; its uncommitted changes stay behind.
 The conversation uses your chosen model, then any computer folder override, the project's
-preference and the computer's default. Editing the brief applies to new conversations; earlier conversations keep their
-original context.
+preference, the model you used last on this device if that computer can run it, and the
+computer's default. Editing the brief applies to new conversations; earlier conversations keep
+their original context.
 
 T3's folder records are the computer locations of these projects. Adding an existing folder
 reuses its folder record and settings. Once added, **Project settings** from a thread opens
@@ -129,8 +142,8 @@ The command palette reaches projects from anywhere. Type part of a project's nam
 or use **Go to project...** and **Open project brief...** to pick one, most recently active
 first. **New conversation in...** opens the New conversation project list. In a thread that
 belongs to a project, **Go to this thread's project** opens it, even when that thread's
-computer is offline. To give **Go to project** or
-**New conversation in** a shortcut, bind `loom.library.goToProject` or
+computer is offline. Press `Cmd/Ctrl+Alt+P` for **Go to project** and `Cmd/Ctrl+Alt+Shift+N`
+for **New conversation in**. To change them, rebind `loom.library.goToProject` or
 `loom.library.newConversationIn` in **Settings → Keybindings**.
 
 **Preferences** on the project page records how work gets going on any computer, and it is saved

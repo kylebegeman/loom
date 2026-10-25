@@ -11,6 +11,7 @@ import {
   REACH_LIBRARY_FEATURE,
   LIBRARY_PUSH_FEATURE,
   LIBRARY_PUSH_ACTIVITY_FEATURE,
+  LIBRARY_WORKTREE_STARTS_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
@@ -116,6 +117,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "library-launch-candidates",
   "library-timeline-activity",
   "library-brief-suggestions",
+  LIBRARY_WORKTREE_STARTS_FEATURE,
   "preview-links",
   "preview-tickets",
   "preview-pages",

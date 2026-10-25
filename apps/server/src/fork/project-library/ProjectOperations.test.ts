@@ -13,6 +13,8 @@ import {
   EnvironmentId,
   type AuthClientSession,
   type OrchestrationV2ThreadShell,
+  type VcsCreateWorktreeInput,
+  type VcsStatusLocalResult,
 } from "@t3tools/contracts";
 import {
   LibraryError,
@@ -25,12 +27,15 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { SessionStore } from "../../auth/SessionStore.ts";
+import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
@@ -92,6 +97,13 @@ const fixture = Effect.gen(function* () {
   const threadDeleted = yield* Ref.make(false);
   const revokeAtResolve = yield* Ref.make(false);
   const observedToken = yield* Ref.make<string | null>(null);
+  const repositoryPaths = yield* Ref.make<readonly string[]>([]);
+  const worktreePath = yield* Ref.make("/work/worktree");
+  const worktreesMade = yield* Ref.make<readonly VcsCreateWorktreeInput[]>([]);
+  const createdIn = yield* Ref.make<
+    readonly { branch: string | null; worktreePath: string | null }[]
+  >([]);
+  const boundIn = yield* Ref.make<readonly (string | undefined)[]>([]);
   const external = Layer.mergeAll(
     Layer.mock(ProjectWorkflows)({ changed: Effect.void, changes: Stream.empty }),
     Layer.mock(LibraryService)({
@@ -132,15 +144,17 @@ const fixture = Effect.gen(function* () {
       resolveBinding: (input) =>
         Ref.get(revokeAtResolve).pipe(
           Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
-          Effect.as({
+          Effect.andThen(Ref.get(repositoryPaths)),
+          Effect.map((paths) => ({
             binding: input.binding,
             localProjectId: ProjectId.make("local"),
             cwd: "/work/project",
-            repositoryPaths: [],
-          }),
+            repositoryPaths: paths,
+          })),
         ),
       bindThread: (input) =>
-        Ref.get(failBind).pipe(
+        Ref.update(boundIn, (paths) => [...paths, input.worktreePath]).pipe(
+          Effect.andThen(Ref.get(failBind)),
           Effect.flatMap((fail) =>
             fail
               ? Effect.fail(new LibraryError({ reason: "io", detail: "Reconnect the computer." }))
@@ -178,7 +192,26 @@ const fixture = Effect.gen(function* () {
         ),
       dispatch: (command) =>
         Ref.update(dispatched, (ids) => [...ids, command.commandId]).pipe(
+          Effect.andThen(
+            command.type === "thread.create"
+              ? Ref.update(createdIn, (list) => [
+                  ...list,
+                  { branch: command.branch, worktreePath: command.worktreePath },
+                ])
+              : Effect.void,
+          ),
           Effect.as({ sequence: 1, storedEvents: [] }),
+        ),
+    }),
+    Layer.mock(GitWorkflowService)({
+      hasCommit: () => Effect.succeed(false),
+      localStatus: () => Effect.succeed({ refName: "main" } as VcsStatusLocalResult),
+      createWorktree: (input) =>
+        Ref.update(worktreesMade, (made) => [...made, input]).pipe(
+          Effect.andThen(Ref.get(worktreePath)),
+          Effect.map((path) => ({
+            worktree: { path, refName: input.newRefName ?? input.refName },
+          })),
         ),
     }),
     Layer.mock(SessionStore)({
@@ -194,6 +227,11 @@ const fixture = Effect.gen(function* () {
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   );
   return {
+    repositoryPaths,
+    worktreePath,
+    worktreesMade,
+    createdIn,
+    boundIn,
     retentionSaves,
     dispatched,
     failBind,
@@ -567,6 +605,95 @@ describe("Project operations", () => {
         expect(
           (yield* state.service.list({ projectId: project.id })).map((operation) => operation.id),
         ).toContain("create-project");
+      }),
+    ),
+  );
+
+  it.effect("starts a conversation in its own worktree, made once across retries", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "library-launch-" }),
+        );
+        const worktree = path.join(root, "worktree");
+        yield* fs.makeDirectory(worktree);
+        yield* Ref.set(state.worktreePath, worktree);
+        yield* Ref.set(state.repositoryPaths, ["/work/project"]);
+        const request: LibraryOperationInput = {
+          kind: "launch",
+          input: {
+            project,
+            workspace: "worktree",
+            binding: {
+              projectId: project.id,
+              projectRevision: project.revision,
+              environmentId,
+              workingCopyId: "copy",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("worktree-thread"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+          },
+        };
+        yield* Ref.set(state.failBind, true);
+        yield* state.service.execute("worktree-launch", request, actor).pipe(Effect.flip);
+        yield* Ref.set(state.failBind, false);
+        expect((yield* state.service.execute("worktree-launch", request, actor)).result).toEqual({
+          threadId: "worktree-thread",
+        });
+        const made = yield* Ref.get(state.worktreesMade);
+        expect(made).toEqual([
+          {
+            cwd: "/work/project",
+            refName: "main",
+            newRefName: expect.stringMatching(/^t3\/[0-9a-f]{8}$/),
+            baseRefName: "main",
+            path: null,
+          },
+        ]);
+        const workspace = { branch: made[0]!.newRefName, worktreePath: worktree };
+        expect(yield* Ref.get(state.createdIn)).toEqual([workspace, workspace]);
+        expect(yield* Ref.get(state.boundIn)).toEqual([worktree, worktree]);
+        expect(yield* fs.exists(`${worktree}.t3-setup-pending`)).toBe(true);
+      }),
+    ),
+  );
+
+  it.effect("refuses a worktree start for more than one repository before changing anything", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.repositoryPaths, ["/work/project/app", "/work/project/site"]);
+        const request: LibraryOperationInput = {
+          kind: "launch",
+          input: {
+            project,
+            workspace: "worktree",
+            binding: {
+              projectId: project.id,
+              projectRevision: project.revision,
+              environmentId,
+              workingCopyId: "copy",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("several-repositories"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+          },
+        };
+        const failure = yield* state.service
+          .execute("several-repositories", request, actor)
+          .pipe(Effect.flip);
+        expect(failure.reason).toBe("blocked");
+        expect(failure.message).toContain("one repository");
+        expect(yield* Ref.get(state.worktreesMade)).toEqual([]);
+        expect(yield* Ref.get(state.dispatched)).toEqual([]);
       }),
     ),
   );

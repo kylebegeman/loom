@@ -1,16 +1,21 @@
 import {
+  libraryCopyFolderConversations,
+  libraryLaunchCanUseWorktree,
   libraryLaunchDefaults,
   libraryLaunchInputs,
+  libraryLaunchWorkspace,
   libraryQuickLaunch,
   supportsLoomFeature,
   type LibraryLaunchHost,
   type LibraryLaunchRememberedComputer,
 } from "@t3tools/client-runtime/fork";
-import type { EnvironmentId, ProjectId, ServerConfig } from "@t3tools/contracts";
-import type {
-  LibraryProject,
-  LibraryThreadSummary,
-  LibraryWorkingCopy,
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentId, ModelSelection, ProjectId, ServerConfig } from "@t3tools/contracts";
+import {
+  LIBRARY_WORKTREE_STARTS_FEATURE,
+  type LibraryProject,
+  type LibraryThreadSummary,
+  type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import type { LegacyProjectSettingsFields } from "@t3tools/shared/projectSettings";
 import { RUNTIME_MODE_CHOICES } from "../../features/threads/thread-settings-options";
@@ -49,6 +54,13 @@ export function libraryStartDefaults(input: {
     environmentId: EnvironmentId,
     projectId: ProjectId,
   ) => LegacyProjectSettingsFields | null;
+  /** The model this device's composer used last. */
+  readonly lastUsedSelection?: ModelSelection | null;
+  /** Conversations on connected computers, to tell whether the files are in use. */
+  readonly shells?: readonly Pick<
+    EnvironmentThreadShell,
+    "environmentId" | "worktreePath" | "runtime" | "archivedAt"
+  >[];
 }): LibraryStartDefaults | null {
   const { project } = input;
   // Ranked without working threads, as web ranks, so a row never moves as threads start and stop.
@@ -96,12 +108,22 @@ export function libraryStartDefaults(input: {
     localProjectId,
     localProject: localProjectId ? input.localProject(environmentId, localProjectId) : null,
     savedSelection: null,
+    lastUsedSelection: input.lastUsedSelection ?? null,
   });
   if (defaultModel === null) return null;
   const runtimeMode = libraryLaunchDefaults({
     settings: config?.settings,
     localProjectId,
   }).runtimeMode;
+  // The start screen starts in a new worktree while other conversations work in these files, so
+  // the row says so rather than promising the folder it will not use.
+  const workspace = libraryLaunchWorkspace({
+    available:
+      supportsLoomFeature(capabilities, LIBRARY_WORKTREE_STARTS_FEATURE) &&
+      libraryLaunchCanUseWorktree(project, repositories.length === 1 ? repositories[0]!.id : null),
+    chosen: null,
+    conversations: libraryCopyFolderConversations(input.shells ?? [], copy),
+  });
   return {
     environmentId,
     copyId: copy.id,
@@ -109,6 +131,7 @@ export function libraryStartDefaults(input: {
       quick.label,
       defaultModel.label,
       RUNTIME_MODE_CHOICES.find((choice) => choice.mode === runtimeMode)?.label,
+      workspace === "worktree" ? "New worktree" : undefined,
     ]
       .filter((part) => part !== undefined)
       .join(" · "),

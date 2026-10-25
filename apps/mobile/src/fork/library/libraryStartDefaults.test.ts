@@ -188,6 +188,39 @@ describe("New task Library project defaults", () => {
     expect(libraryStartDefaults(input({ terminal: new Set() }))).not.toBeNull();
   });
 
+  it("says a tap starts in a new worktree while another conversation works in the files", () => {
+    const worktrees = input().hosts.map((host) => ({
+      ...host,
+      capabilities: {
+        repositoryIdentity: false,
+        loomFeatures: ["project-library", "library-worktree-starts"],
+      },
+    }));
+    const working = {
+      environmentId: dorothy,
+      worktreePath: "/Projects/files/app",
+      archivedAt: null,
+      runtime: {
+        status: "running" as const,
+        activeRunId: null,
+        providerInstanceId: instanceId,
+        providerName: null,
+        lastError: null,
+        updatedAt: project.updatedAt,
+      },
+    };
+    expect(libraryStartDefaults(input({ hosts: worktrees, shells: [working] }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access · New worktree",
+    );
+    expect(libraryStartDefaults(input({ hosts: worktrees }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access",
+    );
+    // A computer that cannot start one keeps the shared folder, and the row says nothing more.
+    expect(libraryStartDefaults(input({ shells: [working] }))?.summary).toBe(
+      "Dorothy · GPT 6.0 Astra · Full access",
+    );
+  });
+
   it("leaves the start to the settings screen when it needs a decision first", () => {
     const offline = input().hosts.map((host) => ({ ...host, online: false }));
     expect(libraryStartDefaults(input({ hosts: offline }))).toBeNull();
