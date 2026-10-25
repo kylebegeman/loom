@@ -84,6 +84,14 @@ export const recoveryGrantSubject = Effect.fn("LibraryRecoveryGrant.subject")(fu
   );
 });
 
+/** Grants last minutes and name exact files, so a refused one is replaced, never retried. */
+export const recoveryGrantRefused = () =>
+  new LibraryError({
+    reason: "blocked",
+    detail:
+      "This restore authorization expired or does not match these saved files. Start the restore again to get a new one.",
+  });
+
 export const readRecoveryGrantClaims = Effect.fn("LibraryRecoveryGrant.readClaims")(function* (
   session: Pick<AuthenticatedSession, "subject" | "scopes" | "expiresAt">,
 ) {
@@ -91,17 +99,14 @@ export const readRecoveryGrantClaims = Effect.fn("LibraryRecoveryGrant.readClaim
     !session.scopes.includes(AuthLibraryRecoveryReadScope) ||
     !session.subject.startsWith(subjectPrefix)
   )
-    return yield* new LibraryError({ reason: "blocked" });
+    return yield* recoveryGrantRefused();
   const claims = yield* Effect.fromResult(
     Base64Url.decodeString(session.subject.slice(subjectPrefix.length)),
-  ).pipe(
-    Effect.flatMap(decodeClaims),
-    Effect.mapError(() => new LibraryError({ reason: "blocked" })),
-  );
+  ).pipe(Effect.flatMap(decodeClaims), Effect.mapError(recoveryGrantRefused));
   if (
     session.expiresAt === undefined ||
     session.expiresAt.epochMilliseconds !== Date.parse(claims.expiresAt)
   )
-    return yield* new LibraryError({ reason: "blocked" });
+    return yield* recoveryGrantRefused();
   return claims;
 });

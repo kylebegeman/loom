@@ -117,7 +117,21 @@ export function AndroidWorkspaceNavigation(props: {
         }}
         onNewThread={() => {
           Keyboard.dismiss();
-          navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+          // fork: no-project-first - A Library project in view leads the picker, as on iPhone.
+          const state = root?.getState(); // fork: no-project-first
+          const route = state?.routes[state.index]; // fork: no-project-first
+          const params = route?.params; // fork: no-project-first
+          if (
+            route?.name.startsWith("Library") && // fork: no-project-first
+            params && // fork: no-project-first
+            "projectId" in params && // fork: no-project-first
+            typeof params.projectId === "string" // fork: no-project-first
+          )
+            navigation.navigate("NewTaskSheet", {
+              screen: "NewTask", // fork: no-project-first
+              params: { libraryProjectId: params.projectId }, // fork: no-project-first
+            }); // fork: no-project-first
+          else navigation.navigate("NewTaskSheet", { screen: "NewTask" }); // fork: no-project-first
         }}
         onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
         style={rail ? { flex: 1 } : { height: 80 * Math.max(1, scale) }}

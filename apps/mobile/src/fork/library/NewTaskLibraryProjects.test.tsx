@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   switchRef: vi.fn(),
   create: vi.fn(),
   online: true,
+  projects: [] as LibraryProject[],
 }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
@@ -29,8 +30,10 @@ vi.mock("@react-navigation/native", () => ({
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
 vi.mock("./libraryState", () => ({
-  useLibraryAuthority: () => ({ environmentId: "library" }),
+  useLibraryAuthority: () => ({ environmentId: "library", computers: [] }),
   library: {
+    projects: () => "projects",
+    threadIndex: () => "thread-index",
     threadBinding: state.binding,
     lookupThread: state.lookup,
     copies: state.copies,
@@ -42,6 +45,8 @@ vi.mock("../../state/environments", () => ({
     environments: [
       {
         environmentId: "computer",
+        label: "Computer",
+        entry: { enabled: true },
         connection: { phase: state.online ? "connected" : "offline" },
         serverConfig: { environment: { capabilities: { loomFeatures: ["project-library"] } } },
       },
@@ -50,8 +55,17 @@ vi.mock("../../state/environments", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [{ environmentId: "computer", id: "local-project", workspaceRoot: "/repo" }],
+  useServerConfigs: () => new Map(),
+  useThreadShells: () => [],
 }));
-vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => ({ data: [] }) }));
+vi.mock("../../state/session", () => ({ useEnvironmentsWithScope: () => new Set() }));
+vi.mock("../../components/ui/IconButton", () => ({ IconButton: () => null }));
+vi.mock("../../state/query", () => ({
+  useEnvironmentQuery: (query: unknown) => ({
+    data: query === "projects" ? state.projects : [],
+    error: null,
+  }),
+}));
 vi.mock("../../state/use-atom-query-runner", () => ({
   useAtomQueryRunner: (query: unknown) => query,
 }));
@@ -76,7 +90,11 @@ vi.mock("../../components/ui/NavigationRow", () => ({
   ),
 }));
 
-import { NewTaskLibraryProjectChoices, useNewTaskFromSource } from "./NewTaskLibraryProjects";
+import {
+  NewTaskLibraryProjectChoices,
+  useNewTaskFromSource,
+  useNewTaskLibraryProjects,
+} from "./NewTaskLibraryProjects";
 
 const source = makeThreadShellFixture({
   id: ThreadId.make("source-thread"),
@@ -314,7 +332,11 @@ describe("mobile source launch actions", () => {
   });
 
   it("keeps ordinary New task project selection independent of source settings", async () => {
-    await act(() => root.render(<NewTaskLibraryProjectChoices choices={[project]} error={null} />));
+    await act(() =>
+      root.render(
+        <NewTaskLibraryProjectChoices choices={[{ project, start: null }]} error={null} />,
+      ),
+    );
     await act(() => container.querySelector("button")!.click());
     expect(state.dispatch).toHaveBeenCalledExactlyOnceWith({
       name: "LibraryStart",
@@ -322,5 +344,33 @@ describe("mobile source launch actions", () => {
     });
     expect(state.binding).not.toHaveBeenCalled();
     expect(state.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("mobile New task Library choices", () => {
+  it("leads with the project in view and still offers every other project once", async () => {
+    const other = (id: string, updatedAt: string) => ({ ...project, id, title: id, updatedAt });
+    state.projects = [
+      other("older", "2026-10-20T00:00:00Z"),
+      project,
+      other("newer", "2026-10-23T00:00:00Z"),
+    ];
+    let shown: ReturnType<typeof useNewTaskLibraryProjects> | null = null;
+    function Choices(props: { readonly searchText: string }) {
+      const result = useNewTaskLibraryProjects({ ...props, suggestedProjectId: project.id });
+      useEffect(() => {
+        shown = result;
+      });
+      return null;
+    }
+    const ids = (rows: ReturnType<typeof useNewTaskLibraryProjects>["choices"]) =>
+      rows.map((row) => row.project.id);
+    await act(() => root.render(<Choices searchText="" />));
+    expect(ids(shown!.suggested)).toEqual([project.id]);
+    expect(ids(shown!.choices)).toEqual(["newer", "older"]);
+    // A search that leaves the project in view out leaves out its lead too.
+    await act(() => root.render(<Choices searchText="newer" />));
+    expect(ids(shown!.suggested)).toEqual([]);
+    expect(ids(shown!.choices)).toEqual(["newer"]);
   });
 });

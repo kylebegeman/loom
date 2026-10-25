@@ -112,8 +112,8 @@ One-time Apple setup, on the same eligible team (not a personal team):
    `com.kylebegeman.loom`. Keep a copy in Vault and install it on the Library.
 
 Build a release with `LOOM_MOBILE_LIBRARY_PUSH_ENABLED=1` in the environment before `prepare`
-or `release`; for nightly delivery, set it in the publisher's environment. The value is `0` or
-`1`, and unset means `0`. The prepared record freezes it, and a later phase run with a
+or `release`. For nightly delivery, set `"libraryPush": true` in the publisher's `ios.json`,
+because its launch agent carries no environment. The value is `0` or `1`, and unset means `0`. The prepared record freezes it, and a later phase run with a
 contradicting value fails, so a retry cannot quietly change it.
 
 Inspection checks the main app only. With the flag on, its signed entitlements and its profile

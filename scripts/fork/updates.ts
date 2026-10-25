@@ -1012,6 +1012,7 @@ export function iosPublishConfig(raw: unknown) {
   const exportOptions = value.exportOptions;
   const signingKeychain = value.signingKeychain;
   const signingKeychainPasswordFile = value.signingKeychainPasswordFile;
+  const libraryPush = value.libraryPush;
   if (typeof teamId !== "string" || !/^[A-Z0-9]{10}$/.test(teamId) || teamId === "ARK85ZXQ4Z") {
     throw new Error("Configure your own Apple team for Loom iOS publishing.");
   }
@@ -1047,6 +1048,8 @@ export function iosPublishConfig(raw: unknown) {
       "Loom iOS signing keychain and protected password file require paired absolute paths.",
     );
   }
+  if (libraryPush !== undefined && typeof libraryPush !== "boolean")
+    throw new Error("Loom iOS libraryPush must be true or false.");
   return {
     teamId,
     appId,
@@ -1055,6 +1058,8 @@ export function iosPublishConfig(raw: unknown) {
     signingKeychainPasswordFile: signingKeychainPasswordFile as string | undefined,
     groups: groups as string[] | undefined,
     exportOptions: exportOptions as string | undefined,
+    // The launch agent carries no environment, so the Library push build flag lives here.
+    libraryPush: libraryPush as boolean | undefined,
   };
 }
 
@@ -1193,6 +1198,9 @@ async function publishIos(release: Release) {
         LOOM_IOS_ASC_APP_ID: config.appId,
         LOOM_IOS_TESTFLIGHT_GROUPS: config.groups?.join(",") ?? "",
         ...(config.exportOptions ? { LOOM_IOS_EXPORT_OPTIONS: config.exportOptions } : {}),
+        ...(config.libraryPush !== undefined
+          ? { LOOM_MOBILE_LIBRARY_PUSH_ENABLED: config.libraryPush ? "1" : "0" }
+          : {}),
       },
       stdio: "inherit",
     },

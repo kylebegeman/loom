@@ -57,6 +57,48 @@ it.layer(NodeServices.layer)("migrate-dev-db with Loom tables", (it) => {
     }),
   );
 
+  it.effect("leaves the live computer's Library history journal behind", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "fork-dev-db-src-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "fork-dev-db-dest-" });
+      const source = path.join(sourceDir, "userdata", "statev2.sqlite");
+      yield* fs.makeDirectory(path.dirname(source), { recursive: true });
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* runMigrations();
+          yield* sql`CREATE TABLE fork_library_source_state (key TEXT PRIMARY KEY, environment_id TEXT)`;
+          yield* sql`INSERT INTO fork_library_source_state VALUES ('host', 'live-environment')`;
+          yield* sql`CREATE TABLE fork_library_source_outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, payload_json TEXT)`;
+          yield* sql`INSERT INTO fork_library_source_outbox VALUES (1, '{}')`;
+        }),
+      );
+
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 1 },
+        { sharedHome: sourceDir },
+      );
+
+      const counts = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const [row] = yield* sql<{ journal: number; outbox: number; numbering: number }>`
+            SELECT
+              (SELECT COUNT(*) FROM fork_library_source_state) AS journal,
+              (SELECT COUNT(*) FROM fork_library_source_outbox) AS outbox,
+              (SELECT COUNT(*) FROM sqlite_sequence
+                WHERE name = 'fork_library_source_outbox') AS numbering`;
+          return row;
+        }),
+      );
+      assert.deepStrictEqual(counts, { journal: 0, outbox: 0, numbering: 0 });
+    }),
+  );
+
   it.effect("copies the Library's search index with the conversations it covers", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -1,7 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { ArrowLeftIcon, ChevronRightIcon, CircleIcon, CheckIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  CheckIcon,
+} from "lucide-react";
 import { CommandPaletteContent } from "~/components/CommandPaletteContent";
+import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
@@ -13,12 +22,21 @@ export interface LibraryPaletteItem {
   readonly id: string;
   readonly title: string;
   readonly description?: string | undefined;
+  /**
+   * Shown in place of the description but never searched. Enter takes the first match, so text
+   * that many rows share, such as the computer a start runs on, must not decide which row leads.
+   */
+  readonly summary?: string | undefined;
   readonly terms?: readonly string[] | undefined;
   readonly icon?: ReactNode;
   readonly next?: boolean | undefined;
   readonly selected?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly select: () => void;
+  /** What Enter does on this row, named in the footer while the row is highlighted. */
+  readonly enterLabel?: string | undefined;
+  /** A second step reached from the row's chevron or Right Arrow, while Enter runs `select`. */
+  readonly options?: (() => void) | undefined;
 }
 
 export function LibraryPaletteDialog({
@@ -65,6 +83,7 @@ export function LibraryPaletteView({
   children,
   footerHints,
 }: {
+  /** Replaces the keys the footer names, for pages whose keys do not follow the rows. */
   readonly footerHints?: ReactNode;
   readonly title: string;
   readonly placeholder: string;
@@ -109,12 +128,25 @@ export function LibraryPaletteView({
     kind: "action",
     value: item.id,
     title: item.title,
-    description: item.description,
+    description: item.summary ?? item.description,
     searchTerms: item.terms ?? [],
     icon: item.icon ?? <CircleIcon className="size-4" />,
     disabled: busy || item.disabled === true,
     titleTrailingContent: item.selected ? (
       <CheckIcon className="ml-auto size-4 text-muted-foreground" />
+    ) : item.options ? (
+      // Keyboard users reach this with Right Arrow. Base UI commits the row on click, so the
+      // chevron stops the click before it reaches the row.
+      <span
+        aria-hidden
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!busy && !item.disabled) item.options?.();
+        }}
+        className="-my-1 ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <ChevronRightIcon className="size-4" />
+      </span>
     ) : item.next ? (
       <ChevronRightIcon className="ml-auto size-4 text-muted-foreground" />
     ) : undefined,
@@ -122,6 +154,8 @@ export function LibraryPaletteView({
       item.select();
     },
   }));
+  const enterLabel = selected?.enterLabel ?? "Select";
+  const escapeLabel = onBack ? "Back" : "Close";
   return (
     <CommandPaletteContent
       mode="none"
@@ -141,10 +175,46 @@ export function LibraryPaletteView({
         const id = typeof value === "string" ? value : null;
         setHighlight((previous) => ({ id, choice: reason === "none" ? previous.choice : id }));
       }}
-      footerActionLabel="Select"
-      footerHints={footerHints}
+      footerActionLabel={enterLabel}
+      // The default footer has no Right Arrow hint, so a row with options lists every key.
+      footerHints={
+        footerHints ??
+        (selected?.options ? (
+          <>
+            <KbdGroup>
+              <Kbd>
+                <ArrowUpIcon />
+              </Kbd>
+              <Kbd>
+                <ArrowDownIcon />
+              </Kbd>
+              <span>Navigate</span>
+            </KbdGroup>
+            <KbdGroup>
+              <Kbd>Enter</Kbd>
+              <span>{enterLabel}</span>
+            </KbdGroup>
+            <KbdGroup>
+              <Kbd>
+                <ArrowRightIcon />
+              </Kbd>
+              <span>Options</span>
+            </KbdGroup>
+            {onBack ? (
+              <KbdGroup>
+                <Kbd>Backspace</Kbd>
+                <span>Back</span>
+              </KbdGroup>
+            ) : null}
+            <KbdGroup>
+              <Kbd>Esc</Kbd>
+              <span>{escapeLabel}</span>
+            </KbdGroup>
+          </>
+        ) : undefined)
+      }
       showBackHint={!!onBack}
-      escapeLabel={onBack ? "Back" : "Close"}
+      escapeLabel={escapeLabel}
       inputAccessory={
         onBack ? (
           <button
@@ -174,6 +244,26 @@ export function LibraryPaletteView({
           : {}),
         onKeyDown: (event) => {
           if (event.nativeEvent.isComposing || busy) return;
+          const input = event.currentTarget;
+          const options =
+            event.key === "ArrowRight" &&
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            input.selectionStart === input.value.length &&
+            input.selectionEnd === input.value.length
+              ? selected?.options
+              : undefined;
+          if (options) {
+            (
+              event as typeof event & { preventBaseUIHandler?: () => void }
+            ).preventBaseUIHandler?.();
+            event.preventDefault();
+            event.stopPropagation();
+            options();
+            return;
+          }
           if (
             event.key === "Enter" ||
             event.key === "Escape" ||

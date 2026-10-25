@@ -405,6 +405,12 @@ const proposalSource = McpInvocationContext.pipe(
   }),
 );
 
+const operationCallerMissing = () =>
+  new Library.LibraryError({
+    reason: "blocked",
+    detail: "Project operations run only from a conversation or a signed-in app session.",
+  });
+
 export const projectLibraryHandlers = McpToolAccess.toLayer(
   ProjectLibraryToolkit,
   Effect.gen(function* () {
@@ -422,7 +428,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
             ? service.executeAgent(id, request, invocation.thread)
             : invocation.client
               ? service.executeClient(id, request, invocation.client.sessionId)
-              : Effect.fail(new Library.LibraryError({ reason: "blocked" })),
+              : Effect.fail(operationCallerMissing()),
         ),
       );
     });
@@ -466,7 +472,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
                       input.action,
                       invocation.client.sessionId,
                     )
-                  : Effect.fail(new Library.LibraryError({ reason: "blocked" })),
+                  : Effect.fail(operationCallerMissing()),
             ),
           );
         }),

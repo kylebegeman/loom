@@ -56,6 +56,7 @@ const state = vi.hoisted(() => ({
   copiesPending: false,
   sourceError: null as string | null,
   sourcePending: false,
+  healthPending: false,
   source: null as {
     summary: {
       title: string;
@@ -103,7 +104,7 @@ vi.mock("./libraryState", () => ({
     project: () => "project",
     copies: () => "copies",
     history: () => "history",
-    copyHealth: vi.fn(),
+    copyHealth: () => "health",
     prepareCopy: state.prepare,
     bindThread: state.bind,
     registerCopy: state.registerCopy,
@@ -156,14 +157,29 @@ vi.mock("../../state/presentation", () => ({
   environmentPresentations: { presentationAtom: (id: unknown) => id },
 }));
 vi.mock("../../state/query", () => ({
-  useEnvironmentQuery: (query: string | null) => ({
-    data: query === "project" ? state.project : query === "copies" ? state.copies : state.source,
-    error: query === "copies" ? state.copiesError : query === "history" ? state.sourceError : null,
-    isPending:
-      query === "copies" ? state.copiesPending : query === "history" ? state.sourcePending : false,
-    isSuccess: true,
-    refresh: state.refresh,
-  }),
+  useEnvironmentQuery: (query: string | null) =>
+    query === "health"
+      ? {
+          data: null,
+          error: null,
+          isPending: state.healthPending,
+          isSuccess: !state.healthPending,
+          refresh: state.refresh,
+        }
+      : {
+          data:
+            query === "project" ? state.project : query === "copies" ? state.copies : state.source,
+          error:
+            query === "copies" ? state.copiesError : query === "history" ? state.sourceError : null,
+          isPending:
+            query === "copies"
+              ? state.copiesPending
+              : query === "history"
+                ? state.sourcePending
+                : false,
+          isSuccess: true,
+          refresh: state.refresh,
+        },
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("../../state/use-atom-query-runner", () => ({
@@ -340,7 +356,12 @@ import { LibraryStartRouteScreen } from "./LibraryStartScreen";
 const computerA = EnvironmentId.make("computer-a"),
   computerB = EnvironmentId.make("computer-b"),
   localProjectId = ProjectId.make("local-project");
-const makeComputer = (id: EnvironmentId, label: string, online = true): Computer => ({
+const makeComputer = (
+  id: EnvironmentId,
+  label: string,
+  online = true,
+  features: readonly string[] = [],
+): Computer => ({
   environmentId: id,
   label,
   entry: { enabled: true },
@@ -348,7 +369,12 @@ const makeComputer = (id: EnvironmentId, label: string, online = true): Computer
   serverConfig: {
     environment: {
       capabilities: {
-        loomFeatures: ["project-library", "library-file-lifecycle", "library-portable-recovery"],
+        loomFeatures: [
+          "project-library",
+          "library-file-lifecycle",
+          "library-portable-recovery",
+          ...features,
+        ],
       },
     },
     newProjectsRoot: `/Projects/${id}`,
@@ -442,8 +468,21 @@ beforeEach(() => {
   state.copiesPending = false;
   state.sourceError = null;
   state.sourcePending = false;
+  state.healthPending = false;
   state.source = null;
   state.warning = null;
+  // Applies each update the way the preferences store does, so a remounted screen reads it.
+  state.savePreferences.mockImplementation(
+    async (update: {
+      transform: (current: { loomLibraryLaunches: Record<string, string> }) => {
+        loomLibraryLaunches: Record<string, string>;
+      };
+    }) => {
+      state.preferences = update.transform({
+        loomLibraryLaunches: state.preferences,
+      }).loomLibraryLaunches;
+    },
+  );
   state.prepare.mockResolvedValue(AsyncResult.success(copy));
   state.create.mockResolvedValue(AsyncResult.success({}));
   state.registerCopy.mockResolvedValue(AsyncResult.success({}));
@@ -591,6 +630,199 @@ describe("Library start progressive disclosure", () => {
     expect(button("server").getAttribute("aria-checked")).toBe("true");
     await click("Start work");
     expect(state.launch.mock.calls[0]![0].resourceIds).toEqual(["server"]);
+  });
+
+  it("starts a project tapped in New task once, on the computer and files its row named", async () => {
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+    expect(state.launch.mock.calls[0]![0].executionEnvironmentId).toBe(computerA);
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Preparation interrupted");
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a tapped project to the Start button when its files need a decision", async () => {
+    state.warning = { message: "This copy is 2 commits behind.", pullPaths: ["/Projects/Loom"] };
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(state.launch).not.toHaveBeenCalled();
+    state.warning = null;
+    await render();
+    expect(state.launch).not.toHaveBeenCalled();
+    expect(button("Start work").disabled).toBe(false);
+  });
+
+  it("leaves a tapped project to the Start button when its files were released since", async () => {
+    state.copies = [{ ...copy, state: "released", recovery: recoveryMetadata }];
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(button("Files").textContent).toContain("Restore saved files when starting");
+    expect(button("Start work").disabled).toBe(false);
+    expect(state.launch).not.toHaveBeenCalled();
+  });
+
+  it("waits for the copy's live health before starting a tapped project", async () => {
+    state.computers[0] = makeComputer(computerA, "MacBook", true, ["library-copy-health"]);
+    state.healthPending = true;
+    params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+    await render();
+    expect(state.launch).not.toHaveBeenCalled();
+    state.healthPending = false;
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Start work", "Conversation options"])(
+    "drops a waiting start once %s is pressed",
+    async (label) => {
+      state.computers[0] = makeComputer(computerA, "MacBook", true, ["library-copy-health"]);
+      state.healthPending = true;
+      params = { ...params, reuseEnvironmentId: computerA, initialCopyId: copy.id, startNow: true };
+      await render();
+      expect(state.launch).not.toHaveBeenCalled();
+      await click(label);
+      const pressed = state.launch.mock.calls.length;
+      state.healthPending = false;
+      await render();
+      expect(state.launch).toHaveBeenCalledTimes(pressed);
+    },
+  );
+
+  it("adds a handed-in folder by starting in it", async () => {
+    state.copies = [];
+    params = {
+      ...params,
+      reuseEnvironmentId: computerA,
+      reuseRootPath: "/Projects/Existing",
+      startNow: true,
+    };
+    await render();
+    expect(state.launch).toHaveBeenCalledTimes(1);
+    expect(state.prepare).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ rootPath: "/Projects/Existing", strategy: "reuse" }),
+    });
+  });
+
+  it("offers Start over on a reopened attempt, then starts fresh on the files it left", async () => {
+    const prepared = { ...copy, id: "prepared", rootPath: "/Projects/computer-a/Loom" };
+    state.copies = [prepared];
+    state.preferences = {
+      [JSON.stringify(["library", project.id, "new"])]: encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "saved-request",
+        threadId: ThreadId.make("saved-thread"),
+        receipt: {
+          ...emptyLibraryLaunchReceipt(),
+          intent: {
+            project,
+            executionEnvironmentId: computerA,
+            resourceIds: [],
+            threadId: ThreadId.make("saved-thread"),
+          },
+          copy: prepared,
+          copyRegistered: true,
+        },
+        review: {
+          authorityEnvironmentId: EnvironmentId.make("library"),
+          model: {
+            key: "codex:default",
+            selection: { instanceId: ProviderInstanceId.make("codex"), model: "default" },
+          },
+          title: "Project discussion",
+          mode: "clone",
+          rootPath: prepared.rootPath,
+          copy: null,
+          carryContext: "",
+          keepOnComputer: false,
+        },
+      }),
+    };
+    await render();
+    expect(container.textContent).toContain("An unfinished preparation is saved");
+    expect(button("Computer").disabled).toBe(true);
+    await click("Start over");
+    expect(state.preferences).toEqual({});
+    expect(container.textContent).not.toContain("An unfinished preparation is saved");
+    expect(button("Computer").disabled).toBe(false);
+    // The files the attempt prepared are reused rather than cloned again beside them.
+    expect(button("Files").textContent).toContain("Use files already on this computer");
+    await click("Start work");
+    const [intent, receipt] = state.launch.mock.calls[0]!;
+    expect(intent.threadId).not.toBe("saved-thread");
+    expect(receipt.copy).toBeNull();
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.create).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ threadId: intent.threadId }),
+    });
+    expect(state.create.mock.calls[0]![0].input.commandId).not.toContain("saved-request");
+  });
+
+  it("starts over on the dropped attempt's computer, model, permissions and folder", async () => {
+    state.copies = [];
+    state.preferences = {
+      [JSON.stringify(["library", project.id, "new"])]: encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "saved-request",
+        threadId: ThreadId.make("saved-thread"),
+        receipt: {
+          ...emptyLibraryLaunchReceipt(),
+          intent: {
+            project,
+            executionEnvironmentId: computerA,
+            resourceIds: [],
+            threadId: ThreadId.make("saved-thread"),
+          },
+        },
+        review: {
+          authorityEnvironmentId: EnvironmentId.make("library"),
+          model: {
+            key: "codex:custom",
+            selection: { instanceId: ProviderInstanceId.make("codex"), model: "custom" },
+          },
+          title: "Ship the new flow",
+          mode: "clone",
+          rootPath: "/Work/Loom",
+          copy: null,
+          carryContext: "",
+          keepOnComputer: true,
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        },
+      }),
+    };
+    await render();
+    await click("Start over");
+    expect(state.preferences).toEqual({});
+    expect(button("Computer").disabled).toBe(false);
+    // Ranked alone, the Mac mini would lead.
+    expect(button("Computer").textContent).toContain("MacBook");
+    expect(button("Agent model").textContent).toContain("Codex: custom");
+    await click("Files");
+    // The computer may still be preparing this folder, so a second one is never suggested.
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Project folder on selected computer"]',
+      )!.value,
+    ).toBe("/Work/Loom");
+    await click("Start work");
+    expect(state.launch.mock.calls[0]![0].executionEnvironmentId).toBe(computerA);
+    expect(state.prepare).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({ rootPath: "/Work/Loom", strategy: "clone" }),
+    });
+    expect(state.create).toHaveBeenCalledWith({
+      environmentId: computerA,
+      input: expect.objectContaining({
+        title: "Ship the new flow",
+        modelSelection: { instanceId: "codex", model: "custom" },
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+      }),
+    });
   });
 
   it("keeps launch warnings and explicit safety actions visible while options are collapsed", async () => {

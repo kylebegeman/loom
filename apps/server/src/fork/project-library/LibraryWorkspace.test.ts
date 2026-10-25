@@ -22,6 +22,7 @@ import * as Ref from "effect/Ref";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -423,7 +424,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             reviewToken: finalReview.reviewToken!,
           })
           .pipe(Effect.flip, Effect.ensuring(Effect.sync(() => publisherEdits.delete(copy.id))));
-        expect(failed.reason).toBe("blocked");
+        expect(failed).toMatchObject({
+          reason: "blocked",
+          detail: "These files changed since they were reviewed. Review them again, then retry.",
+        });
         expect((yield* store.get(copy.id)).copy.recovery).toEqual(second.recovery);
         expect(yield* fs.readFileString(notes)).toBe("changed during publication\n");
         expect((yield* store.get(copy.id)).copy.state).toBe("ready");
@@ -883,10 +887,13 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         yield* fs.makeDirectory(occupied);
         yield* fs.writeFileString(path.join(occupied, "keep.txt"), "existing destination");
         expect(
-          (yield* destination.service
+          yield* destination.service
             .restoreCopy({ ...input, requestId: `occupied-${scope}`, rootPath: occupied })
-            .pipe(Effect.flip)).reason,
-        ).toBe("blocked");
+            .pipe(Effect.flip),
+        ).toMatchObject({
+          reason: "blocked",
+          detail: `${occupied} is not an empty folder. Choose an empty folder or a new location.`,
+        });
         expect(yield* fs.readFileString(path.join(occupied, "keep.txt"))).toBe(
           "existing destination",
         );
@@ -1921,14 +1928,16 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         },
       });
       const threadId = ThreadId.make("orphan-created-thread");
-      const rejected = yield* Effect.result(
-        receipts.validateThreadCwd({
+      const rejected = yield* receipts
+        .validateThreadCwd({
           threadId,
           localProjectId: resolved.localProjectId,
           cwd: rootPath,
-        }),
+        })
+        .pipe(Effect.flip);
+      expect(rejected.message).toBe(
+        "This conversation is not linked to its Library files, so it cannot run in this folder. Start a new conversation from the Library project instead.",
       );
-      expect(rejected._tag).toBe("Failure");
       yield* receipts.bind(threadId, resolved);
       expect(
         yield* receipts.validateThreadCwd({
@@ -2016,15 +2025,54 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       });
       const review = yield* service.status({ workingCopyId: copy.id });
       yield* fs.writeFileString(path.join(rootPath, "notes.md"), "work to preserve");
-      const released = yield* Effect.result(
-        service.release({
+      const released = yield* service
+        .release({
           requestId: "release-stale",
           workingCopyId: copy.id,
           reviewToken: review.reviewToken!,
-        }),
-      );
-      expect(released._tag).toBe("Failure");
+        })
+        .pipe(Effect.flip);
+      expect(released).toMatchObject({
+        reason: "blocked",
+        detail: "These files changed since they were reviewed. Review them again, then retry.",
+      });
       expect(yield* fs.readFileString(path.join(rootPath, "notes.md"))).toBe("work to preserve");
+    }),
+  );
+  it.effect("names why new files cannot be prepared", () =>
+    Effect.gen(function* () {
+      const rootPath = yield* makeTemp;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* fs.writeFileString(path.join(rootPath, "keep.txt"), "existing");
+      const request = {
+        requestId: "clone-over-existing",
+        project: makeProject([]),
+        rootPath,
+        strategy: "clone" as const,
+      };
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      expect((yield* service.prepareCopy(request).pipe(Effect.flip)).message).toBe(
+        "A folder already exists at this location. Choose an empty location for new files, or add the existing folder instead.",
+      );
+      const hostOnly = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(
+          Layer.fresh(LibraryWorkspace.layer).pipe(
+            Layer.provide(
+              ConfigProvider.layer(ConfigProvider.fromUnknown({ LOOM_EXECUTION_ENABLED: "false" })),
+            ),
+          ),
+        ),
+      );
+      expect(
+        (yield* hostOnly
+          .prepareCopy({ ...request, requestId: "host-only", rootPath: path.join(rootPath, "new") })
+          .pipe(Effect.flip)).message,
+      ).toBe(
+        "This computer hosts your Library but does not run work. Choose another computer for these files.",
+      );
+      expect(yield* fs.readFileString(path.join(rootPath, "keep.txt"))).toBe("existing");
+      expect(yield* fs.exists(path.join(rootPath, "new"))).toBe(false);
     }),
   );
   it.effect("rejects resources escaping the parent without mutating the folder", () =>
@@ -3243,8 +3291,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(
         (yield* service
           .reopenCopy({ requestId: "reopen-existing", workingCopyId: copy.id })
-          .pipe(Effect.flip)).reason,
-      ).toBe("blocked");
+          .pipe(Effect.flip)).message,
+      ).toBe(
+        `The folder at ${rootPath} is missing or is not the one Loom prepared. Put the original folder back, or move the folder that is there now, then retry.`,
+      );
       expect(yield* fs.readFileString(path.join(rootPath, "other.txt"))).toBe("other folder");
       yield* fs.remove(rootPath, { recursive: true });
       const receipt = yield* store.get(copy.id);
@@ -3286,7 +3336,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
           })
           .pipe(Effect.flip);
         publisherEdits.delete(copy.id);
-        expect(failed.reason).toBe("blocked");
+        expect(failed).toMatchObject({
+          reason: "blocked",
+          detail: "These files changed since they were reviewed. Review them again, then retry.",
+        });
         expect(yield* fs.readFileString(notes)).toBe("newer work\n");
         expect((yield* store.get(copy.id)).copy.state).toBe("ready");
         expect(yield* fs.exists(rootPath)).toBe(true);

@@ -175,6 +175,12 @@ const encodeReviewState = Schema.encodeEffect(Schema.fromJsonString(ReviewState)
 
 const TAR_BLOCK_BYTES = 512;
 const OWNER_CHECK_TIMEOUT = "30 seconds";
+// "blocked" alone reads as a generic refusal, so each refusal says why and what to do next.
+const COPY_IN_USE = "This working copy is still in use or has work that must be preserved.";
+const CHANGED_SINCE_REVIEW =
+  "These files changed since they were reviewed. Review them again, then retry.";
+const EXECUTION_DISABLED =
+  "This computer hosts your Library but does not run work. Choose another computer for these files.";
 const FullRecoveryManifest = Schema.Struct({
   version: Schema.Literal(1),
   project: LibraryProject,
@@ -369,7 +375,12 @@ const make = Effect.gen(function* () {
           ],
           { concurrency: "unbounded" },
         );
-        if ((yield* child.exitCode) !== 0) return yield* new LibraryError({ reason: "blocked" });
+        if ((yield* child.exitCode) !== 0)
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail:
+              "Loom could not read every file in this folder. Check that its files are readable and nothing is changing them, then retry.",
+          });
         return hash.digest("hex");
       }),
     );
@@ -887,7 +898,8 @@ const make = Effect.gen(function* () {
     input: LibraryPrepareCopyRequest,
     rootPath: string,
   ) {
-    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    if (!supportsExecution)
+      return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
     if (
       !validLibraryResources(input.project.resources, {
         allowLocalRemotes: input.strategy === "reuse",
@@ -1021,7 +1033,10 @@ const make = Effect.gen(function* () {
             { workspaceLeaseHeld: record.cwd === rootPath },
           );
           if (created.project.id !== record.id)
-            return yield* new LibraryError({ reason: "blocked" });
+            return yield* new LibraryError({
+              reason: "blocked",
+              detail: `${record.cwd} is open as another project on this computer, so Loom cannot reuse it for ${input.project.title}. Choose another folder.`,
+            });
         }
       }
       const restored = {
@@ -1050,7 +1065,12 @@ const make = Effect.gen(function* () {
         !(input.strategy === "reuse" && receipt.copy.projectId === input.project.id),
     );
     if (conflicting.length > 0) {
-      if (input.strategy !== "reuse") return yield* new LibraryError({ reason: "blocked" });
+      if (input.strategy !== "reuse")
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "Loom already keeps project files at this location. Choose a different location for new files.",
+        });
       yield* takeOverFolder(conflicting);
     }
     const retired = receipts.find(
@@ -1095,7 +1115,12 @@ const make = Effect.gen(function* () {
       if (input.strategy === "reuse") {
         if (!(yield* fs.exists(rootPath))) return yield* new LibraryError({ reason: "not-found" });
       } else {
-        if (yield* fs.exists(rootPath)) return yield* new LibraryError({ reason: "blocked" });
+        if (yield* fs.exists(rootPath))
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail:
+              "A folder already exists at this location. Choose an empty location for new files, or add the existing folder instead.",
+          });
         yield* fs.makeDirectory(rootPath, { recursive: true });
       }
       const info = yield* fs.stat(rootPath);
@@ -1170,7 +1195,10 @@ const make = Effect.gen(function* () {
             if (repositoryPath !== rootPath)
               yield* fs.makeDirectory(path.dirname(repositoryPath), { recursive: true });
             if (repositoryPath !== rootPath && (yield* fs.exists(repositoryPath)))
-              return yield* new LibraryError({ reason: "blocked" });
+              return yield* new LibraryError({
+                reason: "blocked",
+                detail: `${resource.relativePath} already exists and is not a Git repository, so Loom cannot download ${resource.title} there. Move that folder, or choose another location.`,
+              });
             const cloned = yield* runner.run({
               command: "git",
               args: [
@@ -1543,7 +1571,7 @@ const make = Effect.gen(function* () {
     if (receipt.copy.registered === false) return receipt.copy;
     const reviewed = yield* status({ workingCopyId: input.workingCopyId });
     if (reviewed.reviewToken?.split(":")[0] !== input.reviewToken.split(":")[0])
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
     const removed = {
       ...receipt,
       unregisterRequests: [
@@ -1750,7 +1778,7 @@ const make = Effect.gen(function* () {
             manifestDirectory,
           })) !== reviewed.contentsDigest
         )
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
         yield* fs.chmod(archivePath, 0o600);
         const verified = yield* runner.run({
           command: "tar",
@@ -1765,7 +1793,7 @@ const make = Effect.gen(function* () {
         yield* Effect.scoped(fs.open(archiveDirectory).pipe(Effect.flatMap((file) => file.sync)));
         const stillCurrent = yield* status({ workingCopyId: receipt.copy.id });
         if (stillCurrent.reviewToken !== input.reviewToken)
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
         if (Option.isNone(recoveryPublisher))
           return yield* new LibraryError({ reason: "publisher-unavailable" });
         const recovery = yield* recoveryPublisher.value.publish({
@@ -1805,7 +1833,8 @@ const make = Effect.gen(function* () {
   const snapshotCopy = Effect.fn("LibraryWorkspace.snapshotCopy")(function* (
     input: LibrarySnapshotCopyRequest,
   ) {
-    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    if (!supportsExecution)
+      return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
     const receipt = yield* store.get(input.workingCopyId);
     if (receipt.copy.environmentId !== environmentId)
       return yield* new LibraryError({ reason: "invalid" });
@@ -1818,7 +1847,11 @@ const make = Effect.gen(function* () {
       return previous.copy;
     }
     if (receipt.copy.state !== "ready" || receipt.copy.registered === false)
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "These files are not ready on this computer, so Loom cannot save them. Prepare them here again, then retry.",
+      });
     if (
       (yield* store.receipts).some(
         (saved) =>
@@ -1852,11 +1885,12 @@ const make = Effect.gen(function* () {
               thread.goal?.status === "active"),
         )
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
       const processReason = yield* managedProjectProcessReason(receipt.copy.rootPath).pipe(
         Effect.provide(restorationServices),
       );
-      if (processReason !== null) return yield* new LibraryError({ reason: "blocked" });
+      if (processReason !== null)
+        return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
     });
     yield* assertIdle;
     // The archive must match this digest, so a borrowed folder's files are read here, not in review.
@@ -1869,7 +1903,10 @@ const make = Effect.gen(function* () {
       reviewed.contentsDigest === null ||
       reviewed.blockers.length > 0
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: reviewed.blockers[0] ?? CHANGED_SINCE_REVIEW,
+      });
     const saved = yield* publishArchive(
       receipt,
       input,
@@ -1878,7 +1915,7 @@ const make = Effect.gen(function* () {
         yield* mapIo(assertIdle);
         const finalReview = yield* mapIo(status({ workingCopyId: receipt.copy.id }));
         if (finalReview.reviewToken !== input.reviewToken)
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
         const recovery = archived.copy.recovery;
         if (recovery === undefined)
           return yield* new LibraryError({ reason: "archive-unverified" });
@@ -1921,7 +1958,7 @@ const make = Effect.gen(function* () {
       return receipt.copy;
     }
     if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
     if (receipt.removalPath === null) {
       const reviewed = yield* status({ workingCopyId: input.workingCopyId });
       if (
@@ -1929,7 +1966,10 @@ const make = Effect.gen(function* () {
         reviewed.reviewToken !== input.reviewToken ||
         reviewed.blockers.length !== 0
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: reviewed.blockers[0] ?? CHANGED_SINCE_REVIEW,
+        });
       if (receipt.copy.ownership === "managed") {
         if (Option.isNone(recoveryPublisher) || !recoveryPublisher.value.configured)
           return yield* new LibraryError({ reason: "publisher-unavailable" });
@@ -1964,15 +2004,22 @@ const make = Effect.gen(function* () {
         !(yield* fs.exists(receipt.archivePath)) ||
         (yield* fileDigest(receipt.archivePath)) !== receipt.archiveDigest
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "The saved archive for these files is missing or changed on this computer. Turn on Keep files on this computer, then review the files again before removing them.",
+        });
       if (yield* fs.exists(receipt.copy.rootPath)) {
         if (yield* fs.exists(receipt.removalPath))
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: `Something already exists at ${receipt.removalPath}, where Loom moves files before removing them. Move it, then retry.`,
+          });
         const current = yield* status({ workingCopyId: input.workingCopyId });
         if (current.reviewToken !== input.reviewToken)
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({ reason: "blocked", detail: CHANGED_SINCE_REVIEW });
         if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
         yield* fs.rename(receipt.copy.rootPath, receipt.removalPath);
       }
       if (yield* fs.exists(receipt.removalPath)) {
@@ -1983,7 +2030,10 @@ const make = Effect.gen(function* () {
           receipt.rootIdentity?.device !== identity.device ||
           receipt.rootIdentity?.inode !== identity.inode
         )
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: `Loom kept ${receipt.removalPath} because it changed after Loom set it aside. Review it and remove it yourself.`,
+          });
         yield* fs.remove(receipt.removalPath, { recursive: true });
       }
     }
@@ -2018,7 +2068,11 @@ const make = Effect.gen(function* () {
         !(yield* fs.exists(receipt.copy.rootPath)) ||
         (yield* fs.exists(receipt.removalPath))
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "Loom is already removing these files. Let the removal finish before changing whether they stay on this computer.",
+        });
       receipt = { ...receipt, releaseRequestId: null, releaseReviewToken: null, removalPath: null };
     }
     const copy = { ...receipt.copy, keepOnComputer: input.keepOnComputer, updatedAt: yield* now };
@@ -2185,8 +2239,12 @@ const make = Effect.gen(function* () {
     function* (cwd: string, create = true) {
       const marker = `${cwd}.t3-setup-pending`;
       const contents = "Workspace setup must complete before starting the agent.\n";
-      if (Option.isSome(yield* fs.readLink(marker).pipe(Effect.option)))
-        return yield* new LibraryError({ reason: "blocked" });
+      const unexpected = () =>
+        new LibraryError({
+          reason: "blocked",
+          detail: `Loom found a file it did not create at ${marker}. Remove it, then retry.`,
+        });
+      if (Option.isSome(yield* fs.readLink(marker).pipe(Effect.option))) return yield* unexpected();
       if (create)
         yield* fs.writeFileString(marker, contents, { flag: "wx" }).pipe(
           Effect.catch(() =>
@@ -2196,7 +2254,7 @@ const make = Effect.gen(function* () {
                 (yield* fs.stat(marker)).type !== "File" ||
                 (yield* fs.readFileString(marker)) !== contents
               )
-                return yield* new LibraryError({ reason: "blocked" });
+                return yield* unexpected();
             }),
           ),
         );
@@ -2206,7 +2264,7 @@ const make = Effect.gen(function* () {
           (yield* fs.stat(marker)).type !== "File" ||
           (yield* fs.readFileString(marker)) !== contents
         )
-          return yield* new LibraryError({ reason: "blocked" });
+          return yield* unexpected();
       }
     },
   );
@@ -2215,7 +2273,8 @@ const make = Effect.gen(function* () {
     input: LibraryRestoreCopyRequest,
     rootPath: string,
   ) {
-    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    if (!supportsExecution)
+      return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
     const source = input.grant.sourceCopy;
     const recovery = source.recovery;
     if (
@@ -2266,7 +2325,11 @@ const make = Effect.gen(function* () {
           (contained(rootPath, saved.copy.rootPath) || contained(saved.copy.rootPath, rootPath)),
       )
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Loom already keeps project files at, inside or around this location. Choose a different location.",
+      });
     const ownProjectIds = new Set([
       receipt?.rootLocalProjectId,
       ...(receipt?.copy.repositories.map((repository) => repository.localProjectId) ?? []),
@@ -2293,14 +2356,23 @@ const make = Effect.gen(function* () {
             contained(project.workspaceRoot, rootPath)),
       )
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Another project on this computer uses this location, a folder inside it or one around it. Choose a different location.",
+      });
+    const occupied = () =>
+      new LibraryError({
+        reason: "blocked",
+        detail: `${rootPath} is not an empty folder. Choose an empty folder or a new location.`,
+      });
     const ownsPublishedRoot = Effect.gen(function* () {
       if (!(yield* fs.exists(rootPath))) return false;
       if (
         (yield* fs.stat(rootPath)).type !== "Directory" ||
         (yield* fs.realPath(rootPath)) !== rootPath
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* occupied();
       const identity = fileIdentity(yield* fs.stat(rootPath));
       if (
         identity.device !== null &&
@@ -2309,14 +2381,17 @@ const make = Effect.gen(function* () {
         receipt.rootIdentity.inode === identity.inode
       )
         return true;
-      if ((yield* fs.readDirectory(rootPath)).length !== 0)
-        return yield* new LibraryError({ reason: "blocked" });
+      if ((yield* fs.readDirectory(rootPath)).length !== 0) return yield* occupied();
       return false;
     });
     yield* ensureRestoreSetupPending(rootPath, false);
     let published = yield* ownsPublishedRoot;
     if (receipt?.copy.state === "ready") {
-      if (!published) return yield* new LibraryError({ reason: "blocked" });
+      if (!published)
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `The restored files are no longer at ${rootPath}. Restore them again to a new location.`,
+        });
       return receipt.copy;
     }
     if (
@@ -2324,7 +2399,11 @@ const make = Effect.gen(function* () {
       receipt.copy.state !== "preparing" &&
       receipt.copy.state !== "failed"
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "The files from this restore were removed from this computer. Restore them again to bring them back.",
+      });
     if (receipt === undefined) {
       const timestamp = yield* now;
       receipt = {
@@ -2363,7 +2442,10 @@ const make = Effect.gen(function* () {
       const retriever = recoveryPublisher.value;
       yield* fs.makeDirectory(path.dirname(rootPath), { recursive: true });
       if ((yield* fs.realPath(path.dirname(rootPath))) !== path.dirname(rootPath))
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `The folder that holds ${rootPath} changed during the restore. Choose the location again, then retry.`,
+        });
       yield* Effect.scoped(
         Effect.gen(function* () {
           const staging = yield* fs.makeTempDirectoryScoped({
@@ -2488,7 +2570,7 @@ const make = Effect.gen(function* () {
               (yield* fs.stat(rootPath)).type !== "Directory" ||
               (yield* fs.readDirectory(rootPath)).length !== 0
             )
-              return yield* new LibraryError({ reason: "blocked" });
+              return yield* occupied();
             yield* fs.remove(rootPath);
           }
           yield* fs.rename(restored, rootPath);
@@ -2551,16 +2633,22 @@ const make = Effect.gen(function* () {
     input: LibraryReopenCopyRequest,
     keepOnComputer = true,
   ) {
-    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
+    if (!supportsExecution)
+      return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
     let receipt = yield* store.get(input.workingCopyId);
     if (receipt.copy.environmentId !== environmentId || receipt.copy.ownership !== "managed")
       return yield* new LibraryError({ reason: "not-managed" });
+    const replaced = () =>
+      new LibraryError({
+        reason: "blocked",
+        detail: `The folder at ${receipt.copy.rootPath} is missing or is not the one Loom prepared. Put the original folder back, or move the folder that is there now, then retry.`,
+      });
     if (receipt.copy.state === "ready") {
       if (
         !(yield* fs.exists(receipt.copy.rootPath)) ||
         (yield* fs.realPath(receipt.copy.rootPath)) !== receipt.copy.rootPath
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* replaced();
       const rootIdentity = fileIdentity(yield* fs.stat(receipt.copy.rootPath));
       if (
         rootIdentity.device === null ||
@@ -2568,12 +2656,17 @@ const make = Effect.gen(function* () {
         rootIdentity.inode === null ||
         rootIdentity.inode !== receipt.rootIdentity?.inode
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* replaced();
       yield* removeArchiveCache(receipt);
       return receipt.copy;
     }
     const resuming = receipt.copy.state === "released" && receipt.reopenRequestId !== undefined;
-    if (receipt.copy.state !== "released") return yield* new LibraryError({ reason: "blocked" });
+    if (receipt.copy.state !== "released")
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "These files did not finish preparing on this computer. Prepare them again from the project, then retry.",
+      });
     if (
       receipt.archivePath === null ||
       receipt.archiveDigest === null ||
@@ -2590,7 +2683,7 @@ const make = Effect.gen(function* () {
         rootIdentity.inode === null ||
         rootIdentity.inode !== receipt.rootIdentity?.inode
       )
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* replaced();
     } else {
       const archivePath = yield* ensureRecoveryArchive(receipt);
       yield* Effect.scoped(
@@ -2623,8 +2716,7 @@ const make = Effect.gen(function* () {
           };
           yield* store.put(receipt);
           // The recorded inode makes a retry distinguish our restored folder from someone else's.
-          if (yield* fs.exists(receipt.copy.rootPath))
-            return yield* new LibraryError({ reason: "blocked" });
+          if (yield* fs.exists(receipt.copy.rootPath)) return yield* replaced();
           yield* fs.rename(restored, receipt.copy.rootPath);
         }),
       );
@@ -2945,7 +3037,13 @@ const make = Effect.gen(function* () {
               existing === null &&
               (yield* projections.getThreadShell(input.threadId))?.latestRunId != null
             )
-              return yield* new LibraryError({ reason: "blocked" });
+              // Without a detail, "blocked" reads as a busy working copy. A launch retry lands here
+              // when its conversation was used before binding finished, and only starting over helps.
+              return yield* new LibraryError({
+                reason: "blocked",
+                detail:
+                  "This conversation already has work, so it can no longer be linked to Library files. Start a new conversation instead.",
+              });
             yield* store.bind(input.threadId, resolved, input.project);
             return resolved;
           }),

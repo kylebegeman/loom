@@ -16,17 +16,34 @@ export interface LibraryConversationDefaults {
 }
 const EVENT = "loom:library:action";
 
+interface LibraryActionDetail {
+  readonly action: LibraryAction;
+  readonly projectId?: string;
+  readonly defaults?: LibraryConversationDefaults;
+  /**
+   * The project only leads the list, as the likely choice, instead of opening its settings. Used
+   * when the project comes from where the user is rather than from a choice they made.
+   */
+  readonly suggest?: boolean;
+}
+
 /** Every entry point opens the same flow, including first-time Library setup. */
 export function openLibraryAction(
   action: LibraryAction,
   projectId?: string,
   defaults?: LibraryConversationDefaults,
+  options?: { readonly suggest?: boolean },
 ) {
   window.dispatchEvent(
     new CustomEvent(EVENT, {
       detail:
         projectId || defaults
-          ? { action, ...(projectId ? { projectId } : {}), ...(defaults ? { defaults } : {}) }
+          ? {
+              action,
+              ...(projectId ? { projectId } : {}),
+              ...(defaults ? { defaults } : {}),
+              ...(projectId && options?.suggest ? { suggest: true } : {}),
+            }
           : action,
     }),
   );
@@ -38,16 +55,13 @@ export function onLibraryAction(
     action: LibraryAction,
     projectId?: string,
     defaults?: LibraryConversationDefaults,
+    suggest?: boolean,
   ) => void,
 ) {
   const handler = (event: Event) => {
-    const detail = (
-      event as CustomEvent<
-        | LibraryAction
-        | { action: LibraryAction; projectId?: string; defaults?: LibraryConversationDefaults }
-      >
-    ).detail;
+    const detail = (event as CustomEvent<LibraryAction | LibraryActionDetail>).detail;
     if (typeof detail === "string") listener(detail);
+    else if (detail.suggest) listener(detail.action, detail.projectId, detail.defaults, true);
     else if (detail.defaults) listener(detail.action, detail.projectId, detail.defaults);
     else listener(detail.action, detail.projectId);
   };

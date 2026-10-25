@@ -51,6 +51,13 @@ const NONE: LibraryConnection = { kind: "none" };
 const UNAVAILABLE: LibraryConnection = { kind: "unavailable" };
 const AUTHORITY: LibraryConnection = { kind: "authority" };
 
+export const LIBRARY_SIGN_IN_MISSING =
+  "This computer's sign-in to your Library is missing or expired. Reconnect this computer to your Library, then try again.";
+export const LIBRARY_NOT_CONNECTED =
+  "This computer is not connected to a Library. Connect it to your Library, then try again.";
+export const LIBRARY_MISMATCH =
+  "This computer is signed in to a different Library. Reconnect it to your Library, then try again.";
+
 /** Reads this computer's Library configuration and sign-in once. Fails `invalid` on a bad URL. */
 export const resolveLibraryConnection = Effect.gen(function* () {
   const localAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
@@ -141,7 +148,7 @@ export const resolveLibraryConnection = Effect.gen(function* () {
       Option.isNone(token) ||
       (credential !== null && Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis))
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_SIGN_IN_MISSING });
     // HTTP failures can hold a request containing its token. Do not retain that cause.
     return yield* http.execute(request.pipe(HttpClientRequest.bearerToken(token.value))).pipe(
       Effect.timeout("3 minutes"),

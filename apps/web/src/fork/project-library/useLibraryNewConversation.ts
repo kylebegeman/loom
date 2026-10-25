@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
-import { readThreadShell } from "~/state/entities";
+import { readProject, readThreadShell } from "~/state/entities";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useParams } from "@tanstack/react-router";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
@@ -49,6 +49,18 @@ export function libraryContextForLocalProject(
   return matches[0]!;
 }
 
+/**
+ * A Library conversation runs in its project's own folder, with whatever branch is checked out
+ * there, and may record that folder as its worktree. Only a different folder is a worktree of its
+ * own. An unknown project counts as one, because moving work out of its worktree is the worse
+ * mistake.
+ */
+export function runsInSeparateWorktree(worktreePath: string, workspaceRoot: string | undefined) {
+  const folderKey = (path: string) =>
+    path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return workspaceRoot === undefined || folderKey(worktreePath) !== folderKey(workspaceRoot);
+}
+
 /** Resolve context on the source before choosing a new execution binding. No full history read. */
 export function useLibraryNewConversation() {
   const params = useParams({ strict: false });
@@ -89,13 +101,26 @@ export function useLibraryNewConversation() {
         "new-conversation",
         scope.projectId,
         scope.resourceId ? { resourceId: scope.resourceId } : {},
+        { suggest: true },
       );
       return true;
     }
     if (!authority.authorityId) return false;
+    // Starting from a thread on purpose keeps its project. Otherwise the thread is only where the
+    // user happens to be, so its project leads the list instead of deciding the conversation.
+    const suggest = { suggest: !options?.inheritSettings };
     const sourceShell = options?.inheritSettings ? readThreadShell(thread) : null;
-    // The project form cannot select an explicit branch; reuse that checkout and its lane.
-    if (sourceShell?.branch) return false;
+    // The project form cannot select a worktree, and the Library links only conversations in the
+    // copy's own folder, so a conversation in a worktree of its own keeps that checkout and lane.
+    if (
+      sourceShell?.worktreePath &&
+      runsInSeparateWorktree(
+        sourceShell.worktreePath,
+        readProject({ environmentId: thread.environmentId, projectId: sourceShell.projectId })
+          ?.workspaceRoot,
+      )
+    )
+      return false;
     const launchDefaults = sourceShell
       ? {
           modelSelection: sourceShell.modelSelection,
@@ -123,16 +148,21 @@ export function useLibraryNewConversation() {
         input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
       });
       if (saved._tag === "Success" && saved.value) {
-        openLibraryAction("new-conversation", saved.value.projectId, {
-          ...launchDefaults,
-          environmentId: thread.environmentId,
-          ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
-          ...(saved.value.resourceIds.length === 1
-            ? { resourceId: saved.value.resourceIds[0]! }
-            : saved.value.resourceIds.length > 1
-              ? { resourceIds: saved.value.resourceIds }
-              : {}),
-        });
+        openLibraryAction(
+          "new-conversation",
+          saved.value.projectId,
+          {
+            ...launchDefaults,
+            environmentId: thread.environmentId,
+            ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
+            ...(saved.value.resourceIds.length === 1
+              ? { resourceId: saved.value.resourceIds[0]! }
+              : saved.value.resourceIds.length > 1
+                ? { resourceIds: saved.value.resourceIds }
+                : {}),
+          },
+          suggest,
+        );
         return true;
       }
       if (saved._tag === "Failure") {
@@ -158,24 +188,34 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      openLibraryAction("new-conversation", recovered.projectId, {
-        ...launchDefaults,
-        environmentId: thread.environmentId,
-        workingCopyId: recovered.workingCopyId,
-        ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
-      });
+      openLibraryAction(
+        "new-conversation",
+        recovered.projectId,
+        {
+          ...launchDefaults,
+          environmentId: thread.environmentId,
+          workingCopyId: recovered.workingCopyId,
+          ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
+        },
+        suggest,
+      );
       return true;
     }
-    openLibraryAction("new-conversation", result.value.projectId, {
-      ...launchDefaults,
-      environmentId: result.value.environmentId,
-      workingCopyId: result.value.workingCopyId,
-      ...(result.value.resourceIds.length === 1
-        ? { resourceId: result.value.resourceIds[0]! }
-        : result.value.resourceIds.length > 1
-          ? { resourceIds: result.value.resourceIds }
-          : {}),
-    });
+    openLibraryAction(
+      "new-conversation",
+      result.value.projectId,
+      {
+        ...launchDefaults,
+        environmentId: result.value.environmentId,
+        workingCopyId: result.value.workingCopyId,
+        ...(result.value.resourceIds.length === 1
+          ? { resourceId: result.value.resourceIds[0]! }
+          : result.value.resourceIds.length > 1
+            ? { resourceIds: result.value.resourceIds }
+            : {}),
+      },
+      suggest,
+    );
     return true;
   };
   return useStableCallback(openConversation);

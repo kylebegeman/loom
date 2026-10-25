@@ -173,6 +173,67 @@ it("uses empty Backspace and Escape for Back without closing the popup or submit
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
 });
 
+function WithOptions() {
+  const [query, setQuery] = useState("");
+  return (
+    <LibraryPaletteDialog title="New conversation" onClose={closed}>
+      <LibraryPaletteView
+        title="Projects"
+        placeholder="Search choices..."
+        query={query}
+        onQueryChange={setQuery}
+        onClose={closed}
+        items={[
+          {
+            id: "alpha",
+            title: "Alpha",
+            enterLabel: "Start",
+            select: () => selected("start alpha"),
+            options: () => selected("options alpha"),
+          },
+          { id: "beta", title: "Beta", select: () => selected("beta") },
+        ]}
+      />
+    </LibraryPaletteDialog>
+  );
+}
+it("opens a row's options from Right Arrow at the end of the search and from its chevron", async () => {
+  await act(() => root.render(<WithOptions />));
+  await act(() => vi.advanceTimersToNextFrame());
+  await press("ArrowRight");
+  await type("Al");
+  // Mid-text, Right Arrow only moves the caret.
+  await act(() => input().setSelectionRange(0, 0));
+  await press("ArrowRight");
+  expect(selected.mock.calls).toEqual([["options alpha"]]);
+  await type("");
+  // The row commits on click, so a full pointer press on the chevron must not also start it.
+  const chevron = document.querySelector('[data-slot="command-item"] span[aria-hidden="true"]')!;
+  await act(() => {
+    for (const name of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"])
+      chevron.dispatchEvent(
+        new (name.startsWith("pointer") ? PointerEvent : MouseEvent)(name, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+        }),
+      );
+  });
+  expect(selected.mock.calls).toEqual([["options alpha"], ["options alpha"]]);
+  await press("Enter");
+  expect(selected).toHaveBeenLastCalledWith("start alpha");
+});
+it("names what Enter and Right Arrow do for the row Enter would run", async () => {
+  await act(() => root.render(<WithOptions />));
+  await act(() => vi.advanceTimersToNextFrame());
+  const footer = () => document.querySelector('[data-slot="command-footer"]')!.textContent;
+  expect(footer()).toBe("NavigateEnterStartOptionsEscClose");
+  await press("ArrowDown");
+  expect(footer()).toBe("NavigateEnterSelectEscClose");
+  await type("Al");
+  expect(footer()).toBe("NavigateEnterStartOptionsEscClose");
+});
+
 function TextEditor() {
   const [value, setValue] = useState("");
   return (

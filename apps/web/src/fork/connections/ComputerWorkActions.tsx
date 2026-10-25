@@ -2,7 +2,11 @@ import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { ArrowUpRightIcon, FolderIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { AuthOrchestrationOperateScope, type EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type ProjectId,
+} from "@t3tools/contracts";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -20,6 +24,7 @@ import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { openCommandPalette } from "~/commandPaletteBus";
 import { environmentCatalog } from "~/connection/catalog";
 import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
+import { useLibraryLocalProjectStart } from "~/fork/project-library/libraryLocalProjectStart";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -31,6 +36,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
   const setEnabled = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
   const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const { handleNewThread } = useHandleNewThread();
+  const startLibraryFolder = useLibraryLocalProjectStart();
   const { startScratchThread, scratchWorkspaceRootFor } = useScratchProject();
   const canStartWork = useEnvironmentScope(
     environment.environmentId,
@@ -62,6 +68,10 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
   const choiceCount = machineProjects.length + (canStartScratch ? 1 : 0);
   const addProject = () =>
     openCommandPalette({ open: "add-project", environmentId: environment.environmentId });
+  const startInProject = async (projectId: ProjectId) => {
+    const projectRef = scopeProjectRef(environment.environmentId, projectId);
+    if (!startLibraryFolder(projectRef)) await handleNewThread(projectRef);
+  };
 
   return (
     <div className="space-y-3 py-3">
@@ -132,11 +142,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
               else if (canStartScratch)
                 void action.act(() => startScratchThread(environment.environmentId));
               else if (machineProjects[0])
-                void action.act(() =>
-                  handleNewThread(
-                    scopeProjectRef(environment.environmentId, machineProjects[0]!.id),
-                  ).then(() => undefined),
-                );
+                void action.act(() => startInProject(machineProjects[0]!.id));
             }}
           >
             New conversation
@@ -197,13 +203,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
             <button
               key={project.id}
               disabled={action.busy || !canStartWork}
-              onClick={() =>
-                void action.act(() =>
-                  handleNewThread(scopeProjectRef(environment.environmentId, project.id)).then(
-                    () => undefined,
-                  ),
-                )
-              }
+              onClick={() => void action.act(() => startInProject(project.id))}
               className="flex w-full min-w-0 items-start gap-2 rounded-md p-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
             >
               <FolderIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

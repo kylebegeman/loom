@@ -396,9 +396,18 @@ const make = Effect.gen(function* () {
               )
             )
               return input.cwd;
-            return yield* new LibraryError({ reason: "blocked" });
+            return yield* new LibraryError({
+              reason: "blocked",
+              detail:
+                "This conversation is not linked to its Library files, so it cannot run in this folder. Start a new conversation from the Library project instead.",
+            });
           }
           const receipt = yield* get(resolved.binding.workingCopyId);
+          const unavailableFiles = () =>
+            new LibraryError({
+              reason: "blocked",
+              detail: `This conversation's files are not ready at ${resolved.cwd}. Put them back there, or start a new conversation from the Library project.`,
+            });
           if (
             !(yield* fs.exists(input.cwd)) &&
             resolved.legacyWorktreeRoot !== undefined &&
@@ -424,7 +433,7 @@ const make = Effect.gen(function* () {
             let ancestor = path.dirname(resolved.cwd);
             while (!(yield* fs.exists(ancestor))) {
               const parent = path.dirname(ancestor);
-              if (parent === ancestor) return yield* new LibraryError({ reason: "blocked" });
+              if (parent === ancestor) return yield* unavailableFiles();
               ancestor = parent;
             }
             if ((yield* fs.realPath(ancestor)) !== ancestor)
@@ -437,7 +446,7 @@ const make = Effect.gen(function* () {
             !(yield* fs.exists(input.cwd)) ||
             (yield* fs.realPath(input.cwd)) !== resolved.cwd
           )
-            return yield* new LibraryError({ reason: "blocked" });
+            return yield* unavailableFiles();
           for (const repositoryPath of [resolved.cwd, ...resolved.repositoryPaths]) {
             if (!(yield* fs.exists(repositoryPath)))
               return yield* new LibraryError({ reason: "not-found" });

@@ -61,6 +61,10 @@ previous Library.
 **New project** needs only a name. Add repositories, reference links or a brief whenever
 useful. **Add existing folder** finds repositories in a folder and suggests an existing
 project when the repository origins and layout match. This leaves your files in place.
+When you browse to a folder, Loom says what adding it will do, such as joining a matching
+project or creating a new one, and Enter does exactly that. If adding a folder does not
+finish, Add existing folder offers to retry it or start over, and you can still browse to a
+different folder instead.
 A folder that already belongs to a current project is added to that project instead of a
 new one. A folder held by an archived project moves to the new project, and the archived
 project's conversations stay in the archive. Files Loom created for an archived project stay
@@ -68,8 +72,13 @@ with it until you restore that project and remove them.
 The Projects page lists each computer folder still waiting to be added, so you can work
 through existing projects without losing your place.
 
-Start a conversation from a project and Loom chooses an available computer and prepares
-its files automatically. You can choose another computer or work on one repository.
+**New conversation** lists your projects, with the project you are in first. A project that
+can start right away shows the computer, model and permissions it will use. Press Enter, or
+tap it on iPhone, to start with them, or open its options first (Right Arrow on a keyboard)
+to change them. A project that needs a choice opens its options instead. Loom chooses an
+available computer and prepares its files automatically, and you can choose another computer
+or work on one repository. If a start gets stuck, **Start over** drops that attempt and keeps
+its model, permissions and folder; a conversation it already created stays in your list.
 The conversation uses your chosen model, then any computer folder override, the project's
 preference and the computer's default. Editing the brief applies to new conversations; earlier conversations keep their
 original context.
@@ -117,9 +126,10 @@ and has no local changes, **Pull** updates it. Offline computers show their last
 state and when it was checked.
 
 The command palette reaches projects from anywhere. Type part of a project's name to open it,
-or use **Go to project...**, **New conversation in...** and **Open project brief...** to pick
-one, most recently active first. In a thread that belongs to a project, **Go to this thread's
-project** opens it, even when that thread's computer is offline. To give **Go to project** or
+or use **Go to project...** and **Open project brief...** to pick one, most recently active
+first. **New conversation in...** opens the New conversation project list. In a thread that
+belongs to a project, **Go to this thread's project** opens it, even when that thread's
+computer is offline. To give **Go to project** or
 **New conversation in** a shortcut, bind `loom.library.goToProject` or
 `loom.library.newConversationIn` in **Settings → Keybindings**.
 

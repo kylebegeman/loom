@@ -298,8 +298,9 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
         return "Earlier history is still waiting to upload.";
       case "sequence-conflict":
         return "This history does not match the saved source journal.";
+      // Refusals have many causes, so each one names its own in `detail`.
       case "blocked":
-        return "This working copy is still in use or has work that must be preserved.";
+        return "Loom could not complete this request.";
       case "not-managed":
         return "This folder belongs to you. Removing its registration preserves its files.";
       case "io":

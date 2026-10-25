@@ -82,10 +82,15 @@ describe("sidebar source conversation", () => {
       environmentId,
       input: { threadId: source.threadId },
     });
-    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "source-project", {
-      ...defaults,
-      ...launchSettings,
-    });
+    expect(state.open).toHaveBeenCalledExactlyOnceWith(
+      "new-conversation",
+      "source-project",
+      {
+        ...defaults,
+        ...launchSettings,
+      },
+      { suggest: false },
+    );
     expect(state.lookup.run).not.toHaveBeenCalled();
     expect(state.copies.run).not.toHaveBeenCalled();
   });
@@ -96,12 +101,17 @@ describe("sidebar source conversation", () => {
       value: { ...binding, resourceIds: ["web", "api"] },
     });
     await useLibraryNewConversation()(source, { inheritSettings: true });
-    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "source-project", {
-      environmentId,
-      workingCopyId: "source-files",
-      resourceIds: ["web", "api"],
-      ...launchSettings,
-    });
+    expect(state.open).toHaveBeenCalledExactlyOnceWith(
+      "new-conversation",
+      "source-project",
+      {
+        environmentId,
+        workingCopyId: "source-files",
+        resourceIds: ["web", "api"],
+        ...launchSettings,
+      },
+      { suggest: false },
+    );
   });
 
   it("preserves the regular Library form without source defaults", async () => {
@@ -111,12 +121,13 @@ describe("sidebar source conversation", () => {
     expect(state.shell).not.toHaveBeenCalled();
   });
 
-  it("keeps ordinary New thread using project defaults", async () => {
+  it("suggests the current thread's project for an ordinary New thread instead of choosing it", async () => {
     await useLibraryNewConversation()(source);
     expect(state.open).toHaveBeenCalledExactlyOnceWith(
       "new-conversation",
       "source-project",
       defaults,
+      { suggest: true },
     );
   });
 
@@ -124,10 +135,15 @@ describe("sidebar source conversation", () => {
     state.environments = [];
     state.lookup.run.mockResolvedValue({ _tag: "Success", value: binding });
     await useLibraryNewConversation()(source, { inheritSettings: true });
-    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "source-project", {
-      ...defaults,
-      ...launchSettings,
-    });
+    expect(state.open).toHaveBeenCalledExactlyOnceWith(
+      "new-conversation",
+      "source-project",
+      {
+        ...defaults,
+        ...launchSettings,
+      },
+      { suggest: false },
+    );
     expect(state.binding.run).not.toHaveBeenCalled();
   });
 
@@ -147,11 +163,16 @@ describe("sidebar source conversation", () => {
       ],
     });
     await useLibraryNewConversation()(source, { inheritSettings: true });
-    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation", "source-project", {
-      environmentId,
-      workingCopyId: "source-files",
-      ...launchSettings,
-    });
+    expect(state.open).toHaveBeenCalledExactlyOnceWith(
+      "new-conversation",
+      "source-project",
+      {
+        environmentId,
+        workingCopyId: "source-files",
+        ...launchSettings,
+      },
+      { suggest: false },
+    );
   });
 
   it("uses the existing local new-thread flow when no Library is configured", async () => {

@@ -435,10 +435,22 @@ export function useThreadActions() {
       deletedIds && deletedIds.size > 0
         ? threads.filter((entry) => entry.id === threadRef.threadId || !deletedIds.has(entry.id))
         : threads;
-    const orphanedWorktreePath = getOrphanedWorktreePathForThread(
+    const linkedWorktreePath = getOrphanedWorktreePathForThread(
       survivingThreads,
       threadRef.threadId,
     );
+    // fork: project-root-worktree: a Library conversation records its project's own folder as
+    // its worktree path, and that folder is never a worktree to remove with the thread. Case and
+    // separators are ignored because mistaking a worktree for the project's folder only keeps it
+    // on disk, while the opposite mistake offers to delete the project.
+    const folderKey = (path: string) =>
+      path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const orphanedWorktreePath =
+      linkedWorktreePath !== null &&
+      threadProject !== null &&
+      folderKey(linkedWorktreePath) === folderKey(threadProject.workspaceRoot)
+        ? null
+        : linkedWorktreePath; // fork: project-root-worktree
     const displayWorktreePath = orphanedWorktreePath
       ? formatWorktreePathForDisplay(orphanedWorktreePath)
       : null;
@@ -474,7 +486,8 @@ export function useThreadActions() {
             "",
             "Delete the worktree too?",
           ].join("\n"),
-          { variant: "destructive" },
+          // fork: confirm-label: the thread is deleted either way, so neither button reads Cancel.
+          { variant: "destructive", confirmLabel: "Delete worktree", cancelLabel: "Keep worktree" },
         ),
       );
       if (confirmationResult._tag === "Failure") {

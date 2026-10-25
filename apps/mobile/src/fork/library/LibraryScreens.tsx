@@ -78,9 +78,12 @@ export function LibraryPage(props: {
     useCallback(() => {
       if (!focused) return false;
       const params = route.params;
+      // A project in view only leads the picker, as on web; the others and No project follow it.
       if (params && "projectId" in params && typeof params.projectId === "string")
-        navigation.navigate("LibraryStart", { projectId: params.projectId });
-      // Without a project in view, the picker offers No project ahead of Library projects.
+        navigation.navigate("NewTaskSheet", {
+          screen: "NewTask",
+          params: { libraryProjectId: params.projectId },
+        });
       else navigation.navigate("NewTaskSheet", { screen: "NewTask" });
       return true;
     }, [focused, route.params, navigation]),

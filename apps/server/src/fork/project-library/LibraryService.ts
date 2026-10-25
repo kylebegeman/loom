@@ -82,7 +82,11 @@ import { LOOM_SERVER_FEATURES } from "../features.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
-import { readRecoveryGrantClaims, recoveryGrantSubject } from "./recoveryGrant.ts";
+import {
+  readRecoveryGrantClaims,
+  recoveryGrantRefused,
+  recoveryGrantSubject,
+} from "./recoveryGrant.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -402,6 +406,12 @@ const make = Effect.gen(function* () {
       Effect.map(({ result }) => result),
     );
   });
+  const staleAuthority = () =>
+    new LibraryError({
+      reason: "blocked",
+      detail:
+        "This request came from an older or different Library. Reconnect this computer to your Library, then try again.",
+    });
   const validateAuthority = Effect.fnUntraced(function* (input: {
     authorityId?: string | undefined;
     authorityEpoch?: number | undefined;
@@ -410,10 +420,10 @@ const make = Effect.gen(function* () {
       return yield* invalid();
     if (input.authorityId === undefined) return;
     const payload = yield* store.authority;
-    if (payload === null) return yield* new LibraryError({ reason: "blocked" });
+    if (payload === null) return yield* staleAuthority();
     const authority = yield* decode(codecs.authority, payload);
     if (authority.id !== input.authorityId || authority.epoch !== input.authorityEpoch)
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* staleAuthority();
   });
   const saveCopy = Effect.fnUntraced(function* (incoming: LibraryWorkingCopy) {
     const project = yield* getProject(incoming.projectId, incoming.projectRevision);
@@ -683,7 +693,11 @@ const make = Effect.gen(function* () {
       (session.expiresAt !== undefined &&
         session.expiresAt.epochMilliseconds <= issuedAt.epochMilliseconds)
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Only a person signed in to your Library can authorize a restore. Sign in again, then retry.",
+      });
     if (Option.isNone(sessions) || Option.isNone(recovery))
       return yield* new LibraryError({ reason: "publisher-unavailable" });
     const saved = yield* store.copy(input.workingCopyId).pipe(Effect.mapError(io));
@@ -716,7 +730,10 @@ const make = Effect.gen(function* () {
         );
       })
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: "These saved files changed since you chose them. Choose them again, then retry.",
+      });
     yield* getProject(sourceCopy.projectId, sourceCopy.projectRevision).pipe(Effect.mapError(io));
     const metadata = sourceCopy.recovery;
     if (metadata === undefined) return yield* new LibraryError({ reason: "archive-unverified" });
@@ -776,7 +793,7 @@ const make = Effect.gen(function* () {
       claims.libraryEnvironmentId !== (yield* identity.getEnvironmentId) ||
       Date.parse(claims.expiresAt) <= (yield* DateTime.now).epochMilliseconds
     )
-      return yield* new LibraryError({ reason: "blocked" });
+      return yield* recoveryGrantRefused();
     if (Option.isNone(recovery))
       return yield* new LibraryError({ reason: "publisher-unavailable" });
     const archive = yield* recovery.value.get(

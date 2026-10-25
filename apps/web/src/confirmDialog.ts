@@ -7,18 +7,21 @@ export type ConfirmDialogState =
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string | undefined; // fork: confirm-label
+      readonly cancelLabel: string | undefined; // fork: confirm-label
     }
   | {
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string | undefined; // fork: confirm-label
+      readonly cancelLabel: string | undefined; // fork: confirm-label
     };
 
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
   readonly confirmLabel: string | undefined; // fork: confirm-label
+  readonly cancelLabel: string | undefined; // fork: confirm-label
   readonly resolve: (confirmed: boolean) => void;
 };
 
@@ -86,6 +89,7 @@ export function requestConfirmDialog(
       message,
       variant: options?.variant ?? "default",
       confirmLabel: options?.confirmLabel, // fork: confirm-label
+      cancelLabel: options?.cancelLabel, // fork: confirm-label
       resolve,
     } satisfies PendingConfirmation;
     if (activeConfirmation || state.status === "closing") {
@@ -99,6 +103,7 @@ export function requestConfirmDialog(
       message,
       variant: pending.variant,
       confirmLabel: pending.confirmLabel, // fork: confirm-label
+      cancelLabel: pending.cancelLabel, // fork: confirm-label
     });
   });
 
@@ -133,6 +138,7 @@ export function completeConfirmDialogClose(): void {
     message: next.message,
     variant: next.variant,
     confirmLabel: next.confirmLabel, // fork: confirm-label
+    cancelLabel: next.cancelLabel, // fork: confirm-label
   });
 }
 

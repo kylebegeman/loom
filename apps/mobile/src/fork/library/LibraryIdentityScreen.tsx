@@ -107,10 +107,12 @@ function IdentityContent({
     return (async () => {
       // Any server can copy a computer's public sign-in settings, so a typed address must be one
       // the Library knows for the computer it claims to be.
-      const checked = identityAddressNeedsCheck(address, [
+      // A separate statement: the React Compiler cannot compile optional chaining in a ternary test.
+      const needsCheck = identityAddressNeedsCheck(address, [
         connection?.httpBaseUrl,
         connection?.identityHttpBaseUrl,
-      ])
+      ]);
+      const checked = needsCheck
         ? await Promise.race([
             directoryAddresses(authority.environmentId),
             // Cancel sign-in does not wait for a slow Library; the aborted sign-in below ends it.

@@ -22,7 +22,14 @@ const state = vi.hoisted(() => ({
   browse: vi.fn(),
   refresh: vi.fn(),
   allowed: true,
+  files: true,
   online: true,
+  repository: false,
+  libraryCopies: [] as LibraryWorkingCopy[],
+  copiesLoading: false,
+  projectsError: null as string | null,
+  projectsRefreshing: false,
+  copiesFamily: (target: unknown) => ({ copies: target }),
   browseError: null as string | null,
   pending: false,
   block: null as { label: string; message: string; repair: "sign-in" | null } | null,
@@ -34,7 +41,7 @@ vi.mock("./state", () => ({
     prepareCopy: "prepare",
     registerCopy: "register",
     preparation: "preparation",
-    copies: "copies",
+    copies: state.copiesFamily,
   },
   useLibraryPermission: () => state.allowed,
   useAccessBlock: () => state.block,
@@ -42,7 +49,11 @@ vi.mock("./state", () => ({
   useLibraryProjects: () => ({
     authorityId: "library",
     connected: true,
-    query: { data: state.projects, isPending: false },
+    query: {
+      data: state.projectsError ? null : state.projects,
+      isPending: state.projectsRefreshing,
+      error: state.projectsError,
+    },
     environments: ["dorothy", "remote"].map((id) => ({
       environmentId: id,
       label: id,
@@ -61,18 +72,18 @@ vi.mock("./LibraryAccessNotice", () => ({
     onLeave?: () => void;
   }) => (block ? <button onClick={onLeave}>{`Repair: ${block.message}`}</button> : null),
 }));
-vi.mock("./attempts", async () => {
-  const { useState } = await import("react");
-  return { useLibraryAttempt: () => useState<unknown>(null) };
-});
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "dorothy" }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: "inspect" | "create" | "prepare" | "register") => state[command],
 }));
 vi.mock("~/state/use-atom-query-runner", () => ({
-  useAtomQueryRunner: (query: string) =>
-    query === "copies" ? state.readCopies : query === "preparation" ? state.recover : vi.fn(),
+  useAtomQueryRunner: (query: unknown) =>
+    query === state.copiesFamily
+      ? state.readCopies
+      : query === "preparation"
+        ? state.recover
+        : vi.fn(),
 }));
 vi.mock("~/state/filesystem", () => ({
   filesystemEnvironment: {
@@ -81,10 +92,19 @@ vi.mock("~/state/filesystem", () => ({
       return input;
     },
   },
-  useFilesystemReadAccess: () => ({ canReadFiles: state.allowed, isPending: false, error: null }),
+  useFilesystemReadAccess: () => ({ canReadFiles: state.files, isPending: false, error: null }),
 }));
 vi.mock("~/state/query", () => ({
-  useEnvironmentQuery: (request: { input: { partialPath: string } } | null) => {
+  useEnvironmentQuery: (
+    request: { input: { partialPath: string } } | { copies: unknown } | null,
+  ) => {
+    if (request && "copies" in request)
+      return {
+        data: state.copiesLoading ? null : state.libraryCopies,
+        isSuccess: !state.copiesLoading,
+        isPending: state.copiesLoading,
+        error: null,
+      };
     const nested = request?.input.partialPath === "/Users/kyle/Developer/";
     return {
       data:
@@ -96,6 +116,7 @@ vi.mock("~/state/query", () => ({
                 : [
                     { name: "Developer", fullPath: "/Users/kyle/Developer" },
                     { name: ".config", fullPath: "/Users/kyle/.config" },
+                    ...(state.repository ? [{ name: ".git", fullPath: "/Users/kyle/.git" }] : []),
                   ],
             }
           : null,
@@ -135,6 +156,7 @@ vi.mock("./LibraryPalette", () => ({
   ),
 }));
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { saveLibraryAttempt } from "./attempts";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -142,13 +164,87 @@ const button = (name: string) =>
   Array.from(container.querySelectorAll("button")).find(
     (entry) => entry.textContent?.trim() === name,
   )!;
+const libraryProject = (id: string, title: string, archived = false): LibraryProject => ({
+  id,
+  title,
+  brief: "",
+  revision: 1,
+  resources: [],
+  archived,
+  createdAt: "2026-10-23T00:00:00.000Z",
+  updatedAt: "2026-10-23T00:00:00.000Z",
+});
+const copyOf = (project: LibraryProject, rootPath = "/Users/kyle"): LibraryWorkingCopy => ({
+  id: `${project.id}-copy`,
+  projectId: project.id,
+  projectRevision: 1,
+  environmentId: EnvironmentId.make("dorothy"),
+  rootPath,
+  repositories: [],
+  ownership: "borrowed",
+  state: "ready",
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+});
+const registrationFor = (
+  project: LibraryProject,
+  ownership: "borrowed" | "managed" = "borrowed",
+) => ({
+  workingCopyId: `${project.id}-copy`,
+  projectId: project.id,
+  projectTitle: project.title,
+  ownership,
+});
+// The single holder a computer that predates reporting every holder names.
+const registeredTo = (project: LibraryProject, ownership: "borrowed" | "managed" = "borrowed") =>
+  state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
+    AsyncResult.success({
+      rootPath: input.rootPath,
+      exists: true,
+      repositories: [],
+      truncated: false,
+      registration: registrationFor(project, ownership),
+    }),
+  );
+const created = libraryProject("created", "kyle");
+// An import an earlier visit left unfinished, after it created its project.
+const saveUnfinishedImport = (copy: LibraryWorkingCopy | null) =>
+  saveLibraryAttempt(
+    "loom:library:import:library",
+    JSON.stringify({
+      environmentId: "dorothy",
+      rootPath: "/Users/kyle",
+      createInput: { requestId: "create-earlier", title: "kyle", brief: "", resources: [] },
+      project: created,
+      prepareRequestId: "prepare-earlier",
+      registerRequestId: "register-earlier",
+      copy,
+    }),
+    window.localStorage,
+  );
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  saveLibraryAttempt("loom:library:import:library", null, window.localStorage);
   state.readCopies.mockResolvedValue(AsyncResult.success([]));
+  state.create.mockResolvedValue(AsyncResult.success(created));
+  state.prepare.mockImplementation(async ({ input }: { input: { project: LibraryProject } }) =>
+    AsyncResult.success(copyOf(input.project)),
+  );
+  state.register.mockImplementation(async ({ input }: { input: { copy: LibraryWorkingCopy } }) =>
+    AsyncResult.success(input.copy),
+  );
+  state.recover.mockResolvedValue(AsyncResult.success(null));
   state.projects = [];
+  state.libraryCopies = [];
+  state.copiesLoading = false;
+  state.projectsError = null;
+  state.projectsRefreshing = false;
   state.allowed = true;
+  state.files = true;
   state.online = true;
+  state.repository = false;
   state.browseError = null;
   state.pending = false;
   state.block = null;
@@ -175,8 +271,9 @@ async function mount(props: Partial<ComponentProps<typeof ImportProjectDialog>> 
   );
 }
 
-it("browses folders on the selected computer and checks the selected folder without importing it", async () => {
-  await mount({ initialHostId: EnvironmentId.make("remote") });
+it("creates a project for the browsed folder in one step", async () => {
+  const onSaved = vi.fn();
+  await mount({ initialHostId: EnvironmentId.make("remote"), onSaved });
   expect(state.browse).toHaveBeenLastCalledWith({
     environmentId: "remote",
     input: { partialPath: "~/" },
@@ -186,14 +283,32 @@ it("browses folders on the selected computer and checks the selected folder with
     environmentId: "remote",
     input: { partialPath: "/Users/kyle/Developer/" },
   });
-  await act(async () => button("Use this folder").click());
+  expect(container.textContent).toContain("A new Library project for these files.");
+  expect(state.inspect).not.toHaveBeenCalled();
+  await act(async () => button("Create project Developer").click());
   expect(state.inspect).toHaveBeenCalledExactlyOnceWith({
     environmentId: "remote",
     input: { rootPath: "/Users/kyle/Developer" },
   });
-  expect(state.create).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("/Users/kyle/Developer");
-  expect(button("Add folder to Developer")).toBeDefined();
+  expect(state.create).toHaveBeenCalledOnce();
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input).toMatchObject({
+    rootPath: "/Users/kyle/Developer",
+    strategy: "reuse",
+  });
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("leads with folders at the home folder it opens on, and with the action once one is chosen", async () => {
+  await mount();
+  const titles = () =>
+    Array.from(container.querySelectorAll("button"), (entry) => entry.textContent);
+  expect(titles().indexOf("Developer")).toBeLessThan(titles().indexOf("Create project kyle"));
+  await act(async () => button("Developer").click());
+  expect(titles().indexOf("Create project Developer")).toBeLessThan(
+    titles().indexOf("Parent folder"),
+  );
+  expect(titles().find((title) => title !== "Back")).toBe("Create project Developer");
 });
 
 it("retraces folder navigation with Back and leaves without changing the chosen folder", async () => {
@@ -209,40 +324,40 @@ it("retraces folder navigation with Back and leaves without changing the chosen 
   expect(state.inspect).not.toHaveBeenCalled();
 });
 
-it("does not allow a stale or failed listing to select a folder", async () => {
+it("does not allow a stale or failed listing to add a folder", async () => {
   await mount();
   state.pending = true;
   await mount();
-  expect(button("Use this folder").disabled).toBe(true);
+  expect(button("Add this folder").disabled).toBe(true);
   state.pending = false;
   state.browseError = "Permission denied on this computer.";
   await mount();
   expect(container.textContent).toContain(state.browseError);
-  expect(button("Use this folder").disabled).toBe(true);
+  expect(button("Add this folder").disabled).toBe(true);
   await act(async () => button("Try again").click());
   expect(state.refresh).toHaveBeenCalled();
 });
 
-it("keeps selection unavailable when access is denied or the selected computer is offline", async () => {
-  state.allowed = false;
+it("keeps adding unavailable when file access is denied or the selected computer is offline", async () => {
+  state.files = false;
   await mount();
-  expect(button("Use this folder").disabled).toBe(true);
+  expect(button("Add this folder").disabled).toBe(true);
   expect(state.browse).not.toHaveBeenCalled();
-  state.allowed = true;
+  state.files = true;
   state.online = false;
   await mount();
-  expect(button("Use this folder")).toBeUndefined();
+  expect(button("Add this folder")).toBeUndefined();
   expect(state.inspect).not.toHaveBeenCalled();
 });
 
-it("reports an inspection failure after selection without importing", async () => {
+it("reports an inspection failure without importing", async () => {
   state.inspect.mockResolvedValue(
     AsyncResult.failure(Cause.fail(new Error("Folder is unreadable."))),
   );
   await mount();
-  await act(async () => button("Use this folder").click());
+  await act(async () => button("Create project kyle").click());
   expect(container.textContent).toContain("Folder is unreadable.");
-  expect(button("Use this folder").disabled).toBe(false);
+  expect(button("Create project kyle").disabled).toBe(false);
   expect(state.create).not.toHaveBeenCalled();
 });
 
@@ -254,31 +369,27 @@ it("browses the new computer after returning to the computer list", async () => 
     environmentId: "remote",
     input: { partialPath: "~/" },
   });
-  await act(async () => button("Use this folder").click());
+  await act(async () => button("Create project kyle").click());
   expect(state.inspect).toHaveBeenCalledExactlyOnceWith({
     environmentId: "remote",
     input: { rootPath: "/Users/kyle" },
   });
+  expect(state.prepare.mock.calls[0]![0].environmentId).toBe("remote");
 });
 
-it("preserves folder and project choices on Back without starting an import", async () => {
-  await mount();
-  await act(async () => button("Use this folder").click());
+it("keeps a typed folder's confirmation and its drafts on Back", async () => {
+  const onBack = vi.fn();
+  await mount({ initialRootPath: "/Users/kyle", onBack });
   expect(button("Add folder to kyle")).toBeDefined();
   await act(async () => button("Project name").click());
   await act(async () => button("Back").click());
   expect(button("Add folder to kyle")).toBeDefined();
-  expect(state.inspect).toHaveBeenCalledOnce();
-  expect(state.create).not.toHaveBeenCalled();
-});
-
-it("returns from the project brief to the folder confirmation without losing the draft", async () => {
-  const onBack = vi.fn();
-  await mount({ onBack });
-  await act(async () => button("Use this folder").click());
   await act(async () => button("Project brief").click());
   await act(async () => button("Back").click());
   expect(button("Add folder to kyle")).toBeDefined();
+  expect(button("Choose another folder")).toBeUndefined();
+  await act(async () => button("Back").click());
+  expect(button("Create project kyle")).toBeDefined();
   expect(onBack).not.toHaveBeenCalled();
   expect(state.inspect).toHaveBeenCalledOnce();
   expect(state.create).not.toHaveBeenCalled();
@@ -295,57 +406,98 @@ it("keeps hidden folders out of ordinary browsing and finds them when explicitly
   });
   expect(button(".config")).toBeDefined();
   expect(button("Developer")).toBeUndefined();
+  expect(button("Create project kyle")).toBeUndefined();
   expect(state.inspect).not.toHaveBeenCalled();
 });
 
-it("uses an existing non-Git project association on the inspected computer", async () => {
-  const project: LibraryProject = {
-    id: "existing",
-    title: "Existing app",
-    brief: "",
-    revision: 1,
-    resources: [],
-    archived: false,
-    createdAt: "2026-10-23T00:00:00.000Z",
-    updatedAt: "2026-10-23T00:00:00.000Z",
-  };
+it("names a folder's existing project association before checking it, then adds it there", async () => {
+  const project = libraryProject("existing", "Existing app");
+  const onSaved = vi.fn();
   state.projects = [project];
-  state.readCopies.mockResolvedValue(
-    AsyncResult.success([
-      {
-        id: "copy",
-        projectId: project.id,
-        projectRevision: 1,
-        environmentId: EnvironmentId.make("dorothy"),
-        rootPath: "/Users/kyle",
-        repositories: [],
-        ownership: "borrowed",
-        state: "ready",
-        createdAt: project.createdAt,
-        updatedAt: project.updatedAt,
-      },
-    ]),
-  );
-  await mount();
-  await act(async () => button("Use this folder").click());
-  expect(button("Add folder to Existing app")).toBeDefined();
+  state.libraryCopies = [copyOf(project)];
+  state.readCopies.mockResolvedValue(AsyncResult.success([copyOf(project)]));
+  await mount({ onSaved });
+  expect(container.textContent).toContain("Uses your Library project Existing app.");
+  expect(state.inspect).not.toHaveBeenCalled();
+  await act(async () => button("Add to Existing app").click());
   expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare.mock.calls[0]![0].input.project.id).toBe("existing");
+  expect(onSaved).toHaveBeenCalledWith(project, copyOf(project));
 });
+
+it("checks a repository folder while browsing so its row names the project that holds it", async () => {
+  const owner = libraryProject("owner", "Owner app");
+  state.projects = [owner, libraryProject("other", "Other app")];
+  state.repository = true;
+  registeredTo(owner);
+  await mount();
+  expect(state.inspect).toHaveBeenCalledExactlyOnceWith({
+    environmentId: "dorothy",
+    input: { rootPath: "/Users/kyle" },
+  });
+  expect(button("Add to Owner app").disabled).toBe(false);
+  // A current holder keeps the folder, so no other project is offered.
+  expect(button("Add to another project...")).toBeUndefined();
+  await act(async () => button("Add to Owner app").click());
+  expect(state.inspect).toHaveBeenCalledTimes(2);
+  expect(state.prepare.mock.calls[0]![0].input.project.id).toBe("owner");
+});
+
+it("shows a different result instead of acting when the check disagrees with the row", async () => {
+  const owner = libraryProject("owner", "Owner app");
+  state.projects = [owner];
+  registeredTo(owner);
+  await mount();
+  await act(async () => button("Create project kyle").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare).not.toHaveBeenCalled();
+  expect(button("Add to Owner app").disabled).toBe(false);
+});
+
+it("adds a folder to another project chosen from the browser and returns there on Back", async () => {
+  const onSaved = vi.fn();
+  const alpha = libraryProject("alpha", "Alpha");
+  state.projects = [alpha, libraryProject("beta", "Beta")];
+  await mount({ onSaved });
+  await act(async () => button("Add to another project...").click());
+  expect(button("Create a new project")).toBeDefined();
+  await act(async () => button("Back").click());
+  expect(button("Create project kyle")).toBeDefined();
+  await act(async () => button("Add to another project...").click());
+  await act(async () => button("Alpha").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare.mock.calls[0]![0].input.project.id).toBe("alpha");
+  expect(onSaved).toHaveBeenCalledWith(alpha, copyOf(alpha));
+});
+
+it("opens the project choice when several projects match a folder", async () => {
+  const alpha = libraryProject("alpha", "Alpha");
+  const beta = libraryProject("beta", "Beta");
+  state.projects = [alpha, beta];
+  state.libraryCopies = [copyOf(alpha), { ...copyOf(beta), id: "beta-copy" }];
+  state.readCopies.mockResolvedValue(AsyncResult.success(state.libraryCopies));
+  await mount();
+  expect(button("Add to another project...")).toBeUndefined();
+  await act(async () => button("Choose a project for this folder").click());
+  expect(button("Create a new project")).toBeDefined();
+  expect(state.prepare).not.toHaveBeenCalled();
+});
+
 it("does not silently create a project when existing folder associations cannot be checked", async () => {
   state.readCopies.mockResolvedValue(AsyncResult.failure(Cause.fail(new Error("offline"))));
   await mount();
-  await act(async () => button("Use this folder").click());
+  await act(async () => button("Create project kyle").click());
   expect(container.textContent).toContain("existing folder associations");
-  state.readCopies.mockResolvedValue(AsyncResult.success([]));
-  await act(async () => button("Use this folder").click());
-  expect(button("Add folder to kyle")).toBeDefined();
   expect(state.create).not.toHaveBeenCalled();
+  state.readCopies.mockResolvedValue(AsyncResult.success([]));
+  await act(async () => button("Create project kyle").click());
+  expect(state.create).toHaveBeenCalledOnce();
 });
-it("offers the repair in place when an expired Library sign-in blocks the import", async () => {
+
+it("offers the repair in place when an expired Library sign-in blocks adding", async () => {
   const onClose = vi.fn();
   await mount({ onClose });
-  await act(async () => button("Use this folder").click());
-  expect(button("Add folder to kyle").disabled).toBe(false);
+  expect(button("Create project kyle").disabled).toBe(false);
   state.allowed = false;
   state.block = {
     label: "Library",
@@ -353,70 +505,23 @@ it("offers the repair in place when an expired Library sign-in blocks the import
     repair: "sign-in",
   };
   await mount({ onClose });
-  expect(button("Add folder to kyle").disabled).toBe(true);
+  expect(button("Create project kyle").disabled).toBe(true);
+  expect(container.textContent).toContain("Restore access above to add this folder.");
   await act(async () => button("Repair: Your sign-in to Library expired.").click());
   expect(onClose).toHaveBeenCalled();
 });
 
-const libraryProject = (id: string, title: string, archived = false): LibraryProject => ({
-  id,
-  title,
-  brief: "",
-  revision: 1,
-  resources: [],
-  archived,
-  createdAt: "2026-10-23T00:00:00.000Z",
-  updatedAt: "2026-10-23T00:00:00.000Z",
-});
-const registrationFor = (
-  project: LibraryProject,
-  ownership: "borrowed" | "managed" = "borrowed",
-) => ({
-  workingCopyId: `${project.id}-copy`,
-  projectId: project.id,
-  projectTitle: project.title,
-  ownership,
-});
-// The single holder a computer that predates reporting every holder names.
-const registeredTo = (project: LibraryProject, ownership: "borrowed" | "managed" = "borrowed") =>
-  state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
-    AsyncResult.success({
-      rootPath: input.rootPath,
-      exists: true,
-      repositories: [],
-      truncated: false,
-      registration: registrationFor(project, ownership),
-    }),
-  );
-const copyOf = (project: LibraryProject): LibraryWorkingCopy => ({
-  id: "copy",
-  projectId: project.id,
-  projectRevision: 1,
-  environmentId: EnvironmentId.make("dorothy"),
-  rootPath: "/Users/kyle",
-  repositories: [],
-  ownership: "borrowed",
-  state: "ready",
-  createdAt: project.createdAt,
-  updatedAt: project.updatedAt,
-});
-
 it("keeps the project it created when a later step fails, so a retry adds the folder to it", async () => {
-  const created = libraryProject("created", "kyle");
   const onSaved = vi.fn();
   const detail =
     "Loom could not check which project owns this folder. Reconnect your Library and try again.";
-  state.create.mockResolvedValue(AsyncResult.success(created));
   state.prepare
     .mockResolvedValueOnce(
       AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked", detail }))),
     )
     .mockResolvedValueOnce(AsyncResult.success(copyOf(created)));
-  state.recover.mockResolvedValue(AsyncResult.success(null));
-  state.register.mockResolvedValue(AsyncResult.success(copyOf(created)));
   await mount({ onSaved });
-  await act(async () => button("Use this folder").click());
-  await act(async () => button("Add folder to kyle").click());
+  await act(async () => button("Create project kyle").click());
   expect(container.textContent).toContain(detail);
   await act(async () => button("Add folder to kyle").click());
   expect(state.create).toHaveBeenCalledOnce();
@@ -425,31 +530,24 @@ it("keeps the project it created when a later step fails, so a retry adds the fo
   expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
 });
 
-it("still adds the folder to the project it created after the folder is checked again", async () => {
-  const created = libraryProject("created", "kyle");
-  state.create.mockResolvedValue(AsyncResult.success(created));
-  state.prepare
-    .mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked" }))))
-    .mockResolvedValueOnce(AsyncResult.success(copyOf(created)));
-  state.recover.mockResolvedValue(AsyncResult.success(null));
-  state.register.mockResolvedValue(AsyncResult.success(copyOf(created)));
+it("still adds the folder to the project it created after returning to the browser", async () => {
+  state.prepare.mockResolvedValueOnce(
+    AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked" }))),
+  );
   await mount();
-  await act(async () => button("Use this folder").click());
-  await act(async () => button("Add folder to kyle").click());
-  await act(async () => button("Choose another folder").click());
-  await act(async () => button("Use this folder").click());
+  await act(async () => button("Create project kyle").click());
+  await act(async () => button("Back").click());
+  await act(async () => button("Add to kyle").click());
   expect(state.inspect).toHaveBeenCalledTimes(2);
-  await act(async () => button("Add folder to kyle").click());
   expect(state.create).toHaveBeenCalledOnce();
   expect(state.prepare.mock.calls[1]![0].input.project.id).toBe("created");
 });
 
-it("adds a folder to the current project that holds it and refuses a new one", async () => {
+it("refuses a new project for a typed folder a current project holds", async () => {
   const owner = libraryProject("owner", "Owner app");
   state.projects = [owner];
   registeredTo(owner);
-  await mount();
-  await act(async () => button("Use this folder").click());
+  await mount({ initialRootPath: "/Users/kyle" });
   expect(button("Add folder to Owner app").disabled).toBe(false);
   await act(async () => button("Project").click());
   await act(async () => button("Create a new project").click());
@@ -474,8 +572,7 @@ it("keeps a folder a current project also holds when an older build left an arch
       registrations: [registrationFor(old), registrationFor(owner)],
     }),
   );
-  await mount();
-  await act(async () => button("Use this folder").click());
+  await mount({ initialRootPath: "/Users/kyle" });
   expect(button("Add folder to Owner app").disabled).toBe(false);
   expect(container.textContent).not.toContain("Takes this folder over");
   await act(async () => button("Project").click());
@@ -488,18 +585,16 @@ it("keeps a folder a current project also holds when an older build left an arch
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("takes a folder over from an archived project with a new one", async () => {
+it("shows a takeover from an archived project before making a new one", async () => {
   state.projects = [libraryProject("old", "Old app", true)];
   registeredTo(state.projects[0]!);
-  state.create.mockResolvedValue(AsyncResult.success(libraryProject("created", "kyle")));
-  state.prepare.mockResolvedValue(AsyncResult.success(copyOf(libraryProject("created", "kyle"))));
-  state.register.mockResolvedValue(AsyncResult.success(copyOf(libraryProject("created", "kyle"))));
   await mount();
-  await act(async () => button("Use this folder").click());
+  await act(async () => button("Create project kyle").click());
+  expect(state.create).not.toHaveBeenCalled();
   expect(container.textContent).toContain(
     "Takes this folder over from archived Old app. Its conversations stay in the archive.",
   );
-  await act(async () => button("Add folder to kyle").click());
+  await act(async () => button("Create project kyle").click());
   expect(state.create).toHaveBeenCalledOnce();
   expect(state.prepare.mock.calls[0]![0].input.strategy).toBe("reuse");
 });
@@ -508,9 +603,122 @@ it("does not create a project for a folder holding files Loom made for an archiv
   state.projects = [libraryProject("old", "Old app", true)];
   registeredTo(state.projects[0]!, "managed");
   await mount();
-  await act(async () => button("Use this folder").click());
-  expect(button("Add folder to kyle").disabled).toBe(true);
+  await act(async () => button("Create project kyle").click());
+  expect(button("Create project kyle").disabled).toBe(true);
+  expect(button("Add to another project...")).toBeUndefined();
   expect(container.textContent).toContain(
     "This folder holds files Loom created for archived Old app. Restore that project",
   );
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("names the Library's failure instead of guessing a new project, and stays usable while it refreshes", async () => {
+  state.projectsError = "Your Library is offline.";
+  await mount();
+  expect(button("Add this folder").disabled).toBe(true);
+  expect(container.textContent).toContain("Your Library is offline.");
+  expect(button("Create project kyle")).toBeUndefined();
+  state.projectsError = null;
+  state.projectsRefreshing = true;
+  await mount();
+  expect(button("Create project kyle").disabled).toBe(false);
+});
+
+it("waits for the Library's folder associations before naming what a folder joins", async () => {
+  const project = libraryProject("existing", "Existing app");
+  state.projects = [project];
+  state.libraryCopies = [copyOf(project)];
+  state.copiesLoading = true;
+  await mount();
+  expect(button("Add this folder").disabled).toBe(true);
+  expect(button("Create project kyle")).toBeUndefined();
+  state.copiesLoading = false;
+  await mount();
+  expect(button("Add to Existing app").disabled).toBe(false);
+});
+
+it("confirms a takeover from an archived project before adding the folder to a chosen one", async () => {
+  const alpha = libraryProject("alpha", "Alpha");
+  state.projects = [libraryProject("old", "Old app", true), alpha];
+  registeredTo(state.projects[0]!);
+  await mount();
+  await act(async () => button("Add to another project...").click());
+  await act(async () => button("Alpha").click());
+  expect(state.prepare).not.toHaveBeenCalled();
+  expect(container.textContent).toContain(
+    "Takes this folder over from archived Old app. Its conversations stay in the archive.",
+  );
+  await act(async () => button("Add folder to Alpha").click());
+  expect(state.prepare.mock.calls[0]![0].input.project.id).toBe("alpha");
+});
+
+it("does not offer other projects once a check shows a current project holds the folder", async () => {
+  const owner = libraryProject("owner", "Owner app");
+  state.projects = [owner, libraryProject("other", "Other app")];
+  registeredTo(owner);
+  await mount();
+  await act(async () => button("Add to another project...").click());
+  expect(button("Create a new project")).toBeUndefined();
+  expect(button("Add to another project...")).toBeUndefined();
+  expect(button("Add to Owner app").disabled).toBe(false);
+  expect(state.prepare).not.toHaveBeenCalled();
+});
+
+it("reopens an unfinished import with Retry, Back and Start over, and keeps it offered while browsing", async () => {
+  const onSaved = vi.fn();
+  state.projects = [created];
+  saveUnfinishedImport(copyOf(created));
+  await mount({ onSaved });
+  expect(button("Retry import").disabled).toBe(false);
+  expect(container.textContent).toContain("Adds /Users/kyle on dorothy to kyle.");
+  expect(button("Start over")).toBeDefined();
+  await act(async () => button("Back").click());
+  expect(button("Add to kyle")).toBeDefined();
+  await act(async () => button("Retry earlier import").click());
+  await act(async () => button("Retry import").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare).not.toHaveBeenCalled();
+  expect(state.register.mock.calls[0]![0].input.requestId).toBe("register-earlier");
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("starts an unfinished import over without creating its project again", async () => {
+  const onSaved = vi.fn();
+  state.projects = [created];
+  // The earlier try stopped before preparing the folder, so its computer has no record of it.
+  saveUnfinishedImport(null);
+  await mount({ onSaved });
+  await act(async () => button("Start over").click());
+  expect(button("Retry earlier import")).toBeUndefined();
+  await act(async () => button("Add to kyle").click());
+  expect(state.create).not.toHaveBeenCalled();
+  expect(state.prepare.mock.calls[0]![0].input).toMatchObject({
+    project: created,
+    rootPath: "/Users/kyle",
+  });
+  expect(state.prepare.mock.calls[0]![0].input.requestId).not.toBe("prepare-earlier");
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});
+
+it("adds a different browsed folder while an unfinished import waits", async () => {
+  const onSaved = vi.fn();
+  saveUnfinishedImport(copyOf(created));
+  await mount({ onSaved });
+  await act(async () => button("Back").click());
+  await act(async () => button("Developer").click());
+  await act(async () => button("Create project Developer").click());
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
+  expect(state.register.mock.calls[0]![0].input.requestId).not.toBe("register-earlier");
+  expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it("opens on the folder it was asked to add and only offers an unfinished import of another", async () => {
+  saveUnfinishedImport(copyOf(created));
+  await mount({ initialRootPath: "/Users/kyle/Developer" });
+  expect(button("Retry import")).toBeUndefined();
+  expect(button("Retry earlier import")).toBeDefined();
+  await act(async () => button("Add folder to Developer").click());
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
 });

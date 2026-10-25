@@ -6,18 +6,25 @@ import {
   libraryStartRepositoryProjects,
   rankLibraryStartProjects,
 } from "@t3tools/client-runtime/fork";
-import { CommandId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
+  CommandId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { LibraryProject } from "@t3tools/contracts/fork";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { IconButton } from "../../components/ui/IconButton";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { useEnvironmentQuery } from "../../state/query";
-import { useProjects } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
+import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
@@ -33,11 +40,13 @@ import {
   type LibrarySourceContext,
 } from "./librarySourceLaunch";
 import { library, useLibraryAuthority } from "./libraryState";
+import { libraryStartDefaults, type LibraryStartDefaults } from "./libraryStartDefaults";
 
 /** Library projects use their normal computer and files form without inheriting a thread. */
 export function useNewTaskLibraryProjects(input: {
-  readonly hasRouteParams: boolean;
   readonly searchText: string;
+  /** The Library project in view where New task was opened. */
+  readonly suggestedProjectId?: string | undefined;
 }) {
   const authority = useLibraryAuthority();
   const sharedProjects = useEnvironmentQuery(
@@ -76,32 +85,125 @@ export function useNewTaskLibraryProjects(input: {
   );
   const holdsLocalRefs = (refs: readonly { environmentId: string; projectId: string }[]) =>
     libraryHoldsLocalRefs([], refs, sharedCopies.data ?? []);
+  const { environments } = useEnvironments();
+  const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
+  const terminal = useEnvironmentsWithScope(environments, AuthTerminalOperateScope);
+  const libraryRef = useMemo(
+    () => (authority.environmentId ? [{ environmentId: authority.environmentId }] : []),
+    [authority.environmentId],
+  );
+  const libraryOperable =
+    useEnvironmentsWithScope(libraryRef, AuthOrchestrationOperateScope).size > 0;
+  const configs = useServerConfigs();
+  const localProjects = useProjects();
+  // Keyed by project and independent of the search text, so typing only filters. The computers
+  // are listed as web lists them, so both promise the same computer for a project.
+  const starts = useMemo(() => {
+    const hosts = environments.map((entry) => {
+      const capabilities = entry.serverConfig?.environment.capabilities;
+      return {
+        environmentId: entry.environmentId,
+        label: entry.label,
+        online: entry.entry.enabled && entry.connection.phase === "connected",
+        supportsExecution:
+          capabilities?.supportsExecution !== false &&
+          supportsLoomFeature(capabilities, "project-library"),
+        capabilities,
+      };
+    });
+    return new Map(
+      (sharedProjects.data ?? []).map((project) => [
+        project.id,
+        libraryStartDefaults({
+          project,
+          copies: sharedCopies.data ?? [],
+          threads: recent.data?.threads ?? [],
+          hosts,
+          remembered: authority.computers,
+          operable,
+          terminal,
+          libraryOperable,
+          configs,
+          localProject: (environmentId, projectId) =>
+            localProjects.find(
+              (entry) => entry.environmentId === environmentId && entry.id === projectId,
+            ) ?? null,
+        }),
+      ]),
+    );
+  }, [
+    sharedProjects.data,
+    sharedCopies.data,
+    recent.data,
+    environments,
+    operable,
+    terminal,
+    libraryOperable,
+    configs,
+    localProjects,
+    authority.computers,
+  ]);
 
-  return { choices, error: sharedProjects.error, holdsLocalRefs };
+  const rows = choices.map((project) => ({ project, start: starts.get(project.id) ?? null }));
+  return {
+    // The project in view only leads, as on web: every other project and No project stay a tap
+    // away, and a suggestion the catalog no longer lists is left out rather than reported.
+    suggested: rows.filter((row) => row.project.id === input.suggestedProjectId),
+    choices: rows.filter((row) => row.project.id !== input.suggestedProjectId),
+    error: sharedProjects.error,
+    holdsLocalRefs,
+  };
 }
 
-/** Library projects offered above the local project list; each opens the Library start flow. */
+/**
+ * Library projects offered above the local project list. A tap starts with the defaults its row
+ * shows; the options button, or a tap on a project that needs a decision, opens the start screen.
+ */
 export function NewTaskLibraryProjectChoices(props: {
-  readonly choices: readonly LibraryProject[];
+  readonly choices: readonly {
+    readonly project: LibraryProject;
+    readonly start: LibraryStartDefaults | null;
+  }[];
   readonly error: string | null;
 }) {
   const navigation = useNavigation();
+  // Options open on the computer and files the row named, so both show the same defaults.
+  const open = (project: LibraryProject, start: LibraryStartDefaults | null, startNow: boolean) =>
+    navigation.getParent()?.dispatch(
+      StackActions.replace(
+        "LibraryStart",
+        start
+          ? {
+              projectId: project.id,
+              reuseEnvironmentId: start.environmentId,
+              initialCopyId: start.copyId,
+              startNow,
+            }
+          : { projectId: project.id },
+      ),
+    );
   return (
     <>
       {props.choices.length > 0 ? (
         <View className="overflow-hidden rounded-2xl bg-grouped-card">
-          {props.choices.map((project) => (
+          {props.choices.map(({ project, start }) => (
             <NavigationRow
               key={project.id}
               title={project.title}
               subtitle={
-                project.brief.trim().split("\n")[0] ||
-                `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`
+                start?.summary ??
+                (project.brief.trim().split("\n")[0] ||
+                  `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`)
               }
-              onPress={() =>
-                navigation
-                  .getParent()
-                  ?.dispatch(StackActions.replace("LibraryStart", { projectId: project.id }))
+              onPress={() => open(project, start, true)}
+              trailing={
+                start ? (
+                  <IconButton
+                    accessibilityLabel={`Conversation options for ${project.title}`}
+                    icon="slider.horizontal.3"
+                    onPress={() => open(project, start, false)}
+                  />
+                ) : undefined
               }
             />
           ))}
