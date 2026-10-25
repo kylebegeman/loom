@@ -239,6 +239,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   // Reach status and the Library's reach list stay unguarded for the same reason.
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
+  [REACH.forget]: AuthRelayWriteScope,
   [REACH.libraryRetire]: AuthSettingsWriteScope,
   // Push status stays unguarded: the phone and the web read it with a query atom.
   [PUSH.register]: AuthSettingsWriteScope,

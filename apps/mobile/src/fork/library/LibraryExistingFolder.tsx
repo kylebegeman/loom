@@ -1,9 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { libraryStartFolderProjects, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  libraryFolderRegistrations,
+  libraryStartFolderProjects,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryFolderInspection } from "@t3tools/contracts/fork";
+import type { LibraryFolderInspection, LibraryFolderRegistration } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { View } from "react-native";
@@ -20,7 +24,7 @@ import { libraryFolderResources, libraryProjectsForFolder } from "./libraryFolde
 
 export type ExistingLibraryFolder = ReturnType<typeof libraryFolderResources> & {
   environmentId: EnvironmentId;
-  registration: LibraryFolderInspection["registration"];
+  registrations: readonly LibraryFolderRegistration[];
 };
 
 export function LibraryExistingFolder(props: {
@@ -106,7 +110,7 @@ export function LibraryExistingFolder(props: {
         props.onChoose({
           ...inferred,
           environmentId,
-          registration: result.value.registration,
+          registrations: libraryFolderRegistrations(result.value),
         });
       })
       .catch((cause: unknown) => {

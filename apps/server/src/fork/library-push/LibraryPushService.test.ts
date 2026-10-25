@@ -41,6 +41,7 @@ const NOW = Date.UTC(2026, 9, 24, 12, 0, 0);
 const TOKEN = "5e471e1a".repeat(8);
 const BOB_TOKEN = "b0b0cafe".repeat(8);
 const SECRET = LibraryPush.LIBRARY_PUSH_DEVICES_SECRET;
+const APP_STORE = { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" } as const;
 
 const pemOf = (key: NodeCrypto.KeyObject) =>
   key.export({ type: "pkcs8", format: "pem" }).toString();
@@ -291,6 +292,7 @@ describe("LibraryPushService", () => {
         reason: testCase.reason,
         key: testCase.key,
         devices: [],
+        topics: [APP_STORE],
       });
       expect((yield* push.register(alice, registration()).pipe(Effect.flip)).reason).toBe(
         "misconfigured",
@@ -308,6 +310,7 @@ describe("LibraryPushService", () => {
         reason: null,
         key: { teamId: TEAM_ID, keyId: KEY_ID },
         devices: [],
+        topics: [APP_STORE],
       });
       expect(apns.opened).toHaveLength(1);
       expect(apns.opened[0]).toMatchObject({ teamId: TEAM_ID, keyId: KEY_ID });
@@ -376,6 +379,36 @@ describe("LibraryPushService", () => {
       expect(yield* widened.push.register(alice, dev)).toMatchObject({ mine: true });
       // The list replaces the default rather than adding to it.
       expect((yield* widened.push.register(alice, registration()).pipe(Effect.flip)).reason).toBe(
+        "unsupported-app",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("lists the builds its push settings name, so phones and web can tell", () =>
+    Effect.gen(function* () {
+      const { env, push } = yield* ready({
+        LOOM_LIBRARY_PUSH_TOPICS:
+          "com.kylebegeman.loom.dev:sandbox, com.example.other:production, com.kylebegeman.loom:production",
+      });
+      expect((yield* push.status(identity(env, "alice"))).topics).toEqual([
+        { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" },
+        APP_STORE,
+      ]);
+      // Agents and paired operators see the same list as an Identity session.
+      expect((yield* push.status(LibraryPush.AGENT_CALLER)).topics).toHaveLength(2);
+      expect((yield* push.status(READ_ONLY_PAIRING)).topics).toHaveLength(2);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reports an empty list when the settings name no usable build", () =>
+    Effect.gen(function* () {
+      const { env, push } = yield* ready({
+        LOOM_LIBRARY_PUSH_TOPICS: "com.example.other:production",
+      });
+      const alice = identity(env, "alice");
+      expect(yield* push.status(alice)).toMatchObject({ state: "ready", topics: [] });
+      // Register keeps its refusal, so a phone that never read the list still learns why.
+      expect((yield* push.register(alice, registration()).pipe(Effect.flip)).reason).toBe(
         "unsupported-app",
       );
     }).pipe(Effect.provide(NodeServices.layer)),

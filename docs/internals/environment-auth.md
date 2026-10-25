@@ -65,7 +65,10 @@ lets a computer move to its own resource and back without stranding saved connec
 hand-made per-computer resource of another shape counts as shared. Native clients enforce it
 because the device holds the token; in a browser the computer's own login page runs the exchange,
 so the check, like the issuer check, binds only a computer that reports honestly. A native first
-sign-in to a typed address trusts the environment id the computer claims.
+sign-in to a typed address checks the environment id the computer claims against the device's
+Library directory (`identityAddressRefusal` in `packages/shared/src/fork/identityGrant.ts`): when
+the directory knows that id at other addresses, the sign-in is refused, so an address cannot borrow
+a listed computer's or the Library's identity. An id the directory does not know passes.
 
 The Pocket ID admin key that creates resources can also rewrite the native client's callback
 URLs, so a leaked key plus one click by the account owner on a genuine sign-in link yields a

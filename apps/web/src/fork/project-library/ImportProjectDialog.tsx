@@ -24,6 +24,7 @@ import { usePrimaryEnvironmentId } from "~/state/environments";
 import {
   libraryFolderOwner,
   libraryFolderOwnerIssue,
+  libraryFolderRegistrations,
   libraryFolderTakeover,
   libraryStartFolderProjects,
 } from "@t3tools/client-runtime/fork";
@@ -177,7 +178,10 @@ export function ImportProjectDialog({
         return null;
       }
       setRegisteredCopies(copies.value);
-      const owner = libraryFolderOwner(result.value.registration, library.query.data);
+      const owner = libraryFolderOwner(
+        libraryFolderRegistrations(result.value),
+        library.query.data,
+      );
       const matches = matchingProjects(result.value, copies.value);
       setProjectId(
         owner?.kind === "current"
@@ -232,7 +236,7 @@ export function ImportProjectDialog({
   const findProject = (id: string) =>
     library.query.data?.find((project) => project.id === id && !project.archived) ??
     (created?.project.id === id ? created.project : undefined);
-  const owner = libraryFolderOwner(inspection?.registration, library.query.data);
+  const owner = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
   const ownerIssue = attempt
     ? null
     : owner?.kind === "unchecked" && library.query.isPending
@@ -538,12 +542,13 @@ export function ImportProjectDialog({
                     .map((project) => ({
                       id: project.id,
                       title: project.title,
-                      description:
-                        owner?.kind === "current" && owner.project.id === project.id
-                          ? "This folder already belongs to this project"
-                          : matches.some((match) => match.id === project.id)
-                            ? "Matching repositories and folder layout"
-                            : project.brief,
+                      description: owner?.holders.some(
+                        (holder) => holder.kind === "current" && holder.project.id === project.id,
+                      )
+                        ? "This folder already belongs to this project"
+                        : matches.some((match) => match.id === project.id)
+                          ? "Matching repositories and folder layout"
+                          : project.brief,
                       select: () => {
                         setProjectId(project.id);
                         setSearch("");

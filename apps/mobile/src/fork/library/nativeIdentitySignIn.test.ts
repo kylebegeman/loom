@@ -2,6 +2,7 @@ import { AuthAccessTokenType, EnvironmentId } from "@t3tools/contracts";
 import {
   LOOM_IDENTITY_METADATA_PATH,
   LOOM_IDENTITY_SESSION_PATH,
+  type LoomIdentityDirectoryAddresses,
   type LoomIdentityMetadata,
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
@@ -132,11 +133,15 @@ function signIn(input: {
   readonly signal?: AbortSignal;
   readonly expectedEnvironmentId?: EnvironmentId;
   readonly stages?: NativeIdentitySignInStage[];
+  readonly directory?: LoomIdentityDirectoryAddresses;
 }) {
   return signInWithNativeIdentity({
     httpBaseUrl: "book.example.ts.net",
     expectedEnvironmentId: input.expectedEnvironmentId,
-    options: { requireSessionExchange: true },
+    options: {
+      requireSessionExchange: true,
+      ...(input.directory ? { directory: input.directory } : {}),
+    },
     signal: input.signal ?? new AbortController().signal,
     onProgress: (stage) => input.stages?.push(stage),
   });
@@ -180,6 +185,36 @@ describe("native Identity sign-in", () => {
   it("refuses an address that reaches another computer before the sheet opens", async () => {
     await expect(signIn({ expectedEnvironmentId: STUDIO })).rejects.toThrow("another computer");
     expect(native.state.requests).toEqual([]);
+  });
+
+  it("refuses a typed address for a computer the Library lists elsewhere before the sheet opens", async () => {
+    const library = {
+      environmentId: EnvironmentId.make("library"),
+      label: "Helios",
+      addresses: [],
+    };
+    await expect(
+      signIn({
+        directory: {
+          library,
+          computers: [
+            { environmentId: BOOK, label: "Book", addresses: ["https://book.example.com"] },
+          ],
+        },
+      }),
+    ).rejects.toThrow(
+      "This address says it is Book, but your Library lists Book at other addresses.",
+    );
+    expect(native.state.requests).toEqual([]);
+
+    // The same computer at an address the Library lists for it signs in as before.
+    const signedIn = await signIn({
+      directory: {
+        library,
+        computers: [{ environmentId: BOOK, label: "Book", addresses: [`${ADDRESS}/`] }],
+      },
+    });
+    expect(signedIn?.registration.profile.environmentId).toBe(BOOK);
   });
 
   it("returns null when the user closes the sheet or the caller cancels, closing it", async () => {

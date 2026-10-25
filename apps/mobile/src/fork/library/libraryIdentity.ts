@@ -16,6 +16,7 @@ import {
   LoomIdentityMetadata,
   LoomIdentitySessionResult,
   type LoomIdentityAccount,
+  type LoomIdentityDirectoryAddresses,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
@@ -23,6 +24,8 @@ import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
+  identityAddressOrigin,
+  identityAddressRefusal,
   identityGrantKey,
   identityResourceRefusal,
   identitySignInMaxAge,
@@ -63,6 +66,26 @@ export function libraryIdentityAddress(address: string) {
   const ws = new URL("/ws", url);
   ws.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return { httpBaseUrl: url.origin, wsBaseUrl: ws.toString() };
+}
+
+/**
+ * Whether a sign-in address gets the Library's address check: anything but an address this device
+ * already saved for the computer it is signing in to again, which may be one the Library never
+ * lists, such as a home network address.
+ */
+export function identityAddressNeedsCheck(
+  address: string,
+  savedAddresses: ReadonlyArray<string | undefined>,
+): boolean {
+  let typed: string | null;
+  try {
+    typed = identityAddressOrigin(libraryIdentityAddress(address).httpBaseUrl);
+  } catch {
+    return true;
+  }
+  return !savedAddresses.some(
+    (saved) => saved !== undefined && typed !== null && identityAddressOrigin(saved) === typed,
+  );
 }
 
 function secureIdentityEndpoint(value: string) {
@@ -120,6 +143,11 @@ export type IdentityOptions = {
    * found through the Library's directory is pinned to the Library's own issuer.
    */
   readonly expectedIssuer?: string;
+  /**
+   * For an address the user typed: where the Library says its computers are. A computer it
+   * knows at other addresses is refused before the provider opens (`identityAddressRefusal`).
+   */
+  readonly directory?: LoomIdentityDirectoryAddresses | null;
   readonly requireSessionExchange?: boolean;
   readonly signal?: AbortSignal;
 };
@@ -144,6 +172,12 @@ export async function loadLibraryIdentity(
   }
   if (expectedEnvironmentId && metadata.environmentId !== expectedEnvironmentId)
     throw new Error("This address reaches another computer. Review the selected connection.");
+  const addressRefusal = identityAddressRefusal({
+    httpBaseUrl,
+    environmentId: metadata.environmentId,
+    directory: options.directory,
+  });
+  if (addressRefusal !== null) throw new Error(addressRefusal);
   if (
     !metadata.enabled ||
     !metadata.nativeClientId ||

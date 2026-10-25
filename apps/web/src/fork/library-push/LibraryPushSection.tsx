@@ -64,8 +64,9 @@ function CopyDeviceId({ id, label }: { id: LibraryPushDeviceRowId; label: string
 
 /**
  * The chosen Library's push notifications: whether it can send, which Apple key it signs with,
- * and the iPhones registered with it. Push is switched on in the Library's server environment, so
- * there is no on/off control here. The status reads when the section mounts and on Refresh.
+ * which app builds it sends to, and the iPhones registered with it. Push is switched on in the
+ * Library's server environment, so there is no on/off control here. The status reads when the
+ * section mounts and on Refresh.
  */
 export function LibraryPushSection() {
   const authority = useLibraryAuthority();
@@ -178,6 +179,9 @@ function LibraryPushBody({
           ) : null}
           {view.key ? (
             <p className="text-xs leading-relaxed text-muted-foreground">{view.key}</p>
+          ) : null}
+          {view.builds ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">{view.builds}</p>
           ) : null}
           {view.error ? (
             <p role="alert" className="text-xs leading-relaxed text-destructive-foreground">

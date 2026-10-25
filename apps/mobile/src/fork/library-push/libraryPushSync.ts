@@ -34,15 +34,16 @@ import {
 import {
   IDLE_ACTIVITY,
   LIBRARY_PUSH_REFRESH_MS,
-  LIBRARY_PUSH_ROW_SETTLE_MS,
   NOT_READY_SNAPSHOT,
   libraryPushErrorReason,
   libraryPushRefusal,
+  libraryPushServes,
   planLibraryPush,
   planLibraryPushRegistration,
   recordAfterClear,
   recordAfterRefusal,
   recordAfterRegister,
+  recordAfterServed,
   recordAfterStatus,
   recordAfterUnregister,
   recordForOptIn,
@@ -177,32 +178,27 @@ async function unregisterRow(
 }
 
 /**
- * Forgets this iPhone's registration when a status read after it registered no longer lists its
- * row. The record change starts another sync, which registers again.
+ * Applies a Library status to the record. A status read after this iPhone registered that no
+ * longer lists its row forgets the registration, and the served list sets or lifts an
+ * `unsupported-app` refusal. Either record change starts another sync, which registers when it can.
  */
 export const reconcileLibraryPushStatus = (
   registry: AtomRegistry.AtomRegistry,
   libraryId: EnvironmentId,
-  status: Pick<LibraryPushStatus, "devices">,
+  status: Pick<LibraryPushStatus, "devices" | "topics">,
   readAt: number,
-) =>
-  updateLibraryPushRecord(registry, (record) =>
-    recordAfterStatus(record, libraryId, { devices: status.devices, readAt }),
+) => {
+  const build = currentLibraryPushBuild();
+  const served = build === null ? null : libraryPushServes(status.topics, build);
+  return updateLibraryPushRecord(registry, (record) =>
+    recordAfterServed(
+      recordAfterStatus(record, libraryId, { devices: status.devices, readAt }),
+      libraryId,
+      served,
+      build?.appVersion ?? null,
+    ),
   );
-
-/**
- * A fresh registration skips registering, so read the Library's list instead: a row it dropped
- * (an operator's Remove, or Apple refusing the token) then registers again on this connect, not
- * at the daily refresh. One read per sync that would otherwise do nothing; never on a timer.
- */
-async function checkLibraryPushRow(registry: AtomRegistry.AtomRegistry, libraryId: EnvironmentId) {
-  const status = await executeAtomQuery(registry, libraryPush.status(libraryId), {
-    refresh: true,
-    reportFailure: false,
-  });
-  if (status._tag === "Success")
-    await reconcileLibraryPushStatus(registry, libraryId, status.value, Date.now());
-}
+};
 
 /**
  * One run of the sync loop, from the change that started it until nothing is left to plan. A
@@ -211,6 +207,30 @@ async function checkLibraryPushRow(registry: AtomRegistry.AtomRegistry, libraryI
  */
 interface SyncRun {
   token: string | null;
+  /** Libraries whose status this run already read. */
+  readonly statusRead: Set<EnvironmentId>;
+}
+
+/**
+ * Reads the Library's status and applies it to the record: a build it does not serve is never
+ * sent a register, a fixed served list lifts a held refusal, and a row it dropped (an operator's
+ * Remove, or Apple refusing the token) registers again on this connect, not at the daily refresh.
+ * Runs start on connection and record changes, never on a timer. Reading once per run keeps a
+ * status that contradicts a register's answer from clearing and setting a refusal forever.
+ */
+async function readLibraryPushStatusOnce(
+  registry: AtomRegistry.AtomRegistry,
+  libraryId: EnvironmentId,
+  run: SyncRun,
+) {
+  if (run.statusRead.has(libraryId)) return;
+  run.statusRead.add(libraryId);
+  const status = await executeAtomQuery(registry, libraryPush.status(libraryId), {
+    refresh: true,
+    reportFailure: false,
+  });
+  if (status._tag === "Success")
+    await reconcileLibraryPushStatus(registry, libraryId, status.value, Date.now());
 }
 
 /**
@@ -237,6 +257,12 @@ async function registerDevice(
   build: LibraryPushBuild,
   run: SyncRun,
 ) {
+  await readLibraryPushStatusOnce(registry, step.libraryId, run);
+  // The status changed the record, which plans again from it.
+  if (registry.get(libraryPushSnapshotAtom).record !== planned) {
+    setActivity(registry, IDLE_ACTIVITY);
+    return;
+  }
   const token = run.token ?? (await readDevicePushToken());
   if (token === null) {
     setActivity(registry, failed("token", null));
@@ -249,13 +275,7 @@ async function registerDevice(
     appVersion: build.appVersion,
     tokenSuffix: tokenSuffix(token),
   };
-  const now = Date.now();
-  if (planLibraryPushRegistration(planned.registration, device, now) === "none") {
-    if (
-      planned.registration !== null &&
-      now >= planned.registration.registeredAt + LIBRARY_PUSH_ROW_SETTLE_MS
-    )
-      await checkLibraryPushRow(registry, step.libraryId);
+  if (planLibraryPushRegistration(planned.registration, device, Date.now()) === "none") {
     setActivity(registry, IDLE_ACTIVITY);
     return;
   }
@@ -325,6 +345,8 @@ async function syncOnce(registry: AtomRegistry.AtomRegistry, run: SyncRun) {
       record === planned ? recordAfterClear(record, step) : record,
     );
   else if (step.kind === "unregister") await unregisterRow(registry, step);
+  else if (step.kind === "checkServed")
+    await readLibraryPushStatusOnce(registry, step.libraryId, run);
   else if (step.kind === "needsToken" && planned !== null)
     await registerDevice(registry, step, planned, build, run);
 }
@@ -340,7 +362,7 @@ export function requestLibraryPushSync(registry: AtomRegistry.AtomRegistry) {
   if (syncing) return;
   syncing = true;
   syncRunEnded = (async () => {
-    const run: SyncRun = { token: null };
+    const run: SyncRun = { token: null, statusRead: new Set() };
     while (syncAgain) {
       syncAgain = false;
       // Only keychain and device-id storage can throw here, and neither sees the token.

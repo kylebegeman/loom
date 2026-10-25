@@ -28,7 +28,7 @@ export const ReachLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_reach_retire", {
     description:
-      "Retire a computer's reach address from the Library: deletes its Cloudflare tunnel and DNS record, keeps its hostname reserved, and lets the computer be forgotten in the directory. Set endIdentity to also delete its Loom Identity resource, which ends every device's Loom sign-in renewal for that computer. A computer still signed in to the Library sets reach up again on its next start, so also revoke its Library sign-in. Requires full access.",
+      "Retire a computer's reach address from the Library: deletes its Cloudflare tunnel and DNS record, keeps its hostname reserved, and lets the computer be forgotten in the directory. Set endIdentity to also delete its Loom Identity resource, which ends every device's Loom sign-in renewal for that computer. With endIdentity, for a computer that has a Loom Identity resource, a Library whose Pocket ID admin key file is missing or unreadable (setup.identity missing, or refused for a file with loose permissions) changes nothing and fails with reason identity-key-missing: bring the key online and retry, or retire with endIdentity false. A computer still signed in to the Library sets reach up again on its next start, so also revoke its Library sign-in. Requires full access.",
     parameters: ReachRetireInput,
     success: ReachLibraryComputer,
     failure,

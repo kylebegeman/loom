@@ -9,6 +9,8 @@ import {
   type IdentityGrant,
   type IdentityGrantFetch,
   IdentityGrantTransientError,
+  identityAddressOrigin,
+  identityAddressRefusal,
   identityGrantKey,
   identityResourceEnvironment,
   identityResourceRefusal,
@@ -428,5 +430,131 @@ describe("identityResourceRefusal", () => {
       expect(identityResourceEnvironment(audience)).toBeNull();
       expect(identityResourceRefusal(book({ audience }))).toBeNull();
     }
+  });
+});
+
+describe("identityAddressRefusal", () => {
+  const LIBRARY = EnvironmentId.make("library");
+  const BOOK = EnvironmentId.make("book");
+  const DESK = EnvironmentId.make("desk");
+  const directory = {
+    library: {
+      environmentId: LIBRARY,
+      label: "Helios",
+      addresses: ["https://library.example.test/", "http://192.168.1.4:3773"],
+    },
+    computers: [
+      {
+        environmentId: BOOK,
+        label: "Book",
+        addresses: ["https://book.example.test", "https://book.tail1234.ts.net:8443/"],
+      },
+      { environmentId: DESK, label: "Desk", addresses: [] },
+    ],
+  };
+  const refusal = (httpBaseUrl: string, environmentId: string, within = directory) =>
+    identityAddressRefusal({ httpBaseUrl, environmentId, directory: within });
+
+  it("lets a listed computer sign in at any address the directory reports for it", () => {
+    expect(refusal("https://book.example.test", BOOK)).toBeNull();
+    // Tailnet routes count as much as public ones.
+    expect(refusal("https://book.tail1234.ts.net:8443", BOOK)).toBeNull();
+  });
+
+  it("refuses a server claiming a listed computer at an address the directory does not report", () => {
+    expect(refusal("https://evil.example.test", BOOK)).toBe(
+      "This address says it is Book, but your Library lists Book at other addresses. Sign in from your Library's computer list, or use a pairing link.",
+    );
+    // Another computer's own route is still not this computer's.
+    expect(refusal("https://book.example.test", DESK)).toContain("This address says it is Desk");
+    // Same host, other scheme or port, is another server.
+    expect(refusal("http://book.example.test", BOOK)).not.toBeNull();
+    expect(refusal("https://book.tail1234.ts.net", BOOK)).not.toBeNull();
+    expect(refusal("https://book.example.test:8443", BOOK)).not.toBeNull();
+  });
+
+  it("refuses a listed computer the directory has no address for", () => {
+    expect(refusal("https://desk.example.test", DESK)).toBe(
+      "This address says it is Desk, but your Library has no address for Desk. Use a pairing link.",
+    );
+  });
+
+  it("keeps today's sign-in for a computer the Library does not list, or with no directory", () => {
+    expect(refusal("https://studio.example.test", "studio")).toBeNull();
+    expect(
+      identityAddressRefusal({
+        httpBaseUrl: "https://evil.example.test",
+        environmentId: BOOK,
+        directory: undefined,
+      }),
+    ).toBeNull();
+    expect(
+      identityAddressRefusal({
+        httpBaseUrl: "https://evil.example.test",
+        environmentId: BOOK,
+        directory: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("holds the Library to the addresses this device knows it at", () => {
+    expect(refusal("https://library.example.test", LIBRARY)).toBeNull();
+    expect(refusal("http://192.168.1.4:3773/", LIBRARY)).toBeNull();
+    expect(refusal("https://evil.example.test", LIBRARY)).toBe(
+      "This address says it is your Library, Helios, but this device knows Helios at other addresses. Sign in at its saved address, or use a pairing link.",
+    );
+    // A Library its own directory lists may also use the routes it reports.
+    const listed = {
+      ...directory,
+      computers: [
+        ...directory.computers,
+        { environmentId: LIBRARY, label: "library", addresses: ["https://helios.example.test"] },
+      ],
+    };
+    expect(refusal("https://helios.example.test", LIBRARY, listed)).toBeNull();
+    expect(refusal("https://evil.example.test", LIBRARY, listed)).toContain("your Library, Helios");
+    // With no address for it on this device or in the directory, nothing says where it should be.
+    const unknown = { ...directory, library: { ...directory.library, addresses: [] } };
+    expect(refusal("https://evil.example.test", LIBRARY, unknown)).toBeNull();
+  });
+
+  it("compares addresses as origins", () => {
+    for (const typed of [
+      "https://BOOK.Example.TEST",
+      "https://book.example.test/",
+      "https://book.example.test:443",
+      "https://book.example.test./",
+      "https://book.example.test/some/path",
+      "  https://book.example.test  ",
+    ])
+      expect(refusal(typed, BOOK), typed).toBeNull();
+    const v6 = {
+      library: { environmentId: LIBRARY, label: "Helios", addresses: [] },
+      computers: [
+        {
+          environmentId: BOOK,
+          label: "Book",
+          addresses: ["http://[fd7a:115c:a1e0::1]:3773", "http://book.local:80"],
+        },
+      ],
+    };
+    expect(refusal("http://[FD7A:115C:A1E0:0:0:0:0:1]:3773/", BOOK, v6)).toBeNull();
+    expect(refusal("http://[fd7a:115c:a1e0::2]:3773", BOOK, v6)).not.toBeNull();
+    expect(refusal("http://book.local", BOOK, v6)).toBeNull();
+    // An address that does not parse is not one of the computer's.
+    expect(refusal("not a url", BOOK)).not.toBeNull();
+    expect(refusal("ftp://book.example.test", BOOK)).not.toBeNull();
+  });
+
+  it("normalizes an address to its comparable origin", () => {
+    expect(identityAddressOrigin("HTTPS://Book.Example.Test.:443/x?y#z")).toBe(
+      "https://book.example.test",
+    );
+    expect(identityAddressOrigin("http://[::1]:80/")).toBe("http://[::1]");
+    expect(identityAddressOrigin("http://book.example.test:8080")).toBe(
+      "http://book.example.test:8080",
+    );
+    expect(identityAddressOrigin("book.example.test")).toBeNull();
+    expect(identityAddressOrigin("")).toBeNull();
   });
 });

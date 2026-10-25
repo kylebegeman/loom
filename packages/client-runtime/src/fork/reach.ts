@@ -41,7 +41,8 @@ const IDLE_LIBRARY_LIST = Atom.make(AsyncResult.initial<ReachLibraryListing, nev
 
 /**
  * Reach for web, desktop and mobile. `status` streams one computer's reach while mounted; pass
- * null while no computer is chosen or it lacks `reach`. `libraryList` reads the Library's records
+ * null while no computer is chosen or it lacks `reach`. Send `forget` only to a computer that
+ * advertises `reach-forget`, as `reachView` offers it. `libraryList` reads the Library's records
  * when it mounts (if older than a few seconds) and after a retire, never on a timer; pass null
  * unless the Library advertises `reach-library`. Feed results to `reachView` and
  * `reachLibraryView`.
@@ -70,6 +71,10 @@ export function createReachAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegi
     remove: createEnvironmentRpcCommand(runtime, {
       label: "loom:reach:remove",
       tag: REACH_WS_METHODS.remove,
+    }),
+    forget: createEnvironmentRpcCommand(runtime, {
+      label: "loom:reach:forget",
+      tag: REACH_WS_METHODS.forget,
     }),
     /** Refresh this atom for an explicit refresh. */
     libraryList: (
@@ -151,6 +156,8 @@ const PREPARED_ELSEWHERE_TEXT =
 
 const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, string>> = {
   "library-unreachable": "Your Library is not reachable right now. Loom keeps trying.",
+  retired:
+    "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
   "library-signed-out": REACH_BLOCKED_TEXT["library-signed-out"],
   "identity-resource-differs":
     "This computer's Loom sign-in differs from what your Library prepared, so devices that find it through your Library pair instead.",
@@ -169,8 +176,10 @@ export interface ReachViewInput {
    * Pass the status atom null unless this is true, since the computer refuses the read otherwise.
    */
   readonly canRead: boolean | null;
-  /** The `set` command's permission atom for this computer. */
+  /** The `set` command's permission atom for this computer; remove and forget need the same grant. */
   readonly canChange: boolean;
+  /** The computer advertises `REACH_FORGET_FEATURE`, so it answers `forget`. */
+  readonly forgetSupported: boolean;
   /**
    * Viewing the computer's own settings: its desktop app or the web app it serves. Its prepared
    * sign-in values are offered only there, where they get set; elsewhere a line points there.
@@ -202,6 +211,8 @@ export interface ReachView {
   readonly actions: {
     readonly copyAddress: boolean;
     readonly remove: boolean;
+    /** Offered while removing, for a removal the Library may never confirm. */
+    readonly forget: boolean;
     /** The status stream failed; refresh the status atom. */
     readonly retry: boolean;
   };
@@ -214,6 +225,8 @@ export interface ReachView {
   readonly confirmOff: ReachConfirm | null;
   /** Always asked before removing; null when Remove is not offered. */
   readonly confirmRemove: ReachConfirm | null;
+  /** Always asked before forgetting; null when Forget is not offered. */
+  readonly confirmForget: ReachConfirm | null;
   readonly notes: readonly string[];
   readonly signIn: {
     readonly text: string;
@@ -254,6 +267,8 @@ export function reachPreparedEnvironment(prepared: ReachPrepared): string {
 function stateLine(status: ReachStatus, host: string | null): ReachLine {
   switch (status.state) {
     case "off":
+      if (status.warnings.includes("retired"))
+        return { tone: "warning", text: WARNING_TEXT.retired };
       return {
         tone: "neutral",
         text:
@@ -366,8 +381,12 @@ export function reachView(input: ReachViewInput): ReachView {
           : null);
   const live = gate === null && status !== null;
   const canRemove = live && input.canChange && url !== null && !removing;
+  // The user decides whether the Library is gone for good, so it is offered for every removal.
+  const canForget = live && input.canChange && input.forgetSupported && removing;
   const throughAddress = url !== null && sameOrigin(input.activeRouteUrl, url);
   const warnings = new Set(status?.warnings ?? []);
+  // The line already says why reach turned off; the computer's own copy of it would repeat it.
+  const retiredOff = live && status.state === "off" && warnings.has("retired");
   const notes = new Set<string>();
   if (live) {
     if (readFailed) notes.add(REFRESH_FAILED_TEXT);
@@ -385,7 +404,9 @@ export function reachView(input: ReachViewInput): ReachView {
   return {
     status: statusLine,
     detail:
-      live && status.message !== null && status.message !== statusLine.text ? status.message : null,
+      live && !retiredOff && status.message !== null && status.message !== statusLine.text
+        ? status.message
+        : null,
     switch: {
       checked: status?.enabled ?? false,
       disabled: disabledReason !== null,
@@ -395,6 +416,7 @@ export function reachView(input: ReachViewInput): ReachView {
     actions: {
       copyAddress: url !== null,
       remove: canRemove,
+      forget: canForget,
       retry: readFailed && (gate === READ_FAILED_TEXT || live),
     },
     throughAddress,
@@ -415,6 +437,14 @@ export function reachView(input: ReachViewInput): ReachView {
             : `Devices away from your network lose this route. ${removeEffect}`,
           action: "Remove",
         },
+    confirmForget: canForget
+      ? {
+          title: "Forget reach on this computer?",
+          message:
+            "Reach stops here without your Library. Its tunnel and address stay until you retire them in your Library under Reach addresses.",
+          action: "Forget",
+        }
+      : null,
     notes: [...notes],
     signIn: live ? signInHint(status, input.isThisComputer, warnings) : null,
   };
@@ -439,9 +469,9 @@ const isUnreachable = (error: unknown) => {
 };
 
 /**
- * One short line for a failed turn on, turn off or remove, or null when there is nothing to
+ * One short line for a failed turn on, turn off, remove or forget, or null when there is nothing to
  * report. Reach errors carry only a reason, so their contract message is safe; anything else gets
- * a line of its own. Pass `view.throughAddress` as `dropsRoute` for turning off or removing: the
+ * a line of its own. Pass `view.throughAddress` as `dropsRoute` for any change but turning on: the
  * computer answers before it stops the tunnel, but the reply can still be lost with the route,
  * so only a refusal the computer actually sent counts as a failure then.
  */
@@ -560,8 +590,9 @@ const IDENTITY_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> = {
 
 /**
  * A removed computer's failed identity may come from a failed "Also end Loom sign-in" as well as
- * an earlier ensure, and a delete reports a missing admin key file as `unavailable`. Either way
- * its resource can still exist, and only a Retire that ends sign-in deletes it.
+ * an earlier ensure, and a Library older than the `identity-key-missing` refusal reports a missing
+ * admin key file as `unavailable`. Either way its resource can still exist, and only a Retire
+ * that ends sign-in deletes it.
  */
 const IDENTITY_END_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> = {
   denied:
@@ -606,12 +637,21 @@ export interface ReachLibraryComputerView {
     /** The label of the checkbox that sets `endIdentity`. */
     readonly endIdentityLabel: string;
     readonly endIdentityHint: string;
+    /**
+     * Why ending sign-in is not offered now, shown in place of the choice; null while it is. A
+     * Library without its admin key refuses that retire, so it is never sent then.
+     */
+    readonly endIdentityDisabledReason: string | null;
   } | null;
 }
+
+const END_IDENTITY_KEY_MISSING_TEXT =
+  "Ending Loom sign-in needs your Library's Pocket ID key file, which is not in place. You can retire now and end sign-in with another Retire once the key is back.";
 
 function computerView(
   computer: ReachLibraryComputer,
   canRetire: boolean,
+  setup: ReachLibrarySetup,
 ): ReachLibraryComputerView {
   const title = computer.label ?? computer.hostname ?? computer.environmentId;
   const notes: string[] = [];
@@ -651,6 +691,8 @@ function computerView(
           endIdentityLabel: "Also end Loom sign-in for this computer",
           endIdentityHint:
             "Devices signed in to it with Loom lose access when their current sign-in ends.",
+          endIdentityDisabledReason:
+            setup.identity === "missing" ? END_IDENTITY_KEY_MISSING_TEXT : null,
         }
       : null,
   };
@@ -721,7 +763,7 @@ export function reachLibraryView(input: ReachLibraryViewInput): ReachLibraryView
         (left.label ?? left.hostname ?? "").localeCompare(right.label ?? right.hostname ?? "") ||
         left.environmentId.localeCompare(right.environmentId),
     )
-    .map((computer) => computerView(computer, input.canRetire));
+    .map((computer) => computerView(computer, input.canRetire, listing.setup));
   return {
     status: computers.length === 0 ? "empty" : "listed",
     notice:

@@ -6,11 +6,13 @@ import {
   LIBRARY_PUSH_REFRESH_MS,
   LIBRARY_PUSH_ROW_SETTLE_MS,
   libraryPushRefusal,
+  libraryPushServes,
   planLibraryPush,
   planLibraryPushRegistration,
   recordAfterClear,
   recordAfterRefusal,
   recordAfterRegister,
+  recordAfterServed,
   recordAfterStatus,
   recordAfterUnregister,
   recordForOptIn,
@@ -180,7 +182,7 @@ describe("planLibraryPush step one", () => {
   });
 
   it("backs off after a refusal until the app version changes or the user retries", () => {
-    const refused = record({ refusal: { reason: "unsupported-app", appVersion: "1.4.0" } });
+    const refused = record({ refusal: { reason: "limit", appVersion: "1.4.0" } });
     expect(plan({ record: refused })).toEqual({ kind: "none" });
     expect(plan({ record: refused, appVersion: "1.5.0" })).toEqual({
       kind: "needsToken",
@@ -191,6 +193,19 @@ describe("planLibraryPush step one", () => {
       libraryId: LIBRARY,
     });
     expect(recordForOptIn(refused, library(), true)?.refusal).toBeNull();
+  });
+
+  it("checks the Library's status while it refuses this build, and only then", () => {
+    const refused = record({ refusal: { reason: "unsupported-app", appVersion: "1.4.0" } });
+    expect(plan({ record: refused })).toEqual({ kind: "checkServed", libraryId: LIBRARY });
+    expect(plan({ record: refused, chosen: library({ connected: false }) })).toEqual({
+      kind: "none",
+    });
+    expect(plan({ record: refused, permission: "denied" })).toEqual({ kind: "none" });
+    expect(plan({ record: refused, appVersion: "1.5.0" })).toEqual({
+      kind: "needsToken",
+      libraryId: LIBRARY,
+    });
   });
 
   it("forgets a refusal when the Library turns push off, so turning it back on starts fresh", () => {
@@ -300,6 +315,62 @@ describe("record updates", () => {
     expect(recordForOptIn(old, library(), true)).toEqual(record());
     expect(recordForOptIn(old, library(), false)).toBe(old);
     expect(recordForOptIn(null, library(), false)).toBeNull();
+  });
+});
+
+describe("the Library's served list", () => {
+  const build = { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" } as const;
+  const devBuild = { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" } as const;
+  const future = { bundleId: "com.kylebegeman.loom.next", apsEnvironment: "production" };
+  const held = { reason: "unsupported-app", appVersion: "1.4.0" } as const;
+
+  it("matches bundle and environment together, and says nothing without a list", () => {
+    expect(libraryPushServes(undefined, build)).toBeNull();
+    expect(libraryPushServes([], build)).toBe(false);
+    expect(libraryPushServes([devBuild, future], build)).toBe(false);
+    expect(libraryPushServes([{ ...build, apsEnvironment: "sandbox" }], build)).toBe(false);
+    expect(libraryPushServes([future, build], build)).toBe(true);
+  });
+
+  it("holds a build left out as refused, so the phone never registers for it", () => {
+    const optedIn = record();
+    const notServed = recordAfterServed(optedIn, LIBRARY, false, "1.4.0");
+    expect(notServed).toEqual(record({ refusal: held }));
+    expect(plan({ record: notServed })).toEqual({ kind: "checkServed", libraryId: LIBRARY });
+    // Settled: the same answer again changes nothing, so it starts no further sync.
+    expect(recordAfterServed(notServed, LIBRARY, false, "1.4.0")).toBe(notServed);
+    // An update stays refused rather than registering to find out.
+    const updated = recordAfterServed(notServed, LIBRARY, false, "1.5.0");
+    expect(updated?.refusal).toEqual({ reason: "unsupported-app", appVersion: "1.5.0" });
+    expect(plan({ record: updated, appVersion: "1.5.0" }).kind).toBe("checkServed");
+    // Another refusal gives way, since no answer about this account matters until it is served.
+    expect(
+      recordAfterServed(record({ refusal: { ...held, reason: "limit" } }), LIBRARY, false, "1.4.0")
+        ?.refusal,
+    ).toEqual(held);
+  });
+
+  it("registers on its own once a later status lists this build", () => {
+    const refused = record({ refusal: held });
+    const lifted = recordAfterServed(refused, LIBRARY, true, "1.4.0");
+    expect(lifted).toEqual(record());
+    expect(plan({ record: lifted })).toEqual({ kind: "needsToken", libraryId: LIBRARY });
+    // Refusals the served list says nothing about stay until the user retries.
+    const limited = record({ refusal: { ...held, reason: "limit" } });
+    expect(recordAfterServed(limited, LIBRARY, true, "1.4.0")).toBe(limited);
+    const served = record();
+    expect(recordAfterServed(served, LIBRARY, true, "1.4.0")).toBe(served);
+  });
+
+  it("keeps today's behavior for a Library without the list, an opt-out or another Library", () => {
+    const refused = record({ refusal: held });
+    expect(recordAfterServed(refused, LIBRARY, null, "1.4.0")).toBe(refused);
+    const fresh = record();
+    expect(recordAfterServed(fresh, LIBRARY, null, "1.4.0")).toBe(fresh);
+    const optedOut = record({ optedIn: false, registration: registration() });
+    expect(recordAfterServed(optedOut, LIBRARY, false, "1.4.0")).toBe(optedOut);
+    expect(recordAfterServed(refused, OTHER_LIBRARY, true, "1.4.0")).toBe(refused);
+    expect(recordAfterServed(null, LIBRARY, false, "1.4.0")).toBeNull();
   });
 });
 

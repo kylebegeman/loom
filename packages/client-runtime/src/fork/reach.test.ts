@@ -9,6 +9,7 @@ import {
   ReachWarning,
   type ReachLibraryComputer,
   type ReachLibraryListing,
+  type ReachLibrarySetup,
   type ReachStatus,
 } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
@@ -55,6 +56,7 @@ const input = (value: ReachStatus, overrides: Partial<ReachViewInput> = {}): Rea
   supported: true,
   canRead: true,
   canChange: true,
+  forgetSupported: true,
   isThisComputer: false,
   activeRouteUrl: TAILNET,
   ...overrides,
@@ -100,6 +102,8 @@ describe("reachView", () => {
       expect(view.switch.disabled).toBe(!live || !canChange || state === "removing");
       expect(view.confirmOff !== null).toBe(live && enabled && throughAddress);
       expect(view.actions.remove).toBe(live && canChange && state !== "removing");
+      expect(view.actions.forget).toBe(live && canChange && state === "removing");
+      expect(view.confirmForget !== null).toBe(view.actions.forget);
       expect(view.address).toEqual({ url: ADDRESS, host: HOST });
       if (supported === false)
         expect(view.status.text).toBe("Update Loom on this computer to turn this on.");
@@ -270,6 +274,58 @@ describe("reachView", () => {
     }
   });
 
+  it("offers to forget a removal the Library may never confirm, asking first", () => {
+    const stuck = status({
+      state: "removing",
+      enabled: false,
+      message: "Update Loom on your Library to finish removing reach.",
+    });
+    const view = reachView(input(stuck));
+    expect(view.actions).toMatchObject({ forget: true, remove: false });
+    expect(view.confirmForget).toEqual({
+      title: "Forget reach on this computer?",
+      message:
+        "Reach stops here without your Library. Its tunnel and address stay until you retire them in your Library under Reach addresses.",
+      action: "Forget",
+    });
+    expect(view.confirmForget?.title).toMatch(/^[^?]+\?$/u);
+    expect(view.confirmForget?.message).not.toContain("?");
+    expect(allText(view)).not.toContain("—");
+    // A computer that predates forget would refuse the call, so it is never offered there.
+    expect(reachView(input(stuck, { forgetSupported: false }))).toMatchObject({
+      actions: { forget: false },
+      confirmForget: null,
+    });
+    expect(reachView(input(stuck, { canChange: false })).actions.forget).toBe(false);
+    for (const state of ["off", "connected", "error"] as const) {
+      expect(reachView(input(status({ state }))).confirmForget).toBeNull();
+    }
+  });
+
+  it("says plainly that the Library retired the address, once", () => {
+    const retired = status({
+      state: "off",
+      enabled: false,
+      url: null,
+      // What the computer sends for clients that predate the warning.
+      message:
+        "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+      warnings: ["retired"],
+    });
+    const view = reachView(input(retired));
+    expect(view.status).toEqual({
+      tone: "warning",
+      text: "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+    });
+    expect(view.detail).toBeNull();
+    expect(view.notes).toEqual([]);
+    // Turning reach on is the way back, so the switch stays usable.
+    expect(view.switch).toEqual({ checked: false, disabled: false, disabledReason: null });
+    expect(view.actions).toMatchObject({ remove: false, forget: false, copyAddress: false });
+    // A computer's own wording never doubles the line, even when it differs.
+    expect(reachView(input({ ...retired, message: "Retired." })).detail).toBeNull();
+  });
+
   it("offers a retry when the status cannot be read", () => {
     const view = reachView({
       ...input(status()),
@@ -279,7 +335,12 @@ describe("reachView", () => {
       tone: "danger",
       text: "Loom could not read reach on this computer.",
     });
-    expect(view.actions).toEqual({ copyAddress: false, remove: false, retry: true });
+    expect(view.actions).toEqual({
+      copyAddress: false,
+      remove: false,
+      forget: false,
+      retry: true,
+    });
     expect(view.switch.disabled).toBe(true);
   });
 
@@ -306,7 +367,12 @@ describe("reachView", () => {
       disabled: true,
       disabledReason: REACH_UNREADABLE_TEXT,
     });
-    expect(view.actions).toEqual({ copyAddress: false, remove: false, retry: false });
+    expect(view.actions).toEqual({
+      copyAddress: false,
+      remove: false,
+      forget: false,
+      retry: false,
+    });
     const unknown = reachView({ ...input(status()), result: AsyncResult.initial(), canRead: null });
     expect(unknown.status.text).toBe("Checking reach...");
   });
@@ -473,6 +539,23 @@ describe("reachLibraryView", () => {
     expect(notesFor("ready")).toEqual([
       "Pocket ID did not answer, so Loom sign-in was not prepared.",
     ]);
+  });
+
+  it("offers ending Loom sign-in only while the Library's admin key file is in place", () => {
+    const retireWith = (identity: ReachLibrarySetup["identity"]) =>
+      library(
+        AsyncResult.success({
+          ...listingOf([computer()]),
+          setup: { ...listingOf([]).setup, identity },
+        }),
+      ).computers[0]?.retire;
+    const keyless = retireWith("missing");
+    expect(keyless?.endIdentityDisabledReason).toContain("Pocket ID key file");
+    expect(keyless?.endIdentityDisabledReason).not.toContain("—");
+    // A key Pocket ID refused or that did not answer last time may work now, so it stays offered.
+    for (const identity of ["ready", "refused", "unavailable"] as const) {
+      expect(retireWith(identity)?.endIdentityDisabledReason).toBeNull();
+    }
   });
 
   it("points a device without settings access elsewhere to retire", () => {

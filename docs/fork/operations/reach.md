@@ -183,6 +183,13 @@ WebSockets through the address can last that long.
 
 - **Off** is local to the computer. Its connector stops and it stops publishing the address. The
   tunnel and DNS record stay, and turning reach on brings the same address back.
+- **Forget** is local too. It is offered while a removal waits on a Library that may never answer.
+  It ends that removal, stops the connector and clears the saved reach record without calling the
+  Library, so the tunnel and address stay until the Library retires them. Agents use
+  `loom_reach_forget`.
+- When the connector reports the tunnel token refused on two runs in a row, the Library retired
+  the address or another copy of the computer took it over. Reach turns itself off with a
+  `retired` warning, and turning it on asks the Library for an address again.
 - **Remove** (on the computer or from a device paired with full access) stops the connector, then
   asks the Library to rotate the tunnel secret, drop connections, delete the tunnel and delete the
   DNS record if it still matches. The address stays reserved for this computer. The Pocket ID
@@ -194,6 +201,8 @@ WebSockets through the address can last that long.
   forgets the computer's signing key, so the computer can claim its address again with a new key. A
   computer still signed in to the Library sets reach up again on its next start, so revoke its
   Library sign-in too. "Also end Loom sign-in for this computer" deletes its Pocket ID resource.
+  When the Library cannot read its Pocket ID admin key, that option is refused before anything
+  changes (`identity-key-missing`), so the address is never retired with its sign-in left behind.
 
 A Library refuses to forget a directory computer while any of its reach records is not removed,
 including one whose first setup failed. Retire it first.

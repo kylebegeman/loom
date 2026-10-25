@@ -11,7 +11,9 @@ import {
   deriveWsBaseUrl,
 } from "@t3tools/client-runtime/environment";
 import { fetchRemoteSessionState } from "@t3tools/client-runtime/authorization";
+import { loadIdentityDirectoryAddresses } from "@t3tools/client-runtime/fork";
 import { createRuntimeCommand } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomDesktopSignInRequest, LoomDesktopSignInResult } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -89,7 +91,35 @@ export type LoomIdentityConnectInput = LoomDesktopSignInRequest & {
    * saved, and a grant desktop just kept is forgotten.
    */
   readonly verify?: (result: LoomDesktopSignInResult) => string | null;
+  /**
+   * Set when the user typed the address: the Library whose directory desktop main checks the
+   * computer's claimed environment against before any token request. Null when no Library is
+   * chosen. A browser sign-in never holds an Identity token, so it skips the check.
+   */
+  readonly typedAddressLibrary?: EnvironmentId | null;
+  /**
+   * Aborted by Cancel sign-in or leaving the view. Desktop main cancels its own part; this ends
+   * the directory read before it, which would otherwise still open the browser afterwards.
+   */
+  readonly signal?: AbortSignal;
 };
+
+/** Fails once `signal` aborts, and otherwise never completes. */
+const signInAborted = (signal: AbortSignal | undefined) =>
+  signal === undefined
+    ? Effect.never
+    : Effect.callback<never, LoomIdentityConnectionError>((resume) => {
+        const cancel = () =>
+          resume(
+            Effect.fail(new LoomIdentityConnectionError({ detail: "Loom sign-in cancelled." })),
+          );
+        if (signal.aborted) {
+          cancel();
+          return;
+        }
+        signal.addEventListener("abort", cancel, { once: true });
+        return Effect.sync(() => signal.removeEventListener("abort", cancel));
+      });
 
 /** Native sign-in enrolls a normal bearer route, preserving all existing paired and relay connections. */
 export const connectLoomIdentity = createRuntimeCommand(connectionAtomRuntime, {
@@ -100,7 +130,14 @@ export const connectLoomIdentity = createRuntimeCommand(connectionAtomRuntime, {
   },
   execute: Effect.fn("web.loomIdentity.connect")(function* (input: LoomIdentityConnectInput) {
     // Only the request crosses to desktop main: a window or function cannot be sent over IPC.
-    const { popup, verify, ...request } = input;
+    const { popup, verify, typedAddressLibrary, signal, ...signIn } = input;
+    const directory =
+      popup === undefined && typedAddressLibrary !== undefined
+        ? yield* loadIdentityDirectoryAddresses(typedAddressLibrary).pipe(
+            Effect.raceFirst(signInAborted(signal)),
+          )
+        : null;
+    const request = directory === null ? signIn : { ...signIn, directory };
     const result = yield* Effect.tryPromise({
       try: () => {
         if (popup) return signInToLoomBrowser(request, popup);

@@ -65,6 +65,7 @@ const content = (overrides: Overrides = {}): LibraryPushContent => {
     permission: "granted",
     activity: IDLE_ACTIVITY,
     status: { state: "ready", reason: null },
+    served: null,
     libraryLabel: "Home Library",
     test: { phase: "idle" },
     ...rest,
@@ -119,6 +120,24 @@ describe("libraryPushContent", () => {
     });
     expect(content({ chosen: library({ advertised: false }) }).toggle?.disabled).toBe(false);
     expect(content({ chosen: library({ canChange: false }) }).toggle?.disabled).toBe(false);
+  });
+
+  it("says the Library does not serve this build, without offering to turn on or retry", () => {
+    expect(content({ record: null, served: false })).toMatchObject({
+      kind: "not-served",
+      retry: false,
+      toggle: { value: false, disabled: true, description: LIBRARY_PUSH_COPY.unsupportedApp },
+    });
+    const refused = record({ refusal: { reason: "unsupported-app", appVersion: "1.4.0" } });
+    expect(content({ record: refused, served: false })).toMatchObject({
+      kind: "not-served",
+      retry: false,
+      message: null,
+      toggle: { value: true, disabled: false },
+    });
+    // A Library without the list leaves the refusal and its Try again as before.
+    expect(content({ record: refused })).toMatchObject({ kind: "refused", retry: true });
+    expect(content({ record: registered, served: true }).kind).toBe("registered");
   });
 
   it("treats another account's record on the same Library as off", () => {
@@ -267,6 +286,7 @@ describe("libraryPushContent", () => {
       { record: optedOut, chosen: library({ connected: false }) },
       { chosen: library({ advertised: false }) },
       { chosen: library({ canChange: false }) },
+      { served: false },
       { record: null },
       { activity: { ...IDLE_ACTIVITY, running: "register" } },
       { record: optedOut, activity: { ...IDLE_ACTIVITY, running: "unregister" } },
@@ -290,7 +310,7 @@ describe("libraryPushContent", () => {
         view.test?.description ?? "",
       );
     }
-    expect(kinds.size).toBe(16);
+    expect(kinds.size).toBe(17);
     for (const value of Object.values(LIBRARY_PUSH_COPY)) {
       texts.push(typeof value === "function" ? value("Home Library") : value);
     }

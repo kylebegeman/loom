@@ -52,10 +52,12 @@ it.effect("lists reach to read-only agents and retires only with full access", (
       retire: (input) =>
         input.environmentId === "environment-unknown"
           ? Effect.fail(new ReachLibraryError({ reason: "not-found" }))
-          : Effect.sync(() => {
-              retired.push(input);
-              return RETIRED;
-            }),
+          : input.environmentId === "environment-keyless"
+            ? Effect.fail(new ReachLibraryError({ reason: "identity-key-missing" }))
+            : Effect.sync(() => {
+                retired.push(input);
+                return RETIRED;
+              }),
     });
     const toolkit = yield* ReachLibraryToolkit.pipe(
       Effect.provide(
@@ -111,5 +113,10 @@ it.effect("lists reach to read-only agents and retires only with full access", (
 
     const missing = yield* invoke(retire("environment-unknown"), "full-access").pipe(Effect.flip);
     expect(missing).toMatchObject({ _tag: "ReachLibraryError", reason: "not-found" });
+
+    // The MCP server answers a declared failure with its message, so the agent reads that line.
+    const keyless = yield* invoke(retire("environment-keyless"), "full-access").pipe(Effect.flip);
+    expect(keyless).toMatchObject({ _tag: "ReachLibraryError", reason: "identity-key-missing" });
+    expect(keyless.message).toMatch(/^Nothing was changed\./u);
   }),
 );

@@ -9,7 +9,7 @@ import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
-import { identityProfile } from "./identityProfile";
+import { identityProfile, isSavedComputerAddress } from "./identityProfile";
 import { identityRenewalAvailable } from "./renewal";
 import { useEnvironmentSessionState } from "~/state/session";
 
@@ -150,6 +150,7 @@ export function ComputerIdentityConnect({
           baseUrl={checked.url}
           {...(entry ? { expectedEnvironmentId: entry.target.environmentId } : {})}
           {...(profile?.identity ? { expectedIdentity: profile.identity } : {})}
+          typedAddress={!isSavedComputerAddress(entry, checked.url)}
           onConnected={onConnected}
           showUnavailable
         />

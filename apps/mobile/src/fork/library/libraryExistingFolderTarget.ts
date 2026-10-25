@@ -3,7 +3,7 @@ import {
   libraryFolderOwnerIssue,
   libraryFolderTakeover,
 } from "@t3tools/client-runtime/fork";
-import type { LibraryFolderInspection, LibraryProject } from "@t3tools/contracts/fork";
+import type { LibraryFolderRegistration, LibraryProject } from "@t3tools/contracts/fork";
 
 // Stands in for the project Create would make, which has no id until it exists.
 const NEW_PROJECT = "new";
@@ -14,14 +14,15 @@ const NEW_PROJECT = "new";
  * project to add the folder to instead of creating one.
  */
 export function libraryExistingFolderTarget(input: {
-  readonly registration: LibraryFolderInspection["registration"];
+  /** Every project holding the folder on its computer, newest first. */
+  readonly registrations: readonly LibraryFolderRegistration[];
   /** Every Library project, archived ones included. Null until they load. */
   readonly projects: readonly LibraryProject[] | null;
   readonly loading: boolean;
   /** A project created for this folder earlier, which a retry adds the folder to. */
   readonly created: LibraryProject | null;
 }) {
-  const owner = libraryFolderOwner(input.registration, input.projects);
+  const owner = libraryFolderOwner(input.registrations, input.projects);
   if (owner?.kind === "unchecked" && input.loading)
     return {
       canCreate: false,
@@ -36,7 +37,7 @@ export function libraryExistingFolderTarget(input: {
       canCreate: false,
       project: owner.project,
       // Files Loom created start as that saved copy; adding them as a plain folder would overlap it.
-      copyId: owner.managed ? (input.registration?.workingCopyId ?? null) : null,
+      copyId: owner.managed ? owner.workingCopyId : null,
       error: null,
       detail: createIssue,
     };

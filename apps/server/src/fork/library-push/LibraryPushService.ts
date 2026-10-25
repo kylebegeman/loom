@@ -323,6 +323,7 @@ const make = Effect.gen(function* () {
       reason: problem ?? (failing ? "key-rejected" : null),
       key: keySummary,
       devices,
+      topics: config.topics,
     } satisfies LibraryPushStatus;
   });
 

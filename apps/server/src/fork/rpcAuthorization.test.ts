@@ -464,6 +464,7 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
         changes: Stream.fromEffect(record("watch", REACH_OFF)),
         setEnabled: (enabled) => record(enabled ? "on" : "off", { ...REACH_OFF, enabled }),
         remove: () => record("remove", REACH_OFF),
+        forget: () => record("forget", REACH_OFF),
         guardState: () => ({ hostname: null, serving: false }),
         ownPorts: () => [],
       }),
@@ -506,6 +507,7 @@ it.effect(
         reach[REACH.set]({ enabled: true }),
         reach[REACH.set]({ enabled: false }),
         reach[REACH.remove](),
+        reach[REACH.forget](),
       ]) {
         expect(yield* Effect.flip(change)).toMatchObject({
           _tag: "EnvironmentAuthorizationError",
@@ -528,7 +530,8 @@ it.effect("each reach handler checks its own grant before the service runs", () 
     // What a Pocket ID session holds with LOOM_IDENTITY_ALLOW_ADMIN=true, and a paired device.
     const admin = reachHandlers(AuthStandardClientScopes);
     yield* (yield* admin.handlers)[REACH.set]({ enabled: true });
-    expect(admin.calls).toEqual(["on"]);
+    yield* (yield* admin.handlers)[REACH.forget]();
+    expect(admin.calls).toEqual(["on", "forget"]);
 
     const relayOnly = reachHandlers([AuthRelayReadScope, AuthRelayWriteScope]);
     const relay = yield* relayOnly.handlers;
@@ -545,6 +548,10 @@ it.effect("each reach handler checks its own grant before the service runs", () 
     const unrelated = reachHandlers([AuthOrchestrationReadScope, AuthSettingsWriteScope]);
     const denied = yield* Effect.flip(Stream.runDrain((yield* unrelated.handlers)[REACH.watch]()));
     expect(denied).toMatchObject({ requiredScope: AuthRelayReadScope });
+    // Forgetting skips the Library, so it needs the same grant as removing, not a settings grant.
+    expect(yield* Effect.flip((yield* unrelated.handlers)[REACH.forget]())).toMatchObject({
+      requiredScope: AuthRelayWriteScope,
+    });
     expect(unrelated.calls).toEqual([]);
   }),
 );

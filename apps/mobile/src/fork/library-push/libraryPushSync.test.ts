@@ -37,9 +37,16 @@ const harness = await vi.hoisted(async () => {
     catalog: A.make({ isReady: true }),
     allowed: A.make(true),
     secure: new Map<string, string>(),
-    /** Every Library call and the removal, in order. */
+    /** Every Library call and the removal, in order. Status reads are left out. */
     calls: [] as Array<string>,
-    // Reset before each test; a test that holds one open replaces it.
+    // Reset before each test; a test that holds one open replaces it. A null status fails the read.
+    status: (): Promise<{
+      readonly devices: ReadonlyArray<{ readonly id: string }>;
+      readonly topics?: ReadonlyArray<{
+        readonly bundleId: string;
+        readonly apsEnvironment: string;
+      }>;
+    } | null> => Promise.reject(new Error("unset")),
     register: (): Promise<string> => Promise.reject(new Error("unset")),
     token: (): Promise<{ readonly type: string; readonly data: string }> =>
       Promise.reject(new Error("unset")),
@@ -56,7 +63,10 @@ vi.mock("@t3tools/client-runtime/fork", () => ({
   }),
 }));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
-  executeAtomQuery: async () => ({ _tag: "Failure" }),
+  executeAtomQuery: async () => {
+    const value = await harness.status();
+    return value === null ? { _tag: "Failure" } : { _tag: "Success", value };
+  },
   settleAsyncResult: async () => ({ _tag: "Failure" }),
   squashAtomCommandFailure: () => null,
   runAtomCommand: async (
@@ -122,6 +132,9 @@ vi.mock("./libraryPushBuild", () => ({
   libraryPushDeviceLabel: () => "Test iPhone",
 }));
 
+const THIS_BUILD = { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" };
+const DEV_BUILD = { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" };
+
 type Sync = typeof import("./libraryPushSync");
 type Store = typeof import("./libraryPushStore");
 
@@ -135,7 +148,7 @@ const record = (registration: string | null): LibraryPushRecord => ({
       ? null
       : {
           id: registration,
-          // Fresh, so the start-up sync neither registers again nor reads the Library's list.
+          // Fresh, so the start-up sync does not register again or take a missing row as dropped.
           registeredAt: Date.now(),
           expiresAt: Date.now() + 30 * DAY,
           bundleId: "com.kylebegeman.loom",
@@ -174,10 +187,12 @@ async function start(seed: LibraryPushRecord) {
   harness.registry.set(sync.libraryPushPermissionAtom, "granted");
 }
 
-const registrationId = () => {
+const storedRecord = () => {
   const stored = harness.registry.get(store.libraryPushRecordAtom);
-  return stored.loaded ? (stored.record?.registration?.id ?? null) : null;
+  return stored.loaded ? stored.record : null;
 };
+
+const registrationId = () => storedRecord()?.registration?.id ?? null;
 
 const removeLibrary = (succeeds: boolean) => async (environmentId: EnvironmentId) => {
   harness.calls.push(`remove ${environmentId}`);
@@ -191,6 +206,7 @@ beforeEach(() => {
   harness.registry = AtomRegistry.make();
   harness.secure.clear();
   harness.calls = [];
+  harness.status = () => Promise.resolve(null);
   harness.register = () => Promise.resolve(AGAIN_ROW);
   harness.token = () => Promise.resolve({ type: "ios", data: TOKEN });
 });
@@ -280,5 +296,76 @@ describe("registering", () => {
 
     expect(harness.registry.get(sync.libraryPushActivityAtom).running).toBeNull();
     expect(harness.calls).toEqual([]);
+  });
+});
+
+describe("the Library's served builds", () => {
+  it("does not register when the Library's status leaves this build out", async () => {
+    let answer!: () => void;
+    const statusAsked = new Promise<void>((asked) => {
+      harness.status = () => {
+        asked();
+        return new Promise(
+          (resolve) => (answer = () => resolve({ devices: [], topics: [DEV_BUILD] })),
+        );
+      };
+    });
+    await start(record(null));
+    await statusAsked;
+
+    // Every way out of the register step ends idle, so this settles once that step is over.
+    const waiting = { running: null, failure: "token", failureReason: null } as const;
+    harness.registry.set(sync.libraryPushActivityAtom, waiting);
+    answer();
+    await until(harness.registry, sync.libraryPushActivityAtom, (activity) => activity !== waiting);
+
+    expect(storedRecord()?.refusal).toEqual({ reason: "unsupported-app", appVersion: "1.4.0" });
+    expect(harness.calls).toEqual([]);
+  });
+
+  it("registers on its own once a status lists this build, without Try again", async () => {
+    harness.status = () => Promise.resolve({ devices: [], topics: [DEV_BUILD, THIS_BUILD] });
+    await start({ ...record(null), refusal: { reason: "unsupported-app", appVersion: "1.4.0" } });
+
+    await until(
+      harness.registry,
+      store.libraryPushRecordAtom,
+      () => registrationId() === AGAIN_ROW,
+    );
+
+    expect(storedRecord()?.refusal).toBeNull();
+    expect(harness.calls).toEqual(["register"]);
+  });
+
+  it("keeps a held refusal when the Library's status has no served list", async () => {
+    const refusal = { reason: "unsupported-app", appVersion: "1.4.0" } as const;
+    let answer!: () => void;
+    const statusAsked = new Promise<void>((asked) => {
+      harness.status = () => {
+        asked();
+        return new Promise((resolve) => (answer = () => resolve({ devices: [] })));
+      };
+    });
+    let tokenAsked = false;
+    harness.token = () => {
+      tokenAsked = true;
+      return Promise.resolve({ type: "ios", data: TOKEN });
+    };
+    await start({ ...record(null), refusal });
+    await statusAsked;
+
+    // The removal waits for the current run to end. It also stops that run's register, so a
+    // token request is what shows the run went on to register.
+    let heldAtRemoval: unknown;
+    const removal = sync.forgetPushThen(async (environmentId) => {
+      heldAtRemoval = storedRecord()?.refusal;
+      return removeLibrary(true)(environmentId);
+    }, LIBRARY);
+    answer();
+    await removal;
+
+    expect(heldAtRemoval).toEqual(refusal);
+    expect(tokenAsked).toBe(false);
+    expect(harness.calls).toEqual([`remove ${LIBRARY}`]);
   });
 });

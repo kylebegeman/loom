@@ -1,6 +1,7 @@
 import * as RelayClient from "@t3tools/shared/relayClient";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -29,6 +30,12 @@ export interface RunCloudflaredOptions {
    * owner-only before each start and removes it once that child has stopped.
    */
   readonly tokenFile?: string;
+  /**
+   * Runs once cloudflared's edge has refused the token in `REFUSED_RUNS_BEFORE_GIVING_UP` runs in
+   * a row, after which this runner starts no more connectors and waits to be interrupted. Without
+   * it, a refused token restarts like any other failure.
+   */
+  readonly onTokenRefused?: Effect.Effect<void>;
 }
 
 export interface CloudflaredRunnerNames {
@@ -67,6 +74,10 @@ const PINNED_INSTALL_WAIT = Duration.seconds(30);
 const STOP_FORCE_KILL_AFTER = Duration.seconds(35);
 const TOKEN_FILE_MODE = 0o600;
 const TOKEN_DIRECTORY_MODE = 0o700;
+// Each run already retries a refused token for about 31 seconds, which cloudflared does for edge
+// propagation lag on new tunnels. A second refused run rules out that lag right after a token
+// rotation, and a brief edge incident, before the token counts as dead.
+const REFUSED_RUNS_BEFORE_GIVING_UP = 2;
 
 const CONNECTOR_ARGS = [
   "tunnel",
@@ -89,6 +100,16 @@ const CONNECTION_INDEX = /\bconnIndex=(\d+)/u;
 const LEVELED_LINE = /^(?:\S+\s+)?(DBG|INF|WRN|ERR|FTL|PNC)\s+(.*)$/u;
 // Follows a command-line error; the line before it says what went wrong.
 const HELP_POINTER_LINE = /^See 'cloudflared\b.*--help'\.?$/u;
+// The edge refusing a tunnel's credentials, as cloudflared logs the registration error:
+// "Unauthorized: Invalid tunnel secret" once the token was rotated, "Unauthorized: Failed to get
+// tunnel" or "Unauthorized: Tunnel not found" once the tunnel is gone. Network failures surface as
+// dial, QUIC, TLS or DNS errors and never carry it.
+const TOKEN_REFUSED_FIELD = /\berror="Unauthorized: [^"]*"/u;
+// cloudflared's first connection retries a refused token until its backoff runs out, then logs one
+// of these: "initial tunnel connection failed" before it ever connected, after which the process
+// exits, or "Connection terminated" for connIndex=0 after it had, after which the process stays up
+// and retries that connection at most once its backoff resets.
+const GAVE_UP_MESSAGE = /^(?:initial tunnel connection failed|Connection terminated)\b/u;
 
 const CONNECTING_MESSAGE = "Connecting to Cloudflare";
 
@@ -107,6 +128,27 @@ const errorText = (line: string): string | null => {
   const [, level, message = ""] = leveled;
   return level === "ERR" || level === "FTL" || level === "PNC" ? shorten(message) : null;
 };
+
+/**
+ * How a cloudflared output line bears on the token: `refused` when the edge refused it, `gave-up`
+ * when cloudflared also stopped retrying that refusal, and null for anything else.
+ */
+export const classifyTokenRefusal = (line: string): "refused" | "gave-up" | null => {
+  const leveled = LEVELED_LINE.exec(line);
+  if (leveled === null || leveled[1] !== "ERR") return null;
+  const message = leveled[2] ?? "";
+  if (!TOKEN_REFUSED_FIELD.test(message)) return null;
+  if (!GAVE_UP_MESSAGE.test(message)) return "refused";
+  // Only the first connection gives up for the whole connector; the others retry on their own.
+  const index = CONNECTION_INDEX.exec(message)?.[1];
+  return index === undefined || index === "0" ? "gave-up" : "refused";
+};
+
+interface ConnectorEnd {
+  readonly message: string;
+  /** cloudflared's first connection gave up on a refused token, and no other one was left up. */
+  readonly refused: boolean;
+}
 
 const installFailureMessage = (error: RelayClient.RelayClientInstallError) => {
   switch (error.reason) {
@@ -151,8 +193,8 @@ const writeTokenFile = Effect.fnUntraced(function* (file: string, token: string)
 });
 
 /**
- * Runs one connector until it exits and returns why it stopped. Closing its scope, including on
- * interruption, kills the child; only this child is ever signalled.
+ * Runs one connector until it exits or gives up on a refused token, and returns why it stopped.
+ * Closing its scope, including on interruption, kills the child; only this child is ever signalled.
  */
 const runConnector = (
   executablePath: string,
@@ -173,10 +215,11 @@ const runConnector = (
         return options.onStatus(next);
       };
 
+      const ended = (message: string): ConnectorEnd => ({ message, refused: false });
       const { tokenFile } = options;
       if (tokenFile !== undefined) {
         const written = yield* Effect.result(writeTokenFile(tokenFile, options.token));
-        if (Result.isFailure(written)) return "Could not write the cloudflared token file";
+        if (Result.isFailure(written)) return ended("Could not write the cloudflared token file");
       }
       const spawned = yield* Effect.result(
         spawner.spawn(
@@ -201,12 +244,17 @@ const runConnector = (
           ),
         ),
       );
-      if (Result.isFailure(spawned)) return "Could not start cloudflared";
+      if (Result.isFailure(spawned)) return ended("Could not start cloudflared");
       const child = spawned.success;
       yield* options.onStatus(status);
 
       let lastError: string | null = null;
       const connections = new Set<string>();
+      // Only cloudflared's own verdict counts: an earlier refusal followed by a network failure
+      // ends a run like any other failure.
+      let firstGaveUp = false;
+      // After it had connected, a cloudflared that gives up stays up without connecting again.
+      const gaveUp = yield* Deferred.make<void>();
       const handleLine = (line: string) => {
         const metricsPort = METRICS_LINE.exec(line)?.[1];
         if (metricsPort !== undefined) {
@@ -215,6 +263,7 @@ const runConnector = (
         const connection = CONNECTION_INDEX.exec(line)?.[1] ?? "unknown";
         if (REGISTERED_LINE.test(line)) {
           connections.add(connection);
+          if (connection === "0") firstGaveUp = false;
           return report({ state: "connected", message: null, metricsPort: status.metricsPort });
         }
         if (UNREGISTERED_LINE.test(line)) {
@@ -227,12 +276,22 @@ const runConnector = (
                 metricsPort: status.metricsPort,
               });
         }
+        const refusal = classifyTokenRefusal(line);
+        if (refusal !== null) {
+          // The edge refused this connection, so it is down. cloudflared logs no unregistering for
+          // a connection that already failed, as one does when a retired tunnel is cut off.
+          connections.delete(connection);
+          if (refusal === "gave-up") firstGaveUp = true;
+        }
         const error = errorText(line);
         if (error === null) return Effect.void;
         lastError = error;
-        return status.state === "connected"
-          ? Effect.void
-          : report({ state: "starting", message: error, metricsPort: status.metricsPort });
+        return Effect.andThen(
+          status.state === "connected" && connections.size > 0
+            ? Effect.void
+            : report({ state: "starting", message: error, metricsPort: status.metricsPort }),
+          firstGaveUp && connections.size === 0 ? Deferred.succeed(gaveUp, undefined) : Effect.void,
+        );
       };
 
       const observer = yield* child.all.pipe(
@@ -244,14 +303,28 @@ const runConnector = (
         Effect.ignore,
         Effect.forkScoped,
       );
-      const exit = yield* Effect.result(child.exitCode);
-      yield* Fiber.join(observer).pipe(Effect.timeoutOption(OUTPUT_DRAIN_TIMEOUT));
+      // Closing this scope after a give-up stops the child, which is still running then.
+      const exit = yield* Effect.raceFirst(
+        Effect.asSome(Effect.result(child.exitCode)),
+        Effect.as(Deferred.await(gaveUp), Option.none()),
+      );
+      if (Option.isSome(exit)) {
+        yield* Fiber.join(observer).pipe(Effect.timeoutOption(OUTPUT_DRAIN_TIMEOUT));
+      }
+      const end = (message: string): ConnectorEnd => ({
+        message,
+        refused: firstGaveUp && connections.size === 0,
+      });
 
-      if (lastError !== null) return lastError;
-      if (Result.isFailure(exit)) return "cloudflared stopped unexpectedly";
-      return exit.success === 0
-        ? "cloudflared stopped"
-        : `cloudflared stopped with exit code ${exit.success}`;
+      if (lastError !== null) return end(lastError);
+      if (Option.isNone(exit) || Result.isFailure(exit.value)) {
+        return end("cloudflared stopped unexpectedly");
+      }
+      return end(
+        exit.value.success === 0
+          ? "cloudflared stopped"
+          : `cloudflared stopped with exit code ${exit.value.success}`,
+      );
     }),
   );
 
@@ -346,12 +419,24 @@ export const makeCloudflaredRunner = (names: CloudflaredRunnerNames) =>
     });
 
     let restartDelayMillis = RESTART_BACKOFF_BASE_MS;
+    let refusedRuns = 0;
     const attempt = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis;
-      const message = yield* resolveExecutable.pipe(
+      const { message, refused } = yield* resolveExecutable.pipe(
         Effect.flatMap((executablePath) => runConnector(executablePath, options, redact)),
-        Effect.catch(Effect.succeed),
+        Effect.catch((failure) =>
+          Effect.succeed<ConnectorEnd>({ message: failure, refused: false }),
+        ),
       );
+      refusedRuns = refused ? refusedRuns + 1 : 0;
+      if (options.onTokenRefused !== undefined && refusedRuns >= REFUSED_RUNS_BEFORE_GIVING_UP) {
+        yield* Effect.logWarning(
+          `${names.label} connector stopped for good: Cloudflare no longer accepts its token`,
+        );
+        yield* options.onStatus({ state: "error", message: redact(message), metricsPort: null });
+        yield* options.onTokenRefused;
+        return yield* Effect.never;
+      }
       yield* Effect.logWarning(`${names.label} connector stopped`, { message: redact(message) });
       yield* options.onStatus({ state: "error", message: redact(message), metricsPort: null });
       if ((yield* Clock.currentTimeMillis) - startedAt >= RESTART_STABLE_UPTIME_MS) {

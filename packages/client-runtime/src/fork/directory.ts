@@ -4,6 +4,7 @@ import {
   type DirectoryListing,
   type DirectoryMachine,
   type DirectoryRoute,
+  type LoomIdentityDirectoryAddresses,
   type LoomIdentityMetadata,
 } from "@t3tools/contracts/fork";
 import { isDirectoryRouteUrl } from "@t3tools/shared/fork/directory";
@@ -83,22 +84,60 @@ const isNewerReport = (candidate: DirectoryEnvironment, current: DirectoryEnviro
     ? candidate.sequence > current.sequence
     : Date.parse(candidate.receivedAt) > Date.parse(current.receivedAt);
 
-/**
- * One entry per environment, the newest report winning, with only usable routes. The directory
- * keeps one row per environment, but a client never relies on that.
- */
-export function directoryEnvironments(listing: DirectoryListing): readonly DirectoryEnvironment[] {
+function newestReports(
+  environments: readonly DirectoryEnvironment[],
+): readonly DirectoryEnvironment[] {
   const newest = new Map<EnvironmentId, DirectoryEnvironment>();
-  for (const environment of listing.environments) {
+  for (const environment of environments) {
     const current = newest.get(environment.environmentId);
     if (current === undefined || isNewerReport(environment, current)) {
       newest.set(environment.environmentId, environment);
     }
   }
-  return [...newest.values()].map((environment) => ({
+  return [...newest.values()];
+}
+
+/**
+ * One entry per environment, the newest report winning, with only usable routes. The directory
+ * keeps one row per environment, but a client never relies on that.
+ */
+export function directoryEnvironments(listing: DirectoryListing): readonly DirectoryEnvironment[] {
+  return newestReports(listing.environments).map((environment) => ({
     ...environment,
     routes: directoryRoutes(environment.routes),
   }));
+}
+
+/** The Library as this device saved it: its name and every address it connects to it at. */
+export interface IdentityDirectoryLibrary {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly addresses: readonly string[];
+}
+
+/**
+ * What a native sign-in to a typed address checks with `identityAddressRefusal`: the Library's
+ * own addresses, and every route of every kind in each computer's newest report. Unlike
+ * `directoryEnvironments`, nothing is filtered out for being unusable here: a route the computer
+ * reported is still one of its own addresses. Pass a null listing while none is known.
+ */
+export function identityDirectoryAddresses(input: {
+  readonly library: IdentityDirectoryLibrary;
+  readonly listing: DirectoryListing | null;
+}): LoomIdentityDirectoryAddresses {
+  const { library } = input;
+  return {
+    library: {
+      environmentId: library.environmentId,
+      label: library.label,
+      addresses: [...new Set(library.addresses)],
+    },
+    computers: newestReports(input.listing?.environments ?? []).map((environment) => ({
+      environmentId: environment.environmentId,
+      label: environment.label,
+      addresses: [...new Set(environment.routes.map((route) => route.url))],
+    })),
+  };
 }
 
 /** What a client needs from a saved connection to merge it with the directory. */

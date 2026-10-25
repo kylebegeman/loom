@@ -92,27 +92,32 @@ export function LibraryReachSection({ libraryReach }: { readonly libraryReach: L
     });
   }
 
-  // A native alert has no checkbox, so ending Loom sign-in is its own button.
+  // A native alert has no checkbox, so ending Loom sign-in is its own button, or the reason it
+  // is not offered.
   function confirmRetire(computer: ReachLibraryComputerView) {
     const choice = computer.retire;
     if (choice === null) return;
-    Dialog.alert(
-      choice.confirm.title,
-      `${choice.confirm.message}\n\n${choice.endIdentityLabel}? ${choice.endIdentityHint}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: choice.confirm.action,
-          style: "destructive",
-          onPress: () => retire(computer, false),
-        },
-        {
-          text: "Retire and end sign-in",
-          style: "destructive",
-          onPress: () => retire(computer, true),
-        },
-      ],
-    );
+    const offered = choice.endIdentityDisabledReason === null;
+    const endIdentityLine = offered
+      ? `${choice.endIdentityLabel}? ${choice.endIdentityHint}`
+      : choice.endIdentityDisabledReason;
+    Dialog.alert(choice.confirm.title, `${choice.confirm.message}\n\n${endIdentityLine}`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: choice.confirm.action,
+        style: "destructive",
+        onPress: () => retire(computer, false),
+      },
+      ...(offered
+        ? [
+            {
+              text: "Retire and end sign-in",
+              style: "destructive" as const,
+              onPress: () => retire(computer, true),
+            },
+          ]
+        : []),
+    ]);
   }
 
   // Only the setup lines that need attention; the rest is managed from Loom on the Library.

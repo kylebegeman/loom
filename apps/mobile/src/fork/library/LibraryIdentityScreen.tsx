@@ -1,13 +1,18 @@
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { loadIdentityDirectoryAddresses } from "@t3tools/client-runtime/fork";
+import { createRuntimeCommand } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId } from "@t3tools/contracts";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { environmentCatalog } from "../../connection/catalog";
+import { connectionAtomRuntime } from "../../connection/runtime";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { identityAddressNeedsCheck } from "./libraryIdentity";
 import { useLibraryAuthority } from "./libraryState";
 import {
   NativeIdentitySignInExpired,
@@ -23,6 +28,14 @@ const SIGN_IN_PROGRESS = {
 } as const;
 const SAVING = "Saving computer access...";
 const CANCELLED_OR_EXPIRED = "Sign-in cancelled or expired. Try again.";
+const ADDRESS_CHECK_FAILED =
+  "Loom could not check this address with your Library. Try again, or use a pairing link.";
+
+const loadDirectoryAddresses = createRuntimeCommand(connectionAtomRuntime, {
+  label: "loom:identity:directory-addresses",
+  execute: (libraryEnvironmentId: EnvironmentId | null) =>
+    loadIdentityDirectoryAddresses(libraryEnvironmentId),
+});
 
 export function LibraryIdentityRouteScreen({ route }: StaticScreenProps<IdentityRouteParams>) {
   const environmentId = route.params?.environmentId
@@ -66,6 +79,7 @@ function IdentityContent({
   const navigation = useNavigation();
   const register = useAtomCommand(environmentCatalog.register, { reportFailure: false });
   const enable = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
+  const directoryAddresses = useAtomCommand(loadDirectoryAddresses, { reportFailure: false });
   const [address, setAddress] = useState(
     initialAddress ||
       connection?.identityHttpBaseUrl ||
@@ -91,12 +105,31 @@ function IdentityContent({
     setError(null);
     // A promise chain, not try/finally, which the React Compiler cannot compile.
     return (async () => {
+      // Any server can copy a computer's public sign-in settings, so a typed address must be one
+      // the Library knows for the computer it claims to be.
+      const checked = identityAddressNeedsCheck(address, [
+        connection?.httpBaseUrl,
+        connection?.identityHttpBaseUrl,
+      ])
+        ? await Promise.race([
+            directoryAddresses(authority.environmentId),
+            // Cancel sign-in does not wait for a slow Library; the aborted sign-in below ends it.
+            new Promise<null>((resolve) =>
+              abort.signal.addEventListener("abort", () => resolve(null), { once: true }),
+            ),
+          ])
+        : null;
+      // An error must not switch the check off; desktop's sign-in fails here too.
+      if (checked !== null && !AsyncResult.isSuccess(checked))
+        throw new Error(ADDRESS_CHECK_FAILED);
+      const directory = checked === null ? null : checked.value;
       const signedIn = await signInWithNativeIdentity({
         httpBaseUrl: address,
         expectedEnvironmentId: environmentId ?? undefined,
         options: {
           requireSessionExchange: true,
           ...(connection?.identity ? { expectedIdentity: connection.identity } : {}),
+          ...(directory === null ? {} : { directory }),
         },
         label: connection?.environmentLabel,
         signal: abort.signal,

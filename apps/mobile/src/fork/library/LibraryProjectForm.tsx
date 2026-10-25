@@ -189,7 +189,7 @@ function LibraryProjectForm({
     setCatalogSettled(true);
   const folderTarget = existingFolder
     ? libraryExistingFolderTarget({
-        registration: existingFolder.registration,
+        registrations: existingFolder.registrations,
         projects: catalogSettled && catalog.error === null ? catalog.data : null,
         loading: catalog.isPending,
         created: folderProject,

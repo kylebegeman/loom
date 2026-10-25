@@ -22,6 +22,7 @@ import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
+  identityAddressRefusal,
   identityResourceRefusal,
   identitySignInMaxAge,
 } from "@t3tools/shared/fork/identity-grant";
@@ -210,7 +211,7 @@ export async function signInToLoom(
   signal?: AbortSignal,
   expected?: Pick<
     LoomDesktopSignInRequest,
-    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer"
+    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "directory"
   >,
 ): Promise<LoomSignIn> {
   const origin = loomHostOrigin(httpBaseUrl);
@@ -240,6 +241,14 @@ export async function signInToLoom(
       expected.expectedEnvironmentId !== metadata.environmentId
     )
       throw new Error("This address reaches another computer. Review the saved connection.");
+    // Checked here, against the metadata this process read, because the renderer's own read of a
+    // typed address proves nothing about what the address tells this process.
+    const addressRefusal = identityAddressRefusal({
+      httpBaseUrl: origin,
+      environmentId: metadata.environmentId,
+      directory: expected?.directory,
+    });
+    if (addressRefusal !== null) throw new Error(addressRefusal);
     if (expected?.expectedIdentity && expected.expectedIdentity.issuer !== metadata.issuer)
       throw new Error(
         "This computer's Identity provider changed. Remove the saved connection before signing in again.",

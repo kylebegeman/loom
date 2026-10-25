@@ -100,7 +100,10 @@ export class ReachProvisioner extends Context.Service<
       input: ReachCallInput,
     ) => Effect.Effect<ReachRemoveReply, ReachProvisionError>;
     readonly list: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
-    /** An admin's removal without the computer. It also releases the key pin. */
+    /**
+     * An admin's removal without the computer. It also releases the key pin. Ending a sign-in
+     * Pocket ID holds while the admin key file is not ready is refused before anything changes.
+     */
     readonly retire: (
       input: ReachRetireInput,
     ) => Effect.Effect<ReachLibraryComputer, ReachLibraryError>;
@@ -893,6 +896,14 @@ const make = Effect.gen(function* () {
       ? libraryError(error.reason, error.retryAfterSeconds)
       : libraryError("cloudflare-unavailable");
 
+  /** The admin key file's half of `setup.identity`, which clients also gate ending sign-in on. */
+  const identityKeyFile =
+    config.identity.issuer === null || config.identity.nativeClientId === null
+      ? Effect.succeed<ReachCredentialState>("missing")
+      : credentialFileState(config.identity.adminKeyFile).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+        );
+
   const list = Effect.gen(function* () {
     if (config.audience === null) return yield* libraryError("not-authority");
     const state = yield* read.pipe(Effect.mapError(() => libraryError("io")));
@@ -909,12 +920,7 @@ const make = Effect.gen(function* () {
     const cloudflareFile = yield* credentialFileState(config.cloudflareTokenFile).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
     );
-    const identityFile =
-      config.identity.issuer === null || config.identity.nativeClientId === null
-        ? ("missing" as const)
-        : yield* credentialFileState(config.identity.adminKeyFile).pipe(
-            Effect.provideService(FileSystem.FileSystem, fs),
-          );
+    const identityFile = yield* identityKeyFile;
     // A connected tunnel may cost a connector count call, so slow answers overlap, not add up.
     const described = yield* Effect.forEach(
       entries,
@@ -958,6 +964,16 @@ const make = Effect.gen(function* () {
             input.environmentId
           ];
           if (existing === undefined) return yield* libraryError("not-found");
+          // Pocket ID cannot delete the resource without the key, so a retire that would tear
+          // down the tunnel and then fail to end sign-in is refused before either happens.
+          if (
+            input.endIdentity &&
+            existing.identity !== null &&
+            existing.identity.apiId !== null &&
+            (yield* identityKeyFile) !== "ready"
+          ) {
+            return yield* libraryError("identity-key-missing");
+          }
           yield* teardown(input.environmentId).pipe(
             Effect.catch((error) =>
               normalize(error).pipe(

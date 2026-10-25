@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
@@ -416,6 +417,26 @@ export const LibraryImportReceipt = Schema.Struct({
 export type LibraryImportReceipt = typeof LibraryImportReceipt.Type;
 export const LibraryInspectFolderRequest = Schema.Struct({ rootPath: Schema.String });
 export type LibraryInspectFolderRequest = typeof LibraryInspectFolderRequest.Type;
+/**
+ * A project holding a folder on its computer, as that computer recorded it. Ownership a newer
+ * computer adds decodes as managed: an unfamiliar holder blocks a takeover, as files Loom created
+ * do, rather than failing the whole report.
+ */
+export const LibraryFolderRegistration = Schema.Struct({
+  workingCopyId: LibraryId,
+  projectId: LibraryId,
+  projectTitle: LibraryTitle,
+  ownership: Schema.String.pipe(
+    Schema.decodeTo(
+      LibraryWorkingCopy.fields.ownership,
+      SchemaTransformation.transform({
+        decode: (ownership) => (ownership === "borrowed" ? "borrowed" : "managed"),
+        encode: (ownership) => ownership,
+      }),
+    ),
+  ),
+});
+export type LibraryFolderRegistration = typeof LibraryFolderRegistration.Type;
 export const LibraryFolderInspection = Schema.Struct({
   rootPath: Schema.String,
   exists: Schema.Boolean,
@@ -429,17 +450,16 @@ export const LibraryFolderInspection = Schema.Struct({
     }),
   ),
   /**
-   * The project this folder is registered to on its computer, as that computer recorded it.
-   * Absent when no project holds the folder, and from computers that predate reporting it.
+   * The holder clients that predate `registrations` judge the folder by: files Loom created
+   * first, since they block a takeover whatever the Library says, then the newest. Absent when no
+   * project holds the folder, and from computers that predate reporting it.
    */
-  registration: Schema.optional(
-    Schema.Struct({
-      workingCopyId: LibraryId,
-      projectId: LibraryId,
-      projectTitle: LibraryTitle,
-      ownership: LibraryWorkingCopy.fields.ownership,
-    }),
-  ),
+  registration: Schema.optional(LibraryFolderRegistration),
+  /**
+   * Every project holding the folder, newest first. Builds before one-owner folders could leave
+   * several. Absent from computers that predate reporting them; clients then use `registration`.
+   */
+  registrations: Schema.optional(Schema.Array(LibraryFolderRegistration)),
 });
 export type LibraryFolderInspection = typeof LibraryFolderInspection.Type;
 export const LibraryPrepareCopyRequest = Schema.Struct({

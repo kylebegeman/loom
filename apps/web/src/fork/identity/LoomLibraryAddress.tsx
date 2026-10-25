@@ -53,7 +53,9 @@ export function LoomLibraryAddress({
           Check sign-in
         </Button>
       </form>
-      {target ? <LoomSignIn baseUrl={target} onConnected={onConnected} showUnavailable /> : null}
+      {target ? (
+        <LoomSignIn baseUrl={target} typedAddress onConnected={onConnected} showUnavailable />
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

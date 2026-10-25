@@ -15,6 +15,7 @@ vi.mock("~/rpc/loomIdentity", () => ({
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => harness.connect }));
 vi.mock("./connection", () => ({ connectLoomIdentity: {} }));
+vi.mock("~/fork/project-library/state", () => ({ readLibraryAuthorityId: () => "library" }));
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   squashAtomCommandFailure: () => new Error("The old Library refused sign-in."),
 }));

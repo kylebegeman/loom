@@ -73,6 +73,27 @@ export const LoomIdentitySessionRequest = Schema.Union([
   }),
 ]);
 export type LoomIdentitySessionRequest = typeof LoomIdentitySessionRequest.Type;
+
+const LoomIdentityKnownComputer = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  /** Plain URLs of every route kind, so a route kind added later still decodes. */
+  addresses: Schema.Array(Schema.String),
+});
+
+/**
+ * Where this device's Library says its computers are, checked by `identityAddressRefusal` before
+ * a native first sign-in to an address the user typed. A computer's metadata is public, so any
+ * server can claim a listed computer's environment; only the address tells them apart.
+ */
+export const LoomIdentityDirectoryAddresses = Schema.Struct({
+  /** The Library authority, with the addresses this device keeps for it. */
+  library: LoomIdentityKnownComputer,
+  /** Each computer the Library's directory lists, with the routes of its newest report. */
+  computers: Schema.Array(LoomIdentityKnownComputer),
+});
+export type LoomIdentityDirectoryAddresses = typeof LoomIdentityDirectoryAddresses.Type;
+
 export const LoomDesktopSignInRequest = Schema.Struct({
   httpBaseUrl: Schema.String,
   expectedEnvironmentId: Schema.optional(EnvironmentId),
@@ -82,6 +103,8 @@ export const LoomDesktopSignInRequest = Schema.Struct({
    * A computer found through the Library's directory is pinned to the Library's own issuer.
    */
   expectedIssuer: Schema.optional(Schema.String),
+  /** Set only for an address the user typed; saved and directory addresses are already pinned. */
+  directory: Schema.optional(LoomIdentityDirectoryAddresses),
 });
 export type LoomDesktopSignInRequest = typeof LoomDesktopSignInRequest.Type;
 export const LoomDesktopSignInResult = Schema.Struct({

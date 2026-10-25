@@ -12,6 +12,8 @@ import {
 
 /** Advertised by every computer that answers `loom.reach.*`. */
 export const REACH_FEATURE = "reach";
+/** Advertised by every computer that also answers `loom.reach.forget`. */
+export const REACH_FORGET_FEATURE = "reach-forget";
 /**
  * Advertised by the Library authority once its directory runs and its reach zone and Cloudflare
  * token file are configured. It answers `loom.reach.library.*` and the two provisioning routes.
@@ -51,12 +53,17 @@ export const ReachBlocked = Schema.Literals([
 ]);
 export type ReachBlocked = typeof ReachBlocked.Type;
 
+/**
+ * `retired`: cloudflared's edge refused this computer's connector token for good, so the Library
+ * retired the address or another copy of this computer took it over. Reach turned itself off.
+ */
 export const ReachWarning = Schema.Literals([
   "library-unreachable",
   "library-signed-out",
   "identity-off",
   "identity-resource-differs",
   "passkey-not-required",
+  "retired",
 ]);
 export type ReachWarning = typeof ReachWarning.Type;
 
@@ -326,6 +333,11 @@ export const ReachRetireInput = Schema.Struct({
 });
 export type ReachRetireInput = typeof ReachRetireInput.Type;
 
+/**
+ * `identity-key-missing` refuses a retire that would end Loom sign-in while the Pocket ID admin
+ * key file is not ready, before anything changes. Clients older than it cannot decode it, so new
+ * clients do not offer ending sign-in while the listing's `setup.identity` is `missing`.
+ */
 export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
   "ReachLibraryError",
   {
@@ -338,6 +350,7 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
       "cloudflare-unavailable",
       "tunnel-busy",
       "io",
+      "identity-key-missing",
     ]),
     retryAfterSeconds: Schema.optionalKey(PositiveInt),
   },
@@ -360,6 +373,8 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
         return "The computer's connector is still attached. Try again in a moment.";
       case "io":
         return "This Library could not store or read its reach records. Try again.";
+      case "identity-key-missing":
+        return "Nothing was changed. Ending Loom sign-in needs this Library's Pocket ID admin key file, which is missing or unreadable. Bring the key online, then retire again, or retire without ending sign-in.";
     }
   }
 }
@@ -368,6 +383,7 @@ export const REACH_WS_METHODS = {
   watch: "loom.reach.watch",
   set: "loom.reach.set",
   remove: "loom.reach.remove",
+  forget: "loom.reach.forget",
   libraryList: "loom.reach.library.list",
   libraryRetire: "loom.reach.library.retire",
 } as const;
@@ -377,7 +393,9 @@ const libraryError = Schema.Union([ReachLibraryError, EnvironmentAuthorizationEr
 
 /**
  * `set` answers once the intent is stored; provisioning continues in the background and the
- * `watch` stream shows its progress.
+ * `watch` stream shows its progress. `forget` clears reach on the computer without asking its
+ * Library, leaving the Library's tunnel and address until they are retired there; only call it on
+ * a computer that advertises `REACH_FORGET_FEATURE`.
  */
 export const ReachRpcGroup = RpcGroup.make(
   Rpc.make(REACH_WS_METHODS.watch, {
@@ -392,6 +410,11 @@ export const ReachRpcGroup = RpcGroup.make(
     error: computerError,
   }),
   Rpc.make(REACH_WS_METHODS.remove, {
+    payload: Schema.Struct({}),
+    success: ReachStatus,
+    error: computerError,
+  }),
+  Rpc.make(REACH_WS_METHODS.forget, {
     payload: Schema.Struct({}),
     success: ReachStatus,
     error: computerError,

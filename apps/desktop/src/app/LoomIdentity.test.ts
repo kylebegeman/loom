@@ -233,7 +233,8 @@ describe("Loom native OAuth enrollment", () => {
             .end(JSON.stringify(result));
         })().catch(() => response.writeHead(500).end());
       });
-      // Pinned to the computer's own issuer, as a Library directory sign-in is.
+      // Pinned to the computer's own issuer, as a Library directory sign-in is, and typed at an
+      // address the Library lists for it.
       const pending = signInToLoom(
         origin,
         async (authorizationUrl) => {
@@ -254,7 +255,23 @@ describe("Loom native OAuth enrollment", () => {
           return true;
         },
         undefined,
-        { expectedIssuer: `${origin}/idp` },
+        {
+          expectedIssuer: `${origin}/idp`,
+          directory: {
+            library: {
+              environmentId: EnvironmentId.make("library"),
+              label: "Helios",
+              addresses: [],
+            },
+            computers: [
+              {
+                environmentId: EnvironmentId.make("central"),
+                label: "Central",
+                addresses: [`${origin}/`],
+              },
+            ],
+          },
+        },
       );
       if (refusal !== null) {
         await expect(pending).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
@@ -330,6 +347,39 @@ describe("Loom native OAuth enrollment", () => {
     await expect(
       signInToLoom(origin, open, undefined, { expectedIssuer: "https://library-id.test" }),
     ).rejects.toThrow("different sign-in provider than your Library");
+    // Copied metadata cannot make a typed address pass for a computer the Library lists elsewhere.
+    const computer = EnvironmentId.make("computer");
+    const library = {
+      environmentId: EnvironmentId.make("library"),
+      label: "Helios",
+      addresses: [],
+    };
+    await expect(
+      signInToLoom(origin, open, undefined, {
+        directory: {
+          library,
+          computers: [
+            {
+              environmentId: computer,
+              label: "Studio",
+              addresses: ["https://studio.example.test"],
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow("This address says it is Studio, but your Library lists Studio");
+    await expect(
+      signInToLoom(origin, open, undefined, {
+        directory: {
+          library: {
+            ...library,
+            environmentId: computer,
+            addresses: ["https://library.example.test"],
+          },
+          computers: [],
+        },
+      }),
+    ).rejects.toThrow("This address says it is your Library, Helios");
     // A computer naming another computer's resource would collect a sign-in that one accepts.
     resource = "https://library.example.test/computers/other";
     await expect(signInToLoom(origin, open)).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);

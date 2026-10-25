@@ -725,24 +725,25 @@ const make = Effect.gen(function* () {
       if (repository !== null) repositories.push(repository);
     }
     // The same receipts prepareCopy checks for a conflict, so a client can choose before it creates.
-    const owner = (yield* store.receipts)
+    const registrations = (yield* store.receipts)
       .filter((receipt) => holdsRoot(receipt, rootPath))
       .toSorted((left, right) => Date.parse(right.copy.updatedAt) - Date.parse(left.copy.updatedAt))
-      .at(0);
+      .map((receipt) => ({
+        workingCopyId: receipt.copy.id,
+        projectId: receipt.copy.projectId,
+        projectTitle: receipt.project.title,
+        ownership: receipt.copy.ownership,
+      }));
+    // Older clients judge the folder by this one holder. Managed files refuse a takeover without
+    // asking the Library, so naming them keeps those clients from promising one.
+    const preferred =
+      registrations.find((registration) => registration.ownership === "managed") ??
+      registrations.at(0);
     return {
       rootPath,
       exists: true,
       repositories,
-      ...(owner === undefined
-        ? {}
-        : {
-            registration: {
-              workingCopyId: owner.copy.id,
-              projectId: owner.copy.projectId,
-              projectTitle: owner.project.title,
-              ownership: owner.copy.ownership,
-            },
-          }),
+      ...(preferred === undefined ? {} : { registration: preferred, registrations }),
     };
   });
   const findLocalProjectId = Effect.fnUntraced(function* (cwd: string, workspaceLeaseHeld = false) {
@@ -843,27 +844,40 @@ const make = Effect.gen(function* () {
     );
   });
 
-  // Archiving a project leaves its folders registered to it on each computer. A folder whose
-  // owner is archived, or gone from the Library, is retired the way unregister leaves it:
+  // Archiving a project leaves its folders registered to it on each computer, and builds before
+  // one-owner folders could register one folder to several projects. Only when every holder is
+  // archived, or gone from the Library, is each retired the way unregister leaves it:
   // unregistered with its state unchanged, so its old conversations keep their binding and still
   // run there. Replication publishes the change, as it does after unregister.
   const takeOverFolder = Effect.fn("LibraryWorkspace.takeOverFolder")(function* (
     owners: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
   ) {
-    const managed = owners.find((owner) => owner.copy.ownership === "managed");
+    // Newest first, the order clients judge holders in, so both name the same project.
+    const newest = owners.toSorted(
+      (left, right) => Date.parse(right.copy.updatedAt) - Date.parse(left.copy.updatedAt),
+    );
+    const managed = newest.find((owner) => owner.copy.ownership === "managed");
+    // Each check can wait out a stalled Library under the shared prepare lock, so they run together.
+    const checks = yield* Effect.forEach(
+      new Set(newest.map((owner) => owner.copy.projectId)),
+      (projectId) => Effect.result(libraryOwner(projectId)),
+      { concurrency: "unbounded" },
+    );
+    // A current project is named whatever else blocks the folder, even when another check failed.
+    for (const check of checks)
+      if (check._tag === "Success" && check.success !== null && !check.success.archived)
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `This folder already belongs to ${check.success.title}. Add it to that project instead.`,
+        });
+    // Files Loom created refuse the takeover whatever the Library says, so an unreachable Library
+    // only loses the chance to name a current project instead.
     if (managed !== undefined)
       return yield* new LibraryError({
         reason: "blocked",
         detail: `This folder holds files Loom created for ${managed.project.title}. Review and remove them from that project before adding the folder to another one. Restore that project first if it is archived.`,
       });
-    for (const projectId of new Set(owners.map((owner) => owner.copy.projectId))) {
-      const current = yield* libraryOwner(projectId);
-      if (current !== null && !current.archived)
-        return yield* new LibraryError({
-          reason: "blocked",
-          detail: `This folder already belongs to ${current.title}. Add it to that project instead.`,
-        });
-    }
+    for (const check of checks) if (check._tag === "Failure") return yield* check.failure;
     const updatedAt = yield* now;
     for (const owner of owners)
       yield* store.put({ ...owner, copy: { ...owner.copy, registered: false, updatedAt } });

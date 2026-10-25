@@ -7,6 +7,7 @@ import {
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
   type LoomDesktopSignInResult,
   type LoomIdentityAccount,
+  type LoomIdentityDirectoryAddresses,
   type LoomIdentityMetadata,
   LoomIdentitySessionRequest,
   LoomIdentitySessionResult,
@@ -162,6 +163,64 @@ export function identityResourceRefusal(
   return owner === null || owner === metadata.environmentId
     ? null
     : IDENTITY_RESOURCE_MISMATCH_TEXT;
+}
+
+const DEFAULT_PORTS: Readonly<Record<string, string>> = { "http:": "80", "https:": "443" };
+
+/**
+ * An address in the form sign-in compares: scheme, lowercase host without a trailing dot (a fully
+ * qualified name reaches the same host), and a port only when it is not the scheme's default.
+ * The path never matters, since sign-in always uses the origin. Null for anything not http(s).
+ */
+export function identityAddressOrigin(address: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(address.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const host = url.hostname.toLowerCase().replace(/\.$/u, "");
+  if (host === "") return null;
+  const port = url.port === DEFAULT_PORTS[url.protocol] ? "" : url.port;
+  return `${url.protocol}//${host}${port ? `:${port}` : ""}`;
+}
+
+/**
+ * Null when a native first sign-in to a typed address may go ahead, otherwise the refusal line.
+ * Check it with the environment the address's metadata claims, before any token request. Public
+ * metadata can be copied, so a server claiming a computer the Library knows must be at one of
+ * that computer's known addresses: its directory routes of any kind, plus this device's own
+ * addresses for the Library authority. A computer the Library does not know, or no directory at
+ * all, passes, since nothing on this device says where it should be.
+ */
+export function identityAddressRefusal(input: {
+  readonly httpBaseUrl: string;
+  readonly environmentId: string;
+  readonly directory: LoomIdentityDirectoryAddresses | null | undefined;
+}): string | null {
+  const { directory, environmentId } = input;
+  if (!directory) return null;
+  const library = directory.library.environmentId === environmentId ? directory.library : null;
+  const listed = directory.computers.filter((computer) => computer.environmentId === environmentId);
+  const known = [
+    ...(library?.addresses ?? []),
+    ...listed.flatMap((computer) => computer.addresses),
+  ];
+  if (listed.length === 0 && known.length === 0) return null;
+  const typed = identityAddressOrigin(input.httpBaseUrl);
+  if (typed !== null && known.some((address) => identityAddressOrigin(address) === typed))
+    return null;
+  // The Library goes by the name this device saved it under; a computer by its reported name.
+  const label = (library?.label.trim() || listed[0]?.label.trim()) ?? "";
+  if (library !== null)
+    return label
+      ? `This address says it is your Library, ${label}, but this device knows ${label} at other addresses. Sign in at its saved address, or use a pairing link.`
+      : "This address says it is your Library, but this device knows your Library at other addresses. Sign in at its saved address, or use a pairing link.";
+  const name = label || "this computer";
+  return known.length > 0
+    ? `This address says it is ${name}, but your Library lists ${name} at other addresses. Sign in from your Library's computer list, or use a pairing link.`
+    : `This address says it is ${name}, but your Library has no address for ${name}. Use a pairing link.`;
 }
 
 const encodeKeyParts = Schema.encodeSync(

@@ -6,6 +6,7 @@ import { identityResourceRefusal } from "@t3tools/shared/fork/identity-grant";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
+import { readLibraryAuthorityId } from "~/fork/project-library/state";
 import { readLoomIdentity, loomBrowserLoginUrl, cancelLoomBrowserSignIn } from "~/rpc/loomIdentity";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { loomSignInDestination } from "./returnTo";
@@ -16,6 +17,11 @@ interface LoomSignInProps {
   readonly baseUrl?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
   readonly expectedIdentity?: import("@t3tools/contracts/fork").LoomIdentityAccount;
+  /**
+   * The user typed `baseUrl`. Desktop then refuses a computer that claims to be one your Library
+   * knows at other addresses, since anyone can serve a copy of a computer's public metadata.
+   */
+  readonly typedAddress?: boolean;
   readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
@@ -30,6 +36,7 @@ function LoomSignInTarget({
   baseUrl,
   expectedEnvironmentId,
   expectedIdentity,
+  typedAddress = false,
   description = true,
   onConnected,
   showUnavailable = false,
@@ -46,10 +53,12 @@ function LoomSignInTarget({
   const [connected, setConnected] = useState(false);
   const attempt = useRef(0);
   const ownedSignIn = useRef<string | null>(null);
+  const ownedAbort = useRef<AbortController | null>(null);
   const connect = useAtomCommand(connectLoomIdentity, { reportFailure: false });
   useEffect(
     () => () => {
       attempt.current += 1;
+      ownedAbort.current?.abort();
       const target = ownedSignIn.current;
       if (!target || (baseUrl !== undefined && target !== baseUrl)) return;
       if (isElectron) void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: target });
@@ -156,14 +165,19 @@ function LoomSignInTarget({
     setError(null);
     setConnected(false);
     const current = ++attempt.current;
+    const abort = new AbortController();
+    ownedAbort.current = abort;
     const result = await connect({
       httpBaseUrl: active.baseUrl,
       ...(popup ? { popup } : {}),
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
+      ...(typedAddress ? { typedAddressLibrary: readLibraryAuthorityId() } : {}),
+      signal: abort.signal,
     });
     if (current !== attempt.current) return;
     ownedSignIn.current = null;
+    ownedAbort.current = null;
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not sign in to Loom.");
@@ -183,6 +197,7 @@ function LoomSignInTarget({
           <Button
             variant="outline"
             onClick={() => {
+              ownedAbort.current?.abort();
               if (isElectron)
                 void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: active.baseUrl });
               else cancelLoomBrowserSignIn(active.baseUrl);

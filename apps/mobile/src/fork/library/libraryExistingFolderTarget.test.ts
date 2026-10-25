@@ -28,7 +28,7 @@ describe("adding an existing folder from New project", () => {
   it("adds a folder its current project holds to that project instead of creating one", () => {
     expect(
       libraryExistingFolderTarget({
-        registration: registration("current"),
+        registrations: [registration("current")],
         projects,
         loading: false,
         created: null,
@@ -43,7 +43,7 @@ describe("adding an existing folder from New project", () => {
     // Files Loom created reopen as their saved copy rather than as an overlapping folder.
     expect(
       libraryExistingFolderTarget({
-        registration: registration("current", "managed"),
+        registrations: [registration("current", "managed")],
         projects,
         loading: false,
         created: null,
@@ -51,10 +51,43 @@ describe("adding an existing folder from New project", () => {
     ).toBe("copy-1");
   });
 
+  it("judges every holder an older build left, not just the newest", () => {
+    expect(
+      libraryExistingFolderTarget({
+        registrations: [registration("old"), registration("current")],
+        projects,
+        loading: false,
+        created: null,
+      }),
+    ).toEqual({
+      canCreate: false,
+      project: projects[0],
+      copyId: null,
+      error: null,
+      detail: "This folder already belongs to Current app. Add it to that project instead.",
+    });
+    // Files Loom created for a project the Library no longer has refuse a new project too.
+    expect(
+      libraryExistingFolderTarget({
+        registrations: [registration("old"), registration("gone", "managed")],
+        projects,
+        loading: false,
+        created: null,
+      }),
+    ).toEqual({
+      canCreate: false,
+      project: null,
+      copyId: null,
+      error:
+        "This folder holds files Loom created for Recorded title, which is no longer in your Library. Choose another folder.",
+      detail: null,
+    });
+  });
+
   it("creates a project that takes a folder over from an archived owner and says so", () => {
     expect(
       libraryExistingFolderTarget({
-        registration: registration("old"),
+        registrations: [registration("old")],
         projects,
         loading: false,
         created: null,
@@ -72,7 +105,7 @@ describe("adding an existing folder from New project", () => {
     // Older computers omit the registration; the Library catalog has nothing to decide then.
     expect(
       libraryExistingFolderTarget({
-        registration: undefined,
+        registrations: [],
         projects: null,
         loading: true,
         created: null,
@@ -83,7 +116,7 @@ describe("adding an existing folder from New project", () => {
   it("creates nothing while the owner is unchecked or holds files Loom created", () => {
     expect(
       libraryExistingFolderTarget({
-        registration: registration("current"),
+        registrations: [registration("current")],
         projects: null,
         loading: true,
         created: null,
@@ -91,7 +124,7 @@ describe("adding an existing folder from New project", () => {
     ).toMatchObject({ canCreate: false, project: null, error: null });
     expect(
       libraryExistingFolderTarget({
-        registration: registration("current"),
+        registrations: [registration("current")],
         projects: null,
         loading: false,
         created: null,
@@ -99,7 +132,7 @@ describe("adding an existing folder from New project", () => {
     ).toMatchObject({ canCreate: false, error: expect.stringContaining("could not check") });
     expect(
       libraryExistingFolderTarget({
-        registration: registration("old", "managed"),
+        registrations: [registration("old", "managed")],
         projects,
         loading: false,
         created: project("retry", "Retry"),
@@ -132,7 +165,7 @@ describe("adding an existing folder from New project", () => {
     ).toBeNull();
 
     const retry = libraryExistingFolderTarget({
-      registration: registration("old"),
+      registrations: [registration("old")],
       projects: [...projects, created],
       loading: false,
       created,
@@ -142,7 +175,7 @@ describe("adding an existing folder from New project", () => {
     // Archiving the created project frees the folder for a new one again.
     expect(
       libraryExistingFolderTarget({
-        registration: undefined,
+        registrations: [],
         projects: [...projects, { ...created, archived: true }],
         loading: false,
         created,

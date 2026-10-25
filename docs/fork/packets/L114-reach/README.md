@@ -55,12 +55,12 @@ guide section is
 
 ## Surfaces
 
-| Surface         | Where                                                                                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Desktop and web | Settings > Connections: "Reach from anywhere" in this computer's details and in each saved computer's details; Reach addresses on a Library. |
-| iPhone          | A computer's details: Reach switch, Copy address, Remove address. Settings > Computers: Reach addresses with Retire.                         |
-| Agents          | `loom_reach_status`, `loom_reach_off`, `loom_reach_remove`, `loom_reach_computers`, `loom_reach_retire`. No tool turns reach on.             |
-| Older clients   | Drop the `public` endpoint. They cannot decode a `reach-active` refusal or reach states they do not know.                                    |
+| Surface         | Where                                                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop and web | Settings > Connections: "Reach from anywhere" in this computer's details and in each saved computer's details; Reach addresses on a Library.          |
+| iPhone          | A computer's details: Reach switch, Copy address, Remove address. Settings > Computers: Reach addresses with Retire.                                  |
+| Agents          | `loom_reach_status`, `loom_reach_off`, `loom_reach_remove`, `loom_reach_forget`, `loom_reach_computers`, `loom_reach_retire`. No tool turns reach on. |
+| Older clients   | Drop the `public` endpoint. They cannot decode a `reach-active` refusal or reach states they do not know.                                             |
 
 The switch needs `relay:write`; Retire needs `settings:write`. A device without them sees "Turn
 reach on or off from the computer itself or from a device paired with full access."
