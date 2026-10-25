@@ -82,8 +82,9 @@ or work on one repository. If a start gets stuck, **Start over** drops that atte
 its model, permissions and folder; a conversation it already created stays in your list.
 A title you type is kept after the first message; without one, the first message names the
 conversation. If you leave a conversation you just started without sending anything, Loom
-offers **Discard empty conversation**. You can undo it from the notice that follows; on iPhone,
-choose **Keep** to leave it in your list instead.
+offers **Discard empty conversation**, unless it holds something you shared to Loom from another
+app. You can undo it from the notice that follows; on iPhone, choose **Keep** to leave it in your
+list instead.
 Conversations share the project's folder unless you choose **Workspace → New worktree** before
 starting, which gives the conversation a branch and folder of its own so other conversations'
 changes stay apart. Loom picks New worktree while another conversation is working in the folder.
