@@ -210,8 +210,9 @@ L89 adds the Bots footer entry after Sites in `apps/web/src/components/sidebar/S
 utility page in `apps/web/src/components/sidebar/mainAppLocation.ts`. Bot runs are hidden threads: the subagent
 checks in `apps/web/src/components/Sidebar.logic.ts` (2 marker lines),
 `packages/client-runtime/src/state/threadShell.ts` and
-`apps/web/src/components/ThreadNotificationCoordinator.tsx` also skip ids from
-`isBotRunThreadId`. See the [L89 packet](docs/fork/packets/L89-bots-core/SEAMS.md).
+`apps/web/src/components/ThreadNotificationCoordinator.tsx` (4 marker lines) also skip ids from
+`isBotRunThreadId`. The coordinator still alerts when a bot run waits on an approval or an
+answer, titled with the bot's name. See the [L89 packet](docs/fork/packets/L89-bots-core/SEAMS.md).
 
 L91 lists `LOOM_BOTS_INSTRUCTIONS` with the orchestration sections in
 `packages/provider-core/src/server/orchestrationInstructions.ts` (`fork: bots`, 2 marker lines),
@@ -303,12 +304,17 @@ The `respectful-notifications` seams come from LoomOS packet 07
 `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
 setting, on by default, chooses between the thread or pull request title and a generic body
 in system notifications, for thread alerts and review guide alerts
-(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch renders under Thread notifications in General settings
-(`SettingsPanels.tsx`, `settingsSearch.ts`, `packages/contracts/src/settings.ts`).
-`ThreadNotificationCoordinator.tsx` (18 marker lines) withdraws a notification once its
+(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch renders under `ThreadNotificationCoordinator.tsx` (38 marker lines) withdraws a notification once its
 thread is answered, archived or removed, ignores clicks on stale ones, and delivers through
-Web Locks so several windows on one origin show one notification. While the shell resyncs
-after a reconnect nothing is known yet, so shown notifications stay and their clicks still
+Web Locks so several windows on one origin show one notification. Each environment's last known
+thread state outlives a reconnect and is seeded from the cached snapshot at launch, so the next
+live snapshot announces approvals, questions, failures and limits from the gap, and completions
+only within 10 minutes. Snoozed and settled threads keep completions quiet through
+`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also mounts
+`apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3), which alerts when
+a scheduled task could not start; `ScheduledTasksSettings.tsx` (1) labels a launched run
+"started" and `packages/contracts/src/scheduledTask.ts` (1) says so in the run status
+description. Its two upstream tests mark the mock changes and the added cases.notifications stay and their clicks still
 open the thread. Its two upstream tests mark the mock changes and the added cases.
 
 `apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 9 marker lines) skips the Loom
@@ -437,6 +443,16 @@ and `GitWorkflowService.test.ts` (5) marks its cases.
 The `test-temp-isolation` seam in `apps/server/src/git/GitManager.test.ts` (9) creates each
 test's extra worktree inside its own scoped temp directory. Upstream placed them beside the
 scoped repository, so every run left orphaned worktree folders in `$TMPDIR`.
+
+The `failed-run-retry` seams let a failed run continue when its root failure is one another try
+can get past (usage limit, provider or transport error, unknown), using the rule in
+`@t3tools/shared/fork/run-continuation`. `Orchestrator.ts` (3) accepts that manual continuation
+and still refuses permission and validation failures; `runtimeLayer.test.ts` (1) marks its
+cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
+`MessagesTimeline.tsx` (7) adds Retry to a failed root error row. On mobile,
+`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
+recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
+(1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
 
 L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
