@@ -77,6 +77,8 @@ const MESSAGES = {
     "Sign this computer in to its Library again, then restart Loom to finish removing reach.",
   removeOutdated: "Update Loom on your Library to finish removing reach.",
   removeNotReady: "Your Library is not set up for reach, so it cannot remove this address yet.",
+  retired:
+    "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
 } as const;
 
 /**
@@ -91,6 +93,11 @@ const Sidecar = Schema.Struct({
   /** The last request `seq` signed, so a restart never repeats one. */
   lastSeq: NonNegativeInt,
   prepared: Schema.NullOr(ReachPrepared),
+  /**
+   * Set when the edge refused the connector token for good, until reach is turned on, off or
+   * forgotten. Optional so an older Loom still reads the record.
+   */
+  retired: Schema.optionalKey(Schema.Literal(true)),
 });
 type Sidecar = typeof Sidecar.Type;
 const sidecarJson = Schema.fromJsonString(Sidecar);
@@ -102,6 +109,8 @@ const OFF: Sidecar = {
   lastSeq: 0,
   prepared: null,
 };
+/** Every change a person makes ends a retirement's notice. */
+const withoutRetired = ({ retired: _retired, ...rest }: Sidecar): Sidecar => rest;
 
 type LearnedBlock = Extract<ReachBlocked, "library-not-ready" | "library-outdated" | "is-library">;
 
@@ -121,6 +130,11 @@ export class ReachService extends Context.Service<
     readonly setEnabled: (enabled: boolean) => Effect.Effect<ReachStatus, ReachError>;
     /** Answers once removal is stored; it finishes in the background and resumes after a restart. */
     readonly remove: () => Effect.Effect<ReachStatus, ReachError>;
+    /**
+     * Clears reach on this computer without its Library, ending any removal in progress. The
+     * Library keeps the tunnel and address until they are retired there.
+     */
+    readonly forget: () => Effect.Effect<ReachStatus, ReachError>;
     readonly guardState: () => ReachGuardState;
     /** cloudflared metrics ports, including connectors still shutting down. */
     readonly ownPorts: () => ReadonlyArray<number>;
@@ -322,6 +336,8 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
   let failure: { readonly message: string; readonly warning: ReachWarning | null } | null = null;
   let connector: ConnectorRuntime | null = null;
   const runtimes = new Set<ConnectorRuntime>();
+  const lock = yield* Semaphore.make(1);
+  const provisioning = yield* FiberHandle.make<void, never>();
 
   const identityWarnings = (prepared: Sidecar["prepared"]): Array<ReachWarning> => {
     if (!identityConfigured(environment)) return ["identity-off"];
@@ -338,6 +354,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     const warnings = new Set<ReachWarning>();
     if (connection.kind === "unavailable") warnings.add("library-signed-out");
     if (failure?.warning) warnings.add(failure.warning);
+    if (saved.retired) warnings.add("retired");
     if (saved.enabled)
       for (const warning of identityWarnings(saved.prepared)) warnings.add(warning);
     const base = {
@@ -354,7 +371,9 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
       return { ...base, state, message: state === "connected" ? null : message };
     }
     if (blocked !== null) return { ...base, state: "unavailable", message: null };
-    if (!saved.enabled) return { ...base, state: "off", message: null };
+    if (!saved.enabled) {
+      return { ...base, state: "off", message: saved.retired ? MESSAGES.retired : null };
+    }
     if (failure !== null) return { ...base, state: "error", message: failure.message };
     return { ...base, state: "provisioning", message: null };
   };
@@ -414,6 +433,31 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     }),
   );
 
+  /**
+   * Only this computer's own ensure rotates its tunnel token, and it replaces the connector when
+   * it does. So a token the edge refuses for good means the Library retired the address or another
+   * copy of this computer took it over. Ensuring again would undo a Retire, so reach turns off,
+   * across restarts too, until a person turns it on.
+   */
+  const retireConnector = Effect.fn("ReachService.retire")(
+    function* (runtime: ConnectorRuntime) {
+      // A newer ensure, started while this connector was down, replaces it anyway.
+      if (connector !== runtime || Option.isSome(FiberHandle.getUnsafe(provisioning))) return;
+      yield* persistOrRemember((current) => ({
+        ...current,
+        enabled: false,
+        hostname: null,
+        retired: true,
+      }));
+      failure = null;
+      learned = null;
+      yield* stopConnector;
+      yield* publish;
+    },
+    Effect.uninterruptible,
+    lock.withPermit,
+  );
+
   const startConnector = Effect.fn("ReachService.startConnector")(function* (
     token: string,
     url: string,
@@ -445,15 +489,13 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
                 runtime.status = status;
                 return connector === runtime ? publish : Effect.void;
               }),
+            onTokenRefused: retireConnector(runtime),
           }),
         ),
       ),
     ).pipe(Scope.provide(scope));
     yield* Ref.set(route.url, Option.some(url));
   });
-
-  const lock = yield* Semaphore.make(1);
-  const provisioning = yield* FiberHandle.make<void, never>();
 
   /** One ensure and its result. Returns when to try again, or null when done. */
   const ensureOnce = Effect.fn("ReachService.ensure")(function* (
@@ -608,7 +650,8 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
       (connector !== null && connector.status.state !== "error") ||
       (failure === null && Option.isSome(FiberHandle.getUnsafe(provisioning)));
     if (saved.enabled && settled) return view();
-    if (!saved.enabled) yield* persist((current) => ({ ...current, enabled: true }));
+    if (!saved.enabled)
+      yield* persist((current) => ({ ...withoutRetired(current), enabled: true }));
     learned = null;
     failure = null;
     yield* runInBackground(provision(client, true));
@@ -620,7 +663,10 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     if (saved.removing) return view();
     decided = true;
     // Stored before the connector stops, so no crash after this point brings it back.
-    const written = yield* persistOrRemember((current) => ({ ...current, enabled: false }));
+    const written = yield* persistOrRemember((current) => ({
+      ...withoutRetired(current),
+      enabled: false,
+    }));
     yield* FiberHandle.clear(provisioning);
     failure = null;
     yield* stopConnector;
@@ -638,13 +684,27 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     if (client === null && saved.hostname === null && !saved.removing) return yield* turnOff;
     decided = true;
     if (!saved.removing) {
-      yield* persist((current) => ({ ...current, enabled: false, removing: true }));
+      yield* persist((current) => ({ ...withoutRetired(current), enabled: false, removing: true }));
     }
     failure = null;
     yield* FiberHandle.clear(provisioning);
     yield* stopConnector;
     yield* runInBackground(finishRemoval);
     yield* publish;
+    return view();
+  }, lock.withPermit);
+
+  const forget = Effect.fn("ReachService.forget")(function* () {
+    decided = true;
+    // Interrupts a removal still waiting on the Library, which never gets to finish it.
+    yield* FiberHandle.clear(provisioning);
+    // Stored before the connector stops, so no crash after this point brings it back.
+    const written = yield* persistOrRemember((current) => ({ ...OFF, lastSeq: current.lastSeq }));
+    failure = null;
+    learned = null;
+    yield* stopConnector;
+    yield* publish;
+    if (Result.isFailure(written)) return yield* written.failure;
     return view();
   }, lock.withPermit);
 
@@ -664,6 +724,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     changes: SubscriptionRef.changes(state),
     setEnabled,
     remove,
+    forget,
     guardState: () => ({
       hostname: saved.hostname,
       serving: connector !== null,

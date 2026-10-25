@@ -6,8 +6,9 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type * as HttpClient from "effect/http/HttpClient";
 import { AsyncResult, Atom } from "effect/reactivity";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import type { EnvironmentRegistry } from "../connection/registry.ts";
+import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { request } from "../rpc/client.ts";
 import { EnvironmentQueryStore } from "../state/queryPersistence.ts";
@@ -19,9 +20,11 @@ import {
   type StoredDirectoryListing,
 } from "./directory-cache.ts";
 import {
+  directoryLibraryTrust,
   planDirectoryConnect,
   type DirectoryPlanConnectInput,
 } from "./directory-computers-connect.ts";
+import { identityDirectoryAddresses } from "./directory.ts";
 
 /**
  * Kept in each client's offline query cache under the Library: web IndexedDB, the phone's
@@ -67,6 +70,45 @@ const readDirectoryListing = Effect.fn("DirectoryComputers.read")(function* () {
   return stored;
 });
 
+/** A sign-in waits this long for the Library before it uses the listing kept offline. */
+const ADDRESS_CHECK_READ_TIMEOUT = "5 seconds";
+
+/**
+ * What this device's Library says about where its computers are, for a native first sign-in to a
+ * typed address (`identityAddressRefusal`). Reads the directory when the Library answers within a
+ * few seconds, keeping the answer offline, and otherwise uses the listing kept last time. Null
+ * when no Library is chosen.
+ */
+export const loadIdentityDirectoryAddresses = Effect.fn("DirectoryComputers.identityAddresses")(
+  function* (libraryEnvironmentId: EnvironmentId | null) {
+    if (libraryEnvironmentId === null) return null;
+    const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+    const entry = (yield* SubscriptionRef.get(registry.entries)).get(libraryEnvironmentId);
+    // A Library from before `directory` answers the read with a defect ("Unknown request tag"),
+    // not a failure, so every cause falls back to the kept listing rather than ending sign-in.
+    const live =
+      entry?.enabled === true
+        ? yield* registry.run(libraryEnvironmentId, readDirectoryListing()).pipe(
+            Effect.timeout(ADDRESS_CHECK_READ_TIMEOUT),
+            Effect.catchCause(() => Effect.succeed(null)),
+          )
+        : null;
+    const stored =
+      live ??
+      (yield* loadStoredDirectoryListing(libraryEnvironmentId).pipe(
+        Effect.orElseSucceed(() => null),
+      ));
+    return identityDirectoryAddresses({
+      library: {
+        environmentId: libraryEnvironmentId,
+        label: entry?.target.label ?? "",
+        addresses: entry === undefined ? [] : directoryLibraryTrust(entry).httpBaseUrls,
+      },
+      listing: stored?.listing ?? null,
+    });
+  },
+);
+
 /** Stands in while no Library is chosen or it lacks `directory`, so nothing is read. */
 const IDLE_LISTING = Atom.make(AsyncResult.initial<StoredDirectoryListing, never>(false)).pipe(
   Atom.withLabel("loom:directory-computers:listing:idle"),
@@ -83,7 +125,7 @@ const NO_STORED_LISTING = Atom.make<StoredDirectoryListing | null>(null).pipe(
  * to `directoryComputersView`.
  */
 export function createDirectoryComputersAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
+  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | HttpClient.HttpClient | R, E>,
 ) {
   const listing = createEnvironmentQueryAtomFamily(runtime, {
     label: "loom:directory-computers:listing",

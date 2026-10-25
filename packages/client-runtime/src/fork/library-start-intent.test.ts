@@ -8,6 +8,7 @@ import type {
 import {
   libraryFolderOwner,
   libraryFolderOwnerIssue,
+  libraryFolderRegistrations,
   libraryFolderTakeover,
   libraryStartIntent,
   libraryStartFolderProjects,
@@ -222,20 +223,23 @@ describe("existing Start folder associations", () => {
 });
 
 describe("a folder's registered owner", () => {
-  const registration = (projectId: string, ownership: "borrowed" | "managed" = "borrowed") => ({
-    workingCopyId: "copy",
-    projectId,
-    projectTitle: "Recorded title",
-    ownership,
-  });
+  const registration = (
+    projectId: string,
+    ownership: "borrowed" | "managed" = "borrowed",
+    projectTitle = "Recorded title",
+  ) => ({ workingCopyId: `copy-${projectId}`, projectId, projectTitle, ownership });
   const projects = [
     { ...project("current"), title: "Current app" },
+    { ...project("other"), title: "Other app" },
     { ...project("old"), title: "Old app", archived: true },
+    { ...project("older"), title: "Older app", archived: true },
   ];
+  const ownerOf = (...registrations: ReturnType<typeof registration>[]) =>
+    libraryFolderOwner(registrations, projects);
 
   it("keeps a folder with its current project and frees one whose project is archived or gone", () => {
-    expect(libraryFolderOwner(undefined, projects)).toBeNull();
-    const current = libraryFolderOwner(registration("current"), projects);
+    expect(libraryFolderOwner([], projects)).toBeNull();
+    const current = ownerOf(registration("current"));
     expect(libraryFolderOwnerIssue(current, "current")).toBeNull();
     expect(libraryFolderOwnerIssue(current, null)).toBeNull();
     expect(libraryFolderOwnerIssue(current, "new")).toBe(
@@ -243,13 +247,13 @@ describe("a folder's registered owner", () => {
     );
     expect(libraryFolderTakeover(current)).toBeNull();
 
-    const archived = libraryFolderOwner(registration("old"), projects);
+    const archived = ownerOf(registration("old"));
     expect(libraryFolderOwnerIssue(archived, "new")).toBeNull();
     expect(libraryFolderTakeover(archived)).toBe(
       "Takes this folder over from archived Old app. Its conversations stay in the archive.",
     );
     // A project the Library no longer has is named as its computer recorded it.
-    const missing = libraryFolderOwner(registration("deleted"), projects);
+    const missing = ownerOf(registration("deleted"));
     expect(libraryFolderOwnerIssue(missing, "current")).toBeNull();
     expect(libraryFolderTakeover(missing)).toBe(
       "Takes this folder over from Recorded title, which is no longer in your Library.",
@@ -257,21 +261,67 @@ describe("a folder's registered owner", () => {
   });
 
   it("refuses files Loom created and any owner it cannot check yet", () => {
-    const archived = libraryFolderOwner(registration("old", "managed"), projects);
+    const archived = ownerOf(registration("old", "managed"));
     expect(libraryFolderOwnerIssue(archived, "new")).toContain("Restore that project");
     expect(libraryFolderTakeover(archived)).toBeNull();
-    const missing = libraryFolderOwner(registration("deleted", "managed"), projects);
+    const missing = ownerOf(registration("deleted", "managed"));
     expect(libraryFolderOwnerIssue(missing, "current")).toContain("Choose another folder.");
     // Its own project still reuses a managed folder.
-    expect(
-      libraryFolderOwnerIssue(
-        libraryFolderOwner(registration("current", "managed"), projects),
-        "current",
-      ),
-    ).toBeNull();
-    const unchecked = libraryFolderOwner(registration("current"), undefined);
+    expect(libraryFolderOwnerIssue(ownerOf(registration("current", "managed")), "current")).toBe(
+      null,
+    );
+    const unchecked = libraryFolderOwner([registration("current")], undefined);
     expect(libraryFolderOwnerIssue(unchecked, "current")).toBe(
       "Loom could not check which project owns this folder. Reconnect your Library and try again.",
     );
+  });
+
+  it("lets a current holder anywhere keep a folder an older build also left with archived ones", () => {
+    // The newest holder is archived, which is all an older computer would report.
+    const owner = ownerOf(registration("old"), registration("current"), registration("deleted"));
+    expect(owner).toMatchObject({ kind: "current", title: "Current app" });
+    expect(libraryFolderOwnerIssue(owner, "new")).toBe(
+      "This folder already belongs to Current app. Add it to that project instead.",
+    );
+    expect(libraryFolderOwnerIssue(owner, "current")).toBeNull();
+    expect(libraryFolderTakeover(owner)).toBeNull();
+    // Two current holders: either one reuses its own folder, and the newest is the one named.
+    const both = ownerOf(registration("other"), registration("current"));
+    expect(libraryFolderOwnerIssue(both, "current")).toBeNull();
+    expect(libraryFolderOwnerIssue(both, "new")).toContain("belongs to Other app");
+  });
+
+  it("refuses for files Loom created behind any holder and takes over only when all have gone", () => {
+    const managed = ownerOf(registration("old"), registration("older", "managed"));
+    expect(managed).toMatchObject({ kind: "archived", title: "Older app", managed: true });
+    expect(libraryFolderOwnerIssue(managed, "new")).toContain("archived Older app. Restore");
+    expect(libraryFolderOwnerIssue(managed, null)).toContain("archived Older app. Restore");
+    expect(libraryFolderTakeover(managed)).toBeNull();
+    // The current project still reuses its own folder; another project would be refused.
+    const shared = ownerOf(registration("current"), registration("old", "managed"));
+    expect(libraryFolderOwnerIssue(shared, "current")).toBeNull();
+    expect(libraryFolderOwnerIssue(shared, "new")).toContain("belongs to Current app");
+
+    expect(
+      libraryFolderTakeover(
+        ownerOf(registration("old"), registration("older"), registration("old")),
+      ),
+    ).toBe(
+      "Takes this folder over from archived Old app and Older app. Their conversations stay in the archive.",
+    );
+    const gone = ownerOf(registration("old"), registration("deleted", "borrowed", "Gone app"));
+    expect(libraryFolderOwnerIssue(gone, "new")).toBeNull();
+    expect(libraryFolderTakeover(gone)).toBe(
+      "Takes this folder over from archived Old app and from Gone app, which is no longer in your Library. Conversations from Old app stay in the archive.",
+    );
+  });
+
+  it("judges a computer that names one holder by that holder", () => {
+    const older = registration("current");
+    expect(libraryFolderRegistrations({ registration: older })).toEqual([older]);
+    expect(libraryFolderRegistrations({})).toEqual([]);
+    expect(libraryFolderRegistrations(null)).toEqual([]);
+    const all = [registration("old"), older];
+    expect(libraryFolderRegistrations({ registration: older, registrations: all })).toBe(all);
   });
 });

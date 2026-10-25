@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import { ReachService } from "./ReachService.ts";
 
-type ReachMethod = (typeof REACH)["watch" | "set" | "remove"];
+type ReachMethod = (typeof REACH)["watch" | "set" | "remove" | "forget"];
 
 /** The part of `ForkRpcAuth` these handlers use, which it satisfies once it lists the reach methods. */
 export interface ReachRpcAuth {
@@ -27,5 +27,6 @@ export const makeReachRpcHandlers = Effect.fn("Reach.makeRpcHandlers")(function*
     [REACH.set]: (input: ReachSetInput) =>
       auth.effect(REACH.set, service.setEnabled(input.enabled)),
     [REACH.remove]: () => auth.effect(REACH.remove, service.remove()),
+    [REACH.forget]: () => auth.effect(REACH.forget, service.forget()),
   };
 });

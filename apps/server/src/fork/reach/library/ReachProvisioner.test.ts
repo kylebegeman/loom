@@ -17,6 +17,7 @@ import {
   LIBRARY,
   LIBRARY_ID,
   NATIVE_CLIENT_ID,
+  POCKET_ID_KEY,
   type ReachHarness,
   type ReachKey,
   cloudflareError,
@@ -764,6 +765,77 @@ describe("ReachProvisioner admin", () => {
         expect(again.identity).toBeNull();
         expect(fixture.apis.apis.size).toBe(0);
         expect((yield* fixture.provisioner.list).setup.identity).toBe("ready");
+      }),
+    ),
+  );
+
+  it.effect("refuses to end Loom sign-in without its admin key before any Cloudflare call", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const keyFile = fixture.env.LOOM_IDENTITY_ADMIN_API_KEY_FILE!;
+        const endSignIn = fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: true });
+        yield* ensure(fixture, 1);
+        const before = yield* recordOf(fixture.store);
+        yield* fs.remove(keyFile);
+        fixture.apis.clearCalls();
+
+        expect(yield* refusal(endSignIn)).toBe("identity-key-missing");
+        expect(fixture.apis.calls).toEqual([]);
+        expect(yield* recordOf(fixture.store)).toEqual(before);
+        expect(liveTunnels(fixture)).toHaveLength(1);
+        expect((yield* fixture.provisioner.list).setup.identity).toBe("missing");
+
+        // A key file the Library would refuse to read cannot end sign-in either.
+        yield* fs.writeFileString(keyFile, POCKET_ID_KEY);
+        yield* fs.chmod(keyFile, 0o644);
+        fixture.apis.clearCalls();
+        expect(yield* refusal(endSignIn)).toBe("identity-key-missing");
+        expect(fixture.apis.calls).toEqual([]);
+
+        yield* fs.chmod(keyFile, 0o600);
+        expect(yield* endSignIn).toMatchObject({ state: "removed", identity: null });
+        expect(fixture.apis.apis.size).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("ends sign-in without the admin key when Pocket ID holds nothing to delete", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.remove(fixture.env.LOOM_IDENTITY_ADMIN_API_KEY_FILE!);
+        yield* ensure(fixture, 1);
+        expect((yield* recordOf(fixture.store))?.identity).toBeNull();
+
+        const retired = yield* fixture.provisioner.retire({
+          environmentId: STUDIO,
+          endIdentity: true,
+        });
+        expect(retired).toMatchObject({ state: "removed", identity: null });
+        expect(fixture.apis.steps).not.toContain("api.delete");
+      }),
+    ),
+  );
+
+  it.effect("ends a sign-in Pocket ID never created without the admin key", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        fixture.apis.script("api.create", { status: 503, body: { error: "unavailable" } });
+        yield* ensure(fixture, 1);
+        expect((yield* recordOf(fixture.store))?.identity).toMatchObject({
+          apiId: null,
+          state: "failed",
+        });
+        yield* fs.remove(fixture.env.LOOM_IDENTITY_ADMIN_API_KEY_FILE!);
+
+        const retired = yield* fixture.provisioner.retire({
+          environmentId: STUDIO,
+          endIdentity: true,
+        });
+        expect(retired).toMatchObject({ state: "removed", identity: null });
+        expect(fixture.apis.steps).not.toContain("api.delete");
       }),
     ),
   );

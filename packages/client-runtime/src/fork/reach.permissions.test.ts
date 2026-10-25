@@ -43,6 +43,7 @@ const runtime = Atom.runtime(
 const cases = [
   ["set", "set", AuthRelayWriteScope],
   ["remove", "remove", AuthRelayWriteScope],
+  ["forget", "forget", AuthRelayWriteScope],
   ["libraryRetire", "libraryRetire", AuthSettingsWriteScope],
 ] as const;
 

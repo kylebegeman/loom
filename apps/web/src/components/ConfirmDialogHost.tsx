@@ -62,6 +62,7 @@ export function ConfirmDialogHost() {
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
+  const confirmLabel = state.status === "idle" ? null : state.confirmLabel; // fork: confirm-label
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
 
@@ -87,7 +88,7 @@ export function ConfirmDialogHost() {
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>
-            Confirm
+            {confirmLabel ?? "Confirm" /* fork: confirm-label */}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

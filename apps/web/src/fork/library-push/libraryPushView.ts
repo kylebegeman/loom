@@ -1,11 +1,13 @@
 import { EnvironmentAuthorizationError, type EnvironmentId } from "@t3tools/contracts";
 import {
+  LibraryPushApsEnvironment,
+  LibraryPushBundleId,
   LibraryPushError,
-  type LibraryPushBundleId,
   type LibraryPushDeliveryReason,
   type LibraryPushDevice,
   type LibraryPushDeviceRowId,
   type LibraryPushLastDelivery,
+  type LibraryPushServedTopic,
   type LibraryPushStatus,
   type LibraryPushTestResult,
   type LibraryPushUnregisterResult,
@@ -36,6 +38,8 @@ export type LibraryPushViewStatus =
   | "failed"
   | "misconfigured"
   | "failing"
+  /** Push is on, but its settings name no app build it can send to. */
+  | "no-app"
   | "ready";
 
 export interface LibraryPushViewInput {
@@ -72,6 +76,8 @@ export interface LibraryPushView {
   readonly hint: string | null;
   /** Which Apple key the Library signs with, never the key or its file. */
   readonly key: string | null;
+  /** The app builds the Library sends to; null when it does not say or the headline already does. */
+  readonly builds: string | null;
   readonly devices: readonly LibraryPushDeviceView[];
   /** The line shown in place of an empty device list. */
   readonly empty: string | null;
@@ -90,12 +96,29 @@ const OFF_HINT =
 const KEY_SETTINGS_HINT =
   "Check the push key settings in the Library's server environment, then restart the Library.";
 const LIBRARY_UNREACHABLE_TEXT = "Your Library is not reachable right now.";
+const NO_APP_TEXT = "The Library's push settings name no app it can send to.";
 
 const BUNDLE_NAMES: Readonly<Record<LibraryPushBundleId, string>> = {
   "com.kylebegeman.loom": "Loom",
   "com.kylebegeman.loom.preview": "Loom Preview",
   "com.kylebegeman.loom.dev": "Loom Dev",
 };
+
+const APS_ENVIRONMENT_NAMES: Readonly<Record<LibraryPushApsEnvironment, string>> = {
+  sandbox: "Development",
+  production: "Production",
+};
+
+const isBundleId = Schema.is(LibraryPushBundleId);
+const isApsEnvironment = Schema.is(LibraryPushApsEnvironment);
+
+// The served list uses plain strings, so a build newer than this client shows its raw ID.
+const bundleName = (bundleId: string) => (isBundleId(bundleId) ? BUNDLE_NAMES[bundleId] : bundleId);
+const environmentName = (environment: string) =>
+  isApsEnvironment(environment) ? APS_ENVIRONMENT_NAMES[environment] : environment;
+
+const buildName = (topic: LibraryPushServedTopic) =>
+  `${bundleName(topic.bundleId)} (${environmentName(topic.apsEnvironment)})`;
 
 const DELIVERY_REASON_TEXT: Readonly<Record<LibraryPushDeliveryReason, string>> = {
   "bad-token": "Apple no longer accepts this iPhone's notification token.",
@@ -182,7 +205,7 @@ function deviceView(
     label: device.label,
     detail: [
       app,
-      device.apsEnvironment === "sandbox" ? "Development" : "Production",
+      APS_ENVIRONMENT_NAMES[device.apsEnvironment],
       `Registered ${input.formatDate(device.registeredAt)}`,
       `Expires ${input.formatDate(device.expiresAt)}`,
     ].join(" · "),
@@ -196,10 +219,27 @@ function deviceView(
   };
 }
 
+/** An empty list, not a missing one: a Library from before the list omits it. */
+const servesNoApp = (status: LibraryPushStatus) =>
+  status.state === "ready" && status.topics !== undefined && status.topics.length === 0;
+
+/** A Library from before the served list, or with push off, has nothing to show here. */
+function buildsLine(status: LibraryPushStatus): string | null {
+  if (status.topics === undefined || status.state === "off" || servesNoApp(status)) return null;
+  // A key problem takes the headline, so an empty list still needs a line of its own.
+  if (status.topics.length === 0) return NO_APP_TEXT;
+  return `Builds it sends to: ${status.topics.map(buildName).join(", ")}.`;
+}
+
 function stateLines(status: LibraryPushStatus): {
   readonly headline: LibraryPushLine;
   readonly hint: string | null;
 } {
+  if (servesNoApp(status))
+    return {
+      headline: { tone: "danger", text: NO_APP_TEXT },
+      hint: "Check the app builds named in the Library's push settings, then restart the Library.",
+    };
   switch (status.state) {
     case "off":
       return { headline: { tone: "neutral", text: OFF_TEXT }, hint: OFF_HINT };
@@ -237,6 +277,7 @@ export function libraryPushView(input: LibraryPushViewInput): LibraryPushView {
   const quiet = {
     hint: null,
     key: null,
+    builds: null,
     devices: NO_DEVICES,
     empty: null,
     error: null,
@@ -283,14 +324,17 @@ export function libraryPushView(input: LibraryPushViewInput): LibraryPushView {
   // through is how it recovers.
   const canSend = status.state === "ready" || status.state === "failing";
   const devices = status.devices.map((device) => deviceView(device, input, canSend));
+  const noApp = servesNoApp(status);
   return {
-    status: status.state,
+    status: noApp ? "no-app" : status.state,
     headline,
     hint,
     key: status.key === null ? null : `Apple key ${status.key.keyId}, team ${status.key.teamId}.`,
+    builds: buildsLine(status),
     devices,
+    // With no app served, nothing can register, and the headline already says why.
     empty:
-      devices.length > 0 || status.state === "off"
+      devices.length > 0 || status.state === "off" || noApp
         ? null
         : input.canRemove
           ? "No iPhones are registered yet."

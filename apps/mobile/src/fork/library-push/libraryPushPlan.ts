@@ -4,6 +4,7 @@ import {
   LibraryPushBundleId,
   LibraryPushDeviceRowId,
   LibraryPushErrorReason,
+  type LibraryPushServedTopic,
   LoomIdentityAccount,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
@@ -141,7 +142,8 @@ export interface LibraryPushPlanInput extends LibraryPushSnapshot {
 
 /**
  * `clearLocal` touches only this phone. With `keepOptIn` it forgets the registration and any
- * refusal and keeps the user's choice; without it the record goes.
+ * refusal and keeps the user's choice; without it the record goes. `checkServed` reads the
+ * Library's status, whose list of served builds can lift an `unsupported-app` refusal.
  */
 export type LibraryPushStep =
   | { readonly kind: "none" }
@@ -151,6 +153,7 @@ export type LibraryPushStep =
       readonly libraryId: EnvironmentId;
       readonly id: LibraryPushDeviceRowId;
     }
+  | { readonly kind: "checkServed"; readonly libraryId: EnvironmentId }
   | { readonly kind: "needsToken"; readonly libraryId: EnvironmentId };
 
 const NONE: LibraryPushStep = { kind: "none" };
@@ -159,7 +162,9 @@ const FORGET: LibraryPushStep = { kind: "clearLocal", keepOptIn: false };
 /**
  * Step one decides everything that needs no push token, so iOS is asked for one only when the
  * phone is opted in, allowed, connected and the Library advertises push. Every step either
- * changes the record or waits for a new snapshot, so a failure never loops.
+ * changes the record or waits for a new snapshot, so a failure never loops. The status reads
+ * behind `checkServed` and `needsToken` happen at most once per sync run, so a status that
+ * contradicts a register's answer cannot loop either.
  */
 export function planLibraryPush(input: LibraryPushPlanInput): LibraryPushStep {
   const { record } = input;
@@ -194,7 +199,11 @@ export function planLibraryPush(input: LibraryPushPlanInput): LibraryPushStep {
     return unregister !== null && canUnregister ? unregister : NONE;
   }
   if (!library.canChange) return NONE;
-  if (record.refusal !== null && record.refusal.appVersion === input.appVersion) return NONE;
+  if (record.refusal !== null && record.refusal.appVersion === input.appVersion)
+    // The Library fixing its push settings changes no snapshot, but a status read can show it.
+    return record.refusal.reason === "unsupported-app"
+      ? { kind: "checkServed", libraryId: library.id }
+      : NONE;
   return { kind: "needsToken", libraryId: library.id };
 }
 
@@ -292,6 +301,44 @@ export function recordAfterStatus(
     { kind: "unregister", libraryId, id: registration.id },
     { kind: "answered" },
   );
+}
+
+/**
+ * Whether the Library sends to this build, by its status's served list. Null when the status has
+ * no list, as from a Library older than it; then only a register's answer tells.
+ */
+export function libraryPushServes(
+  topics: ReadonlyArray<LibraryPushServedTopic> | undefined,
+  build: Pick<LibraryPushDeviceState, "bundleId" | "apsEnvironment">,
+): boolean | null {
+  if (topics === undefined) return null;
+  return topics.some(
+    (topic) => topic.bundleId === build.bundleId && topic.apsEnvironment === build.apsEnvironment,
+  );
+}
+
+/**
+ * The served list answers what a register would. A build left out is held as refused without
+ * asking, so the phone never registers for it. A build listed lifts a held `unsupported-app`
+ * refusal, so once the Library's settings are fixed the next sync registers on its own. Other
+ * refusals are the Library's answer about this account or its limits, so they stay.
+ */
+export function recordAfterServed(
+  record: LibraryPushRecord | null,
+  libraryId: EnvironmentId,
+  served: boolean | null,
+  appVersion: string | null,
+): LibraryPushRecord | null {
+  if (record === null || served === null || record.libraryEnvironmentId !== libraryId)
+    return record;
+  if (served)
+    return record.refusal?.reason === "unsupported-app" ? { ...record, refusal: null } : record;
+  if (
+    !record.optedIn ||
+    (record.refusal?.reason === "unsupported-app" && record.refusal.appVersion === appVersion)
+  )
+    return record;
+  return { ...record, refusal: { reason: "unsupported-app", appVersion } };
 }
 
 /**

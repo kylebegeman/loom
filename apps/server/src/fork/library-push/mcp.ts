@@ -4,6 +4,7 @@ import {
   LibraryPushDeviceRowId,
   LibraryPushError,
   LibraryPushKeySummary,
+  LibraryPushServedTopic,
   LibraryPushState,
   LibraryPushStatusReason,
   LibraryPushTestDelivery,
@@ -25,6 +26,7 @@ export const LibraryPushAgentStatus = Schema.Struct({
   reason: Schema.NullOr(LibraryPushStatusReason),
   key: Schema.NullOr(LibraryPushKeySummary),
   deviceCount: NonNegativeInt,
+  topics: Schema.optionalKey(Schema.Array(LibraryPushServedTopic)),
 });
 export type LibraryPushAgentStatus = typeof LibraryPushAgentStatus.Type;
 
@@ -42,7 +44,7 @@ export type LibraryPushAgentTestResult = typeof LibraryPushAgentTestResult.Type;
 export const LibraryPushToolkit = Toolkit.make(
   Tool.make("loom_push_status", {
     description:
-      "Read whether this Library can send iPhone notifications: off, misconfigured, ready or failing, with the reason, the Apple Team ID and Key ID, and how many devices are registered. Answers only for the Library this agent runs on and never asks another computer. Returns no device names, push tokens, key material or file paths.",
+      "Read whether this Library can send iPhone notifications: off, misconfigured, ready or failing, with the reason, the Apple Team ID and Key ID, how many devices are registered, and `topics`, the app builds (bundle ID and APNs environment) its push settings accept. An empty `topics` means those settings name no usable build, so every iPhone is refused; it is absent while push is off. Answers only for the Library this agent runs on and never asks another computer. Returns no device names, push tokens, key material or file paths.",
     success: LibraryPushAgentStatus,
     failure: OrchestratorMcpFailure,
   })
@@ -86,6 +88,7 @@ export const libraryPushHandlers = McpToolAccess.toLayer(
             reason: status.reason,
             key: status.key,
             deviceCount: status.devices.length,
+            ...(status.topics === undefined ? {} : { topics: status.topics }),
           })),
         ),
       ),

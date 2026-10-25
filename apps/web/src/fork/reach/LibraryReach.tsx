@@ -20,6 +20,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import { cn } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAuthority } from "../project-library/state";
 import { ReachLineText } from "./ComputerReach";
@@ -157,13 +158,17 @@ function RetireReachDialog({
   const [endIdentity, setEndIdentity] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const endIdentityOffered = retire.endIdentityDisabledReason === null;
 
   const confirm = async () => {
     setBusy(true);
     setFailure(null);
     const outcome = await run({
       environmentId: libraryId,
-      input: { environmentId: computer.environmentId, endIdentity },
+      input: {
+        environmentId: computer.environmentId,
+        endIdentity: endIdentity && endIdentityOffered,
+      },
     });
     setBusy(false);
     if (outcome._tag === "Success") onClose();
@@ -182,15 +187,22 @@ function RetireReachDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{retire.confirm.title}</AlertDialogTitle>
           <AlertDialogDescription>{retire.confirm.message}</AlertDialogDescription>
-          <label className="mt-2 flex cursor-pointer items-start gap-2.5 text-left text-sm">
+          <label
+            className={cn(
+              "mt-2 flex items-start gap-2.5 text-left text-sm",
+              endIdentityOffered ? "cursor-pointer" : "text-muted-foreground",
+            )}
+          >
             <Checkbox
-              checked={endIdentity}
-              disabled={busy}
+              checked={endIdentity && endIdentityOffered}
+              disabled={busy || !endIdentityOffered}
               onCheckedChange={(checked) => setEndIdentity(checked === true)}
             />
             <span className="space-y-0.5">
               <span className="block">{retire.endIdentityLabel}</span>
-              <span className="block text-xs text-muted-foreground">{retire.endIdentityHint}</span>
+              <span className="block text-xs text-muted-foreground">
+                {retire.endIdentityDisabledReason ?? retire.endIdentityHint}
+              </span>
             </span>
           </label>
           {failure ? (

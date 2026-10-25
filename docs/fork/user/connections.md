@@ -57,6 +57,10 @@ a different sign-in provider than your Library. In a browser, sign-in also needs
 the computer to allow this app's address. Get a pairing code from Connections
 settings in Loom on that computer.
 
+The desktop app and iPhone also refuse to sign in at a typed address that
+claims to be a computer your Library lists at other addresses. Sign in from
+your Library's computer list instead, or use a pairing link.
+
 The list is read when you open it. To read it again, choose **Refresh** on
 desktop and in a browser, or pull down on iPhone. If your Library cannot be
 reached, Loom says so and shows the last list it read. Connected computers keep
@@ -130,6 +134,13 @@ Turning reach off and **Remove address** are different:
   computer, and turning reach on again brings the same address back.
 - If this device is connected through the address, Loom asks first, because
   turning it off or removing it disconnects this device.
+- If a removal cannot finish because your Library is gone or cannot be reached,
+  **Forget reach on this computer** ends it here. The tunnel and address stay
+  until you retire them in your Library's **Reach addresses** list.
+
+When your Library retires the computer's address, or another copy of the
+computer takes it over, reach turns off on its own and says so. Turn it on again
+to get an address.
 
 To clean up after a computer you no longer have, use **Retire** in your
 Library's **Reach addresses** list: in **Settings > Connections** on desktop or
@@ -137,8 +148,10 @@ in a browser, or in **Settings > Computers** on iPhone. **Also end Loom sign-in
 for this computer** ends its Loom sign-in too, and devices signed in to it lose
 access when their current sign-in ends. A retired computer that is still signed
 in to your Library sets reach up again on its next start, so revoke its Library
-sign-in as well. Your Library asks you to retire a computer's reach address
-before you can forget the computer.
+sign-in as well. If your Library cannot read its Loom sign-in key, it refuses
+that option and changes nothing; retire without it, or fix the key and try
+again. Your Library asks you to retire a computer's reach address before you can
+forget the computer.
 
 Agents can check reach and can turn it off or remove an address. They cannot
 turn it on.
@@ -159,9 +172,11 @@ accepted its notification token, Loom registers the phone again; try the test
 again in a moment. Your Library turns notifications on with
 `LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
 **Push notifications** section in **Settings > Connections** on desktop or in a
-browser shows whether they are on and lists the iPhones that turned them on. To
-have an agent send a test, choose **Copy ID** on the phone's row there and give
-the ID to the agent.
+browser shows whether they are on, which Loom builds it sends to, and the
+iPhones that turned them on. If the iPhone says your Library doesn't send
+notifications to this build of Loom, add that build to `LOOM_LIBRARY_PUSH_TOPICS`
+on the Library. To have an agent send a test, choose **Copy ID** on the phone's row
+there and give the ID to the agent.
 
 Turning the switch off on iPhone tells your Library to forget the phone. If the
 Library cannot be reached, the phone keeps your choice and tells it on the next

@@ -368,6 +368,16 @@ const libraryProject = (id: string, title: string, archived = false): LibraryPro
   createdAt: "2026-10-23T00:00:00.000Z",
   updatedAt: "2026-10-23T00:00:00.000Z",
 });
+const registrationFor = (
+  project: LibraryProject,
+  ownership: "borrowed" | "managed" = "borrowed",
+) => ({
+  workingCopyId: `${project.id}-copy`,
+  projectId: project.id,
+  projectTitle: project.title,
+  ownership,
+});
+// The single holder a computer that predates reporting every holder names.
 const registeredTo = (project: LibraryProject, ownership: "borrowed" | "managed" = "borrowed") =>
   state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
     AsyncResult.success({
@@ -375,12 +385,7 @@ const registeredTo = (project: LibraryProject, ownership: "borrowed" | "managed"
       exists: true,
       repositories: [],
       truncated: false,
-      registration: {
-        workingCopyId: "old-copy",
-        projectId: project.id,
-        projectTitle: project.title,
-        ownership,
-      },
+      registration: registrationFor(project, ownership),
     }),
   );
 const copyOf = (project: LibraryProject): LibraryWorkingCopy => ({
@@ -446,6 +451,33 @@ it("adds a folder to the current project that holds it and refuses a new one", a
   await mount();
   await act(async () => button("Use this folder").click());
   expect(button("Add folder to Owner app").disabled).toBe(false);
+  await act(async () => button("Project").click());
+  await act(async () => button("Create a new project").click());
+  await act(async () => button("Keep this name").click());
+  expect(button("Add folder to kyle").disabled).toBe(true);
+  expect(container.textContent).toContain(
+    "This folder already belongs to Owner app. Add it to that project instead.",
+  );
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("keeps a folder a current project also holds when an older build left an archived one newer", async () => {
+  const old = libraryProject("old", "Old app", true);
+  const owner = libraryProject("owner", "Owner app");
+  state.projects = [old, owner];
+  state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
+    AsyncResult.success({
+      rootPath: input.rootPath,
+      exists: true,
+      repositories: [],
+      registration: registrationFor(old),
+      registrations: [registrationFor(old), registrationFor(owner)],
+    }),
+  );
+  await mount();
+  await act(async () => button("Use this folder").click());
+  expect(button("Add folder to Owner app").disabled).toBe(false);
+  expect(container.textContent).not.toContain("Takes this folder over");
   await act(async () => button("Project").click());
   await act(async () => button("Create a new project").click());
   await act(async () => button("Keep this name").click());

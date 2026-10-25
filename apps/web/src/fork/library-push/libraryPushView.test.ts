@@ -23,6 +23,7 @@ import {
 
 const LIBRARY = EnvironmentId.make("library");
 const OFF_TEXT = "Push notifications are off on this Library.";
+const NO_APP_TEXT = "The Library's push settings name no app it can send to.";
 
 function device(overrides: Partial<LibraryPushDevice> = {}): LibraryPushDevice {
   return {
@@ -147,6 +148,59 @@ describe("libraryPushView", () => {
       empty: "No iPhones are registered yet.",
       error: null,
       retry: false,
+    });
+  });
+
+  it("keeps today's ready line for a Library from before the served list", () => {
+    expect(view(AsyncResult.success(status()))).toMatchObject({
+      status: "ready",
+      headline: {
+        tone: "success",
+        text: "On. iPhones signed in to this Library can turn on notifications in Loom's settings.",
+      },
+      builds: null,
+    });
+  });
+
+  it("lists the builds the Library sends to, naming ones this client does not know by ID", () => {
+    const result = view(
+      AsyncResult.success(
+        status({
+          topics: [
+            { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" },
+            { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" },
+            { bundleId: "com.kylebegeman.loom.next", apsEnvironment: "production" },
+          ],
+        }),
+      ),
+    );
+    expect(result).toMatchObject({ status: "ready", headline: { tone: "success" } });
+    expect(result.builds).toBe(
+      "Builds it sends to: Loom (Production), Loom Dev (Development), com.kylebegeman.loom.next (Production).",
+    );
+  });
+
+  it("says push cannot reach any app instead of On when the served list is empty", () => {
+    const result = view(AsyncResult.success(status({ topics: [] })));
+    expect(result).toMatchObject({
+      status: "no-app",
+      headline: { tone: "danger", text: NO_APP_TEXT },
+      key: "Apple key ABCDE12345, team 23W93ZUURR.",
+      builds: null,
+      empty: null,
+    });
+    expect(result.hint).toContain("restart the Library");
+  });
+
+  it("keeps a key problem in the headline and names the empty list below it", () => {
+    expect(
+      view(
+        AsyncResult.success(status({ state: "misconfigured", reason: "key-invalid", topics: [] })),
+      ),
+    ).toMatchObject({
+      status: "misconfigured",
+      headline: { text: "The Library's Apple push key is not a valid key." },
+      builds: NO_APP_TEXT,
     });
   });
 

@@ -9,7 +9,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthRelayReadScope, sessionGrantsScope, type EnvironmentId } from "@t3tools/contracts";
-import { REACH_FEATURE } from "@t3tools/contracts/fork";
+import { REACH_FEATURE, REACH_FORGET_FEATURE } from "@t3tools/contracts/fork";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { type ReactNode, useState } from "react";
@@ -26,6 +26,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { reach } from "./state";
 
 const TITLE = "Reach from anywhere";
+
+type PendingChange = "on" | "off" | "remove" | "forget";
 
 const REACH_TONE_CLASS: Readonly<Record<ReachTone, string>> = {
   neutral: "text-muted-foreground",
@@ -48,7 +50,10 @@ export function ReachLineText({ line, live = false }: { line: ReachLine; live?: 
 
 /** The shared confirm dialog titles the line that ends in a question mark. */
 const askFirst = (confirm: ReachConfirm) =>
-  requestConfirmDialog(`${confirm.title}\n${confirm.message}`, { variant: "destructive" });
+  requestConfirmDialog(`${confirm.title}\n${confirm.message}`, {
+    variant: "destructive",
+    confirmLabel: confirm.action,
+  });
 
 function CopyAction({
   value,
@@ -125,6 +130,9 @@ function ComputerReachBody({
     serverConfig === null
       ? null
       : supportsLoomFeature(serverConfig.environment.capabilities, REACH_FEATURE);
+  const forgetSupported =
+    serverConfig !== null &&
+    supportsLoomFeature(serverConfig.environment.capabilities, REACH_FORGET_FEATURE);
   const session = useEnvironmentSessionState(environmentId).data;
   const canRead = session === null ? null : sessionGrantsScope(session, AuthRelayReadScope);
   const statusAtom = reach.status(
@@ -139,8 +147,9 @@ function ComputerReachBody({
   });
   const set = useAtomCommand(reach.set, { reportFailure: false });
   const remove = useAtomCommand(reach.remove, { reportFailure: false });
+  const forget = useAtomCommand(reach.forget, { reportFailure: false });
   // The switch moves at once; the status stream confirms the change.
-  const [pending, setPending] = useState<"on" | "off" | "remove" | null>(null);
+  const [pending, setPending] = useState<PendingChange | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const view = reachView({
     result,
@@ -148,12 +157,13 @@ function ComputerReachBody({
     supported,
     canRead,
     canChange,
+    forgetSupported,
     isThisComputer,
     activeRouteUrl,
   });
 
   const run = async (
-    kind: "on" | "off" | "remove",
+    kind: PendingChange,
     change: () => Promise<AtomCommandResult<unknown, unknown>>,
   ) => {
     setPending(kind);
@@ -174,6 +184,12 @@ function ComputerReachBody({
     if (view.confirmRemove === null) return;
     if ((await askFirst(view.confirmRemove)) !== true) return;
     await run("remove", () => remove({ environmentId, input: {} }));
+  };
+
+  const forgetReach = async () => {
+    if (view.confirmForget === null) return;
+    if ((await askFirst(view.confirmForget)) !== true) return;
+    await run("forget", () => forget({ environmentId, input: {} }));
   };
 
   const disabledNote =
@@ -219,6 +235,16 @@ function ComputerReachBody({
             </Button>
           ) : null}
         </div>
+      ) : null}
+      {view.actions.forget ? (
+        <Button
+          size="xs"
+          variant="destructive-outline"
+          disabled={pending !== null}
+          onClick={() => void forgetReach()}
+        >
+          Forget reach on this computer
+        </Button>
       ) : null}
       {view.notes.map((note) => (
         <p key={note} className="text-xs leading-relaxed text-warning-foreground">

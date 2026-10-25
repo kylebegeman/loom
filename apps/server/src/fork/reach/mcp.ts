@@ -16,7 +16,7 @@ const failure = Schema.Union([ReachError, OrchestratorMcpFailure]);
 export const ReachToolkit = Toolkit.make(
   Tool.make("loom_reach_status", {
     description:
-      "Read whether this computer is reachable from anywhere through its Library: off, provisioning, starting, connected, in error with a short reason, or removing, plus its public address, why reach cannot run here and any Loom Identity warnings. Includes no credentials or connector tokens.",
+      "Read whether this computer is reachable from anywhere through its Library: off, provisioning, starting, connected, in error with a short reason, or removing, plus its public address, why reach cannot run here and any Loom Identity warnings. The warning `retired` means Cloudflare stopped accepting this computer's connector token, so its Library retired the address or another copy of this computer took it over, and reach turned itself off until a person turns it on again. Includes no credentials or connector tokens.",
     success: ReachStatus,
     failure,
   })
@@ -34,6 +34,15 @@ export const ReachToolkit = Toolkit.make(
   Tool.make("loom_reach_remove", {
     description:
       "Remove this computer's reach address. Reach turns off here, then the Library deletes the address's tunnel and DNS record, finishing in the background and after a restart if needed. The Library keeps the hostname for this computer, so turning reach on again in Loom's settings brings the same address back. Requires full access.",
+    success: ReachStatus,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
+  Tool.make("loom_reach_forget", {
+    description:
+      "Forget reach on this computer without its Library. Reach stops here and this computer clears its reach record, ending a removal that cannot finish, so reach is off and can be turned on again normally. The Library keeps this computer's Cloudflare tunnel and address until they are retired in its Reach addresses list. Use loom_reach_remove instead while the Library can still be reached. Requires full access.",
     success: ReachStatus,
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -58,6 +67,7 @@ export const reachHandlers = McpToolAccess.toLayer(
         onReach((reach) => reach.setEnabled(false)),
       ),
       loom_reach_remove: McpToolAccess.writesEnvironment(() => onReach((reach) => reach.remove())),
+      loom_reach_forget: McpToolAccess.writesEnvironment(() => onReach((reach) => reach.forget())),
     };
   }),
 );

@@ -46,6 +46,12 @@ const makeHarness = Effect.fn("ReachMcpTest.makeHarness")(function* (
         status = { ...status, enabled: false, state: "removing" };
         return status;
       }),
+    forget: () =>
+      Effect.sync(() => {
+        calls.push("forget");
+        status = { ...status, enabled: false, state: "off", url: null };
+        return status;
+      }),
     guardState: () => ({ hostname: null, serving: false }),
     ownPorts: () => [],
     ...overrides,
@@ -86,13 +92,14 @@ it.effect("D10: agents read reach and take it down, and read-only callers change
       expect((yield* decodeToolInput(Tool.getJsonSchema(tool))).type).toBe("object");
     }
     expect(Object.keys(ReachToolkit.tools).toSorted()).toEqual([
+      "loom_reach_forget",
       "loom_reach_off",
       "loom_reach_remove",
       "loom_reach_status",
     ]);
 
     expect(yield* h.call("loom_reach_status", "read-only")).toEqual(CONNECTED);
-    for (const name of ["loom_reach_off", "loom_reach_remove"] as const) {
+    for (const name of ["loom_reach_off", "loom_reach_remove", "loom_reach_forget"] as const) {
       expect(yield* Effect.flip(h.call(name, "read-only"))).toMatchObject({
         code: "capability_denied",
       });
@@ -106,7 +113,11 @@ it.effect("D10: agents read reach and take it down, and read-only callers change
     expect(yield* h.call("loom_reach_remove", "full-access")).toMatchObject({
       state: "removing",
     });
-    expect(h.calls).toEqual(["set:false", "remove"]);
+    expect(yield* h.call("loom_reach_forget", "full-access")).toMatchObject({
+      state: "off",
+      url: null,
+    });
+    expect(h.calls).toEqual(["set:false", "remove", "forget"]);
   }),
 );
 

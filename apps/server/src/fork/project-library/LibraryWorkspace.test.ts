@@ -3484,14 +3484,218 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(yield* refused("no-library", () => Effect.die("no Library"), { library: false })).toBe(
         reconnectDetail,
       );
+      const managedDetail =
+        "This folder holds files Loom created for Old app. Review and remove them from that project before adding the folder to another one. Restore that project first if it is archived.";
       expect(
-        yield* refused("managed", () => Effect.die("managed folders are never looked up"), {
+        yield* refused("managed", (old) => Effect.succeed({ ...old, archived: true }), {
           managed: true,
         }),
-      ).toBe(
-        "This folder holds files Loom created for Old app. Review and remove them from that project before adding the folder to another one. Restore that project first if it is archived.",
-      );
+      ).toBe(managedDetail);
+      // A current project is the more useful one to name; without the Library, the files decide.
+      expect(
+        yield* refused(
+          "managed-current",
+          (old) => Effect.succeed({ ...old, title: "Current owner" }),
+          { managed: true },
+        ),
+      ).toBe("This folder already belongs to Current owner. Add it to that project instead.");
+      expect(
+        yield* refused(
+          "managed-unreachable",
+          () => Effect.fail(new LibraryError({ reason: "io" })),
+          {
+            managed: true,
+          },
+        ),
+      ).toBe(managedDetail);
+      expect(
+        yield* refused("managed-no-library", () => Effect.die("no Library"), {
+          managed: true,
+          library: false,
+        }),
+      ).toBe(managedDetail);
     }),
+  );
+
+  it.effect(
+    "reports every project holding a folder and takes it only when all of them have gone",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const library = new Map<string, Effect.Effect<LibraryProject, LibraryError>>();
+        const service = yield* withOwnerLookup(
+          (projectId) => library.get(projectId) ?? Effect.die(`unexpected lookup ${projectId}`),
+        );
+        // Builds before one-owner folders could leave a folder registered to two projects.
+        const heldTwice = Effect.fnUntraced(function* (
+          slug: string,
+          ownership: "borrowed" | "managed" = "borrowed",
+        ) {
+          const { rootPath, old, next } = yield* takenFolder(slug);
+          library.set(old.id, Effect.succeed({ ...old, archived: true }));
+          const oldCopy = yield* service.prepareCopy({
+            requestId: `twice-old-${slug}`,
+            project: old,
+            rootPath,
+            strategy: "reuse",
+          });
+          const nextCopy = yield* service.prepareCopy({
+            requestId: `twice-next-${slug}`,
+            project: next,
+            rootPath,
+            strategy: "reuse",
+          });
+          const retired = yield* store.get(oldCopy.id);
+          yield* store.put({
+            ...retired,
+            copy: {
+              ...retired.copy,
+              registered: true,
+              ownership,
+              updatedAt: "2099-01-01T00:00:00.000Z",
+            },
+          });
+          const third = { ...next, id: `project:third-${slug}`, title: "Third app" };
+          const addThird = service.prepareCopy({
+            requestId: `twice-third-${slug}`,
+            project: third,
+            rootPath,
+            strategy: "reuse",
+          });
+          return { rootPath, old, next, third, oldCopy, nextCopy, addThird };
+        });
+        const registered = (copyId: string) =>
+          store.get(copyId).pipe(Effect.map((receipt) => receipt.copy.registered !== false));
+
+        // The newest holder is archived, which is all older computers reported.
+        const shared = yield* heldTwice("shared");
+        library.set(shared.next.id, Effect.succeed(shared.next));
+        const inspection = yield* service.inspectFolder({ rootPath: shared.rootPath });
+        expect(inspection.registrations).toEqual([
+          {
+            workingCopyId: shared.oldCopy.id,
+            projectId: shared.old.id,
+            projectTitle: "Old app",
+            ownership: "borrowed",
+          },
+          {
+            workingCopyId: shared.nextCopy.id,
+            projectId: shared.next.id,
+            projectTitle: "New app",
+            ownership: "borrowed",
+          },
+        ]);
+        expect(inspection.registration).toEqual(inspection.registrations?.[0]);
+        expect(yield* Effect.flip(shared.addThird)).toMatchObject({
+          reason: "blocked",
+          detail: "This folder already belongs to New app. Add it to that project instead.",
+        });
+        expect(yield* registered(shared.oldCopy.id)).toBe(true);
+        expect(yield* registered(shared.nextCopy.id)).toBe(true);
+
+        // The Library cannot answer for one holder: a current other is still named, and with none
+        // the folder stays put until the Library answers.
+        const partly = yield* heldTwice("partly");
+        library.set(partly.old.id, Effect.fail(new LibraryError({ reason: "io" })));
+        library.set(partly.next.id, Effect.succeed(partly.next));
+        expect(yield* Effect.flip(partly.addThird)).toMatchObject({
+          reason: "blocked",
+          detail: "This folder already belongs to New app. Add it to that project instead.",
+        });
+        library.set(partly.next.id, Effect.succeed({ ...partly.next, archived: true }));
+        expect(yield* Effect.flip(partly.addThird)).toMatchObject({
+          reason: "blocked",
+          detail: reconnectDetail,
+        });
+        expect(yield* registered(partly.oldCopy.id)).toBe(true);
+        expect(yield* registered(partly.nextCopy.id)).toBe(true);
+
+        const gone = yield* heldTwice("gone");
+        library.set(gone.next.id, Effect.fail(new LibraryError({ reason: "not-found" })));
+        expect(yield* gone.addThird).toMatchObject({ projectId: gone.third.id, state: "ready" });
+        expect(yield* registered(gone.oldCopy.id)).toBe(false);
+        expect(yield* registered(gone.nextCopy.id)).toBe(false);
+        const taken = yield* service.inspectFolder({ rootPath: gone.rootPath });
+        expect(taken.registrations?.map((registration) => registration.projectId)).toEqual([
+          gone.third.id,
+        ]);
+
+        // Older clients judge by one holder, so the one with Loom's files is the one they see.
+        const managed = yield* heldTwice("managed", "managed");
+        library.set(managed.next.id, Effect.succeed(managed.next));
+        const held = yield* store.get(managed.nextCopy.id);
+        yield* store.put({
+          ...held,
+          copy: { ...held.copy, updatedAt: "2100-01-01T00:00:00.000Z" },
+        });
+        const managedInspection = yield* service.inspectFolder({ rootPath: managed.rootPath });
+        expect(
+          managedInspection.registrations?.map((registration) => registration.projectId),
+        ).toEqual([managed.next.id, managed.old.id]);
+        expect(managedInspection.registration).toMatchObject({
+          projectId: managed.old.id,
+          ownership: "managed",
+        });
+        expect(yield* Effect.flip(managed.addThird)).toMatchObject({
+          reason: "blocked",
+          detail: "This folder already belongs to New app. Add it to that project instead.",
+        });
+        expect(yield* registered(managed.oldCopy.id)).toBe(true);
+        expect(yield* registered(managed.nextCopy.id)).toBe(true);
+      }),
+  );
+
+  it.effect(
+    "asks the Library about every holder at once, so a slow answer is waited out once",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const { rootPath, old, next } = yield* takenFolder("together");
+        const asked = new Map([
+          [old.id, yield* Deferred.make<void>()],
+          [next.id, yield* Deferred.make<void>()],
+        ]);
+        const answer = yield* Deferred.make<void>();
+        let slow = false;
+        const service = yield* withOwnerLookup((projectId) => {
+          const project = projectId === old.id ? { ...old, archived: true } : next;
+          const gate = asked.get(projectId);
+          if (!slow || gate === undefined) return Effect.succeed(project);
+          // Every check waits until each holder has been asked, which checks made in turn never reach.
+          return Deferred.succeed(gate, undefined).pipe(
+            Effect.andThen(Deferred.await(answer)),
+            Effect.as(project),
+          );
+        });
+        const oldCopy = yield* service.prepareCopy({
+          requestId: "together-old",
+          project: old,
+          rootPath,
+          strategy: "reuse",
+        });
+        yield* service.prepareCopy({
+          requestId: "together-next",
+          project: next,
+          rootPath,
+          strategy: "reuse",
+        });
+        const retired = yield* store.get(oldCopy.id);
+        yield* store.put({ ...retired, copy: { ...retired.copy, registered: true } });
+        slow = true;
+        const adding = yield* service
+          .prepareCopy({
+            requestId: "together-third",
+            project: { ...next, id: "project:third-together", title: "Third app" },
+            rootPath,
+            strategy: "reuse",
+          })
+          .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+        yield* Effect.forEach(asked.values(), (gate) => Deferred.await(gate), { discard: true });
+        yield* Deferred.succeed(answer, undefined);
+        expect((yield* Fiber.join(adding)).detail).toBe(
+          "This folder already belongs to New app. Add it to that project instead.",
+        );
+      }),
   );
 
   it.effect("reviews a borrowed folder for removal without reading its files", () =>

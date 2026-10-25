@@ -5,9 +5,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   LIBRARY_PUSH_DEVICE_ROW_ID_LENGTH,
+  LibraryPushDevice,
   LibraryPushError,
   LibraryPushErrorReason,
+  LibraryPushKeySummary,
   LibraryPushRegisterRequest,
+  LibraryPushState,
+  LibraryPushStatus,
+  LibraryPushStatusReason,
   LibraryPushTestRequest,
   LibraryPushUnregisterRequest,
   LOOM_IOS_PUSH_BUNDLE_IDS,
@@ -89,6 +94,82 @@ describe("LibraryPushRegisterRequest", () => {
       // RpcServer answers a payload it cannot decode with this same issue text.
       expect(result.failure.message).not.toContain(SENTINEL_TOKEN);
     }
+  });
+});
+
+describe("LibraryPushStatus", () => {
+  const decodeStatus = Schema.decodeUnknownSync(LibraryPushStatus);
+  const encodeStatus = Schema.encodeSync(LibraryPushStatus);
+  // The status as clients released before `topics` decode it.
+  const decodeOlderStatus = Schema.decodeUnknownSync(
+    Schema.Struct({
+      state: LibraryPushState,
+      reason: Schema.NullOr(LibraryPushStatusReason),
+      key: Schema.NullOr(LibraryPushKeySummary),
+      devices: Schema.Array(LibraryPushDevice),
+    }),
+  );
+  const device = {
+    id: "A".repeat(LIBRARY_PUSH_DEVICE_ROW_ID_LENGTH),
+    deviceId: registration.deviceId,
+    label: registration.label,
+    bundleId: "com.kylebegeman.loom",
+    apsEnvironment: "production",
+    appVersion: "1.4.0",
+    registeredAt: "2026-10-24T12:00:00.000Z",
+    refreshedAt: "2026-10-24T12:00:00.000Z",
+    expiresAt: "2026-11-23T12:00:00.000Z",
+    mine: true,
+    lastDelivery: null,
+  };
+  const status = {
+    state: "ready",
+    reason: null,
+    key: { teamId: "TEAM123456", keyId: "KEY1234567" },
+    devices: [device],
+  };
+
+  it("reads a Library from before the served list as not saying", () => {
+    const decoded = decodeStatus(status);
+    expect(decoded.topics).toBeUndefined();
+    expect("topics" in encodeStatus(decoded)).toBe(false);
+  });
+
+  it("keeps an empty list, which means the Library serves no build", () => {
+    expect(decodeStatus({ ...status, topics: [] }).topics).toEqual([]);
+  });
+
+  it("keeps unknown builds in the served list and drops their device rows", () => {
+    const future = { bundleId: "com.kylebegeman.loom.next", apsEnvironment: "staging" };
+    const decoded = decodeStatus({
+      ...status,
+      topics: [{ bundleId: "com.kylebegeman.loom", apsEnvironment: "production" }, future],
+      devices: [
+        device,
+        { ...device, id: "B".repeat(LIBRARY_PUSH_DEVICE_ROW_ID_LENGTH), ...future },
+      ],
+    });
+    expect(decoded.topics).toEqual([
+      { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" },
+      future,
+    ]);
+    // An unknown build's device row is dropped, so it cannot fail the whole status.
+    expect(decoded.devices.map((row) => row.id)).toEqual([device.id]);
+  });
+
+  it("decodes on a client from before the served list", () => {
+    const wire = encodeStatus(
+      decodeStatus({
+        ...status,
+        topics: [{ bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" }],
+      }),
+    );
+    expect(wire.topics).toEqual([
+      { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" },
+    ]);
+    const older = decodeOlderStatus(JSON.parse(JSON.stringify(wire)));
+    expect(older).toEqual(status);
+    expect("topics" in older).toBe(false);
   });
 });
 

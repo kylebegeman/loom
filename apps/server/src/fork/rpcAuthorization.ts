@@ -473,6 +473,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   // terminal or full-access agent rights reach the same switch another way (D9).
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
+  [REACH.forget]: AuthRelayWriteScope,
   [REACH.libraryList]: AuthOrchestrationReadScope,
   // Mirrors DIR.forget: a signed-in phone can cut a lost computer off from the Library.
   [REACH.libraryRetire]: AuthSettingsWriteScope,

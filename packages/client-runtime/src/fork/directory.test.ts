@@ -8,11 +8,13 @@ import {
   directoryProofAge,
   directoryRoutes,
   directoryUnattachedMachines,
+  identityDirectoryAddresses,
 } from "./directory.ts";
 import {
   APP_ORIGIN,
   BOOK,
   DESK,
+  LIBRARY,
   LIBRARY_ISSUER,
   MINUTES,
   NOW,
@@ -356,5 +358,64 @@ describe("directory resource check", () => {
     expect(directoryConnectPlan(row, identity(BOOK, { audience: DESK_RESOURCE }), browser)).toEqual(
       expect.objectContaining({ signIn: "pairing", reason: "resource-mismatch" }),
     );
+  });
+});
+
+describe("identityDirectoryAddresses", () => {
+  const library = {
+    environmentId: LIBRARY,
+    label: "Helios",
+    addresses: ["https://library.example.com/", "https://library.example.com/"],
+  };
+
+  it("keeps every route of each computer's newest report, usable or not", () => {
+    const addresses = identityDirectoryAddresses({
+      library,
+      listing: listing([
+        reported(BOOK, {
+          sequence: 1,
+          label: "Old Book",
+          routes: [{ kind: "public", url: "https://old-book.example.com" }],
+        }),
+        reported(BOOK, {
+          sequence: 2,
+          label: "Book",
+          routes: [
+            { kind: "public", url: "https://book.example.com" },
+            { kind: "tailnet", url: "https://book.example.ts.net" },
+            { kind: "public", url: "https://book.example.com" },
+            // A browser cannot use these, but they are still this computer's own addresses.
+            { kind: "tailnet", url: "https://100.64.0.7:3773" },
+          ],
+        }),
+        reported(DESK, { routes: [] }),
+      ]),
+    });
+    expect(addresses).toEqual({
+      library: {
+        environmentId: LIBRARY,
+        label: "Helios",
+        addresses: ["https://library.example.com/"],
+      },
+      computers: [
+        {
+          environmentId: BOOK,
+          label: "Book",
+          addresses: [
+            "https://book.example.com",
+            "https://book.example.ts.net",
+            "https://100.64.0.7:3773",
+          ],
+        },
+        { environmentId: DESK, label: DESK, addresses: [] },
+      ],
+    });
+  });
+
+  it("still knows the Library's own addresses before any listing", () => {
+    expect(identityDirectoryAddresses({ library, listing: null })).toEqual({
+      library: { ...library, addresses: ["https://library.example.com/"] },
+      computers: [],
+    });
   });
 });

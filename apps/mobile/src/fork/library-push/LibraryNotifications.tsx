@@ -14,13 +14,13 @@ import { SettingsScreen } from "../../features/settings/components/SettingsScree
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
-import { supportsLibraryPushBuild } from "./libraryPushBuild";
+import { currentLibraryPushBuild, supportsLibraryPushBuild } from "./libraryPushBuild";
 import {
   LIBRARY_PUSH_COPY,
   libraryPushContent,
   type LibraryPushTestState,
 } from "./libraryPushContent";
-import { recordFor } from "./libraryPushPlan";
+import { libraryPushServes, recordFor } from "./libraryPushPlan";
 import {
   libraryPush,
   libraryPushActivityAtom,
@@ -92,9 +92,10 @@ function LibraryNotificationsContent() {
   const [test, setTest] = useState<LibraryPushTestState>(IDLE_TEST);
 
   const status = AsyncResult.isSuccess(statusResult) ? statusResult.value : null;
+  const build = currentLibraryPushBuild();
   const libraryId = library?.id ?? null;
-  // The Library may have dropped this iPhone since it registered; then it says so and registers
-  // again rather than showing a registration the Library no longer holds.
+  // The Library may have dropped this iPhone since it registered, or changed which builds it
+  // serves; the record follows, so the phone registers again or stops asking.
   useEffect(() => {
     if (libraryId === null || !AsyncResult.isSuccess(statusResult) || statusResult.waiting) return;
     void reconcileLibraryPushStatus(
@@ -110,6 +111,7 @@ function LibraryNotificationsContent() {
     permission,
     activity,
     status: status === null ? null : { state: status.state, reason: status.reason },
+    served: status === null || build === null ? null : libraryPushServes(status.topics, build),
     libraryLabel: saved?.environmentLabel ?? null,
     test,
   });

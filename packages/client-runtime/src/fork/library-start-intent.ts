@@ -1,5 +1,6 @@
 import type {
   LibraryFolderInspection,
+  LibraryFolderRegistration,
   LibraryProject,
   LibraryThreadSummary,
   LibraryWorkingCopy,
@@ -97,22 +98,53 @@ export function libraryStartFolderProjects(
 }
 
 /**
- * The project holding a folder, as its computer recorded it, judged against the Library now.
- * Only a current owner keeps the folder; an archived or missing one gives it up when the folder
- * is added elsewhere. `projects` must include archived ones; null means they have not loaded.
+ * Every project holding a folder, newest first. Builds before one-owner folders could register a
+ * folder to several projects; computers that predate reporting them all name only one.
  */
-export function libraryFolderOwner(
-  registration: LibraryFolderInspection["registration"],
-  projects: readonly LibraryProject[] | null | undefined,
+export function libraryFolderRegistrations(
+  inspection: Pick<LibraryFolderInspection, "registration" | "registrations"> | null | undefined,
 ) {
-  if (registration === undefined) return null;
-  const managed = registration.ownership === "managed";
-  if (!projects) return { kind: "unchecked" as const, title: registration.projectTitle, managed };
+  if (!inspection) return [];
+  if (inspection.registrations?.length) return inspection.registrations;
+  return inspection.registration ? [inspection.registration] : [];
+}
+
+const folderHolder = (
+  registration: LibraryFolderRegistration,
+  projects: readonly LibraryProject[] | null | undefined,
+) => {
+  const recorded = {
+    workingCopyId: registration.workingCopyId,
+    projectId: registration.projectId,
+    managed: registration.ownership === "managed",
+  };
+  if (!projects)
+    return { ...recorded, kind: "unchecked" as const, title: registration.projectTitle };
   const project = projects.find((entry) => entry.id === registration.projectId);
   if (project === undefined)
-    return { kind: "missing" as const, title: registration.projectTitle, managed };
-  if (project.archived) return { kind: "archived" as const, title: project.title, managed };
-  return { kind: "current" as const, title: project.title, managed, project };
+    return { ...recorded, kind: "missing" as const, title: registration.projectTitle };
+  if (project.archived) return { ...recorded, kind: "archived" as const, title: project.title };
+  return { ...recorded, kind: "current" as const, title: project.title, project };
+};
+export type LibraryFolderHolder = ReturnType<typeof folderHolder>;
+
+/**
+ * The projects holding a folder, as its computer recorded them, judged against the Library now.
+ * A current holder keeps the folder and files Loom created hold it for their own project, so the
+ * owner is the first current holder, then the first managed one. Archived or missing borrowed
+ * holders give the folder up when it is added elsewhere. `projects` must include archived ones;
+ * null means they have not loaded.
+ */
+export function libraryFolderOwner(
+  registrations: readonly LibraryFolderRegistration[],
+  projects: readonly LibraryProject[] | null | undefined,
+) {
+  const holders = registrations.map((registration) => folderHolder(registration, projects));
+  const owner =
+    holders.find((holder) => holder.kind === "current") ??
+    holders.find((holder) => holder.managed) ??
+    holders.at(0);
+  return owner === undefined ? null : { ...owner, holders };
 }
 export type LibraryFolderOwner = NonNullable<ReturnType<typeof libraryFolderOwner>>;
 
@@ -128,8 +160,15 @@ export function libraryFolderOwnerIssue(
   if (owner === null) return null;
   if (owner.kind === "unchecked")
     return "Loom could not check which project owns this folder. Reconnect your Library and try again.";
+  // A project that already holds the folder reuses it. Its computer weighs the other holders only
+  // when that copy no longer fits the project, and then explains its refusal itself.
+  if (
+    projectId !== null &&
+    owner.holders.some((holder) => holder.kind === "current" && holder.project.id === projectId)
+  )
+    return null;
   if (owner.kind === "current")
-    return projectId === null || projectId === owner.project.id
+    return projectId === null
       ? null
       : `This folder already belongs to ${owner.title}. Add it to that project instead.`;
   // Files Loom created can hold unpushed work, so only their own project's review frees them.
@@ -139,12 +178,37 @@ export function libraryFolderOwnerIssue(
     : `This folder holds files Loom created for ${owner.title}, which is no longer in your Library. Choose another folder.`;
 }
 
-/** What adding the folder does to the project it leaves, when that project is not current. */
+const listTitles = (titles: readonly string[]) =>
+  titles.length < 2 ? titles.join("") : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)}`;
+
+/** What adding the folder does to the projects it leaves, when every one is archived or gone. */
 export function libraryFolderTakeover(owner: LibraryFolderOwner | null) {
-  if (owner === null || owner.managed) return null;
-  if (owner.kind === "archived")
-    return `Takes this folder over from archived ${owner.title}. Its conversations stay in the archive.`;
-  if (owner.kind === "missing")
-    return `Takes this folder over from ${owner.title}, which is no longer in your Library.`;
-  return null;
+  // The owner is current or managed when any holder is, so past this check every holder is
+  // borrowed and its project archived or gone.
+  if (owner === null || owner.managed || owner.kind === "current" || owner.kind === "unchecked")
+    return null;
+  const titles = (kind: "archived" | "missing") => [
+    ...new Map(
+      owner.holders
+        .filter((holder) => holder.kind === kind)
+        .map((holder) => [holder.projectId, holder.title]),
+    ).values(),
+  ];
+  const archived = titles("archived");
+  const missing = titles("missing");
+  const from = [
+    ...(archived.length ? [`archived ${listTitles(archived)}`] : []),
+    ...(missing.length
+      ? [
+          `${listTitles(missing)}, which ${missing.length === 1 ? "is" : "are"} no longer in your Library`,
+        ]
+      : []),
+  ].join(" and from ");
+  // Beside a project the Library no longer has, "its" would point at that one, which has no archive.
+  const archive = !archived.length
+    ? ""
+    : missing.length
+      ? ` Conversations from ${listTitles(archived)} stay in the archive.`
+      : ` ${archived.length === 1 ? "Its" : "Their"} conversations stay in the archive.`;
+  return `Takes this folder over from ${from}.${archive}`;
 }

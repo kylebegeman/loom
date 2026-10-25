@@ -97,6 +97,12 @@ interface Harness {
   readonly next: Effect.Effect<Event>;
   /** Reports a status from the newest connector, as cloudflared's output would. */
   readonly connectorStatus: (status: CloudflaredStatus) => Effect.Effect<void>;
+  /** The newest connector's runner giving up on a token the edge keeps refusing. */
+  readonly refuseToken: Effect.Effect<void>;
+  /** The same from the connector this run started `index`th, from 0, even once it stopped. */
+  readonly refuseTokenOf: (index: number) => Effect.Effect<void>;
+  /** Nothing the Library, the connector or a sleep did is waiting to be read. */
+  readonly settled: Effect.Effect<boolean>;
   readonly waitFor: (predicate: (status: ReachStatus) => boolean) => Effect.Effect<ReachStatus>;
   readonly sidecar: Effect.Effect<unknown>;
   readonly sidecarText: Effect.Effect<string | null>;
@@ -192,6 +198,7 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
     );
 
     const connectors: Array<(status: CloudflaredStatus) => Effect.Effect<void>> = [];
+    const refusals: Array<Effect.Effect<void>> = [];
     const runTunnel = (
       runOptions: Parameters<Parameters<typeof makeReachService>[0]["runTunnel"]>[0],
     ) =>
@@ -202,6 +209,7 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
           yield* fs.writeFileString(runOptions.tokenFile, runOptions.token, { mode: 0o600 });
         }
         connectors.push(runOptions.onStatus);
+        refusals.push(runOptions.onTokenRefused ?? Effect.die(new Error("no refusal handler")));
         yield* runOptions.onStatus({
           state: "connected",
           message: null,
@@ -251,6 +259,17 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
       ),
     );
 
+    // The real runner reports a last error and then hands over, from the connector's fiber.
+    const refuseTokenOf = (index: number) =>
+      Effect.suspend(() =>
+        connectors[index]!({
+          state: "error",
+          message:
+            'Register tunnel error from server side error="Unauthorized: Invalid tunnel secret"',
+          metricsPort: null,
+        }).pipe(Effect.andThen(refusals[index]!)),
+      );
+
     return yield* Effect.gen(function* () {
       const service = yield* makeReachService({ runTunnel, ingressOrigin: Ref.get(origin) });
       return yield* use({
@@ -261,6 +280,9 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
         route,
         next,
         connectorStatus: (status) => connectors.at(-1)!(status),
+        refuseToken: Effect.suspend(() => refuseTokenOf(connectors.length - 1)),
+        refuseTokenOf,
+        settled: Effect.map(Queue.size(events), (size) => size === 0),
         waitFor: (predicate) =>
           service.changes.pipe(
             Stream.filter(predicate),
@@ -831,6 +853,192 @@ describe("ReachService", () => {
             message: null,
           });
         }),
+    ),
+  );
+
+  it.effect("forgets a removal the Library cannot confirm, and turns on again normally", () =>
+    withReach(
+      {
+        answers: [page(404)],
+        sidecar: {
+          version: 1,
+          enabled: false,
+          removing: true,
+          hostname: HOSTNAME,
+          lastSeq: NOW - 5,
+          prepared: null,
+        },
+      },
+      (h) =>
+        Effect.gen(function* () {
+          yield* expectEvent(h, { kind: "request", action: "remove", seq: NOW });
+          yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
+          expect(yield* h.service.status).toMatchObject({
+            state: "removing",
+            message: "Update Loom on your Library to finish removing reach.",
+          });
+
+          const forgotten = yield* h.service.forget();
+          expect(forgotten).toEqual({
+            state: "off",
+            enabled: false,
+            blocked: null,
+            url: null,
+            message: null,
+            warnings: [],
+            prepared: null,
+          });
+          // The signed seq survives, so the Library never sees a replayed one.
+          expect(yield* h.sidecar).toEqual({
+            version: 1,
+            enabled: false,
+            removing: false,
+            hostname: null,
+            lastSeq: NOW,
+            prepared: null,
+          });
+          expect(h.service.guardState()).toEqual({ hostname: null, serving: false });
+          // The removal's retry was interrupted, so the Library is never asked again.
+          yield* h.adjust(15 * MINUTE);
+          expect(yield* h.settled).toBe(true);
+
+          yield* h.service.setEnabled(true);
+          const ensure = yield* expectEvent(h, { kind: "request", action: "ensure" });
+          expect(ensure.kind === "request" && ensure.seq > NOW).toBe(true);
+          yield* expectEvent(h, { kind: "start", token: "token-1" });
+          expect(yield* h.service.status).toMatchObject({ state: "connected", url: URL_ });
+        }),
+    ),
+  );
+
+  it.effect("forgets a removal with no Library left to ask, which stays forgotten", () =>
+    Effect.gen(function* () {
+      const removing = {
+        version: 1,
+        enabled: false,
+        removing: true,
+        hostname: HOSTNAME,
+        lastSeq: NOW - 5,
+        prepared: null,
+      };
+      yield* withReach({ env: {}, sidecar: removing }, (h) =>
+        Effect.gen(function* () {
+          expect(yield* h.service.status).toMatchObject({ state: "removing", url: URL_ });
+          expect((yield* Effect.flip(h.service.setEnabled(true))).reason).toBe("busy");
+          expect(yield* h.service.forget()).toMatchObject({
+            state: "unavailable",
+            enabled: false,
+            blocked: "no-library",
+            url: null,
+          });
+          expect(yield* h.sidecar).toMatchObject({ removing: false, hostname: null });
+        }),
+      );
+    }),
+  );
+
+  it.effect(
+    "turns reach off for good when the edge keeps refusing the token, until it is turned on",
+    () =>
+      withReach({}, (h) =>
+        Effect.gen(function* () {
+          yield* turnOn(h);
+          yield* h.refuseToken;
+          yield* expectEvent(h, { kind: "stop", token: "token-1", enabledOnDisk: false });
+          const retired = yield* h.service.status;
+          expect(retired).toEqual({
+            state: "off",
+            enabled: false,
+            blocked: null,
+            url: null,
+            message:
+              "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+            warnings: ["retired"],
+            prepared: null,
+          });
+          expect(yield* h.sidecar).toMatchObject({
+            enabled: false,
+            hostname: null,
+            retired: true,
+          });
+          expect(yield* Ref.get(h.route)).toEqual(Option.none());
+          expect(h.service.guardState()).toEqual({ hostname: null, serving: false });
+          // Nothing asks the Library again by itself, since that would undo a Retire.
+          yield* h.adjust(60 * MINUTE);
+          expect(yield* h.settled).toBe(true);
+
+          yield* h.service.setEnabled(true);
+          yield* expectEvent(h, { kind: "request", action: "ensure" });
+          yield* expectEvent(h, { kind: "start", token: "token-2" });
+          expect(yield* h.service.status).toMatchObject({ state: "connected", url: URL_ });
+          expect((yield* h.service.status).warnings).not.toContain("retired");
+          expect(yield* h.sidecar).not.toHaveProperty("retired");
+        }),
+      ),
+  );
+
+  it.effect("keeps a retired address off after a restart, and turning off clears its notice", () =>
+    withReach(
+      {
+        sidecar: {
+          version: 1,
+          enabled: false,
+          removing: false,
+          hostname: null,
+          lastSeq: NOW - 5,
+          prepared: null,
+          retired: true,
+        },
+      },
+      (h) =>
+        Effect.gen(function* () {
+          expect(yield* h.service.status).toMatchObject({ state: "off", warnings: ["retired"] });
+          yield* h.adjust(60 * MINUTE);
+          expect(yield* h.settled).toBe(true);
+          expect(yield* h.service.setEnabled(false)).toMatchObject({
+            state: "off",
+            message: null,
+            warnings: [],
+          });
+          expect(yield* h.sidecar).not.toHaveProperty("retired");
+        }),
+    ),
+  );
+
+  it.effect("lets a fresh ensure replace a refused connector instead of turning reach off", () =>
+    withReach({}, (h) =>
+      Effect.gen(function* () {
+        yield* turnOn(h);
+        yield* h.connectorStatus({ state: "error", message: "Unauthorized", metricsPort: null });
+        const release = yield* Deferred.make<void>();
+        yield* Ref.set(h.hold, release);
+        yield* h.service.setEnabled(true);
+        yield* expectEvent(h, { kind: "request", action: "ensure" });
+        yield* h.refuseToken;
+        expect(yield* h.service.status).toMatchObject({ enabled: true });
+        expect(yield* h.sidecar).not.toHaveProperty("retired");
+
+        yield* Ref.set(h.hold, null);
+        yield* Deferred.succeed(release, undefined);
+        yield* expectEvent(h, { kind: "stop", token: "token-1" });
+        yield* expectEvent(h, { kind: "start", token: "token-2" });
+        expect(yield* h.service.status).toMatchObject({
+          state: "connected",
+          warnings: ["identity-off"],
+        });
+
+        // The replaced connector's refusal arrives late, and only that old token is dead.
+        yield* h.refuseTokenOf(0);
+        expect(yield* h.service.status).toMatchObject({
+          state: "connected",
+          enabled: true,
+          url: URL_,
+          warnings: ["identity-off"],
+        });
+        expect(yield* h.sidecar).toMatchObject({ enabled: true, hostname: HOSTNAME });
+        expect(yield* h.sidecar).not.toHaveProperty("retired");
+        expect(yield* h.settled).toBe(true);
+      }),
     ),
   );
 });

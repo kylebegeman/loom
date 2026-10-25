@@ -39,7 +39,7 @@ export const LIBRARY_PUSH_COPY = {
   unregisterFailed:
     "Couldn't turn off notifications on the Library. Loom tries again when it reconnects.",
   identityRequired: "Sign in to the Library with Loom Identity to get notifications.",
-  unsupportedApp: "Your Library doesn't accept notifications from this build.",
+  unsupportedApp: "Your Library doesn't send notifications to this build of Loom.",
   registered: (library: string) => `On. Registered with ${library}.`,
   theLibrary: "the Library",
   keyRejected: "The Library can't sign notifications. Check its Apple key.",
@@ -71,6 +71,7 @@ export type LibraryPushContentKind =
   | "pending-off"
   | "off"
   | "not-allowed"
+  | "not-served"
   | "available"
   | "turning-on"
   | "turning-off"
@@ -106,6 +107,8 @@ export interface LibraryPushContentInput {
     readonly state: LibraryPushState;
     readonly reason: LibraryPushStatusReason | null;
   } | null;
+  /** Whether that status lists this build; null when it has not answered or has no list. */
+  readonly served: boolean | null;
   readonly libraryLabel: string | null;
   readonly test: LibraryPushTestState;
 }
@@ -279,6 +282,14 @@ export function libraryPushContent(input: LibraryPushContentInput): LibraryPushC
     return { ...BASE, kind: "off", toggle: offeredOnlyOff(LIBRARY_PUSH_COPY.off) };
   if (!library.canChange)
     return { ...BASE, kind: "not-allowed", toggle: offeredOnlyOff(LIBRARY_PUSH_COPY.notAllowed) };
+  // Ahead of a held refusal: Try again cannot help until the Library's settings change, and
+  // the phone registers on its own once they do.
+  if (input.served === false)
+    return {
+      ...BASE,
+      kind: "not-served",
+      toggle: offeredOnlyOff(LIBRARY_PUSH_COPY.unsupportedApp),
+    };
   if (record === null || !value) return { ...BASE, kind: "available", toggle: toggle(null) };
 
   if (input.permission === "denied") {

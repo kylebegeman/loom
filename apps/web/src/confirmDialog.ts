@@ -6,16 +6,19 @@ export type ConfirmDialogState =
       readonly status: "confirming";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly confirmLabel: string | undefined; // fork: confirm-label
     }
   | {
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly confirmLabel: string | undefined; // fork: confirm-label
     };
 
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
+  readonly confirmLabel: string | undefined; // fork: confirm-label
   readonly resolve: (confirmed: boolean) => void;
 };
 
@@ -82,6 +85,7 @@ export function requestConfirmDialog(
     const pending = {
       message,
       variant: options?.variant ?? "default",
+      confirmLabel: options?.confirmLabel, // fork: confirm-label
       resolve,
     } satisfies PendingConfirmation;
     if (activeConfirmation || state.status === "closing") {
@@ -90,7 +94,12 @@ export function requestConfirmDialog(
     }
 
     activeConfirmation = pending;
-    publish({ status: "confirming", message, variant: pending.variant });
+    publish({
+      status: "confirming",
+      message,
+      variant: pending.variant,
+      confirmLabel: pending.confirmLabel, // fork: confirm-label
+    });
   });
 
   return confirmation;
@@ -106,7 +115,7 @@ export function respondToConfirmDialog(confirmed: boolean): void {
   const confirmation = activeConfirmation;
   activeConfirmation = null;
   confirmation.resolve(confirmed);
-  publish({ status: "closing", message: state.message, variant: state.variant });
+  publish({ ...state, status: "closing" }); // fork: confirm-label
 }
 
 export function completeConfirmDialogClose(): void {
@@ -119,7 +128,12 @@ export function completeConfirmDialogClose(): void {
   }
 
   activeConfirmation = next;
-  publish({ status: "confirming", message: next.message, variant: next.variant });
+  publish({
+    status: "confirming",
+    message: next.message,
+    variant: next.variant,
+    confirmLabel: next.confirmLabel, // fork: confirm-label
+  });
 }
 
 export function resetConfirmDialogForTests(): void {

@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
+import { ForwardCompatibleArray } from "../baseSchemas.ts";
 import { ServerConfig, ServerDirectEndpoint } from "../server.ts";
 import { DirectoryError } from "./directory.ts";
 import {
@@ -89,6 +90,24 @@ describe("reach status", () => {
     expect(decoded.warnings).toEqual(["passkey-not-required"]);
   });
 
+  it("carries a retired address as a warning that older clients drop", () => {
+    const retired = { ...status, state: "off", enabled: false, url: null, warnings: ["retired"] };
+    expect(decodeStatus(retired).warnings).toEqual(["retired"]);
+    // The warning list a client built before `retired` existed.
+    const olderWarnings = Schema.decodeUnknownSync(
+      ForwardCompatibleArray(
+        Schema.Literals([
+          "library-unreachable",
+          "library-signed-out",
+          "identity-off",
+          "identity-resource-differs",
+          "passkey-not-required",
+        ]),
+      ),
+    );
+    expect(olderWarnings(retired.warnings)).toEqual([]);
+  });
+
   it("has nowhere to carry a connector token", () => {
     const decoded = decodeStatus({ ...status, connectorToken: "secret" });
     expect(decoded).not.toHaveProperty("connectorToken");
@@ -108,6 +127,7 @@ describe("reach status", () => {
       "cloudflare-unavailable",
       "tunnel-busy",
       "io",
+      "identity-key-missing",
     ] as const;
     for (const reason of libraryReasons) {
       expect(new ReachLibraryError({ reason }).message).not.toContain("—");

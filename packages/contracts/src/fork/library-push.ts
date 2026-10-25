@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { IsoDateTime, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import { ForwardCompatibleArray, IsoDateTime, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
 /** Advertised only by a Library whose push switch, Identity and APNs key settings are all set. */
 export const LIBRARY_PUSH_FEATURE = "library-push";
@@ -143,14 +143,30 @@ export const LibraryPushKeySummary = Schema.Struct({
 export type LibraryPushKeySummary = typeof LibraryPushKeySummary.Type;
 
 /**
+ * A bundle and APNs environment the Library sends to. Plain strings rather than the bundle and
+ * environment literals, so a Library that serves a newer build still decodes on an older client.
+ */
+export const LibraryPushServedTopic = Schema.Struct({
+  bundleId: Schema.String,
+  apsEnvironment: Schema.String,
+});
+export type LibraryPushServedTopic = typeof LibraryPushServedTopic.Type;
+
+/**
  * `devices` holds the caller's own rows for an Identity session, every row for an operator, and
- * nothing for a session that is neither.
+ * nothing for a session that is neither. A row for a bundle or environment this build does not
+ * know is left out rather than failing the whole status.
+ *
+ * `topics` lists the builds the Library's push settings accept. It is present whenever push is
+ * on, and empty when those settings name no usable build, so every register is refused with
+ * `unsupported-app`. A Library from before the list omits it, as does one with push off.
  */
 export const LibraryPushStatus = Schema.Struct({
   state: LibraryPushState,
   reason: Schema.NullOr(LibraryPushStatusReason),
   key: Schema.NullOr(LibraryPushKeySummary),
-  devices: Schema.Array(LibraryPushDevice),
+  devices: ForwardCompatibleArray(LibraryPushDevice),
+  topics: Schema.optionalKey(Schema.Array(LibraryPushServedTopic)),
 });
 export type LibraryPushStatus = typeof LibraryPushStatus.Type;
 

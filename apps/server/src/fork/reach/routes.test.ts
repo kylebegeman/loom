@@ -33,6 +33,7 @@ it.effect("the fork routes keep /mcp off the reach host and leave /ws and other 
       changes: Effect.die("unused") as never,
       setEnabled: () => Effect.die("unused"),
       remove: () => Effect.die("unused"),
+      forget: () => Effect.die("unused"),
       guardState: () => ({ hostname: REACH_HOST, serving: true }),
       ownPorts: () => [],
     });

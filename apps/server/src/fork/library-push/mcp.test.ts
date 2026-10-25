@@ -35,7 +35,9 @@ const DEVICE: LibraryPushDevice = {
   lastDelivery: null,
 };
 
-const setup = Effect.fn("test.setup")(function* () {
+const DEV_BUILD = { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" } as const;
+
+const setup = Effect.fn("test.setup")(function* (topics?: ReadonlyArray<typeof DEV_BUILD>) {
   const tests: Array<{
     readonly caller: LibraryPushCaller;
     readonly request: LibraryPushTestRequest;
@@ -47,6 +49,7 @@ const setup = Effect.fn("test.setup")(function* () {
         reason: null,
         key: { teamId: "TEAM123456", keyId: "KEY1234567" },
         devices: [DEVICE],
+        ...(topics === undefined ? {} : { topics }),
       }),
     register: () => Effect.die("unused"),
     unregister: () => Effect.die("unused"),
@@ -110,6 +113,19 @@ describe("library push MCP tools", () => {
       expect(output).not.toContain(LABEL);
       expect(output).not.toContain(DEVICE.deviceId);
       expect(output).not.toContain(ROW_ID);
+    }),
+  );
+
+  it.effect("report the builds the Library sends to, including none", () =>
+    Effect.gen(function* () {
+      for (const topics of [[DEV_BUILD], []]) {
+        const { toolkit, invoke } = yield* setup(topics);
+        const result = yield* invoke(
+          toolkit.handle("loom_push_status", {}).pipe(Effect.flatMap(Stream.runCollect)),
+          "read-only",
+        );
+        expect(result[0]?.result).toMatchObject({ state: "ready", topics });
+      }
     }),
   );
 

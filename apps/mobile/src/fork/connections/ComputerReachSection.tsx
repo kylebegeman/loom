@@ -8,7 +8,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthRelayReadScope, sessionGrantsScope, type EnvironmentId } from "@t3tools/contracts";
-import { REACH_FEATURE, type ReachStatus } from "@t3tools/contracts/fork";
+import { REACH_FEATURE, REACH_FORGET_FEATURE, type ReachStatus } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
@@ -28,7 +28,7 @@ import { REACH_INK, reach } from "./reach";
 const FOOTER =
   "Your Library gives this computer its own address, so your devices can connect when they are away from your network and tailnet.";
 
-type Pending = "on" | "off" | "remove";
+type Pending = "on" | "off" | "remove" | "forget";
 
 function askFirst(confirm: ReachConfirm, onConfirm: () => void) {
   Dialog.confirm({
@@ -56,6 +56,9 @@ export function ComputerReachSection({
   const supported = config
     ? supportsLoomFeature(config.environment.capabilities, REACH_FEATURE)
     : null;
+  const forgetSupported = config
+    ? supportsLoomFeature(config.environment.capabilities, REACH_FORGET_FEATURE)
+    : false;
   const session = useAtomValue(environmentSession.sessionStateValueAtom(environmentId));
   const canRead = session === null ? null : sessionGrantsScope(session, AuthRelayReadScope);
   const canChange = useAtomValue(reach.set.permissionAtom(environmentId));
@@ -67,6 +70,7 @@ export function ComputerReachSection({
   const prepared = usePreparedConnection(environmentId);
   const setReach = useAtomCommand(reach.set, { reportFailure: false });
   const removeReach = useAtomCommand(reach.remove, { reportFailure: false });
+  const forgetReach = useAtomCommand(reach.forget, { reportFailure: false });
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +82,7 @@ export function ComputerReachSection({
     supported,
     canRead,
     canChange,
+    forgetSupported,
     isThisComputer: false,
     activeRouteUrl: connected && Option.isSome(prepared) ? prepared.value.httpBaseUrl : null,
   });
@@ -110,6 +115,13 @@ export function ComputerReachSection({
     if (view.confirmRemove === null) return;
     askFirst(view.confirmRemove, () =>
       run("remove", () => removeReach({ environmentId, input: {} })),
+    );
+  }
+
+  function confirmForget() {
+    if (view.confirmForget === null) return;
+    askFirst(view.confirmForget, () =>
+      run("forget", () => forgetReach({ environmentId, input: {} })),
     );
   }
 
@@ -172,6 +184,16 @@ export function ComputerReachSection({
           loading={pending === "remove"}
           disabled={pending !== null}
           onPress={confirmRemove}
+        />
+      ) : null}
+      {view.actions.forget ? (
+        <SettingsActionRow
+          icon="xmark.circle.fill"
+          label="Forget reach on this computer"
+          tone="danger"
+          loading={pending === "forget"}
+          disabled={pending !== null}
+          onPress={confirmForget}
         />
       ) : null}
     </SettingsSection>

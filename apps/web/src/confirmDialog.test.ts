@@ -104,4 +104,29 @@ describe("confirm dialog coordinator", () => {
     unregister();
     return expect(confirmation).resolves.toBe(true);
   });
+
+  // fork: confirm-label: each dialog keeps its own button label while it shows and closes.
+  it("keeps each confirmation's button label through closing and the queue", async () => {
+    const unregister = registerConfirmDialogHost();
+    const first = requireConfirmation(
+      requestConfirmDialog("Turn reach off?", { variant: "destructive", confirmLabel: "Turn off" }),
+    );
+    const second = requireConfirmation(requestConfirmDialog("Delete the worktree too?"));
+    expect(readConfirmDialogState()).toMatchObject({ confirmLabel: "Turn off" });
+
+    respondToConfirmDialog(true);
+    await expect(first).resolves.toBe(true);
+    expect(readConfirmDialogState()).toMatchObject({ status: "closing", confirmLabel: "Turn off" });
+
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toEqual({
+      status: "confirming",
+      message: "Delete the worktree too?",
+      variant: "default",
+    });
+
+    respondToConfirmDialog(false);
+    await expect(second).resolves.toBe(false);
+    unregister();
+  });
 });

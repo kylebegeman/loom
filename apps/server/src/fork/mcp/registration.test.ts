@@ -51,6 +51,7 @@ it.effect("lets agents see and take down reach but never turn it on (D10)", () =
       loom_reach_status: [true, false],
       loom_reach_off: [false, false],
       loom_reach_remove: [false, true],
+      loom_reach_forget: [false, true],
       loom_reach_computers: [true, false],
       loom_reach_retire: [false, true],
     });

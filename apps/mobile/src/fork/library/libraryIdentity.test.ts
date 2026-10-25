@@ -9,6 +9,7 @@ import {
 import {
   completeNativeIdentitySignIn,
   exchangeLibraryIdentityToken,
+  identityAddressNeedsCheck,
   libraryIdentityAddress,
   libraryIdentityResourceParameters,
   loadLibraryIdentity,
@@ -58,6 +59,36 @@ describe("native library identity", () => {
         request,
       ),
     ).rejects.toThrow("another computer");
+  });
+  it("holds a typed address to where the Library says the claimed computer is", async () => {
+    const request = vi.fn<typeof fetch>(async () => response(metadata));
+    const directory = {
+      library: {
+        environmentId,
+        label: "Helios",
+        addresses: ["https://library.example:9443/"],
+      },
+      computers: [],
+    };
+    await expect(
+      loadLibraryIdentity("https://LIBRARY.example:9443", undefined, request, { directory }),
+    ).resolves.toMatchObject({ environmentId });
+    // A copy of the Library's metadata served from elsewhere never reaches the provider.
+    await expect(
+      loadLibraryIdentity("https://copy.example", undefined, request, { directory }),
+    ).rejects.toThrow("This address says it is your Library, Helios");
+    await expect(
+      loadLibraryIdentity("https://copy.example", undefined, request, { directory: null }),
+    ).resolves.toMatchObject({ environmentId });
+  });
+  it("checks every typed address except one already saved for the computer", () => {
+    const saved = ["https://book.example.ts.net/", undefined];
+    expect(identityAddressNeedsCheck("book.example.ts.net", saved)).toBe(false);
+    expect(identityAddressNeedsCheck("https://BOOK.example.ts.net:443", saved)).toBe(false);
+    expect(identityAddressNeedsCheck("https://copy.example.com", saved)).toBe(true);
+    expect(identityAddressNeedsCheck("http://book.example.ts.net", saved)).toBe(true);
+    expect(identityAddressNeedsCheck("book.example.ts.net", [])).toBe(true);
+    expect(identityAddressNeedsCheck("https://book.example.ts.net/path", saved)).toBe(true);
   });
   it("requires native PKCE configuration and rejects embedded credentials", async () => {
     expect(() => libraryIdentityAddress("https://user:password@library.example")).toThrow(
