@@ -489,6 +489,29 @@ describe("starting a conversation without the settings step", () => {
     expect(quick([copyOn("ready", DOROTHY)], { ...app, archived: true })).toBeNull();
   });
 
+  it("still starts on a copy with uncommitted files", () => {
+    const changed = copyOn("changed", DOROTHY, {
+      health: {
+        copyId: "changed",
+        environmentId: DOROTHY,
+        checkedAt: now,
+        repositories: [
+          {
+            resourceId: "app",
+            branch: "main",
+            upstream: "origin/main",
+            ahead: 0,
+            behind: 0,
+            uncommittedFiles: 5,
+            unpushedCommits: 0,
+            checkedAt: now,
+          },
+        ],
+      },
+    });
+    expect(quick([changed])).toEqual({ environmentId: DOROTHY, label: "Dorothy", copy: changed });
+  });
+
   it("promises only the files the settings would use on that computer", () => {
     const ready = copyOn("ready", DOROTHY);
     // Saved files from a released copy make the settings ask which files to use.

@@ -252,9 +252,10 @@ export function sameLibraryFolderAction(left: LibraryFolderAction, right: Librar
 
 /**
  * Where a new conversation in this project can start without a settings step: the preselected
- * computer when its one copy of the whole project is ready and not known to be behind, changed or
- * broken. Projects with required tools wait for each computer's check, so they always show the
- * settings first. Null means the settings decide.
+ * computer when its one copy of the whole project is ready and not known to be behind or broken.
+ * Uncommitted files do not stop it, since a copy in use nearly always has some. Projects with
+ * required tools wait for each computer's check, so they always show the settings first. Null
+ * means the settings decide.
  */
 export function libraryQuickLaunch(input: {
   readonly project: LibraryProject;

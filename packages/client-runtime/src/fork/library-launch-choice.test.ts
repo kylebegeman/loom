@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
   LibraryProfileReadiness,
@@ -9,7 +9,9 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
+import type { ThreadRuntimeSummary } from "../state/models.ts";
 import {
+  libraryCopyFolderConversations,
   libraryLaunchChoice,
   libraryLaunchRanking,
   libraryLaunchWarning,
@@ -255,6 +257,7 @@ describe("libraryLaunchWarning", () => {
   const warningFor = (
     repositories: readonly LibraryRepositoryHealth[],
     resourceId: string | null = null,
+    sharedFolder?: { conversations: number; canUseWorktree: boolean },
   ) => {
     const entry = copy("mini-copy", MINI);
     const ranking = libraryLaunchRanking({
@@ -265,7 +268,7 @@ describe("libraryLaunchWarning", () => {
       resourceId,
       liveHealth: live(health(entry.id, MINI, repositories)),
     });
-    return libraryLaunchWarning(ranking.preselected, entry, resourceId);
+    return libraryLaunchWarning(ranking.preselected, entry, resourceId, sharedFolder);
   };
 
   it("says nothing for an up-to-date copy or one never checked", () => {
@@ -288,9 +291,33 @@ describe("libraryLaunchWarning", () => {
     });
   });
 
-  it("warns about uncommitted files without offering a pull", () => {
-    expect(warningFor([repository("app", { uncommittedFiles: 1 }), repository("docs")])).toEqual({
-      message: "This copy has 1 uncommitted file.",
+  it("says nothing about uncommitted files alone", () => {
+    expect(warningFor([repository("app", { uncommittedFiles: 1 }), repository("docs")])).toBeNull();
+  });
+
+  it("warns when other conversations work in the same folder, pointing to a worktree", () => {
+    const changed = [repository("app", { uncommittedFiles: 1 }), repository("docs")];
+    expect(warningFor(changed, null, { conversations: 1, canUseWorktree: true })).toEqual({
+      message:
+        "Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
+      pullPaths: null,
+    });
+    expect(warningFor(changed, null, { conversations: 2, canUseWorktree: false })).toEqual({
+      message: "2 other conversations are working in this folder and changing the same files.",
+      pullPaths: null,
+    });
+    expect(warningFor(changed, null, { conversations: 0, canUseWorktree: true })).toBeNull();
+  });
+
+  it("never offers a pull under another conversation's work", () => {
+    expect(
+      warningFor([repository("app", { behind: 3 }), repository("docs")], null, {
+        conversations: 1,
+        canUseWorktree: true,
+      }),
+    ).toEqual({
+      message:
+        "This copy is 3 commits behind. Another conversation is working in this folder. Choose New worktree to keep the changes apart.",
       pullPaths: null,
     });
   });
@@ -342,5 +369,50 @@ describe("libraryLaunchWarning", () => {
       resourceId: null,
     });
     expect(libraryLaunchWarning(ranking.preselected, null, null)).toBeNull();
+  });
+});
+
+describe("libraryCopyFolderConversations", () => {
+  const entry = copy("mini-copy", MINI);
+  const shell = (
+    worktreePath: string | null,
+    status: ThreadRuntimeSummary["status"] = "running",
+  ) => ({
+    environmentId: MINI,
+    worktreePath,
+    archivedAt: null as string | null,
+    runtime: {
+      status,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: null,
+      lastError: null,
+      updatedAt: CHECKED,
+    } satisfies ThreadRuntimeSummary,
+  });
+
+  it("counts working conversations in the copy folder and its component folders", () => {
+    expect(
+      libraryCopyFolderConversations(
+        [shell("/work/mini-copy"), shell("/work/mini-copy/app/"), shell("/work/mini-copy-2")],
+        entry,
+      ),
+    ).toBe(2);
+  });
+
+  it("leaves out worktrees, idle and archived conversations, and other computers", () => {
+    expect(
+      libraryCopyFolderConversations(
+        [
+          shell("/home/.t3/worktrees/loom/t3-1"),
+          shell("/work/mini-copy", "idle"),
+          { ...shell("/work/mini-copy"), archivedAt: CHECKED },
+          { ...shell("/work/mini-copy"), environmentId: BOOK },
+          shell(null),
+        ],
+        entry,
+      ),
+    ).toBe(0);
+    expect(libraryCopyFolderConversations([shell("/work/mini-copy")], null)).toBe(0);
   });
 });
