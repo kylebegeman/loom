@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { DatabaseStorageStatus } from "@t3tools/contracts"; // fork: restart-compaction
 import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -111,6 +112,76 @@ it.effect("publishes nothing when doctor would repair a different database", () 
       ),
     ),
   ),
+);
+
+// fork: restart-compaction
+const failedRestartCompaction = {
+  at: "2026-10-25T12:00:00.000Z",
+  outcome: "failed",
+  detail: "The repair stopped with exit code 1.",
+} as const;
+
+// fork: restart-compaction
+const desktopConfig = Layer.effect(
+  ServerConfig.ServerConfig,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    // The desktop records its attempt before it starts the server.
+    yield* fs.writeFileString(
+      path.join(path.dirname(config.dbPath), "restart-compaction.json"),
+      JSON.stringify(failedRestartCompaction),
+    );
+    return { ...config, restartCompaction: true };
+  }),
+).pipe(Layer.provide(testConfig));
+
+// fork: restart-compaction
+const firstPublishedStatus = (matches: (status: DatabaseStorageStatus) => boolean) =>
+  Effect.flatMap(DatabaseStorage.DatabaseStorage, (storage) =>
+    storage.status.pipe(
+      Stream.filter((status): status is DatabaseStorageStatus => status !== null && matches(status)),
+      Stream.runHead,
+      Effect.map(Option.getOrThrow),
+    ),
+  );
+
+// fork: restart-compaction
+it.effect("lets Settings ask the desktop to compact at its next restart", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig;
+    const storage = yield* DatabaseStorage.DatabaseStorage;
+    const requestPath = path.join(path.dirname(config.dbPath), "compact-at-restart");
+
+    const initial = yield* firstPublishedStatus(() => true);
+    assert.deepEqual(initial.restartCompaction, {
+      requested: false,
+      lastAttempt: failedRestartCompaction,
+    });
+
+    // Each change republishes before it returns, so Settings never shows a stale state.
+    yield* storage.requestRestartCompaction(true);
+    assert.isTrue(yield* fs.exists(requestPath));
+    assert.isTrue((yield* firstPublishedStatus(() => true)).restartCompaction?.requested);
+
+    yield* storage.requestRestartCompaction(false);
+    assert.isFalse(yield* fs.exists(requestPath));
+    assert.isFalse((yield* firstPublishedStatus(() => true)).restartCompaction?.requested);
+  }).pipe(Effect.provide(storageLayer(desktopConfig).pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+// fork: restart-compaction
+it.effect("keeps the doctor command where no desktop compacts the database", () =>
+  Effect.gen(function* () {
+    const storage = yield* DatabaseStorage.DatabaseStorage;
+    const status = yield* firstPublishedStatus(() => true);
+    assert.notProperty(status, "restartCompaction");
+    const error = yield* storage.requestRestartCompaction(true).pipe(Effect.flip);
+    assert.equal(error.reason, "unavailable");
+  }).pipe(Effect.provide(storageLayer(testConfig))),
 );
 
 const compactionLayer = (

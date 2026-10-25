@@ -36,6 +36,7 @@ import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
 import { REACH_WS_METHODS as REACH } from "./reach.ts";
 import { AuthRelayWriteScope } from "../auth.ts";
 import { LIBRARY_PUSH_WS_METHODS as PUSH } from "./library-push.ts";
+import { DATABASE_COMPACTION_WS_METHODS as DBC } from "./database-compaction.ts";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -284,4 +285,6 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [ANYWHERE.syncLibrary]: AuthOrchestrationOperateScope,
   [ANYWHERE.bindVaultSlot]: AuthOrchestrationOperateScope,
   [ANYWHERE.setRemoteSettings]: AuthOrchestrationOperateScope,
+  // The desktop rewrites the database file at its next launch, a storage setting.
+  [DBC.setRequest]: AuthSettingsWriteScope,
 } as const;

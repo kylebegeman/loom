@@ -90,3 +90,5 @@ export * from "./bots.ts";
 export * from "./library-push.ts";
 
 export * from "./project-workflows.ts";
+
+export * from "./database-compaction.ts";

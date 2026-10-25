@@ -34,6 +34,7 @@ import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
+import { compactBeforeBackendStart } from "../fork/database-compaction/RestartCompaction.ts"; // fork: restart-compaction
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
@@ -237,6 +238,9 @@ const bootstrap = Effect.gen(function* () {
     );
   }
 
+  // fork: restart-compaction: no backend has the database open yet. A quit
+  // during the repair stops it, and the check below then skips the start.
+  yield* compactBeforeBackendStart;
   if (!(yield* Ref.get(state.quitting))) {
     if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;

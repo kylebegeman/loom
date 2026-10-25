@@ -354,6 +354,21 @@ describe("DesktopBackendConfiguration", () => {
     ),
   );
 
+  // fork: restart-compaction: the desktop compacts only the database on this machine.
+  it.effect("only the local primary backend offers compaction at restart", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const primary = yield* configuration.resolvePrimary;
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+
+        assert.equal(primary.bootstrap.restartCompaction, true);
+        assert.isUndefined(wsl.bootstrap.restartCompaction);
+      }),
+    ),
+  );
+
   it.effect("keeps server hydration enabled when desktop preparation failed", () =>
     withHarness(
       Effect.gen(function* () {
