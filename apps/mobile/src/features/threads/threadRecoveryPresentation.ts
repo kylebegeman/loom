@@ -4,7 +4,14 @@ import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
 export interface ThreadRecoveryPresentation {
   readonly title: string;
   readonly detail: string;
-  readonly action: "reconnect" | "connection" | "resume" | "files" | null;
+  readonly action:
+    | "reconnect"
+    | "connection"
+    | "resume"
+    | "files"
+    | "resume-run" // fork: failed-run-retry
+    | "retry-run" // fork: failed-run-retry
+    | null;
   readonly danger?: boolean;
 }
 
@@ -24,6 +31,8 @@ export function resolveThreadRecoveryPresentation(input: {
   readonly workspaceError: string | null;
   readonly queueHeld: boolean;
   readonly canOperate: boolean;
+  /** How the latest run ended, when it can continue from there. */
+  readonly stoppedRun?: "interrupted" | "failed" | null; // fork: failed-run-retry
 }): ThreadRecoveryPresentation | null {
   const connected = input.connectionState === "connected";
   const count = input.queuedMessages.length;
@@ -128,6 +137,16 @@ export function resolveThreadRecoveryPresentation(input: {
       detail: `${input.workspaceError} The agent did not start. Check this computer's project files before sending another message.`,
       danger: true,
       action: "files",
+    };
+  }
+  // fork: failed-run-retry
+  if (input.stoppedRun) {
+    const failed = input.stoppedRun === "failed";
+    return {
+      title: failed ? "Run failed" : "Run stopped",
+      detail: `${failed ? "Retry" : "Resume"} to continue where it left off.${input.queueHeld ? " Queued messages run after it." : ""}`,
+      ...(failed ? { danger: true } : {}),
+      action: input.canOperate ? (failed ? "retry-run" : "resume-run") : null,
     };
   }
   if (input.queueHeld) {

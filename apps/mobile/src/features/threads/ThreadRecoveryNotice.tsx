@@ -15,6 +15,12 @@ import {
   resolveWorkspacePreparationError,
 } from "./threadRecoveryPresentation";
 
+// fork: failed-run-retry
+export interface ContinuableRunAction {
+  readonly failed: boolean;
+  readonly onContinue: () => Promise<void>;
+}
+
 export function ThreadRecoveryNotice(props: {
   readonly threadRef: ScopedThreadRef;
   readonly connectionState: EnvironmentConnectionPhase;
@@ -28,6 +34,8 @@ export function ThreadRecoveryNotice(props: {
   readonly onOpenConnection: () => void;
   readonly onReviewFiles?: () => void;
   readonly onResumeQueue: (() => Promise<void>) | null;
+  /** Present while the latest run stopped or failed in a way it can continue from. */
+  readonly continuableRun?: ContinuableRunAction | null; // fork: failed-run-retry
 }) {
   const delivery = useAtomValue(threadOutboxDeliveryAtom);
   const items = useThreadVisibleTurnItems(props.threadRef);
@@ -45,19 +53,28 @@ export function ThreadRecoveryNotice(props: {
     }),
     queueHeld: props.onResumeQueue !== null,
     canOperate: props.canOperate,
+    // fork: failed-run-retry
+    stoppedRun: props.continuableRun ? (props.continuableRun.failed ? "failed" : "interrupted") : null,
   });
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   if (presentation === null) return null;
+  // fork: failed-run-retry
+  const continuesRun = presentation.action === "resume-run" || presentation.action === "retry-run";
   const resume = async () => {
-    if (resuming || props.onResumeQueue === null) return;
+    const start = continuesRun ? (props.continuableRun?.onContinue ?? null) : props.onResumeQueue; // fork: failed-run-retry
+    if (resuming || start === null) return;
     setResuming(true);
     setResumeError(null);
     try {
-      await props.onResumeQueue();
+      await start();
     } catch (error) {
       setResumeError(
-        error instanceof Error ? error.message : "Could not resume the queue. Try again.",
+        error instanceof Error
+          ? error.message
+          : continuesRun // fork: failed-run-retry
+            ? "Could not continue the run. Try again."
+            : "Could not resume the queue. Try again.",
       );
     }
     setResuming(false);
@@ -89,16 +106,20 @@ export function ThreadRecoveryNotice(props: {
             label={
               presentation.action === "resume"
                 ? "Resume queue"
-                : presentation.action === "connection"
-                  ? "Connection settings"
-                  : presentation.action === "files"
-                    ? "Review files"
-                    : "Reconnect"
+                : presentation.action === "retry-run" // fork: failed-run-retry
+                  ? "Retry"
+                  : presentation.action === "resume-run" // fork: failed-run-retry
+                    ? "Resume"
+                    : presentation.action === "connection"
+                      ? "Connection settings"
+                      : presentation.action === "files"
+                        ? "Review files"
+                        : "Reconnect"
             }
             tone="text"
-            loading={presentation.action === "resume" && resuming}
+            loading={(presentation.action === "resume" || continuesRun) && resuming} // fork: failed-run-retry
             onPress={
-              presentation.action === "resume"
+              presentation.action === "resume" || continuesRun // fork: failed-run-retry
                 ? () => void resume()
                 : presentation.action === "connection"
                   ? props.onOpenConnection

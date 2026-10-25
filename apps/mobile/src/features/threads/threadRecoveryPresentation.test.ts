@@ -126,6 +126,37 @@ describe("thread interruption recovery presentation", () => {
       action: "resume",
     });
   });
+
+  // fork: failed-run-retry
+  it("offers to continue a stopped or failed run, ahead of its held queue", () => {
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "interrupted" }),
+    ).toMatchObject({
+      title: "Run stopped",
+      detail: "Resume to continue where it left off.",
+      action: "resume-run",
+    });
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "failed", queueHeld: true }),
+    ).toMatchObject({
+      title: "Run failed",
+      detail: "Retry to continue where it left off. Queued messages run after it.",
+      action: "retry-run",
+      danger: true,
+    });
+    expect(
+      resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "failed", canOperate: false })
+        ?.action,
+    ).toBeNull();
+    expect(
+      resolveThreadRecoveryPresentation({
+        ...ready,
+        stoppedRun: "failed",
+        runtimeStatus: "failed",
+        workspaceError: "Saved files are unavailable.",
+      })?.action,
+    ).toBe("files");
+  });
 });
 
 describe("workspace preparation recovery errors", () => {

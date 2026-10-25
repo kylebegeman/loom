@@ -126,7 +126,7 @@ import type {
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
-import { ThreadRecoveryNotice } from "./ThreadRecoveryNotice";
+import { ThreadRecoveryNotice, type ContinuableRunAction } from "./ThreadRecoveryNotice"; // fork: failed-run-retry
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
@@ -228,6 +228,7 @@ export interface ThreadDetailScreenProps {
   readonly onStopThread: () => void;
   /** Present while the thread's queue is held. */
   readonly onResumeQueue: (() => Promise<void>) | null;
+  readonly continuableRun: ContinuableRunAction | null; // fork: failed-run-retry
   readonly onSendMessage: (followUp?: ActiveTurnComposerAction) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -1278,6 +1279,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                     onOpenConnection={props.onOpenConnectionEditor}
                     onReviewFiles={props.onOpenConversationDetails}
                     onResumeQueue={props.onResumeQueue}
+                    continuableRun={props.continuableRun} // fork: failed-run-retry
                   />
                   {props.queuedRunEdit !== null ? (
                     <Animated.View

@@ -20,9 +20,12 @@ import {
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  MessageId, // fork: failed-run-retry
   ThreadId,
   type ProjectScript,
+  type RunId, // fork: failed-run-retry
 } from "@t3tools/contracts";
+import { continuableRun } from "@t3tools/shared/fork/run-continuation"; // fork: failed-run-retry
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
@@ -319,6 +322,11 @@ function ThreadRouteContent(
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
   const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
+  // fork: failed-run-retry - The recovery notice shows why a continuation failed.
+  const startContinuation = useAtomCommand(threadEnvironment.startTurn, {
+    label: "continue run",
+    reportFailure: false,
+  });
   const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
     reportFailure: false,
@@ -618,6 +626,46 @@ function ThreadRouteContent(
     });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
   };
+
+  // fork: failed-run-retry
+  // Continues as the web Resume does. A usage limit keeps its own card, which resumes at the reset.
+  const continuable =
+    !selectedThread || selectedThreadDetail === null
+      ? null
+      : continuableRun({
+          runs: selectedThreadDetail.runs,
+          turnItems: selectedThreadDetail.turnItems,
+          lastErrorClass: selectedThread.runtime?.lastErrorClass,
+        });
+  const handleContinueRun = async (runId: RunId) => {
+    if (!selectedThread) return;
+    const result = await startContinuation({
+      environmentId: selectedThread.environmentId,
+      input: {
+        threadId: selectedThread.id,
+        creationSource: "mobile",
+        manualContinuationOfRunId: runId,
+        message: {
+          messageId: MessageId.make(uuidv4()),
+          role: "user",
+          text: "Continue where you left off.",
+          attachments: [],
+        },
+        runtimeMode: selectedThread.runtimeMode,
+        interactionMode: selectedThread.interactionMode,
+        dispatchMode: "start",
+      },
+    });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    if (composer.queueHeld) await handleResumeQueue();
+  };
+  const continuableRunAction =
+    continuable === null || continuable.failure?.class === "usage_limit"
+      ? null
+      : {
+          failed: continuable.failure !== null,
+          onContinue: () => handleContinueRun(continuable.run.id),
+        };
 
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
     terminalDebugLog("terminal-menu:open-existing", {
@@ -1014,6 +1062,7 @@ function ThreadRouteContent(
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
           onResumeQueue={composer.queueHeld ? handleResumeQueue : null}
+          continuableRun={continuableRunAction} // fork: failed-run-retry
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}

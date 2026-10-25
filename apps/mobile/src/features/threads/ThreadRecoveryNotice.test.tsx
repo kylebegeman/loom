@@ -104,6 +104,29 @@ describe("queue resume recovery", () => {
   });
 });
 
+// fork: failed-run-retry
+describe("failed run recovery", () => {
+  it("retries the failed run before its held queue and says when that fails", async () => {
+    const attempt = Promise.withResolvers<void>();
+    const onContinue = vi.fn<() => Promise<void>>().mockReturnValueOnce(attempt.promise);
+    const resumeQueue = vi.fn<() => Promise<void>>();
+    props = { ...props, onResumeQueue: resumeQueue, continuableRun: { failed: true, onContinue } };
+    await act(() => root.render(<ThreadRecoveryNotice {...props} />));
+    expect(container.textContent).toContain("Run failed");
+    expect(button().textContent).toBe("Retry");
+
+    await act(() => button().click());
+    expect(onContinue).toHaveBeenCalledOnce();
+    expect(resumeQueue).not.toHaveBeenCalled();
+    await act(async () => {
+      attempt.reject(null);
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Could not continue the run. Try again.");
+    expect(button().disabled).toBe(false);
+  });
+});
+
 describe("rejected message recovery", () => {
   it("opens conversation context from a send error without losing its reason", async () => {
     const review = vi.fn();
