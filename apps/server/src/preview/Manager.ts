@@ -12,6 +12,7 @@ import {
   type PreviewResizeInput,
   type PreviewAdjustInput,
   FILL_PREVIEW_VIEWPORT,
+  PreviewNavStatus, // fork: preview-status-guard
   PreviewSessionLookupError,
   type PreviewSessionSnapshot,
 } from "@t3tools/contracts";
@@ -26,6 +27,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema"; // fork: preview-status-guard
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
@@ -118,6 +120,7 @@ const normalizeUrl = (rawUrl: string): Effect.Effect<string, PreviewInvalidUrlEr
   });
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+const isPreviewNavStatus = Schema.is(PreviewNavStatus); // fork: preview-status-guard
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* PreviewManagerMake() {
@@ -270,6 +273,18 @@ export const make = Effect.gen(function* PreviewManagerMake() {
       Effect.fn("PreviewManager.reportSessionStatus")(function* (session) {
         if (session.snapshot.runtime === "server" && !input.serverControlled)
           return yield* new PreviewControlRequiredError({ tabId: input.tabId });
+        // fork: preview-status-guard -- server browser statuses come from Playwright, not a
+        // decoded RPC payload. One the contract rejects, such as a popup's blank URL, would fail
+        // the encoder and end every preview event stream, so it is dropped and the tab keeps its
+        // last good status.
+        const reportedTag = input.navStatus._tag;
+        if (!isPreviewNavStatus(input.navStatus)) {
+          yield* Effect.logWarning("preview status report failed validation", {
+            tabId: input.tabId,
+            navStatus: reportedTag,
+          });
+          return { next: session, emit: null, result: undefined as void };
+        }
         const updatedAt = yield* currentIsoTimestamp;
         const snapshot: PreviewSessionSnapshot = {
           ...session.snapshot,
