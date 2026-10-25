@@ -1376,6 +1376,70 @@ it.live("a popup becomes the agent's own tab and keeps its opener page", () =>
   ).pipe(Effect.provide(layer)),
 );
 
+// fork: preview-popups
+const fillAgentTabBudget = Effect.gen(function* () {
+  const { browser, broker, tabId } = yield* ready;
+  for (let count = 1; count < 8; count += 1) {
+    yield* broker.invoke({
+      scope,
+      operation: "open",
+      input: { reuseExistingTab: false, show: false },
+    });
+  }
+  const watcher = yield* browser.attachViewer(viewerInput(tabId, false));
+  const openPopup = Effect.gen(function* () {
+    contexts[0]!.page.emit("popup", makeContext().page);
+    let shown = yield* Queue.take(watcher.output);
+    while (shown._tag !== "popup") shown = yield* Queue.take(watcher.output);
+    return shown.tabId;
+  });
+  return { browser, broker, tabId, openPopup };
+});
+
+// fork: preview-popups
+it.live(
+  "a popup past the agent's tab budget opens and is shown to whoever watches its opener",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { tabId, openPopup } = yield* fillAgentTabBudget;
+        const popupTabId = yield* openPopup;
+        const manager = yield* Manager.PreviewManager;
+        const { sessions } = yield* manager.list({ threadId: scope.thread.threadId });
+        const opener = sessions.find((session) => session.tabId === tabId)!;
+        expect(sessions.find((session) => session.tabId === popupTabId)).toMatchObject({
+          automationOwner: opener.automationOwner,
+          reveal: false,
+        });
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+// fork: preview-popups
+it.live("a popup the tab limit closes is reported once in the agent's status", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId, openPopup } = yield* fillAgentTabBudget;
+      for (let count = 0; count < 4; count += 1) {
+        // Attaching resolves once the popup's tab is registered and counts toward the limit.
+        yield* browser.attachViewer(viewerInput(yield* openPopup, false));
+      }
+      const blocked = makeContext(undefined, "https://accounts.example.com/sign-in");
+      contexts[0]!.page.emit("popup", blocked.page);
+      expect(blocked.page.close).toHaveBeenCalled();
+      const status = () =>
+        broker.invoke<PreviewAutomationStatus>({ scope, tabId, operation: "status", input: {} });
+      const reported = yield* status();
+      expect(reported.blockedPopup).toMatchObject({
+        openerTabId: tabId,
+        url: "https://accounts.example.com/sign-in",
+        message: expect.stringContaining("t3_preview_close"),
+      });
+      expect((yield* status()).blockedPopup).toBeUndefined();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
 it.live.each([
   { url: "https://environment.test/api/assets/token/guide.pdf", pdf: true },
   { url: "https://example.com/sign-in", pdf: false },

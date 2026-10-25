@@ -141,6 +141,14 @@ export const PreviewAutomationStatus = Schema.Struct({
   ),
   profiles: Schema.optional(Schema.Array(PreviewAutomationProfile)),
   defaultProfileId: Schema.optional(BrowserProfileId),
+  // fork: preview-popups -- reported once, after the tab limit closed a popup from one of the caller's tabs.
+  blockedPopup: Schema.optional(
+    Schema.Struct({
+      openerTabId: PreviewTabId,
+      url: Schema.NullOr(Schema.String),
+      message: Schema.String,
+    }),
+  ),
 });
 export type PreviewAutomationStatus = typeof PreviewAutomationStatus.Type;
 

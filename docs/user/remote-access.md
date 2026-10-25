@@ -229,8 +229,10 @@ continue. Read-only connections can watch without changing the page.
 While you have control, the tab works with your device: text the page copies or
 cuts goes to your clipboard, a file picker on the page opens your device's
 picker, and a finished download is offered for you to save. Popups such as
-sign-in windows open as their own tabs. Downloads stay on the host until the
-tab closes. Audio does not play on your device.
+sign-in windows open as their own tabs. A popup from an agent's tab you are
+watching comes forward, so you can take control and finish the sign-in.
+Downloads stay on the host until the tab closes. Audio does not play on your
+device.
 
 On a phone, tap the floating preview's corner dot to show its controls, then
 **Pop into separate window** to keep watching in picture-in-picture over other

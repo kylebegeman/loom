@@ -350,6 +350,9 @@ const READ_OPERATIONS: ReadonlySet<PreviewAutomationRequest["operation"]> = new 
 ]);
 
 const AGENT_TAB_LIMIT = 8;
+// fork: preview-popups -- a sign-in popup must survive an agent's full tab budget, but a page that
+// keeps calling window.open still cannot take the server's tabs.
+const AGENT_POPUP_HEADROOM = 4;
 const SERVER_TAB_LIMIT = 32;
 const AGENT_TAB_IDLE_MS = 30 * 60 * 1000;
 const IDLE_SWEEP_INTERVAL = "1 minute";
@@ -488,6 +491,8 @@ const make = Effect.gen(function* () {
   const desktopReleases = new Map<string, Promise<void>>();
   const closedPendingTabs = new Set<string>();
   const adoptedPages = new Map<string, { readonly page: Page; readonly openerTabId: string }>();
+  // fork: preview-popups -- the latest popup each agent session lost to the tab limit, kept until its next status.
+  const blockedPopups = new Map<string, NonNullable<PreviewAutomationStatus["blockedPopup"]>>();
   const closedSessions = new Set<string>();
   let hostConnectionId: string | null = null;
   let viewerResizeOrder = 0;
@@ -1264,11 +1269,23 @@ const make = Effect.gen(function* () {
 
   const adoptPopup = async (opener: ServerTab, popup: Page) => {
     const agentId = opener.control.agentId;
-    if (opener.closing || (agentId !== null && atTabLimit(agentId))) {
+    const url = popup.url(); // fork: preview-popups
+    if (opener.closing) {
       await popup.close().catch(constVoid);
       return;
     }
-    const url = popup.url();
+    // fork: preview-popups -- an agent waiting on a sign-in window learns at its next status that
+    // the window was closed, instead of waiting on one that no longer exists.
+    if (agentId !== null && atTabLimit(agentId, AGENT_POPUP_HEADROOM)) {
+      blockedPopups.set(agentId, {
+        openerTabId: opener.tabId,
+        url: /^https?:/i.test(url) ? url.slice(0, 2048) : null,
+        message:
+          "Loom closed a popup from this tab because too many browser tabs are open. Close one with t3_preview_close, then repeat the action that opened the popup.",
+      });
+      await popup.close().catch(constVoid);
+      return;
+    }
 
     const controller = [...opener.viewers].find(
       (viewer) => viewer.id === opener.control.controller,
@@ -1292,6 +1309,10 @@ const make = Effect.gen(function* () {
       (snapshot) => {
         if (opener.control.agentId === null)
           controller?.push({ _tag: "popup", tabId: snapshot.tabId });
+        // fork: preview-popups -- whoever watches an agent's tab follows it into the popup, which
+        // can be a sign-in only that person can finish. Unwatched popups stay out of view.
+        const watchers = opener.control.agentId === null ? [] : [...opener.viewers];
+        for (const viewer of watchers) viewer.push({ _tag: "popup", tabId: snapshot.tabId });
       },
       async () => {
         await popup.close().catch(constVoid);
@@ -1341,10 +1362,11 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const atTabLimit = (agentSessionId: string) =>
+  // fork: preview-popups -- headroom lets a popup past the per-agent budget, never past the server's.
+  const atTabLimit = (agentSessionId: string, headroom = 0) =>
     tabs.size + pendingTabs.size >= SERVER_TAB_LIMIT ||
     [...tabs.values()].filter((tab) => tab.control.agentId === agentSessionId).length >=
-      AGENT_TAB_LIMIT;
+      AGENT_TAB_LIMIT + headroom;
 
   const assertTabCapacity = (agentSessionId: string) => {
     if (atTabLimit(agentSessionId))
@@ -1437,6 +1459,11 @@ const make = Effect.gen(function* () {
     tab: ServerTab | undefined,
     agentSessionId?: string,
   ): Promise<PreviewAutomationStatus> => {
+    // fork: preview-popups
+    const blockedPopup =
+      agentSessionId === undefined ? undefined : blockedPopups.get(agentSessionId);
+    if (agentSessionId !== undefined) blockedPopups.delete(agentSessionId);
+    const blocked = blockedPopup === undefined ? {} : { blockedPopup };
     if (!tab) {
       return {
         available: false,
@@ -1446,6 +1473,7 @@ const make = Effect.gen(function* () {
         title: null,
         loading: false,
         ...profileStatus(),
+        ...blocked, // fork: preview-popups
       };
     }
     const url = tab.page.url();
@@ -1487,6 +1515,7 @@ const make = Effect.gen(function* () {
         url,
         completedAt,
       })),
+      ...blocked, // fork: preview-popups
     };
     if (status.url === null || tab.dialog) return status;
     return { ...status, title: (await tab.page.title().catch(() => "")) || null };
