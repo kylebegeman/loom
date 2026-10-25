@@ -6,7 +6,7 @@ vi.mock("./state", () => ({}));
 vi.mock("~/state/environments", () => ({}));
 vi.mock("~/state/entities", () => ({}));
 vi.mock("~/uiStateStore", () => ({}));
-import { libraryContextForLocalProject, runsInSeparateWorktree } from "./useLibraryNewConversation";
+import { libraryContextForLocalProject } from "./useLibraryNewConversation";
 
 const copy: LibraryWorkingCopy = {
   id: "files",
@@ -63,16 +63,5 @@ describe("new conversations from old local threads", () => {
         { ...copy, id: "other-files", projectId: "other" },
       ]),
     ).toBeNull();
-  });
-});
-
-describe("new conversations with a thread's settings", () => {
-  it("goes through the Library from the project's own folder, however its path is written", () => {
-    expect(runsInSeparateWorktree("/Users/Kyle/Loom/", "/users/kyle/loom")).toBe(false);
-    expect(runsInSeparateWorktree("C:\\Code\\Loom", "c:/code/loom")).toBe(false);
-  });
-  it("keeps a worktree of its own, or one whose project is not loaded, in its checkout", () => {
-    expect(runsInSeparateWorktree("/lanes/loom/fix-sidebar", "/Users/kyle/loom")).toBe(true);
-    expect(runsInSeparateWorktree("/Users/kyle/loom", undefined)).toBe(true);
   });
 });

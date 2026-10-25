@@ -740,4 +740,5 @@ apps/web/src/hooks/useThreadActions.ts	project-root-worktree	2
 apps/server/src/git/GitWorkflowService.ts	project-root-worktree	5
 apps/server/src/git/GitWorkflowService.test.ts	project-root-worktree	5
 apps/server/src/server.ts	project-root-worktree	1
+apps/server/src/git/GitManager.test.ts	test-temp-isolation	9
 packages/shared/package.json	-	"./fork/reach"

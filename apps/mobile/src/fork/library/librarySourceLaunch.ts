@@ -26,13 +26,9 @@ export function librarySourceLaunchParams(
   context: LibrarySourceContext,
   project: LibraryProject,
 ) {
-  // The Library form cannot select a branch or a partial multi-repository scope.
-  if (
-    source.branch ||
-    source.worktreePath ||
-    context.environmentId !== source.environmentId ||
-    context.projectId !== project.id
-  )
+  // A Library conversation runs in its copy's folder, so the source's branch or worktree is not
+  // carried over. The form cannot select a partial multi-repository scope.
+  if (context.environmentId !== source.environmentId || context.projectId !== project.id)
     return null;
   const repositories = libraryRepositories(project);
   const resourceIds = context.resourceIds?.length

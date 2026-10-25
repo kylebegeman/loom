@@ -17,6 +17,8 @@ settings. Returning from either restores the conversation you left.
 
 On web and desktop, hover a thread or focus it with the keyboard and choose **+**
 to start a fresh conversation with that thread's project, computer and settings.
+A Library project's conversation starts in the project's folder, even when the
+source thread ran in a worktree of its own.
 Review or change the selections before starting. The main **New thread** action
 remains available when you want to choose a different setup.
 
