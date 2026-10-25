@@ -387,4 +387,41 @@ describe("mobile New task Library choices", () => {
     expect(ids(shown!.suggested)).toEqual([]);
     expect(ids(shown!.choices)).toEqual(["newer"]);
   });
+
+  it("hands content shared from another app to the start", async () => {
+    const start = {
+      environmentId: EnvironmentId.make("computer"),
+      copyId: "files",
+      summary: "Computer",
+    };
+    const other = { ...project, id: "other", title: "Other" };
+    await act(() =>
+      root.render(
+        <NewTaskLibraryProjectChoices
+          choices={[
+            { project, start },
+            { project: other, start: null },
+          ]}
+          error={null}
+          incomingShareId="share"
+        />,
+      ),
+    );
+    for (const row of container.querySelectorAll("button")) await act(() => row.click());
+    expect(state.dispatch.mock.calls).toEqual([
+      [
+        {
+          name: "LibraryStart",
+          params: {
+            projectId: project.id,
+            reuseEnvironmentId: start.environmentId,
+            initialCopyId: "files",
+            startNow: true,
+            incomingShareId: "share",
+          },
+        },
+      ],
+      [{ name: "LibraryStart", params: { projectId: "other", incomingShareId: "share" } }],
+    ]);
+  });
 });

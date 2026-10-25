@@ -47,11 +47,17 @@ import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import * as Dialog from "../../components/ui/Dialog";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { ListRow } from "../../components/ui/ListRow";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
+import { useIncomingShare } from "../../features/sharing/IncomingShareProvider";
+import {
+  selectIncomingShareAttachmentsForServer,
+  type IncomingShareDraft,
+} from "../../features/sharing/incoming-share-model";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -63,6 +69,9 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import {
   setComposerDraftText,
   flushComposerDrafts,
+  getComposerDraftSnapshot,
+  mergeComposerDraftContent,
+  scheduleUnusedComposerAttachmentCleanup,
   useStickyComposerModelSelection,
 } from "../../state/use-composer-drafts";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
@@ -106,6 +115,78 @@ function unwrap<A, E>(result: AtomCommandResult<A, E>): A {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
   return result.value;
 }
+
+const sharedContent = (share: IncomingShareDraft) =>
+  share.attachments.length === 0
+    ? "what you shared"
+    : share.attachments.length === 1
+      ? `the ${share.attachments[0]?.type === "image" ? "image" : "file"} you shared`
+      : `the ${share.attachments.length} ${share.attachments.every((attachment) => attachment.type === "image") ? "images" : "files"} you shared`;
+
+/**
+ * Adds content shared from another app to the first message of the conversation just started, the
+ * way a New task draft takes it for a local project, and returns whether the draft holds it. The
+ * conversation exists by now, so a problem is reported without failing the start, and the share
+ * leaves the inbox only once the draft holds it.
+ */
+async function addIncomingShare(
+  share: IncomingShareDraft | null,
+  draftKey: string,
+  serverConfig: Parameters<typeof selectIncomingShareAttachmentsForServer>[0]["serverConfig"],
+  consumeShare: (shareId: string) => Promise<void>,
+): Promise<boolean> {
+  if (!share) {
+    Dialog.alert(
+      "Shared content unavailable",
+      "The shared content is no longer in the inbox, so the conversation started without it.",
+    );
+    return false;
+  }
+  const selected = selectIncomingShareAttachmentsForServer({
+    attachments: share.attachments,
+    serverConfig,
+  });
+  if (selected.status === "pending") {
+    Dialog.alert(
+      "Could not add what you shared",
+      "This computer's attachment support is still loading.",
+    );
+    return false;
+  }
+  const merged = await mergeComposerDraftContent(draftKey, {
+    text: share.text,
+    attachments: selected.attachments,
+    sourceShareId: share.id,
+  }).catch((cause: unknown) => {
+    Dialog.alert(
+      "Could not add what you shared",
+      cause instanceof Error ? cause.message : "The shared content could not be saved.",
+    );
+    return null;
+  });
+  if (!merged) return false;
+  try {
+    await consumeShare(share.id);
+    // The consumed inbox entry was the last owner of files the draft did not take.
+    const kept = new Set(
+      getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id),
+    );
+    scheduleUnusedComposerAttachmentCleanup(
+      share.attachments.filter((attachment) => !kept.has(attachment.id)),
+    );
+  } catch (cause) {
+    // The draft already holds the share. The inbox entry still owns its files, so they stay.
+    console.warn("[incoming-share] could not remove shared content from the inbox", cause);
+  }
+  const warnings = [...share.warnings, ...selected.warnings];
+  const skipped = merged.skippedAttachmentCount;
+  if (skipped > 0)
+    warnings.push(
+      `${skipped} shared file${skipped === 1 ? " was" : "s were"} skipped because the message reached the attachment limit.`,
+    );
+  if (warnings.length > 0) Dialog.alert("Some shared content was skipped", warnings.join("\n"));
+  return true;
+}
 export function LibraryStartRouteScreen({
   route,
 }: StaticScreenProps<{
@@ -119,6 +200,8 @@ export function LibraryStartRouteScreen({
   readonly reuseRootPath?: string;
   /** Start as soon as this screen agrees the handed-in computer and files are ready. */
   readonly startNow?: boolean;
+  /** Content shared from another app, which the started conversation's first message takes. */
+  readonly incomingShareId?: string;
 }>) {
   const authority = useLibraryAuthority();
   const preferences = useAtomValue(mobilePreferencesAtom);
@@ -175,6 +258,7 @@ export function LibraryStartRouteScreen({
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
+      incomingShareId={route.params.incomingShareId}
       restart={restart}
       // Starting over is a deliberate step back to the settings, so it never starts by itself.
       startNow={restart === null && route.params.startNow === true}
@@ -203,6 +287,7 @@ function LibraryStartContent(props: {
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
+  incomingShareId?: string | undefined;
   /** The attempt Start over dropped, whose choices this screen starts from. */
   restart: typeof LibraryLaunchAttempt.Type | null;
   startNow: boolean;
@@ -212,6 +297,8 @@ function LibraryStartContent(props: {
     navigation = useNavigation(),
     { environments } = useEnvironments(),
     configs = useServerConfigs();
+  const { getShare, consumeShare } = useIncomingShare();
+  const incomingShare = props.incomingShareId ? getShare(props.incomingShareId) : null;
   const preferences = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
   const attemptKey = JSON.stringify([
@@ -967,6 +1054,9 @@ function LibraryStartContent(props: {
         setComposerDraftText(scopedThreadKey(target), review.carryContext);
         await flushComposerDrafts();
       }
+      const shared =
+        props.incomingShareId !== undefined &&
+        (await addIncomingShare(incomingShare, scopedThreadKey(target), config, consumeShare));
       refreshLibraryWork(authority.environmentId, launchProject.id);
       await savePreferences({
         transform: (current) => {
@@ -975,7 +1065,8 @@ function LibraryStartContent(props: {
           return { loomLibraryLaunches: next };
         },
       });
-      markLibraryConversationStarted(scopedThreadKey(target));
+      // Discarding it as empty would delete what was shared along with its draft.
+      if (!shared) markLibraryConversationStarted(scopedThreadKey(target));
       setLaunchedThread(target);
     } catch (cause) {
       setError(
@@ -1147,6 +1238,11 @@ function LibraryStartContent(props: {
   return (
     <LibraryPage title={props.sourceArchiveId ? "Continue conversation" : "New conversation"} back>
       <Text className="text-xl font-t3-semibold text-foreground">{launchProject.title}</Text>
+      {incomingShare ? (
+        <LibraryNotice
+          detail={`The new conversation's first message includes ${sharedContent(incomingShare)}.`}
+        />
+      ) : null}
       {saved ? (
         <LibraryNotice detail="An unfinished preparation is saved on this device. Resume it with the original computer, files and context." />
       ) : null}

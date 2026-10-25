@@ -172,8 +172,13 @@ export function NewTaskLibraryProjectChoices(props: {
     readonly start: LibraryStartDefaults | null;
   }[];
   readonly error: string | null;
+  /** Content shared from another app, which the started conversation's first message takes. */
+  readonly incomingShareId?: string | undefined;
+  /** Set while that content waits in another project's task draft, as the local rows are. */
+  readonly disabled?: boolean;
 }) {
   const navigation = useNavigation();
+  const share = props.incomingShareId ? { incomingShareId: props.incomingShareId } : {};
   // Options open on the computer and files the row named, so both show the same defaults.
   const open = (project: LibraryProject, start: LibraryStartDefaults | null, startNow: boolean) =>
     navigation.getParent()?.dispatch(
@@ -185,8 +190,9 @@ export function NewTaskLibraryProjectChoices(props: {
               reuseEnvironmentId: start.environmentId,
               initialCopyId: start.copyId,
               startNow,
+              ...share,
             }
-          : { projectId: project.id },
+          : { projectId: project.id, ...share },
       ),
     );
   return (
@@ -202,12 +208,14 @@ export function NewTaskLibraryProjectChoices(props: {
                 (project.brief.trim().split("\n")[0] ||
                   `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`)
               }
+              disabled={props.disabled}
               onPress={() => open(project, start, true)}
               trailing={
                 start ? (
                   <IconButton
                     accessibilityLabel={`Conversation options for ${project.title}`}
                     icon="slider.horizontal.3"
+                    disabled={props.disabled}
                     onPress={() => open(project, start, false)}
                   />
                 ) : undefined

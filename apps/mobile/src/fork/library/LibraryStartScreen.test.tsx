@@ -7,7 +7,8 @@ import {
   ThreadId,
   type ServerConfig,
 } from "@t3tools/contracts";
-import { libraryLaunchRanking } from "@t3tools/client-runtime/fork";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { libraryLaunchRanking, takeEmptyLibraryConversation } from "@t3tools/client-runtime/fork";
 import {
   LibraryError,
   type LibraryProject,
@@ -18,6 +19,7 @@ import { AsyncResult } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { IncomingShareDraft } from "../../features/sharing/incoming-share-model";
 
 type Launch = typeof import("./libraryLaunch").launchLibraryConversation;
 type Computer = {
@@ -47,6 +49,12 @@ const state = vi.hoisted(() => ({
   snapshot: vi.fn(),
   executeOperation: vi.fn(),
   shells: [] as unknown[],
+  alert: vi.fn(),
+  shares: [] as IncomingShareDraft[],
+  consumeShare: vi.fn(),
+  mergeDraft: vi.fn(),
+  draftAttachments: [] as unknown[],
+  releaseAttachments: vi.fn(),
   savePreferences: vi.fn(),
   preferenceAtom: {},
   preferences: {} as Record<string, string>,
@@ -194,7 +202,17 @@ vi.mock("../../state/vcs", () => ({ vcsEnvironment: { pull: state.pull } }));
 vi.mock("../../state/use-composer-drafts", () => ({
   setComposerDraftText: vi.fn(),
   flushComposerDrafts: vi.fn(),
+  mergeComposerDraftContent: state.mergeDraft,
+  getComposerDraftSnapshot: () => ({ attachments: state.draftAttachments }),
+  scheduleUnusedComposerAttachmentCleanup: state.releaseAttachments,
   useStickyComposerModelSelection: () => null,
+}));
+vi.mock("../../components/ui/Dialog", () => ({ alert: state.alert }));
+vi.mock("../../features/sharing/IncomingShareProvider", () => ({
+  useIncomingShare: () => ({
+    getShare: (id: string) => state.shares.find((share) => share.id === id) ?? null,
+    consumeShare: state.consumeShare,
+  }),
 }));
 vi.mock("./useLibraryLaunchRanking", () => ({
   useLibraryLaunchRanking: (input: {
@@ -477,6 +495,12 @@ beforeEach(() => {
   state.source = null;
   state.warning = null;
   state.shells = [];
+  state.shares = [];
+  state.draftAttachments = [];
+  state.mergeDraft.mockImplementation(async (_key, content: { attachments: unknown[] }) => {
+    state.draftAttachments = content.attachments;
+    return { skippedAttachmentCount: 0 };
+  });
   // Applies each update the way the preferences store does, so a remounted screen reads it.
   state.savePreferences.mockImplementation(
     async (update: {
@@ -958,6 +982,93 @@ describe("Library start progressive disclosure", () => {
     expect(state.preferences[JSON.stringify(["library", project.id, "new"])]).toContain(
       '"workspace":"folder"',
     );
+  });
+
+  describe("content shared from another app", () => {
+    const image = {
+      id: "screenshot",
+      type: "image",
+      name: "screenshot.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+      previewUri: "file:///shared/screenshot.png",
+      fileUri: "file:///shared/screenshot.png",
+    } as const;
+    const log = {
+      id: "log",
+      type: "file",
+      name: "build.log",
+      mimeType: "text/plain",
+      sizeBytes: 2048,
+      fileUri: "file:///shared/build.log",
+    } as const;
+    const startedThread = () => {
+      const intent = state.launch.mock.calls[0]![0];
+      return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
+    };
+    const empty = { itemCount: 0, latestRun: null, runtime: null, archivedAt: null };
+    beforeEach(() => {
+      state.shares = [
+        {
+          schemaVersion: 1,
+          id: "share",
+          createdAt: project.createdAt,
+          text: "Why does the build fail?",
+          attachments: [image, log],
+          warnings: [],
+        },
+      ];
+      state.launch.mockImplementation(async (intent) => ({
+        environmentId: intent.executionEnvironmentId,
+        threadId: intent.threadId,
+      }));
+      params = {
+        ...params,
+        reuseEnvironmentId: computerA,
+        initialCopyId: copy.id,
+        incomingShareId: "share",
+      };
+    });
+
+    it("goes into the started conversation's first message and leaves the inbox", async () => {
+      await render();
+      expect(container.textContent).toContain(
+        "The new conversation's first message includes the 2 files you shared.",
+      );
+      await click("Start work");
+      const thread = startedThread();
+      const key = scopedThreadKey(thread);
+      // This computer takes no files, so only the image goes in and the log is released.
+      expect(state.mergeDraft).toHaveBeenCalledExactlyOnceWith(key, {
+        text: "Why does the build fail?",
+        attachments: [image],
+        sourceShareId: "share",
+      });
+      expect(state.consumeShare).toHaveBeenCalledExactlyOnceWith("share");
+      expect(state.releaseAttachments).toHaveBeenCalledExactlyOnceWith([log]);
+      expect(state.alert).toHaveBeenCalledExactlyOnceWith(
+        "Some shared content was skipped",
+        "'build.log' was skipped because this server does not support files.",
+      );
+      expect(state.dispatch).toHaveBeenCalledWith({ name: "Thread", params: thread });
+      // Discarding it as empty would delete the shared content with its draft.
+      expect(takeEmptyLibraryConversation(key, empty)).toBe(false);
+    });
+
+    it("stays in the inbox when it cannot be added, and the conversation still opens", async () => {
+      state.mergeDraft.mockRejectedValue(new Error("Storage is full."));
+      await render();
+      await click("Start work");
+      const thread = startedThread();
+      expect(state.alert).toHaveBeenCalledExactlyOnceWith(
+        "Could not add what you shared",
+        "Storage is full.",
+      );
+      expect(state.consumeShare).not.toHaveBeenCalled();
+      expect(state.releaseAttachments).not.toHaveBeenCalled();
+      expect(state.dispatch).toHaveBeenCalledWith({ name: "Thread", params: thread });
+      expect(takeEmptyLibraryConversation(scopedThreadKey(thread), empty)).toBe(true);
+    });
   });
 
   it("keeps launch warnings and explicit safety actions visible while options are collapsed", async () => {

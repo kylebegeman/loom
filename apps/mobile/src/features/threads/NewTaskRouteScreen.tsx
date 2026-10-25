@@ -331,7 +331,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           }}
         >
           {/* fork: library - The Library project in view leads, ahead of No project, as on web. */}
-          <NewTaskLibraryProjectChoices choices={libraryProjects.suggested} error={null} />
+          <NewTaskLibraryProjectChoices
+            choices={libraryProjects.suggested} // fork: library
+            error={null} // fork: library
+            incomingShareId={incomingShare?.id} // fork: library
+            disabled={reservedDestinationProject !== null} // fork: library
+          />
           {/* fork: no-project-first - No project leads the choices whenever a computer can run it. */}
           {canStartScratch && !emptyStateOffersScratch ? (
             Platform.OS === "android" ? (
@@ -388,6 +393,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
           <NewTaskLibraryProjectChoices
             choices={libraryProjects.choices} // fork: library
             error={libraryProjects.error} // fork: library
+            incomingShareId={incomingShare?.id} // fork: library
+            disabled={reservedDestinationProject !== null} // fork: library
           />
           {legacyScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View
