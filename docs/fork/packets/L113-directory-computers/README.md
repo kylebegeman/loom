@@ -13,15 +13,16 @@ kept offline for each Library.
   (iPhone); Connect from a row, which reads the computer's Identity metadata from its published
   routes and signs in only when the computer uses the Library's issuer; a pairing fallback that
   explains why and checks that the address reaches the listed computer.
-- Out: public routes (C03), recording each computer's Pocket ID resource in the Library (C03),
-  a Command Palette entry and Settings search, which need edits in files other packets own.
+- Out: public routes and per-computer Pocket ID resources (C03), a Command Palette entry and
+  Settings search, which need edits in files other packets own.
 
 ## Issuer pin
 
 The Library's issuer comes from the account recorded on the saved Library connection, or from
-the Library's own `/api/loom/identity`. A row whose computer names another issuer, or whose
-Library issuer is unknown, falls back to pairing. The finished sign-in is checked again with
-`directorySignInMismatch` before anything is saved.
+the Library's own `/api/loom/identity`. A row whose computer names another issuer, whose
+Library issuer is unknown, or whose metadata names another computer's per-computer resource
+(`identityResourceRefusal`, from C03) falls back to pairing. The finished sign-in is checked
+again with `directorySignInMismatch` before anything is saved.
 
 ## Packet seams
 

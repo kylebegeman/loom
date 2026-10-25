@@ -38,6 +38,9 @@ import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import { CODE_GRAPH_WS_METHODS as G } from "@t3tools/contracts/fork";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "@t3tools/contracts/fork";
 import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
+import { REACH_WS_METHODS as REACH } from "@t3tools/contracts/fork";
+import { AuthRelayReadScope, AuthRelayWriteScope } from "@t3tools/contracts";
+import { LIBRARY_PUSH_WS_METHODS as PUSH } from "@t3tools/contracts/fork";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -465,6 +468,19 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [DIR.list]: AuthOrchestrationReadScope,
   [DIR.forget]: AuthSettingsWriteScope,
   [DIR.reporting]: AuthOrchestrationReadScope,
+  [REACH.watch]: AuthRelayReadScope,
+  // Upstream's tunnel grant. Identity sessions hold it only with LOOM_IDENTITY_ALLOW_ADMIN, and
+  // terminal or full-access agent rights reach the same switch another way (D9).
+  [REACH.set]: AuthRelayWriteScope,
+  [REACH.remove]: AuthRelayWriteScope,
+  [REACH.libraryList]: AuthOrchestrationReadScope,
+  // Mirrors DIR.forget: a signed-in phone can cut a lost computer off from the Library.
+  [REACH.libraryRetire]: AuthSettingsWriteScope,
+  [PUSH.status]: AuthOrchestrationReadScope,
+  // A registered device receives Apple-signed pushes, so registering is a settings change.
+  [PUSH.register]: AuthSettingsWriteScope,
+  [PUSH.unregister]: AuthSettingsWriteScope,
+  [PUSH.test]: AuthSettingsWriteScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

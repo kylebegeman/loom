@@ -341,12 +341,15 @@ const make = Effect.gen(function* () {
             threadId === undefined
               ? undefined
               : database.bindings.find((row) => row.threadId === threadId);
-          const receipt = database.receipts.find(
+          const candidates = database.receipts.filter(
             (row) =>
               path.resolve(row.copy.rootPath) === normalized &&
               row.copy.state !== "released" &&
               (binding === undefined || binding.resolved.binding.workingCopyId === row.copy.id),
           );
+          // A folder taken over by another project keeps its retired receipt for the old bound
+          // conversations, which the binding above selects. Everything else uses the current one.
+          const receipt = candidates.find((row) => row.copy.registered !== false) ?? candidates[0];
           if (receipt === undefined) return null;
           if (receipt.copy.repositories.length === 0 && receipt.rootCheckpointRepository)
             return [{ path: receipt.copy.rootPath, relativePath: "" }];

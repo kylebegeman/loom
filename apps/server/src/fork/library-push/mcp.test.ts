@@ -62,7 +62,7 @@ const setup = Effect.fn("test.setup")(function* () {
         Layer.provide(
           Layer.succeed(
             ForkRuntime,
-            // ForkServices gains LibraryPushService when the service is wired into ForkLayer.
+            // Only the push service; the tools never read any other fork service.
             Context.make(LibraryPushService, service) as unknown as Context.Context<ForkServices>,
           ),
         ),

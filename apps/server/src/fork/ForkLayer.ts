@@ -54,6 +54,7 @@ import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHeal
 import { LibraryHttpRoutes } from "./project-library/http.ts";
 import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
 import * as StaleConnectLink from "./connect-off/staleConnectLink.ts";
+import * as DeletedThreadHistory from "./deleted-history/DeletedThreadHistory.ts";
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
@@ -106,6 +107,15 @@ import * as PreviewPages from "./preview-pages/PreviewPagesService.ts";
 import * as Directory from "./directory/DirectoryService.ts";
 import * as DirectoryReporter from "./directory/DirectoryReporter.ts";
 import { DirectoryHttpRoutes } from "./directory/http.ts";
+import { CloudflaredExtraPorts } from "./cloudflared/connector.ts";
+import * as ReachService from "./reach/ReachService.ts";
+import { ReachGuardLayer } from "./reach/guard.ts";
+import * as ReachStore from "./reach/library/ReachStore.ts";
+import * as ReachCloudflare from "./reach/library/ReachCloudflare.ts";
+import * as ReachPocketId from "./reach/library/ReachPocketId.ts";
+import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
+import { ReachHttpRoutes } from "./reach/library/http.ts";
+import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -243,13 +253,31 @@ export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
   Layer.provide(ProcessRunner.layer),
   Layer.provide(layerLibraryPublisher),
 );
+const layerLibraryHistorySource = LibraryHistorySource.layer.pipe(
+  Layer.provide(LibraryWorkspaceStore.layer),
+  Layer.provide(ProjectionStore.layer),
+);
+// One reach store, so the directory refuses to forget a computer the provisioner still serves (F2).
+const layerReachStore = ReachStore.layer;
+const layerDirectory = Directory.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(layerReachStore),
+);
+export const layerReachLibrary = ReachProvisioner.layer.pipe(
+  Layer.provide(
+    Layer.merge(ReachCloudflare.layer, ReachPocketId.layer).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ),
+  ),
+  Layer.provideMerge(Layer.merge(layerDirectory, layerReachStore)),
+);
+
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
     Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
   ),
 );
 
-/** Packet service layers, one line each. Keep `Layer.empty` first. */
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
@@ -277,6 +305,7 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
   ),
 );
 
+/** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
@@ -350,12 +379,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
     Layer.provide(RuntimeLayer.layerThreadManagementProvided),
-    Layer.provide(
-      LibraryHistorySource.layer.pipe(
-        Layer.provide(LibraryWorkspaceStore.layer),
-        Layer.provide(ProjectionStore.layer),
-      ),
-    ),
+    Layer.provide(layerLibraryHistorySource),
   ),
   layerLibraryPublisher,
   LibraryTimeline.layer,
@@ -364,12 +388,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(LibraryDocumentPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer))),
     Layer.provide(layerLibraryWorkspace),
     Layer.provide(layerLibraryPublisher),
-    Layer.provide(
-      LibraryHistorySource.layer.pipe(
-        Layer.provide(LibraryWorkspaceStore.layer),
-        Layer.provide(ProjectionStore.layer),
-      ),
-    ),
+    Layer.provide(layerLibraryHistorySource),
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(
       LibraryCopyHealthPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer)),
@@ -377,9 +396,11 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   layerLibraryAssets,
   layerLibraryRecovery,
-  LibraryHistorySource.layer.pipe(
+  layerLibraryHistorySource,
+  DeletedThreadHistory.layer.pipe(
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(ProjectionStore.layer),
+    Layer.provide(layerLibraryPublisher),
   ),
   layerLibraryWorkspace,
   ProjectCheckoutManagement.layer.pipe(
@@ -433,7 +454,7 @@ const ForkServicesLive = Layer.mergeAll(
           layerVaultReferences,
           layerVaultCore,
           layerLibraryWorkspace,
-          Directory.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+          layerDirectory,
         ),
       ),
     ),
@@ -462,6 +483,13 @@ const ForkServicesLive = Layer.mergeAll(
   PreviewLinks.layer.pipe(
     Layer.provide(layerProjectLifecycle),
     Layer.provide(layerLibraryPublisher),
+    // The reach connector's metrics port is this server's own, not a lane's.
+    Layer.provide(
+      Layer.effect(
+        CloudflaredExtraPorts,
+        Effect.map(ReachService.ReachService, (reach) => ({ ports: reach.ownPorts })),
+      ).pipe(Layer.provide(ReachService.layer)),
+    ),
   ),
   // The pages host serves the pages the Library routes store and checks tickets with the same
   // key the Library signs them with, so it shares both instances.
@@ -471,20 +499,16 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(
     Layer.provideMerge(
       LibraryBriefSuggestions.layer.pipe(
-        Layer.provide(
-          LibraryPublisher.layer.pipe(
-            Layer.provide(FetchHttpClient.layer),
-            Layer.provide(layerLibraryService),
-            Layer.provide(layerLibraryAssets),
-            Layer.provide(PreviewAccess.layer),
-          ),
-        ),
+        Layer.provide(layerLibraryPublisher),
         Layer.provide(layerLibraryService),
         Layer.provide(LibraryWorkspaceStore.layer),
       ),
     ),
   ),
-  Directory.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+  layerReachLibrary,
+  // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
+  ReachService.layer,
+  LibraryPushLive,
   // Reads the worker identities the one Mini instance keeps from its readiness checks.
   DirectoryReporter.DirectoryReporterLive.pipe(
     Layer.provideMerge(
@@ -520,4 +544,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PageLibraryHttpRoutes,
   DirectoryHttpRoutes,
   BotLibraryHttpRoutes,
+  ReachHttpRoutes,
+  // Global, so it also covers upstream routes such as /mcp and requests no route matches.
+  ReachGuardLayer,
 );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { DirectoryRoute } from "@t3tools/contracts/fork";
+import { type DirectoryRoute } from "@t3tools/contracts/fork";
 
 import {
   directoryAgeText,
@@ -267,6 +267,13 @@ describe("directoryConnectPlan", () => {
     });
   });
 
+  it("has a browser try tailnet first, since a public reach address serves no browser sign-in", () => {
+    expect(directoryConnectPlan(row, null, browser)?.routes).toEqual([
+      { kind: "tailnet", url: "https://book.example.ts.net" },
+      { kind: "public", url: "https://book.example.com" },
+    ]);
+  });
+
   it("signs in with Loom Identity when the computer offers it here", () => {
     expect(directoryConnectPlan(row, identity(BOOK), browser)).toMatchObject({
       signIn: "loom-identity",
@@ -306,5 +313,48 @@ describe("directoryConnectPlan", () => {
     expect(
       directoryConnectPlan(row, identity(BOOK), { ...native, libraryIssuer: null }),
     ).toMatchObject({ signIn: "pairing", reason: "library-issuer-unknown" });
+  });
+});
+
+describe("directory resource check", () => {
+  const BOOK_RESOURCE = "https://library.example.com/computers/book";
+  const DESK_RESOURCE = "https://library.example.com/computers/desk";
+  const browser = {
+    signIn: { surface: "browser", origin: APP_ORIGIN },
+    libraryIssuer: LIBRARY_ISSUER,
+  } as const;
+  const rowFor = (environments: Parameters<typeof listing>[0]) => {
+    const row = directoryCatalogRows({
+      listing: listing(environments),
+      saved: [],
+      connected: [],
+      now: NOW,
+    }).find((candidate) => candidate.environmentId === BOOK);
+    if (row === undefined) throw new Error("expected Book's row");
+    return row;
+  };
+
+  it("signs in while a computer moves to its own resource and back", () => {
+    const row = rowFor([reported(BOOK), reported(DESK)]);
+    for (const fields of [
+      {},
+      { resource: BOOK_RESOURCE },
+      { audience: BOOK_RESOURCE, resource: BOOK_RESOURCE },
+    ]) {
+      expect(directoryConnectPlan(row, identity(BOOK, fields), native)).toMatchObject({
+        signIn: "loom-identity",
+        reason: null,
+      });
+    }
+  });
+
+  it("pairs with a computer naming another computer's resource", () => {
+    const row = rowFor([reported(BOOK), reported(DESK)]);
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native)?.reason,
+    ).toBe("resource-mismatch");
+    expect(directoryConnectPlan(row, identity(BOOK, { audience: DESK_RESOURCE }), browser)).toEqual(
+      expect.objectContaining({ signIn: "pairing", reason: "resource-mismatch" }),
+    );
   });
 });

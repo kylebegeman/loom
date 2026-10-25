@@ -68,3 +68,19 @@ it("treats a blocked Identity connection as an expired sign-in", () => {
 it("does not offer a repair while permissions are still loading", () => {
   expect(accessBlock({ ...library, session: null })).toMatchObject({ repair: null });
 });
+
+it("waits without a repair while a first connection is still on its way", () => {
+  // Right after signing in the connection starts over; telling the user to reconnect would be wrong.
+  expect(accessBlock({ ...library, phase: "connecting", session: null })).toEqual({
+    label: "Library",
+    message: "Connecting to Library...",
+    repair: null,
+  });
+});
+
+it("sends a turned-off or missing connection to Connections", () => {
+  expect(accessBlock({ ...library, phase: null, session: null })).toMatchObject({
+    repair: "connection",
+    message: "Library is not connected. Reconnect it to continue.",
+  });
+});

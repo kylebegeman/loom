@@ -1,12 +1,16 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  DirectoryEnvironment,
-  DirectoryListing,
-  DirectoryMachine,
-  DirectoryRoute,
-  LoomIdentityMetadata,
+import {
+  type DirectoryEnvironment,
+  type DirectoryListing,
+  type DirectoryMachine,
+  type DirectoryRoute,
+  type LoomIdentityMetadata,
 } from "@t3tools/contracts/fork";
 import { isDirectoryRouteUrl } from "@t3tools/shared/fork/directory";
+import {
+  IDENTITY_RESOURCE_MISMATCH_TEXT,
+  identityResourceRefusal,
+} from "@t3tools/shared/fork/identity-grant";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -55,6 +59,8 @@ export function directoryProofAge(reportedAt: string, now: number): DirectoryPro
 }
 
 const ROUTE_ORDER: Record<DirectoryRoute["kind"], number> = { public: 0, tailnet: 1 };
+/** A public reach address serves no browser sign-in, so a browser tries tailnet first. */
+const BROWSER_ROUTE_ORDER: Record<DirectoryRoute["kind"], number> = { tailnet: 0, public: 1 };
 
 /**
  * The routes a client may use from a report: DNS names over HTTPS only, each URL once, public
@@ -220,7 +226,10 @@ export type DirectoryPairingReason =
   | "other-computer"
   | "not-here"
   | "library-issuer-unknown"
-  | "issuer-mismatch";
+  | "issuer-mismatch"
+  | "resource-mismatch"
+  /** Only a public reach address answered, and a browser cannot sign in there. */
+  | "reach-browser";
 
 /** One short line per reason, for the row that offers pairing. */
 export const DIRECTORY_PAIRING_REASON_TEXT: Readonly<Record<DirectoryPairingReason, string>> = {
@@ -230,11 +239,16 @@ export const DIRECTORY_PAIRING_REASON_TEXT: Readonly<Record<DirectoryPairingReas
   "not-here": "This computer does not allow Loom sign-in from this app.",
   "library-issuer-unknown": "Loom could not confirm your Library's sign-in provider.",
   "issuer-mismatch": "This computer uses a different sign-in provider than your Library.",
+  "resource-mismatch": IDENTITY_RESOURCE_MISMATCH_TEXT,
+  "reach-browser": "Sign in from this browser on your home network, or pair it with a code.",
 };
 
 export interface DirectoryConnectPlan {
   readonly environmentId: EnvironmentId;
-  /** Directory routes to try in order: public first, then tailnet. */
+  /**
+   * Directory routes to try in order. Native sign-in tries public first, then tailnet. A browser
+   * tries tailnet first: a public reach address serves no browser sign-in.
+   */
   readonly routes: readonly DirectoryRoute[];
   /**
    * Loom Identity when the computer offers it here under the Library's issuer, pairing otherwise.
@@ -252,10 +266,11 @@ export interface DirectoryConnectOptions {
 }
 
 function pairingReason(
+  row: DirectoryCatalogRow,
   identity: LoomIdentityMetadata | null,
-  environmentId: EnvironmentId,
   options: DirectoryConnectOptions,
 ): DirectoryPairingReason | null {
+  const { environmentId } = row;
   if (identity === null) return "no-sign-in";
   // Metadata from another environment means the route reaches some other computer, so signing in
   // there would hand that computer a session meant for this one.
@@ -281,6 +296,7 @@ function pairingReason(
   // sign-in to a provider the computer chose.
   if (options.libraryIssuer === null) return "library-issuer-unknown";
   if (identity.issuer !== options.libraryIssuer) return "issuer-mismatch";
+  if (identityResourceRefusal(identity) !== null) return "resource-mismatch";
   return null;
 }
 
@@ -295,9 +311,12 @@ export function directoryConnectPlan(
   options: DirectoryConnectOptions,
 ): DirectoryConnectPlan | null {
   if (row.saved !== null || row.action !== "connect") return null;
-  const routes = directoryRoutes(row.routes);
+  const order = options.signIn.surface === "browser" ? BROWSER_ROUTE_ORDER : ROUTE_ORDER;
+  const routes = [...directoryRoutes(row.routes)].sort(
+    (left, right) => order[left.kind] - order[right.kind],
+  );
   if (routes.length === 0) return null;
-  const reason = pairingReason(identity, row.environmentId, options);
+  const reason = pairingReason(row, identity, options);
   return {
     environmentId: row.environmentId,
     routes,

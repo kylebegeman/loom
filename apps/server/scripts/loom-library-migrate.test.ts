@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ChatAttachmentId, EnvironmentId, EventId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryImportShadowRequest,
   LibraryIngestHistoryRequest,
@@ -16,6 +16,8 @@ import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ServerConfig from "../src/config.ts";
 import {
@@ -26,9 +28,15 @@ import {
   copyFor,
   archiveFor,
 } from "../src/fork/project-library/Library.testkit.ts";
-import { LibraryMigrationPlan } from "../src/fork/project-library/LibraryMigration.ts";
+import {
+  LibraryMigrationPlan,
+  pendingImportThreadIds,
+  recordPendingImport,
+} from "../src/fork/project-library/LibraryMigration.ts";
 import * as WorkspaceStore from "../src/fork/project-library/LibraryWorkspaceStore.ts";
-import { activateMigration, uploadMigration } from "./loom-library-migrate.ts";
+import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
+import { layerFromPath } from "../src/persistence/Sqlite.ts";
+import { activateMigration, exportMigration, uploadMigration } from "./loom-library-migrate.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const shadowCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryImportShadowRequest));
@@ -350,6 +358,11 @@ describe("verified Library migration commands", () => {
     () =>
       run((f) =>
         Effect.gen(function* () {
+          yield* recordPendingImport({
+            stateDir: f.activate.stateDir,
+            requestId: "approved-import",
+            threadIds: [threadId],
+          });
           expect(
             yield* uploadMigration({ ...f.upload, archive: f.chunked, receipt: f.chunkReceipts }),
           ).toEqual({ verified: true, threads: 1 });
@@ -360,8 +373,156 @@ describe("verified Library migration commands", () => {
               receipt: f.chunkReceipts,
             }),
           ).toEqual({ copies: 1, threads: 1 });
+          expect(yield* pendingImportThreadIds(f.activate.stateDir)).toEqual(new Set());
         }),
       ),
+  );
+  const seedSource = Effect.fnUntraced(function* (
+    f: Effect.Success<typeof fixture>,
+    database: string,
+    deletedAt?: DateTime.Utc,
+  ) {
+    const original = yield* archiveFor(f.project);
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      yield* sql`INSERT INTO projection_projects (project_id,title,workspace_root,auto_pull,scripts_json,created_at,updated_at) VALUES (${localProjectId},'Source',${f.repository},0,'[]',${f.project.createdAt},${f.project.updatedAt})`;
+      yield* projections.apply({
+        id: EventId.make("created"),
+        threadId,
+        type: "thread.created",
+        payload: original.projection.thread,
+        occurredAt: original.projection.updatedAt,
+      });
+      yield* projections.apply({
+        id: EventId.make("message"),
+        threadId,
+        type: "message.updated",
+        payload: original.projection.messages[0]!,
+        occurredAt: original.projection.updatedAt,
+      });
+      yield* sql`INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES ('created','thread',${threadId},1,'thread.created',${f.project.createdAt},'server','{}','{}',2)`;
+      if (deletedAt === undefined) return;
+      yield* projections.apply({
+        id: EventId.make("deleted"),
+        threadId,
+        type: "thread.deleted",
+        payload: { ...original.projection.thread, deletedAt },
+        occurredAt: deletedAt,
+      });
+      yield* sql`INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES ('deleted','thread',${threadId},2,'thread.deleted',${DateTime.formatIso(deletedAt)},'server','{}','{}',2)`;
+    }).pipe(
+      Effect.provide(ProjectionStore.layer.pipe(Layer.provideMerge(layerFromPath(database)))),
+      Effect.scoped,
+    );
+  });
+  it.effect("records an export of the source computer before its archive can be uploaded", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const database = f.path.join(
+          yield* f.fs.makeTempDirectoryScoped({ prefix: "loom-library-export-" }),
+          "statev2.sqlite",
+        );
+        yield* seedSource(f, database);
+        const exported = {
+          database,
+          plan: f.planPath,
+          output: f.path.join(f.path.dirname(database), "export.json"),
+          requestId: "onboarding",
+          journalId: "migration",
+          stateDir: f.activate.stateDir,
+        };
+
+        const elsewhere = f.path.join(f.path.dirname(database), "elsewhere");
+        yield* f.fs.makeDirectory(elsewhere);
+        yield* f.fs.writeFileString(f.path.join(elsewhere, "environment-id"), "other-computer");
+        expect(
+          yield* Effect.flip(exportMigration({ ...exported, stateDir: elsewhere })),
+        ).toMatchObject({ reason: "blocked" });
+        expect(yield* f.fs.exists(exported.output)).toBe(false);
+
+        expect(yield* exportMigration(exported)).toMatchObject({ threads: 1 });
+        expect(yield* pendingImportThreadIds(f.activate.stateDir)).toEqual(new Set([threadId]));
+      }),
+    ),
+  );
+  it.effect(
+    "refuses a snapshot that sends live a conversation the history purge may have taken",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const directory = yield* f.fs.makeTempDirectoryScoped({ prefix: "loom-library-export-" });
+          const snapshot = f.path.join(directory, "snapshot.sqlite");
+          yield* seedSource(f, snapshot);
+          // The computer deleted the conversation after that snapshot was taken.
+          const deletedAt = DateTime.makeUnsafe("2026-10-20T00:00:00.000Z");
+          yield* seedSource(f, f.path.join(f.activate.stateDir, "statev2.sqlite"), deletedAt);
+          const exported = {
+            database: snapshot,
+            plan: f.planPath,
+            requestId: "onboarding",
+            journalId: "migration",
+            stateDir: f.activate.stateDir,
+          };
+          const day = 24 * 60 * 60 * 1000;
+
+          // Under a day later the export's record keeps it until activation.
+          yield* TestClock.setTime(DateTime.toEpochMillis(deletedAt) + day - 1);
+          expect(
+            yield* exportMigration({ ...exported, output: f.path.join(directory, "recent.json") }),
+          ).toMatchObject({ threads: 1 });
+          expect(yield* pendingImportThreadIds(f.activate.stateDir)).toEqual(new Set([threadId]));
+
+          // From then on a purge pass may already have recorded that deletion and emptied the
+          // conversation, and the Library would keep it live.
+          yield* TestClock.setTime(DateTime.toEpochMillis(deletedAt) + day);
+          for (const chunked of [false, true]) {
+            const output = f.path.join(directory, chunked ? "stale" : "stale.json");
+            expect(
+              yield* Effect.flip(exportMigration({ ...exported, output, chunked })),
+            ).toMatchObject({ reason: "blocked" });
+            expect(
+              yield* f.fs.exists(chunked ? f.path.join(output, "manifest.json") : output),
+            ).toBe(false);
+          }
+        }),
+      ),
+  );
+  it.effect("lets the deleted history purge go only for the export it activates", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const other = ThreadId.make("thread:other-export");
+        yield* recordPendingImport({
+          stateDir: f.activate.stateDir,
+          requestId: "approved-import",
+          threadIds: [threadId],
+        });
+        yield* recordPendingImport({
+          stateDir: f.activate.stateDir,
+          requestId: "other-export",
+          threadIds: [other],
+        });
+        yield* uploadMigration(f.upload);
+        expect(yield* pendingImportThreadIds(f.activate.stateDir)).toEqual(
+          new Set([threadId, other]),
+        );
+        yield* activateMigration(f.activate);
+        expect(yield* pendingImportThreadIds(f.activate.stateDir)).toEqual(new Set([other]));
+
+        // An activation can remove a record after the purge listed it and before it reads it.
+        expect(
+          yield* pendingImportThreadIds(f.activate.stateDir).pipe(
+            Effect.provideService(FileSystem.FileSystem, {
+              ...f.fs,
+              readDirectory: (directory, options) =>
+                f.fs
+                  .readDirectory(directory, options)
+                  .pipe(Effect.map((names) => [...names, "activated.json"])),
+            }),
+          ),
+        ).toEqual(new Set([other]));
+      }),
+    ),
   );
   it.effect(
     "retains historical bindings when old folders have disappeared without recreating files",

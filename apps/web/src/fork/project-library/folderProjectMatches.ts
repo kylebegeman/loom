@@ -13,6 +13,7 @@ export function folderProjectMatches(
   return projects.filter((project) => {
     const repositories = project.resources.filter((resource) => resource.kind !== "link");
     return (
+      !project.archived &&
       repositories.length > 0 &&
       repositories.length === inspection.repositories.length &&
       repositories.every((resource) => {

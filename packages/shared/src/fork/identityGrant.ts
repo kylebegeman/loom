@@ -2,10 +2,12 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
   type LoomDesktopSignInResult,
   type LoomIdentityAccount,
+  type LoomIdentityMetadata,
   LoomIdentitySessionRequest,
   LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
@@ -108,6 +110,60 @@ export function identitySignInMaxAge(maxSessionAgeSeconds: number): string {
   return String(Math.max(0, Math.floor(maxSessionAgeSeconds) - MAX_SESSION_SECONDS));
 }
 
+/**
+ * Pocket ID reapplies the browser session's sign-in method to every grant, so signing in again
+ * only helps once that session ends.
+ */
+export const IDENTITY_PASSKEY_REQUIRED_TEXT =
+  "This computer accepts passkey sign-ins only. Sign out of Loom Identity in your browser, then sign in with your passkey.";
+
+/** A provider that ignores `max_age` hands back its old browser sign-in, past the computer's cap. */
+export const IDENTITY_FRESH_SIGN_IN_TEXT =
+  "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.";
+
+/**
+ * Reach resources are the likeliest cause: values copied from another computer's Reach section,
+ * whose button copies them as "sign-in values".
+ */
+export const IDENTITY_RESOURCE_MISMATCH_TEXT =
+  "This computer's Loom sign-in is set up for a different computer. Copy the sign-in values from this computer's own Reach section, then restart Loom on it.";
+
+/** The path of the resource the Library derives for each computer (`reachResource`). */
+const PER_COMPUTER_RESOURCE_PATH = /^\/computers\/([^/]+)$/u;
+
+/**
+ * The environment a per-computer resource names, or null for any other value, such as an audience
+ * several computers share. Trailing slashes go first because Pocket ID strips them before its
+ * lookup, so `<resource>/` still reaches that computer's resource.
+ */
+export function identityResourceEnvironment(resource: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(resource.replace(/\/+$/u, ""));
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  return PER_COMPUTER_RESOURCE_PATH.exec(url.pathname)?.[1] ?? null;
+}
+
+/**
+ * Null when a computer may receive the sign-in it asks for, otherwise the refusal line. Check it,
+ * after confirming the metadata names the expected computer, before the provider opens. Only
+ * another computer's own resource is refused: that computer accepts the resulting token, so naming
+ * it is how one computer would collect a sign-in for another. A shared audience passes, since
+ * every computer set up with it already accepts its tokens, so a computer can move to its own
+ * resource and back without stranding saved connections.
+ */
+export function identityResourceRefusal(
+  metadata: Pick<LoomIdentityMetadata, "audience" | "resource" | "environmentId">,
+): string | null {
+  const owner = identityResourceEnvironment(metadata.resource || metadata.audience);
+  return owner === null || owner === metadata.environmentId
+    ? null
+    : IDENTITY_RESOURCE_MISMATCH_TEXT;
+}
+
 const encodeKeyParts = Schema.encodeSync(
   Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
 );
@@ -132,6 +188,20 @@ const decodeSessionReply = Schema.decodeUnknownOption(
 const decodeAccessClaims = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ exp: Schema.optional(Schema.Number) })),
 );
+
+const DEVICE_REFUSED_TEXT = "Loom Identity no longer accepts this device's sign-in. Sign in again.";
+/**
+ * Token endpoint errors that no retry fixes. Pocket ID rechecks a refresh grant's resource and the
+ * client's access to it, so a resource deleted by Retire answers `invalid_target` and a revoked
+ * grant `access_denied` (403).
+ */
+const REFRESH_REFUSALS: ReadonlyMap<string, string> = new Map([
+  ["invalid_grant", "Your Loom sign-in ended. Sign in again."],
+  ["invalid_client", DEVICE_REFUSED_TEXT],
+  ["unauthorized_client", DEVICE_REFUSED_TEXT],
+  ["access_denied", DEVICE_REFUSED_TEXT],
+  ["invalid_target", "This computer's Loom sign-in changed. Sign in again."],
+]);
 
 const signInRequired = (reason: string): IdentitySignInRequired => ({
   _tag: "SignInRequired",
@@ -202,13 +272,10 @@ export async function refreshIdentityGrant(
     },
     "Could not reach Loom Identity to renew access.",
   );
-  if (reply.status === 400 || reply.status === 401) {
+  if (reply.status >= 400 && reply.status < 500) {
     const code = Option.getOrUndefined(decodeErrorCode(reply.body))?.error;
-    if (code === "invalid_grant") return signInRequired("Your Loom sign-in ended. Sign in again.");
-    if (code === "invalid_client" || code === "unauthorized_client")
-      return signInRequired(
-        "Loom Identity no longer accepts this device's sign-in. Sign in again.",
-      );
+    const reason = code === undefined ? undefined : REFRESH_REFUSALS.get(code);
+    if (reason !== undefined) return signInRequired(reason);
   }
   if (reply.status < 200 || reply.status >= 300)
     throw new IdentityGrantTransientError(
@@ -270,11 +337,11 @@ export async function exchangeNativeIdentitySession(input: {
     },
     "Could not reach this computer to renew Loom access.",
   );
-  if (
-    reply.status === 401 &&
-    Option.getOrUndefined(decodeErrorCode(reply.body))?.error === LOOM_IDENTITY_SIGN_IN_EXPIRED
-  )
+  const refusal = reply.status === 401 ? Option.getOrUndefined(decodeErrorCode(reply.body)) : null;
+  if (refusal?.error === LOOM_IDENTITY_SIGN_IN_EXPIRED)
     return signInRequired("Your Loom sign-in reached its time limit. Sign in again.");
+  if (refusal?.error === LOOM_IDENTITY_PASSKEY_REQUIRED)
+    return signInRequired(IDENTITY_PASSKEY_REQUIRED_TEXT);
   if (reply.status >= 500 || reply.status === 408 || reply.status === 429)
     throw new IdentityGrantTransientError(
       `This computer could not renew Loom access (HTTP ${reply.status}).`,

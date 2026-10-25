@@ -128,6 +128,27 @@ const withProject = (
       : definition.workspace,
 });
 
+/**
+ * The Library project a local project belongs to on this computer. A folder taken over by another
+ * project keeps its retired receipt for old conversations, so the folder's current owner wins.
+ */
+export const libraryProjectFor = (
+  receipts: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
+  projectId: ProjectId | null,
+  readyOnly = false,
+) => {
+  if (projectId === null) return null;
+  const matches = receipts.filter(
+    (receipt) =>
+      (!readyOnly || receipt.copy.state === "ready") &&
+      (receipt.rootLocalProjectId === projectId ||
+        receipt.copy.repositories.some((repository) => repository.localProjectId === projectId)),
+  );
+  return (
+    (matches.find((receipt) => receipt.copy.registered !== false) ?? matches[0])?.project.id ?? null
+  );
+};
+
 const sameModel = (a: ModelSelection, b: ModelSelection) =>
   a.instanceId === b.instanceId && a.model === b.model;
 
@@ -1015,16 +1036,8 @@ const make = Effect.gen(function* () {
               message: "Its project's required tools could not be checked.",
             },
           ];
-        const libraryId =
-          libraryProjectId ??
-          all.value.find(
-            (receipt) =>
-              receipt.rootLocalProjectId === projectId ||
-              receipt.copy.repositories.some(
-                (repository) => repository.localProjectId === projectId,
-              ),
-          )?.project.id;
-        if (libraryId == null) return [];
+        const libraryId = libraryProjectId ?? libraryProjectFor(all.value, projectId);
+        if (libraryId === null) return [];
         if (
           !all.value.some(
             (receipt) => receipt.project.id === libraryId && receipt.copy.state === "ready",
@@ -1049,19 +1062,7 @@ const make = Effect.gen(function* () {
           : toolProblems(report.value.checks);
       }),
       toLibrary: (projectId) =>
-        receipts.pipe(
-          Effect.map(
-            (all) =>
-              all.find(
-                (receipt) =>
-                  receipt.copy.state === "ready" &&
-                  (receipt.rootLocalProjectId === projectId ||
-                    receipt.copy.repositories.some(
-                      (repository) => repository.localProjectId === projectId,
-                    )),
-              )?.project.id ?? null,
-          ),
-        ),
+        receipts.pipe(Effect.map((all) => libraryProjectFor(all, projectId, true))),
       toLocal: (libraryProjectId) =>
         receipts.pipe(
           Effect.map((all) => {

@@ -14,10 +14,17 @@ import {
   type LoomDesktopSignInResult,
   type LoomDesktopSignInRequest,
   LoomIdentitySessionResult,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
-import { type IdentityGrant, identitySignInMaxAge } from "@t3tools/shared/fork/identity-grant";
+import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  type IdentityGrant,
+  identityResourceRefusal,
+  identitySignInMaxAge,
+} from "@t3tools/shared/fork/identity-grant";
 
 const decodeMetadata = Schema.decodeUnknownSync(LoomIdentityMetadata);
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
@@ -239,6 +246,8 @@ export async function signInToLoom(
       );
     if (expected?.expectedIssuer !== undefined && expected.expectedIssuer !== metadata.issuer)
       throw new Error("This computer uses a different sign-in provider than your Library.");
+    const resourceRefusal = identityResourceRefusal(metadata);
+    if (resourceRefusal !== null) throw new Error(resourceRefusal);
     const discovery = decodeDiscovery(
       await jsonRequest(
         `${metadata.issuer.replace(/\/$/, "")}/.well-known/openid-configuration`,
@@ -422,10 +431,9 @@ export async function signInToLoom(
       } catch (error) {
         // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
         if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
-          throw new Error(
-            "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.",
-            { cause: error },
-          );
+          throw new Error(IDENTITY_FRESH_SIGN_IN_TEXT, { cause: error });
+        if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_PASSKEY_REQUIRED)
+          throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT, { cause: error });
         // oxlint-disable-next-line preserve-caught-error -- A failed session decode can quote the issued token.
         throw new Error(
           "This Loom account is not authorized for this computer, or its session could not be issued.",

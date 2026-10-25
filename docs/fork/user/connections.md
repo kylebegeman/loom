@@ -40,8 +40,11 @@ your Library that this device has not connected yet. On desktop and in a browser
 they are under **Settings > Connections**. On iPhone they are in the **From your
 Library** section of **Settings > Computers**. Choose **Connect** to sign in to
 one with Loom Identity, with no pairing code. In a browser, choose **Sign in**
-next, which opens the sign-in window. For now Loom reaches these computers over
-Tailscale, so this device needs to be on your tailnet.
+next, which opens the sign-in window. Loom reaches these computers over
+Tailscale, or at a computer's reach address once reach is on for it (see
+[Reach a computer from anywhere](#reach-a-computer-from-anywhere)). A computer
+without a reach address needs this device on your tailnet. A browser signs in
+over Tailscale; when only the reach address answers, Loom offers pairing instead.
 
 If you joined your Library with Loom Identity, sign in to each computer with the
 same account. Loom only signs in to a computer that uses the same sign-in
@@ -81,6 +84,97 @@ and iPhone app on every device that signs in to that computer first, because
 older versions cannot sign in once the limit is set. Setting or changing the
 limit ends the computer's current Identity sign-ins when it restarts. Devices
 that were already renewing reconnect on their own, and others sign in again.
+
+## Reach a computer from anywhere
+
+Reach gives a computer its own address, such as
+`https://studio-loom.example.com`, so your devices can connect to it from any
+network without Tailscale. Your Library sets the address up and the connection
+runs through Cloudflare. The address only opens the door to Loom: every device
+still signs in with Loom Identity or pairs before it can use the computer.
+
+Your Library needs a reach zone and a Cloudflare token before any computer can
+use reach. Set `LOOM_REACH_ZONE` and `LOOM_REACH_CLOUDFLARE_TOKEN_FILE` in the
+Library's server environment and restart it. Once both are set, a **Reach
+addresses** section appears in the Library's Connections settings and shows
+whether the token can be read.
+
+To turn reach on, open the computer's details in **Settings > Connections** and
+turn on **Reach from anywhere**. You can do this on the computer itself, or from
+another device: in the computer's details on desktop or in a browser, or in the
+**Reach** section of the computer's details on iPhone. Another device needs a
+pairing with full access to change reach. The computer must be signed in to
+your Library, and your Library computer itself cannot use reach. Once the
+address appears, **Copy address** copies it.
+
+Other devices pick the address up the next time they connect to the computer.
+A device that saved the computer before reach was on, and is now away from home
+without Tailscale, has to connect once from home or reconnect the computer from
+your Library's list.
+
+When your Library has prepared Loom sign-in for the computer, its Reach section
+on that computer lists four settings. Copy them into the computer's server
+environment and restart Loom. Until then, devices that find the computer through
+your Library pair instead. While reach and Loom sign-in are both on, Loom also
+suggests setting
+`LOOM_IDENTITY_REQUIRE_PASSKEY=true`, which makes the computer accept passkey
+sign-ins only. If a sign-in is refused for that reason, sign out of Loom
+Identity in your browser, then sign in with your passkey.
+
+Turning reach off and **Remove address** are different:
+
+- Turning reach off stops the computer from using its address, but keeps the
+  address. Turning it on again brings it back.
+- **Remove address** deletes the computer's tunnel and address record, so devices
+  away from your network lose this route. The address stays reserved for the
+  computer, and turning reach on again brings the same address back.
+- If this device is connected through the address, Loom asks first, because
+  turning it off or removing it disconnects this device.
+
+To clean up after a computer you no longer have, use **Retire** in your
+Library's **Reach addresses** list: in **Settings > Connections** on desktop or
+in a browser, or in **Settings > Computers** on iPhone. **Also end Loom sign-in
+for this computer** ends its Loom sign-in too, and devices signed in to it lose
+access when their current sign-in ends. A retired computer that is still signed
+in to your Library sets reach up again on its next start, so revoke its Library
+sign-in as well. Your Library asks you to retire a computer's reach address
+before you can forget the computer.
+
+Agents can check reach and can turn it off or remove an address. They cannot
+turn it on.
+
+## Notifications from your Library
+
+Your Library can send notifications to Loom on your iPhone without a Connect
+account. For now it sends only test notifications. This needs a Loom build for
+iPhone that supports Library notifications, a Library with notifications turned
+on, and an iPhone signed in to the Library with Loom Identity.
+
+To turn them on, open **Settings > Notifications** on iPhone and turn on
+**Notifications from** your Library. iOS asks for permission the first time.
+Choose **Send test notification** to check that one arrives. If the test fails,
+Loom says why, such as too many tests in a short time or Apple refusing the
+Library's push key. When the Library no longer had the phone, or Apple no longer
+accepted its notification token, Loom registers the phone again; try the test
+again in a moment. Your Library turns notifications on with
+`LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
+**Push notifications** section in **Settings > Connections** on desktop or in a
+browser shows whether they are on and lists the iPhones that turned them on. To
+have an agent send a test, choose **Copy ID** on the phone's row there and give
+the ID to the agent.
+
+Turning the switch off on iPhone tells your Library to forget the phone. If the
+Library cannot be reached, the phone keeps your choice and tells it on the next
+connection. Signing in to the Library with a different account turns the switch
+off.
+
+Removing the Library connection on iPhone while the Library is connected tells it
+to forget the phone first. Signing out, or removing the connection while the
+Library cannot be reached, does not stop notifications right away. Your Library
+keeps the phone until its registration expires, up to your Library's sign-in
+limit or 30 days. To stop a phone now, for example a lost one, choose **Remove**
+next to it in **Push notifications** and revoke its sign-in. A phone removed
+there that still has the switch on registers again the next time it connects.
 
 ## Name and use a computer
 

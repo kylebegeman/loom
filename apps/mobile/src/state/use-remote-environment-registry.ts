@@ -7,6 +7,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback } from "react";
 
 import { useConnectionController } from "../features/connection/useConnectionController";
+import { forgetPushThen } from "../fork/library-push/libraryPushSync"; // fork: library-push
 import { environmentPresentations } from "./presentation";
 import { useWorkspaceConnectionState, useWorkspaceEnvironments } from "./workspace";
 import type { SavedRemoteConnection } from "../lib/connection";
@@ -165,7 +166,7 @@ export function useRemoteConnections() {
         text: "Remove",
         style: "destructive",
         onPress: () => {
-          void controller.removeEnvironment(environmentId);
+          void forgetPushThen(controller.removeEnvironment, environmentId); // fork: library-push
         },
       } as const;
       if (environment.isRelayManaged) {

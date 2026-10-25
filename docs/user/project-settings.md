@@ -61,6 +61,10 @@ previous Library.
 **New project** needs only a name. Add repositories, reference links or a brief whenever
 useful. **Add existing folder** finds repositories in a folder and suggests an existing
 project when the repository origins and layout match. This leaves your files in place.
+A folder that already belongs to a current project is added to that project instead of a
+new one. A folder held by an archived project moves to the new project, and the archived
+project's conversations stay in the archive. Files Loom created for an archived project stay
+with it until you restore that project and remove them.
 The Projects page lists each computer folder still waiting to be added, so you can work
 through existing projects without losing your place.
 

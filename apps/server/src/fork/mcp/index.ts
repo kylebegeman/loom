@@ -29,6 +29,9 @@ import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.ts";
 import { DirectoryToolkit, directoryHandlers } from "../directory/mcp.ts";
+import { ReachToolkit, reachHandlers } from "../reach/mcp.ts";
+import { ReachLibraryToolkit, reachLibraryHandlers } from "../reach/library/mcp.ts";
+import { LibraryPushToolkit, libraryPushHandlers } from "../library-push/mcp.ts";
 import { BotsToolkit, botsHandlers } from "../bots/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
@@ -189,6 +192,23 @@ export const FORK_MCP_TOOLKITS = [
     handlers: directoryHandlers,
     register: (register: typeof toolkitRegistration) =>
       register(DirectoryToolkit, directoryHandlers),
+  },
+  {
+    toolkit: ReachToolkit,
+    handlers: reachHandlers,
+    register: (register: typeof toolkitRegistration) => register(ReachToolkit, reachHandlers),
+  },
+  {
+    toolkit: ReachLibraryToolkit,
+    handlers: reachLibraryHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(ReachLibraryToolkit, reachLibraryHandlers),
+  },
+  {
+    toolkit: LibraryPushToolkit,
+    handlers: libraryPushHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(LibraryPushToolkit, libraryPushHandlers),
   },
   {
     toolkit: BotsToolkit,

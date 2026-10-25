@@ -33,6 +33,7 @@ import {
 // fork: fleet-connections - Computer work and access live beside its routes and permissions.
 import { ComputerNameSection } from "../../fork/connections/ComputerNameSection"; // fork: computer-naming
 import { ComputerConnectSection } from "../../fork/connect/ComputerConnectSection"; // fork: fleet-connect
+import { ComputerReachSection } from "../../fork/connections/ComputerReachSection"; // fork: reach
 import { ComputerWorkSection } from "../../fork/connections/ComputerWorkSection";
 import { DevicesWithAccessSection } from "../../fork/connections/DevicesWithAccessSection";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
@@ -253,6 +254,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             {/* fork: computer-naming - One name follows the computer across clients. */}
             <ComputerNameSection environmentId={environmentId} connected={connected} />
             <ComputerConnectSection environmentId={environmentId} connected={connected} />
+            {/* fork: reach - Reach is per computer; the phone is never a reach host. */}
+            <ComputerReachSection environmentId={environmentId} connected={connected} />
             {/* fork: vault-core */}
             <VaultSettingsSection environmentId={environmentId} connected={connected} />
             {/* fork: fleet-connections - Show authorized devices for the selected host. */}

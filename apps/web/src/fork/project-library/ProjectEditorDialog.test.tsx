@@ -6,11 +6,16 @@ import * as Cause from "effect/Cause";
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-const state = vi.hoisted(() => ({ create: vi.fn(), workflows: true }));
+const state = vi.hoisted(() => ({
+  create: vi.fn(),
+  workflows: true,
+  access: null as { readonly message: string } | null,
+}));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => state.create }));
 vi.mock("./state", () => ({
   projectLibrary: { createProject: {} },
   useLibraryPermission: () => true,
+  useLibraryAccessBlock: () => state.access,
   useLibraryProjects: () => ({
     query: { data: [] },
     environment: {
@@ -21,6 +26,11 @@ vi.mock("./state", () => ({
       },
     },
   }),
+}));
+vi.mock("./LibraryAccessNotice", () => ({
+  LibraryAccessNotice: ({ block }: { block: { message: string } | null }) => (
+    <p role="status">{block?.message}</p>
+  ),
 }));
 vi.mock("./LibraryPalette", () => ({
   LibraryPaletteDialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -36,6 +46,7 @@ vi.mock("./LibraryPalette", () => ({
       />
       {props.onBack ? <button onClick={props.onBack}>Back</button> : null}
       <p role="alert">{props.error}</p>
+      {props.children}
       {props.items.map((item) => (
         <button key={item.id} disabled={props.busy || item.disabled} onClick={item.select}>
           {item.title}
@@ -67,6 +78,7 @@ beforeEach(async () => {
   localStorage.clear();
   state.create.mockReset();
   state.workflows = true;
+  state.access = null;
   onSaved.mockClear();
   state.create.mockResolvedValue(AsyncResult.success({ id: "new-project" }));
   container = document.createElement("div");
@@ -148,6 +160,35 @@ it("keeps blueprint creation unavailable on older Library servers", async () => 
     ),
   );
   expect(button("Use a project blueprint")).toBeUndefined();
+  await choose("Create “Coast”");
+  expect(state.create).toHaveBeenCalledOnce();
+});
+
+it("explains blocked Library access instead of offering a create that cannot run", async () => {
+  state.access = { message: "Your sign-in to Library expired. Sign in again to continue." };
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(button("Create “Coast”").disabled).toBe(true);
+  expect(container.textContent).toContain("Sign in again to continue.");
+  state.access = null;
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
   await choose("Create “Coast”");
   expect(state.create).toHaveBeenCalledOnce();
 });

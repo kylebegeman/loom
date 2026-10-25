@@ -428,6 +428,18 @@ export const LibraryFolderInspection = Schema.Struct({
       branch: Schema.NullOr(Schema.String),
     }),
   ),
+  /**
+   * The project this folder is registered to on its computer, as that computer recorded it.
+   * Absent when no project holds the folder, and from computers that predate reporting it.
+   */
+  registration: Schema.optional(
+    Schema.Struct({
+      workingCopyId: LibraryId,
+      projectId: LibraryId,
+      projectTitle: LibraryTitle,
+      ownership: LibraryWorkingCopy.fields.ownership,
+    }),
+  ),
 });
 export type LibraryFolderInspection = typeof LibraryFolderInspection.Type;
 export const LibraryPrepareCopyRequest = Schema.Struct({

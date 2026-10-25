@@ -228,6 +228,7 @@ import { ComputerWorkActions } from "~/fork/connections/ComputerWorkActions";
 import { ComputerConnectionDetails } from "~/fork/connections/ComputerConnectionDetails";
 import { RemoteComputerAccess } from "~/fork/connections/RemoteComputerAccess";
 import { RenameComputer } from "~/fork/connections/RenameComputer";
+import { ComputerReachDetails } from "~/fork/reach/ComputerReach"; // fork: reach
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1685,6 +1686,8 @@ function SavedBackendListRow({
                 onAddRoute={() => onAddRoute(environment)}
               />
             </section>
+            {/* fork: reach */}
+            <ComputerReachDetails environment={environment} />
             <SavedComputerIdentity entry={environment.entry} phase={environment.connection.phase} />
             <RemoteComputerAccess environmentId={environmentId} connected={isConnected} />
             <section aria-label="Connection permissions">

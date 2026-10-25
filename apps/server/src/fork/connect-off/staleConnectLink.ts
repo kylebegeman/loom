@@ -82,8 +82,13 @@ const clearStaleConnectLink = Effect.fn("ConnectOff.clearStaleConnectLink")(
         { failures },
       );
     }
+    // Upstream counts a computer as linked only while it holds the linked user id. A CLI sign-in,
+    // a `connect link` that never finished or a lone preference leaves T3 no computer to remove.
+    const linked = stored.includes(CLOUD_LINKED_USER_ID);
     yield* Effect.logWarning(
-      "Cleared this computer's stored T3 Connect link and sign-in because this Loom build retires Connect. A later re-link is refused while Connect is retired. T3 keeps its record of this computer until it is removed from the T3 Connect account.",
+      linked
+        ? "Cleared this computer's stored T3 Connect link because this Loom build retires Connect. A later re-link is refused while Connect is retired. T3 keeps its record of this computer until it is removed from the T3 Connect account."
+        : "Cleared leftover T3 Connect state on this computer because this Loom build retires Connect. It held no Connect link, and a new link is refused while Connect is retired.",
       {
         cleared: signedIn ? [...stored, "cloud-cli-oauth-token"] : stored,
         ...(Option.isSome(relay) ? { relayHost: relay.value } : {}),

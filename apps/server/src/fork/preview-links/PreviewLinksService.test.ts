@@ -45,6 +45,7 @@ import {
 import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
+import { CloudflaredExtraPorts } from "../cloudflared/connector.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { ProjectLifecycleService } from "../project-lifecycle/ProjectLifecycleService.ts";
 import type { LaneRow } from "../project-lifecycle/store.ts";
@@ -465,6 +466,8 @@ const makeHarness = Effect.fn("makeHarness")(function* (
   };
   /** Ports something outside Loom listens on. */
   const busyPorts = new Set<number>();
+  /** Metrics ports of cloudflared connectors other than the preview tunnel, such as reach's. */
+  const connectorPorts = new Set<number>();
   /**
    * Ports something listens on over ::1 only. A 127.0.0.1 bind still succeeds beside it, but the
    * port probe sees it.
@@ -583,6 +586,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         ),
         Layer.succeed(HostProcess.Hostname, "Dorothy.local"),
         Layer.succeed(ProcessRunner.ProcessRunner, docker.runner),
+        Layer.succeed(CloudflaredExtraPorts, { ports: () => [...connectorPorts] }),
       ),
     ),
   );
@@ -605,6 +609,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
     tunnel,
     folders,
     busyPorts,
+    connectorPorts,
     docker,
     secretValues,
     waitFor,
@@ -789,6 +794,28 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(view.portAllowed(4100)).toBe(false);
       expect(view.portAllowed(20241)).toBe(false);
       expect(view.portAllowed(5173)).toBe(true);
+    }),
+  );
+
+  it.effect("denies another cloudflared connector's ports, following it to a new port", () =>
+    Effect.gen(function* () {
+      const { workspace } = yield* makeSite;
+      const harness = yield* makeHarness({ lanes: siteLanes(workspace) });
+      yield* harness.service.configure({ settings: ready });
+      harness.connectorPorts.add(41000);
+
+      const error = yield* Effect.flip(harness.service.share({ port: 41000 }, owner));
+      expect(error.reason).toBe("port-denied");
+      const view = yield* harness.view;
+      expect(view.portAllowed(41000)).toBe(false);
+      expect((yield* harness.service.shareFolder({ path: "dist" }, threadA)).port).toBe(41001);
+
+      // A restarted connector listens elsewhere; the old port is free to share at once.
+      harness.connectorPorts.clear();
+      harness.connectorPorts.add(41002);
+      expect(view.portAllowed(41000)).toBe(true);
+      expect(view.portAllowed(41002)).toBe(false);
+      expect((yield* harness.service.share({ port: 41000 }, owner)).port).toBe(41000);
     }),
   );
 

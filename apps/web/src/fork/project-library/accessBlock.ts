@@ -20,7 +20,10 @@ export interface AccessTarget {
 export interface AccessBlock {
   readonly label: string;
   readonly message: string;
-  /** Whether Settings > Connections can repair it, and whether that repair is signing in. */
+  /**
+   * How to repair it: signing in again with the saved Identity route, or Settings > Connections.
+   * Null while nothing is known to be wrong yet.
+   */
   readonly repair: "sign-in" | "connection" | null;
 }
 
@@ -34,6 +37,9 @@ export function accessBlock(target: AccessTarget): AccessBlock | null {
 }
 
 function explain(target: AccessTarget): Omit<AccessBlock, "label"> | null {
+  // A first attempt with nothing failed yet, such as right after signing in, needs no repair.
+  if (target.phase === "connecting")
+    return { message: `Connecting to ${target.label}...`, repair: null };
   if (target.phase !== "connected") {
     const signIn = target.identity && target.phase === "error";
     return {

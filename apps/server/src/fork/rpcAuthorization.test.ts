@@ -8,6 +8,10 @@ import {
   AuthEnvironmentMaintainScope,
   AuthSettingsWriteScope,
   AuthPreviewOperateScope,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
+  AuthStandardClientScopes,
+  EnvironmentId,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
@@ -22,12 +26,22 @@ import {
   PCB_PREVIEW_WS_METHODS as P,
   PROJECT_CHECKOUT_WS_METHODS as C,
   PREVIEW_LINKS_WS_METHODS as PL,
+  REACH_WS_METHODS as REACH,
   FORK_CLIENT_GUARDED_RPC_SCOPES,
+  type ReachLibraryComputer,
+  type ReachStatus,
 } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as RpcSchema from "effect/rpc/RpcSchema";
 import * as Stream from "effect/Stream";
+import { PocketIdStandardScopes } from "../auth/PocketId.ts";
+import { ReachProvisioner } from "./reach/library/ReachProvisioner.ts";
+import { makeReachLibraryRpcHandlers } from "./reach/library/rpc.ts";
+import { ReachService } from "./reach/ReachService.ts";
+import { makeReachRpcHandlers } from "./reach/rpc.ts";
 import { FORK_RPC_REQUIRED_SCOPES, makeForkRpcAuth } from "./rpcAuthorization.ts";
 
 const forkTags = [...ForkRpcGroup.requests.keys()];
@@ -391,5 +405,146 @@ it.effect("reads published pages with read access and changes them only with pre
     // Clients read the list through a query atom, and query atoms refuse guarded tags.
     expect(FORK_CLIENT_GUARDED_RPC_SCOPES).not.toHaveProperty(PL.pagesList);
     expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PL.pagesUpdate]).toBe(AuthPreviewOperateScope);
+  }),
+);
+
+it("guards each fork write in the client with the scope its server handler enforces", () => {
+  const mismatched = Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES).filter(
+    ([method, scope]) => FORK_RPC_REQUIRED_SCOPES[method as ForkRpcMethod] !== scope,
+  );
+  expect(mismatched).toEqual([]);
+  // An unguarded write needs no grant to look available in the UI, so the server alone refuses it.
+  // Streams are exempt: subscription atoms never run the client guard.
+  const unguarded = [...ForkRpcGroup.requests.values()].filter(
+    (rpc) =>
+      !FORK_RPC_REQUIRED_SCOPES[rpc._tag as ForkRpcMethod].endsWith(":read") &&
+      !RpcSchema.isStreamSchema(rpc.successSchema) &&
+      !Object.hasOwn(FORK_CLIENT_GUARDED_RPC_SCOPES, rpc._tag),
+  );
+  expect(unguarded.map((rpc) => rpc._tag)).toEqual([]);
+});
+
+const REACH_OFF: ReachStatus = {
+  state: "off",
+  enabled: false,
+  blocked: null,
+  url: null,
+  message: null,
+  warnings: [],
+  prepared: null,
+};
+const RETIRED: ReachLibraryComputer = {
+  environmentId: EnvironmentId.make("environment-studio"),
+  label: null,
+  hostname: "studio-loom.reach.example.test",
+  state: "removed",
+  lastError: null,
+  connection: "down",
+  connectors: null,
+  leftoverDnsRecordId: null,
+  identity: null,
+  signIn: "unknown",
+  updatedAt: "2026-10-24T12:00:00.000Z",
+  lastEnsuredAt: null,
+};
+
+/** The real reach handlers, over services that record each call that reached them. */
+const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
+  const calls: Array<string> = [];
+  const record = <A>(name: string, value: A) =>
+    Effect.sync(() => {
+      calls.push(name);
+      return value;
+    });
+  const services = Layer.merge(
+    Layer.succeed(
+      ReachService,
+      ReachService.of({
+        status: record("status", REACH_OFF),
+        changes: Stream.fromEffect(record("watch", REACH_OFF)),
+        setEnabled: (enabled) => record(enabled ? "on" : "off", { ...REACH_OFF, enabled }),
+        remove: () => record("remove", REACH_OFF),
+        guardState: () => ({ hostname: null, serving: false }),
+        ownPorts: () => [],
+      }),
+    ),
+    Layer.succeed(
+      ReachProvisioner,
+      ReachProvisioner.of({
+        ensure: () => Effect.die(new Error("ensure is a computer's HTTP route, not an RPC")),
+        remove: () => Effect.die(new Error("remove is a computer's HTTP route, not an RPC")),
+        list: record("libraryList", {
+          setup: { zone: null, cloudflare: "missing", identity: "missing", edge: null },
+          computers: [],
+        }),
+        retire: () => record("libraryRetire", RETIRED),
+      }),
+    ),
+  );
+  const handlers = Effect.gen(function* () {
+    const auth = makeForkRpcAuth({
+      sessionId: AuthSessionId.make("reach-test"),
+      subject: "test",
+      method: "bearer-access-token",
+      scopes,
+    });
+    return {
+      ...(yield* makeReachRpcHandlers(auth)),
+      ...(yield* makeReachLibraryRpcHandlers(auth)),
+    };
+  }).pipe(Effect.provide(services));
+  return { calls, handlers };
+};
+
+it.effect(
+  "a standard Identity session watches reach and retires computers but cannot switch reach",
+  () =>
+    Effect.gen(function* () {
+      const identity = reachHandlers(PocketIdStandardScopes);
+      const reach = yield* identity.handlers;
+      for (const change of [
+        reach[REACH.set]({ enabled: true }),
+        reach[REACH.set]({ enabled: false }),
+        reach[REACH.remove](),
+      ]) {
+        expect(yield* Effect.flip(change)).toMatchObject({
+          _tag: "EnvironmentAuthorizationError",
+          requiredScope: AuthRelayWriteScope,
+        });
+      }
+      expect(identity.calls).toEqual([]);
+      yield* Stream.runDrain(reach[REACH.watch]());
+      yield* reach[REACH.libraryList]();
+      yield* reach[REACH.libraryRetire]({
+        environmentId: RETIRED.environmentId,
+        endIdentity: true,
+      });
+      expect(identity.calls).toEqual(["watch", "libraryList", "libraryRetire"]);
+    }),
+);
+
+it.effect("each reach handler checks its own grant before the service runs", () =>
+  Effect.gen(function* () {
+    // What a Pocket ID session holds with LOOM_IDENTITY_ALLOW_ADMIN=true, and a paired device.
+    const admin = reachHandlers(AuthStandardClientScopes);
+    yield* (yield* admin.handlers)[REACH.set]({ enabled: true });
+    expect(admin.calls).toEqual(["on"]);
+
+    const relayOnly = reachHandlers([AuthRelayReadScope, AuthRelayWriteScope]);
+    const relay = yield* relayOnly.handlers;
+    expect(yield* Effect.flip(relay[REACH.libraryList]())).toMatchObject({
+      requiredScope: AuthOrchestrationReadScope,
+    });
+    expect(
+      yield* Effect.flip(
+        relay[REACH.libraryRetire]({ environmentId: RETIRED.environmentId, endIdentity: false }),
+      ),
+    ).toMatchObject({ requiredScope: AuthSettingsWriteScope });
+    expect(relayOnly.calls).toEqual([]);
+
+    const unrelated = reachHandlers([AuthOrchestrationReadScope, AuthSettingsWriteScope]);
+    const denied = yield* Effect.flip(Stream.runDrain((yield* unrelated.handlers)[REACH.watch]()));
+    expect(denied).toMatchObject({ requiredScope: AuthRelayReadScope });
+    expect(unrelated.calls).toEqual([]);
   }),
 );

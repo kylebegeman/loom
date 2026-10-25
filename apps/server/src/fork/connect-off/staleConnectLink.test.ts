@@ -110,19 +110,33 @@ describe("stale Connect link cleanup", () => {
       assert.strictEqual(kept.publicKey, keyPair.publicKey);
       assert.lengthOf(warnings, 1);
       assert.include(String(warnings[0]?.[0]), "re-link is refused");
+      assert.include(String(warnings[0]?.[0]), "T3 keeps its record");
       assert.deepInclude(warnings[0]?.[1], { relayHost: "relay.example.test" });
     }).pipe(Effect.provide(layerHost())),
   );
 
-  it.effect("clears a CLI sign-in left on a computer that was never linked", () =>
+  it.effect.each([
+    { name: "a CLI sign-in", pendingLink: false },
+    { name: "a `connect link` that never finished", pendingLink: true },
+  ] as const)("clears $name without claiming T3 holds a linked computer", ({ pendingLink }) =>
     Effect.gen(function* () {
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
       const tokens = yield* CliTokenManager.CloudCliTokenManager;
       yield* tokens.store(signIn);
+      if (pendingLink) yield* secrets.set(CLOUD_CLI_DESIRED_LINK_SECRET, bytes("managed"));
 
       const warnings = yield* startUp(true);
 
       assert.isFalse(yield* tokens.hasCredential);
+      assert.isFalse(yield* isStored(CLOUD_CLI_DESIRED_LINK_SECRET));
       assert.lengthOf(warnings, 1);
+      assert.include(String(warnings[0]?.[0]), "held no Connect link");
+      assert.notInclude(String(warnings[0]?.[0]), "T3 keeps its record");
+      assert.deepInclude(warnings[0]?.[1], {
+        cleared: pendingLink
+          ? [CLOUD_CLI_DESIRED_LINK_SECRET, "cloud-cli-oauth-token"]
+          : ["cloud-cli-oauth-token"],
+      });
     }).pipe(Effect.provide(layerHost())),
   );
 

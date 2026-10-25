@@ -102,6 +102,7 @@ import { LibraryTabs } from "../project-library/LibraryTabs";
 import { ProjectWash } from "../project-library/ProjectCollection";
 import { ProjectColorDot, projectColorStyle } from "../project-library/ProjectIdentity";
 import {
+  useLibraryAccessBlock,
   useLibraryAuthority,
   useLibraryPermission,
   useLibraryProjects,
@@ -471,6 +472,9 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
   const manages = supportsLoomFeature(capabilities, SITES_MANAGEMENT_FEATURE);
   const projects = useLibraryProjects(true);
   const allowed = useLibraryPermission(sites.saveSite, environmentId);
+  // An expired or unchecked session also turns saving off, and the page frame already says how to
+  // repair it, so owner advice would contradict it.
+  const access = useLibraryAccessBlock(environmentId, []);
   // A local editor remembers the page it opened on, so going Back from there leaves it behind.
   const [editing, setEditing] = useState<{
     readonly target: SiteEditTarget;
@@ -511,7 +515,8 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
         : !managementConfigured
           ? "Site management needs a manager connection on your Library server."
           : !allowed
-            ? `Ask an owner of ${libraryLabel} for settings access to change sites.`
+            ? (access?.message ??
+              `Ask an owner of ${libraryLabel} for settings access to change sites.`)
             : null;
   const projectsById = new Map(
     (projects.query.data ?? []).map((project) => [project.id, project] as const),
@@ -598,7 +603,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
             ? "Viewing only. Site management needs a manager connection on your Library server."
             : `Viewing only. Update ${libraryLabel} to manage sites here.`}
         </LibraryNotice>
-      ) : query.data?.configured && manages && !allowed ? (
+      ) : query.data?.configured && manages && !allowed && !access ? (
         <LibraryNotice icon={LockIcon}>
           You can view sites. Ask an owner of {libraryLabel} for settings access to change them.
         </LibraryNotice>

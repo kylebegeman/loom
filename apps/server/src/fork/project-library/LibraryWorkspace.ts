@@ -174,6 +174,7 @@ const encodeReviewRepository = Schema.encodeEffect(Schema.fromJsonString(ReviewR
 const encodeReviewState = Schema.encodeEffect(Schema.fromJsonString(ReviewState));
 
 const TAR_BLOCK_BYTES = 512;
+const OWNER_CHECK_TIMEOUT = "30 seconds";
 const FullRecoveryManifest = Schema.Struct({
   version: Schema.Literal(1),
   project: LibraryProject,
@@ -381,6 +382,11 @@ const make = Effect.gen(function* () {
       (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
     );
   };
+  /** One folder belongs to one current project. A retired receipt only serves its old conversations. */
+  const holdsRoot = (receipt: LibraryWorkspaceStore.WorkspaceReceipt, rootPath: string) =>
+    receipt.copy.rootPath === rootPath &&
+    receipt.copy.state !== "released" &&
+    receipt.copy.registered !== false;
   const git = Effect.fnUntraced(function* (
     cwd: string,
     args: ReadonlyArray<string>,
@@ -718,7 +724,26 @@ const make = Effect.gen(function* () {
       const repository = yield* inspectRepository(rootPath, candidate);
       if (repository !== null) repositories.push(repository);
     }
-    return { rootPath, exists: true, repositories };
+    // The same receipts prepareCopy checks for a conflict, so a client can choose before it creates.
+    const owner = (yield* store.receipts)
+      .filter((receipt) => holdsRoot(receipt, rootPath))
+      .toSorted((left, right) => Date.parse(right.copy.updatedAt) - Date.parse(left.copy.updatedAt))
+      .at(0);
+    return {
+      rootPath,
+      exists: true,
+      repositories,
+      ...(owner === undefined
+        ? {}
+        : {
+            registration: {
+              workingCopyId: owner.copy.id,
+              projectId: owner.copy.projectId,
+              projectTitle: owner.project.title,
+              ownership: owner.copy.ownership,
+            },
+          }),
+    };
   });
   const findLocalProjectId = Effect.fnUntraced(function* (cwd: string, workspaceLeaseHeld = false) {
     const exact = yield* projects.getByWorkspaceRoot(cwd, { workspaceLeaseHeld });
@@ -797,6 +822,51 @@ const make = Effect.gen(function* () {
     const checkpointable = { ...receipt, rootCheckpointRepository: true };
     yield* store.put(checkpointable);
     return checkpointable;
+  });
+
+  /** The owner as the Library has it now, or null when the Library does not have that project. */
+  const libraryOwner = Effect.fn("LibraryWorkspace.libraryOwner")(function* (projectId: string) {
+    const unchecked = new LibraryError({
+      reason: "blocked",
+      detail:
+        "Loom could not check which project owns this folder. Reconnect your Library and try again.",
+    });
+    if (Option.isNone(publisher) || !publisher.value.enabled) return yield* unchecked;
+    return yield* publisher.value.project(projectId).pipe(
+      // The prepare lock is held while this runs, so a stalled Library must not hold up others.
+      Effect.timeout(OWNER_CHECK_TIMEOUT),
+      Effect.catch((error) =>
+        isLibraryError(error) && error.reason === "not-found"
+          ? Effect.succeed(null)
+          : Effect.fail(unchecked),
+      ),
+    );
+  });
+
+  // Archiving a project leaves its folders registered to it on each computer. A folder whose
+  // owner is archived, or gone from the Library, is retired the way unregister leaves it:
+  // unregistered with its state unchanged, so its old conversations keep their binding and still
+  // run there. Replication publishes the change, as it does after unregister.
+  const takeOverFolder = Effect.fn("LibraryWorkspace.takeOverFolder")(function* (
+    owners: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
+  ) {
+    const managed = owners.find((owner) => owner.copy.ownership === "managed");
+    if (managed !== undefined)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: `This folder holds files Loom created for ${managed.project.title}. Review and remove them from that project before adding the folder to another one. Restore that project first if it is archived.`,
+      });
+    for (const projectId of new Set(owners.map((owner) => owner.copy.projectId))) {
+      const current = yield* libraryOwner(projectId);
+      if (current !== null && !current.archived)
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `This folder already belongs to ${current.title}. Add it to that project instead.`,
+        });
+    }
+    const updatedAt = yield* now;
+    for (const owner of owners)
+      yield* store.put({ ...owner, copy: { ...owner.copy, registered: false, updatedAt } });
   });
 
   const prepareCopy = Effect.fn("LibraryWorkspace.prepareCopy")(function* (
@@ -956,6 +1026,19 @@ const make = Effect.gen(function* () {
       yield* store.put(restored);
       return restored.copy;
     }
+    // A copy this project still holds is reused above without the owner check, so starting a
+    // conversation in it never depends on the Library. Registering a copy, new or retired, checks
+    // first, so re-adding a folder to a project it was taken from never leaves two holding it.
+    const conflicting = receipts.filter(
+      (receipt) =>
+        holdsRoot(receipt, rootPath) &&
+        receipt.requestId !== input.requestId &&
+        !(input.strategy === "reuse" && receipt.copy.projectId === input.project.id),
+    );
+    if (conflicting.length > 0) {
+      if (input.strategy !== "reuse") return yield* new LibraryError({ reason: "blocked" });
+      yield* takeOverFolder(conflicting);
+    }
     const retired = receipts.find(
       (receipt) =>
         receipt.copy.rootPath === rootPath &&
@@ -993,15 +1076,6 @@ const make = Effect.gen(function* () {
       yield* store.put(restored);
       return restored.copy;
     }
-    const conflicting = receipts.find(
-      (receipt) =>
-        receipt.copy.rootPath === rootPath &&
-        receipt.copy.state !== "released" &&
-        receipt.copy.registered !== false &&
-        receipt.requestId !== input.requestId &&
-        !(input.strategy === "reuse" && receipt.copy.projectId === input.project.id),
-    );
-    if (conflicting !== undefined) return yield* new LibraryError({ reason: "blocked" });
     let receipt: LibraryWorkspaceStore.WorkspaceReceipt;
     if (existing === undefined) {
       if (input.strategy === "reuse") {
@@ -1167,9 +1241,11 @@ const make = Effect.gen(function* () {
     return prepared.success;
   });
 
-  const status = Effect.fn("LibraryWorkspace.status")(function* (input: {
-    readonly workingCopyId: string;
-  }) {
+  const status = Effect.fn("LibraryWorkspace.status")(function* (
+    input: { readonly workingCopyId: string },
+    /** Borrowed folders are only read in full by a snapshot, which archives their files. */
+    options: { readonly borrowedContents?: boolean } = {},
+  ) {
     const receipt = yield* store.get(input.workingCopyId);
     const copy = receipt.copy;
     if (copy.environmentId !== environmentId) return yield* new LibraryError({ reason: "invalid" });
@@ -1178,14 +1254,20 @@ const make = Effect.gen(function* () {
     if (copy.state === "released" || copy.registered === false)
       return { copy, blockers, reviewToken: null, contentsDigest: null };
     if (copy.ownership === "borrowed") {
-      const contentsDigest =
+      // Forgetting a borrowed folder never touches its files, and unregister checks only the
+      // record segment. Hashing every byte here made large folders impossible to forget.
+      const root =
         (yield* fs.exists(copy.rootPath)) && (yield* fs.realPath(copy.rootPath)) === copy.rootPath
+          ? fileIdentity(yield* fs.stat(copy.rootPath))
+          : null;
+      const contentsDigest =
+        root !== null && options.borrowedContents === true
           ? yield* streamWorkingCopy(copy.rootPath)
           : null;
       return {
         copy,
         blockers,
-        reviewToken: `${yield* digest(`unregister:${yield* encodeWorkingCopy(copy)}`)}:${contentsDigest ?? "missing"}:${contentsDigest === null ? "" : yield* externalGitReview(copy)}`,
+        reviewToken: `${yield* digest(`unregister:${yield* encodeWorkingCopy(copy)}`)}:${root === null ? "missing" : `${root.device ?? ""}-${root.inode ?? ""}`}:${root === null ? "" : yield* externalGitReview(copy)}`,
         contentsDigest,
       };
     }
@@ -1763,7 +1845,11 @@ const make = Effect.gen(function* () {
       if (processReason !== null) return yield* new LibraryError({ reason: "blocked" });
     });
     yield* assertIdle;
-    const reviewed = yield* status({ workingCopyId: input.workingCopyId });
+    // The archive must match this digest, so a borrowed folder's files are read here, not in review.
+    const reviewed = yield* status(
+      { workingCopyId: input.workingCopyId },
+      { borrowedContents: true },
+    );
     if (
       reviewed.reviewToken !== input.reviewToken ||
       reviewed.contentsDigest === null ||

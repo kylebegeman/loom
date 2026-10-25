@@ -1,8 +1,7 @@
 import { LibraryTextPalette } from "./LibraryTextPalette";
 import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
 import { LibraryFolderPalette } from "./LibraryFolderPalette";
-import { MonitorIcon, FolderPlusIcon, KeyRoundIcon } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { MonitorIcon, FolderPlusIcon } from "lucide-react";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -22,10 +21,22 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
 
 import { usePrimaryEnvironmentId } from "~/state/environments";
-import { libraryStartFolderProjects } from "@t3tools/client-runtime/fork";
+import {
+  libraryFolderOwner,
+  libraryFolderOwnerIssue,
+  libraryFolderTakeover,
+  libraryStartFolderProjects,
+} from "@t3tools/client-runtime/fork";
 import { folderProjectMatches } from "./folderProjectMatches";
 
-import { projectLibrary, useAccessBlock, useLibraryProjects, useLibraryPermission } from "./state";
+import {
+  projectLibrary,
+  useAccessBlock,
+  useLibraryAccessBlock,
+  useLibraryProjects,
+  useLibraryPermission,
+} from "./state";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
 
 const isLibraryError = Schema.is(LibraryError);
 const ImportAttempt = Schema.NullOr(
@@ -60,7 +71,8 @@ export function ImportProjectDialog({
   readonly onSaved: (project: LibraryProject, copy?: LibraryWorkingCopy) => void;
   readonly onClose: () => void;
 }) {
-  const library = useLibraryProjects();
+  // Archived projects tell a folder's archived owner apart from one the Library no longer has.
+  const library = useLibraryProjects(true);
   const [attempt, saveAttempt] = useLibraryAttempt(
     `loom:library:import:${library.authorityId}`,
     ImportAttempt,
@@ -94,6 +106,13 @@ export function ImportProjectDialog({
   const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
   const [projectId, setProjectId] = useState(attempt?.project?.id ?? "choose");
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);
+  // A project this dialog created for a folder. A failure after it was created clears the
+  // attempt, and a retry must add the folder to this project rather than create another.
+  const [created, setCreated] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly rootPath: string;
+    readonly project: LibraryProject;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
@@ -128,13 +147,12 @@ export function ImportProjectDialog({
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, library.authorityId);
   const host = library.environments.find((entry) => entry.environmentId === hostId);
   const hostBlock = useAccessBlock(hostId, [projectLibrary.prepareCopy]);
-  const libraryBlock = useAccessBlock(
+  const libraryBlock = useLibraryAccessBlock(
     library.authorityId,
     projectId === "new"
       ? [projectLibrary.registerCopy, projectLibrary.createProject]
       : [projectLibrary.registerCopy],
   );
-  const navigate = useNavigate();
   const inspectFolder = async (path = rootPath) => {
     if (!hostId || !path.trim()) return;
     setBusy(true);
@@ -159,8 +177,19 @@ export function ImportProjectDialog({
         return null;
       }
       setRegisteredCopies(copies.value);
+      const owner = libraryFolderOwner(result.value.registration, library.query.data);
       const matches = matchingProjects(result.value, copies.value);
-      setProjectId(matches.length === 1 ? matches[0]!.id : matches.length > 1 ? "choose" : "new");
+      setProjectId(
+        owner?.kind === "current"
+          ? owner.project.id
+          : created?.environmentId === hostId && created.rootPath === result.value.rootPath
+            ? created.project.id
+            : matches.length === 1
+              ? matches[0]!.id
+              : matches.length > 1
+                ? "choose"
+                : "new",
+      );
       if (!title)
         setTitle(
           result.value.rootPath
@@ -200,10 +229,19 @@ export function ImportProjectDialog({
     attempt,
   ]);
   const matches = inspection ? matchingProjects(inspection, registeredCopies) : [];
+  const findProject = (id: string) =>
+    library.query.data?.find((project) => project.id === id && !project.archived) ??
+    (created?.project.id === id ? created.project : undefined);
+  const owner = libraryFolderOwner(inspection?.registration, library.query.data);
+  const ownerIssue = attempt
+    ? null
+    : owner?.kind === "unchecked" && library.query.isPending
+      ? "Checking which project owns this folder..."
+      : libraryFolderOwnerIssue(owner, projectId === "choose" ? null : projectId);
   const submit = async () => {
     const authorityId = library.authorityId;
-    if (!hostId || !authorityId || busy || (!attempt && !inspection?.exists)) return;
-    const existing = library.query.data?.find((project) => project.id === projectId);
+    if (!hostId || !authorityId || busy || ownerIssue || (!attempt && !inspection?.exists)) return;
+    const existing = findProject(projectId);
     if (!attempt && projectId !== "new" && !existing) return;
     setBusy(true);
     setError(null);
@@ -245,6 +283,11 @@ export function ImportProjectDialog({
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         next = { ...next, project: result.value };
+        setCreated({
+          environmentId: next.environmentId,
+          rootPath: next.rootPath,
+          project: result.value,
+        });
         saveAttempt(next);
         submitted = next;
       }
@@ -284,8 +327,18 @@ export function ImportProjectDialog({
             else if (
               isLibraryError(cause) &&
               ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-            )
+            ) {
+              // The project already exists, so a retry adds the folder to it. An attempt restored
+              // from an earlier visit created it too, before this dialog could record it.
+              if (submitted.createInput)
+                setCreated({
+                  environmentId: submitted.environmentId,
+                  rootPath: submitted.rootPath,
+                  project: submitted.project,
+                });
+              setProjectId(submitted.project.id);
               saveAttempt(null);
+            }
           }
         } else if (isLibraryError(cause) && cause.reason === "invalid") saveAttempt(null);
         setError(
@@ -332,13 +385,14 @@ export function ImportProjectDialog({
     );
   if (!open) return null;
   const locked = attempt !== null;
-  const selectedProject = library.query.data?.find((project) => project.id === projectId);
+  const selectedProject = findProject(projectId);
   const canImport =
     canPrepare &&
     canRegister &&
     (projectId !== "new" || canCreate) &&
     library.connected &&
     host?.connection.phase === "connected" &&
+    !ownerIssue &&
     (!!attempt ||
       (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
   const accessIssue = canImport ? null : (hostBlock ?? libraryBlock);
@@ -350,19 +404,23 @@ export function ImportProjectDialog({
         : "Choose a folder first."
       : !inspection.exists
         ? "This folder no longer exists on this computer. Choose another folder."
-        : projectId === "choose"
-          ? "Choose which project this folder belongs to."
-          : projectId === "new" && !title.trim()
-            ? "Name the project first."
-            : null;
+        : (ownerIssue ??
+          (projectId === "choose"
+            ? "Choose which project this folder belongs to."
+            : projectId === "new" && !title.trim()
+              ? "Name the project first."
+              : null));
   const repositories = inspection?.repositories ?? [];
   const importDescription = canImport
-    ? selectedProject
-      ? "Use the existing Library project"
-      : repositories.length > 1
-        ? `One Library project for ${repositories.length} repositories: ${repositories.map((repository) => repository.relativePath).join(", ")}`
-        : "Create a Library project for these files"
-    : (accessIssue?.message ?? formIssue ?? "Checking this device's access...");
+    ? (libraryFolderTakeover(owner) ??
+      (selectedProject
+        ? "Use the existing Library project"
+        : repositories.length > 1
+          ? `One Library project for ${repositories.length} repositories: ${repositories.map((repository) => repository.relativePath).join(", ")}`
+          : "Create a Library project for these files"))
+    : accessIssue?.repair
+      ? "Restore access above to add this folder."
+      : (accessIssue?.message ?? formIssue ?? "Checking this device's access...");
   const back = () => {
     setSearch("");
     if (page === "choose-project" || page === "name" || page === "brief") setPage("project");
@@ -480,9 +538,12 @@ export function ImportProjectDialog({
                     .map((project) => ({
                       id: project.id,
                       title: project.title,
-                      description: matches.some((match) => match.id === project.id)
-                        ? "Matching repositories and folder layout"
-                        : project.brief,
+                      description:
+                        owner?.kind === "current" && owner.project.id === project.id
+                          ? "This folder already belongs to this project"
+                          : matches.some((match) => match.id === project.id)
+                            ? "Matching repositories and folder layout"
+                            : project.brief,
                       select: () => {
                         setProjectId(project.id);
                         setSearch("");
@@ -510,24 +571,6 @@ export function ImportProjectDialog({
                       icon: <FolderPlusIcon className="size-4" />,
                       select: () => void submit(),
                     },
-                    ...(accessIssue?.repair
-                      ? [
-                          {
-                            id: "repair-access",
-                            title:
-                              accessIssue.repair === "sign-in"
-                                ? `Sign in to ${accessIssue.label} again`
-                                : `Review ${accessIssue.label} connection`,
-                            description: "Opens Settings > Connections",
-                            next: true,
-                            icon: <KeyRoundIcon className="size-4" />,
-                            select: () => {
-                              onClose();
-                              void navigate({ to: "/settings/connections" });
-                            },
-                          },
-                        ]
-                      : []),
                     ...(!inspection && rootPath && !attempt
                       ? [
                           {
@@ -593,7 +636,13 @@ export function ImportProjectDialog({
                       : []),
                   ]
         }
-      />
+      >
+        {page === "project" && accessIssue?.repair ? (
+          <div className="px-4 py-2">
+            <LibraryAccessNotice block={accessIssue} onLeave={onClose} />
+          </div>
+        ) : null}
+      </LibraryPaletteView>
     );
   return embedded ? (
     content

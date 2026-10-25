@@ -1,7 +1,11 @@
 import { AuthAccessTokenType, AuthTokenExchangeGrantType, EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { identityGrantKey } from "@t3tools/shared/fork/identity-grant";
+import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_RESOURCE_MISMATCH_TEXT,
+  identityGrantKey,
+} from "@t3tools/shared/fork/identity-grant";
 import {
   completeNativeIdentitySignIn,
   exchangeLibraryIdentityToken,
@@ -12,6 +16,7 @@ import {
   assertNativeIdentityUnchanged,
   nativeIdentityAuthorizationParameters,
   nativeIdentityScopes,
+  type IdentityOptions,
 } from "./libraryIdentity";
 const environmentId = EnvironmentId.make("selected-library");
 const metadata: LoomIdentityMetadata = {
@@ -160,6 +165,23 @@ describe("ordinary computer Identity", () => {
         expectedIssuer: identity.issuer,
       }),
     ).resolves.toMatchObject({ issuer: identity.issuer });
+    // Its own resource and a shared audience both work, so a computer can move between them.
+    const own = "https://library.example/computers/selected-library";
+    request.mockResolvedValueOnce(response({ ...modern, resource: own }));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request),
+    ).resolves.toMatchObject({ resource: own });
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request),
+    ).resolves.toMatchObject({ audience: modern.audience });
+    // Another computer's resource is refused before the provider sheet opens.
+    request.mockResolvedValueOnce(
+      response({ ...modern, resource: "https://library.example/computers/other" }),
+    );
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request),
+    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
     for (const tokenEndpoint of [
       "http://identity.example/token",
       "https://user:secret@identity.example/token",
@@ -301,6 +323,7 @@ describe("renewable native sign-in", () => {
   const signIn = (
     overrides: Partial<typeof tokens> = {},
     computerMetadata: LoomIdentityMetadata = modern,
+    options: IdentityOptions = { requireSessionExchange: true },
   ) =>
     completeNativeIdentitySignIn({
       destination: libraryIdentityAddress("https://computer.example"),
@@ -314,7 +337,7 @@ describe("renewable native sign-in", () => {
       discovery,
       tokens: { ...tokens, ...overrides },
       label: "computer.example",
-      options: { requireSessionExchange: true },
+      options,
       request: computer,
       now: () => NOW,
     });
@@ -406,6 +429,32 @@ describe("renewable native sign-in", () => {
         metadata: modern,
       }),
     ).rejects.toThrow("This computer needs a fresh Loom sign-in.");
+  });
+
+  it("explains a sign-in the computer refuses because it needs a passkey", async () => {
+    const refusing = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ error: "passkey_required" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "access", refusing, {
+        metadata: modern,
+      }),
+    ).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
+  });
+
+  it("never sends the account token to a computer that now names another computer's resource", async () => {
+    computer.mockClear();
+    computer.mockResolvedValueOnce(
+      response({ ...modern, resource: "https://library.example/computers/other" }),
+    );
+    await expect(signIn()).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    expect(
+      computer.mock.calls.some(([url]) => String(url).endsWith("/api/loom/identity/session")),
+    ).toBe(false);
   });
 
   it("still signs in when the provider issues no refresh grant", async () => {

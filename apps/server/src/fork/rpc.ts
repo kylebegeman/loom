@@ -66,6 +66,9 @@ import {
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
+import { makeReachRpcHandlers } from "./reach/rpc.ts";
+import { makeReachLibraryRpcHandlers } from "./reach/library/rpc.ts";
+import { makeLibraryPushRpcHandlers } from "./library-push/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import {
   VaultCoreRpcGroup,
@@ -84,6 +87,10 @@ import {
   ForkRpcGroup,
   VaultSshRpcGroup,
   VAULT_SSH_WS_METHODS,
+  ReachRpcGroup,
+  REACH_WS_METHODS,
+  LibraryPushRpcGroup,
+  LIBRARY_PUSH_WS_METHODS,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
@@ -116,6 +123,8 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(BOTS_VERSION_WS_METHODS),
   ...Object.values(BOTS_PIPELINE_WS_METHODS),
   ...Object.values(BOTS_ANYWHERE_WS_METHODS),
+  ...Object.values(REACH_WS_METHODS),
+  ...Object.values(LIBRARY_PUSH_WS_METHODS),
 );
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
@@ -144,6 +153,8 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotVersionsRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotPipelinesRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsAnywhereRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof ReachRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof LibraryPushRpcGroup>>
 > =>
   Layer.mergeAll(
     ProjectWorkflowsRpcGroup.toLayer(
@@ -210,6 +221,20 @@ export const makeForkRpcLayer = (
     ),
     VaultSshRpcGroup.toLayer(
       withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    ),
+    ReachRpcGroup.toLayer(
+      withForkRuntime(
+        Effect.gen(function* () {
+          const auth = makeForkRpcAuth(session);
+          return ReachRpcGroup.of({
+            ...(yield* makeReachRpcHandlers(auth)),
+            ...(yield* makeReachLibraryRpcHandlers(auth)),
+          });
+        }),
+      ),
+    ),
+    LibraryPushRpcGroup.toLayer(
+      withForkRuntime(makeLibraryPushRpcHandlers(makeForkRpcAuth(session), session)),
     ),
     otherForkRpcGroup.toLayer(
       Effect.gen(function* () {

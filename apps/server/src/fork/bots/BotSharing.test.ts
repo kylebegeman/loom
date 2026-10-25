@@ -15,9 +15,11 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { inProcessClient, type BotLibraryClient } from "./BotLibraryClient.ts";
 import { BotLibraryService, layer as libraryLayer } from "./BotLibraryService.ts";
-import { makeSharing } from "./BotSharing.ts";
+import { libraryProjectFor, makeSharing } from "./BotSharing.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
 import { model, projectId, reviewer, withHarness, type Harness } from "./testing/BotsHarness.ts";
+import { copyFor } from "../project-library/Library.testkit.ts";
+import type { WorkspaceReceipt } from "../project-library/LibraryWorkspaceStore.ts";
 
 const laptop = EnvironmentId.make("env-laptop");
 const studio = EnvironmentId.make("env-studio");
@@ -1026,4 +1028,55 @@ describe("BotSharing", () => {
       }),
     ),
   );
+});
+
+describe("libraryProjectFor", () => {
+  const receiptFor = (
+    id: string,
+    copy: Partial<WorkspaceReceipt["copy"]> = {},
+    rootLocalProjectId: ProjectId | null = projectId,
+  ): WorkspaceReceipt => {
+    const project = {
+      id,
+      title: id,
+      brief: "",
+      revision: 1,
+      resources: [],
+      archived: false,
+      createdAt: "2026-10-23T00:00:00.000Z",
+      updatedAt: "2026-10-23T00:00:00.000Z",
+    };
+    return {
+      requestId: id,
+      fingerprint: id,
+      project,
+      copy: { ...copyFor(project), id: `copy-${id}`, repositories: [], ...copy },
+      rootLocalProjectId,
+      rootCheckpointRepository: true,
+      legacyThreadIds: [],
+      rootIdentity: null,
+      releaseRequestId: null,
+      releaseReviewToken: null,
+      removalPath: null,
+      archivePath: null,
+      archiveDigest: null,
+    };
+  };
+
+  it("finds the folder's current owner rather than the archived project it took over from", () => {
+    const retired = receiptFor("archived", { registered: false });
+    const current = receiptFor("current");
+    expect(libraryProjectFor([retired, current], projectId)).toBe("current");
+    expect(libraryProjectFor([retired, current], projectId, true)).toBe("current");
+    // Old conversations on a retired folder still find the project they ran under.
+    expect(libraryProjectFor([retired], projectId)).toBe("archived");
+  });
+
+  it("matches a project only through a ready copy when asked, and never a missing project", () => {
+    const missing = receiptFor("missing", { state: "missing" });
+    expect(libraryProjectFor([missing], projectId)).toBe("missing");
+    expect(libraryProjectFor([missing], projectId, true)).toBeNull();
+    // A folder with no root project of its own is not the project of a bot without one.
+    expect(libraryProjectFor([receiptFor("rootless", {}, null)], null)).toBeNull();
+  });
 });

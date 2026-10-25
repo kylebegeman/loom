@@ -32,10 +32,11 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Jose from "jose";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { IDENTITY_PASSKEY_REQUIRED_TEXT } from "@t3tools/shared/fork/identity-grant";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { signPayload, timingSafeEqualBase64Url } from "./utils.ts";
-import { identitySessionPrefix, parseMaxSessionAge } from "./identityPolicy.ts";
+import { identitySessionPrefix, parseMaxSessionAge, passkeyRequired } from "./identityPolicy.ts";
 
 const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
   AuthAccessReadScope,
@@ -67,6 +68,8 @@ const AT_HASH_DIGESTS: ReadonlyMap<string, Crypto.DigestAlgorithm> = new Map([
   ["PS256", "SHA-256"],
   ["EdDSA", "SHA-512"],
 ]);
+/** The `amr` value Pocket ID sets only for a passkey sign-in (`webauthn/service.go`). */
+const PASSKEY_AUTH_METHOD = "phr";
 const Discovery = Schema.Struct({
   issuer: Schema.String,
   authorization_endpoint: Schema.String,
@@ -91,6 +94,7 @@ const Claims = Schema.Struct({
   at_hash: Schema.optional(Schema.String),
   azp: Schema.optional(Schema.String),
   auth_time: Schema.optional(Schema.Finite),
+  amr: Schema.optional(Schema.Array(Schema.String)),
 });
 const decodeClaims = Schema.decodeUnknownEffect(Claims);
 const readUserInfo = HttpClientResponse.schemaBodyJson(
@@ -116,17 +120,28 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
     "session",
     "expired",
     "revoked",
+    "passkey",
   ]),
   cause: Schema.optional(Schema.Defect()),
+  /**
+   * The app window a failed browser sign-in reports to. Set only once the callback matched its
+   * pending sign-in, so the origin is one this computer allows and the state is that window's.
+   */
+  handoff: Schema.optional(Schema.Struct({ origin: Schema.String, state: Schema.String })),
 }) {
   override get message(): string {
-    return this.reason === "disabled"
-      ? "Loom sign-in is unavailable on this computer."
-      : this.reason === "configuration"
-        ? "Loom sign-in needs this computer's identity configuration."
-        : this.reason === "expired"
-          ? "Your Loom sign-in reached this computer's time limit. Sign in again."
-          : "Loom could not complete sign-in. Try again.";
+    switch (this.reason) {
+      case "disabled":
+        return "Loom sign-in is unavailable on this computer.";
+      case "configuration":
+        return "Loom sign-in needs this computer's identity configuration.";
+      case "expired":
+        return "Your Loom sign-in reached this computer's time limit. Sign in again.";
+      case "passkey":
+        return IDENTITY_PASSKEY_REQUIRED_TEXT;
+      default:
+        return "Loom could not complete sign-in. Try again.";
+    }
   }
 }
 
@@ -237,6 +252,8 @@ const make = Effect.gen(function* () {
   const maxSessionAgeSetting = optional("LOOM_IDENTITY_MAX_SESSION_AGE");
   const maxSessionAgeSeconds =
     maxSessionAgeSetting === null ? null : parseMaxSessionAge(maxSessionAgeSetting);
+  const requirePasskeySetting = optional("LOOM_IDENTITY_REQUIRE_PASSKEY");
+  const requirePasskey = passkeyRequired(environment);
   const audiences = csv("LOOM_IDENTITY_AUDIENCE");
   if (audiences.length === 0) audiences.push(environmentId);
   const grantedScopes =
@@ -292,6 +309,8 @@ const make = Effect.gen(function* () {
     if (clientId === null && nativeClientId === null)
       return yield* new PocketIdError({ reason: "configuration" });
     if (maxSessionAgeSetting !== null && maxSessionAgeSeconds === null)
+      return yield* new PocketIdError({ reason: "configuration" });
+    if (requirePasskeySetting !== null && !requirePasskey)
       return yield* new PocketIdError({ reason: "configuration" });
     for (const origin of browserOrigins) {
       const url = yield* secureUrl(origin);
@@ -522,6 +541,14 @@ const make = Effect.gen(function* () {
       ? { ...identity, expiresAt: DateTime.makeUnsafe(limit) }
       : identity;
   });
+  /**
+   * Pocket ID keeps a grant's `amr` through every refresh, so a sign-in that began with a one-time
+   * code never passes; it runs before `capSignInAge` so that grant gets this actionable refusal.
+   */
+  const checkPasskey = (amr: ReadonlyArray<string> | undefined) =>
+    requirePasskey && !amr?.includes(PASSKEY_AUTH_METHOD)
+      ? Effect.fail(new PocketIdError({ reason: "passkey" }))
+      : Effect.void;
   const issue = Effect.fnUntraced(function* (
     identity: VerifiedIdentity,
     input: {
@@ -685,81 +712,100 @@ const make = Effect.gen(function* () {
         ] as const;
       });
       if (entry === null) return yield* new PocketIdError({ reason: "state" });
-      const endpoints = yield* discovery;
-      const form: Record<string, string> = {
-        grant_type: "authorization_code",
-        code: input.code,
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        code_verifier: entry.verifier,
-      };
-      if (clientSecret !== null) form.client_secret = Redacted.value(clientSecret);
-      const tokens = yield* http
-        .execute(
-          HttpClientRequest.post(endpoints.token_endpoint).pipe(
-            HttpClientRequest.bodyUrlParams(form),
-          ),
-        )
-        .pipe(
-          Effect.flatMap(HttpClientResponse.filterStatusOk),
-          Effect.flatMap(readTokenResponse),
-          Effect.timeout("15 seconds"),
-          Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
-        );
-      if (tokens.token_type.toLowerCase() !== "bearer")
-        return yield* new PocketIdError({ reason: "token" });
-      const claims = yield* verifyIdToken({
-        idToken: tokens.id_token,
-        accessToken: tokens.access_token,
-        audience: clientId,
-        nonce: entry.nonce,
-        requireAtHash: false,
-      });
-      const identity = yield* verifyAccessToken(tokens.access_token);
-      if (
-        identity.account.subject !== claims.sub ||
-        (entry.browser?.expectedIdentity &&
-          (entry.browser.expectedIdentity.issuer !== identity.account.issuer ||
-            entry.browser.expectedIdentity.subject !== identity.account.subject))
-      )
-        return yield* new PocketIdError({ reason: "subject" });
-      const expiration = DateTime.make(claims.exp * 1000);
-      if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
-      const acceptedIdentity = yield* capSignInAge(
-        {
-          ...identity,
-          expiresAt: DateTime.toUtc(
-            expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
-              ? expiration.value
-              : identity.expiresAt,
-          ),
-        },
-        claims.auth_time,
-      );
-      const session = yield* issue(acceptedIdentity, {
-        client: input.client,
-        method: "browser-session-cookie",
-      });
-      if (!entry.browser) return { ...session, returnTo: entry.returnTo };
-      const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
-      const accepted = yield* Ref.modify(handoffs, (current) => {
-        const next = new Map(
-          [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
-        );
-        if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
-        next.set(code, {
-          browser: entry.browser!,
-          identity: acceptedIdentity,
-          expiresAt: now.epochMilliseconds + 60_000,
+      const browser = entry.browser;
+      return yield* Effect.gen(function* () {
+        const endpoints = yield* discovery;
+        const form: Record<string, string> = {
+          grant_type: "authorization_code",
+          code: input.code,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          code_verifier: entry.verifier,
+        };
+        if (clientSecret !== null) form.client_secret = Redacted.value(clientSecret);
+        const tokens = yield* http
+          .execute(
+            HttpClientRequest.post(endpoints.token_endpoint).pipe(
+              HttpClientRequest.bodyUrlParams(form),
+            ),
+          )
+          .pipe(
+            Effect.flatMap(HttpClientResponse.filterStatusOk),
+            Effect.flatMap(readTokenResponse),
+            Effect.timeout("15 seconds"),
+            Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
+          );
+        if (tokens.token_type.toLowerCase() !== "bearer")
+          return yield* new PocketIdError({ reason: "token" });
+        const claims = yield* verifyIdToken({
+          idToken: tokens.id_token,
+          accessToken: tokens.access_token,
+          audience: clientId,
+          nonce: entry.nonce,
+          requireAtHash: false,
         });
-        return [true, next] as const;
-      });
-      if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
-      return {
-        ...session,
-        returnTo: entry.returnTo,
-        handoff: { code, origin: entry.browser.origin, state: entry.browser.state, environmentId },
-      };
+        yield* checkPasskey(claims.amr);
+        const identity = yield* verifyAccessToken(tokens.access_token);
+        if (
+          identity.account.subject !== claims.sub ||
+          (entry.browser?.expectedIdentity &&
+            (entry.browser.expectedIdentity.issuer !== identity.account.issuer ||
+              entry.browser.expectedIdentity.subject !== identity.account.subject))
+        )
+          return yield* new PocketIdError({ reason: "subject" });
+        const expiration = DateTime.make(claims.exp * 1000);
+        if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
+        const acceptedIdentity = yield* capSignInAge(
+          {
+            ...identity,
+            expiresAt: DateTime.toUtc(
+              expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
+                ? expiration.value
+                : identity.expiresAt,
+            ),
+          },
+          claims.auth_time,
+        );
+        const session = yield* issue(acceptedIdentity, {
+          client: input.client,
+          method: "browser-session-cookie",
+        });
+        if (!entry.browser) return { ...session, returnTo: entry.returnTo };
+        const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
+        const accepted = yield* Ref.modify(handoffs, (current) => {
+          const next = new Map(
+            [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
+          );
+          if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
+          next.set(code, {
+            browser: entry.browser!,
+            identity: acceptedIdentity,
+            expiresAt: now.epochMilliseconds + 60_000,
+          });
+          return [true, next] as const;
+        });
+        if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
+        return {
+          ...session,
+          returnTo: entry.returnTo,
+          handoff: {
+            code,
+            origin: entry.browser.origin,
+            state: entry.browser.state,
+            environmentId,
+          },
+        };
+      }).pipe(
+        Effect.mapError((error) =>
+          browser === undefined
+            ? error
+            : new PocketIdError({
+                reason: error.reason,
+                ...(error.cause === undefined ? {} : { cause: error.cause }),
+                handoff: { origin: browser.origin, state: browser.state },
+              }),
+        ),
+      );
     },
   );
   return PocketId.of({
@@ -801,8 +847,9 @@ const make = Effect.gen(function* () {
           )
             return yield* new PocketIdError({ reason: "subject" });
           // A refresh grant renews access tokens indefinitely; its ID token's `auth_time` is what
-          // bounds the sign-in, so a host with a limit cannot accept a native session without one.
-          if (input.idToken !== undefined || maxSessionAgeSeconds !== null) {
+          // bounds the sign-in and its `amr` is what proves a passkey, so a host with a limit or a
+          // passkey requirement cannot accept a native session without one.
+          if (input.idToken !== undefined || maxSessionAgeSeconds !== null || requirePasskey) {
             if (input.idToken === undefined || nativeClientId === null)
               return yield* new PocketIdError({ reason: "token" });
             const claims = yield* verifyIdToken({
@@ -813,6 +860,7 @@ const make = Effect.gen(function* () {
             });
             if (claims.sub !== identity.account.subject)
               return yield* new PocketIdError({ reason: "subject" });
+            yield* checkPasskey(claims.amr);
             identity = yield* capSignInAge(identity, claims.auth_time);
           }
         } else {
@@ -884,8 +932,10 @@ const make = Effect.gen(function* () {
       },
     ),
     exchangeAccessToken: Effect.fn("PocketId.exchangeAccessToken")(function* (input) {
-      // Token exchange carries no ID token, so it would let a refresh grant outlive the limit.
-      if (maxSessionAgeSeconds !== null) return yield* new PocketIdError({ reason: "token" });
+      // Token exchange carries no ID token, so it would let a refresh grant outlive the limit and
+      // leaves no `amr` to prove a passkey.
+      if (maxSessionAgeSeconds !== null || requirePasskey)
+        return yield* new PocketIdError({ reason: "token" });
       const identity = yield* verifyAccessToken(input.token);
       const session = yield* issue(identity, {
         ...input,

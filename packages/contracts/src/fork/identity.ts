@@ -30,6 +30,11 @@ export const LOOM_IDENTITY_SESSION_PATH = "/api/loom/identity/session";
 export const LOOM_IDENTITY_LOGOUT_PATH = "/api/loom/identity/logout";
 /** The session endpoint's 401 `error` when a sign-in is older than the host's maximum age. */
 export const LOOM_IDENTITY_SIGN_IN_EXPIRED = "sign_in_expired";
+/**
+ * The session endpoint's 401 `error` when the host requires a passkey sign-in and the ID token's
+ * `amr` lacks one. Signing in again only helps after signing out of Loom Identity in the browser.
+ */
+export const LOOM_IDENTITY_PASSKEY_REQUIRED = "passkey_required";
 
 export const LoomIdentityAccount = Schema.Struct({
   issuer: Schema.String,

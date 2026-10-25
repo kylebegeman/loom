@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { makeBotBatchesStore } from "./BotBatchesStore.ts";
 import { promotedTitle, USER_CALLER } from "./BotsService.ts";
@@ -214,6 +215,25 @@ describe("BotsService inbox", () => {
         const reopened = yield* bots.promote(failed.id, USER_CALLER);
         expect(reopened.created).toBe(true);
         expect(reopened.threadId).not.toBe(opened.threadId);
+      }),
+    ),
+  );
+
+  it.effect("refuses to open a run whose thread was deleted", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const failed = yield* failedRun(harness, "src/a.ts");
+        harness.shells.set(failed.threadId, {
+          projectId,
+          deletedAt: DateTime.makeUnsafe("2026-10-15T00:00:00.000Z"),
+        });
+        expect(yield* Effect.flip(bots.promote(failed.id, USER_CALLER))).toMatchObject({
+          reason: "not_found",
+        });
+        expect(harness.dispatched).toEqual([]);
+        expect((yield* bots.getRun(failed.id)).promotedThreadId ?? null).toBeNull();
       }),
     ),
   );

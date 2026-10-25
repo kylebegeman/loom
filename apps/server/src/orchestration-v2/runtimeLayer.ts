@@ -26,6 +26,7 @@ import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EffectWorker from "./EffectWorker.ts";
+import { holdLibraryAttachments } from "../fork/deleted-history/AttachmentCleanupHold.ts"; // fork: deleted-history
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -349,6 +350,7 @@ const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
       layerThreadManagementProvided,
     ),
   ),
+  holdLibraryAttachments, // fork: deleted-history
 );
 const layerEffectWorkerProvided = EffectWorker.layer.pipe(
   Layer.provide(Layer.merge(layerStores, layerEffectExecutorProvided)),

@@ -36,6 +36,7 @@ import {
   directoryPairingAddress,
   type DirectoryPairing,
 } from "../directory-computers/directoryComputers";
+import { LibraryReachSection, useLibraryReach } from "./LibraryReachSection";
 
 const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
@@ -64,6 +65,7 @@ export function ConnectionsScreen() {
     "relay environment refresh",
   );
   const directoryComputers = useDirectoryComputers();
+  const libraryReach = useLibraryReach(directoryComputers.libraryId);
   const [isRefreshingCloud, setIsRefreshingCloud] = useState(false);
   const cloudRefreshPendingRef = useRef(false);
   async function refreshCloudEnvironments() {
@@ -180,11 +182,12 @@ export function ConnectionsScreen() {
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
         refreshControl={
-          relaySession || directoryComputers.content.kind !== "hidden" ? (
+          relaySession || directoryComputers.content.kind !== "hidden" || libraryReach.visible ? (
             <RefreshControl
               refreshing={isRefreshingCloud}
               onRefresh={() => {
                 directoryComputers.refresh();
+                libraryReach.refresh();
                 void refreshCloudEnvironments();
               }}
             />
@@ -215,6 +218,7 @@ export function ConnectionsScreen() {
           onUpdate={handleUpdateEnvironment}
         />
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
+        <LibraryReachSection libraryReach={libraryReach} />
 
         {/* Always mounted: already-connected relay environments must stay
             visible (and removable) even when cloud config is missing or the

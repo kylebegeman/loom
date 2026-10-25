@@ -30,13 +30,17 @@ import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { layerFromPath, layerMemory } from "../../persistence/Sqlite.ts";
 import { ServerActivation } from "../../serverActivation.ts";
+import * as DeletedThreadHistory from "../deleted-history/DeletedThreadHistory.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as CopyHealth from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
+import * as Migration from "./LibraryMigration.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Replication from "./LibraryReplication.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
@@ -928,6 +932,48 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  it.effect("skips a copy whose project the Library no longer has and registers the rest", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const gone: WorkspaceStore.WorkspaceReceipt = {
+          ...receipt,
+          project: { ...project, id: "deleted-project" },
+          copy: { ...copy, id: "deleted-copy", projectId: "deleted-project", registered: false },
+        };
+        const cleanups = yield* Ref.make(0);
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, {
+            ...f.publisher,
+            registerCopy: (input) =>
+              input.copy.id === gone.copy.id
+                ? Effect.fail(new LibraryError({ reason: "not-found" }))
+                : f.publisher.registerCopy(input),
+          }),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            receipts: Effect.succeed([gone, receipt]),
+            bindings: Effect.succeed([]),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Ref.update(cleanups, (count) => count + 1),
+            }),
+          ),
+        );
+        yield* service.drain;
+        expect((yield* Ref.get(f.registered)).map((input) => input.copy.id)).toEqual([copy.id]);
+        expect(yield* Ref.get(cleanups)).toBe(1);
+        expect((yield* service.status).lastFailure).toBeNull();
+      }),
+    ),
+  );
   it.effect("keeps a bound conversation's baseline and removes ones no delta will use", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -1017,6 +1063,277 @@ describe("durable Library history replication", () => {
         expect((yield* f.service.status).lastFailure).toBe("blocked");
       }),
     ),
+  );
+  it.effect("never sends a purged conversation again, even after an authority change", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const archive = yield* Ref.get(f.archive);
+        const thread = archive.projection.thread;
+        yield* projections.apply({
+          id: EventId.make("purged-created"),
+          threadId,
+          type: "thread.created",
+          payload: thread,
+          occurredAt: thread.createdAt,
+        });
+        yield* projections.apply({
+          id: EventId.make("purged-message"),
+          threadId,
+          type: "message.updated",
+          payload: archive.projection.messages[0]!,
+          occurredAt: thread.createdAt,
+        });
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.event(2, "message.updated", '{"streaming":false}');
+        const sources = yield* HistorySource.LibraryHistorySource.pipe(
+          Effect.provide(
+            HistorySource.layer.pipe(
+              Layer.provide(Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, workspace)),
+              Layer.provide(
+                Layer.succeed(ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(source),
+                }),
+              ),
+            ),
+          ),
+        );
+        let attempts = 0;
+        const snapshotThread = (input: { readonly threadId: ThreadId }) =>
+          Effect.suspend(() => {
+            attempts += 1;
+            return sources.snapshotThread(input);
+          });
+        const service = yield* serviceFor(f, [threadId], snapshotThread);
+        yield* service.drain;
+        yield* projections.apply({
+          id: EventId.make("purged-deleted"),
+          threadId,
+          type: "thread.deleted",
+          payload: { ...thread, deletedAt: thread.createdAt },
+          occurredAt: thread.createdAt,
+        });
+        yield* f.event(3, "thread.deleted", "{}");
+        yield* service.flush;
+        const sent = yield* Ref.get(f.requests);
+        expect(sent.at(-1)?.entries.map((entry) => entry.thread.summary)).toMatchObject([
+          { sequence: 3, deleted: true },
+        ]);
+        // Another conversation owns the newest event, which a purge always keeps.
+        yield* f.sql`INSERT INTO orchestration_events (sequence,event_id,stream_version,occurred_at,actor_kind,metadata_json,application_event_version,aggregate_kind,stream_id,event_type,payload_json) VALUES (4,'other-created',0,'2026-10-15T00:00:00.000Z','server','{}',2,'thread','other-thread','thread.created','{}')`;
+        yield* TestClock.setTime(DateTime.toEpochMillis(thread.createdAt) + 25 * 60 * 60 * 1000);
+        const history = yield* DeletedThreadHistory.DeletedThreadHistory.pipe(
+          Effect.provide(
+            DeletedThreadHistory.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, workspace),
+                  Layer.succeed(Publisher.LibraryPublisher, f.publisher),
+                  ServerConfig.layerTest(process.cwd(), { prefix: "library-replication-purge-" }),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect((yield* history.pass()).purgedThreads).toBe(1);
+
+        // A new Library authority starts this computer's history over from nothing.
+        yield* Ref.update(f.authority, (info) => ({
+          ...info,
+          authorityId: "new-authority",
+          authorityEpoch: 2,
+        }));
+        for (const table of [
+          "fork_library_source_state",
+          "fork_library_source_threads",
+          "fork_library_source_outbox",
+          "fork_library_source_baselines",
+        ])
+          yield* f.sql`DELETE FROM ${f.sql(table)}`;
+        const attempted = attempts;
+        const restarted = yield* serviceFor(f, [threadId], snapshotThread);
+        yield* restarted.drain;
+        yield* restarted.flush;
+        yield* restarted.drain;
+        expect(yield* Ref.get(f.requests)).toHaveLength(sent.length);
+        // Refused once, then remembered for the life of the service.
+        expect(attempts).toBe(attempted + 1);
+        expect(yield* restarted.status).toMatchObject({ pendingEntries: 0, lastFailure: null });
+        // The conversation has no replication row now, yet nothing about it waits to be saved.
+        expect((yield* restarted.status).threads[0]).toMatchObject({ threadId, pending: false });
+      }).pipe(Effect.provide(ProjectionStore.layer)),
+    ),
+  );
+  it.effect(
+    "sends the deletion of a conversation deleted after its export and before activation",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const projections = yield* ProjectionStore.ProjectionStoreV2;
+          const { stateDir } = yield* ServerConfig.ServerConfig;
+          const archive = yield* Ref.get(f.archive);
+          const thread = archive.projection.thread;
+          yield* projections.apply({
+            id: EventId.make("exported-created"),
+            threadId,
+            type: "thread.created",
+            payload: thread,
+            occurredAt: thread.createdAt,
+          });
+          yield* projections.apply({
+            id: EventId.make("exported-message"),
+            threadId,
+            type: "message.updated",
+            payload: archive.projection.messages[0]!,
+            occurredAt: thread.createdAt,
+          });
+          yield* f.event(1, "thread.created", "{}");
+          yield* f.event(2, "message.updated", '{"streaming":false}');
+
+          // `export` uploads the conversation live and records itself until `activate`.
+          const migration = yield* Migration.LibraryMigration.pipe(
+            Effect.provide(
+              Migration.layer.pipe(
+                Layer.provide(
+                  Layer.mock(ProjectStore.ProjectStoreV2)({
+                    list: () =>
+                      Effect.succeed([
+                        {
+                          projectId: localProjectId,
+                          title: "Original source folder",
+                          workspaceRoot: copy.repositories[0]!.path,
+                          defaultModelSelection: null,
+                          defaultThreadEnvMode: null,
+                          autoPull: false,
+                          faviconPath: null,
+                          projectIcon: null,
+                          scripts: [],
+                          createdAt: project.createdAt,
+                          updatedAt: project.updatedAt,
+                          deletedAt: null,
+                        },
+                      ]),
+                  }),
+                ),
+              ),
+            ),
+          );
+          const exported = yield* migration.exportShadow({
+            requestId: "onboarding",
+            journalId: "migration",
+            plan: {
+              sourceEnvironmentId: source,
+              projects: [project],
+              copies: [
+                {
+                  copy,
+                  localProjects: [
+                    { localProjectId, cwd: copy.repositories[0]!.path, resourceIds: [resource.id] },
+                  ],
+                },
+              ],
+              excludedThreadIds: [],
+            },
+          });
+          expect(exported.threads.map((entry) => entry.summary)).toMatchObject([
+            { threadId, deleted: false, sequence: 2 },
+          ]);
+          yield* Migration.recordPendingImport({
+            stateDir,
+            requestId: "onboarding",
+            threadIds: [threadId],
+          });
+
+          // Deleted while still unbound, and more than a day passes before activation.
+          yield* projections.apply({
+            id: EventId.make("exported-deleted"),
+            threadId,
+            type: "thread.deleted",
+            payload: { ...thread, deletedAt: thread.createdAt },
+            occurredAt: thread.createdAt,
+          });
+          yield* f.event(3, "thread.deleted", "{}");
+          yield* f.sql`INSERT INTO orchestration_events (sequence,event_id,stream_version,occurred_at,actor_kind,metadata_json,application_event_version,aggregate_kind,stream_id,event_type,payload_json) VALUES (4,'other-created',0,'2026-10-15T00:00:00.000Z','server','{}',2,'thread','other-thread','thread.created','{}')`;
+          yield* TestClock.setTime(DateTime.toEpochMillis(thread.createdAt) + 25 * 60 * 60 * 1000);
+
+          let activated = false;
+          const store = WorkspaceStore.LibraryWorkspaceStore.of({
+            ...workspace,
+            bindings: Effect.sync(() =>
+              activated
+                ? [
+                    {
+                      threadId,
+                      resolved,
+                      importedHistory: {
+                        authorityId: "authority",
+                        authorityEpoch: 1,
+                        sequence: 2,
+                        sourceEventSequence: 2,
+                      },
+                    },
+                  ]
+                : [],
+            ),
+            getBinding: () => Effect.sync(() => (activated ? resolved : null)),
+          });
+          const history = yield* DeletedThreadHistory.DeletedThreadHistory.pipe(
+            Effect.provide(
+              DeletedThreadHistory.layer.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, store),
+                    Layer.succeed(Publisher.LibraryPublisher, f.publisher),
+                  ),
+                ),
+              ),
+            ),
+          );
+          expect((yield* history.pass()).purgedThreads).toBe(0);
+          expect(yield* f.sql`SELECT thread_id FROM fork_library_source_threads`).toEqual([]);
+
+          // `activate` binds the conversation at its exported sequence and removes the record.
+          activated = true;
+          yield* Migration.clearPendingImport({ stateDir, requestId: "onboarding" });
+          const sources = yield* HistorySource.LibraryHistorySource.pipe(
+            Effect.provide(
+              HistorySource.layer.pipe(
+                Layer.provide(Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, store)),
+                Layer.provide(
+                  Layer.succeed(ServerEnvironmentIdentity, {
+                    getEnvironmentId: Effect.succeed(source),
+                  }),
+                ),
+              ),
+            ),
+          );
+          const service = yield* Replication.LibraryReplication.pipe(
+            Effect.provide(Replication.layer),
+            Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+            Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, store),
+            Effect.provideService(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(source),
+            }),
+            Effect.provideService(HistorySource.LibraryHistorySource, sources),
+          );
+          yield* service.drain;
+          expect(
+            (yield* Ref.get(f.requests)).flatMap((request) =>
+              request.entries.map((entry) => entry.thread.summary),
+            ),
+          ).toMatchObject([{ threadId, sequence: 3, deleted: true }]);
+
+          // Once the Library holds the deletion, the history goes.
+          expect((yield* history.pass()).purgedThreads).toBe(1);
+        }).pipe(
+          Effect.provide(
+            Layer.merge(
+              ProjectionStore.layer,
+              ServerConfig.layerTest(process.cwd(), { prefix: "library-replication-import-" }),
+            ),
+          ),
+        ),
+      ),
   );
   it.effect(
     "keeps one unacknowledged snapshot per conversation and coalesces later milestones",

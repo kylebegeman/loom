@@ -35,6 +35,7 @@ import { createHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
+import { isWithheldError } from "../deleted-history/deletedHistory.ts";
 
 export class LibraryReplication extends Context.Service<
   LibraryReplication,
@@ -182,6 +183,10 @@ const make = Effect.gen(function* () {
   // The size of each deferred thread's last snapshot that did not fit the outbox. These keep the
   // storage limit reported while they wait, and retry as soon as that size fits.
   const oversized = new Map<ThreadId, number>();
+  // Deleted conversations whose history the source refused: the Library already holds the
+  // deletion, or the history was purged. Nothing more is sent for them while this service runs;
+  // a restart refuses each one once more.
+  const withheld = new Set<ThreadId>();
   let reconciled = false;
   let prunedBaselines = false;
   let supportsDeltas = false;
@@ -247,7 +252,16 @@ const make = Effect.gen(function* () {
     // The reader takes the snapshot in one read transaction, so no write waits while a long
     // history is read; anything committed after it is a later event the next scan finds. The
     // reader is one shared connection, so other reads, Vault checks among them, still wait.
-    const snapshot = yield* source.snapshotThread({ threadId }).pipe(NodeSqliteClient.readOnly);
+    const snapshot = yield* source.snapshotThread({ threadId }).pipe(
+      NodeSqliteClient.readOnly,
+      Effect.catchIf(isWithheldError, () => Effect.succeed(null)),
+    );
+    if (snapshot === null) {
+      withheld.add(threadId);
+      oversized.delete(threadId);
+      spacedUntil.delete(threadId);
+      return { result: "withheld" as const, bytes: 0 };
+    }
     if (queuedSequence !== undefined && queuedSequence >= snapshot.summary.sequence) {
       oversized.delete(threadId);
       return { result: "current" as const, bytes: 0 };
@@ -348,7 +362,7 @@ const make = Effect.gen(function* () {
         // host binding. Seed acknowledgements without replaying the entire source history.
         yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
         queued.set(entry.threadId, imported.sequence);
-      } else deferred.add(entry.threadId);
+      } else if (!withheld.has(entry.threadId)) deferred.add(entry.threadId);
     }
     if (!reconciled) {
       // Compaction keeps only a thread's newest whole-thread event, so a later reorder can
@@ -408,9 +422,10 @@ const make = Effect.gen(function* () {
       const outstanding = new Set(outbox.map((row) => row.thread_id));
       let pendingBytes = outbox.reduce((total, row) => total + row.bytes, 0);
       for (const threadId of deferred) {
-        if (!bound.has(threadId)) {
+        if (!bound.has(threadId) || withheld.has(threadId)) {
           deferred.delete(threadId);
           oversized.delete(threadId);
+          spacedUntil.delete(threadId);
           continue;
         }
         if (flushed?.has(threadId)) continue;
@@ -614,7 +629,17 @@ const make = Effect.gen(function* () {
         copy.state === "failed"
       )
         continue;
-      yield* registerChangedCopy(current, copy);
+      yield* registerChangedCopy(current, copy).pipe(
+        // The Library cannot record a copy of a project it no longer has. Skipping it keeps one
+        // such copy from failing every later copy and the cleanup that follows.
+        Effect.catch((error) =>
+          isLibraryError(error) && error.reason === "not-found"
+            ? Effect.logDebug("The Library no longer has this copy's project.", {
+                copyId: copy.id,
+              })
+            : Effect.fail(error),
+        ),
+      );
     }
   }, mapIo);
 
@@ -644,10 +669,11 @@ const make = Effect.gen(function* () {
         currentSequence: latest,
         // Compaction can replace a deferred milestone with navigation the tail ignores.
         pending:
-          row === undefined ||
-          pending > 0 ||
-          latest > row.acknowledged_sequence ||
-          deferred.has(threadId),
+          !withheld.has(threadId) &&
+          (row === undefined ||
+            pending > 0 ||
+            latest > row.acknowledged_sequence ||
+            deferred.has(threadId)),
       };
     },
     mapIo,

@@ -29,7 +29,13 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { useAtomCommand } from "~/state/use-atom-command";
-import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./state";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
+import {
+  projectLibrary,
+  useLibraryAccessBlock,
+  useLibraryPermission,
+  useLibraryProjects,
+} from "./state";
 
 import { libraryResourceFromInput, validateResources } from "@t3tools/client-runtime/fork";
 
@@ -64,7 +70,7 @@ export function ProjectEditorDialog({
   readonly initialTitle?: string | undefined;
   readonly initialResource?: string | undefined;
   readonly continueToConversation?: boolean;
-  readonly authorityId: EnvironmentId | null;
+  readonly authorityId: EnvironmentId;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
 }) {
@@ -96,9 +102,12 @@ export function ProjectEditorDialog({
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.createProject, authorityId);
+  const access = useLibraryAccessBlock(authorityId, [projectLibrary.createProject]);
+  // Access is apart from the form: the notice on the name page says why and offers the repair.
+  const canSave = allowed && access === null;
   const locked = busy || attempt !== null;
   const save = async () => {
-    if (!authorityId || !allowed || busy) return;
+    if (!canSave || busy) return;
     if (profile && !supportsBlueprint) {
       setError("Connect an updated Library before creating a project from this blueprint.");
       return;
@@ -293,7 +302,7 @@ export function ProjectEditorDialog({
                     description: continueToConversation
                       ? "Continue to your conversation"
                       : "Open project",
-                    disabled: !allowed || !title.trim(),
+                    disabled: !canSave || !title.trim(),
                     // The draft's mark previews name and color; an automatic color waits for an id.
                     icon: (
                       <ProjectTile
@@ -384,7 +393,13 @@ export function ProjectEditorDialog({
                   })),
                 ]
         }
-      />
+      >
+        {page === "name" && access ? (
+          <div className="px-4 py-2">
+            <LibraryAccessNotice block={access} onLeave={onClose} />
+          </div>
+        ) : null}
+      </LibraryPaletteView>
     );
   return embedded ? (
     content

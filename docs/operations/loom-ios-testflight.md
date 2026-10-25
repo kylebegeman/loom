@@ -43,7 +43,8 @@ registration of Loom's Apple team and bundle on the selected auth service, its c
 allowlist and Associated Domains configuration. Only after that qualification, set the
 optional `nativeAuthDomain` to that service's authentication hostname. Do not point it at
 upstream's authentication domain and assume Loom is registered. Connect account discovery
-does not enable push notifications, Apple sign-in or Expo OTA.
+does not enable push notifications, Apple sign-in or Expo OTA. Notifications from a Library
+are a separate opt-in, described in [Library push](#library-push).
 
 For direct manual iOS builds, set `LOOM_MOBILE_CONNECT_ENABLED=1` and the four canonical
 public `T3CODE_*` values from [Connect setup](connect-setup.md), plus
@@ -92,6 +93,35 @@ generated project signing settings and `asc` generates manual export options fro
 the signed archive. API keys can instead resolve through `ASC_KEY_ID`,
 `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; key contents stay in a private file.
 Never place a private key in source or pass its contents as a command argument.
+
+## Library push
+
+Release builds leave push off by default: the signed app carries no `aps-environment`, so iOS
+never issues a device token. A Library can send notifications with Loom's own Apple key once a
+build opts in. The Library side, including the APNs key and its custody, is in the
+[L115 packet](../fork/packets/L115-push/README.md#apple-key-k4).
+
+One-time Apple setup, on the same eligible team (not a personal team):
+
+1. Enable Push Notifications on the `com.kylebegeman.loom` App ID. The extensions stay without
+   it.
+2. Regenerate the App Store distribution profile for `com.kylebegeman.loom` so it carries
+   `aps-environment`, and install it on the release Mac. If you supply an export-options plist,
+   keep its mapping pointed at the new profile.
+3. Create the APNs key for the Library: Production, restricted to the topic
+   `com.kylebegeman.loom`. Keep a copy in Vault and install it on the Library.
+
+Build a release with `LOOM_MOBILE_LIBRARY_PUSH_ENABLED=1` in the environment before `prepare`
+or `release`; for nightly delivery, set it in the publisher's environment. The value is `0` or
+`1`, and unset means `0`. The prepared record freezes it, and a later phase run with a
+contradicting value fails, so a retry cannot quietly change it.
+
+Inspection checks the main app only. With the flag on, its signed entitlements and its profile
+must carry `aps-environment` set to `production`. With the flag off, its signed entitlements
+must not carry it; the profile is not checked, because once the App ID has Push every profile
+carries it. Upstream's own relay push stays off either way, and the release config check
+refuses a build that turns it on. The verification workflow checks the flag-on public
+configuration in its "Check Library push public configuration" step.
 
 ## Prepare and publish
 
@@ -179,8 +209,8 @@ configured personal identity. Signing stays on the existing Mac; no new runner o
 publishing account is required.
 
 The fork-owned `Loom iOS TestFlight verification` workflow checks production identity,
-release boundaries, focused project/handoff tests and mobile, contracts,
-client-runtime and scripts typechecks. It runs on relevant main changes and published
+release boundaries, focused project/handoff and Library push tests (including the iPhone's
+registration sync) and mobile, contracts, client-runtime and scripts typechecks. It runs on relevant main changes and published
 releases, and supports manual dispatch. Its recorded source artifact is verification
 evidence, not a downloadable iOS binary. The workflow does not hold Apple credentials
 or upload to TestFlight. Upstream EAS workflows are separate and must remain disabled

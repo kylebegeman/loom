@@ -13,6 +13,9 @@ import {
   LibraryComputers,
   type PairLibraryComputer,
 } from "../directory-computers/LibraryComputers";
+import { LibraryPushSection } from "../library-push/LibraryPushSection";
+import { ComputerReachSection } from "../reach/ComputerReach";
+import { LibraryReach } from "../reach/LibraryReach";
 
 const PRIMARY_DETAIL_TARGETS = [
   "connections-environment",
@@ -80,6 +83,7 @@ export function ComputerConnectionsHome({
                   searchTargetIds={PRIMARY_DETAIL_TARGETS}
                 >
                   {primaryDetails}
+                  <ComputerReachSection environment={primaryEnvironment} />
                 </ComputerConnectionDetails>
               </>
             }
@@ -93,6 +97,8 @@ export function ComputerConnectionsHome({
         {discoveredRows}
       </SettingsSection>
       <LibraryComputers onPair={onPairComputer} />
+      <LibraryReach />
+      <LibraryPushSection />
       <FleetUpdatesSection />
     </>
   );

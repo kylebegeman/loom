@@ -184,6 +184,8 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
     "key-changed",
     "stale-sequence",
     "not-found",
+    // Forgetting would drop the key pin that guards a live reach address.
+    "reach-active",
     "io",
   ]),
   cause: Schema.optional(Schema.Defect()),
@@ -204,6 +206,8 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
         return "The directory already has a newer report from this computer.";
       case "not-found":
         return "The directory has no entry with that id.";
+      case "reach-active":
+        return "This computer still has a reach address. Retire it under Reach addresses first, then forget the computer.";
       case "io":
         return "The directory could not store or read its records. Try again.";
     }

@@ -16,11 +16,15 @@ import {
   LoomIdentityMetadata,
   LoomIdentitySessionResult,
   type LoomIdentityAccount,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
 import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
   identityGrantKey,
+  identityResourceRefusal,
   identitySignInMaxAge,
 } from "@t3tools/shared/fork/identity-grant";
 import * as Schema from "effect/Schema";
@@ -160,6 +164,8 @@ export async function loadLibraryIdentity(
     );
   if (options.expectedIssuer !== undefined && metadata.issuer !== options.expectedIssuer)
     throw new Error("This computer uses a different sign-in provider than your Library.");
+  const resourceRefusal = identityResourceRefusal(metadata);
+  if (resourceRefusal !== null) throw new Error(resourceRefusal);
   secureIdentityEndpoint(metadata.issuer);
   secureIdentityEndpoint(metadata.authorizationEndpoint);
   secureIdentityEndpoint(metadata.tokenEndpoint);
@@ -263,16 +269,10 @@ export async function exchangeLibraryIdentityToken(
   );
   if (!response.ok) {
     const failure: unknown = await response.json().catch(() => null);
-    // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
-    if (
-      typeof failure === "object" &&
-      failure !== null &&
-      "error" in failure &&
-      failure.error === LOOM_IDENTITY_SIGN_IN_EXPIRED
-    )
-      throw new Error(
-        "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.",
-      );
+    const code =
+      typeof failure === "object" && failure !== null && "error" in failure ? failure.error : null;
+    if (code === LOOM_IDENTITY_SIGN_IN_EXPIRED) throw new Error(IDENTITY_FRESH_SIGN_IN_TEXT);
+    if (code === LOOM_IDENTITY_PASSKEY_REQUIRED) throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT);
     throw new Error(
       "This account could not sign in to the computer. Check its allowed accounts and try again.",
     );

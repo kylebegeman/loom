@@ -4,8 +4,15 @@ import {
   LOOM_IDENTITY_LOGIN_PATH,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_LOGOUT_PATH,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
+  LOOM_IDENTITY_SIGN_IN_EXPIRED,
   LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
+import {
+  IDENTITY_FRESH_SIGN_IN_TEXT,
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  identityResourceRefusal,
+} from "@t3tools/shared/fork/identity-grant";
 import * as Schema from "effect/Schema";
 
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
@@ -60,6 +67,28 @@ export function loomBrowserLoginUrl(
 
 const activeBrowserSignIns = new Map<string, AbortController>();
 
+const SIGN_IN_FAILED_TEXT =
+  "This account could not sign in to the computer. Try again or use pairing.";
+
+/** The line for a refusal the computer named, from the callback window or the session exchange. */
+function signInRefusalText(code: unknown) {
+  if (code === LOOM_IDENTITY_PASSKEY_REQUIRED) return IDENTITY_PASSKEY_REQUIRED_TEXT;
+  if (code === LOOM_IDENTITY_SIGN_IN_EXPIRED) return IDENTITY_FRESH_SIGN_IN_TEXT;
+  return SIGN_IN_FAILED_TEXT;
+}
+
+/** The named refusal a computer sends when only a different sign-in would work, if any. */
+async function sessionRefusalCode(response: Response): Promise<string | null> {
+  if (response.status !== 401) return null;
+  const body: unknown = await response.json().catch(() => null);
+  return typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "string"
+    ? body.error
+    : null;
+}
+
 export function cancelLoomBrowserSignIn(baseUrl: string) {
   activeBrowserSignIns.get(new URL(baseUrl).origin)?.abort();
 }
@@ -99,6 +128,8 @@ export async function signInToLoomBrowser(
     // picks the provider, so this stops only a computer that reports its provider honestly.
     if (input.expectedIssuer !== undefined && metadata.issuer !== input.expectedIssuer)
       throw new Error("This computer uses a different sign-in provider than your Library.");
+    const resourceRefusal = identityResourceRefusal(metadata);
+    if (resourceRefusal !== null) throw new Error(resourceRefusal);
     const random = () => {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       return btoa(String.fromCharCode(...bytes))
@@ -125,13 +156,13 @@ export async function signInToLoomBrowser(
         )
           return;
         const data = event.data;
-        if (
-          !("type" in data) ||
-          data.type !== "loom:identity:complete" ||
-          !("state" in data) ||
-          data.state !== state
-        )
+        if (!("type" in data) || !("state" in data) || data.state !== state) return;
+        // The computer's callback page reports a refused sign-in so this window can say why.
+        if (data.type === "loom:identity:failed") {
+          reject(new Error(signInRefusalText("error" in data ? data.error : null)));
           return;
+        }
+        if (data.type !== "loom:identity:complete") return;
         if (
           !("environmentId" in data) ||
           data.environmentId !== metadata.environmentId ||
@@ -186,8 +217,7 @@ export async function signInToLoomBrowser(
         ...(input.expectedIdentity ? { expectedIdentity: input.expectedIdentity } : {}),
       }),
     });
-    if (!response.ok)
-      throw new Error("This account could not sign in to the computer. Try again or use pairing.");
+    if (!response.ok) throw new Error(signInRefusalText(await sessionRefusalCode(response)));
     const session = decodeIdentitySession(await response.json());
     if (
       session.token_type !== "Bearer" ||

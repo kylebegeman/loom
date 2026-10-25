@@ -45,6 +45,7 @@ import * as ServerConfig from "../../config.ts";
 import { PortDiscovery } from "../../preview/PortScanner.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { forkParked, forkParkedFiber } from "../../serverActivation.ts";
+import { CloudflaredExtraPorts } from "../cloudflared/connector.ts";
 import { isContained } from "../model-preview-3d/signedFiles.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
 import { PORT_BLOCK } from "../project-lifecycle/policy.ts";
@@ -285,6 +286,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const clock = yield* Clock.Clock;
   const hostname = yield* HostProcess.Hostname;
   const containers = yield* makePreviewContainerOps;
+  const otherConnectors = yield* CloudflaredExtraPorts;
   const rootScope = yield* Effect.scope;
 
   const sidecarPath = path.join(config.stateDir, "fork", "preview-links", "state.json");
@@ -436,6 +438,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     settings.gatewayPort,
     gateway?.port,
     tunnel?.status.metricsPort,
+    ...otherConnectors.ports(),
   ];
 
   const view: PreviewGatewayView = {
@@ -1804,7 +1807,10 @@ export const layer = Layer.effect(
   PreviewLinksService,
   Effect.gen(function* () {
     const tunnelContext = yield* Effect.context<
-      RelayClient.RelayClient | ChildProcessSpawner.ChildProcessSpawner
+      | RelayClient.RelayClient
+      | ChildProcessSpawner.ChildProcessSpawner
+      | FileSystem.FileSystem
+      | Path.Path
     >();
     return yield* makePreviewLinksService({
       startGateway: startPreviewGateway,

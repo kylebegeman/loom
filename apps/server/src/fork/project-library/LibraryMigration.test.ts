@@ -8,7 +8,9 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
+import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Migration from "./LibraryMigration.ts";
+import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
   source,
   localProjectId,
@@ -188,5 +190,59 @@ describe("explicit Library shadow migration", () => {
           ).toBe("invalid");
         }),
       ),
+  );
+  it.effect("leaves out a deleted conversation once its history was purged", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const thread = f.original.projection.thread;
+        yield* projections.apply({
+          id: EventId.make("deleted"),
+          threadId,
+          type: "thread.deleted",
+          payload: { ...thread, deletedAt: thread.createdAt },
+          occurredAt: thread.createdAt,
+        });
+        yield* f.sql`INSERT INTO orchestration_events(event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES
+          ('message','thread',${threadId},2,'message.updated','2026-10-15T00:00:00.000Z','server','{}','{}',2),
+          ('deleted','thread',${threadId},3,'thread.deleted','2026-10-15T00:00:00.000Z','server','{}','{}',2)`;
+        const exported = (requestId: string) =>
+          f.migration
+            .exportShadow({ requestId, journalId: "migration", plan })
+            .pipe(Effect.map((result) => result.threads.map((entry) => entry.summary.deleted)));
+        expect(yield* exported("deleted")).toEqual([true]);
+        // A purge leaves only the creation and the deletion.
+        yield* f.sql`DELETE FROM orchestration_events WHERE event_id = 'message'`;
+        expect(yield* exported("purged")).toEqual([]);
+      }),
+    ),
+  );
+  it.effect("leaves out a deleted conversation once the Library holds its deletion", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* runForkMigrationSet(ProjectLibraryMigrations);
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const thread = f.original.projection.thread;
+        yield* projections.apply({
+          id: EventId.make("deleted"),
+          threadId,
+          type: "thread.deleted",
+          payload: { ...thread, deletedAt: thread.createdAt },
+          occurredAt: thread.createdAt,
+        });
+        yield* f.sql`INSERT INTO orchestration_events(sequence,event_id,aggregate_kind,stream_id,stream_version,event_type,occurred_at,actor_kind,payload_json,metadata_json,application_event_version) VALUES
+          (2,'message','thread',${threadId},2,'message.updated','2026-10-15T00:00:00.000Z','server','{}','{}',2),
+          (3,'deleted','thread',${threadId},3,'thread.deleted','2026-10-15T00:00:00.000Z','server','{}','{}',2)`;
+        const exported = (requestId: string) =>
+          f.migration
+            .exportShadow({ requestId, journalId: "migration", plan })
+            .pipe(Effect.map((result) => result.threads.map((entry) => entry.summary.deleted)));
+        // Saved to the Library only while it was live.
+        yield* f.sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence,acknowledged_sequence) VALUES (${threadId},2,2)`;
+        expect(yield* exported("live-copy")).toEqual([true]);
+        yield* f.sql`UPDATE fork_library_source_threads SET acknowledged_sequence=3`;
+        expect(yield* exported("deletion-held")).toEqual([]);
+      }),
+    ),
   );
 });

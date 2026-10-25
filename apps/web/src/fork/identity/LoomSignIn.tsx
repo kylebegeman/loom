@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { identityResourceRefusal } from "@t3tools/shared/fork/identity-grant";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
@@ -132,6 +133,11 @@ function LoomSignInTarget({
       (expectedIdentity && expectedIdentity.issuer !== active.metadata.issuer)
     ) {
       setError("This address or Identity provider changed. Review the saved computer connection.");
+      return;
+    }
+    const resourceRefusal = identityResourceRefusal(active.metadata);
+    if (resourceRefusal !== null) {
+      setError(resourceRefusal);
       return;
     }
     if (!isElectron && new URL(active.baseUrl).origin === window.location.origin) {

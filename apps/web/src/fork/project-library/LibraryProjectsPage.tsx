@@ -85,7 +85,9 @@ import {
   ProjectRows,
 } from "./ProjectCollection";
 import { ComputerLabel, PathLabel, ProjectColorDot, projectColorStyle } from "./ProjectIdentity";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
 import {
+  useLibraryAccessBlock,
   useLibraryPermission,
   useLibraryProjects,
   useSelectedLibraryProject,
@@ -136,6 +138,16 @@ export function LibraryProjectsPage() {
     title?: string;
   } | null>(null);
   const canCreate = useLibraryPermission(projectLibrary.createProject, catalog.authorityId);
+  // Every folder import ends by registering the folder with the Library.
+  const canRegister = useLibraryPermission(projectLibrary.registerCopy, catalog.authorityId);
+  const libraryReady = !!catalog.authorityId && catalog.connected;
+  const createAvailable = libraryReady && canCreate;
+  const importAvailable = libraryReady && canRegister;
+  // Covers every reason the actions above are off, so a disabled action never goes unexplained.
+  const access = useLibraryAccessBlock(catalog.authorityId, [
+    projectLibrary.createProject,
+    projectLibrary.registerCopy,
+  ]);
   const environmentProjects = useProjects();
   const copies = useEnvironmentQuery(
     catalog.authorityId
@@ -250,7 +262,8 @@ export function LibraryProjectsPage() {
     return compact ? <ProjectCompactCards {...props} /> : <ProjectCards {...props} />;
   };
   return (
-    <LibraryPageFrame>
+    // The access notice below names this page's connection problem and its repair.
+    <LibraryPageFrame libraryStatus={false}>
       <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
@@ -289,23 +302,25 @@ export function LibraryProjectsPage() {
             shape="pill"
             size="sm"
             variant="outline"
-            disabled={!catalog.authorityId || !catalog.connected}
+            disabled={!importAvailable}
             onClick={() => setImporting({})}
           >
             <FolderPlusIcon />
             Add existing folder
           </Button>
+          {/* Without a Library there is nowhere to create; the setup below says so. */}
           <Button
             shape="pill"
             size="sm"
             onClick={() => setCreating(true)}
-            disabled={!!catalog.authorityId && (!canCreate || !catalog.connected)}
+            disabled={!createAvailable}
           >
             <PlusIcon />
             New project
           </Button>
         </div>
       </header>
+      <LibraryAccessNotice block={access} />
       {preservationOpen && catalog.authorityId ? (
         <ProjectPreservationCenter
           key={catalog.authorityId}
@@ -507,7 +522,7 @@ export function LibraryProjectsPage() {
                   <Button
                     shape="pill"
                     onClick={() => setCreating(true)}
-                    disabled={!canCreate || !catalog.connected}
+                    disabled={!createAvailable}
                   >
                     <PlusIcon />
                     Create your first project
@@ -515,7 +530,7 @@ export function LibraryProjectsPage() {
                   <Button
                     shape="pill"
                     variant="outline"
-                    disabled={!catalog.connected}
+                    disabled={!importAvailable}
                     onClick={() => setImporting({})}
                   >
                     Add existing folder
@@ -577,7 +592,7 @@ export function LibraryProjectsPage() {
                     shape="pill"
                     size="xs"
                     variant="outline"
-                    disabled={!catalog.connected}
+                    disabled={!importAvailable}
                     onClick={() =>
                       setImporting({
                         ...(ref ? { hostId: ref.environmentId } : {}),
@@ -594,7 +609,7 @@ export function LibraryProjectsPage() {
           </ul>
         </FoldedSection>
       ) : null}
-      {creating ? (
+      {creating && catalog.authorityId ? (
         <ProjectEditorDialog
           authorityId={catalog.authorityId}
           onClose={() => setCreating(false)}
