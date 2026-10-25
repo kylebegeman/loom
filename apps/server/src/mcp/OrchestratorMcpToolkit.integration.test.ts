@@ -89,7 +89,12 @@ import { delegatedTaskRun, hasPendingChildRuns } from "./OrchestratorMcpService.
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
-  Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
+  Layer.provide(
+    Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+      // fork: library-projects -- delegation asks for a Library binding first; these projects have none.
+      resolveLibraryBinding: () => Effect.succeed(null),
+    }),
+  ),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
