@@ -36,6 +36,11 @@ describe("LOOM_VAULT_INSTRUCTIONS", () => {
     expect(LOOM_VAULT_INSTRUCTIONS).toContain("missing visible match");
   });
 
+  it("steers longer SSH work to the terminal agent and reuses stored credentials", () => {
+    expect(LOOM_VAULT_INSTRUCTIONS).toContain("short probes: 8 s, 2 KiB");
+    expect(LOOM_VAULT_INSTRUCTIONS).toContain('argv ["personal-vps","cat > f.gz"]');
+  });
+
   it("separates credential availability from task, runtime and human administration authority", () => {
     expect(LOOM_VAULT_INSTRUCTIONS).toContain("does not authorize a task");
     expect(LOOM_VAULT_INSTRUCTIONS).toContain("Shared and legacy environments remain restricted");

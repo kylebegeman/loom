@@ -450,11 +450,13 @@ loom vault broker ssh-exec --state-dir /absolute/private/machine-directory \
 Loom signs this exact command request and rechecks policy, host presence and key version.
 Only macOS/Linux servers with compatible OpenSSH host-bound authentication and Ed25519 host
 keys are supported. There is no password, personal-agent, host-key bypass or forwarding fallback.
-IPv6 targets, SSH aliases and certificates are not implemented. Keys stay in OpenBao/server
+IPv6 targets, SSH config aliases and certificates are not implemented. Keys stay in OpenBao/server
 memory; the SSH operation writes only public identity/host-trust files and removes its local
 resources afterward.
 
-Commands are limited to eight seconds, 2 KiB stdout and four concurrent executions. The CLI
+Commands are limited to eight seconds, 2 KiB stdout and four concurrent executions, so use them
+for short probes. For longer commands, file transfers or piped input, use the agent terminal
+command in the next section. The CLI
 prints JSON with `exitCode` and `stdout`; inspect the remote exit code, since it is not used as
 the CLI process exit status. SSH failures fail the CLI. Do not place credentials in argv or
 print sensitive remote values. Timeout, cancellation or a lost response can leave remote
@@ -475,6 +477,18 @@ the managed key's current details:
 loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"ssh","argv":["git@dev.example.test","uname -a"]}}'
 loom vault ssh-agent-exec '{"id":"your-item-id","expectedVersion":1,"timeoutMs":30000,"command":{"tool":"git","argv":["fetch","origin"]}}'
 ```
+
+You can also select the connection by name instead of its ID and version. The command can then
+use that name, or `user@name`, as its destination, and Loom connects to the connection's pinned
+host, user and port. Standard input and output pass through, so pipes work for file transfers:
+
+```sh
+loom vault ssh-agent-exec '{"connection":{"resource":"personal-vps"},"timeoutMs":120000,"command":{"tool":"ssh","argv":["personal-vps","df -h"]}}'
+gzip -c backup.sql | loom vault ssh-agent-exec '{"connection":{"resource":"personal-vps"},"timeoutMs":300000,"command":{"tool":"ssh","argv":["personal-vps","cat > backup.sql.gz"]}}'
+```
+
+`timeoutMs` can be up to five minutes. Use a host-style name, such as `personal-vps`, for this;
+other destinations must still match the pinned host.
 
 Git clone/push and other ordinary Git argv also use this command. The key's host, user and port
 must match the SSH remote; existing remotes are retained. Direct SSH supports the pinned host,
