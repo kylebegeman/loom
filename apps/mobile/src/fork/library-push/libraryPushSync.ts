@@ -7,6 +7,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
+  LIBRARY_PUSH_ACTIVITY_FEATURE,
   LIBRARY_PUSH_FEATURE,
   type LibraryPushDeviceRowId,
   type LibraryPushStatus,
@@ -84,22 +85,23 @@ function libraryView(get: Atom.AtomContext, id: EnvironmentId): LibraryPushLibra
       configured: false,
       connected: false,
       advertised: null,
+      alerts: null,
       canChange: false,
       account: null,
     };
   const profile = Option.getOrNull(presentation.entry.profile);
+  const capabilities = presentation.serverConfig?.environment.capabilities ?? null;
   const identity = profile?._tag === "BearerConnectionProfile" ? profile.identity : undefined;
   return {
     id,
     configured: true,
     connected: presentation.entry.enabled && presentation.connection.phase === "connected",
     advertised:
-      presentation.serverConfig === null
+      capabilities === null ? null : supportsLoomFeature(capabilities, LIBRARY_PUSH_FEATURE),
+    alerts:
+      capabilities === null
         ? null
-        : supportsLoomFeature(
-            presentation.serverConfig.environment.capabilities,
-            LIBRARY_PUSH_FEATURE,
-          ),
+        : supportsLoomFeature(capabilities, LIBRARY_PUSH_ACTIVITY_FEATURE),
     canChange: get(libraryPush.register.permissionAtom(id)),
     account: identity === undefined ? null : { issuer: identity.issuer, subject: identity.subject },
   };

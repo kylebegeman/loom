@@ -9,6 +9,7 @@ import {
 import {
   recordFor,
   type LibraryPushActivity,
+  type LibraryPushLibrary,
   type LibraryPushPermission,
   type LibraryPushRefusalReason,
   type LibraryPushSnapshot,
@@ -19,8 +20,11 @@ export const LIBRARY_PUSH_COPY = {
   rowLabel: "Notifications",
   toggleLabel: "Library notifications",
   toggleLabelFor: (library: string) => `Notifications from ${library}`,
-  footer:
-    "Lets your Library send notifications to this iPhone. For now it sends only test notifications.",
+  footer: "Lets your Library send notifications to this iPhone.",
+  footerAlerts:
+    "Lets your Library notify this iPhone when an agent needs your approval or an answer, fails, reaches a usage limit or finishes.",
+  footerTestsOnly:
+    "Lets your Library send notifications to this iPhone. Agent alerts are off on this Library, so it sends only test notifications.",
   unsupported: "This build of Loom can't receive notifications.",
   checking: "Checking the Library...",
   chooseLibrary: "Choose a Library in Library connection to get notifications.",
@@ -200,7 +204,6 @@ const testDescription = (test: LibraryPushTestState): string | null => {
 };
 
 const BASE = {
-  footer: LIBRARY_PUSH_COPY.footer,
   chooseLibrary: false,
   openSettings: false,
   retry: false,
@@ -208,11 +211,24 @@ const BASE = {
   message: null,
 } as const;
 
+/** Says what the chosen Library sends once it is known, whatever the switch shows. */
+const footerFor = (library: LibraryPushLibrary | null) => {
+  if (library?.alerts === true) return LIBRARY_PUSH_COPY.footerAlerts;
+  if (library?.advertised === true && library.alerts === false)
+    return LIBRARY_PUSH_COPY.footerTestsOnly;
+  return LIBRARY_PUSH_COPY.footer;
+};
+
+export function libraryPushContent(input: LibraryPushContentInput): LibraryPushContent {
+  const footer = input.supported ? footerFor(input.snapshot.chosen) : LIBRARY_PUSH_COPY.footer;
+  return { ...switchContent(input), footer };
+}
+
 /**
  * Turning off is always offered, turning on only where it can work, so the switch never asks iOS
  * for permission on behalf of a Library that cannot use it.
  */
-export function libraryPushContent(input: LibraryPushContentInput): LibraryPushContent {
+function switchContent(input: LibraryPushContentInput): Omit<LibraryPushContent, "footer"> {
   if (!input.supported) {
     return {
       ...BASE,
