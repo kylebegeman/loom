@@ -1,6 +1,7 @@
 import * as W from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import { Tool, Toolkit } from "effect/ai";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -388,7 +389,8 @@ export const PcbToolkit = Toolkit.make(
     parameters: Schema.Struct({
       ...design,
       expectedVersion: W.PcbWorkspaceUpdate.fields.expectedVersion,
-      workspace: W.PcbWorkspaceInput,
+      // A save always keeps the stored change requests, so advertising them would only cost context.
+      workspace: W.PcbWorkspaceInput.mapFields(Struct.omit(["requests"])),
     }),
     success: W.PcbWorkspace,
     failure,
