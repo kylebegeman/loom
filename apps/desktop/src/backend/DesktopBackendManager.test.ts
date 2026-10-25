@@ -27,6 +27,7 @@ import {
   HttpClientResponse,
 } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: restart-continuity
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopApp from "../app/DesktopApp.ts";
@@ -35,6 +36,7 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+import * as OrphanedProviders from "../fork/orphaned-providers/OrphanedProviders.ts"; // fork: restart-continuity
 
 const decodeDesktopBackendBootstrap = Schema.decodeEffect(
   Schema.fromJsonString(DesktopBackendBootstrap),
@@ -144,7 +146,19 @@ interface MakeInstanceInput {
     DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]
   >;
   readonly pruneRuntimes?: (distro: string | null, runtimeId: string) => Effect.Effect<void>;
+  // fork: restart-continuity: the provider cleanup reads its ledger here and
+  // signals through a fake host, so tests never touch real processes.
+  readonly fileSystem?: Partial<FileSystem.FileSystem>;
+  readonly providerProcessHost?: OrphanedProviders.ProcessHostShape;
 }
+
+// fork: restart-continuity: a test that reaches the cleanup without a fake host fails loudly.
+const unexpectedProviderProcessHost: OrphanedProviders.ProcessHostShape = {
+  pid: 1_000,
+  inspect: () => Effect.die(new Error("unexpected ps call")),
+  table: Effect.die(new Error("unexpected ps call")),
+  signal: () => Effect.die(new Error("unexpected signal")),
+};
 
 function makeTestInstance(input: MakeInstanceInput) {
   const stubLog: DesktopObservability.DesktopBackendOutputLogShape = {
@@ -158,7 +172,13 @@ function makeTestInstance(input: MakeInstanceInput) {
   const layerServices = Layer.mergeAll(
     FileSystem.layerNoop({
       exists: () => Effect.succeed(true),
+      ...input.fileSystem, // fork: restart-continuity
     }),
+    // fork: restart-continuity
+    Layer.succeed(
+      OrphanedProviders.ProviderProcessHost,
+      input.providerProcessHost ?? unexpectedProviderProcessHost,
+    ),
     input.spawnerLayer,
     input.httpClientLayer ?? layerHealthyHttpClient,
     Layer.succeed(DesktopObservability.DesktopBackendOutputLogFactory, {
@@ -1607,6 +1627,94 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  // fork: restart-continuity
+  it.effect("stops the providers a force-stopped backend leaves running", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const backend = { pid: 123, pgid: 123, lstart: "Sun Oct 25 09:00:00 2026" };
+        const earlierBackend = { ...backend, lstart: "Sat Oct 24 09:00:00 2026" };
+        const provider = { pid: 456, pgid: 456, lstart: "Sun Oct 25 09:00:05 2026" };
+        const earlierProvider = { pid: 789, pgid: 789, lstart: "Sat Oct 24 09:00:05 2026" };
+        const running = new Map(
+          [
+            { pid: 1_000, pgid: 1_000, lstart: "Sun Oct 25 08:00:00 2026" },
+            backend,
+            provider,
+            earlierProvider,
+          ].map((process) => [process.pid, process]),
+        );
+        const signals: Array<readonly [number, OrphanedProviders.ProcessSignal]> = [];
+        const killed = yield* Deferred.make<void>();
+        const terminated = yield* Deferred.make<void>();
+        const ready = yield* Deferred.make<void>();
+        const sigkillExit = PlatformError.systemError({
+          _tag: "Unknown",
+          module: "ChildProcess",
+          method: "exitCode",
+          cause: new Error("Process interrupted due to receipt of signal: 'SIGKILL'"),
+        });
+
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.gen(function* () {
+                const scope = yield* Scope.Scope;
+                // Closing the run stands in for the spawner's TERM, grace and KILL.
+                yield* Scope.addFinalizer(
+                  scope,
+                  Effect.sync(() => running.delete(backend.pid)).pipe(
+                    Effect.andThen(Deferred.succeed(killed, undefined)),
+                  ),
+                );
+                return makeProcess({
+                  exitCode: Deferred.await(killed).pipe(Effect.andThen(Effect.fail(sigkillExit))),
+                });
+              }),
+            ),
+          ),
+          config: {
+            ...baseConfig,
+            providerProcessLedger: "/tmp/t3/userdata/runtime/provider-processes.json",
+          },
+          fileSystem: {
+            readFileString: () =>
+              Effect.succeed(
+                JSON.stringify({
+                  version: 1,
+                  processes: [
+                    { ...provider, owner: backend },
+                    { ...earlierProvider, owner: earlierBackend },
+                  ],
+                }),
+              ),
+          },
+          providerProcessHost: {
+            pid: 1_000,
+            inspect: (pid) => Effect.sync(() => running.get(pid) ?? null),
+            table: Effect.sync(() => new Map(running)),
+            signal: (pgid, signal) =>
+              Effect.sync(() => {
+                signals.push([pgid, signal]);
+                running.delete(pgid);
+              }).pipe(Effect.andThen(Deferred.succeed(terminated, undefined))),
+          },
+          onReady: Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
+        }).pipe(Effect.provideService(HostProcess.Platform, "darwin"));
+
+        yield* instance.start;
+        yield* Deferred.await(ready);
+        const stopFiber = yield* instance.stop().pipe(Effect.forkChild);
+        yield* Deferred.await(terminated);
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Fiber.join(stopFiber);
+
+        // Only the provider recorded by this run's backend; 789 belonged to an earlier PID 123.
+        assert.deepEqual(signals, [[provider.pid, "SIGTERM"]]);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
+  );
+
   it.effect("stopAllPoolInstances bounds the quit finalizer when backends hang", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1657,9 +1765,9 @@ describe("DesktopBackendManager", () => {
         const started = yield* Queue.takeN(teardownStarted, 2);
         assert.deepEqual(started.toSorted(), ["instance1", "instance2"]);
 
-        // fork: restart-continuity: the force kill is still in flight a moment
-        // before the budget runs out.
-        yield* TestClock.adjust(Duration.seconds(16));
+        // fork: restart-continuity: the force kill and provider cleanup are still
+        // in flight a moment before the budget runs out.
+        yield* TestClock.adjust(Duration.seconds(18));
         assert.isUndefined(quitFiber.pollUnsafe());
         yield* TestClock.adjust(Duration.seconds(1));
         yield* Fiber.join(quitFiber);
