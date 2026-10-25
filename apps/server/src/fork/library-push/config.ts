@@ -48,6 +48,39 @@ export const libraryPushEffective = (env: Env) =>
 /** Phones use the slug to decide whether to register at all, so it must mean "push runs here". */
 export const libraryPushAdvertised = libraryPushEffective;
 
+/** Agent alerts (C04-10) have a switch of their own, read with the same literals. */
+export const libraryPushActivitySwitchOn = (env: Env) =>
+  /^(true|yes|on|1|y)$/.test(env.LOOM_LIBRARY_PUSH_ACTIVITY ?? "");
+
+/** Parsed as PocketId parses `LOOM_IDENTITY_ALLOWED_SUBJECTS`, which decides who can sign in. */
+const subjectList = (value: string | undefined) => [
+  ...new Set(
+    (value ?? "")
+      .split(",")
+      .map((subject) => subject.trim())
+      .filter(Boolean),
+  ),
+];
+
+/**
+ * The Identity subjects whose iPhones get agent alerts. A computer belongs to no account, so a
+ * Library that admits one person sends to that person, and one that admits several sends only to
+ * the subjects `LOOM_LIBRARY_PUSH_RECIPIENTS` names. A named subject must also be allowed to sign
+ * in, so a list with no allowed subject sends to no one.
+ */
+export const libraryPushAlertRecipients = (env: Env): ReadonlyArray<string> => {
+  const allowed = subjectList(env.LOOM_IDENTITY_ALLOWED_SUBJECTS);
+  const named = subjectList(env.LOOM_LIBRARY_PUSH_RECIPIENTS);
+  if (named.length > 0) return allowed.filter((subject) => named.includes(subject));
+  return allowed.length === 1 ? allowed : [];
+};
+
+/** Clients read the slug as "this Library sends agent alerts", so it needs someone to send to. */
+export const libraryPushActivityAdvertised = (env: Env) =>
+  libraryPushEffective(env) &&
+  libraryPushActivitySwitchOn(env) &&
+  libraryPushAlertRecipients(env).length > 0;
+
 const isBundleId = (value: string): value is LibraryPushBundleId =>
   (LOOM_IOS_PUSH_BUNDLE_IDS as ReadonlyArray<string>).includes(value);
 
@@ -101,6 +134,8 @@ export type LibraryPushConfig =
       /** Rows whose account no longer matches these are never sent to and are dropped. */
       readonly issuer: string;
       readonly allowedSubjects: ReadonlyArray<string>;
+      /** Who gets agent alerts; null while they are off. Never empty. */
+      readonly alertRecipients: ReadonlyArray<string> | null;
     };
 
 /** Read once when the service starts; changing any of these takes a restart. */
@@ -117,14 +152,7 @@ export const libraryPushConfig = (env: Env): LibraryPushConfig => {
     ttlSeconds: libraryPushTtlSeconds(env),
     // identityAccountFromSession takes the issuer the same way, so stored rows compare equal.
     issuer: env.LOOM_IDENTITY_ISSUER!.trim(),
-    // Parsed as PocketId parses it, which decides who can sign in at all.
-    allowedSubjects: [
-      ...new Set(
-        (env.LOOM_IDENTITY_ALLOWED_SUBJECTS ?? "")
-          .split(",")
-          .map((subject) => subject.trim())
-          .filter(Boolean),
-      ),
-    ],
+    allowedSubjects: subjectList(env.LOOM_IDENTITY_ALLOWED_SUBJECTS),
+    alertRecipients: libraryPushActivityAdvertised(env) ? libraryPushAlertRecipients(env) : null,
   };
 };

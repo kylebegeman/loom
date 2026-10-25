@@ -63,6 +63,8 @@ const setup = (scopes: readonly AuthEnvironmentScope[]) => {
       register: (caller) => record(PUSH.register, caller, DEVICE),
       unregister: (caller) => record(PUSH.unregister, caller, { removed: true }),
       test: (caller) => record(PUSH.test, caller, { deliveries: [] }),
+      alerts: false,
+      alert: () => Effect.die("unused"),
     }),
   );
   const session: AuthenticatedSession = {
