@@ -264,6 +264,39 @@ describe("isTemporaryWorktreeBranch", () => {
 });
 
 describe("applyGitStatusStreamEvent", () => {
+  // fork: source-control-cockpit -- remote refreshes must not erase a live conflict, and local refreshes keep the compared HEAD.
+  it("preserves recovery and landed facts across independent status updates", () => {
+    const local = {
+      isRepo: true,
+      hasPrimaryRemote: true,
+      isDefaultRef: false,
+      refName: "feature",
+      hasWorkingTreeChanges: true,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      operation: "rebase" as const,
+      unmergedCount: 1,
+      unmergedPaths: ["conflict.ts"],
+      headSha: "new-head",
+    };
+    const remote = {
+      hasUpstream: true,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+      landedOnDefault: "main",
+      landedHeadSha: "old-head",
+    };
+    const snapshot = applyGitStatusStreamEvent(null, { _tag: "snapshot", local, remote });
+    expect(applyGitStatusStreamEvent(snapshot, { _tag: "remoteUpdated", remote })).toEqual(
+      snapshot,
+    );
+    const resolved = { ...local, operation: null, unmergedCount: 0, unmergedPaths: [] };
+    expect(applyGitStatusStreamEvent(snapshot, { _tag: "localUpdated", local: resolved })).toEqual({
+      ...resolved,
+      ...remote,
+    });
+  });
+
   it("treats a remote-only update as a repository when local state is missing", () => {
     const remote: VcsStatusRemoteResult = {
       hasUpstream: true,

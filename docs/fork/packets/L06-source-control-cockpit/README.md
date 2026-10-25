@@ -1,14 +1,19 @@
 # L06: Source control cockpit
 
-Status: Ready to build. The lane card is retired (see [Retired parts](#retired-parts)). <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: In progress. The minimal recovery slice is implemented in the existing Git controls on web,
+desktop and mobile. Graph, Checks and safe Switch remain planned. The lane card is retired.
 
-A "Source control" right panel for the current thread's branch. It answers the questions
-upstream leaves unanswered: what the commit history around the branch looks like, whether CI
-is green for the branch head (with or without a pull request) and why a check failed (with
-the log tail), which files are in conflict during a merge or rebase, and whether switching
-branches right now would lose or collide with uncommitted work. It builds on upstream's pull
-request panel, Thread details panel, Git status stream and branch selector instead of
-duplicating them.
+The Git control shows an in-progress merge, rebase, cherry-pick or revert and its unmerged
+files. Ask the agent prepares a draft; Continue and Abort require confirmation. Commit
+refuses to stage unmerged files. Diverged branches offer an agent sync prompt. Running
+stacked Git actions can be cancelled; silent pushes name possible SSH approval on the
+host and stop after ten minutes. Default-branch confirmation can be remembered per
+project, and a clean worktree whose HEAD is in the fetched remote default shows Landed
+with an explicit Settle action.
+
+The remaining cockpit is a Source control right panel for commit history, branch checks
+and safe branch switching. It will reuse the existing recovery behavior and Git status
+stream instead of introducing a second conflict workflow.
 
 ## Retired parts
 
@@ -21,7 +26,7 @@ Kyle approved this retirement on 2026-10-09.
   and stashes with Apply and Pop go to the Switch view. The fork `lane` facts query stays as
   the data source for those.
 
-## Scope
+## Remaining panel scope
 
 - In:
   - **Panel header**: the branch, the environment, and an in-progress merge or rebase banner
@@ -54,13 +59,13 @@ Kyle approved this retirement on 2026-10-09.
     "Checks are available for GitHub repositories" for other remotes. Upstream's PR panel
     still shows their PR checks.
   - Installing git hooks for varlock.
-  - Mobile UI.
+  - Mobile UI for Graph, Checks and safe Switch. Recovery already works on mobile.
 
 ## Surfaces
 
-Web and desktop: supported (same bundle). Mobile: not supported; mobile has no right panel
-system. Remote: every git and gh command runs on the thread's environment through fork RPCs
-keyed by thread id, so it works locally, over Tailscale and through T3 Connect.
+Recovery: web, desktop and mobile, including remote connections. Commands run on the
+checkout's environment through the existing typed Git service and RPC path. The remaining
+right panel views target web and desktop; mobile has no equivalent panel system.
 
 ## Extension points used
 
@@ -70,11 +75,13 @@ keyed by thread id, so it works locally, over Tailscale and through T3 Connect.
 - [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (command `loom.source-control-cockpit.toggle`), which requires
   [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root).
 
-No storage: the packet keeps no tables (server caches are in memory).
+No new tables. Branch facts remain derived. Direct-default-branch consent is one project
+override in the existing server settings, shared by clients of that environment.
 
 ## Packet seams
 
-None. All upstream behavior is reused through exported stores, hooks and RPCs.
+The recovery slice uses the `source-control-cockpit` seam in the existing Git status,
+workflow, client controls and keybinding contracts. The future panel reuses those paths.
 
 ## Optional integrations
 

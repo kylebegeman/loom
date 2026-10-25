@@ -276,6 +276,33 @@ server, but the host's own site will not show them, and the count reads **viewed
 On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
 and their marks follow the same rules as on web and desktop.
 
+<!-- fork: source-control-cockpit -->
+
+## Finish local work
+
+During a merge, rebase, cherry-pick or revert, open the Git controls to see conflicted files.
+**Ask the agent to resolve** prepares a draft for you to review and send. After resolving
+and staging the files, choose **Continue**, or choose **Abort** to return to before the
+operation. Both ask for confirmation. Commit refuses unresolved conflicts. If your branch
+has diverged from upstream, the Git control can prepare a sync request for the agent.
+
+A running Git action has **Cancel**. A silent push may be waiting for SSH approval on the
+computer hosting the checkout; approve it there or cancel. Pushes stop after ten minutes,
+including hooks. Cancellation does not undo a completed commit or a remote push. Refresh
+status before retrying.
+
+Default-branch confirmation has **Don't ask again for this project**, shared across clients
+connected to that project on the same computer. Use **Ask before default branch actions**
+in the Git controls to restore it. Checking out a feature branch switches the folder for
+every conversation using it.
+
+A clean worktree marked **Landed on main** (or your default branch) has its current commit
+in the last-fetched remote default. Choose **Settle** when finished, or keep working in the
+conversation. **Send latest turn to source thread** shares conversation context; it does
+not merge Git commits. On web and desktop, the command palette also offers **Commit**,
+**Commit & push** and **Create pull request**. `git.commit` and `git.commitPush` can be bound
+to shortcuts; neither has a default key.
+
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,

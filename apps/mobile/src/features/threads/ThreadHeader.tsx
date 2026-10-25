@@ -6,7 +6,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-content-stack";
 import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
 import { useWorkspaceBackNavigation } from "../workspace/useAndroidWorkspaceNavigation";
-import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
+// fork: source-control-cockpit -- latest-turn transfer is shown beside the conversation.
 
 export function ThreadHeader(
   props: Parameters<typeof useThreadHeaderOptions>[0] & {
@@ -21,7 +21,7 @@ export function ThreadHeader(
 ) {
   const goBack = useWorkspaceBackNavigation("threads");
   const { layout, panes, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
-  const { onOpenTerminal, onMergeBack } = props.gitControls;
+  const { onOpenTerminal } = props.gitControls; // fork: source-control-cockpit
   const native = useThreadHeaderOptions(props);
   const androidHeaderActions = useMemo<ReadonlyArray<AppBarAction>>(() => {
     const actions: AppBarAction[] = [];
@@ -53,20 +53,14 @@ export function ThreadHeader(
       icon: "point.topleft.down.curvedto.point.bottomright.up",
       onPress: props.onOpenGitInspector,
     });
-    if (onMergeBack) {
-      actions.push({
-        accessibilityLabel: "Merge back to source",
-        icon: PullRequestGlyph.merged,
-        onPress: onMergeBack,
-      });
-    }
+    // fork: source-control-cockpit -- keep the Android Git toolbar free of context-transfer actions.
     return actions;
   }, [
     props.inspectorMode,
     panes.auxiliaryPaneVisible,
     props.onOpenFilesInspector,
     onOpenTerminal,
-    onMergeBack,
+    // fork: source-control-cockpit
     props.onOpenGitInspector,
     toggleAuxiliaryPane,
     props.onReturnToThread,

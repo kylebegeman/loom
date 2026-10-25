@@ -20,7 +20,7 @@ export interface GitActionMenuItem {
 export interface GitQuickAction {
   label: string;
   disabled: boolean;
-  kind: "run_action" | "run_pull" | "open_pr" | "show_hint";
+  kind: "run_action" | "run_pull" | "open_pr" | "show_hint" | "ask_agent"; // fork: source-control-cockpit
   action?: GitStackedAction;
   hint?: string;
 }
@@ -54,9 +54,12 @@ export function buildMenuItems(
   const hasOpenPr = gitStatus.pr?.state === "open";
   const isBehind = gitStatus.behindCount > 0;
   const canPushWithoutUpstream = hasOriginRemote && !gitStatus.hasUpstream;
-  const canCommit = !isBusy && hasChanges;
+  // fork: source-control-cockpit
+  const operationActive = !!gitOperationLabel(gitStatus);
+  const canCommit = !isBusy && !operationActive && hasChanges;
   const canPush =
     !isBusy &&
+    !operationActive && // fork: source-control-cockpit
     hasBranch &&
     !hasChanges &&
     !isBehind &&
@@ -64,6 +67,7 @@ export function buildMenuItems(
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canCreatePr =
     !isBusy &&
+    !operationActive && // fork: source-control-cockpit
     hasBranch &&
     !hasOpenPr &&
     (gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) > 0 &&
@@ -133,6 +137,20 @@ export function resolveQuickAction(
   const isBehind = gitStatus.behindCount > 0;
   const isDiverged = isAhead && isBehind;
 
+  // fork: source-control-cockpit
+  const operationLabel = gitOperationLabel(gitStatus);
+  if (operationLabel) {
+    return {
+      label: operationLabel,
+      disabled: false,
+      kind: "ask_agent",
+      hint: "Resolve the conflicts, then continue or abort the operation.",
+    };
+  }
+  if (isDiverged) {
+    return { label: "Ask the agent to sync with upstream", disabled: false, kind: "ask_agent" };
+  }
+
   if (!hasBranch) {
     return {
       label: "Commit",
@@ -196,15 +214,6 @@ export function resolveQuickAction(
     };
   }
 
-  if (isDiverged) {
-    return {
-      label: "Sync branch",
-      disabled: true,
-      kind: "show_hint",
-      hint: "Branch has diverged from upstream. Rebase/merge first.",
-    };
-  }
-
   if (isBehind) {
     return {
       label: "Pull",
@@ -252,6 +261,9 @@ export function getGitActionDisabledReason(input: {
   if (!item.disabled) return null;
   if (isBusy) return "Git action in progress.";
   if (!gitStatus) return "Git status is unavailable.";
+  // fork: source-control-cockpit
+  const operation = gitOperationLabel(gitStatus);
+  if (operation) return operation;
 
   const hasBranch = gitStatus.refName !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
@@ -306,8 +318,9 @@ export function getGitActionDisabledReason(input: {
 export function requiresDefaultBranchConfirmation(
   action: GitStackedAction,
   isDefaultBranch: boolean,
+  skipConfirmation = false, // fork: source-control-cockpit
 ): boolean {
-  if (!isDefaultBranch) return false;
+  if (!isDefaultBranch || skipConfirmation) return false; // fork: source-control-cockpit
   return (
     action === "push" ||
     action === "create_pr" ||
@@ -351,4 +364,60 @@ export function resolveDefaultBranchActionDialogCopy(input: {
     description: `This action will push local commits and create a PR${suffix}`,
     continueLabel: "Push & create PR",
   };
+}
+
+// fork: source-control-cockpit
+export function gitOperationLabel(status: VcsStatusResult | null): string | null {
+  if (!status?.operation && !status?.unmergedCount) return null;
+  const operation = status.operation ?? "Conflict resolution";
+  const conflicts = status.unmergedCount ?? 0;
+  return `${operation[0]!.toUpperCase()}${operation.slice(1)} in progress, ${conflicts} conflict${conflicts === 1 ? "" : "s"}`;
+}
+
+export function buildGitRecoveryPrompt(status: VcsStatusResult): string {
+  if (status.operation || status.unmergedCount) {
+    return [
+      `Resolve the ${status.operation ?? "Git"} conflicts in this checkout.`,
+      "Conflicted files:",
+      ...(status.unmergedPaths ?? []).map((file) => `- ${JSON.stringify(file)}`),
+      ...((status.unmergedCount ?? 0) > (status.unmergedPaths?.length ?? 0)
+        ? ["More conflicted files exist. Inspect git status for the complete list."]
+        : []),
+      "Preserve the intended changes on both sides. Run focused checks, stage resolved files, and continue the operation when ready. Do not push without my approval.",
+    ].join("\n");
+  }
+  return `Sync ${status.refName ?? "this branch"} with its upstream. Inspect local changes first, fetch the upstream, and rebase the local commits onto it. Resolve conflicts and run focused checks. Do not discard changes or force-push.`;
+}
+
+export function gitWaitingLabel(
+  input: {
+    phase?: string | null;
+    hookName: string | null;
+    lastProgressAtMs?: number | null;
+    phaseStartedAtMs: number | null;
+  },
+  nowMs: number,
+  computer: string,
+): string | null {
+  const lastProgress = input.lastProgressAtMs ?? input.phaseStartedAtMs;
+  return input.phase === "push" &&
+    input.hookName === null &&
+    lastProgress !== null &&
+    nowMs - lastProgress >= 20_000
+    ? `Waiting for git (SSH key approval on ${computer}?)`
+    : null;
+}
+
+// fork: source-control-cockpit -- a local HEAD update can arrive before the next remote comparison.
+export function landedBranch(status: VcsStatusResult | null, isWorktree: boolean): string | null {
+  return isWorktree &&
+    status?.isRepo &&
+    status.refName !== null &&
+    !status.isDefaultRef &&
+    !status.hasWorkingTreeChanges &&
+    !gitOperationLabel(status) &&
+    status.headSha != null &&
+    status.headSha === status.landedHeadSha
+    ? (status.landedOnDefault ?? null)
+    : null;
 }

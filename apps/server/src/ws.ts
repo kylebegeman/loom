@@ -104,7 +104,7 @@ import {
   HttpServerRespondable,
   HttpServerResponse,
 } from "effect/http";
-import { RpcSerialization, RpcServer } from "effect/rpc";
+import { RpcSerialization, RpcServer, type Rpc, type RpcGroup } from "effect/rpc"; // fork: source-control-cockpit
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -2856,6 +2856,11 @@ export const layerWsRpc = (
                 refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
             }),
           ),
+        // fork: source-control-cockpit
+        [WS_METHODS.gitResolveOperation]: (input) =>
+          gitWorkflow
+            .resolveOperation(input)
+            .pipe(Effect.ensuring(refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true })))),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow
@@ -3181,7 +3186,16 @@ export const layerWsRpc = (
             ),
           ),
       });
-      return handlers;
+      // fork: source-control-cockpit -- bound the handler type so another RPC does not exhaust inference in layer consumers.
+      type HandlerResult = ReturnType<(typeof handlers)[keyof typeof handlers]>;
+      type HandlerServices = Effect.Services<HandlerResult> | Stream.Services<HandlerResult>;
+      const boundHandlers: {
+        [Request in RpcGroup.Rpcs<typeof ServerWsRpcGroup> as Request["_tag"]]: Rpc.ToHandlerFn<
+          Request,
+          HandlerServices
+        >;
+      } = handlers;
+      return boundHandlers;
     }),
   );
 

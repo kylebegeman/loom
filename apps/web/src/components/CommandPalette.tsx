@@ -2,6 +2,10 @@
 
 // fork: attention-status
 import { useThreadAttention } from "../fork/attention/ThreadAttention";
+// fork: source-control-cockpit
+import { requestGitAction } from "~/fork/source-control-cockpit/commands";
+import { gitPaletteActionHint } from "./GitActionsControl.logic";
+import { vcsEnvironment, vcsActionManager } from "~/state/vcs";
 
 import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation"; // fork: library-palette
 import {
@@ -595,6 +599,19 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           modelPickerOpen: composerHandleRef.current?.isModelPickerOpen() ?? false,
         },
       });
+      // fork: source-control-cockpit
+      if (
+        (command === "git.commit" || command === "git.commitPush") &&
+        routeThreadRef &&
+        !state.open &&
+        !isTerminalFocused()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat)
+          requestGitAction(routeThreadRef, command === "git.commit" ? "commit" : "commit_push");
+        return;
+      }
       if (command === "appearance.cycle") {
         event.preventDefault();
         event.stopPropagation();
@@ -654,6 +671,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    routeThreadRef,
+    state.open, // fork: source-control-cockpit
     appearanceMode,
     keybindings,
     navigate,
@@ -1128,6 +1147,22 @@ function OpenCommandPaletteDialog(props: {
   const currentProjectCwd = currentProjectId
     ? (projectCwdById.get(currentProjectId) ?? null)
     : null;
+  // fork: source-control-cockpit
+  const gitCwd = activeThread?.worktreePath ?? activeDraftThread?.worktreePath ?? currentProjectCwd;
+  const gitTarget = { environmentId: currentProjectEnvironmentId, cwd: gitCwd };
+  const gitStatus = useEnvironmentQuery(
+    currentProjectEnvironmentId && gitCwd
+      ? vcsEnvironment.status({
+          environmentId: currentProjectEnvironmentId,
+          input: { cwd: gitCwd },
+        })
+      : null,
+  ).data;
+  const gitActionState = useAtomValue(vcsActionManager.stateAtom(gitTarget));
+  const canRunGitActions = useEnvironmentScope(
+    currentProjectEnvironmentId,
+    AuthSourceControlWriteScope,
+  );
   const currentProjectCwdForBrowse =
     browseEnvironmentId && currentProjectEnvironmentId === browseEnvironmentId
       ? currentProjectCwd
@@ -2439,6 +2474,31 @@ function OpenCommandPaletteDialog(props: {
         });
       },
     });
+  }
+
+  // fork: source-control-cockpit
+  if (activeThread) {
+    for (const [action, title, shortcutCommand] of [
+      ["commit", "Commit", "git.commit"],
+      ["commit_push", "Commit & push", "git.commitPush"],
+      ["create_pr", "Create pull request", undefined],
+    ] as const) {
+      const hint = canRunGitActions
+        ? gitPaletteActionHint(gitStatus, gitActionState.isRunning, action)
+        : "This connection cannot change source control.";
+      actionItems.push({
+        kind: "action",
+        value: `action:git:${action}`,
+        title,
+        searchTerms: ["git", "commit", "push", "pull request"],
+        icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+        disabled: hint !== null,
+        description: hint ?? undefined,
+        ...(shortcutCommand ? { shortcutCommand } : {}),
+        run: async () =>
+          requestGitAction(scopeThreadRef(activeThread.environmentId, activeThread.id), action),
+      });
+    }
   }
 
   actionItems.push(...forkPaletteItems.items); // fork: ext-palette

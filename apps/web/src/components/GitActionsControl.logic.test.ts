@@ -4,6 +4,7 @@ import { assert, describe, it } from "vite-plus/test";
 import {
   buildGitActionProgressStages,
   buildMenuItems,
+  gitPaletteActionHint, // fork: source-control-cockpit
   formatGitActionElapsed,
   requiresDefaultBranchConfirmation,
   resolveAutoFeatureBranchName,
@@ -470,13 +471,13 @@ describe("when: ref is behind upstream", () => {
 });
 
 describe("when: ref has diverged from upstream", () => {
-  it("resolveQuickAction returns a disabled sync hint", () => {
+  it("resolveQuickAction offers an upstream sync prompt", () => {
     const quick = resolveQuickAction(status({ aheadCount: 2, behindCount: 1 }), false);
     assert.deepEqual(quick, {
-      label: "Sync ref",
-      disabled: true,
-      kind: "show_hint",
-      hint: "Branch has diverged from upstream. Rebase/merge first.",
+      // fork: source-control-cockpit
+      label: "Ask the agent to sync with upstream",
+      disabled: false,
+      kind: "ask_agent",
     });
   });
 });
@@ -1260,4 +1261,39 @@ describe("resolveAutoFeatureBranchName", () => {
     const ref = resolveAutoFeatureBranchName(["main"]);
     assert.equal(ref, "feature/update");
   });
+});
+
+// fork: source-control-cockpit
+it("recovery takes precedence over detached HEAD and dirty commit actions", () => {
+  const conflicted = status({
+    refName: null,
+    operation: "rebase",
+    unmergedCount: 2,
+    hasWorkingTreeChanges: true,
+  });
+  assert.equal(resolveQuickAction(conflicted, false).kind, "ask_agent");
+  assert.equal(
+    buildMenuItems(conflicted, false).every((item) => item.disabled),
+    true,
+  );
+  assert.equal(
+    gitPaletteActionHint(conflicted, false, "commit"),
+    "Rebase in progress, 2 conflicts",
+  );
+});
+it("palette guards each finishing action and remembers direct default-branch consent", () => {
+  assert.equal(
+    gitPaletteActionHint(status(), false, "commit"),
+    "Worktree is clean. Make changes before committing.",
+  );
+  assert.equal(
+    gitPaletteActionHint(status({ hasWorkingTreeChanges: true }), false, "commit_push"),
+    null,
+  );
+  assert.equal(
+    gitPaletteActionHint(status({ aheadCount: 2, behindCount: 1 }), false, "commit_push"),
+    "Sync with upstream before pushing.",
+  );
+  assert.equal(requiresDefaultBranchConfirmation("commit_push", true, true), false);
+  assert.equal(requiresDefaultBranchConfirmation("commit_push", true), true);
 });

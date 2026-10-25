@@ -11,6 +11,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred"; // fork: source-control-cockpit
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -48,6 +49,9 @@ export interface VcsActionState {
   readonly operation: VcsActionOperation | null;
   readonly actionId: string | null;
   readonly action: GitStackedAction | null;
+  // fork: source-control-cockpit
+  readonly phase?: GitActionProgressPhase | null;
+  readonly lastProgressAtMs?: number | null;
   readonly currentLabel: string | null;
   readonly currentPhaseLabel: string | null;
   readonly hookName: string | null;
@@ -347,6 +351,9 @@ export function applyVcsActionProgressEvent(
         actionId: event.actionId,
         action: event.action,
         operation: "run_change_request",
+        // fork: source-control-cockpit
+        phase: event.phase,
+        lastProgressAtMs: now,
         currentLabel: event.label,
         currentPhaseLabel: event.label,
         phaseStartedAtMs: now,
@@ -362,6 +369,8 @@ export function applyVcsActionProgressEvent(
         actionId: event.actionId,
         action: event.action,
         operation: "run_change_request",
+        // fork: source-control-cockpit
+        lastProgressAtMs: now,
         currentLabel: `Running ${event.hookName}...`,
         hookName: event.hookName,
         hookStartedAtMs: now,
@@ -375,6 +384,8 @@ export function applyVcsActionProgressEvent(
         actionId: event.actionId,
         action: event.action,
         operation: "run_change_request",
+        // fork: source-control-cockpit
+        lastProgressAtMs: now,
         lastOutputLine: event.text,
         error: null,
       };
@@ -385,6 +396,8 @@ export function applyVcsActionProgressEvent(
         actionId: event.actionId,
         action: event.action,
         operation: "run_change_request",
+        // fork: source-control-cockpit
+        lastProgressAtMs: now,
         currentLabel: current.currentPhaseLabel,
         hookName: null,
         hookStartedAtMs: null,
@@ -415,6 +428,18 @@ export function applyVcsActionProgressEvent(
 export function createVcsActionManager<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | Persistence.EnvironmentCacheStore | R, E>,
 ) {
+  // fork: source-control-cockpit -- cancelling the owned stream interrupts the server's scoped git child.
+  const cancellations = new Map<string, { actionId: string; signal: Deferred.Deferred<void> }>();
+  const cancelStackedAction = createRuntimeCommand(runtime, {
+    label: "vcs-action:cancel-stacked",
+    execute: (input: { target: VcsActionTarget; actionId: string }) => {
+      const key = getVcsActionTargetKey(input.target);
+      const active = key === null ? undefined : cancellations.get(key);
+      return active?.actionId === input.actionId
+        ? Deferred.succeed(active.signal, undefined)
+        : Effect.succeed(false);
+    },
+  });
   const runStackedActionCommands = new Map<
     string,
     AtomCommand<RunVcsStackedActionInput, GitRunStackedActionResult, unknown>
@@ -444,9 +469,13 @@ export function createVcsActionManager<R, E>(
       label: `vcs-action:run-stacked:${commandKey}`,
       scheduler: vcsCommandScheduler,
       concurrency: { mode: "serial", key: () => commandKey },
-      execute: (input: RunVcsStackedActionInput, registry) => {
+      // fork: source-control-cockpit
+      execute: Effect.fn("VcsAction.runStackedAction")(function* (
+        input: RunVcsStackedActionInput,
+        registry,
+      ) {
         if (target === null) {
-          return Effect.fail(
+          return yield* Effect.fail(
             new VcsActionUnavailableError({
               operation: "run_change_request",
               environmentId: requestedTarget.environmentId,
@@ -454,6 +483,9 @@ export function createVcsActionManager<R, E>(
             }),
           );
         }
+        // fork: source-control-cockpit
+        const signal = yield* Deferred.make<void>();
+        cancellations.set(commandKey, { actionId: input.actionId, signal });
         const transportActionId = createVcsActionTransportId(target, input.actionId);
         registry.set(
           stateAtom,
@@ -480,7 +512,8 @@ export function createVcsActionManager<R, E>(
             registry.set(stateAtom, EMPTY_VCS_ACTION_STATE);
           }
         });
-        return consumeVcsActionProgress(
+        return yield* consumeVcsActionProgress(
+          // fork: source-control-cockpit
           runStreamInEnvironment(
             target.environmentId,
             runStreamGuarded(WS_METHODS.gitRunStackedAction, rpcInput),
@@ -505,6 +538,14 @@ export function createVcsActionManager<R, E>(
               }),
           },
         ).pipe(
+          // fork: source-control-cockpit -- raceFirst waits for stream/process finalizers before the command settles.
+          Effect.raceFirst(Deferred.await(signal).pipe(Effect.andThen(Effect.interrupt))),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (cancellations.get(commandKey)?.signal === signal)
+                cancellations.delete(commandKey);
+            }),
+          ),
           Effect.provideService(RpcPermissionGuard, {
             authorize: (id, method, payload) =>
               createCommandPermissions(runtime, method).authorize(registry, id, payload),
@@ -524,7 +565,7 @@ export function createVcsActionManager<R, E>(
           ),
           Effect.onInterrupt(() => clearOwnedState),
         );
-      },
+      }), // fork: source-control-cockpit
     });
     runStackedActionCommands.set(commandKey, command);
     return command;
@@ -544,6 +585,8 @@ export function createVcsActionManager<R, E>(
   };
 
   return {
+    // fork: source-control-cockpit
+    cancelStackedAction,
     stateAtom: getVcsActionStateAtom,
     runStackedAction: (target: VcsActionTarget) => getRunStackedActionCommand(target),
     track: async <A, E>(

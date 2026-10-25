@@ -23,6 +23,8 @@ import {
   GitActionProgressEvent,
   GitActionProgressPhase,
   GitCommandError,
+  type GitResolveOperationInput,
+  type GitResolveOperationResult, // fork: source-control-cockpit
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitPullRequestRefInput,
@@ -158,6 +160,10 @@ export class GitManager extends Context.Service<
     readonly preparePullRequestThread: (
       input: GitPreparePullRequestThreadInput,
     ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
+    // fork: source-control-cockpit
+    readonly resolveOperation: (
+      input: GitResolveOperationInput,
+    ) => Effect.Effect<GitResolveOperationResult, GitManagerServiceError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitRunStackedActionOptions,
@@ -1136,6 +1142,11 @@ export const make = Effect.gen(function* () {
       hasPrimaryRemote: details.hasOriginRemote,
       isDefaultRef: details.isDefaultBranch,
       refName: details.branch,
+      // fork: source-control-cockpit
+      operation: details.operation,
+      unmergedCount: details.unmergedCount,
+      unmergedPaths: details.unmergedPaths,
+      headSha: details.headSha,
       hasWorkingTreeChanges: details.hasWorkingTreeChanges,
       workingTree: details.workingTree,
       ...(details.branchChanges ? { branchChanges: details.branchChanges } : {}),
@@ -1413,6 +1424,9 @@ export const make = Effect.gen(function* () {
       aheadCount: details.aheadCount,
       behindCount: details.behindCount,
       aheadOfDefaultCount: details.aheadOfDefaultCount,
+      // fork: source-control-cockpit
+      landedOnDefault: details.landedOnDefault,
+      landedHeadSha: details.landedHeadSha,
       pr,
     } satisfies VcsStatusRemoteResult;
   });
@@ -3076,6 +3090,17 @@ export const make = Effect.gen(function* () {
         GitManagerServiceError
       > {
         const initialStatus = yield* gitCore.statusDetails(input.cwd);
+        // fork: source-control-cockpit -- do not turn a resolved rebase into an ordinary commit/push.
+        if (initialStatus.operation || initialStatus.unmergedCount) {
+          return yield* new GitCommandError({
+            operation: "GitManager.runStackedAction",
+            command: "git",
+            cwd: input.cwd,
+            reason: initialStatus.unmergedCount ? "unresolved_conflicts" : "operation_changed",
+            detail:
+              "A Git operation is in progress. Resolve and stage conflicts, then use Continue or Abort before committing or pushing.",
+          });
+        }
         const wantsCommit = isCommitAction(input.action);
         const wantsPush =
           input.action === "push" ||
@@ -3211,7 +3236,27 @@ export const make = Effect.gen(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("push"))),
-                Effect.flatMap(() => gitCore.pushCurrentBranch(input.cwd, currentBranch)),
+                // fork: source-control-cockpit -- push hooks and transport output use the same progress stream as commit.
+                Effect.flatMap(() =>
+                  gitCore.pushCurrentBranch(input.cwd, currentBranch, {
+                    progress: {
+                      onOutputLine: ({ stream, text }) => {
+                        const sanitized = sanitizeProgressText(text);
+                        return sanitized
+                          ? progress.emit({
+                              kind: "hook_output",
+                              hookName: null,
+                              stream,
+                              text: sanitized,
+                            })
+                          : Effect.void;
+                      },
+                      onHookStarted: (hookName) =>
+                        progress.emit({ kind: "hook_started", hookName }),
+                      onHookFinished: (hook) => progress.emit({ kind: "hook_finished", ...hook }),
+                    },
+                  }),
+                ),
               )
           : { status: "skipped_not_requested" as const };
 
@@ -3274,7 +3319,60 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // fork: source-control-cockpit -- a checkout can be shared by several active conversations.
+  const resolveOperation: GitManager["Service"]["resolveOperation"] = Effect.fn(
+    "GitManager.resolveOperation",
+  )(function* (input) {
+    const snapshot = yield* threads.getShellSnapshot().pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "resolveOperation",
+            cwd: input.cwd,
+            detail: "Cannot check conversations using this checkout.",
+            cause,
+          }),
+      ),
+    );
+    const projectList = yield* projects.list().pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "resolveOperation",
+            cwd: input.cwd,
+            detail: "Cannot check project folders.",
+            cause,
+          }),
+      ),
+    );
+    const roots = new Map(projectList.map((project) => [project.projectId, project.workspaceRoot]));
+    const realCwd = yield* fileSystem
+      .realPath(input.cwd)
+      .pipe(Effect.orElseSucceed(() => path.resolve(input.cwd)));
+    for (const thread of [...snapshot.threads, ...snapshot.archivedThreads]) {
+      if (thread.activeRunId === null) continue;
+      const cwd = thread.worktreePath ?? roots.get(thread.projectId);
+      if (!cwd) continue;
+      const realPath = yield* fileSystem
+        .realPath(cwd)
+        .pipe(Effect.orElseSucceed(() => path.resolve(cwd)));
+      if (realPath === realCwd) {
+        return yield* new GitManagerError({
+          operation: "resolveOperation",
+          cwd: input.cwd,
+          detail:
+            "A conversation is working in this checkout. Wait for it to finish before continuing or aborting.",
+        });
+      }
+    }
+    return yield* gitCore
+      .resolveOperation(input)
+      .pipe(Effect.ensuring(invalidateStatus(input.cwd)));
+  });
+
   return GitManager.of({
+    // fork: source-control-cockpit
+    resolveOperation,
     createWorktree,
     localStatus,
     remoteStatus,

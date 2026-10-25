@@ -1,3 +1,7 @@
+// fork: source-control-cockpit
+import { gitWaitingLabel } from "@t3tools/client-runtime/state/vcs";
+import { useAtomCommand } from "./use-atom-command";
+import { serverEnvironment } from "./server";
 import { useAtomValue } from "@effect/atom-react";
 import { type VcsActionState, type VcsActionTarget } from "@t3tools/client-runtime/state/vcs";
 import { Atom } from "effect/reactivity";
@@ -55,6 +59,7 @@ export function useGitActionResultNotification(): {
 export type GitActionProgressPhase = "idle" | "running" | "success" | "error";
 
 export interface GitActionProgress {
+  readonly onCancel?: () => void; // fork: source-control-cockpit
   readonly phase: GitActionProgressPhase;
   readonly label: string | null;
   readonly description: string | null;
@@ -76,6 +81,9 @@ function formatElapsedSeconds(ms: number | null, nowMs: number): string | null {
 
 export function useGitActionProgress(target: VcsActionTarget): GitActionProgress {
   const actionState = useVcsActionState(target);
+  // fork: source-control-cockpit
+  const cancel = useAtomCommand(vcsActionManager.cancelStackedAction);
+  const config = useAtomValue(serverEnvironment.configValueAtom(target.environmentId));
   const { result } = useGitActionResultNotification();
 
   // The clock is state the interval advances: a render-time Date.now() would be
@@ -94,7 +102,17 @@ export function useGitActionProgress(target: VcsActionTarget): GitActionProgress
       formatElapsedSeconds(actionState.hookStartedAtMs ?? actionState.phaseStartedAtMs, nowMs);
     return {
       phase: "running",
-      label: actionState.currentLabel,
+      // fork: source-control-cockpit
+      label:
+        gitWaitingLabel(actionState, nowMs, config?.environment.label ?? "the host computer") ??
+        actionState.currentLabel,
+      ...(actionState.actionId && actionState.operation === "run_change_request"
+        ? {
+            onCancel: () => {
+              void cancel({ target, actionId: actionState.actionId! });
+            },
+          }
+        : {}),
       description,
     };
   }
