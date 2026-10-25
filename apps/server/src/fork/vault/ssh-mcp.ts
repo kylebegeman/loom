@@ -21,6 +21,8 @@ import {
   VaultSshProbeResult,
   VaultSshTrust,
   VaultSshInfo,
+  VaultSshPinnedKeysInput,
+  VaultSshPinnedKey,
   VaultItemId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -41,6 +43,15 @@ const failure = Schema.Union([
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const VaultSshToolkit = Toolkit.make(
+  Tool.make("loom_vault_ssh_pinned_keys", {
+    description:
+      "Read matching Ed25519 host keys from this Loom computer's SSH configuration and known-hosts files. Human full-access administrator only. Returns fingerprints and global versus user file sources; it does not scan, trust or connect to the host. Review the fingerprint before using loom_vault_ssh_trust.",
+    parameters: VaultSshPinnedKeysInput,
+    success: Schema.Array(VaultSshPinnedKey),
+    failure,
+    failureMode: "return",
+    dependencies,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_ssh_agent_open", {
     description:
       "Explicitly activate one five-minute SSH agent session for this current full-access/default run, dedicated key/version and pinned host. Requires current Vault policy permission for that SSH host; repository-only grants do not authorize agent signing. Use the Loom ssh-agent-exec CLI to run ordinary terminal SSH/Git with local socket cleanup. Returns public metadata, never private keys. Already authenticated remote connections are not recalled by revocation.",
@@ -150,6 +161,13 @@ export const vaultSshHandlers = McpToolAccess.toLayer(
       return caller.thread.threadId;
     });
     return {
+      loom_vault_ssh_pinned_keys: McpToolAccess.reads((input) =>
+        administrator.pipe(
+          Effect.andThen(
+            onHost(Effect.flatMap(VaultSsh.VaultSsh, (service) => service.pinnedKeys(input))),
+          ),
+        ),
+      ),
       loom_vault_ssh_agent_open: McpToolAccess.writesEnvironment((input) =>
         callingThread.pipe(
           Effect.flatMap((threadId) =>

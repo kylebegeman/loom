@@ -20,13 +20,14 @@ const fixture = Effect.gen(function* () {
   const gh = path.join(bin, "gh");
   yield* fs.writeFileString(
     gh,
+    // fork: github-host-setup
     `#!/bin/sh
 printf '%s\\n' "$*" >> "${home}/calls"
 case "$*" in
   '--version') echo 'gh version 2.102.0';;
   'auth status --hostname github.com --active')
     if test -f "${home}/network-failure"; then echo 'failed to connect to api.github.com' >&2; exit 1; fi
-    test -f "${home}/signed-in";;
+    if test -f "${home}/signed-in"; then echo 'Logged in to github.com account fixture-user (keyring)'; else exit 1; fi;;
   'auth login --hostname github.com --git-protocol https --web') touch "${home}/signed-in";;
   'auth setup-git --hostname github.com') test ! -f "${home}/helper-failure";;
   *) exit 1;;
@@ -71,7 +72,12 @@ it.layer(NodeServices.layer)("GitHub host setup", (it) => {
       const calls = yield* f.calls();
       assert.include(calls, "auth login --hostname github.com --git-protocol https --web");
       assert.isTrue(calls.indexOf("auth login") < calls.indexOf("auth setup-git"));
-      assert.equal((yield* f.service.status()).state, "signed-in");
+      // fork: github-host-setup
+      assert.deepEqual(yield* f.service.status(), {
+        executable: f.gh,
+        state: "signed-in",
+        account: "fixture-user",
+      });
     }),
   );
   it.effect(

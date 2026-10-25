@@ -80,6 +80,7 @@ const fixture = Effect.gen(function* () {
   const active = yield* Ref.make<readonly AuthClientSession[]>([session()]);
   const calls = yield* Ref.make(0);
   const failure = yield* Ref.make(false);
+  const prepareFailure = yield* Ref.make<LibraryError | null>(null);
   const defect = yield* Ref.make(false);
   const entered = yield* Deferred.make<void>();
   const release = yield* Deferred.make<void>();
@@ -151,7 +152,12 @@ const fixture = Effect.gen(function* () {
                 }),
           ),
         ),
-      prepareCopy: () => Effect.succeed({ ...copyFor(project), environmentId }),
+      prepareCopy: () =>
+        Ref.get(prepareFailure).pipe(
+          Effect.flatMap((error) =>
+            error ? Effect.fail(error) : Effect.succeed({ ...copyFor(project), environmentId }),
+          ),
+        ),
       restoreCopy: (input) =>
         Ref.set(observedToken, input.grant.accessToken).pipe(
           Effect.as({ ...copyFor(project), environmentId }),
@@ -196,6 +202,7 @@ const fixture = Effect.gen(function* () {
     active,
     calls,
     failure,
+    prepareFailure,
     defect,
     entered,
     release,
@@ -221,6 +228,43 @@ const run = <A, E, R>(
   }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
 
 describe("Project operations", () => {
+  it.effect(
+    "persists a clone repair through operation failure and clears it after a successful retry",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const repair = {
+            kind: "github-host-setup" as const,
+            environmentId,
+            label: "Computer",
+            agentTool: "loom_github_host_setup" as const,
+            action: "start" as const,
+          };
+          const request: LibraryOperationInput = {
+            kind: "prepare",
+            input: { requestId: "clone", project, rootPath: "/test/clone", strategy: "clone" },
+          };
+          yield* Ref.set(
+            state.prepareFailure,
+            new LibraryError({
+              reason: "blocked",
+              detail: "Git authentication failed on Computer.",
+              repair,
+            }),
+          );
+          const error = yield* state.service.execute("clone", request, actor).pipe(Effect.flip);
+          expect(error.repair).toEqual(repair);
+          expect((yield* state.service.list({}))[0]).toMatchObject({
+            state: "needs-input",
+            repair,
+          });
+          yield* Ref.set(state.prepareFailure, null);
+          const retried = yield* state.service.execute("clone", request, actor);
+          expect(retried.state).toBe("succeeded");
+          expect(retried.repair).toBeUndefined();
+        }),
+      ),
+  );
   it.effect("deduplicates accepted operations and rejects changed inputs or another subject", () =>
     run((state) =>
       Effect.gen(function* () {

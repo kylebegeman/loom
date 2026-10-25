@@ -66,6 +66,12 @@ export function VaultOwnerSettings({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const firstItems = useEnvironmentQuery(
+    connected
+      ? core.list({ environmentId, input: { cursor: null, includeArchived: false } })
+      : null,
+  );
+  const showRecords = advanced || firstItems.data?.items.length === 0;
   const [help, setHelp] = useState(false);
   const [repair, setRepair] = useState<"broker" | "health" | null>(null);
   useEffect(() => {
@@ -241,7 +247,7 @@ export function VaultOwnerSettings({
           />
         </View>
       </SettingsSection>
-      {advanced ? (
+      {showRecords ? (
         <>
           {advancedItems}
           <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />

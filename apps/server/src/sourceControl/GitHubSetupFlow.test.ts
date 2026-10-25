@@ -97,3 +97,50 @@ it.effect("clears codes and exposes a safe retry message after approval failure"
     assert.notInclude(error.message!, "private CLI output");
   }),
 );
+
+// fork: github-host-setup
+it.effect("initial snapshots and watchers report saved sign-in without starting setup", () =>
+  Effect.gen(function* () {
+    let checks = 0;
+    const flow = yield* Flow.make.pipe(
+      Effect.provideService(Setup.GitHubHostSetup, {
+        status: () =>
+          Effect.sync(() => {
+            checks++;
+            return { executable: "/test/gh", state: "signed-in" as const, account: "loom-bot" };
+          }),
+        setup: () => Effect.die("Must not start setup from a read"),
+      }),
+    );
+    const [a, b] = yield* Effect.all(
+      [flow.snapshot, flow.changes.pipe(Stream.runHead, Effect.map(Option.getOrThrow))],
+      { concurrency: 2 },
+    );
+    assert.equal(a.phase, "ready");
+    assert.include(a.message!, "loom-bot");
+    assert.deepEqual(a, b);
+    assert.equal(checks, 1);
+  }),
+);
+it.effect("initial status distinguishes missing sign-in and unavailable checks", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    assert.include((yield* f.flow.snapshot).message!, "sign-in required");
+    assert.equal(f.calls(), 0);
+    const flow = yield* Flow.make.pipe(
+      Effect.provideService(Setup.GitHubHostSetup, {
+        status: () =>
+          Effect.fail(
+            new Setup.GitHubHostSetupError({
+              reason: "unavailable",
+              cause: new Error("private output"),
+            }),
+          ),
+        setup: () => Effect.die("Must not start setup"),
+      }),
+    );
+    const snapshot = yield* flow.snapshot;
+    assert.equal(snapshot.phase, "error");
+    assert.notInclude(snapshot.message!, "private output");
+  }),
+);

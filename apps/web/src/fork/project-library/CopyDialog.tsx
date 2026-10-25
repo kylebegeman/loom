@@ -1,3 +1,4 @@
+import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -96,6 +97,7 @@ export function CopyDialog({
     reportFailure: false,
   });
   const [error, setError] = useState<string | null>(null);
+  const [repair, setRepair] = useState<LibraryError["repair"]>(undefined);
   const [inspection, setInspection] = useState<string | null>(null);
   const prepare = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
@@ -120,6 +122,7 @@ export function CopyDialog({
     if (!authorityId || !hostId || !rootPath.trim() || busy) return;
     setBusy(true);
     setError(null);
+    setRepair(undefined);
     let submitted = attempt;
     const prepareCopy = async () => {
       let next = attempt ?? {
@@ -153,6 +156,7 @@ export function CopyDialog({
     try {
       await prepareCopy();
     } catch (cause) {
+      setRepair(isLibraryError(cause) ? cause.repair : undefined);
       const handleFailure = async () => {
         if (submitted) {
           const receipt = await recover({
@@ -376,6 +380,9 @@ export function CopyDialog({
           </p>
         ) : null}
         <LibraryErrorNotice error={error} />
+        {repair && repair.environmentId === hostId ? (
+          <LibraryCloneRepair key={repair.environmentId} repair={repair} />
+        ) : null}
       </div>
     </LibraryDialog>
   );

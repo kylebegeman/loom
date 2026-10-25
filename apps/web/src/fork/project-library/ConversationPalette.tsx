@@ -1,3 +1,4 @@
+import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import {
   createContext,
   use,
@@ -609,6 +610,9 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
             : undefined
       }
     >
+      {s.cloneRepair ? (
+        <LibraryCloneRepair key={s.cloneRepair.environmentId} repair={s.cloneRepair} />
+      ) : null}
       {page === "files" && s.hostId ? (
         <div className="px-4 py-2">
           <ProfileReadiness environmentId={s.hostId} project={s.project} />

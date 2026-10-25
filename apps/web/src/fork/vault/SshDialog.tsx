@@ -1,3 +1,4 @@
+import { PinnedHostKeys } from "./PinnedHostKeys";
 import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 import { useId, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -373,6 +374,17 @@ function SshDetails({
         ) : null}
         {!removing ? (
           <>
+            <PinnedHostKeys
+              environmentId={environmentId}
+              target={info.target}
+              disabled={!writable || busy}
+              onSelect={(key) => {
+                setHostKey(key.publicKey);
+                setConfirmed(false);
+                setOperationId(newId());
+                setError(null);
+              }}
+            />
             <LoomSettingsField
               label={<label htmlFor={`${fieldId}-key`}>Verified host public key</label>}
             >

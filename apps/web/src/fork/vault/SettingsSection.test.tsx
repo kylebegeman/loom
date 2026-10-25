@@ -21,13 +21,15 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (atom: string) =>
-    atom === "status"
-      ? AsyncResult.success({ state: "ready" })
-      : atom === "items"
-        ? state.listError
-          ? AsyncResult.fail(new Error("Backend unavailable"))
-          : AsyncResult.success({ items: [state.item], nextCursor: null })
-        : true,
+    atom === "add-target"
+      ? null
+      : atom === "status"
+        ? AsyncResult.success({ state: "ready" })
+        : atom === "items"
+          ? state.listError
+            ? AsyncResult.fail(new Error("Backend unavailable"))
+            : AsyncResult.success({ items: [state.item], nextCursor: null })
+          : true,
 }));
 vi.mock("@t3tools/client-runtime/fork", () => ({
   loomFeaturesOf: () => ["vault-core"],
@@ -41,6 +43,7 @@ vi.mock("~/components/settings/SettingsScopeContext", () => ({
 vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh } }));
+vi.mock("./add-navigation", () => ({ vaultAddTarget: "add-target" }));
 vi.mock("./OwnerSettingsSection", () => ({ VaultOwnerSettings: () => null }));
 vi.mock("./SshDialog", () => ({ VaultSshDialog: () => null }));
 vi.mock("./access-navigation", () => ({ openVaultAccess: vi.fn() }));

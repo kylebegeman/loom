@@ -29,6 +29,8 @@ export const VaultGitHubInfo = Schema.Struct({
   repositories: Schema.Array(VaultGitHubRepository),
 });
 export type VaultGitHubInfo = typeof VaultGitHubInfo.Type;
+export const VAULT_GITHUB_REPOSITORY_LIMIT = 32;
+export const VAULT_GITHUB_OWNER_REPOSITORY_LIMIT = 100;
 const VaultGitHubConnect = Schema.Struct({
   id: VaultItemId,
   operationId: VaultItemId,
@@ -36,15 +38,15 @@ const VaultGitHubConnect = Schema.Struct({
   label: VaultItemSummary.fields.label,
   repositories: Schema.Array(VaultGitHubRepository).check(
     Schema.isMinLength(1),
-    Schema.isMaxLength(32),
+    Schema.isMaxLength(VAULT_GITHUB_OWNER_REPOSITORY_LIMIT),
   ),
-  credential: VaultGitHubCredential,
+  credential: Schema.optionalKey(VaultGitHubCredential),
 });
-// New connections use expectedVersion 0; replacement uses the current item version.
+// Omitting credentials on an edit retains the encrypted value at the expected version.
 export const VaultGitHubSave = Schema.Struct({
   ...VaultGitHubConnect.fields,
   expectedVersion: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-});
+}).check(Schema.makeFilter((input) => input.expectedVersion > 0 || input.credential !== undefined));
 export type VaultGitHubSave = typeof VaultGitHubSave.Type;
 export const VaultGitHubTarget = Schema.Struct({
   id: VaultItemId,
@@ -138,6 +140,13 @@ export type VaultGitHubTerminalResult = typeof VaultGitHubTerminalResult.Type;
 export const vaultGitHubDestination = (repository: string) =>
   `https://github.com/${repository.toLowerCase()}`;
 export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("VaultGitHubError", {
+  repair: Schema.optionalKey(
+    Schema.Struct({
+      id: VaultItemId,
+      repository: VaultGitHubRepository,
+      settingsPath: Schema.String,
+    }),
+  ),
   reason: Schema.Literals([
     "invalid-credential",
     "unauthorized",
@@ -161,8 +170,9 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
       "invalid-credential":
         "Use valid dedicated GitHub credentials. App keys must be RSA PEM private keys.",
       unauthorized: "GitHub refused these credentials. Replace or renew the connection in Vault.",
-      "repository-denied":
-        "This connection cannot access the selected repository. Check its allowlist and GitHub permissions.",
+      "repository-denied": this.repair
+        ? `Add ${this.repair.repository} to this connection in GitHub for agents (Vault): ${this.repair.settingsPath}. GitHub permissions must also include it.`
+        : "This connection cannot access the selected repository. Check its allowlist and GitHub permissions.",
       unavailable: "GitHub could not be reached. Check the connection before retrying.",
       "invalid-response": "GitHub returned an unsupported response.",
       "cli-unavailable":

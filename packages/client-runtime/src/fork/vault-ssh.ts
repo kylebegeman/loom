@@ -12,6 +12,10 @@ import { refreshVaultItems, vaultItemChanges } from "./vault-core.ts";
 
 export function createVaultSshAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   return {
+    pinnedKeys: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:ssh-pinned-keys",
+      tag: V.pinnedKeys,
+    }),
     info: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:ssh-info",
       tag: V.info,

@@ -1,3 +1,4 @@
+import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
 import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
@@ -1216,10 +1217,20 @@ const make = Effect.gen(function* () {
                 resource.remoteUrl,
                 repositoryPath,
               ],
+              // Keep the host's credential helpers and remote URL; only suppress interactive prompts.
+              env: { ...hostEnvironment, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
               timeout: "10 minutes",
+              timeoutBehavior: "timedOutResult",
               maxOutputBytes: 1024 * 1024,
             });
-            if (cloned.code !== 0) return yield* new LibraryError({ reason: "io", cause: cloned });
+            if (cloned.code !== 0)
+              return yield* libraryCloneFailure({
+                stderr: cloned.stderr,
+                timedOut: cloned.timedOut,
+                remoteUrl: resource.remoteUrl,
+                environmentId,
+                computer: yield* HostProcess.Hostname,
+              });
           }
           const inspected = yield* inspectRepository(rootPath, repositoryPath);
           if (

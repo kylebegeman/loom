@@ -75,3 +75,22 @@ it.effect.each(["generate", "trust", "probe"] as const)(
       }),
     ),
 );
+
+it.effect("pinned host key lookup requires read access to the destination", () =>
+  Effect.gen(function* () {
+    const registry = AtomRegistry.make();
+    yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+    const policy = createCommandPermissions(runtime, VAULT_SSH_WS_METHODS.pinnedKeys);
+    expect(policy.requiredScopes()).toEqual([AuthAccessReadScope]);
+    registry.mount(sessions(destination));
+    registry.set(sessions(destination), AsyncResult.success(grant(false)));
+    yield* policy.authorize(registry, destination);
+    registry.set(
+      sessions(destination),
+      AsyncResult.success({ ...grant(false), scopes: [], permissions: [] }),
+    );
+    expect(
+      (yield* policy.authorize(registry, destination).pipe(Effect.flip)).requiredPermission,
+    ).toBe(AuthAccessReadScope);
+  }),
+);

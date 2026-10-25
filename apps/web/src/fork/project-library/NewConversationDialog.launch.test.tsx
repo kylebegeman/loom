@@ -106,6 +106,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: "a",
   useNavigate: () => state.navigate,
 }));
+vi.mock("../vault/LibraryCloneRepair", () => ({ LibraryCloneRepair: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
 vi.mock("~/fork/switchboard/switchboardPicker", () => ({
@@ -1547,6 +1548,32 @@ describe("held attempts and one-step starts", () => {
       input: { threadId, binding, project },
     });
     expectOpened();
+  });
+
+  it("keeps the clone repair pinned to the failed preparation computer", async () => {
+    withCapabilities("project-workflows");
+    const repair = {
+      kind: "github-host-setup" as const,
+      environmentId,
+      label: "Computer",
+      agentTool: "loom_github_host_setup" as const,
+      action: "start" as const,
+    };
+    commands.executeOperation.run.mockResolvedValueOnce(
+      AsyncResult.failure(
+        Cause.fail(
+          new LibraryError({
+            reason: "blocked",
+            detail: "Git authentication failed on Computer.",
+            repair,
+          }),
+        ),
+      ),
+    );
+    await mount();
+    await click("Start conversation");
+    expect(launch.cloneRepair).toEqual(repair);
+    expect(launch.error).toBe("Git authentication failed on Computer.");
   });
 
   it("keeps a retry whose conversation was deleted, says so, and starts a new operation after Start over", async () => {

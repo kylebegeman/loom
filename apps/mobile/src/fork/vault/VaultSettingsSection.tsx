@@ -384,7 +384,9 @@ function VaultEditor({
         }),
       );
       setFileName(asset.name);
-      if (!label) setLabel(asset.name);
+      setKind("secure-file");
+      setReplace(true);
+      if (!label.trim()) setLabel(asset.name);
       changed();
       setError(null);
     })()
@@ -503,6 +505,7 @@ function VaultEditor({
           ) : (
             <View className="gap-2">
               <Text>Value</Text>
+              <Button label="Choose file" disabled={busy} onPress={() => void pickFile()} />
               <TextInput
                 accessibilityLabel="Vault item value"
                 value={value}

@@ -196,7 +196,7 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     icon: GithubIcon,
     scope: "computer",
     related: ["vault-profiles", "vault-access"],
-    title: "GitHub access",
+    title: "GitHub for agents (Vault)",
     description: "Connect a dedicated GitHub identity for repository access.",
     group: "connections",
     keywords: "github token app installation repository repositories git https gh credentials",

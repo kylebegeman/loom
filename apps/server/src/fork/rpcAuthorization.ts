@@ -130,6 +130,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [VP.retirePin]: AuthAccessWriteScope,
   [VR.search]: AuthAccessReadScope,
   [VR.describe]: AuthAccessReadScope,
+  [VS.pinnedKeys]: AuthAccessReadScope,
   [VS.info]: AuthAccessReadScope,
   [VB.snapshot]: AuthAccessReadScope,
   [VS.generate]: AuthAccessWriteScope,

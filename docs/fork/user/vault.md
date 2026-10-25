@@ -35,7 +35,9 @@ access after personal access is disabled.
 
 ## Manage records
 
-Choose **Add item**, give it a name and kind, and enter its value. Secret values are hidden by
+Choose **Add item**, or **Add to Vault...** in the command palette, and enter a name and value.
+To save a file, choose **Choose file** beside the value or drop one onto the Vault page on web/desktop.
+Loom selects Secure file and uses the filename as the initial name. Secret values are hidden by
 default. Multiline entry is explicitly visible, for keys and notes. File imports support files
 up to 512 KB. Choose **Edit** to rename an item; enable **Replace value** only when changing its
 contents. Values appear only after **Reveal value**, **Download** or **Share file**. Downloads
@@ -49,6 +51,10 @@ changes while you edit it, refresh before retrying instead of overwriting the ne
 Inspection requires access to read this computer's credentials; changes and reveal require
 write access. A locked, unavailable or misconfigured backend reports its state and can be
 checked again with **Refresh**. Vault does not fall back to your personal password manager.
+
+When answering a private secret request, you can select **Also save to Vault as** and enter a name.
+This saves a separate Vault item using your own write access before answering the request.
+If the save fails, retry or turn the option off to answer without a Vault copy.
 
 Agents with a manage grant can save values using Loom's private secret prompt and a one-use reference. Never paste
 credentials into chat. Normal agent tools return metadata, not stored values. The authenticated
@@ -317,6 +323,12 @@ Paste that public key, review the proposed fingerprint and confirm before saving
 alone does not establish trust. **Remove host trust** requires confirmation and blocks new
 connections; save a verified pin later to restore access. Archive/restore uses the normal
 item actions. Removing trust or archiving does not unregister the public key on the host.
+
+Use **Find pinned keys on this computer** to read the selected computer's configured SSH known-hosts files.
+When a matching Ed25519 key exists, review its source file and fingerprint, then choose
+**Use pinned key from this computer** and confirm the fingerprint. Global pins are labeled separately
+from user known-hosts entries, which may have been accepted on first use. This reads the computer
+running Loom, including when you connect from a phone; it does not scan the remote host.
 
 After registering the public key and saving host trust, choose **Test SSH connection**.
 Loom runs a fixed harmless command from its server, using this key and pinned host. Success
@@ -591,10 +603,13 @@ This is not secure erasure or remote credential revocation. Human administrators
 
 ## Connect GitHub and approve project access
 
-Open **Settings → Loom → GitHub access** on web/desktop, or **GitHub access** under
+Open **Settings → Loom → GitHub for agents (Vault)** on web/desktop, or **GitHub for agents (Vault)** under
 **Settings → Computers → Manage computer** on mobile. Save a dedicated fine-grained token
 or choose a GitHub App under **Advanced connection settings**. Paste GitHub repository URLs
 or `owner/repository` names. Loom verifies the account and API access before saving.
+Personal owner-trusted environments support up to 100 repositories per connection; restricted
+environments support 32. When editing repositories or the name, leave the credential blank
+to keep it. Enter a credential only when replacing it.
 
 The token form links to GitHub and lists the required repository permissions. Choosing
 **All repositories** on GitHub chooses repository coverage; it does not add permission entries.

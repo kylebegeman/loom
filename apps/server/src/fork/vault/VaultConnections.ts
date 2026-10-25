@@ -6,6 +6,7 @@ import {
   VaultSshTarget,
   VaultGitCommand,
   VaultGitHubRepository,
+  VAULT_GITHUB_OWNER_REPOSITORY_LIMIT,
   vaultGitDestination,
   vaultGitHubDestination,
   vaultSshDestination,
@@ -61,7 +62,7 @@ const GitHubMetadata = Schema.fromJsonString(
     account: Schema.String.check(Schema.isMaxLength(200)),
     repositories: Schema.Array(VaultGitHubRepository).check(
       Schema.isMinLength(1),
-      Schema.isMaxLength(32),
+      Schema.isMaxLength(VAULT_GITHUB_OWNER_REPOSITORY_LIMIT),
     ),
   }),
 );

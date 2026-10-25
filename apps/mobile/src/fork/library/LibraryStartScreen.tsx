@@ -1,4 +1,6 @@
 import { useLibraryStartProject, useLibraryStartCopies } from "./libraryState";
+import { GitHubHostSetupSettings } from "../../features/settings/components/GitHubHostSetupSettings";
+import { LibraryError } from "@t3tools/contracts/fork";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   StackActions,
@@ -270,6 +272,8 @@ function LibraryStartContent(props: {
   }, []);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
+  const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
+  const [showGitHubSetup, setShowGitHubSetup] = useState(false);
   const [launchedThread, setLaunchedThread] = useState<Awaited<
     ReturnType<typeof launchLibraryConversation>
   > | null>(null);
@@ -943,6 +947,7 @@ function LibraryStartContent(props: {
       });
       setLaunchedThread(target);
     } catch (cause) {
+      setCloneRepair(cause instanceof LibraryError ? cause.repair : undefined);
       setError(
         cause instanceof Error
           ? cause.message
@@ -1510,6 +1515,20 @@ function LibraryStartContent(props: {
         <LibraryNotice detail="The selected model is unavailable. Restore it in provider settings before resuming this preparation." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
+      {error && cloneRepair && cloneRepair.environmentId === execution ? (
+        <>
+          <Button
+            label={showGitHubSetup ? "Hide GitHub setup" : `Set up GitHub on ${cloneRepair.label}`}
+            onPress={() => setShowGitHubSetup((value) => !value)}
+          />
+          {showGitHubSetup ? (
+            <GitHubHostSetupSettings
+              environmentId={cloneRepair.environmentId}
+              label={cloneRepair.label}
+            />
+          ) : null}
+        </>
+      ) : null}
       {progress.recoverySnapshotRejected && !progress.copy && !progress.recoverySnapshot ? (
         <Button
           label="Review latest source files"
