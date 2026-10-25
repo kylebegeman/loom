@@ -26,6 +26,7 @@ import {
   BOTS_DISMISS_MAX_RUNS,
   BOTS_LIST_RUNS_MAX_LIMIT,
   isBotInboxRun,
+  isBotRunHandledByCaller,
   isBotRunThreadId,
   isTerminalBotRunStatus,
 } from "@t3tools/contracts/fork";
@@ -207,9 +208,9 @@ export const canRetryBotRun = (run: BotRun): boolean =>
   run.pipelineRunId == null && isBotInboxRun(run);
 
 /**
- * Loaded inbox pages with watched changes applied, the total kept without a refetch. A changed run
+ * Loaded inbox pages with watched changes applied, the totals kept without a refetch. A changed run
  * that was loaded was counted; one that was not was not, unless it is older than every loaded run
- * while more remain, where its earlier state is unknown and the total is left alone.
+ * while more remain, where its earlier state is unknown and the totals are left alone.
  */
 export const applyInboxChanges = (
   page: BotsInboxPage,
@@ -219,20 +220,31 @@ export const applyInboxChanges = (
   const oldest = page.runs.at(-1)?.createdAt;
   const merged = new Map(page.runs.map((run) => [run.id, run]));
   let total = page.total;
+  let handled = page.handled;
   for (const [id, run] of changes.runs) {
-    const listed = merged.has(id);
-    if (!listed && page.hasMore && oldest !== undefined && run.createdAt < oldest) continue;
+    const before = merged.get(id);
+    if (before === undefined && page.hasMore && oldest !== undefined && run.createdAt < oldest)
+      continue;
     const now = isBotTriageRun(run, options.dismissed);
-    total += Number(now) - Number(listed);
+    total += Number(now) - Number(before !== undefined);
+    if (handled !== undefined)
+      handled +=
+        Number(now && isBotRunHandledByCaller(run)) -
+        Number(before !== undefined && isBotRunHandledByCaller(before));
     if (now) merged.set(id, run);
     else merged.delete(id);
   }
   return {
     runs: [...merged.values()].sort(newestFirst),
     total: Math.max(0, total),
+    ...(handled === undefined ? {} : { handled: Math.max(0, handled) }),
     hasMore: page.hasMore,
   };
 };
+
+/** The inbox runs still asking a person; those their calling agent already has do not. */
+export const inboxNeedsPersonCount = (page: BotsInboxPage): number =>
+  Math.max(0, page.total - (page.handled ?? 0));
 
 /** Run ids split into requests the dismiss input accepts; a live inbox can outgrow one. */
 export const dismissRunIdBatches = (

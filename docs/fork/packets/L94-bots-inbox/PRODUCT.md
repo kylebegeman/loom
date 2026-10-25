@@ -36,6 +36,12 @@ its timeout, because nobody can see the question.
   retry is the new item.
 - Runs started by an agent appear too. An agent that wants its own failures handled should read
   them through `loom_bots_inbox`.
+- A run an agent started with `notify` whose result reached its calling thread is listed but
+  folded under "Handled by the calling agent" and left out of the footer count: that agent
+  already has the outcome. Kyle chose this over hiding such runs, so they can still be reviewed
+  and dismissed.
+- A failed run carries its provider's failure class and reason in place of a generic "The run
+  ended as failed", so a usage limit reads differently from a broken bot.
 
 ## Not in this packet
 

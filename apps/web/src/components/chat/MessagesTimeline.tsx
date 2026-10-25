@@ -352,6 +352,7 @@ interface TimelineRowSharedState {
   onCancelWorktreeSetup: (() => void) | null;
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
+  failedRunRetry: FailedRunRetry | null; // fork: failed-run-retry
   onWorktreeSetupWorkLocally: (() => void) | null;
   onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
   workGroupViewState: WorkGroupViewState;
@@ -428,6 +429,13 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 } as const satisfies MaintainScrollAtEndOptions;
 const EMPTY_TIMELINE_RUNS: ReadonlyArray<HandoffTimelineRun> = [];
 const EMPTY_RUN_IDS: ReadonlySet<RunId> = new Set();
+// fork: failed-run-retry
+/** A failed run whose root error row offers Retry, which continues it like the composer's Resume. */
+interface FailedRunRetry {
+  readonly runId: RunId;
+  readonly nodeId: OrchestrationV2TurnItem["nodeId"];
+  readonly retry: () => void;
+}
 const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
   ...TIMELINE_MAINTAIN_SCROLL_AT_END,
   animated: true,
@@ -455,6 +463,7 @@ interface MessagesTimelineProps {
   onCancelWorktreeSetup?: () => void;
   retryableWorkspacePreparationRunIds?: ReadonlySet<RunId>;
   onRetryWorkspacePreparation?: (runId: RunId) => void;
+  failedRunRetry?: FailedRunRetry | null; // fork: failed-run-retry
   onWorktreeSetupWorkLocally?: () => void;
   onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
   isPreparingWorktree?: boolean;
@@ -562,6 +571,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCancelWorktreeSetup,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
+  failedRunRetry = null, // fork: failed-run-retry
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
   isPreparingWorktree = false,
@@ -1317,6 +1327,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
     retryableWorkspacePreparationRunIds,
     onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
+    failedRunRetry, // fork: failed-run-retry
     onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
     onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     workGroupViewState,
@@ -5369,6 +5380,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       failureItem.failure.code === ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE
         ? failureItem.runId
         : null;
+    // fork: failed-run-retry
+    const retryFailedRun =
+      retryRunId === null &&
+      ctx.failedRunRetry !== null &&
+      failureItem.runId === ctx.failedRunRetry.runId &&
+      failureItem.nodeId === ctx.failedRunRetry.nodeId
+        ? ctx.failedRunRetry.retry
+        : null;
     return (
       <WorkLogRow
         data-v2-item-type="error"
@@ -5407,6 +5426,15 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               variant="outline"
               onClick={() => onRetryWorkspacePreparation(retryRunId)}
             >
+              <RotateCcwIcon aria-hidden />
+              Retry
+            </Button>
+          </div>
+        ) : null}
+        {/* fork: failed-run-retry */}
+        {retryFailedRun !== null ? (
+          <div className="ms-7 pb-1">
+            <Button type="button" size="xs" variant="outline" onClick={retryFailedRun}>
               <RotateCcwIcon aria-hidden />
               Retry
             </Button>

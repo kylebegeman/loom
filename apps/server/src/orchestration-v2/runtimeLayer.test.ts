@@ -6564,6 +6564,125 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
       }),
   );
 
+  // fork: failed-run-retry
+  it.effect.each([
+    { failure: "provider_error", resumes: true },
+    { failure: "transport_error", resumes: true },
+    { failure: "unknown", resumes: true },
+    { failure: "permission_error", resumes: false },
+    { failure: "validation_error", resumes: false },
+    { failure: null, resumes: false },
+  ] as const)(
+    "manually resumes a run that failed on $failure only when another try can help",
+    ({ failure, resumes }) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const events = yield* EventSink.EventSinkV2;
+        const key = `failed-resume:${failure ?? "unrecorded"}`;
+        const threadId = ThreadId.make(key);
+        const projectId = ProjectId.make(`${key}:project`);
+        const now = yield* DateTime.now;
+        yield* seedProject({
+          projectId,
+          title: "Resume project",
+          workspaceRoot: process.cwd(),
+          defaultModelSelection: modelSelection,
+          createdAt: DateTime.formatIso(now),
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`${key}:create`),
+          threadId,
+          projectId,
+          title: "Failed thread",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`${key}:start`),
+          threadId,
+          messageId: MessageId.make(`${key}:start`),
+          text: "Start work.",
+          attachments: [],
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const [source] = (yield* orchestrator.getThreadProjection(threadId)).runs as [
+          OrchestrationV2Run,
+        ];
+        yield* events.write({
+          events: [
+            {
+              id: EventId.make(`${key}:fail`),
+              type: "run.updated",
+              threadId,
+              occurredAt: now,
+              payload: { ...source, status: "failed", completedAt: now },
+            },
+            ...(failure === null
+              ? []
+              : [
+                  {
+                    id: EventId.make(`${key}:error`),
+                    type: "turn-item.updated" as const,
+                    threadId,
+                    occurredAt: now,
+                    payload: {
+                      id: TurnItemId.make(`${key}:error`),
+                      type: "error" as const,
+                      threadId,
+                      runId: source.id,
+                      nodeId: source.rootNodeId,
+                      providerThreadId: null,
+                      providerTurnId: null,
+                      nativeItemRef: null,
+                      parentItemId: null,
+                      ordinal: 2,
+                      status: "failed" as const,
+                      title: "Provider failed",
+                      startedAt: now,
+                      completedAt: now,
+                      updatedAt: now,
+                      failure: {
+                        class: failure,
+                        message: "The provider failed.",
+                        code: null,
+                        retryable: null,
+                      },
+                    },
+                  },
+                ]),
+          ],
+        });
+        const resumed = yield* orchestrator
+          .dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`${key}:resume`),
+            threadId,
+            messageId: MessageId.make(`${key}:resume`),
+            manualContinuationOfRunId: source.id,
+            text: "Continue where you left off.",
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+            createdBy: "user",
+            creationSource: "web",
+          })
+          .pipe(Effect.exit);
+        assert.equal(resumed._tag, resumes ? "Success" : "Failure");
+        assert.lengthOf(
+          (yield* orchestrator.getThreadProjection(threadId)).runs,
+          resumes ? 2 : 1,
+        );
+      }),
+  );
+
   it.effect.each([
     "resume",
     "queued-resume",

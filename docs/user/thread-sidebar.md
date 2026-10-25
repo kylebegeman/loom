@@ -246,8 +246,10 @@ for custom configuration.
 **Limited** means the provider stopped on a usage or rate limit. The conversation
 keeps the provider's explanation. Retry after the limit resets, or switch to
 another provider instance.
-On web and desktop, press **Resume** in an empty composer to continue a limited
-or interrupted turn manually.
+Press **Resume** in an empty composer on web and desktop, or **Resume** or
+**Retry** above the composer on mobile, to continue a limited, interrupted, or
+failed turn manually. When a failure offers neither, fix the cause shown in the
+conversation, then send a new message. <!-- fork: failed-run-retry -->
 Queued messages stay saved while the limit blocks the thread. They run after
 the continuation finishes. If the queue was held by a restart, resume it then.
 

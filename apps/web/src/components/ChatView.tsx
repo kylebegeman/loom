@@ -36,10 +36,7 @@ import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import {
-  latestExecutedRun,
-  latestRootProviderFailure,
-} from "@t3tools/shared/orchestrationV2ThreadError";
+import { continuableRun } from "@t3tools/shared/fork/run-continuation"; // fork: failed-run-retry
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
@@ -1585,16 +1582,16 @@ export default function ChatView(props: ChatViewProps) {
     isServerThread &&
     serverProjection?.runs.some((run) => run.status === "queued" && run.queueHeld === true) ===
       true;
-  const resumableRunId = (() => {
-    if (!isServerThread || serverProjection === null) return null;
-    const run = latestExecutedRun(serverProjection.runs);
-    if (run?.status === "interrupted") return run.id;
-    return run?.status === "failed" &&
-      serverRuntime?.lastErrorClass === "usage_limit" &&
-      latestRootProviderFailure(run, serverProjection.turnItems)?.class === "usage_limit"
-      ? run.id
-      : null;
-  })();
+  // fork: failed-run-retry
+  const continuable =
+    !isServerThread || serverProjection === null
+      ? null
+      : continuableRun({
+          runs: serverProjection.runs,
+          turnItems: serverProjection.turnItems,
+          lastErrorClass: serverRuntime?.lastErrorClass,
+        });
+  const resumableRunId = continuable?.run.id ?? null; // fork: failed-run-retry
   const parentSubagentThreadId =
     activeThread?.lineage.relationshipToParent === "subagent"
       ? activeThread.lineage.parentThreadId
@@ -8100,6 +8097,15 @@ export default function ChatView(props: ChatViewProps) {
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
+  // fork: failed-run-retry - A usage limit's row says when to retry, and its recovery covers it.
+  const failedRunRetry =
+    canOperateThread && continuable?.failure != null && continuable.failure.class !== "usage_limit"
+      ? {
+          runId: continuable.run.id,
+          nodeId: continuable.run.rootNodeId,
+          retry: onComposerResumeStable,
+        }
+      : null;
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   const queuedRunsControl =
     isServerThread && activeThread ? (
@@ -8525,6 +8531,7 @@ export default function ChatView(props: ChatViewProps) {
                       retryableWorkspacePreparationRunIds,
                       onRetryWorkspacePreparation: onRetryWorkspacePreparationStable,
                     })}
+                failedRunRetry={paintOnlyDisplayedTimeline ? null : failedRunRetry} // fork: failed-run-retry
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
                   : {})}

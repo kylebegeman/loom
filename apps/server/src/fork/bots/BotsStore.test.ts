@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { isBotInboxRun } from "@t3tools/contracts/fork";
+import { ThreadId } from "@t3tools/contracts";
+import { isBotInboxRun, isBotRunHandledByCaller } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
@@ -241,5 +242,45 @@ describe("BotsStore", () => {
         expect(dismissed.runs[0]!.dismissedAt).toBe("2026-10-20T19:00:00.000Z");
       }),
     ),
+  );
+
+  it.effect("counts handled runs as isBotRunHandledByCaller does, from past deliveries too", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runForkMigrationSet({
+        ...BotsMigrations,
+        migrations: BotsMigrations.migrations.filter(([id]) => id < 15),
+      });
+      const store = yield* makeBotsStore;
+      const agent = {
+        status: "failed",
+        startedBy: "agent",
+        callerThreadId: ThreadId.make("chat"),
+        notify: true,
+      } as const;
+      yield* store.insertRun(testRun("delivered", "2026-10-20T10:00:00.000Z", agent));
+      yield* store.insertRun(testRun("refused", "2026-10-20T11:00:00.000Z", agent));
+      yield* store.insertRun(
+        testRun("by-user", "2026-10-20T12:00:00.000Z", { ...agent, startedBy: "user" }),
+      );
+      yield* sql`UPDATE fork_bots_runs SET notified_at = '2026-10-20T13:00:00.000Z'`;
+      yield* sql`UPDATE fork_bots_runs SET error = 'Result delivery failed: the calling thread no longer exists.' WHERE id = 'refused'`;
+      yield* runForkMigrationSet(BotsMigrations);
+
+      yield* store.insertRun(testRun("later", "2026-10-20T14:00:00.000Z", agent));
+      yield* store.markNotified("later", "2026-10-20T15:00:00.000Z", null, true);
+      yield* store.insertRun(testRun("unreached", "2026-10-20T16:00:00.000Z", agent));
+      yield* store.markNotified("unreached", "2026-10-20T17:00:00.000Z", "Result delivery failed: x", false);
+
+      const page = yield* store.inbox({ dismissed: false, limit: 10 });
+      expect(page.runs.filter(isBotRunHandledByCaller).map((run) => run.id)).toEqual([
+        "later",
+        "delivered",
+      ]);
+      expect(page).toMatchObject({ total: 5, handled: 2 });
+      expect(page.runs.find((run) => run.id === "by-user")?.deliveredAt).toBe(
+        "2026-10-20T13:00:00.000Z",
+      );
+    }).pipe(Effect.provide(SqlitePersistenceMemory)),
   );
 });

@@ -12,6 +12,7 @@ const run = {
   callerThreadId: ThreadId.make("caller"),
   createdAt: "2026-10-25T00:00:00Z",
   finishedAt: "2026-10-25T00:01:00Z",
+  startedBy: "agent" as const,
   error: "Run failed.\nTry again.",
   inputs: { prompt: "input ".repeat(10_000) },
   result: "reply ".repeat(10_000),
@@ -29,6 +30,7 @@ describe("compact bot inbox", () => {
       createdAt: run.createdAt,
       finishedAt: run.finishedAt,
       reason: "Run failed. Try again.",
+      handled: false,
     });
     expect(
       JSON.stringify(Array.from({ length: 20 }, () => botInboxSummary(run))).length,
@@ -50,5 +52,13 @@ describe("compact bot inbox", () => {
     expect(summary.reason).toContain("Check this.");
     expect(summary).not.toHaveProperty("verdict");
     expect(summary).not.toHaveProperty("result");
+  });
+  it("marks a run whose result already reached its calling agent", () => {
+    const delivered = { ...run, notify: true, deliveredAt: "2026-10-25T00:01:01Z" };
+    expect(botInboxSummary(delivered).handled).toBe(true);
+    expect(botInboxSummary({ ...delivered, notify: false }).handled).toBe(false);
+    expect(botInboxSummary({ ...delivered, failureClass: "usage_limit" })).toMatchObject({
+      failureClass: "usage_limit",
+    });
   });
 });

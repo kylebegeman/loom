@@ -127,7 +127,7 @@ export const BotsToolkit = Toolkit.make(
   }),
   Tool.make("loom_bots_inbox", {
     description:
-      "List a compact inbox of bot runs, newest first: ids, bot name, status, one-line reason, times and caller thread. Full inputs, reply and verdict are available from loom_bots_run_status with the run id. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
+      "List a compact inbox of bot runs, newest first: ids, bot name, status, one-line reason, failure class, times and caller thread. A run marked handled already delivered its result to the agent that started it and needs no person; the top-level handled counts them. Full inputs, reply and verdict are available from loom_bots_run_status with the run id. Retry one with loom_bots_retry or dismiss it with loom_bots_dismiss.",
     parameters: Schema.Struct({
       limit: Schema.optionalKey(
         Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: BOTS_LIST_RUNS_MAX_LIMIT })),
@@ -136,6 +136,7 @@ export const BotsToolkit = Toolkit.make(
     success: Schema.Struct({
       runs: Schema.Array(BotInboxSummary),
       total: Schema.Int,
+      handled: Schema.optionalKey(Schema.Int),
       hasMore: Schema.Boolean,
     }),
     failure,

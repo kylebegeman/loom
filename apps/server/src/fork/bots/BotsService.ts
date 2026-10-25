@@ -10,6 +10,9 @@ import {
   resolveProviderInstanceEnabled,
   ThreadId,
   type ModelSelection,
+  type OrchestrationV2ProviderFailure,
+  type OrchestrationV2ProviderFailureClass,
+  type OrchestrationV2Run,
   type ProjectId,
   type RunId,
   type RuntimeMode,
@@ -58,6 +61,7 @@ import {
   type BotVerdict,
   type BotVersionSavedBy,
 } from "@t3tools/contracts/fork";
+import { latestRootProviderFailure } from "@t3tools/shared/orchestrationV2ThreadError";
 import { isModelSelectionProviderEnabled } from "@t3tools/shared/serverSettings";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
@@ -223,6 +227,35 @@ export const capReply = (text: string): { readonly text: string; readonly trunca
 
 const errorMessage = (error: unknown) =>
   error instanceof Error && error.message !== "" ? error.message : String(error);
+
+const FAILURE_LEADS: Record<OrchestrationV2ProviderFailureClass, string> = {
+  usage_limit: "Usage limit reached",
+  provider_error: "The provider failed",
+  transport_error: "Provider connection dropped",
+  permission_error: "The provider refused permission",
+  validation_error: "The provider rejected the request",
+  unknown: "The provider failed",
+};
+
+/** In UTC: the server's own time zone may not be the reader's. */
+const utcMinute = (iso: string) => {
+  const at = DateTime.make(iso);
+  if (at._tag === "None") return iso;
+  const text = DateTime.formatIso(at.value);
+  return `${text.slice(0, 10)} ${text.slice(11, 16)} UTC`;
+};
+
+/**
+ * A failed run's error from what its provider recorded, so a caller can tell a usage limit from a
+ * broken bot. The class leads, since lists show only an error's first line.
+ */
+export const providerFailureError = (failure: OrchestrationV2ProviderFailure): string => {
+  const resets =
+    failure.class === "usage_limit" && failure.resetAt != null
+      ? `, resets ${utcMinute(failure.resetAt)}`
+      : "";
+  return `${FAILURE_LEADS[failure.class]}${resets}: ${failure.message}`;
+};
 
 const formatDuration = (ms: number) => {
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -747,10 +780,15 @@ export const make = Effect.gen(function* () {
       failure === null
         ? run.error
         : [run.error, `Result delivery failed: ${failure}`].filter(Boolean).join("\n");
-    yield* store.markNotified(run.id, yield* nowIso, error).pipe(Effect.ignore({ log: true }));
-    if (failure !== null)
+    const at = yield* nowIso;
+    yield* store
+      .markNotified(run.id, at, error, failure === null)
+      .pipe(Effect.ignore({ log: true }));
+    if (failure !== null) {
       yield* Effect.logWarning("Bot run result delivery failed", { runId: run.id, failure });
-    return { ...run, error };
+      return { ...run, error };
+    }
+    return { ...run, error, deliveredAt: at };
   });
 
   /** Records a terminal state once, whichever path reaches it first. */
@@ -759,6 +797,7 @@ export const make = Effect.gen(function* () {
     outcome: {
       readonly status: BotRunStatus;
       readonly error?: string | null;
+      readonly failureClass?: OrchestrationV2ProviderFailureClass | null;
       readonly reply?: string | null;
       readonly usage?: BotRunUsage | null;
     },
@@ -777,6 +816,7 @@ export const make = Effect.gen(function* () {
       result: reply?.text ?? null,
       resultTruncated: reply?.truncated ?? false,
       error: outcome.error ?? null,
+      ...(outcome.failureClass == null ? {} : { failureClass: outcome.failureClass }),
       ...(verdict === null ? {} : { verdict }),
       ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
     };
@@ -823,6 +863,23 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  /** What the provider recorded for a failed thread run; a failed read leaves none. */
+  const readFailure = (projectId: ProjectId, threadId: ThreadId, run: OrchestrationV2Run) =>
+    threads
+      .getProjectThreadRecords({ projectId, threadId }, ["turnItems"], {
+        turnItemRunId: run.id,
+        turnItemTypes: ["error"],
+        turnItemStatuses: ["failed"],
+      })
+      .pipe(
+        Effect.map((records) => latestRootProviderFailure(run, records.turnItems)),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Reading the bot run failure reason failed", { threadId, cause }).pipe(
+            Effect.as(null),
+          ),
+        ),
+      );
+
   /** Waits for the run thread to end, enforces the timeout, and records the outcome. */
   const awaitThread = Effect.fnUntraced(function* (entry: LiveRun, timeoutMs: number) {
     const projectId = entry.run.projectId;
@@ -857,9 +914,14 @@ export const make = Effect.gen(function* () {
       });
     if (waited.run.status === "completed")
       return yield* finish(entry, { status: "completed", reply, usage });
+    const failure = yield* readFailure(projectId, entry.run.threadId, waited.run);
     return yield* finish(entry, {
       status: "failed",
-      error: `The run ended as ${waited.run.status.replaceAll("_", " ")}.`,
+      error:
+        failure === null
+          ? `The run ended as ${waited.run.status.replaceAll("_", " ")}.`
+          : providerFailureError(failure),
+      failureClass: failure?.class ?? null,
       reply,
       usage,
     });
@@ -1708,7 +1770,8 @@ export const make = Effect.gen(function* () {
     const undelivered = yield* store.listUndeliveredRuns().pipe(Effect.catch(storageError));
     for (const stored of undelivered) {
       const delivered = yield* deliver(stored);
-      if (delivered.error !== stored.error) yield* publish({ _tag: "run", run: delivered });
+      if (delivered.error !== stored.error || delivered.deliveredAt !== stored.deliveredAt)
+        yield* publish({ _tag: "run", run: delivered });
     }
   });
 

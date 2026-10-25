@@ -5,6 +5,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
+import { OrchestrationV2ProviderFailureClass } from "../orchestrationV2.ts";
 import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
 import { ScheduledTaskWebhookEndpoint, ScheduledTaskWebhookSignature } from "../scheduledTask.ts";
 import { LibraryId } from "./project-library.ts";
@@ -325,8 +326,12 @@ export const BotRun = Schema.Struct({
   result: Schema.NullOr(Schema.String),
   resultTruncated: Schema.Boolean,
   error: Schema.NullOr(Schema.String),
+  /** How the provider failed a failed run, when it said. Absent for a run that ran elsewhere. */
+  failureClass: Schema.optionalKey(Schema.NullOr(OrchestrationV2ProviderFailureClass)),
   /** Whether the result is posted to the calling thread when the run ends. Absent means no. */
   notify: Schema.optionalKey(Schema.Boolean),
+  /** When the result reached the calling thread. Absent until it does, and if it never did. */
+  deliveredAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Set for a completed run of a verdict bot. */
   verdict: Schema.optionalKey(Schema.NullOr(BotVerdict)),
   /** The batch that started the run. Absent for a run started on its own. */
@@ -385,6 +390,19 @@ export const isBotInboxRun = (run: BotRun): boolean =>
   (run.pipelineRunId == null
     ? needsBotAttention(run)
     : run.pipelineStopped === true && run.retriedBy == null);
+
+/**
+ * An agent's run whose result was posted back to its calling thread. That agent already has the
+ * outcome, so the run stays in the inbox but no longer asks a person. The server counts the same
+ * runs in SQL; keep the two in step.
+ */
+export const isBotRunHandledByCaller = (
+  run: Pick<BotRun, "startedBy" | "notify" | "callerThreadId" | "deliveredAt">,
+): boolean =>
+  run.startedBy === "agent" &&
+  run.notify === true &&
+  run.callerThreadId !== null &&
+  run.deliveredAt != null;
 
 export const BotsChange = Schema.Union([
   Schema.TaggedStruct("bot", { bot: BotDefinition }),
@@ -457,6 +475,8 @@ export const BotsInboxPage = Schema.Struct({
   runs: Schema.Array(BotRun),
   /** Every matching run, not only this page. */
   total: Schema.Int,
+  /** How many of `total` their calling agent already handled. Absent from older servers. */
+  handled: Schema.optionalKey(Schema.Int),
   hasMore: Schema.Boolean,
 });
 export type BotsInboxPage = typeof BotsInboxPage.Type;

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId, type ModelSelection } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { makeBotBatchesStore } from "./BotBatchesStore.ts";
 import { promotedTitle, USER_CALLER } from "./BotsService.ts";
 import { model, projectId, reviewer, withHarness, type Harness } from "./testing/BotsHarness.ts";
@@ -23,6 +24,70 @@ const failedRun = (harness: Harness, file: string) =>
   });
 
 describe("BotsService inbox", () => {
+  it.effect("gives a failed run its provider's reason and failure class", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const run = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+        );
+        yield* harness.end(run.threadId, {
+          status: "failed",
+          reply: null,
+          failure: {
+            class: "usage_limit",
+            message: "You've hit your usage limit.",
+            code: null,
+            retryable: false,
+            resetAt: "2026-10-25T14:05:00.000Z",
+          },
+        });
+        const expected = {
+          error: "Usage limit reached, resets 2026-10-25 14:05 UTC: You've hit your usage limit.",
+          failureClass: "usage_limit",
+        };
+        expect(yield* bots.awaitRun(run.id, WAIT_MS)).toMatchObject(expected);
+        expect(yield* bots.getRun(run.id)).toMatchObject(expected);
+      }),
+    ),
+  );
+
+  it.effect("keeps an agent's delivered run listed but counts it as handled", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const chat = ThreadId.make("chat");
+        harness.shells.set(chat, { projectId, worktreePath: null, branch: null });
+        const agent = { actor: "agent", threadId: chat, projectId, runtimeMode: "full-access" } as const;
+        const end = (caller: Parameters<typeof bots.run>[1], file: string) =>
+          Effect.gen(function* () {
+            const run = yield* bots.run(
+              { botId: "reviewer", inputs: { file }, projectId, notify: true },
+              caller,
+            );
+            yield* harness.end(run.threadId, { status: "failed", reply: null });
+            return yield* bots.awaitRun(run.id, WAIT_MS);
+          });
+
+        const handled = yield* end(agent, "a.ts");
+        expect(handled.deliveredAt).toEqual(expect.any(String));
+        // A person who asked for the result in their thread still decides what to do with it.
+        const byPerson = yield* end(yield* bots.threadCaller(chat), "b.ts");
+        expect(byPerson.deliveredAt).toEqual(expect.any(String));
+        harness.state.sendError = new ThreadManagement.ThreadManagementThreadArchivedError({
+          threadId: chat,
+        });
+        const unreached = yield* end(agent, "c.ts");
+        expect(unreached.deliveredAt).toBeUndefined();
+
+        expect(yield* bots.inbox({ limit: 10 })).toMatchObject({ total: 3, handled: 1 });
+      }),
+    ),
+  );
+
   it.effect("lists runs that need a person, with a total across pages", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
