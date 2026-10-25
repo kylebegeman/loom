@@ -105,6 +105,7 @@ function makeFakeBrowserWindow() {
     focus: vi.fn(),
     getBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
     getNormalBounds: vi.fn(() => ({ x: 0, y: 0, width: 1100, height: 780 })),
+    hide: vi.fn(), // fork: restart-continuity
     isDestroyed: vi.fn(() => false),
     isFullScreen: vi.fn(() => false),
     isMaximized: vi.fn(() => false),
@@ -134,6 +135,7 @@ function makeFakeBrowserWindow() {
     window: window as unknown as Electron.BrowserWindow,
     getBounds: window.getBounds,
     getNormalBounds: window.getNormalBounds,
+    hide: window.hide, // fork: restart-continuity
     isDestroyed: window.isDestroyed,
     isFullScreen: window.isFullScreen,
     isMaximized: window.isMaximized,
@@ -1190,7 +1192,7 @@ describe("DesktopWindow", () => {
         if (!close) {
           return yield* Effect.die("window close listener was not registered");
         }
-        close();
+        close({ preventDefault: vi.fn() }); // fork: restart-continuity
         yield* Effect.promise(() => Promise.resolve());
 
         assert.deepEqual(mainWindowBoundsUpdates, [{ x: 220, y: 140, width: 1380, height: 920 }]);
@@ -1296,7 +1298,7 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("window lifecycle listeners were not registered");
         }
 
-        close();
+        close({ preventDefault: vi.fn() }); // fork: restart-continuity
         yield* Effect.promise(() => Promise.resolve());
         assert.deepEqual(mainWindowBoundsUpdates, []);
 
@@ -1459,7 +1461,7 @@ describe("DesktopWindow", () => {
         if (!close) {
           return yield* Effect.die("window close listener was not registered");
         }
-        close();
+        close({ preventDefault: vi.fn() }); // fork: restart-continuity
         yield* Deferred.await(writeStarted);
         fakeWindow.isDestroyed.mockReturnValue(true);
 
@@ -1482,6 +1484,55 @@ describe("DesktopWindow", () => {
             height: 930,
           },
         ]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  // fork: restart-continuity
+  it.effect("hides the macOS main window on close until a quit starts", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const revealed: Electron.BrowserWindow[] = [];
+      const layer = layerTest({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        onReveal: (window) => revealed.push(window),
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        const state = yield* DesktopState.DesktopState;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        const close = fakeWindow.windowListeners.get("close");
+        if (!close) {
+          return yield* Effect.die("window close listener was not registered");
+        }
+
+        const userClose = { preventDefault: vi.fn() };
+        close(userClose);
+        assert.equal(userClose.preventDefault.mock.calls.length, 1);
+        assert.equal(fakeWindow.hide.mock.calls.length, 1);
+
+        // The Dock brings back the same window instead of building a new one.
+        yield* desktopWindow.activate;
+        assert.deepEqual(revealed, [fakeWindow.window]);
+        assert.equal(yield* Ref.get(createCount), 1);
+
+        fakeWindow.isFullScreen.mockReturnValue(true);
+        close({ preventDefault: vi.fn() });
+        assert.deepEqual(fakeWindow.setFullScreen.mock.calls.at(-1), [false]);
+        assert.equal(fakeWindow.hide.mock.calls.length, 1);
+        fakeWindow.windowListeners.get("leave-full-screen")?.();
+        assert.equal(fakeWindow.hide.mock.calls.length, 2);
+
+        yield* Ref.set(state.quitting, true);
+        const quitClose = { preventDefault: vi.fn() };
+        close(quitClose);
+        assert.equal(quitClose.preventDefault.mock.calls.length, 0);
+        assert.equal(fakeWindow.hide.mock.calls.length, 2);
       }).pipe(Effect.provide(layer));
     }),
   );
