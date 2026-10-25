@@ -1,11 +1,15 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { makeThreadShellFixture } from "../../test-fixtures";
+
 vi.mock("react-native", () => ({ View: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../../state/use-thread-detail", () => ({ useThreadVisibleTurnItems: () => [] }));
+vi.mock("../../state/threads", () => ({ threadEnvironment: { updateMetadata: null } }));
+vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => async () => null }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -13,13 +17,15 @@ vi.mock("../../components/ui/Button", () => ({
   Button: ({
     label,
     loading,
+    disabled,
     onPress,
   }: {
     label: string;
-    loading: boolean;
+    loading?: boolean;
+    disabled?: boolean;
     onPress: () => void;
   }) => (
-    <button disabled={loading} onClick={onPress}>
+    <button disabled={loading || disabled} onClick={onPress}>
       {label}
     </button>
   ),
@@ -31,6 +37,7 @@ vi.mock("../../components/ui/Notice", () => ({
 
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ThreadRecoveryNotice } from "./ThreadRecoveryNotice";
+import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
 
 type Props = Parameters<typeof ThreadRecoveryNotice>[0];
 let root: Root;
@@ -104,7 +111,6 @@ describe("queue resume recovery", () => {
   });
 });
 
-// fork: failed-run-retry
 describe("failed run recovery", () => {
   it("retries the failed run before its held queue and says when that fails", async () => {
     const attempt = Promise.withResolvers<void>();
@@ -124,6 +130,65 @@ describe("failed run recovery", () => {
     });
     expect(container.textContent).toContain("Could not continue the run. Try again.");
     expect(button().disabled).toBe(false);
+  });
+});
+
+describe("usage limit recovery", () => {
+  const failedAt = "2026-10-25T10:00:00.000Z";
+  const limitedThread = makeThreadShellFixture({
+    environmentId: EnvironmentId.make("computer"),
+    latestRun: {
+      runId: RunId.make("limited-run"),
+      status: "failed",
+      requestedAt: failedAt,
+      startedAt: failedAt,
+      completedAt: failedAt,
+      assistantMessageId: null,
+    },
+    runtime: {
+      status: "failed",
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "Codex",
+      lastError: "Usage limit reached.",
+      lastErrorClass: "usage_limit",
+      usageLimitResetAt: null,
+      updatedAt: failedAt,
+    },
+  });
+
+  it("retries a limit with no reset time now, and stays usable after a failed try", async () => {
+    const first = Promise.withResolvers<void>();
+    const onRetry = vi
+      .fn<() => Promise<void>>()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(undefined);
+    await act(() =>
+      root.render(
+        <UsageLimitRecoveryCard
+          thread={limitedThread}
+          environmentId={limitedThread.environmentId}
+          onRetry={onRetry}
+        />,
+      ),
+    );
+    expect(container.textContent).toContain("did not report a reset time");
+    expect(button().textContent).toBe("Retry now");
+
+    await act(() => button().click());
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(button().disabled).toBe(true);
+
+    await act(async () => {
+      first.reject(null);
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Could not retry the run. Try again.");
+    expect(button().disabled).toBe(false);
+
+    await act(() => button().click());
+    expect(onRetry).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("Could not retry the run.");
   });
 });
 

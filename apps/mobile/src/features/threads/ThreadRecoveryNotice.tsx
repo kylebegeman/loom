@@ -15,7 +15,6 @@ import {
   resolveWorkspacePreparationError,
 } from "./threadRecoveryPresentation";
 
-// fork: failed-run-retry
 export interface ContinuableRunAction {
   readonly failed: boolean;
   readonly onContinue: () => Promise<void>;
@@ -35,7 +34,7 @@ export function ThreadRecoveryNotice(props: {
   readonly onReviewFiles?: () => void;
   readonly onResumeQueue: (() => Promise<void>) | null;
   /** Present while the latest run stopped or failed in a way it can continue from. */
-  readonly continuableRun?: ContinuableRunAction | null; // fork: failed-run-retry
+  readonly continuableRun?: ContinuableRunAction | null;
 }) {
   const delivery = useAtomValue(threadOutboxDeliveryAtom);
   const items = useThreadVisibleTurnItems(props.threadRef);
@@ -53,16 +52,14 @@ export function ThreadRecoveryNotice(props: {
     }),
     queueHeld: props.onResumeQueue !== null,
     canOperate: props.canOperate,
-    // fork: failed-run-retry
     stoppedRun: props.continuableRun ? (props.continuableRun.failed ? "failed" : "interrupted") : null,
   });
   const [resuming, setResuming] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   if (presentation === null) return null;
-  // fork: failed-run-retry
   const continuesRun = presentation.action === "resume-run" || presentation.action === "retry-run";
   const resume = async () => {
-    const start = continuesRun ? (props.continuableRun?.onContinue ?? null) : props.onResumeQueue; // fork: failed-run-retry
+    const start = continuesRun ? (props.continuableRun?.onContinue ?? null) : props.onResumeQueue;
     if (resuming || start === null) return;
     setResuming(true);
     setResumeError(null);
@@ -72,7 +69,7 @@ export function ThreadRecoveryNotice(props: {
       setResumeError(
         error instanceof Error
           ? error.message
-          : continuesRun // fork: failed-run-retry
+          : continuesRun
             ? "Could not continue the run. Try again."
             : "Could not resume the queue. Try again.",
       );
@@ -106,9 +103,9 @@ export function ThreadRecoveryNotice(props: {
             label={
               presentation.action === "resume"
                 ? "Resume queue"
-                : presentation.action === "retry-run" // fork: failed-run-retry
+                : presentation.action === "retry-run"
                   ? "Retry"
-                  : presentation.action === "resume-run" // fork: failed-run-retry
+                  : presentation.action === "resume-run"
                     ? "Resume"
                     : presentation.action === "connection"
                       ? "Connection settings"
@@ -117,9 +114,9 @@ export function ThreadRecoveryNotice(props: {
                         : "Reconnect"
             }
             tone="text"
-            loading={(presentation.action === "resume" || continuesRun) && resuming} // fork: failed-run-retry
+            loading={(presentation.action === "resume" || continuesRun) && resuming}
             onPress={
-              presentation.action === "resume" || continuesRun // fork: failed-run-retry
+              presentation.action === "resume" || continuesRun
                 ? () => void resume()
                 : presentation.action === "connection"
                   ? props.onOpenConnection

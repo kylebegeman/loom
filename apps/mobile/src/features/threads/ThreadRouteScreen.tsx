@@ -628,7 +628,7 @@ function ThreadRouteContent(
   };
 
   // fork: failed-run-retry
-  // Continues as the web Resume does. A usage limit keeps its own card, which resumes at the reset.
+  // Continues as the web Resume does. A usage limit offers it on its own card, beside resume at reset.
   const continuable =
     !selectedThread || selectedThreadDetail === null
       ? null
@@ -659,13 +659,18 @@ function ThreadRouteContent(
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
     if (composer.queueHeld) await handleResumeQueue();
   };
+  const limited = continuable?.failure?.class === "usage_limit";
   const continuableRunAction =
-    continuable === null || continuable.failure?.class === "usage_limit"
+    continuable === null || limited
       ? null
       : {
           failed: continuable.failure !== null,
           onContinue: () => handleContinueRun(continuable.run.id),
         };
+  const retryLimitedRun =
+    continuable !== null && limited && canOperateThread
+      ? () => handleContinueRun(continuable.run.id)
+      : null;
 
   const handleOpenTerminal = (nextTerminalId?: string | null) => {
     terminalDebugLog("terminal-menu:open-existing", {
@@ -1063,6 +1068,7 @@ function ThreadRouteContent(
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
           onResumeQueue={composer.queueHeld ? handleResumeQueue : null}
           continuableRun={continuableRunAction} // fork: failed-run-retry
+          onRetryLimitedRun={retryLimitedRun} // fork: failed-run-retry
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}

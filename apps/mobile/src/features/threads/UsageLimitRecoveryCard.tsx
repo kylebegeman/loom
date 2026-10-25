@@ -13,9 +13,12 @@ import { useAtomCommand } from "../../state/use-atom-command";
 export function UsageLimitRecoveryCard({
   thread,
   environmentId,
+  onRetry = null, // fork: failed-run-retry
 }: {
   thread: EnvironmentThreadShell;
   environmentId: EnvironmentId;
+  /** Continues the limited run now, for when the limit lifted early or never reported a reset. */
+  onRetry?: (() => Promise<void>) | null; // fork: failed-run-retry
 }) {
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
   const [pending, setPending] = useState(false);
@@ -85,6 +88,18 @@ export function UsageLimitRecoveryCard({
       setError(cause instanceof Error ? cause.message : "Could not change limit recovery.");
     }
   }
+  // fork: failed-run-retry
+  async function retry() {
+    if (!onRetry || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onRetry();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not retry the run. Try again.");
+    }
+    setPending(false);
+  }
   return (
     <View className="mx-3 mb-2 gap-2 rounded-xl border border-warning-foreground/25 bg-screen p-3">
       <Text className="text-sm text-warning-foreground">
@@ -107,6 +122,15 @@ export function UsageLimitRecoveryCard({
             onPress={() => void toggle("snooze")}
           />
         </View>
+      ) : null}
+      {/* fork: failed-run-retry */}
+      {onRetry ? (
+        <Button
+          label="Retry now"
+          tone="secondary"
+          disabled={pending}
+          onPress={() => void retry()}
+        />
       ) : null}
       {error ? (
         <Text accessibilityRole="alert" className="text-sm text-destructive">

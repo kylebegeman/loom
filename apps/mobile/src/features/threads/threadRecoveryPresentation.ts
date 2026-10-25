@@ -9,8 +9,8 @@ export interface ThreadRecoveryPresentation {
     | "connection"
     | "resume"
     | "files"
-    | "resume-run" // fork: failed-run-retry
-    | "retry-run" // fork: failed-run-retry
+    | "resume-run"
+    | "retry-run"
     | null;
   readonly danger?: boolean;
 }
@@ -32,7 +32,7 @@ export function resolveThreadRecoveryPresentation(input: {
   readonly queueHeld: boolean;
   readonly canOperate: boolean;
   /** How the latest run ended, when it can continue from there. */
-  readonly stoppedRun?: "interrupted" | "failed" | null; // fork: failed-run-retry
+  readonly stoppedRun?: "interrupted" | "failed" | null;
 }): ThreadRecoveryPresentation | null {
   const connected = input.connectionState === "connected";
   const count = input.queuedMessages.length;
@@ -139,7 +139,6 @@ export function resolveThreadRecoveryPresentation(input: {
       action: "files",
     };
   }
-  // fork: failed-run-retry
   if (input.stoppedRun) {
     const failed = input.stoppedRun === "failed";
     return {

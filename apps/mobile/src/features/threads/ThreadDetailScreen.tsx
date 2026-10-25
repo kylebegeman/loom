@@ -229,6 +229,7 @@ export interface ThreadDetailScreenProps {
   /** Present while the thread's queue is held. */
   readonly onResumeQueue: (() => Promise<void>) | null;
   readonly continuableRun: ContinuableRunAction | null; // fork: failed-run-retry
+  readonly onRetryLimitedRun: (() => Promise<void>) | null; // fork: failed-run-retry
   readonly onSendMessage: (followUp?: ActiveTurnComposerAction) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -1300,6 +1301,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                     key={props.selectedThread.latestRun?.runId}
                     thread={props.selectedThread}
                     environmentId={props.environmentId}
+                    onRetry={props.onRetryLimitedRun} // fork: failed-run-retry
                   />
                   {props.feedbackSubmissions.map((submission) => (
                     <ComposerFeedback

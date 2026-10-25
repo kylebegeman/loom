@@ -127,7 +127,6 @@ describe("thread interruption recovery presentation", () => {
     });
   });
 
-  // fork: failed-run-retry
   it("offers to continue a stopped or failed run, ahead of its held queue", () => {
     expect(
       resolveThreadRecoveryPresentation({ ...ready, stoppedRun: "interrupted" }),
