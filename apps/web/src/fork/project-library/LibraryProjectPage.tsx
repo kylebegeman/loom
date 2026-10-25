@@ -1,3 +1,5 @@
+import { TidyProjectDialog } from "./TidyProjectDialog";
+import { projectEntries } from "@t3tools/client-runtime/fork";
 import { ProjectWorkstreams } from "./ProjectWorkstreams";
 import { ProjectBlueprint } from "./ProjectBlueprint";
 import { ProjectAttention } from "./ProjectAttention";
@@ -163,6 +165,7 @@ function ProjectView({
 }) {
   const navigate = useNavigate();
   const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
+  const [tidying, setTidying] = useState(false);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
@@ -293,6 +296,7 @@ function ProjectView({
         onSaved={library.refresh}
         onNewConversation={startConversation}
         onConversationOptions={() => setConversation({})}
+        onTidy={() => setTidying(true)}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
@@ -518,6 +522,16 @@ function ProjectView({
           }}
         />
       ) : null}
+      {tidying ? (
+        <TidyProjectDialog
+          entry={
+            projectEntries([project], copies, { threads, nextOffset: null }, localProjects)[0]!
+          }
+          now={now}
+          onChanged={library.refresh}
+          onClose={() => setTidying(false)}
+        />
+      ) : null}
       {releasing ? (
         <ReleaseCopyDialog
           copy={releasing}
@@ -582,6 +596,7 @@ function ProjectHero({
   onSaved,
   onNewConversation,
   onConversationOptions,
+  onTidy,
 }: {
   readonly project: LibraryProject;
   readonly localIcon: LocalProjectIcon | null;
@@ -599,6 +614,7 @@ function ProjectHero({
   readonly onSaved: () => void;
   readonly onNewConversation: () => void;
   readonly onConversationOptions: () => void;
+  readonly onTidy: () => void;
 }) {
   const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
   const canArchive = useLibraryPermission(projectLibrary.archiveProject, authorityId);
@@ -707,6 +723,7 @@ function ProjectHero({
                 <MenuItem disabled={!update.canEdit} onClick={() => onEditingBriefChange(true)}>
                   Edit brief
                 </MenuItem>
+                <MenuItem onClick={onTidy}>Tidy...</MenuItem>
                 <MenuSeparator />
                 <MenuItem
                   disabled={!canArchive || !connected}

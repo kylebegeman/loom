@@ -1,3 +1,4 @@
+import { CopyRepairActions } from "./CopyRepairActions";
 import { randomUUID } from "~/lib/utils";
 import { useRef, useState } from "react";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
@@ -37,6 +38,25 @@ export function ReleaseCopyDialog({
   const requestIds = useRef({ release: randomUUID(), register: randomUUID() });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const disabledReason = busy
+    ? "Removal is in progress."
+    : !allowed
+      ? "You do not have permission to remove files on this computer."
+      : !canRegister
+        ? "You do not have permission to register copies in the Library."
+        : !authority.connected || !authority.authorityId
+          ? "Connect to your Library to remove these files."
+          : host?.connection.phase !== "connected"
+            ? `${host?.label ?? "This computer"} is offline.`
+            : status.isPending
+              ? "Checking these files before removal."
+              : removalBlockers.length
+                ? "Resolve the problems below before removing these files."
+                : !status.data?.reviewToken &&
+                    status.data?.copy.state !== "released" &&
+                    status.data?.copy.registered !== false
+                  ? "Refresh the status to review these files before removal."
+                  : null;
   const submit = async () => {
     const authorityId = authority.authorityId;
     const data = status.data;
@@ -98,28 +118,24 @@ export function ReleaseCopyDialog({
           <Button variant="outline" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={
-              busy ||
-              !allowed ||
-              !canRegister ||
-              !authority.connected ||
-              host?.connection.phase !== "connected" ||
-              status.isPending ||
-              removalBlockers.length > 0 ||
-              (!status.data?.reviewToken &&
-                status.data?.copy.state !== "released" &&
-                status.data?.copy.registered !== false)
-            }
-            onClick={() => void submit()}
-          >
-            {busy
-              ? "Removing..."
-              : copy.ownership === "borrowed"
-                ? "Stop using folder"
-                : "Remove files"}
-          </Button>
+          <div className="flex max-w-sm flex-col items-end gap-1">
+            <Button
+              variant="destructive"
+              disabled={disabledReason !== null}
+              onClick={() => void submit()}
+            >
+              {busy
+                ? "Removing..."
+                : copy.ownership === "borrowed"
+                  ? "Stop using folder"
+                  : "Remove files"}
+            </Button>
+            {disabledReason ? (
+              <p role="status" className="text-right text-xs text-muted-foreground">
+                {disabledReason}
+              </p>
+            ) : null}
+          </div>
         </>
       }
     >
@@ -137,7 +153,15 @@ export function ReleaseCopyDialog({
         {removalBlockers.length ? (
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {removalBlockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
+              <li key={blocker}>
+                <p>{blocker}</p>
+                <CopyRepairActions
+                  copy={copy}
+                  threads={status.data?.releaseBlockerThreads ?? []}
+                  blocker={blocker}
+                  onOpen={onClose}
+                />
+              </li>
             ))}
           </ul>
         ) : null}

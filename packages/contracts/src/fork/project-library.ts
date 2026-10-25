@@ -488,6 +488,15 @@ export const LibraryCopyStatus = Schema.Struct({
    * stop a snapshot, which never deletes anything. Absent from computers that predate them.
    */
   releaseBlockers: Schema.optional(Schema.Array(Schema.String)),
+  releaseBlockerThreads: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        threadId: ThreadId,
+        title: Schema.String,
+        worktreePath: Schema.String,
+      }),
+    ),
+  ),
   reviewToken: Schema.NullOr(Schema.String),
   /** Per-repository health, present when the copy's computer can read it. */
   health: Schema.optional(LibraryCopyHealth),

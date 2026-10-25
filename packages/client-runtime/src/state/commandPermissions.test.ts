@@ -538,3 +538,28 @@ it.effect("interrupts document-lived commands when their final reader closes", (
     }),
   ),
 );
+
+// fork: project-lifecycle
+it.effect.each([
+  [WS_METHODS.checkpointRestoreState, AuthOrchestrationReadScope],
+  [WS_METHODS.checkpointUndoRestore, AuthOrchestrationOperateScope],
+] as const)("guards checkpoint operation %s", ([method, scope]) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const policy = createCommandPermissions(runtime, method);
+      expect(policy.requiredScopes()).toEqual([scope]);
+      registry.set(sessions(env), AsyncResult.success(grant(false)));
+      expect(registry.get(policy.permissionAtom(env))).toBe(false);
+      expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+        "EnvironmentAuthorizationError",
+      );
+      registry.set(
+        sessions(env),
+        AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
+      );
+      yield* policy.authorize(registry, env);
+      expect(registry.get(policy.permissionAtom(env))).toBe(true);
+    }),
+  ),
+);

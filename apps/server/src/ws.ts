@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import * as CheckpointRollbackService from "./orchestration-v2/CheckpointRollbackService.ts";
 import { computerNameConfigUpdates } from "./fork/computer-naming/config.ts"; // fork: computer-naming
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -94,6 +96,7 @@ import {
   type PullRequestRef,
   WS_METHODS,
   WsRpcGroup,
+  CheckpointRestoreRpcGroup, // fork: project-lifecycle
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -546,7 +549,22 @@ function projectFileFailureContext(
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
-const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+// fork: project-lifecycle -- one handler map for every RPC exceeds the compiler's instantiation
+// limit, which surfaces only as `any` requirements in server.ts (TS2589 shows with --checkers 1).
+const ServerWsRpcGroup = WsRpcGroup.omit(
+  WS_METHODS.checkpointRestoreState,
+  WS_METHODS.checkpointUndoRestore,
+).middleware(RpcInstrumentation);
+const ServerCheckpointRestoreRpcGroup = CheckpointRestoreRpcGroup.middleware(RpcInstrumentation);
+const layerCheckpointRestoreRpc = ServerCheckpointRestoreRpcGroup.toLayer(
+  Effect.gen(function* () {
+    const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+    return ServerCheckpointRestoreRpcGroup.of({
+      [WS_METHODS.checkpointRestoreState]: (input) => checkpointRollback.restoreState(input),
+      [WS_METHODS.checkpointUndoRestore]: (input) => checkpointRollback.undoRestore(input),
+    });
+  }),
+);
 // Replaying each intervening event costs a shell refetch; past this gap a
 // single O(active-threads) snapshot is cheaper and bounded.
 const SHELL_RESUME_MAX_GAP = 1_000;
@@ -2412,7 +2430,11 @@ export const layerWsRpc = (
             const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
             return { keybindings: keybindingsConfig, issues: [] };
           }),
-        [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
+        // fork: project-lifecycle
+        [WS_METHODS.serverRunStorageCleanup]: (input) =>
+          input.removeOrphanPath === undefined
+            ? storageCleanup.runNow
+            : storageCleanup.removeOrphan(input.removeOrphanPath),
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.serverGetSettings]: (_input) =>
@@ -3218,7 +3240,10 @@ export const layer = Layer.unwrap(
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           // fork: ext-core
           yield* RpcServer.make(
-            ServerWsRpcGroup.merge(ForkRpcGroup.middleware(RpcInstrumentation)),
+            ServerWsRpcGroup.merge(
+              ServerCheckpointRestoreRpcGroup, // fork: project-lifecycle
+              ForkRpcGroup.middleware(RpcInstrumentation),
+            ),
             WS_RPC_SERVER_OPTIONS,
           ).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
@@ -3257,6 +3282,7 @@ export const layer = Layer.unwrap(
               heldSession, // fork: identity-renewal
             ).pipe(
               Layer.merge(makeForkRpcLayer(session)), // fork: ext-core
+              Layer.merge(layerCheckpointRestoreRpc), // fork: project-lifecycle
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.

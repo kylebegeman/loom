@@ -1,3 +1,14 @@
+// fork: project-lifecycle
+import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type StorageCleanupReportEntry,
+} from "@t3tools/contracts";
+import { useThreadActions } from "../../hooks/useThreadActions";
+import { useThreadShells } from "../../state/entities";
+import { useEnvironmentScope } from "../../state/session";
 import { ProjectCheckoutSettings } from "../../fork/project-checkout/ProjectCheckoutSettings"; // fork: project-checkout-management
 // fork: mini-native-retention
 import type {
@@ -194,9 +205,13 @@ function lastRunSummary(
 function CleanupResults({
   report,
   environmentLabel,
+  // fork: project-lifecycle
+  environmentId,
 }: {
   report: StorageCleanupReport;
   environmentLabel: string;
+  // fork: project-lifecycle
+  environmentId: EnvironmentId;
 }) {
   return (
     <>
@@ -247,20 +262,24 @@ function CleanupResults({
               </span>
             }
             control={
-              (entry.outcome === "removed" ||
-                (entry.outcome === "kept" && entry.bytes !== null)) && (
-                <span className="text-xs text-muted-foreground">
-                  {[
-                    // fork: mini-native-retention
-                    entry.kind !== "worktree" && entry.kind !== "scratch" && entry.files !== null
-                      ? `${entry.files.toLocaleString()} ${entry.files === 1 ? "file" : "files"}`
-                      : null,
-                    entry.bytes !== null ? formatBytes(entry.bytes) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              )
+              // fork: project-lifecycle
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <CleanupRowActions environmentId={environmentId} entry={entry} />
+                {(entry.outcome === "removed" ||
+                  (entry.outcome === "kept" && entry.bytes !== null)) && (
+                  <span className="text-xs text-muted-foreground">
+                    {[
+                      // fork: mini-native-retention
+                      entry.kind !== "worktree" && entry.kind !== "scratch" && entry.files !== null
+                        ? `${entry.files.toLocaleString()} ${entry.files === 1 ? "file" : "files"}`
+                        : null,
+                      entry.bytes !== null ? formatBytes(entry.bytes) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                )}
+              </div>
             }
           />
         );
@@ -275,6 +294,89 @@ function CleanupResults({
           {environmentLabel}: Nothing needed cleanup.
         </p>
       )}
+    </>
+  );
+}
+
+// fork: project-lifecycle
+function CleanupRowActions({
+  environmentId,
+  entry,
+}: {
+  environmentId: EnvironmentId;
+  entry: StorageCleanupReportEntry;
+}) {
+  const navigate = useNavigate();
+  const run = useAtomCommand(serverEnvironment.runStorageCleanup);
+  const allowed = useAtomValue(serverEnvironment.runStorageCleanup.permissionAtom(environmentId));
+  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const actions = useThreadActions();
+  const threads = useThreadShells();
+  const thread = threads.find(
+    (thread) => thread.environmentId === environmentId && thread.id === entry.threadId,
+  );
+  const [pending, setPending] = useState(false);
+  if (entry.kind !== "worktree" || entry.outcome !== "kept") return null;
+  const remove = async () => {
+    if (!entry.path || pending) return;
+    setPending(true);
+    try {
+      const result = await run({ environmentId, input: { removeOrphanPath: entry.path } });
+      if (result._tag === "Success") {
+        const row = result.value.entries.find((row) => row.path === entry.path);
+        toastManager.add({
+          type: row?.outcome === "removed" ? "success" : "error",
+          title: row?.reason ?? "Worktree removal did not complete",
+        });
+      }
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <>
+      {entry.threadId ? (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId, threadId: entry.threadId! },
+            })
+          }
+        >
+          Open conversation
+        </Button>
+      ) : null}
+      {thread &&
+      threadRuntimeCanArchive(thread.runtime) &&
+      thread.settledOverride !== "settled" &&
+      thread.archivedAt === null ? (
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={!canOperate || pending}
+          onClick={() => {
+            setPending(true);
+            void actions
+              .settleThread({ environmentId, threadId: thread.id })
+              .finally(() => setPending(false));
+          }}
+        >
+          Settle
+        </Button>
+      ) : null}
+      {entry.canRemove && entry.threadId === null ? (
+        <Button
+          size="xs"
+          variant="destructive-outline"
+          disabled={!allowed || pending}
+          onClick={() => void remove()}
+        >
+          {pending ? "Removing..." : "Remove"}
+        </Button>
+      ) : null}
     </>
   );
 }
@@ -427,6 +529,8 @@ function CleanupSection() {
                 <CleanupResults
                   key={environment.environmentId}
                   report={report}
+                  // fork: project-lifecycle
+                  environmentId={environment.environmentId}
                   environmentLabel={label}
                 />
               ),

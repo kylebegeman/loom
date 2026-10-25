@@ -1,3 +1,6 @@
+// fork: project-lifecycle
+import type { PendingRevert } from "./chat/ChatOverlayHosts";
+import { CheckpointScopeId } from "@t3tools/contracts";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
@@ -1119,6 +1122,13 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const revertThreadCheckpoint = useOrchestrationCommand(threadEnvironment.revertCheckpoint, {
+    reportFailure: false,
+  });
+  // fork: project-lifecycle
+  const checkRestoreState = useAtomCommand(serverEnvironment.checkpointRestoreState, {
+    reportFailure: false,
+  });
+  const undoCheckpointRestore = useAtomCommand(serverEnvironment.undoCheckpointRestore, {
     reportFailure: false,
   });
   const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {
@@ -5968,6 +5978,62 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThreadId, composerRef]);
 
+  // fork: project-lifecycle -- wait for the persisted rollback before offering its recovery token.
+  const showRestoreUndo = async () => {
+    if (!activeThread) return;
+    const state = await checkRestoreState({ environmentId, input: { threadId: activeThread.id } });
+    if (state._tag !== "Success" || state.value.undoToken === null) return;
+    const undoToken = state.value.undoToken;
+    const id = toastManager.add({
+      type: "success",
+      title: "Files restored",
+      timeout: 0,
+      description: "Undo restores your previous files. Conversation history stays rewound.",
+      actionProps: {
+        children: "Undo file restore",
+        onClick: async () => {
+          const result = await undoCheckpointRestore({
+            environmentId,
+            input: { threadId: activeThread.id, undoToken },
+          });
+          if (result._tag === "Success") {
+            toastManager.close(id);
+            toastManager.add({ type: "success", title: "File restore undone" });
+          } else if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add({
+              type: "error",
+              title: "Could not undo the restore",
+              description: error instanceof Error ? error.message : "Try again.",
+            });
+          }
+        },
+      },
+    });
+  };
+  const openCheckedRevert = async (pending: Omit<PendingRevert, "canRestoreFiles" | "reason">) => {
+    if (!activeThread) return;
+    const result = await checkRestoreState({
+      environmentId,
+      input: {
+        threadId: activeThread.id,
+        ...(pending.scopeId === null ? {} : { scopeId: CheckpointScopeId.make(pending.scopeId) }),
+      },
+    });
+    if (currentRouteThreadKeyRef.current !== routeThreadKey) return;
+    openRevertConfirm(routeThreadKey, {
+      ...pending,
+      canRestoreFiles:
+        pending.checkpointId !== null && result._tag === "Success" && result.value.canRestoreFiles,
+      reason:
+        pending.checkpointId === null
+          ? "This checkpoint is not loaded. Reopen the message to restore its files."
+          : result._tag === "Success"
+            ? result.value.reason
+            : "Could not check file restore safety. Reconnect and try again, or keep the current files.",
+    });
+  };
+
   const onRevertToTurnCount = async (
     turnCount: number,
     messageId: MessageId,
@@ -6003,7 +6069,14 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     if (restoreFiles === undefined) {
-      openRevertConfirm(routeThreadKey, { turnCount, messageId });
+      // fork: project-lifecycle
+      const checkpoint = findRevertCheckpoint(serverProjection?.checkpoints ?? [], turnCount);
+      await openCheckedRevert({
+        turnCount,
+        messageId,
+        checkpointId: checkpoint?.id ?? null,
+        scopeId: checkpoint?.scopeId ?? null,
+      });
       return;
     }
 
@@ -6034,6 +6107,8 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(activeThread.id, rewind.error);
       return;
     }
+    // fork: project-lifecycle
+    if (restoreFiles) await showRestoreUndo();
     if (currentRouteThreadKeyRef.current === routeThreadKey) {
       const nextPrompt = rewind.prompt;
       promptRef.current = nextPrompt;
@@ -6044,16 +6119,17 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);
-  const onConfirmRevert = (turnCount: number, messageId: MessageId, restoreFiles: boolean) => {
-    void onRevertToTurnCount(turnCount, messageId, restoreFiles);
-  };
-  const onConfirmRevertStable = useStableCallback(onConfirmRevert);
 
-  const onRollbackCheckpoint = async (input: {
-    readonly checkpointId: string;
-    readonly scopeId: string;
-  }) => {
-    if (!activeThread || isRevertingCheckpoint) return;
+  // fork: project-lifecycle
+  const onRollbackCheckpoint = async (
+    input: {
+      readonly checkpointId: string;
+      readonly scopeId: string;
+    },
+    restoreFiles?: boolean,
+  ) => {
+    // fork: project-lifecycle
+    if (!activeThread || isRevertingCheckpoint || !canOperateThread) return;
     if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
       setThreadError(
         activeThread.id,
@@ -6065,29 +6141,55 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
       return;
     }
-    const localApi = readLocalApi();
-    const confirmed =
-      localApi == null
-        ? window.confirm("Roll back this thread to the selected checkpoint?")
-        : await localApi.dialogs.confirm(
-            "Roll back this thread to the selected checkpoint?\nThis action cannot be undone.",
-          );
-    if (!confirmed) return;
+    // fork: project-lifecycle
+    const checkpoint = serverProjection?.checkpoints.find(
+      (candidate) => candidate.id === input.checkpointId,
+    );
+    if (!checkpoint) {
+      setThreadError(
+        activeThread.id,
+        "This checkpoint is no longer loaded. Reopen it and try again.",
+      );
+      return;
+    }
+    if (restoreFiles === undefined) {
+      await openCheckedRevert({
+        ...input,
+        messageId: null,
+        turnCount: checkpoint.appRunOrdinal ?? 0,
+      });
+      return;
+    }
 
     useComposerDraftStore.setState((store) => ({
       rewindingThreadKeys: new Set(store.rewindingThreadKeys).add(routeThreadKey),
     }));
     setThreadError(activeThread.id, null);
-    const result = await revertThreadCheckpoint({
-      environmentId,
-      input: {
-        threadId: activeThread.id,
-        checkpointId: input.checkpointId,
-        scopeId: input.scopeId,
-      },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
+    // fork: project-lifecycle
+    try {
+      const commandId = CommandId.make(randomUUID());
+      await waitForRevertedMessage(
+        routeThreadRef,
+        checkpoint.appRunOrdinal ?? 0,
+        commandId,
+        async () => {
+          const result = await revertThreadCheckpoint({
+            environmentId,
+            input: {
+              commandId,
+              threadId: activeThread.id,
+              checkpointId: input.checkpointId,
+              scopeId: input.scopeId,
+              restoreFiles,
+            },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        },
+        undefined,
+        { allowFilesOnly: true },
+      );
+      if (restoreFiles) await showRestoreUndo();
+    } catch (error) {
       setThreadError(
         activeThread.id,
         error instanceof Error ? error.message : "Failed to revert thread state.",
@@ -6100,10 +6202,25 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
 
-  const onForkFromRun = async (input: {
-    readonly sourceThreadId: ThreadId;
-    readonly runId: RunId;
-  }) => {
+  // fork: project-lifecycle
+  const onConfirmRevert = (pending: PendingRevert, restoreFiles: boolean) => {
+    if (pending.messageId !== null)
+      void onRevertToTurnCount(pending.turnCount, pending.messageId, restoreFiles);
+    else if (pending.checkpointId !== null && pending.scopeId !== null)
+      void onRollbackCheckpoint(
+        { checkpointId: pending.checkpointId, scopeId: pending.scopeId },
+        restoreFiles,
+      );
+  };
+  const onConfirmRevertStable = useStableCallback(onConfirmRevert);
+
+  // fork: project-lifecycle
+  const onForkFromRun = async (
+    input: { readonly sourceThreadId: ThreadId } & (
+      | { readonly runId: RunId; readonly checkpointId?: never }
+      | { readonly checkpointId: string; readonly runId?: never }
+    ),
+  ) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
@@ -6112,7 +6229,10 @@ export default function ChatView(props: ChatViewProps) {
       input: {
         sourceThreadId: input.sourceThreadId,
         targetThreadId,
-        runId: input.runId,
+        // fork: project-lifecycle
+        ...(input.checkpointId === undefined
+          ? { runId: input.runId }
+          : { checkpointId: input.checkpointId }),
         title: `${activeThread.title} fork`,
       },
     });
@@ -8929,7 +9049,15 @@ export default function ChatView(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
-      <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
+      {/* fork: project-lifecycle */}
+      <RevertConfirmHost
+        threadKey={routeThreadKey}
+        canOperate={canOperateThread}
+        onConfirm={onConfirmRevertStable}
+        onFork={(checkpointId) => {
+          if (activeThread) void onForkFromRun({ sourceThreadId: activeThread.id, checkpointId });
+        }}
+      />
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />

@@ -1087,6 +1087,67 @@ describe("subagent worktree ownership", () => {
 });
 
 describe("orphan worktree reports", () => {
+  // fork: project-lifecycle
+  it.live("removes only a clean unreferenced orphan and prunes its empty project folder", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fixture = yield* cleanupFixture();
+        fixture.setThreads([]);
+        const parent = `${fixture.config.worktreesDir}/orphan-project`;
+        const orphan = `${parent}/checkout`;
+        yield* fixture.command(fixture.repo, ["worktree", "add", "-b", "orphan-removal", orphan]);
+        yield* fixture.fs.utimes(orphan, 1, 1);
+        yield* fixture.fs.writeFileString(`${orphan}/tracked.txt`, "unsaved");
+        expect((yield* fixture.service.removeOrphan(orphan)).entries[0]?.outcome).toBe("kept");
+        expect(yield* fixture.fs.readFileString(`${orphan}/tracked.txt`)).toBe("unsaved");
+        yield* fixture.command(orphan, ["restore", "tracked.txt"]);
+        fixture.setStoredWorktreePaths([orphan]);
+        expect((yield* fixture.service.removeOrphan(orphan)).entries[0]?.outcome).toBe("kept");
+        fixture.setStoredWorktreePaths([]);
+        yield* fixture.fs.utimes(orphan, 1, 1);
+        const removed = (yield* fixture.service.removeOrphan(orphan)).entries[0];
+        expect(removed, JSON.stringify(removed)).toMatchObject({ outcome: "removed" });
+        expect(yield* fixture.fs.exists(parent)).toBe(false);
+        expect(
+          (yield* fixture.command(fixture.repo, [
+            "show-ref",
+            "--verify",
+            "refs/heads/orphan-removal",
+          ])).stdout,
+        ).toContain("orphan-removal");
+      }),
+    ),
+  );
+
+  // fork: project-lifecycle
+  it.live.each(["untracked", "ignored", "detached"])(
+    "preserves orphan work with %s files or commits",
+    (kind) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fixture = yield* cleanupFixture();
+          fixture.setThreads([]);
+          const orphan = `${fixture.config.worktreesDir}/preserve/${kind}`;
+          yield* fixture.command(fixture.repo, [
+            "worktree",
+            "add",
+            ...(kind === "detached" ? ["--detach"] : ["-b", `preserve-${kind}`]),
+            orphan,
+          ]);
+          if (kind === "ignored")
+            yield* fixture.fs.writeFileString(`${fixture.repo}/.git/info/exclude`, "keep.dat\n");
+          if (kind !== "detached")
+            yield* fixture.fs.writeFileString(`${orphan}/keep.dat`, "keep me");
+          yield* fixture.fs.utimes(orphan, 1, 1);
+          const report = yield* fixture.service.removeOrphan(orphan);
+          expect(report.entries[0]?.outcome).toBe("kept");
+          expect(yield* fixture.fs.exists(orphan)).toBe(true);
+          if (kind !== "detached")
+            expect(yield* fixture.fs.readFileString(`${orphan}/keep.dat`)).toBe("keep me");
+        }),
+      ),
+  );
+
   it.live("keeps orphan results visible when thread results fill the report", () =>
     runCleanupTest(
       Effect.gen(function* () {

@@ -83,8 +83,25 @@ export const layerSource = Layer.effect(
           timeout: "30 seconds",
           maxOutputBytes,
         })
-        .pipe(Effect.mapError(io));
-      if (result.code !== 0 || result.stdoutTruncated || result.stdoutInvalidUtf8)
+        .pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ProcessOutputLimitError"
+              ? new LibraryError({
+                  reason: "invalid",
+                  detail:
+                    "Document sources exceed the publication size limit. Narrow the sources in loom-documents.json.",
+                  cause,
+                })
+              : io(cause),
+          ),
+        );
+      if (result.stdoutTruncated)
+        return yield* new LibraryError({
+          reason: "invalid",
+          detail:
+            "Document sources exceed the publication size limit. Narrow the sources in loom-documents.json.",
+        });
+      if (result.code !== 0 || result.stdoutInvalidUtf8)
         return yield* new LibraryError({ reason: "io" });
       return result.stdout;
     });
@@ -126,7 +143,14 @@ export const layerSource = Layer.effect(
             )
       ).trim();
       if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(commit)) return yield* invalid();
-      const tree = yield* git(input.cwd, ["ls-tree", "-r", "-z", "-l", commit]);
+      const tree = yield* git(input.cwd, [
+        "ls-tree",
+        "-z",
+        "-l",
+        commit,
+        "--",
+        "loom-documents.json",
+      ]);
       const files = new Map<string, { oid: string; size: number }>();
       for (const entry of tree.split("\0")) {
         if (!entry) continue;
@@ -143,6 +167,35 @@ export const layerSource = Layer.effect(
         try: () => documentSources(rawManifest),
         catch: invalid,
       });
+      // ls-tree accepts literal paths, not globs. A wildcard inside a directory name
+      // requires its parent, while exact file sources can be read on their own.
+      const prefixes = [
+        ...new Set(
+          sources.map((source) => {
+            if (source.path !== undefined) return source.path;
+            const glob = source.glob!;
+            const wildcard = glob.search(/[?*[]/u);
+            if (wildcard < 0) return glob;
+            return glob.slice(0, glob.lastIndexOf("/", wildcard) + 1) || ".";
+          }),
+        ),
+      ];
+      files.clear();
+      if (prefixes.length > 0) {
+        const sourceTree = yield* git(input.cwd, [
+          "ls-tree",
+          "-r",
+          "-z",
+          "-l",
+          commit,
+          "--",
+          ...prefixes,
+        ]);
+        for (const entry of sourceTree.split("\0")) {
+          const parsed = /^(100644|100755) blob ([a-f0-9]{40,64})\s+(\d+)\t([\s\S]+)$/u.exec(entry);
+          if (parsed) files.set(parsed[4]!, { oid: parsed[2]!, size: Number(parsed[3]) });
+        }
+      }
       const documents: LibraryDocument[] = [];
       for (const [path, file] of files) {
         const source = sources.find((source) => matchesDocumentSource(path, source));

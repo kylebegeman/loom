@@ -1527,6 +1527,18 @@ const make = Effect.gen(function* () {
       contentsDigest,
       blockers: [...new Set(blockers)],
       releaseBlockers,
+      releaseBlockerThreads: [...linkedWorktrees]
+        .toSorted()
+        .slice(0, LISTED_WORKTREES)
+        .flatMap((worktreePath) => {
+          // One owner per listed worktree keeps old conversations from flooding the repair list.
+          const thread = [...snapshot.threads, ...snapshot.archivedThreads].find(
+            (candidate) => candidate.deletedAt === null && candidate.worktreePath === worktreePath,
+          );
+          return thread === undefined
+            ? []
+            : [{ threadId: thread.id, title: thread.title, worktreePath }];
+        }),
       reviewToken:
         blockers.length === 0
           ? yield* digest(

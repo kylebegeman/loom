@@ -1,3 +1,4 @@
+import { CopyRepairActions } from "./CopyRepairActions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { BrushCleaningIcon } from "lucide-react";
@@ -233,7 +234,7 @@ export function TidyProjectDialog({
           ? remaining.length || result.archive?.ok === false
             ? "Some of this needs another look. Everything listed below was left as it was."
             : "Done. The project and its saved conversations stay in your Library."
-          : "This project has been quiet for two weeks. Remove the copies that hold nothing unsaved, and archive the project if you are done with it for now."
+          : "Remove copies that hold nothing unsaved. Quiet projects can also be archived if you are done with them for now."
       }
       actions={
         result ? (
@@ -305,6 +306,7 @@ export function TidyProjectDialog({
                   warning: true,
                 }))}
                 hostLabel={hostLabel}
+                onOpen={onClose}
               />
             ) : null}
           </>
@@ -351,7 +353,9 @@ function CopyGroup({
   empty,
   rows,
   hostLabel,
+  onOpen,
 }: {
+  readonly onOpen?: () => void;
   readonly title: string;
   readonly hint: string;
   readonly empty?: string;
@@ -387,6 +391,7 @@ function CopyGroup({
               >
                 {detail}
               </p>
+              {warning && onOpen ? <CopyRepairActions copy={copy} onOpen={onOpen} /> : null}
             </li>
           ))}
         </ul>

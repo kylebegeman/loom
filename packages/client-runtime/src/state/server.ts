@@ -967,6 +967,15 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    // fork: project-lifecycle
+    checkpointRestoreState: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:checkpoint:restore-state",
+      tag: WS_METHODS.checkpointRestoreState,
+    }),
+    undoCheckpointRestore: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:checkpoint:undo-restore",
+      tag: WS_METHODS.checkpointUndoRestore,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

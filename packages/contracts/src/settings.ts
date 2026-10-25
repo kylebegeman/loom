@@ -1057,6 +1057,8 @@ export function shouldRecommendDatabaseCompaction(status: DatabaseStorageStatus)
 }
 
 export const StorageCleanupReportEntry = Schema.Struct({
+  // fork: project-lifecycle -- older hosts never offer removal without a safety review.
+  canRemove: Schema.optional(Schema.Boolean),
   kind: Schema.Literals(["worktree", "project", "scratch", "browser-artifacts", "logs"]),
   outcome: Schema.Literals(["removed", "kept", "failed"]),
   reason: Schema.String,

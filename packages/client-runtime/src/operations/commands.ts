@@ -206,12 +206,15 @@ export interface RevertThreadCheckpointInput extends ThreadCommandInput {
 
 export type StopThreadSessionInput = ThreadCommandInput;
 
-export interface ForkThreadFromRunInput extends CommandMetadata {
+// fork: project-lifecycle -- checkpoint forks use the same transfer command as run forks.
+export type ForkThreadFromRunInput = CommandMetadata & {
   readonly sourceThreadId: ThreadId;
   readonly targetThreadId: ThreadId;
-  readonly runId: RunId;
   readonly title?: string;
-}
+} & (
+    | { readonly runId: RunId; readonly checkpointId?: never }
+    | { readonly checkpointId: string; readonly runId?: never }
+  );
 
 export interface MergeThreadBackInput extends CommandMetadata {
   readonly sourceThreadId: ThreadId;
@@ -956,7 +959,11 @@ export const forkThreadFromRun = Effect.fn("EnvironmentCommands.forkThreadFromRu
     creationSource: input.creationSource ?? "web",
     sourceThreadId: input.sourceThreadId,
     targetThreadId: input.targetThreadId,
-    sourcePoint: { type: "run", runId: input.runId },
+    // fork: project-lifecycle
+    sourcePoint:
+      input.checkpointId === undefined
+        ? { type: "run", runId: input.runId }
+        : { type: "checkpoint", checkpointId: CheckpointId.make(input.checkpointId) },
     ...(input.title === undefined ? {} : { title: input.title }),
   });
 });

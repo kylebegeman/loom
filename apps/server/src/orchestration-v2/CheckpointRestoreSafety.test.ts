@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -108,6 +110,8 @@ it.effect.each([
       Layer.provide(
         Layer.mergeAll(
           NodeServices.layer,
+          // fork: project-lifecycle
+          Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
           ServerSettings.layerTest(),
           ThreadCommandExecutor.layer,

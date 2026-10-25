@@ -13,11 +13,13 @@ import { parseLoomConnectConfig } from "./connect-config.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "../../apps/desktop/src/updates/releaseNotes.ts";
 import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
+  capPublisherLog,
+  withBuildLog,
   assertReleasePin,
   buildEnvironment,
   connectReceipt,
   describePublisherConnect,
-  main,
+  main as publisherMain,
   parseUpdateArgs,
   installedUpdateRequirement,
   preparedConnect,
@@ -38,6 +40,9 @@ import {
   updateManifest,
   validateFeedConfig,
 } from "./updates.ts";
+
+const main = (command: string, args: readonly string[] = []) =>
+  publisherMain(command, args, { withBuildLog: (_record, body) => body() });
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -1217,4 +1222,29 @@ it("does not inherit interactive build or export overrides into automatic iOS de
   };
   expect(automaticIosEnvironment(env)).toEqual({ ASC_PROFILE: "some-profile", PATH: "/usr/bin" });
   expect(env.LOOM_IOS_BUILD_NUMBER).toBe("1");
+});
+
+describe("publisher logs", () => {
+  it("caps the launchd inode and keeps build output with its record", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-build-log-"));
+    try {
+      const mainLog = NodePath.join(directory, "updates.log");
+      await NodeFSP.writeFile(mainLog, "status");
+      await capPublisherLog(mainLog);
+      expect(await NodeFSP.readFile(mainLog, "utf8")).toBe("status");
+      const inode = (await NodeFSP.stat(mainLog)).ino;
+      await NodeFSP.truncate(mainLog, 11 * 1024 * 1024);
+      await capPublisherLog(mainLog);
+      expect((await NodeFSP.stat(mainLog)).size).toBe(0);
+      expect((await NodeFSP.stat(mainLog)).ino).toBe(inode);
+      const record = NodePath.join(directory, "record");
+      await withBuildLog(record, async () => "done");
+      expect(await NodeFSP.readFile(NodePath.join(record, "build.log"), "utf8")).toContain(
+        "Publisher run",
+      );
+      expect((await NodeFSP.stat(NodePath.join(record, "build.log"))).mode & 0o777).toBe(0o600);
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
 });

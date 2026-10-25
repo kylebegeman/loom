@@ -151,11 +151,16 @@ On web and desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
 leave workspace files as they are, or **Revert files too** to put the workspace back
 to its checkpoint from before that message. That also undoes edits you made yourself.
-File restore is only offered for threads running in a worktree, and it is
-refused when another thread or agent session also uses that directory, a folder
-inside it, or a folder that contains it, since
-restoring would erase their changes. A thread that works in the project directory
-rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
+
+<!-- fork: project-lifecycle -->
+
+File restore requires an isolated worktree. The dialog explains when another
+conversation or agent session shares the folder and disables file restore.
+Choose **Fork from here** to continue from the checkpoint in a separate worktree,
+or rewind the conversation while keeping the current files.
+After a file restore, **Undo file restore** recovers the files you had beforehand.
+Undo is available in the current server session while the agent is stopped and the files remain unchanged;
+it leaves the conversation rewound. The selected prompt and its attachments return to the composer for editing and
 resending. Any unsent draft stays above the restored prompt.
 
 This removes the selected message and later conversation from the active thread

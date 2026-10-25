@@ -22,7 +22,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+// fork: project-lifecycle
 const messageId = MessageId.make("message-1");
+const pending = {
+  turnCount: 2,
+  messageId,
+  checkpointId: "checkpoint-1",
+  scopeId: "scope-1",
+  canRestoreFiles: true,
+  reason: null,
+};
 const dialog = () => document.querySelector('[role="alertdialog"]');
 
 describe("RevertConfirmHost", () => {
@@ -30,25 +39,63 @@ describe("RevertConfirmHost", () => {
     const onConfirm = vi.fn();
     const host = (threadKey: string) => (
       <AppAtomRegistryProvider>
-        <RevertConfirmHost threadKey={threadKey} onConfirm={onConfirm} />
+        {/* fork: project-lifecycle */}
+        <RevertConfirmHost
+          threadKey={threadKey}
+          canOperate
+          onConfirm={onConfirm}
+          onFork={vi.fn()}
+        />
       </AppAtomRegistryProvider>
     );
     await act(() => root.render(host("env:a")));
 
-    await act(() => openRevertConfirm("env:b", { turnCount: 2, messageId }));
+    await act(() => openRevertConfirm("env:b", pending));
     expect(dialog()).toBeNull();
 
-    await act(() => openRevertConfirm("env:a", { turnCount: 2, messageId }));
+    await act(() => openRevertConfirm("env:a", pending));
     const keep = [...(dialog()?.querySelectorAll("button") ?? [])].find(
       (button) => button.textContent === "Revert and keep changes",
     );
     await act(() => keep?.click());
-    expect(onConfirm).toHaveBeenCalledExactlyOnceWith(2, messageId, false);
+    // fork: project-lifecycle
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith(pending, false);
     await vi.waitFor(() => expect(dialog()).toBeNull());
 
-    await act(() => openRevertConfirm("env:a", { turnCount: 3, messageId }));
+    await act(() => openRevertConfirm("env:a", { ...pending, turnCount: 3 }));
     expect(dialog()).not.toBeNull();
     await act(() => root.render(host("env:b")));
     await vi.waitFor(() => expect(dialog()).toBeNull());
   });
+});
+
+// fork: project-lifecycle
+it("explains shared workspace restrictions and forks without confirming a restore", async () => {
+  const onFork = vi.fn();
+  const onConfirm = vi.fn();
+  await act(() =>
+    root.render(
+      <AppAtomRegistryProvider>
+        <RevertConfirmHost
+          threadKey="env:shared"
+          canOperate
+          onConfirm={onConfirm}
+          onFork={onFork}
+        />
+      </AppAtomRegistryProvider>,
+    ),
+  );
+  await act(() =>
+    openRevertConfirm("env:shared", {
+      ...pending,
+      canRestoreFiles: false,
+      reason: "This workspace is shared.",
+    }),
+  );
+  expect(dialog()?.textContent).toContain("This workspace is shared.");
+  const buttons = [...(dialog()?.querySelectorAll("button") ?? [])];
+  expect(buttons.find((button) => button.textContent === "Revert files too")?.disabled).toBe(true);
+  await act(() => buttons.find((button) => button.textContent === "Fork from here")?.click());
+  expect(onFork).toHaveBeenCalledExactlyOnceWith("checkpoint-1");
+  expect(onConfirm).not.toHaveBeenCalled();
 });

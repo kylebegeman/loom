@@ -1075,6 +1075,8 @@ export async function waitForRevertedMessage(
   requestId: CommandId,
   revert: () => Promise<void>,
   timeoutMs = 120_000,
+  // fork: project-lifecycle
+  options: { readonly allowFilesOnly?: boolean } = {},
 ): Promise<void> {
   const threadAtom = environmentThreadDetails.stateAtom(threadRef);
   const readProjection = () => Option.getOrNull(appAtomRegistry.get(threadAtom).data);
@@ -1096,7 +1098,8 @@ export async function waitForRevertedMessage(
       return latest;
     return latest === undefined || run.ordinal > latest.ordinal ? run : latest;
   }, undefined);
-  if (witness === undefined) {
+  // fork: project-lifecycle
+  if (witness === undefined && !options.allowFilesOnly) {
     throw new Error("The thread has changed. Select a message to rewind again.");
   }
   return new Promise<void>((resolve, reject) => {
@@ -1120,8 +1123,14 @@ export async function waitForRevertedMessage(
         finish(new Error(failure.message));
         return;
       }
+      // fork: project-lifecycle -- this marker is committed after the provider and files finish.
+      if (accepted && thread.thread.rollbackCompletedRequestId === requestId) {
+        finish();
+        return;
+      }
       if (
         accepted &&
+        witness !== undefined &&
         thread.providerThreads.some(
           (providerThread) =>
             (providerThread.id === providerThreadId ||
