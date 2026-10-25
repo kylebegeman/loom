@@ -30,6 +30,13 @@ import {
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLibraryMigrations } from "../project-library/migrations.ts";
+import {
+  type ReachLibraryState,
+  ReachStore,
+  ReachStoreError,
+  ReachStoredComputer,
+  emptyReachLibraryState,
+} from "../reach/library/ReachStore.ts";
 import * as Directory from "./DirectoryService.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
@@ -138,7 +145,28 @@ interface Options {
   readonly library?: (url: string) => Response;
   /** Describes this computer, so the authority lists itself. */
   readonly describe?: boolean;
+  /** The Library's reach records, read on every call so a test can change them. */
+  readonly reach?: { state: ReachLibraryState; unreadable?: boolean };
 }
+
+const decodeReachComputer = Schema.decodeSync(ReachStoredComputer);
+const reachComputer = (overrides: Partial<typeof ReachStoredComputer.Encoded>) =>
+  decodeReachComputer({
+    seq: 1,
+    keyFingerprint: null,
+    hostname: null,
+    tunnelId: null,
+    dnsRecordId: null,
+    origin: null,
+    state: "ready",
+    lastError: null,
+    leftoverDnsRecordId: null,
+    publisherSessionId: null,
+    updatedAt: "2026-10-20T12:00:00.000Z",
+    lastEnsuredAt: null,
+    identity: null,
+    ...overrides,
+  });
 
 const run = <A, E>(
   options: Options,
@@ -174,9 +202,25 @@ const run = <A, E>(
         },
       }),
     });
+    const reach = options.reach;
+    const reachStore =
+      reach === undefined
+        ? Layer.empty
+        : Layer.succeed(
+            ReachStore,
+            ReachStore.of({
+              read: Effect.suspend(() =>
+                reach.unreadable === true
+                  ? Effect.fail(new ReachStoreError({ operation: "read" }))
+                  : Effect.succeed(reach.state),
+              ),
+              update: () => Effect.die(new Error("The directory never writes reach records.")),
+            }),
+          );
     const context = yield* Layer.build(
       Directory.layer.pipe(
         Layer.provide(options.describe === true ? descriptor : Layer.empty),
+        Layer.provide(reachStore),
         Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
         Layer.provide(
           ConfigProvider.layer(ConfigProvider.fromEnv({ env: options.env ?? AUTHORITY })),
@@ -231,7 +275,8 @@ describe("DirectoryService", () => {
         expect(listing.environments).toHaveLength(1);
         expect(listing.environments[0]).toMatchObject({
           environmentId: STUDIO,
-          routes: [{ kind: "public", url: "https://studio.example.com/" }],
+          // Without a ready reach record for it, a computer's public route is not listed.
+          routes: [],
           firstSeenAt: "2026-10-20T12:00:00.000Z",
           receivedAt: "2026-10-20T12:01:00.000Z",
         });
@@ -387,6 +432,144 @@ describe("DirectoryService", () => {
     ),
   );
 
+  it.effect("answers the key and label it pinned for a computer", () =>
+    run({}, (directory) =>
+      Effect.gen(function* () {
+        const stored = yield* directory.report({
+          environmentId: STUDIO,
+          request: yield* signed(reportOf()),
+        });
+        expect(yield* directory.pinned(STUDIO)).toEqual({
+          publicKey: studioKey.publicKey,
+          keyFingerprint: stored.keyFingerprint,
+          label: "Studio",
+        });
+        expect(yield* directory.pinned(LAPTOP)).toBeNull();
+      }),
+    ),
+  );
+
+  it.effect(
+    "lists a public route only as a ready reach hostname, and attests created resources",
+    () => {
+      const studioResource = `${LIBRARY}/computers/${STUDIO}`;
+      const reach = {
+        state: {
+          ...emptyReachLibraryState,
+          computers: {
+            [STUDIO]: reachComputer({
+              hostname: "studio-loom.reach.example.test",
+              identity: {
+                apiId: "api-1",
+                resource: studioResource,
+                state: "ready",
+                lastError: null,
+              },
+            }),
+            [LAPTOP]: reachComputer({
+              state: "removed",
+              hostname: "laptop-loom.reach.example.test",
+              identity: {
+                apiId: null,
+                resource: `${LIBRARY}/computers/${LAPTOP}`,
+                state: "failed",
+                lastError: "unavailable",
+              },
+            }),
+          },
+        },
+        unreadable: false,
+      };
+      const tailnet = { kind: "tailnet", url: "https://computer.example.ts.net/" } as const;
+      return run({ reach, describe: true }, (directory) =>
+        Effect.gen(function* () {
+          yield* directory.report({
+            environmentId: STUDIO,
+            request: yield* signed(
+              reportOf({
+                routes: [
+                  { kind: "public", url: "https://studio-loom.reach.example.test/" },
+                  { kind: "public", url: "https://studio.example.com/" },
+                  tailnet,
+                ],
+              }),
+            ),
+          });
+          yield* directory.report({
+            environmentId: LAPTOP,
+            request: yield* signed(
+              reportOf({
+                environmentId: LAPTOP,
+                label: "Laptop",
+                routes: [
+                  { kind: "public", url: "https://laptop-loom.reach.example.test/" },
+                  tailnet,
+                ],
+              }),
+              { key: laptopKey },
+            ),
+          });
+          const byId = (listing: DirectoryListing, environmentId: EnvironmentId) =>
+            listing.environments.find((environment) => environment.environmentId === environmentId);
+
+          const listing = yield* directory.list;
+          expect(byId(listing, STUDIO)).toMatchObject({
+            routes: [{ kind: "public", url: "https://studio-loom.reach.example.test/" }, tailnet],
+            identityResource: studioResource,
+          });
+          expect(byId(listing, LAPTOP)?.routes).toEqual([tailnet]);
+          expect(byId(listing, LAPTOP)).not.toHaveProperty("identityResource");
+          expect(byId(listing, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
+          expect(byId(listing, LIBRARY_ID)).not.toHaveProperty("identityResource");
+
+          // Records it cannot read attest nothing.
+          reach.unreadable = true;
+          const unread = yield* directory.list;
+          expect(byId(unread, STUDIO)?.routes).toEqual([tailnet]);
+          expect(byId(unread, STUDIO)).not.toHaveProperty("identityResource");
+          expect(byId(unread, LIBRARY_ID)?.routes).toEqual([{ kind: "public", url: LIBRARY }]);
+        }),
+      );
+    },
+  );
+
+  it.effect("keeps a computer with live reach until the Library removes its address", () => {
+    const reach = {
+      state: {
+        ...emptyReachLibraryState,
+        computers: { [STUDIO]: reachComputer({ hostname: "studio-loom.reach.example.test" }) },
+      },
+    };
+    const withState = (state: ReachStoredComputer["state"]) => {
+      reach.state = {
+        ...reach.state,
+        computers: { [STUDIO]: { ...reach.state.computers[STUDIO]!, state } },
+      };
+    };
+    return run({ reach }, (directory) =>
+      Effect.gen(function* () {
+        yield* directory.report({ environmentId: STUDIO, request: yield* signed(reportOf()) });
+        yield* directory.report({
+          environmentId: LAPTOP,
+          request: yield* signed(reportOf({ environmentId: LAPTOP }), { key: laptopKey }),
+        });
+        const forgetStudio = directory.forget({ kind: "environment", environmentId: STUDIO });
+        expect(yield* reasonOf(forgetStudio)).toBe("reach-active");
+        withState("failed");
+        expect(yield* reasonOf(forgetStudio)).toBe("reach-active");
+        withState("removing");
+        expect(yield* reasonOf(forgetStudio)).toBe("reach-active");
+
+        // A computer reach never set up is forgotten as before.
+        yield* directory.forget({ kind: "environment", environmentId: LAPTOP });
+
+        withState("removed-with-leftover");
+        yield* forgetStudio;
+        expect((yield* directory.list).environments).toEqual([]);
+      }),
+    );
+  });
+
   it.effect("lists the authority itself first", () =>
     run({ describe: true }, (directory) =>
       Effect.gen(function* () {
@@ -427,6 +610,7 @@ describe("DirectoryService", () => {
               yield* reasonOf(directory.forget({ kind: "environment", environmentId: STUDIO })),
             ).toBe("not-authority");
             expect(yield* reasonOf(directory.computers)).toBe("not-authority");
+            expect(yield* reasonOf(directory.pinned(STUDIO))).toBe("not-authority");
           }),
         );
       }

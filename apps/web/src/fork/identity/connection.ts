@@ -59,6 +59,7 @@ const register = Effect.fn("web.loomIdentity.register")(function* (
         httpBaseUrl: result.httpBaseUrl,
         wsBaseUrl: deriveWsBaseUrl(result.httpBaseUrl),
         ...(result.identity ? { identity: result.identity } : {}),
+        ...(result.resource === undefined ? {} : { identityResource: result.resource }),
       }),
       credential: new BearerConnectionCredential({
         token: result.accessToken,

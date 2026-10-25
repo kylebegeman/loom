@@ -1,4 +1,6 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { savedIdentitySignIn } from "@t3tools/client-runtime/fork";
 import { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -62,6 +64,13 @@ function IdentityContent({
   readonly initialAddress: string;
 }) {
   const connection = useSavedRemoteConnection(environmentId);
+  const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  const entry = environmentId === null ? undefined : catalog.entries.get(environmentId);
+  // The resource this computer first signed in with; a computer naming another is refused.
+  const expectedResource =
+    entry === undefined
+      ? undefined
+      : savedIdentitySignIn(entry, "native")?.request.expectedResource;
   const authority = useLibraryAuthority();
   const navigation = useNavigation();
   const register = useAtomCommand(environmentCatalog.register, { reportFailure: false });
@@ -97,6 +106,7 @@ function IdentityContent({
         options: {
           requireSessionExchange: true,
           ...(connection?.identity ? { expectedIdentity: connection.identity } : {}),
+          ...(expectedResource === undefined ? {} : { expectedResource }),
         },
         label: connection?.environmentLabel,
         signal: abort.signal,

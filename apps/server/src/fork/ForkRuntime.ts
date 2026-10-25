@@ -61,6 +61,9 @@ import type { PageLibraryService } from "./preview-pages/PageLibraryService.ts";
 import type { PreviewPagesService } from "./preview-pages/PreviewPagesService.ts";
 import type { DirectoryReporter } from "./directory/DirectoryReporter.ts";
 import type { DirectoryService } from "./directory/DirectoryService.ts";
+import type { ReachService } from "./reach/ReachService.ts";
+import type { ReachProvisioner } from "./reach/library/ReachProvisioner.ts";
+import type { LibraryPushService } from "./library-push/LibraryPushService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -128,7 +131,10 @@ export type ForkServices =
   | PageLibraryService
   | PreviewPagesService
   | DirectoryService
-  | DirectoryReporter;
+  | DirectoryReporter
+  | ReachService
+  | ReachProvisioner
+  | LibraryPushService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

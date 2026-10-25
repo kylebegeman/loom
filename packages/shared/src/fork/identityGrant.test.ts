@@ -4,12 +4,17 @@ import { LOOM_IDENTITY_SESSION_PATH } from "@t3tools/contracts/fork";
 import * as Base64Url from "effect/encoding/Base64Url";
 
 import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_RESOURCE_MISMATCH_TEXT,
   type IdentityGrant,
   type IdentityGrantFetch,
   IdentityGrantTransientError,
   identityGrantKey,
+  identityMetadataResource,
+  identityResourceRefusal,
   makeKeyedSingleFlight,
   renewIdentityGrant,
+  savedIdentitySignInPin,
 } from "./identityGrant.ts";
 
 const NOW = 1_800_000_000_000;
@@ -199,6 +204,19 @@ describe("renewIdentityGrant", () => {
     });
   });
 
+  it("keeps the rotated grant and asks for a passkey sign-in when the computer requires one", async () => {
+    const log: Array<string> = [];
+    const { fetch } = fakeFetch(log, {
+      token: tokenReply,
+      session: () => json(401, { error: "passkey_required", message: "Use a passkey." }),
+    });
+
+    const result = await renew(fetch, log);
+
+    expect(result).toEqual({ _tag: "SignInRequired", reason: IDENTITY_PASSKEY_REQUIRED_TEXT });
+    expect(log).toEqual(["refresh", "persist:refresh-new", "exchange"]);
+  });
+
   it("asks for a sign-in when the computer refuses the account", async () => {
     const { fetch } = fakeFetch([], {
       token: tokenReply,
@@ -324,5 +342,39 @@ describe("identityGrantKey", () => {
       key,
     );
     expect(key).toMatch(/^[a-z0-9.-]+$/u);
+  });
+});
+
+describe("identity resource pin", () => {
+  const metadata = {
+    audience: "https://computer.example.test",
+    resource: "https://lib/computers/a",
+  };
+
+  it("pins the resource indicator, else the audience", () => {
+    expect(identityMetadataResource(metadata)).toBe("https://lib/computers/a");
+    expect(identityMetadataResource({ audience: "https://computer.example.test" })).toBe(
+      "https://computer.example.test",
+    );
+  });
+
+  it("refuses metadata naming another resource, and nothing when no pin is set", () => {
+    expect(identityResourceRefusal("https://lib/computers/a", metadata)).toBeNull();
+    expect(identityResourceRefusal(undefined, metadata)).toBeNull();
+    expect(identityResourceRefusal("https://lib/computers/b", metadata)).toBe(
+      IDENTITY_RESOURCE_MISMATCH_TEXT,
+    );
+    expect(
+      identityResourceRefusal("https://lib/computers/a", { audience: "https://lib/computers/b" }),
+    ).toBe(IDENTITY_RESOURCE_MISMATCH_TEXT);
+  });
+
+  it("pins a saved connection's account, and its resource once one was recorded", () => {
+    const identity = { issuer: grant.issuer, subject: grant.subject };
+    expect(savedIdentitySignInPin({ identity })).toEqual({ expectedIdentity: identity });
+    expect(
+      savedIdentitySignInPin({ identity, identityResource: "https://lib/computers/a" }),
+    ).toEqual({ expectedIdentity: identity, expectedResource: "https://lib/computers/a" });
+    expect(savedIdentitySignInPin({})).toEqual({});
   });
 });

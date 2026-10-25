@@ -1,12 +1,17 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  DirectoryEnvironment,
-  DirectoryListing,
-  DirectoryMachine,
-  DirectoryRoute,
-  LoomIdentityMetadata,
+import {
+  DirectoryError,
+  type DirectoryEnvironment,
+  type DirectoryListing,
+  type DirectoryMachine,
+  type DirectoryRoute,
+  type LoomIdentityMetadata,
 } from "@t3tools/contracts/fork";
 import { isDirectoryRouteUrl } from "@t3tools/shared/fork/directory";
+import { identityMetadataResource } from "@t3tools/shared/fork/identity-grant";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -55,6 +60,8 @@ export function directoryProofAge(reportedAt: string, now: number): DirectoryPro
 }
 
 const ROUTE_ORDER: Record<DirectoryRoute["kind"], number> = { public: 0, tailnet: 1 };
+/** A public reach address serves no browser sign-in, so a browser tries tailnet first. */
+const BROWSER_ROUTE_ORDER: Record<DirectoryRoute["kind"], number> = { tailnet: 0, public: 1 };
 
 /**
  * The routes a client may use from a report: DNS names over HTTPS only, each URL once, public
@@ -126,6 +133,12 @@ export interface DirectoryCatalogRow<
   readonly proof: DirectoryProofAge | null;
   /** Set on a discovered computer with a route to try; see `directoryConnectPlan`. */
   readonly action: "connect" | null;
+  /**
+   * Every Identity resource the Library attests in this listing, with the computer it belongs
+   * to. One map shared by all rows of a listing. Absent on a row built by hand, which then pins
+   * only its own attested resource.
+   */
+  readonly identityResourceOwners?: ReadonlyMap<string, EnvironmentId>;
 }
 
 /**
@@ -148,6 +161,11 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
   for (const machine of input.listing?.machines ?? []) {
     machinesBy.set(machine.reportedBy, [...(machinesBy.get(machine.reportedBy) ?? []), machine]);
   }
+  const identityResourceOwners = new Map<string, EnvironmentId>();
+  for (const environment of environments) {
+    if (environment.identityResource !== undefined)
+      identityResourceOwners.set(environment.identityResource, environment.environmentId);
+  }
   const annotate = (environment: DirectoryEnvironment | undefined) => {
     if (environment === undefined) return { report: null, proof: null };
     const { routes: _routes, ...report } = environment;
@@ -168,6 +186,7 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
       machines: machinesBy.get(saved.environmentId) ?? [],
       connected: connected.has(saved.environmentId),
       action: null,
+      identityResourceOwners,
     });
   }
   const discovered = environments
@@ -187,6 +206,7 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
       machines: machinesBy.get(environment.environmentId) ?? [],
       connected: connected.has(environment.environmentId),
       action: environment.routes.length > 0 ? "connect" : null,
+      identityResourceOwners,
     });
   }
   return rows;
@@ -220,7 +240,10 @@ export type DirectoryPairingReason =
   | "other-computer"
   | "not-here"
   | "library-issuer-unknown"
-  | "issuer-mismatch";
+  | "issuer-mismatch"
+  | "resource-mismatch"
+  /** Only a public reach address answered, and a browser cannot sign in there. */
+  | "reach-browser";
 
 /** One short line per reason, for the row that offers pairing. */
 export const DIRECTORY_PAIRING_REASON_TEXT: Readonly<Record<DirectoryPairingReason, string>> = {
@@ -230,11 +253,16 @@ export const DIRECTORY_PAIRING_REASON_TEXT: Readonly<Record<DirectoryPairingReas
   "not-here": "This computer does not allow Loom sign-in from this app.",
   "library-issuer-unknown": "Loom could not confirm your Library's sign-in provider.",
   "issuer-mismatch": "This computer uses a different sign-in provider than your Library.",
+  "resource-mismatch": "This computer's sign-in does not match what your Library set up for it.",
+  "reach-browser": "Sign in from this browser on your home network, or pair it with a code.",
 };
 
 export interface DirectoryConnectPlan {
   readonly environmentId: EnvironmentId;
-  /** Directory routes to try in order: public first, then tailnet. */
+  /**
+   * Directory routes to try in order. Native sign-in tries public first, then tailnet. A browser
+   * tries tailnet first: a public reach address serves no browser sign-in.
+   */
   readonly routes: readonly DirectoryRoute[];
   /**
    * Loom Identity when the computer offers it here under the Library's issuer, pairing otherwise.
@@ -252,10 +280,11 @@ export interface DirectoryConnectOptions {
 }
 
 function pairingReason(
+  row: DirectoryCatalogRow,
   identity: LoomIdentityMetadata | null,
-  environmentId: EnvironmentId,
   options: DirectoryConnectOptions,
 ): DirectoryPairingReason | null {
+  const { environmentId } = row;
   if (identity === null) return "no-sign-in";
   // Metadata from another environment means the route reaches some other computer, so signing in
   // there would hand that computer a session meant for this one.
@@ -281,6 +310,13 @@ function pairingReason(
   // sign-in to a provider the computer chose.
   if (options.libraryIssuer === null) return "library-issuer-unknown";
   if (identity.issuer !== options.libraryIssuer) return "issuer-mismatch";
+  // The resource names which computer a sign-in is for. A computer naming another computer's
+  // resource could otherwise collect a sign-in that the other computer accepts.
+  const resource = identityMetadataResource(identity);
+  const attested = row.report?.identityResource;
+  if (attested !== undefined && resource !== attested) return "resource-mismatch";
+  const owner = row.identityResourceOwners?.get(resource);
+  if (owner !== undefined && owner !== environmentId) return "resource-mismatch";
   return null;
 }
 
@@ -295,13 +331,29 @@ export function directoryConnectPlan(
   options: DirectoryConnectOptions,
 ): DirectoryConnectPlan | null {
   if (row.saved !== null || row.action !== "connect") return null;
-  const routes = directoryRoutes(row.routes);
+  const order = options.signIn.surface === "browser" ? BROWSER_ROUTE_ORDER : ROUTE_ORDER;
+  const routes = [...directoryRoutes(row.routes)].sort(
+    (left, right) => order[left.kind] - order[right.kind],
+  );
   if (routes.length === 0) return null;
-  const reason = pairingReason(identity, row.environmentId, options);
+  const reason = pairingReason(row, identity, options);
   return {
     environmentId: row.environmentId,
     routes,
     signIn: reason === null ? "loom-identity" : "pairing",
     reason,
   };
+}
+
+const isDirectoryError = Schema.is(DirectoryError);
+
+/**
+ * The line for a forget the Library refused because the computer still has a reach address, or
+ * null for any other failure, which keeps the caller's own line.
+ */
+export function directoryForgetErrorText(cause: Cause.Cause<unknown>): string | null {
+  const error = Option.getOrNull(Cause.findErrorOption(cause));
+  return isDirectoryError(error) && error.reason === "reach-active"
+    ? "Retire this computer's reach address first."
+    : null;
 }

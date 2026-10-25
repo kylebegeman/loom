@@ -5,6 +5,7 @@ import {
   isTailnetHost,
 } from "@t3tools/shared/hostClassification";
 import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
+import { keepIdentityResource } from "@t3tools/shared/fork/identity-grant"; // fork: reach
 import * as Option from "effect/Option";
 
 import {
@@ -294,6 +295,7 @@ export function mergeLearnedRoutes(input: {
           ...(activeProfile?._tag === "BearerConnectionProfile" && activeProfile.identity
             ? { identity: activeProfile.identity }
             : {}),
+          ...keepIdentityResource(activeProfile), // fork: reach
           ...(tailscaleOrigins.has(url.origin) ? { network: "tailscale" as const } : {}),
         }),
       ),
@@ -375,6 +377,7 @@ function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRout
         ...(profile.learned === undefined ? {} : { learned: profile.learned }),
         ...(profile.authorization === undefined ? {} : { authorization: profile.authorization }),
         ...(profile.identity === undefined ? {} : { identity: profile.identity }),
+        ...keepIdentityResource(profile), // fork: reach
         ...(tailscale ? { network: "tailscale" as const } : {}),
       }),
     ),

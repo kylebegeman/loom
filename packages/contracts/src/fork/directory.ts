@@ -148,6 +148,14 @@ export const DirectoryEnvironment = Schema.Struct({
   keyFingerprint: Sha256Hex,
   firstSeenAt: IsoDateTime,
   receivedAt: IsoDateTime,
+  /**
+   * The Loom Identity resource this Library derived and provisioned for the computer. Attested by
+   * the Library, never taken from the computer's report, so clients can refuse a computer that
+   * names another computer's resource. Absent until reach provisioned it, and from older Libraries.
+   */
+  identityResource: Schema.optionalKey(
+    Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(DIRECTORY_ROUTE_URL_MAX_LENGTH)),
+  ),
 });
 export type DirectoryEnvironment = typeof DirectoryEnvironment.Type;
 
@@ -184,6 +192,8 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
     "key-changed",
     "stale-sequence",
     "not-found",
+    // Forgetting would drop the key pin that guards a live reach address.
+    "reach-active",
     "io",
   ]),
   cause: Schema.optional(Schema.Defect()),
@@ -204,6 +214,8 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
         return "The directory already has a newer report from this computer.";
       case "not-found":
         return "The directory has no entry with that id.";
+      case "reach-active":
+        return "This computer still has a reach address. Retire it in the Library's reach list first, then forget the computer.";
       case "io":
         return "The directory could not store or read its records. Try again.";
     }

@@ -20,6 +20,7 @@ import {
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 
 export function SettingsRouteScreen() {
   const navigation = useNavigation();
@@ -127,6 +128,8 @@ function LocalSettingsRouteScreen() {
             valuePosition="trailing"
             target="SettingsEnvironments"
           />
+          {/* fork: library-push */}
+          <LibraryPush.Row />
         </SettingsSection>
 
         <SettingsIndexSections />

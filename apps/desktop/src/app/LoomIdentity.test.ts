@@ -4,6 +4,11 @@ import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { EnvironmentId, AuthAccessTokenType } from "@t3tools/contracts";
+import { LOOM_IDENTITY_PASSKEY_REQUIRED } from "@t3tools/contracts/fork";
+import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_RESOURCE_MISMATCH_TEXT,
+} from "@t3tools/shared/fork/identity-grant";
 import {
   signInToLoom,
   cancelLoomSignIn,
@@ -116,11 +121,14 @@ describe("Loom native OAuth enrollment", () => {
       verifyLoomIdToken(token, { ...input, issuer: "https://other.example" }),
     ).rejects.toThrow();
   });
-  it.each(
-    [false, true].flatMap((modern) => [3600, 0, -1].map((expiresIn) => ({ modern, expiresIn }))),
-  )(
-    "accepts only live bound host sessions (modern: $modern, expires_in: $expiresIn)",
-    async ({ modern, expiresIn }) => {
+  it.each([
+    ...[false, true].flatMap((modern) =>
+      [3600, 0, -1].map((expiresIn) => ({ modern, expiresIn, refusal: null })),
+    ),
+    { modern: true, expiresIn: 3600, refusal: LOOM_IDENTITY_PASSKEY_REQUIRED },
+  ])(
+    "accepts only live bound host sessions (modern: $modern, expires_in: $expiresIn, refusal: $refusal)",
+    async ({ modern, expiresIn, refusal }) => {
       const { publicKey, privateKey } = await generateKeyPair("RS256");
       const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
       let nonce = "";
@@ -148,7 +156,7 @@ describe("Loom native OAuth enrollment", () => {
               scopes: ["openid"],
               audience: "loom",
               environmentId: EnvironmentId.make("central"),
-              ...(modern ? { maxSessionAgeSeconds: 7 * 86_400 } : {}),
+              ...(modern ? { resource: `${origin}/loom`, maxSessionAgeSeconds: 7 * 86_400 } : {}),
             };
           else if (request.url === "/idp/.well-known/openid-configuration")
             result = {
@@ -197,6 +205,12 @@ describe("Loom native OAuth enrollment", () => {
               sentIdToken = input.idToken;
             } else expect(body.get("subject_token_type")).toBe(AuthAccessTokenType);
             exchanged = true;
+            if (refusal !== null) {
+              response
+                .writeHead(401, { "content-type": "application/json" })
+                .end(JSON.stringify({ error: refusal, message: "Passkey sign-in required." }));
+              return;
+            }
             result = {
               access_token: "host-session",
               issued_token_type: AuthAccessTokenType,
@@ -219,7 +233,8 @@ describe("Loom native OAuth enrollment", () => {
             .end(JSON.stringify(result));
         })().catch(() => response.writeHead(500).end());
       });
-      // Pinned to the computer's own issuer, as a Library directory sign-in is.
+      // Pinned to the computer's own issuer and resource, as a Library directory sign-in is. The
+      // legacy computer names no resource, so its audience is what the pin compares.
       const pending = signInToLoom(
         origin,
         async (authorizationUrl) => {
@@ -240,8 +255,14 @@ describe("Loom native OAuth enrollment", () => {
           return true;
         },
         undefined,
-        { expectedIssuer: `${origin}/idp` },
+        { expectedIssuer: `${origin}/idp`, expectedResource: modern ? `${origin}/loom` : "loom" },
       );
+      if (refusal !== null) {
+        await expect(pending).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
+        expect(exchanged).toBe(true);
+        await expect(fetch(redirect)).rejects.toThrow();
+        return;
+      }
       if (expiresIn <= 0) {
         await expect(pending).rejects.toThrow();
         expect(exchanged).toBe(true);
@@ -255,6 +276,8 @@ describe("Loom native OAuth enrollment", () => {
         accessToken: "host-session",
         identity: { issuer: `${origin}/idp`, subject: "user" },
         expiresAt: expect.any(Number),
+        // The saved connection pins this, so a later sign-in refuses another computer's resource.
+        resource: modern ? `${origin}/loom` : "loom",
       });
       expect(session.expiresAt).toBeGreaterThan(Date.now());
       expect(session.expiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
@@ -277,7 +300,7 @@ describe("Loom native OAuth enrollment", () => {
       await expect(fetch(redirect)).rejects.toThrow();
     },
   );
-  it("rejects saved environment and issuer changes before opening the provider", async () => {
+  it("rejects saved environment, issuer and resource changes before opening the provider", async () => {
     let origin = "";
     origin = await serve((_request, response) =>
       response.writeHead(200, { "content-type": "application/json" }).end(
@@ -308,6 +331,12 @@ describe("Loom native OAuth enrollment", () => {
     await expect(
       signInToLoom(origin, open, undefined, { expectedIssuer: "https://library-id.test" }),
     ).rejects.toThrow("different sign-in provider than your Library");
+    // A computer naming another computer's resource would collect a sign-in that one accepts.
+    await expect(
+      signInToLoom(origin, open, undefined, {
+        expectedResource: "https://other.example.test/loom",
+      }),
+    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
     expect(open).not.toHaveBeenCalled();
   });
 

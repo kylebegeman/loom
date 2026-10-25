@@ -1,7 +1,11 @@
 import { AuthAccessTokenType, AuthTokenExchangeGrantType, EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { identityGrantKey } from "@t3tools/shared/fork/identity-grant";
+import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_RESOURCE_MISMATCH_TEXT,
+  identityGrantKey,
+} from "@t3tools/shared/fork/identity-grant";
 import {
   completeNativeIdentitySignIn,
   exchangeLibraryIdentityToken,
@@ -12,6 +16,7 @@ import {
   assertNativeIdentityUnchanged,
   nativeIdentityAuthorizationParameters,
   nativeIdentityScopes,
+  type IdentityOptions,
 } from "./libraryIdentity";
 const environmentId = EnvironmentId.make("selected-library");
 const metadata: LoomIdentityMetadata = {
@@ -160,6 +165,30 @@ describe("ordinary computer Identity", () => {
         expectedIssuer: identity.issuer,
       }),
     ).resolves.toMatchObject({ issuer: identity.issuer });
+    // A Library-attested or saved resource pins the computer before the provider sheet opens.
+    const pinned = "https://library.example/computers/selected-library";
+    const pinnedOptions = { expectedResource: pinned };
+    request.mockResolvedValueOnce(response({ ...modern, resource: pinned }));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
+    ).resolves.toMatchObject({ resource: pinned });
+    request.mockResolvedValueOnce(
+      response({ ...modern, resource: "https://library.example/computers/other" }),
+    );
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
+    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    // A computer that names no resource is issued for its audience.
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, pinnedOptions),
+    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    request.mockResolvedValueOnce(response(modern));
+    await expect(
+      loadLibraryIdentity("https://computer.example", environmentId, request, {
+        expectedResource: modern.audience,
+      }),
+    ).resolves.toMatchObject({ audience: modern.audience });
     for (const tokenEndpoint of [
       "http://identity.example/token",
       "https://user:secret@identity.example/token",
@@ -301,6 +330,7 @@ describe("renewable native sign-in", () => {
   const signIn = (
     overrides: Partial<typeof tokens> = {},
     computerMetadata: LoomIdentityMetadata = modern,
+    options: IdentityOptions = { requireSessionExchange: true },
   ) =>
     completeNativeIdentitySignIn({
       destination: libraryIdentityAddress("https://computer.example"),
@@ -314,7 +344,7 @@ describe("renewable native sign-in", () => {
       discovery,
       tokens: { ...tokens, ...overrides },
       label: "computer.example",
-      options: { requireSessionExchange: true },
+      options,
       request: computer,
       now: () => NOW,
     });
@@ -406,6 +436,41 @@ describe("renewable native sign-in", () => {
         metadata: modern,
       }),
     ).rejects.toThrow("This computer needs a fresh Loom sign-in.");
+  });
+
+  it("explains a sign-in the computer refuses because it needs a passkey", async () => {
+    const refusing = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ error: "passkey_required" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await expect(
+      exchangeLibraryIdentityToken("https://computer.example", "access", refusing, {
+        metadata: modern,
+      }),
+    ).rejects.toThrow(IDENTITY_PASSKEY_REQUIRED_TEXT);
+  });
+
+  it("never sends the account token to a computer naming another resource than the pin", async () => {
+    computer.mockClear();
+    await expect(
+      signIn({}, modern, {
+        requireSessionExchange: true,
+        expectedResource: "https://library.example/computers/other",
+      }),
+    ).rejects.toThrow(IDENTITY_RESOURCE_MISMATCH_TEXT);
+    expect(
+      computer.mock.calls.some(([url]) => String(url).endsWith("/api/loom/identity/session")),
+    ).toBe(false);
+    await expect(
+      signIn({}, modern, { requireSessionExchange: true, expectedResource: modern.resource }),
+    ).resolves.toMatchObject({ registration: { profile: { environmentId } } });
+  });
+
+  it("saves the resource a connection signed in with, so later sign-ins refuse another", async () => {
+    expect((await signIn()).registration.profile.identityResource).toBe(modern.resource);
   });
 
   it("still signs in when the provider issues no refresh grant", async () => {

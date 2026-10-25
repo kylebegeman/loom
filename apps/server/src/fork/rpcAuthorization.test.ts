@@ -8,6 +8,8 @@ import {
   AuthEnvironmentMaintainScope,
   AuthSettingsWriteScope,
   AuthPreviewOperateScope,
+  AuthRelayReadScope,
+  AuthRelayWriteScope,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
@@ -22,12 +24,15 @@ import {
   PCB_PREVIEW_WS_METHODS as P,
   PROJECT_CHECKOUT_WS_METHODS as C,
   PREVIEW_LINKS_WS_METHODS as PL,
+  REACH_WS_METHODS as REACH,
+  LIBRARY_PUSH_WS_METHODS as PUSH,
   FORK_CLIENT_GUARDED_RPC_SCOPES,
 } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
+import { PocketIdStandardScopes } from "../auth/PocketId.ts";
 import { FORK_RPC_REQUIRED_SCOPES, makeForkRpcAuth } from "./rpcAuthorization.ts";
 
 const forkTags = [...ForkRpcGroup.requests.keys()];
@@ -393,3 +398,98 @@ it.effect("reads published pages with read access and changes them only with pre
     expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PL.pagesUpdate]).toBe(AuthPreviewOperateScope);
   }),
 );
+
+const sessionAuth = (scopes: readonly AuthEnvironmentScope[]) =>
+  makeForkRpcAuth({
+    sessionId: AuthSessionId.make("reach-push-test"),
+    subject: "test",
+    method: "bearer-access-token",
+    scopes,
+  });
+
+const REACH_AND_PUSH_SCOPES = [
+  [REACH.set, AuthRelayWriteScope],
+  [REACH.remove, AuthRelayWriteScope],
+  [REACH.libraryList, AuthOrchestrationReadScope],
+  [REACH.libraryRetire, AuthSettingsWriteScope],
+  [PUSH.status, AuthOrchestrationReadScope],
+  [PUSH.register, AuthSettingsWriteScope],
+  [PUSH.unregister, AuthSettingsWriteScope],
+  [PUSH.test, AuthSettingsWriteScope],
+] as const;
+
+it.effect.each(REACH_AND_PUSH_SCOPES)("%s needs %s before any work starts", ([method, scope]) =>
+  Effect.gen(function* () {
+    let invoked = false;
+    const work = Effect.sync(() => {
+      invoked = true;
+      return "done";
+    });
+    // Every other standard grant, so only the one the method names is missing.
+    const others = sessionAuth(
+      [...PocketIdStandardScopes, AuthRelayWriteScope].filter((granted) => granted !== scope),
+    );
+    const denied = yield* others.effect(method, work).pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(scope);
+    expect(invoked).toBe(false);
+    expect(yield* sessionAuth([scope]).effect(method, work)).toBe("done");
+    expect(invoked).toBe(true);
+  }),
+);
+
+it.effect("reach status streams only with relay read", () =>
+  Effect.gen(function* () {
+    let subscribed = false;
+    const stream = Stream.fromEffect(
+      Effect.sync(() => {
+        subscribed = true;
+        return "status";
+      }),
+    );
+    const denied = yield* Stream.runCollect(
+      sessionAuth([AuthOrchestrationReadScope, AuthSettingsWriteScope]).stream(REACH.watch, stream),
+    ).pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthRelayReadScope);
+    expect(subscribed).toBe(false);
+    expect(
+      yield* Stream.runCollect(sessionAuth([AuthRelayReadScope]).stream(REACH.watch, stream)),
+    ).toEqual(["status"]);
+  }),
+);
+
+it.effect(
+  "a standard Identity session can retire computers and use push but cannot switch reach",
+  () =>
+    Effect.gen(function* () {
+      const identity = sessionAuth(PocketIdStandardScopes);
+      for (const method of [REACH.set, REACH.remove]) {
+        const denied = yield* identity.effect(method, Effect.void).pipe(Effect.flip);
+        expect(denied.requiredScope).toBe(AuthRelayWriteScope);
+      }
+      for (const method of [
+        REACH.libraryList,
+        REACH.libraryRetire,
+        PUSH.status,
+        PUSH.register,
+        PUSH.unregister,
+        PUSH.test,
+      ]) {
+        expect(yield* identity.effect(method, Effect.succeed(method))).toBe(method);
+      }
+      expect(yield* Stream.runCollect(identity.stream(REACH.watch, Stream.make("status")))).toEqual(
+        ["status"],
+      );
+    }),
+);
+
+it("guards reach and push changes in the client and leaves their reads to query atoms", () => {
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[REACH.set]).toBe(AuthRelayWriteScope);
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[REACH.remove]).toBe(AuthRelayWriteScope);
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[REACH.libraryRetire]).toBe(AuthSettingsWriteScope);
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PUSH.register]).toBe(AuthSettingsWriteScope);
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PUSH.unregister]).toBe(AuthSettingsWriteScope);
+  expect(FORK_CLIENT_GUARDED_RPC_SCOPES[PUSH.test]).toBe(AuthSettingsWriteScope);
+  for (const read of [REACH.watch, REACH.libraryList, PUSH.status]) {
+    expect(FORK_CLIENT_GUARDED_RPC_SCOPES).not.toHaveProperty(read);
+  }
+});

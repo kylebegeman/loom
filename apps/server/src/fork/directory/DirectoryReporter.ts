@@ -119,13 +119,16 @@ const make = Effect.gen(function* () {
   const describe = Effect.gen(function* () {
     const descriptor = yield* environment.getDescriptor;
     const executes = descriptor.capabilities.supportsExecution !== false;
-    // Only the MagicDNS HTTPS name passes: LAN routes are plain HTTP on an IP address.
+    // Only the MagicDNS HTTPS name and the reach address pass: LAN routes are plain HTTP on an
+    // IP address.
     const routes = (yield* endpoints.resolve())
-      .filter(
-        (endpoint) => endpoint.kind === "tailnet" && isDirectoryRouteUrl(endpoint.httpBaseUrl),
+      .flatMap((endpoint) =>
+        (endpoint.kind === "tailnet" || endpoint.kind === "public") &&
+        isDirectoryRouteUrl(endpoint.httpBaseUrl)
+          ? [{ kind: endpoint.kind, url: endpoint.httpBaseUrl }]
+          : [],
       )
-      .slice(0, DIRECTORY_MAX_ROUTES)
-      .map((endpoint) => ({ kind: "tailnet" as const, url: endpoint.httpBaseUrl }));
+      .slice(0, DIRECTORY_MAX_ROUTES);
     const workers = yield* mini.identities.pipe(Effect.orElseSucceed(() => []));
     return {
       environmentId: descriptor.environmentId,

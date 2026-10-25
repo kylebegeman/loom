@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { DirectoryRoute } from "@t3tools/contracts/fork";
+import { DirectoryError, type DirectoryRoute } from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
 
 import {
   directoryAgeText,
   directoryCatalogRows,
   directoryConnectPlan,
+  directoryForgetErrorText,
   directoryProofAge,
   directoryRoutes,
   directoryUnattachedMachines,
@@ -230,6 +232,7 @@ describe("directoryCatalogRows", () => {
         connected: true,
         proof: null,
         action: null,
+        identityResourceOwners: new Map(),
       },
     ]);
   });
@@ -265,6 +268,13 @@ describe("directoryConnectPlan", () => {
       signIn: "pairing",
       reason: "no-sign-in",
     });
+  });
+
+  it("has a browser try tailnet first, since a public reach address serves no browser sign-in", () => {
+    expect(directoryConnectPlan(row, null, browser)?.routes).toEqual([
+      { kind: "tailnet", url: "https://book.example.ts.net" },
+      { kind: "public", url: "https://book.example.com" },
+    ]);
   });
 
   it("signs in with Loom Identity when the computer offers it here", () => {
@@ -306,5 +316,68 @@ describe("directoryConnectPlan", () => {
     expect(
       directoryConnectPlan(row, identity(BOOK), { ...native, libraryIssuer: null }),
     ).toMatchObject({ signIn: "pairing", reason: "library-issuer-unknown" });
+  });
+});
+
+describe("directory resource pin", () => {
+  const BOOK_RESOURCE = "https://library.example.com/computers/book";
+  const DESK_RESOURCE = "https://library.example.com/computers/desk";
+  const browser = {
+    signIn: { surface: "browser", origin: APP_ORIGIN },
+    libraryIssuer: LIBRARY_ISSUER,
+  } as const;
+  const rowFor = (environments: Parameters<typeof listing>[0]) => {
+    const row = directoryCatalogRows({
+      listing: listing(environments),
+      saved: [],
+      connected: [],
+      now: NOW,
+    }).find((candidate) => candidate.environmentId === BOOK);
+    if (row === undefined) throw new Error("expected Book's row");
+    return row;
+  };
+
+  it("refuses a computer whose resource differs from the one the Library attests for it", () => {
+    const row = rowFor([reported(BOOK, { identityResource: BOOK_RESOURCE })]);
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { resource: BOOK_RESOURCE }), native)?.reason,
+    ).toBeNull();
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native)?.reason,
+    ).toBe("resource-mismatch");
+    // Without a resource indicator the audience is what the sign-in is for.
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { audience: BOOK_RESOURCE }), native)?.reason,
+    ).toBeNull();
+    expect(directoryConnectPlan(row, identity(BOOK), native)?.reason).toBe("resource-mismatch");
+  });
+
+  it("refuses a computer naming a resource the Library attests to another computer", () => {
+    const row = rowFor([reported(BOOK), reported(DESK, { identityResource: DESK_RESOURCE })]);
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native)?.reason,
+    ).toBe("resource-mismatch");
+    expect(directoryConnectPlan(row, identity(BOOK, { audience: DESK_RESOURCE }), browser)).toEqual(
+      expect.objectContaining({ signIn: "pairing", reason: "resource-mismatch" }),
+    );
+  });
+
+  it("pins nothing when the Library attests no resource", () => {
+    const row = rowFor([reported(BOOK), reported(DESK)]);
+    expect(
+      directoryConnectPlan(row, identity(BOOK, { resource: DESK_RESOURCE }), native),
+    ).toMatchObject({ signIn: "loom-identity", reason: null });
+  });
+});
+
+describe("directoryForgetErrorText", () => {
+  it("asks to retire a live reach address first, and leaves other failures to the caller", () => {
+    expect(
+      directoryForgetErrorText(Cause.fail(new DirectoryError({ reason: "reach-active" }))),
+    ).toBe("Retire this computer's reach address first.");
+    expect(
+      directoryForgetErrorText(Cause.fail(new DirectoryError({ reason: "not-found" }))),
+    ).toBeNull();
+    expect(directoryForgetErrorText(Cause.die(new Error("boom")))).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { identityResourceRefusal } from "@t3tools/shared/fork/identity-grant";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
@@ -15,6 +16,8 @@ interface LoomSignInProps {
   readonly baseUrl?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
   readonly expectedIdentity?: import("@t3tools/contracts/fork").LoomIdentityAccount;
+  /** A saved connection's resource pin; a computer naming another is refused before sign-in. */
+  readonly expectedResource?: string;
   readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
@@ -29,6 +32,7 @@ function LoomSignInTarget({
   baseUrl,
   expectedEnvironmentId,
   expectedIdentity,
+  expectedResource,
   description = true,
   onConnected,
   showUnavailable = false,
@@ -134,6 +138,11 @@ function LoomSignInTarget({
       setError("This address or Identity provider changed. Review the saved computer connection.");
       return;
     }
+    const resourceRefusal = identityResourceRefusal(expectedResource, active.metadata);
+    if (resourceRefusal !== null) {
+      setError(resourceRefusal);
+      return;
+    }
     if (!isElectron && new URL(active.baseUrl).origin === window.location.origin) {
       if (browserUrl) window.location.assign(browserUrl);
       return;
@@ -155,6 +164,7 @@ function LoomSignInTarget({
       ...(popup ? { popup } : {}),
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
+      ...(expectedResource ? { expectedResource } : {}),
     });
     if (current !== attempt.current) return;
     ownedSignIn.current = null;

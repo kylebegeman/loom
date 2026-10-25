@@ -4,6 +4,7 @@ import {
   LOOM_IDENTITY_METADATA_PATH,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_LOGOUT_PATH,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
   LoomIdentityBrowserRequest,
   LoomIdentitySessionRequest,
@@ -39,14 +40,20 @@ const failed = (status: number) =>
     { error: "sign_in_failed", message: "Loom could not complete sign-in. Try again." },
     { status, headers: HEADERS },
   );
-const signInExpired = () =>
-  HttpServerResponse.jsonUnsafe(
-    {
-      error: LOOM_IDENTITY_SIGN_IN_EXPIRED,
-      message: new PocketId.PocketIdError({ reason: "expired" }).message,
-    },
-    { status: 401, headers: HEADERS },
-  );
+/** Refusals that only a different sign-in fixes, each named so clients can say which one. */
+const SIGN_IN_REFUSALS: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
+  expired: LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  passkey: LOOM_IDENTITY_PASSKEY_REQUIRED,
+};
+const signInRefused = (error: PocketId.PocketIdError) => {
+  const code = SIGN_IN_REFUSALS[error.reason];
+  return code === undefined
+    ? null
+    : HttpServerResponse.jsonUnsafe(
+        { error: code, message: error.message },
+        { status: 401, headers: HEADERS },
+      );
+};
 // Renewing clients keep their grant and retry on 5xx but ask for a new sign-in on 401, so a host
 // that cannot reach Pocket ID or its own session store, or whose operator mistyped its settings,
 // must not answer 401.
@@ -58,8 +65,7 @@ const RETRYABLE_SESSION_FAILURES: ReadonlySet<PocketId.PocketIdError["reason"]> 
 const isPocketIdError = Schema.is(PocketId.PocketIdError);
 const sessionFailed = (error: unknown) => {
   if (!isPocketIdError(error)) return failed(401);
-  if (error.reason === "expired") return signInExpired();
-  return failed(RETRYABLE_SESSION_FAILURES.has(error.reason) ? 503 : 401);
+  return signInRefused(error) ?? failed(RETRYABLE_SESSION_FAILURES.has(error.reason) ? 503 : 401);
 };
 const setCookie = (
   response: HttpServerResponse.HttpServerResponse,
@@ -132,7 +138,10 @@ export const layer = Layer.unwrap(
         DateTime.toUtc(session.expiresAt),
       );
     }).pipe(
-      Effect.catch(() => Effect.succeed(failed(400))),
+      // A sign-in refused for its age or its method needs a different sign-in, not a retry.
+      Effect.catch((error) =>
+        Effect.succeed((isPocketIdError(error) ? signInRefused(error) : null) ?? failed(400)),
+      ),
       Effect.flatMap((response) =>
         Effect.fromResult(
           Cookies.expireCookie(Cookies.empty, identity.cookieName, COOKIE_OPTIONS),

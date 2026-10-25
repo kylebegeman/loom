@@ -1,6 +1,7 @@
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { PREVIEW_LINK_GATEWAY_PATH } from "@t3tools/contracts/fork";
+import type { CloudflaredStatus, RunCloudflaredOptions } from "../cloudflared/connector.ts";
 
 /**
  * The gateway's only view of link state. It is synchronous because it runs on every proxied
@@ -102,23 +103,14 @@ export type ServePreviewFolder = (options: {
   readonly port: number;
 }) => Effect.Effect<PreviewFolderServer, PreviewFolderListenError, Scope.Scope>;
 
-export interface PreviewTunnelStatus {
-  readonly state: "starting" | "connected" | "error";
-  /** Human-readable cause or progress. Never contains the token. */
-  readonly message: string | null;
-  /** cloudflared's metrics listener, denied to links while known. */
-  readonly metricsPort: number | null;
-}
+/** The metrics port is denied to links while known. */
+export type PreviewTunnelStatus = CloudflaredStatus;
 
 /**
- * `tunnel.ts` exports `runPreviewTunnel(options)`. It resolves or installs cloudflared, runs
- * `tunnel run` with the token in the child's env, restarts with backoff and never completes; the
- * caller interrupts it to stop the connector.
+ * `tunnel.ts` exports `runPreviewTunnel(options)`, the shared cloudflared runner under the
+ * preview tunnel's span names. It never completes; the caller interrupts it to stop the connector.
  */
-export interface RunPreviewTunnelOptions {
-  readonly token: string;
-  readonly onStatus: (status: PreviewTunnelStatus) => Effect.Effect<void>;
-}
+export type RunPreviewTunnelOptions = RunCloudflaredOptions;
 
 export const PREVIEW_COOKIE_NAME = "__Host-loom_pv";
 

@@ -83,6 +83,7 @@ export * from "./identity.ts";
 export * from "./sites.ts";
 
 export * from "./directory.ts";
+export * from "./reach.ts";
 
 export * from "./preview-links.ts";
 export * from "./bots.ts";

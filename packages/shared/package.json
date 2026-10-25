@@ -523,6 +523,10 @@
       "types": "./src/fork/identityGrant.ts",
       "import": "./src/fork/identityGrant.ts"
     },
+    "./fork/reach": {
+      "types": "./src/fork/reach.ts",
+      "import": "./src/fork/reach.ts"
+    },
     "./markdownMath": {
       "types": "./src/markdownMath.ts",
       "import": "./src/markdownMath.ts"

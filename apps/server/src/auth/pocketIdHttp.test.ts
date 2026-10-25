@@ -72,7 +72,9 @@ const pocket = Layer.mock(PocketId.PocketId)({
                     ? "discovery"
                     : input.accessToken === "host-misconfigured"
                       ? "configuration"
-                      : "token",
+                      : input.accessToken === "one-time-code-sign-in"
+                        ? "passkey"
+                        : "token",
             }),
           )
       : origin === "https://app.example.test" && input.type === "browser"
@@ -95,6 +97,8 @@ const pocket = Layer.mock(PocketId.PocketId)({
     Effect.gen(function* () {
       if (input.state !== "verified" || input.cookieValue !== "signed-state")
         return yield* new PocketId.PocketIdError({ reason: "state" });
+      if (input.code === "one-time-code-sign-in")
+        return yield* new PocketId.PocketIdError({ reason: "passkey" });
       return {
         token: "host-browser-token",
         returnTo: "/sites",
@@ -364,6 +368,60 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
               const rejected = await renew("renewed-access-jwt", "another-host-bearer");
               expect(rejected.status).toBe(401);
               expect(await rejected.json()).toMatchObject({ error: "sign_in_failed" });
+            }),
+          (web) => Effect.promise(() => web.dispose()),
+        );
+      }),
+  );
+  it.effect(
+    "tells a renewing device and a browser that only a passkey sign-in works, never as retryable",
+    () =>
+      Effect.gen(function* () {
+        const crypto = yield* Crypto.Crypto;
+        const context = Context.make(Crypto.Crypto, crypto);
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
+          (web) =>
+            Effect.tryPromise(async () => {
+              const passkey = new PocketId.PocketIdError({ reason: "passkey" }).message;
+              const renewal = await web.handler(
+                new Request("https://host.example.test/api/loom/identity/session", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    authorization: "Bearer current-host-bearer",
+                  },
+                  body: encodeJson({
+                    type: "native",
+                    accessToken: "one-time-code-sign-in",
+                    idToken: "id-token",
+                    environmentId: "host",
+                  }),
+                }),
+                context,
+              );
+              expect(renewal.status).toBe(401);
+              expect(await renewal.json()).toEqual({ error: "passkey_required", message: passkey });
+              const callback = await web.handler(
+                new Request(
+                  "https://host.example.test/api/loom/identity/callback?state=verified&code=one-time-code-sign-in",
+                  { headers: { cookie: "identity-state=signed-state" } },
+                ),
+                context,
+              );
+              expect(callback.status).toBe(401);
+              expect(await callback.json()).toEqual({
+                error: "passkey_required",
+                message: passkey,
+              });
+              expect(
+                callback.headers
+                  .getSetCookie()
+                  .some((cookie) => cookie.startsWith("host-session=")),
+              ).toBe(false);
+              expect(callback.headers.getSetCookie()).toContainEqual(
+                expect.stringContaining("identity-state=;"),
+              );
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

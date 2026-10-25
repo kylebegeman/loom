@@ -5,8 +5,13 @@ import {
   LIBRARY_SEMANTIC_SEARCH_FEATURE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
+  REACH_FEATURE,
+  REACH_LIBRARY_FEATURE,
+  LIBRARY_PUSH_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
+import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
+import { libraryPushAdvertised } from "./library-push/config.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
@@ -125,8 +130,13 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "bots-pipelines",
   "bots-anywhere",
   DIRECTORY_REPORTING_FEATURE,
+  REACH_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).
   ...(directoryAdvertised(process.env) ? [DIRECTORY_FEATURE] : []),
+  // Only that Library once its reach zone and Cloudflare token file are named.
+  ...(reachLibraryAdvertised(process.env) ? [REACH_LIBRARY_FEATURE] : []),
+  // Only a Library whose push switch, Identity and APNs key settings are all set (K1).
+  ...(libraryPushAdvertised(process.env) ? [LIBRARY_PUSH_FEATURE] : []),
 ];

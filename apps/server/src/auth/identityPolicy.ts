@@ -13,7 +13,10 @@ const POLICY_KEYS = [
   "LOOM_IDENTITY_ALLOW_ADMIN",
 ] as const;
 /** Added after hosts already issued sessions, so they count only when set and an upgrade keeps those. */
-const ADDED_POLICY_KEYS = ["LOOM_IDENTITY_MAX_SESSION_AGE"] as const;
+const ADDED_POLICY_KEYS = [
+  "LOOM_IDENTITY_MAX_SESSION_AGE",
+  "LOOM_IDENTITY_REQUIRE_PASSKEY",
+] as const;
 
 const MIN_SESSION_AGE_SECONDS = 60 * 60;
 const MAX_SESSION_AGE_SECONDS = 365 * 24 * 60 * 60;
@@ -32,14 +35,37 @@ export function parseMaxSessionAge(value: string): number | null {
   return seconds >= MIN_SESSION_AGE_SECONDS && seconds <= MAX_SESSION_AGE_SECONDS ? seconds : null;
 }
 
+/**
+ * Identity needs an issuer, an audience and an allowlist. Exported so reach can warn about it
+ * from the environment without depending on the PocketId service.
+ */
+export function identityConfigured(environment: NodeJS.ProcessEnv) {
+  return Boolean(
+    environment.LOOM_IDENTITY_ISSUER?.trim() &&
+    environment.LOOM_IDENTITY_AUDIENCE?.trim() &&
+    environment.LOOM_IDENTITY_ALLOWED_SUBJECTS?.trim(),
+  );
+}
+
+/** Only the exact value `true` turns it on; PocketId refuses to start Identity on any other. */
+export function passkeyRequired(environment: NodeJS.ProcessEnv) {
+  return environment.LOOM_IDENTITY_REQUIRE_PASSKEY?.trim() === "true";
+}
+
+/** The resource clients pin a sign-in to: the resource indicator, else the first audience. */
+export function identityResource(environment: NodeJS.ProcessEnv) {
+  return (
+    environment.LOOM_IDENTITY_RESOURCE?.trim() ||
+    environment.LOOM_IDENTITY_AUDIENCE?.split(",")
+      .map((value) => value.trim())
+      .find(Boolean) ||
+    null
+  );
+}
+
 /** A host configuration change invalidates earlier Identity grants after restart. */
 export function identitySessionPrefix(environment: NodeJS.ProcessEnv) {
-  if (
-    !environment.LOOM_IDENTITY_ISSUER?.trim() ||
-    !environment.LOOM_IDENTITY_AUDIENCE?.trim() ||
-    !environment.LOOM_IDENTITY_ALLOWED_SUBJECTS?.trim()
-  )
-    return null;
+  if (!identityConfigured(environment)) return null;
   const policy = [...POLICY_KEYS, ...ADDED_POLICY_KEYS.filter((key) => environment[key]?.trim())]
     .map((key) => {
       const value = environment[key]?.trim() ?? "";

@@ -17,6 +17,7 @@ import * as NodeOS from "node:os";
 import { isPrivateNetworkHost, isTailnetHost } from "@t3tools/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
+import { ReachPublicRoute, reachPublicEndpoints } from "../fork/reach/publicRoute.ts"; // fork: reach
 import { formatHostForUrl, isLoopbackHost, isWildcardHost } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
@@ -98,6 +99,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
+  const reachRoute = yield* Effect.serviceOption(ReachPublicRoute); // fork: reach
 
   const resolve = Effect.gen(function* () {
     const endpoints = [
@@ -135,6 +137,7 @@ export const make = Effect.gen(function* () {
         endpoints.push({ kind: "tailnet", httpBaseUrl: servedUrl.value });
       }
     }
+    endpoints.push(...(yield* reachPublicEndpoints(reachRoute))); // fork: reach
     return endpoints;
   });
 

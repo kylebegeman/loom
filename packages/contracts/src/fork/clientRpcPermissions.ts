@@ -33,6 +33,9 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "./preview-links.ts";
 import { AuthPreviewOperateScope } from "../auth.ts";
 import { DIRECTORY_WS_METHODS as DIR } from "./directory.ts";
+import { REACH_WS_METHODS as REACH } from "./reach.ts";
+import { AuthRelayWriteScope } from "../auth.ts";
+import { LIBRARY_PUSH_WS_METHODS as PUSH } from "./library-push.ts";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -233,6 +236,14 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PL.pagesUpdate]: AuthPreviewOperateScope,
   // The directory list stays unguarded for the same reason.
   [DIR.forget]: AuthSettingsWriteScope,
+  // Reach status and the Library's reach list stay unguarded for the same reason.
+  [REACH.set]: AuthRelayWriteScope,
+  [REACH.remove]: AuthRelayWriteScope,
+  [REACH.libraryRetire]: AuthSettingsWriteScope,
+  // Push status stays unguarded: the phone and the web read it with a query atom.
+  [PUSH.register]: AuthSettingsWriteScope,
+  [PUSH.unregister]: AuthSettingsWriteScope,
+  [PUSH.test]: AuthSettingsWriteScope,
   // Bot list and run history stay unguarded: clients read them with query atoms.
   [BOT.save]: AuthOrchestrationOperateScope,
   [BOT.archive]: AuthOrchestrationOperateScope,

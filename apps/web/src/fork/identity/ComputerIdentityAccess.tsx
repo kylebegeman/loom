@@ -3,8 +3,11 @@ import type {
   ConnectionCatalogEntry,
   EnvironmentConnectionPhase,
 } from "@t3tools/client-runtime/connection";
+import { DIRECTORY_PAIRING_REASON_TEXT, savedIdentitySignIn } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { savedIdentitySignInPin } from "@t3tools/shared/fork/identity-grant";
 import { Button } from "~/components/ui/button";
+import { isElectron } from "~/env";
 import { loomIdentityUrl } from "~/rpc/loomIdentity";
 import { LoomSignIn } from "./LoomSignIn";
 import { identityProfile } from "./identityProfile";
@@ -21,6 +24,29 @@ function useIdentityExpired(entry: ConnectionCatalogEntry, phase: EnvironmentCon
     identityProfile(entry) !== undefined &&
     entry.enabled &&
     (phase === "error" || (phase === "connected" && session.data?.authenticated === false))
+  );
+}
+
+/**
+ * Signs in again over the saved Identity route, pinned to its account and the resource it first
+ * signed in with. A browser cannot sign in over a public reach address, so it offers pairing.
+ */
+function SavedIdentitySignIn({ entry }: { readonly entry: ConnectionCatalogEntry }) {
+  const saved = savedIdentitySignIn(entry, isElectron ? "native" : "browser");
+  if (saved === null)
+    return (
+      <p className="text-xs text-muted-foreground">
+        {DIRECTORY_PAIRING_REASON_TEXT["reach-browser"]}
+      </p>
+    );
+  return (
+    <LoomSignIn
+      baseUrl={saved.request.httpBaseUrl}
+      expectedEnvironmentId={entry.target.environmentId}
+      {...savedIdentitySignInPin(saved.profile)}
+      description={false}
+      showUnavailable
+    />
   );
 }
 
@@ -44,13 +70,7 @@ export function ExpiredComputerIdentity({
           ? `This device can still see ${label} but cannot make changes there. Sign in again to restore access.`
           : `Sign in again to reconnect to ${label}.`}
       </p>
-      <LoomSignIn
-        baseUrl={profile.httpBaseUrl}
-        expectedEnvironmentId={entry.target.environmentId}
-        expectedIdentity={profile.identity!}
-        description={false}
-        showUnavailable
-      />
+      <SavedIdentitySignIn entry={entry} />
     </div>
   );
 }
@@ -76,15 +96,7 @@ export function SavedComputerIdentity({
             ? "Each sign-in lasts up to an hour. If this computer sets a sign-in limit, Loom renews it on its own until then. Removing this connection signs this device out."
             : "Each sign-in lasts up to an hour. Removing this connection revokes this device's active Identity session."}
       </p>
-      {expired ? null : (
-        <LoomSignIn
-          baseUrl={profile.httpBaseUrl}
-          expectedEnvironmentId={entry.target.environmentId}
-          expectedIdentity={profile.identity!}
-          description={false}
-          showUnavailable
-        />
-      )}
+      {expired ? null : <SavedIdentitySignIn entry={entry} />}
     </section>
   );
 }
@@ -138,7 +150,7 @@ export function ComputerIdentityConnect({
           key={checked.url}
           baseUrl={checked.url}
           {...(entry ? { expectedEnvironmentId: entry.target.environmentId } : {})}
-          {...(profile?.identity ? { expectedIdentity: profile.identity } : {})}
+          {...(profile ? savedIdentitySignInPin(profile) : {})}
           onConnected={onConnected}
           showUnavailable
         />

@@ -54,6 +54,16 @@ dropped, which is how a changed LAN address replaces the old one; routes the
 user saved are never touched. The reported addresses are hints like any advertised endpoint, so a
 learned route still has to answer as this environment before it is used.
 
+<!-- fork: reach -->
+
+While reach is on, a Loom computer also reports its public reach address as a
+`public` endpoint. Clients learn it like the others, rank it after LAN and
+tailnet, and reuse the credential and Identity account of the route they learned
+it over. The computer stops reporting it as soon as reach turns off, so clients
+drop it on their next connect.
+
+<!-- fork: reach -->
+
 GitHub routing trust covers the whole route list. Adding or changing a route
 revokes it; reordering does not, because the same addresses remain trusted.
 

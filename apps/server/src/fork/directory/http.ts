@@ -41,6 +41,8 @@ const STATUS = {
   "key-changed": 409,
   "stale-sequence": 409,
   "not-found": 404,
+  // Forgetting waits until the Library's reach list retires the computer's address (F2).
+  "reach-active": 409,
   io: 503,
 } as const satisfies Record<DirectoryError["reason"], number>;
 

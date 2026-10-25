@@ -749,6 +749,126 @@ it.effect("caps browser sign-in age and asks Pocket ID for a recent enough sign-
   }),
 );
 
+const reasonOf = <A>(effect: Effect.Effect<A, PocketId.PocketIdError>) =>
+  effect.pipe(
+    Effect.flip,
+    Effect.map((error) => error.reason),
+  );
+const withAmr = (amr: ReadonlyArray<string> | undefined) =>
+  amr === undefined ? {} : { amr: [...amr] };
+
+it.effect("requires a passkey sign-in in the browser and natively when the host asks for one", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = "true";
+    const accessToken = yield* test.access();
+    const bound = yield* atHash(accessToken);
+    const nativeIdToken = (amr?: ReadonlyArray<string>) =>
+      test.signed({ at_hash: bound, ...withAmr(amr) }, "loom-native", "JWT");
+    const native = (idToken?: string) => ({
+      type: "native" as const,
+      accessToken,
+      environmentId: EnvironmentId.make("host-id"),
+      ...(idToken === undefined ? {} : { idToken }),
+    });
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const browserSignIn = (amr?: ReadonlyArray<string>) =>
+        Effect.gen(function* () {
+          const login = yield* identity.beginLogin();
+          const authorization = new URL(login.authorizationUrl);
+          test.tokenReply.access = accessToken;
+          test.tokenReply.id = yield* test
+            .signed(
+              { nonce: authorization.searchParams.get("nonce")!, ...withAmr(amr) },
+              CLIENT_ID,
+              "JWT",
+            )
+            .pipe(Effect.orDie);
+          return yield* identity.completeLogin({
+            state: authorization.searchParams.get("state")!,
+            code: "one-time-code",
+            cookieValue: login.cookieValue,
+            client: CLIENT,
+          });
+        });
+      // No sign-in limit is set: the requirement alone makes the ID token mandatory.
+      expect((yield* identity.metadata).maxSessionAgeSeconds).toBeUndefined();
+      for (const amr of [["otp"], undefined, []]) {
+        expect(yield* reasonOf(browserSignIn(amr))).toBe("passkey");
+        expect(
+          yield* reasonOf(identity.createSession(native(yield* nativeIdToken(amr)), CLIENT)),
+        ).toBe("passkey");
+      }
+      expect(yield* reasonOf(identity.createSession(native(), CLIENT))).toBe("token");
+      expect(
+        yield* reasonOf(identity.exchangeAccessToken({ token: accessToken, client: CLIENT })),
+      ).toBe("token");
+      expect(test.issued).toHaveLength(0);
+      yield* browserSignIn(["phr"]);
+      yield* identity.createSession(native(yield* nativeIdToken(["otp", "phr"])), CLIENT);
+      expect(test.issued.map((grant) => grant.method)).toEqual([
+        "browser-session-cookie",
+        "bearer-access-token",
+      ]);
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+it.effect("names a missing passkey before an expired sign-in when both rules apply", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = "true";
+    test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "1h";
+    const accessToken = yield* test.access();
+    const bound = yield* atHash(accessToken);
+    const native = (amr: ReadonlyArray<string>) =>
+      test
+        .signed(
+          { at_hash: bound, auth_time: test.seconds - 3601, ...withAmr(amr) },
+          "loom-native",
+          "JWT",
+        )
+        .pipe(
+          Effect.map((idToken) => ({
+            type: "native" as const,
+            accessToken,
+            idToken,
+            environmentId: EnvironmentId.make("host-id"),
+          })),
+        );
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      expect(yield* reasonOf(identity.createSession(yield* native(["otp"]), CLIENT))).toBe(
+        "passkey",
+      );
+      expect(yield* reasonOf(identity.createSession(yield* native(["phr"]), CLIENT))).toBe(
+        "expired",
+      );
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
+it.effect("refuses to enable Identity when the passkey setting is anything but true", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    for (const value of ["yes", "TRUE", "false", "1"]) {
+      test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = value;
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        expect(yield* reasonOf(identity.metadata)).toBe("configuration");
+      }).pipe(Effect.provide(test.layer));
+    }
+    for (const value of [" true ", " "]) {
+      test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = value;
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        expect((yield* identity.metadata).enabled).toBe(true);
+      }).pipe(Effect.provide(test.layer));
+    }
+  }),
+);
+
 it.effect("refuses to enable Identity with a sign-in limit outside its range", () =>
   Effect.gen(function* () {
     const test = yield* fixture;

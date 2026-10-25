@@ -143,6 +143,10 @@ apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	1
 apps/mobile/app.config.ts	fleet-connect	1
 apps/mobile/app.config.ts	library-push	2
+apps/mobile/src/App.tsx	library-push	2
+apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	library-push	3
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-push	2
+apps/mobile/src/state/use-remote-environment-registry.ts	library-push	2
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
@@ -719,3 +723,11 @@ apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	directory-comp
 apps/server/src/telemetry/AnalyticsService.ts	telemetry-off	1
 apps/server/src/cloud/http.ts	connect-off	3
 apps/server/vite.config.ts	connect-off	1
+packages/contracts/src/server.ts	reach	1
+apps/server/src/environment/DirectEndpoints.ts	reach	3
+apps/server/src/server.ts	reach	2
+apps/web/src/components/settings/ConnectionsSettings.tsx	reach	2
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	reach	2
+packages/client-runtime/src/connection/catalog.ts	reach	1
+packages/client-runtime/src/connection/routes.ts	reach	3
+packages/shared/package.json	-	"./fork/reach"

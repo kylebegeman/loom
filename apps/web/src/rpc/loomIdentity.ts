@@ -4,8 +4,14 @@ import {
   LOOM_IDENTITY_LOGIN_PATH,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_LOGOUT_PATH,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
+import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  identityMetadataResource,
+  identityResourceRefusal,
+} from "@t3tools/shared/fork/identity-grant";
 import * as Schema from "effect/Schema";
 
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
@@ -60,6 +66,18 @@ export function loomBrowserLoginUrl(
 
 const activeBrowserSignIns = new Map<string, AbortController>();
 
+/** The named refusal a computer sends when only a different sign-in would work, if any. */
+async function sessionRefusalCode(response: Response): Promise<string | null> {
+  if (response.status !== 401) return null;
+  const body: unknown = await response.json().catch(() => null);
+  return typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "string"
+    ? body.error
+    : null;
+}
+
 export function cancelLoomBrowserSignIn(baseUrl: string) {
   activeBrowserSignIns.get(new URL(baseUrl).origin)?.abort();
 }
@@ -99,6 +117,8 @@ export async function signInToLoomBrowser(
     // picks the provider, so this stops only a computer that reports its provider honestly.
     if (input.expectedIssuer !== undefined && metadata.issuer !== input.expectedIssuer)
       throw new Error("This computer uses a different sign-in provider than your Library.");
+    const resourceRefusal = identityResourceRefusal(input.expectedResource, metadata);
+    if (resourceRefusal !== null) throw new Error(resourceRefusal);
     const random = () => {
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       return btoa(String.fromCharCode(...bytes))
@@ -186,8 +206,11 @@ export async function signInToLoomBrowser(
         ...(input.expectedIdentity ? { expectedIdentity: input.expectedIdentity } : {}),
       }),
     });
-    if (!response.ok)
+    if (!response.ok) {
+      if ((await sessionRefusalCode(response)) === LOOM_IDENTITY_PASSKEY_REQUIRED)
+        throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT);
       throw new Error("This account could not sign in to the computer. Try again or use pairing.");
+    }
     const session = decodeIdentitySession(await response.json());
     if (
       session.token_type !== "Bearer" ||
@@ -208,6 +231,7 @@ export async function signInToLoomBrowser(
       accessToken: session.access_token,
       identity: session.identity,
       expiresAt: Date.now() + session.expires_in * 1000,
+      resource: identityMetadataResource(metadata),
     };
   } finally {
     dispose();

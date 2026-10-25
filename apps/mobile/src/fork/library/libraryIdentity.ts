@@ -16,11 +16,15 @@ import {
   LoomIdentityMetadata,
   LoomIdentitySessionResult,
   type LoomIdentityAccount,
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
 } from "@t3tools/contracts/fork";
 import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
   identityGrantKey,
+  identityMetadataResource,
+  identityResourceRefusal,
   identitySignInMaxAge,
 } from "@t3tools/shared/fork/identity-grant";
 import * as Schema from "effect/Schema";
@@ -116,6 +120,12 @@ export type IdentityOptions = {
    * found through the Library's directory is pinned to the Library's own issuer.
    */
   readonly expectedIssuer?: string;
+  /**
+   * The resource the computer must name (its audience when it names none), checked before the
+   * provider sign-in opens. Set from the Library's attested resource or a saved connection's pin,
+   * so a computer cannot collect a sign-in meant for another computer.
+   */
+  readonly expectedResource?: string;
   readonly requireSessionExchange?: boolean;
   readonly signal?: AbortSignal;
 };
@@ -160,6 +170,8 @@ export async function loadLibraryIdentity(
     );
   if (options.expectedIssuer !== undefined && metadata.issuer !== options.expectedIssuer)
     throw new Error("This computer uses a different sign-in provider than your Library.");
+  const resourceRefusal = identityResourceRefusal(options.expectedResource, metadata);
+  if (resourceRefusal !== null) throw new Error(resourceRefusal);
   secureIdentityEndpoint(metadata.issuer);
   secureIdentityEndpoint(metadata.authorizationEndpoint);
   secureIdentityEndpoint(metadata.tokenEndpoint);
@@ -263,16 +275,14 @@ export async function exchangeLibraryIdentityToken(
   );
   if (!response.ok) {
     const failure: unknown = await response.json().catch(() => null);
+    const code =
+      typeof failure === "object" && failure !== null && "error" in failure ? failure.error : null;
     // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
-    if (
-      typeof failure === "object" &&
-      failure !== null &&
-      "error" in failure &&
-      failure.error === LOOM_IDENTITY_SIGN_IN_EXPIRED
-    )
+    if (code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
       throw new Error(
         "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.",
       );
+    if (code === LOOM_IDENTITY_PASSKEY_REQUIRED) throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT);
     throw new Error(
       "This account could not sign in to the computer. Check its allowed accounts and try again.",
     );
@@ -371,6 +381,7 @@ export async function completeNativeIdentitySignIn(input: {
         label: input.label,
         ...destination,
         identity: account,
+        identityResource: identityMetadataResource(metadata),
       }),
       credential: new BearerConnectionCredential({
         token: session.access_token,

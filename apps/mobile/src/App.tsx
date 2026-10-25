@@ -28,6 +28,7 @@ import { APP_LINKING_CONFIG, shouldHandleAppLink } from "./lib/appLinking"; // f
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
+import { LibraryPushCoordinator } from "./fork/library-push/LibraryPushCoordinator"; // fork: library-push
 import { VoiceInputProvider } from "./features/voice-input/VoiceInputProvider";
 import { GlobalVoiceInputControl } from "./features/voice-input/GlobalVoiceInputControl";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
@@ -99,6 +100,8 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
+      {/* fork: library-push */}
+      <LibraryPushCoordinator />
       <PermissionUpdateNotice />
       <GestureHandlerRootView className="flex-1">
         <KeyboardProvider statusBarTranslucent>

@@ -34,6 +34,13 @@ import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/enviro
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import { resolveLibraryConnection } from "../project-library/LibraryConnection.ts";
+import {
+  ReachStore,
+  type ReachStoredComputer,
+  attestedResource,
+  isReachActive,
+  readyHostname,
+} from "../reach/library/ReachStore.ts";
 import { httpsOrigin } from "./advertised.ts";
 
 export const DIRECTORY_REPORT_ROUTE = "/api/loom/directory/report";
@@ -44,6 +51,15 @@ export const DIRECTORY_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS fork_directory_environments (environment_id TEXT PRIMARY KEY, public_key TEXT NOT NULL, key_fingerprint TEXT NOT NULL, sequence INTEGER NOT NULL, payload_json TEXT NOT NULL, first_seen_at TEXT NOT NULL, received_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS fork_directory_machines (key_fingerprint TEXT PRIMARY KEY, reported_by TEXT NOT NULL, payload_json TEXT NOT NULL, first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL)`,
 ] as const;
+
+/** What the directory pinned for a computer: the key its reports verify against. */
+export interface DirectoryPin {
+  /** Base64 DER SPKI, as the first report carried it. */
+  readonly publicKey: string;
+  readonly keyFingerprint: string;
+  /** The label of its newest stored report, or null when that payload no longer decodes. */
+  readonly label: string | null;
+}
 
 export class DirectoryService extends Context.Service<
   DirectoryService,
@@ -56,8 +72,15 @@ export class DirectoryService extends Context.Service<
     }) => Effect.Effect<DirectoryEnvironment, DirectoryError>;
     /** The authority's own records, with itself first. */
     readonly list: Effect.Effect<DirectoryListing, DirectoryError>;
-    /** Removes a record. An environment's next report then pins whatever key it signs with. */
+    /**
+     * Removes a record. An environment's next report then pins whatever key it signs with, so a
+     * computer with a live reach address is refused until the Library retires that address.
+     */
     readonly forget: (request: DirectoryForgetRequest) => Effect.Effect<void, DirectoryError>;
+    /** The pinned key of one computer, or null when the directory has none. */
+    readonly pinned: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<DirectoryPin | null, DirectoryError>;
     /** The listing wherever the directory runs: here on the authority, else asked of it. */
     readonly computers: Effect.Effect<DirectoryListing, DirectoryError>;
   }
@@ -91,6 +114,28 @@ const decodeRefusal = Schema.decodeUnknownEffect(
   Schema.Struct({ reason: DirectoryError.fields.reason }),
 );
 
+/**
+ * A computer may publish a `public` route only as the reach hostname the Library recorded ready
+ * for it, so a computer cannot point clients at a host it does not answer for. The resource is
+ * attested only once Pocket ID holds it.
+ */
+const withReach = (
+  environment: DirectoryEnvironment,
+  computer: ReachStoredComputer | undefined,
+): DirectoryEnvironment => {
+  const hostname = readyHostname(computer);
+  const resource = attestedResource(computer);
+  // Stored reports never carry `identityResource`; only this attestation adds it.
+  return {
+    ...environment,
+    routes: environment.routes.filter(
+      (route) =>
+        route.kind !== "public" || (hostname !== null && route.url === `https://${hostname}/`),
+    ),
+    ...(resource === null ? {} : { identityResource: resource }),
+  };
+};
+
 const make = Effect.gen(function* () {
   const authority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(Config.withDefault(false));
   // Reports are signed for the Library's public origin, the one its identity callback names.
@@ -107,6 +152,8 @@ const make = Effect.gen(function* () {
   const descriptors = yield* Effect.serviceOption(ServerEnvironment);
   const secrets = yield* Effect.serviceOption(ServerSecretStore.ServerSecretStore);
   const providers = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
+  // Optional, so the directory runs without reach; reach depends on the directory, not back.
+  const reach = yield* Effect.serviceOption(ReachStore);
   // Resolved once, as the publisher does; a broken Library URL leaves the forwarded tool off.
   const connection = authority
     ? null
@@ -286,10 +333,17 @@ const make = Effect.gen(function* () {
       }>`SELECT payload_json FROM fork_directory_machines ORDER BY last_seen_at DESC, key_fingerprint`,
     ]).pipe(Effect.mapError(io));
     const own = yield* self;
+    // Unreadable reach records attest nothing and keep no computer's public route.
+    const reachRecords: Readonly<Record<string, ReachStoredComputer>> = Option.isSome(reach)
+      ? yield* reach.value.read.pipe(
+          Effect.map((state) => state.computers),
+          Effect.orElseSucceed(() => ({})),
+        )
+      : {};
     const environments = environmentRows.flatMap((row) =>
-      Option.toArray(decodeEnvironment(row.payload_json)).filter(
-        (environment) => environment.environmentId !== own?.environmentId,
-      ),
+      Option.toArray(decodeEnvironment(row.payload_json))
+        .filter((environment) => environment.environmentId !== own?.environmentId)
+        .map((environment) => withReach(environment, reachRecords[environment.environmentId])),
     );
     return {
       environments: own === null ? environments : [own, ...environments],
@@ -300,6 +354,11 @@ const make = Effect.gen(function* () {
 
   const forget = Effect.fn("DirectoryService.forget")(function* (request: DirectoryForgetRequest) {
     yield* running;
+    if (request.kind === "environment" && Option.isSome(reach)) {
+      const state = yield* reach.value.read.pipe(Effect.mapError(io));
+      if (isReachActive(state.computers[request.environmentId]))
+        return yield* directoryError("reach-active");
+    }
     const removed = yield* lock
       .withPermits(1)(
         request.kind === "environment"
@@ -308,6 +367,26 @@ const make = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(io));
     if (removed.length === 0) return yield* directoryError("not-found");
+  });
+
+  const pinned = Effect.fn("DirectoryService.pinned")(function* (environmentId: EnvironmentId) {
+    yield* running;
+    const [row] = yield* sql<{
+      readonly public_key: string;
+      readonly key_fingerprint: string;
+      readonly payload_json: string;
+    }>`SELECT public_key, key_fingerprint, payload_json FROM fork_directory_environments WHERE environment_id = ${environmentId}`.pipe(
+      Effect.mapError(io),
+    );
+    if (row === undefined) return null;
+    return {
+      publicKey: row.public_key,
+      keyFingerprint: row.key_fingerprint,
+      label: Option.match(decodeEnvironment(row.payload_json), {
+        onNone: () => null,
+        onSome: (environment) => environment.label,
+      }),
+    } satisfies DirectoryPin;
   });
 
   const forwarded = Effect.gen(function* () {
@@ -335,6 +414,7 @@ const make = Effect.gen(function* () {
     report,
     list,
     forget,
+    pinned,
     computers: authority ? list : forwarded,
   });
 });

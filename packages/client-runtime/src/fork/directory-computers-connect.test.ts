@@ -7,15 +7,23 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import { BearerConnectionProfile } from "../connection/catalog.ts";
 import { BearerConnectionTarget } from "../connection/model.ts";
-import { directoryCatalogRows, type DirectoryCatalogRow } from "./directory.ts";
+import type { ConnectionRoute } from "../connection/catalog.ts";
+import { mergeLearnedRoutes } from "../connection/routes.ts";
+import {
+  directoryCatalogRows,
+  type DirectoryCatalogRow,
+  type DirectorySignIn,
+} from "./directory.ts";
 import {
   directoryLibraryTrust,
   directorySignInMismatch,
   resolveDirectoryConnect,
+  savedIdentitySignIn,
   type DirectoryConnectStep,
   type DirectoryLibraryTrust,
 } from "./directory-computers-connect.ts";
 import {
+  APP_ORIGIN,
   BOOK,
   LIBRARY,
   LIBRARY_ISSUER,
@@ -31,6 +39,7 @@ const TAILNET = "https://book.example.ts.net";
 const LIBRARY_URL = "https://library.example.com";
 const ACCOUNT = { issuer: LIBRARY_ISSUER, subject: "kyle" };
 const native = { surface: "native" } as const;
+const browser = { surface: "browser", origin: APP_ORIGIN } as const;
 
 const [bookRow] = directoryCatalogRows({
   listing: listing([
@@ -76,9 +85,10 @@ const resolve = (
   answers: Record<string, () => Response>,
   library: DirectoryLibraryTrust,
   row: DirectoryCatalogRow = bookRow,
+  signIn: DirectorySignIn = native,
 ) => {
   const server = serve(answers);
-  return resolveDirectoryConnect({ row, signIn: native, library }).pipe(
+  return resolveDirectoryConnect({ row, signIn, library }).pipe(
     Effect.provideService(HttpClient.HttpClient, server.client),
     Effect.map((step) => ({ step, requested: server.requested })),
   );
@@ -209,6 +219,84 @@ describe("resolveDirectoryConnect", () => {
     }),
   );
 
+  it.effect("signs a native app in at the public route first", () =>
+    Effect.gen(function* () {
+      const both = {
+        [PUBLIC]: () => Response.json(identity(BOOK)),
+        [TAILNET]: () => Response.json(identity(BOOK)),
+      };
+      const { step, requested } = yield* resolve(both, signedInLibrary);
+      expect(requested).toEqual([PUBLIC]);
+      expect(step).toMatchObject({ kind: "sign-in", surface: "native", route: { url: PUBLIC } });
+    }),
+  );
+
+  it.effect("signs a browser in over tailnet without reading the public route", () =>
+    Effect.gen(function* () {
+      const both = {
+        [PUBLIC]: () => Response.json(identity(BOOK)),
+        [TAILNET]: () => Response.json(identity(BOOK)),
+      };
+      const { step, requested } = yield* resolve(both, signedInLibrary, bookRow, browser);
+      expect(requested).toEqual([TAILNET]);
+      expect(step).toMatchObject({
+        kind: "sign-in",
+        surface: "browser",
+        route: { url: TAILNET },
+        request: { httpBaseUrl: TAILNET },
+      });
+    }),
+  );
+
+  it.effect("pairs a browser when only the public reach address answers", () =>
+    Effect.gen(function* () {
+      const { step, requested } = yield* resolve(
+        { [PUBLIC]: () => Response.json(identity(BOOK)) },
+        signedInLibrary,
+        bookRow,
+        browser,
+      );
+      expect(requested).toEqual([TAILNET, PUBLIC]);
+      expect(step).toEqual({
+        kind: "pairing",
+        environmentId: BOOK,
+        httpBaseUrl: PUBLIC,
+        reason: "reach-browser",
+        reasonText: "Sign in from this browser on your home network, or pair it with a code.",
+      });
+    }),
+  );
+
+  it.effect("pins the sign-in to the resource the Library attests, and only then", () =>
+    Effect.gen(function* () {
+      const resource = "https://library.example.com/computers/book";
+      const [attested] = directoryCatalogRows({
+        listing: listing([
+          reported(BOOK, { routes: [{ kind: "public", url: PUBLIC }], identityResource: resource }),
+        ]),
+        saved: [],
+        connected: [],
+        now: NOW,
+      });
+      if (attested === undefined) throw new Error("expected a discovered row");
+      const { step } = yield* resolve(
+        { [PUBLIC]: () => Response.json(identity(BOOK, { resource })) },
+        signedInLibrary,
+        attested,
+      );
+      expect(step?.kind === "sign-in" ? step.request.expectedResource : null).toBe(resource);
+
+      const unattested = yield* resolve(
+        { [PUBLIC]: () => Response.json(identity(BOOK, { resource })) },
+        signedInLibrary,
+      );
+      expect(unattested.step).toMatchObject({ kind: "sign-in" });
+      expect(
+        unattested.step?.kind === "sign-in" ? unattested.step.request : null,
+      ).not.toHaveProperty("expectedResource");
+    }),
+  );
+
   it.effect("pairs with a computer that has no Loom sign-in", () =>
     Effect.gen(function* () {
       const { step } = yield* resolve(
@@ -242,6 +330,98 @@ describe("directoryLibraryTrust", () => {
       enabled: true,
     });
     expect(trust).toEqual(signedInLibrary);
+  });
+});
+
+describe("savedIdentitySignIn", () => {
+  const RESOURCE = "https://library.example.com/computers/book";
+  const route = (
+    url: string,
+    options: { learned?: true; identity?: boolean; resource?: string } = {},
+  ) => {
+    const connectionId = `bearer:${url}`;
+    return {
+      target: new BearerConnectionTarget({ environmentId: BOOK, label: "Book", connectionId }),
+      profile: Option.some(
+        new BearerConnectionProfile({
+          connectionId,
+          environmentId: BOOK,
+          label: "Book",
+          httpBaseUrl: `${url}/`,
+          wsBaseUrl: `${url.replace("https:", "wss:")}/`,
+          ...(options.identity === false ? {} : { identity: ACCOUNT }),
+          ...(options.learned ? { learned: true as const } : {}),
+          ...(options.resource === undefined ? {} : { identityResource: options.resource }),
+        }),
+      ),
+    } satisfies ConnectionRoute;
+  };
+  const entry = (routes: readonly [ConnectionRoute, ...ConnectionRoute[]]) => {
+    const [first, ...rest] = routes;
+    return {
+      target: first.target,
+      profile: first.profile,
+      enabled: true,
+      ...(rest.length === 0 ? {} : { alternateRoutes: rest }),
+    };
+  };
+
+  it("pins the saved account and computer at the first route that signed in", () => {
+    const saved = entry([route(TAILNET), route(PUBLIC, { learned: true })]);
+    expect(savedIdentitySignIn(saved, "browser")?.request).toEqual({
+      httpBaseUrl: `${TAILNET}/`,
+      expectedEnvironmentId: BOOK,
+      expectedIdentity: ACCOUNT,
+    });
+  });
+
+  it("never sends a browser to a learned public route", () => {
+    const reachFirst = entry([route(PUBLIC, { learned: true }), route(TAILNET, { learned: true })]);
+    expect(savedIdentitySignIn(reachFirst, "browser")?.profile.httpBaseUrl).toBe(`${TAILNET}/`);
+    expect(savedIdentitySignIn(reachFirst, "native")?.profile.httpBaseUrl).toBe(`${PUBLIC}/`);
+
+    const reachOnly = entry([
+      route(TAILNET, { identity: false }),
+      route(PUBLIC, { learned: true }),
+    ]);
+    expect(savedIdentitySignIn(reachOnly, "browser")).toBeNull();
+    // A public address the user saved is theirs to use.
+    expect(savedIdentitySignIn(entry([route(PUBLIC)]), "browser")?.profile.httpBaseUrl).toBe(
+      `${PUBLIC}/`,
+    );
+  });
+
+  it("pins the resource the connection first signed in with, on routes learned later too", () => {
+    const signedIn = route(TAILNET, { resource: RESOURCE });
+    expect(savedIdentitySignIn(entry([signedIn]), "native")?.request.expectedResource).toBe(
+      RESOURCE,
+    );
+    const learned = mergeLearnedRoutes({
+      entry: entry([signedIn]),
+      activeRoute: signedIn,
+      reported: [
+        { kind: "tailnet", httpBaseUrl: TAILNET },
+        { kind: "public", httpBaseUrl: PUBLIC },
+      ],
+      allowInsecure: false,
+    });
+    // The saved route is rebuilt to note its network, and keeps its pin.
+    expect(savedIdentitySignIn(entry([learned![0]!]), "native")?.request).toMatchObject({
+      httpBaseUrl: `${TAILNET}/`,
+      expectedResource: RESOURCE,
+    });
+    const reach = learned?.find((candidate) =>
+      Option.exists(
+        candidate.profile,
+        (profile) => profile._tag === "BearerConnectionProfile" && profile.learned === true,
+      ),
+    );
+    expect(reach).toBeDefined();
+    expect(savedIdentitySignIn(entry([reach!]), "native")?.request).toMatchObject({
+      httpBaseUrl: `${PUBLIC}/`,
+      expectedIdentity: ACCOUNT,
+      expectedResource: RESOURCE,
+    });
   });
 });
 

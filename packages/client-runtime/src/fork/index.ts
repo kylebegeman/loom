@@ -76,6 +76,8 @@ export * from "./directory-cache.ts";
 export * from "./directory-computers.ts";
 export * from "./directory-computers-connect.ts";
 export * from "./directory-computers-view.ts";
+export * from "./reach.ts";
+export * from "./library-push.ts";
 export * from "./identity-renewal.ts";
 export * from "./identity-renewal-worker.ts";
 export * from "./no-project-target.ts";

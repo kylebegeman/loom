@@ -43,6 +43,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen.logic";
+import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -57,6 +58,7 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
+  if (!hasCloudPublicConfig() && LibraryPush.isSupported()) return <LibraryPush.Screen />; // fork: library-push
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsScreen title="Notifications">
@@ -465,6 +467,8 @@ function ConfiguredSettingsNotificationsRouteScreen() {
             />
           ) : null}
         </SettingsSection>
+        {/* fork: library-push */}
+        <LibraryPush.Section />
       </ScrollView>
     </SettingsScreen>
   );

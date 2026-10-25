@@ -358,6 +358,27 @@ describe("DirectoryReporter", () => {
     ),
   );
 
+  it.effect("reports the reach address as a public route and still drops LAN routes", () =>
+    withReporter({}, (h) =>
+      Effect.gen(function* () {
+        yield* h.nextPost;
+        expect(yield* h.nextSleep).toBe(30_000);
+
+        yield* Ref.set(h.endpoints, [
+          ...ROUTES,
+          { kind: "public", httpBaseUrl: "http://studio-loom.example.com/" },
+          { kind: "public", httpBaseUrl: "https://studio-loom.example.com/" },
+        ]);
+        yield* TestClock.adjust("30 seconds");
+        const changed = yield* h.nextPost;
+        expect(changed.report.routes).toEqual([
+          { kind: "tailnet", url: "https://computer.example.ts.net/" },
+          { kind: "public", url: "https://studio-loom.example.com/" },
+        ]);
+      }),
+    ),
+  );
+
   it.effect("reports a provider status or worker change without waiting for the minute", () =>
     withReporter({}, (h) =>
       Effect.gen(function* () {

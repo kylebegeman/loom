@@ -24,6 +24,7 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
     identity: Schema.optionalKey(LoomIdentityAccount),
+    identityResource: Schema.optionalKey(Schema.String), // fork: reach
     learned: Schema.optionalKey(Schema.Literal(true)),
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
     /**

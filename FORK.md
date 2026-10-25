@@ -399,10 +399,32 @@ sign-in for that row, and clears the row's address when the form closes. iPhone'
 `libraryComputer` route param. See the
 [L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
 
-L115 `library-push` seams let a Loom iPhone build carry the push entitlement for Library
+L114 `reach` seams publish a computer's public reach address, `https://<name>-loom.<zone>/`,
+once its Library has set up a Cloudflare tunnel for it. `packages/contracts/src/server.ts` (1
+marker line) adds `public` to `ServerDirectEndpointKind`, which older clients drop through
+`ForwardCompatibleArray`. `DirectEndpoints.ts` (3) reads the fork `ReachPublicRoute` with
+`Effect.serviceOption`, so upstream tests need nothing, and appends the address while the
+connector runs. `server.ts` (2) provides that route right after `DirectEndpoints.layer`,
+which sits below ForkLayer and cannot see fork services. Web `ConnectionsSettings.tsx` (2) and
+iPhone `SettingsEnvironmentDetailRouteScreen.tsx` (2) mount the reach section in a saved
+computer's details, and `packages/shared/package.json` exports `./fork/reach` (no marker).
+Client-runtime `catalog.ts` (1) adds `identityResource` to `BearerConnectionProfile`, the
+resource a saved connection signed in with, and `routes.ts` (3) carries it onto rebuilt and
+learned routes so a later sign-in over a reach address stays pinned. The request guard on the
+reach hostname is a global middleware merged into `ForkRoutesLayer`, so it needs no upstream
+line. See the [L114 packet](docs/fork/packets/L114-reach/SEAMS.md).
+
+L115 `library-push` seams let a Loom iPhone build register with its Library for push
 notifications without Connect. `apps/mobile/app.config.ts` (2 marker lines) keeps
 `aps-environment` when `LOOM_MOBILE_LIBRARY_PUSH_ENABLED=1` and exposes `extra.loomLibraryPush`,
-while upstream's relay and widget push paths stay off. See the
+while upstream's relay and widget push paths stay off. `App.tsx` (2) mounts the fork
+registration coordinator next to `SubscriptionUsageCoordinator`.
+`SettingsNotificationsRouteScreen.tsx` (3) returns the Library notifications screen before
+upstream's own early return in a build without Connect config, and appends the Library section
+to the Connect variant. `SettingsRouteScreen.tsx` (2) adds a Notifications row to the Local
+settings variant, which has none. `use-remote-environment-registry.ts` (2) asks the Library to
+forget the phone before the iPhone's Remove revokes the session that request needs. The Library
+server, web and the rest of the iPhone work are fork-owned. See the
 [L115 packet](docs/fork/packets/L115-push/SEAMS.md).
 
 L116 `telemetry-off` seams stop Loom sending product analytics to T3. `AnalyticsService.ts` (1)

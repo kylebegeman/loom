@@ -14,9 +14,11 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
-import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
+import { savedIdentitySignInPin } from "@t3tools/shared/fork/identity-grant";
+
+import type { BearerConnectionProfile, ConnectionCatalogEntry } from "../connection/catalog.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { connectionRoutes } from "../connection/routes.ts";
+import { connectionRouteKind, connectionRoutes, isLearned } from "../connection/routes.ts";
 import {
   DIRECTORY_PAIRING_REASON_TEXT,
   directoryConnectPlan,
@@ -149,8 +151,9 @@ const pairing = (
 /**
  * How to connect a discovered computer: read its sign-in settings from its routes in order,
  * skipping a route that does not answer or reaches another computer, then offer Loom Identity at
- * the first route that answered when the computer uses the Library's issuer. Null for a saved
- * connection or a computer with no usable route.
+ * the first route that answered when the computer uses the Library's issuer. A browser tries
+ * tailnet first and pairs when only a public reach address answers, since reach hosts serve no
+ * browser sign-in. Null for a saved connection or a computer with no usable route.
  */
 export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConnect")(
   function* (input: {
@@ -189,6 +192,9 @@ export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConn
     const plan = directoryConnectPlan(row, answered.read, { signIn, libraryIssuer });
     if (plan === null || plan.reason !== null || libraryIssuer === null)
       return pairing(row.environmentId, answered.route, plan?.reason ?? "no-sign-in");
+    if (signIn.surface === "browser" && answered.route.kind === "public")
+      return pairing(row.environmentId, answered.route, "reach-browser");
+    const attestedResource = row.report?.identityResource;
     return {
       kind: "sign-in",
       surface: signIn.surface,
@@ -199,6 +205,7 @@ export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConn
         expectedEnvironmentId: row.environmentId,
         expectedIssuer: libraryIssuer,
         ...(library.account === null ? {} : { expectedIdentity: library.account }),
+        ...(attestedResource === undefined ? {} : { expectedResource: attestedResource }),
       },
       issuer: libraryIssuer,
     } satisfies DirectoryConnectStep;
@@ -246,5 +253,37 @@ export function directorySignInMismatch(
   const expected = step.request.expectedIdentity;
   if (expected !== undefined && result.identity.subject !== expected.subject)
     return "Sign in with the same account you use for your Library.";
+  return null;
+}
+
+/** Where a saved computer signs in with Loom Identity again, and what that sign-in must match. */
+export interface SavedIdentitySignIn {
+  readonly profile: BearerConnectionProfile;
+  readonly request: LoomDesktopSignInRequest;
+}
+
+/**
+ * The first saved route that signed in with Loom Identity, pinned to the account (and resource,
+ * once recorded) it signed in with. A browser skips learned public routes: those are reach
+ * addresses, which serve no browser sign-in. Null when no such route is left.
+ */
+export function savedIdentitySignIn(
+  entry: ConnectionCatalogEntry,
+  surface: DirectorySignInSurface,
+): SavedIdentitySignIn | null {
+  for (const route of connectionRoutes(entry)) {
+    const profile = Option.getOrNull(route.profile);
+    if (profile?._tag !== "BearerConnectionProfile" || profile.identity === undefined) continue;
+    if (surface === "browser" && isLearned(route) && connectionRouteKind(route) === "public")
+      continue;
+    return {
+      profile,
+      request: {
+        httpBaseUrl: profile.httpBaseUrl,
+        expectedEnvironmentId: entry.target.environmentId,
+        ...savedIdentitySignInPin(profile),
+      },
+    };
+  }
   return null;
 }

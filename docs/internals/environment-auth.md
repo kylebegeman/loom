@@ -50,6 +50,21 @@ until it is ended at Pocket ID or its subject leaves the allowed list.
 
 <!-- fork: identity-renewal -->
 
+<!-- fork: reach -->
+
+With reach, the Library derives each computer's resource as
+`<Library origin>/computers/<environment id>`, creates it at Pocket ID only during a reach
+setup, and attests it in its directory only while Pocket ID holds it. Directory sign-ins refuse
+metadata that names any other resource, so a computer cannot obtain a token for a sibling's
+resource by naming it in its own `/api/loom/identity`. Saved connections do not pin a resource
+yet. The Pocket ID admin key that creates resources can also rewrite the native client's callback
+URLs, so a leaked key plus one click by the account owner on a genuine sign-in link yields a
+sign-in to any computer. `LOOM_IDENTITY_REQUIRE_PASSKEY=true` requires an ID token on every
+native session, refuses the `/oauth/token` exchange, checks `amr` for `phr`, and rotates
+sessions once when set. It is a speed bump against an admin-key holder, who can enroll a passkey.
+
+<!-- fork: reach -->
+
 A hosted frontend receives a short-lived, single-use PKCE code through an exactly bound
 opener message, then redeems it at the selected host without cookies. The host's OIDC
 callback stays on the host, and the application handoff never puts credentials in URLs.
@@ -89,6 +104,14 @@ above its ceiling. Inside MCP the credential sets the limits and tool
 parameters only pick targets; see
 [threadAccess](../../apps/server/src/mcp/threadAccess.ts).
 
+<!-- fork: reach -->
+
+A reach address never forwards `/mcp`, `/oauth/mcp/*` or `/.well-known/oauth-*`. None is on
+the reach allowlist, so outside agents reach MCP only through the computer's other addresses,
+and the approval page above is never served to the internet.
+
+<!-- fork: reach -->
+
 Issuer and resource URLs come from the request's Host and
 `X-Forwarded-Proto`, so one server answers over loopback, Tailscale Serve and a
 T3 Connect tunnel. A proxy that rewrites Host or drops the protocol header
@@ -124,6 +147,28 @@ Revocation and insertion share a [database
 transaction](../../apps/server/src/persistence/AuthSessions.ts); a failed
 replacement must leave the old credential usable. Pairing and browser sessions
 do not follow this replacement rule.
+
+<!-- fork: reach -->
+
+### Reach addresses expose an allowlist
+
+A reach address puts a computer on the internet, so only an explicit list of methods and paths
+answers there ([reach.ts](../../packages/shared/src/fork/reach.ts)). Two layers apply it from
+that one constant: a Cloudflare WAF rule the Library maintains, and an in-process
+[guard](../../apps/server/src/fork/reach/guard.ts) on the computer. The edge follows the
+Library's version and the guard follows the computer's, so a path added to the list answers only
+once both run the new version. A new route stays unreachable over reach until it is listed, and
+listing it exposes it to the internet, so it must authenticate.
+
+Every request that acts on the computer needs a credential. The unauthenticated surface is
+`/.well-known/t3/environment`, `GET /api/loom/identity`, `GET /api/auth/session`, the
+pairing-code exchange at `POST /oauth/token`, and signed asset and preview URLs, which are
+bearer URLs. The guard accepts only pairing codes at `/oauth/token`, never a desktop bootstrap
+or the dev credential. It also refuses `X-Forwarded-Host`, dot segments and encoded separators,
+answers 404 while reach is off, and strips every `Set-Cookie`, so no browser cookie session is
+ever set on a reach address. Webhooks and browser Identity sign-in stay blocked there.
+
+<!-- fork: reach -->
 
 ### Reusable dev credential
 

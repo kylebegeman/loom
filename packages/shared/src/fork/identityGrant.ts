@@ -2,10 +2,12 @@
 import { sha256 } from "@noble/hashes/sha2";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
   type LoomDesktopSignInResult,
   type LoomIdentityAccount,
+  type LoomIdentityMetadata,
   LoomIdentitySessionRequest,
   LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
@@ -106,6 +108,71 @@ const MAX_SESSION_SECONDS = 3600;
  */
 export function identitySignInMaxAge(maxSessionAgeSeconds: number): string {
   return String(Math.max(0, Math.floor(maxSessionAgeSeconds) - MAX_SESSION_SECONDS));
+}
+
+/**
+ * Pocket ID reapplies the browser session's sign-in method to every grant, so signing in again
+ * only helps once that session ends.
+ */
+export const IDENTITY_PASSKEY_REQUIRED_TEXT =
+  "This computer accepts passkey sign-ins only. Sign out of Loom Identity in your browser, then sign in with your passkey.";
+
+export const IDENTITY_RESOURCE_MISMATCH_TEXT =
+  "This computer's sign-in does not match the one Loom expects for it.";
+
+type IdentityResourceFields = Pick<LoomIdentityMetadata, "audience" | "resource">;
+
+/**
+ * What a computer's Identity sign-in is issued for: its resource indicator, else its audience.
+ * The computer derives the same value, and clients pin it.
+ */
+export function identityMetadataResource(metadata: IdentityResourceFields): string {
+  return metadata.resource || metadata.audience;
+}
+
+/**
+ * The refusal line when a computer's metadata names another resource than the pinned one, else
+ * null. Check it before the provider opens: a computer naming another computer's resource would
+ * otherwise collect a sign-in that the other computer accepts.
+ */
+export function identityResourceRefusal(
+  expectedResource: string | undefined,
+  metadata: IdentityResourceFields,
+): string | null {
+  return expectedResource === undefined || identityMetadataResource(metadata) === expectedResource
+    ? null
+    : IDENTITY_RESOURCE_MISMATCH_TEXT;
+}
+
+/**
+ * The pin a saved connection's later sign-ins carry. A connection saved before it recorded a
+ * resource pins only its account, and records the resource at its next sign-in.
+ */
+export function savedIdentitySignInPin(profile: {
+  readonly identity?: LoomIdentityAccount | undefined;
+  readonly identityResource?: string | undefined;
+}): { readonly expectedIdentity?: LoomIdentityAccount; readonly expectedResource?: string } {
+  return {
+    ...(profile.identity === undefined ? {} : { expectedIdentity: profile.identity }),
+    ...(profile.identityResource === undefined
+      ? {}
+      : { expectedResource: profile.identityResource }),
+  };
+}
+
+/**
+ * Carries a saved profile's resource pin onto a profile rebuilt from it, such as a learned route,
+ * so a later sign-in over that route is pinned too.
+ */
+export function keepIdentityResource(
+  profile:
+    | { readonly _tag: string; readonly identityResource?: string | undefined }
+    | null
+    | undefined,
+): { readonly identityResource?: string } {
+  return profile?.identityResource === undefined
+    ? {}
+    : { identityResource: profile.identityResource };
 }
 
 const encodeKeyParts = Schema.encodeSync(
@@ -270,11 +337,11 @@ export async function exchangeNativeIdentitySession(input: {
     },
     "Could not reach this computer to renew Loom access.",
   );
-  if (
-    reply.status === 401 &&
-    Option.getOrUndefined(decodeErrorCode(reply.body))?.error === LOOM_IDENTITY_SIGN_IN_EXPIRED
-  )
+  const refusal = reply.status === 401 ? Option.getOrUndefined(decodeErrorCode(reply.body)) : null;
+  if (refusal?.error === LOOM_IDENTITY_SIGN_IN_EXPIRED)
     return signInRequired("Your Loom sign-in reached its time limit. Sign in again.");
+  if (refusal?.error === LOOM_IDENTITY_PASSKEY_REQUIRED)
+    return signInRequired(IDENTITY_PASSKEY_REQUIRED_TEXT);
   if (reply.status >= 500 || reply.status === 408 || reply.status === 429)
     throw new IdentityGrantTransientError(
       `This computer could not renew Loom access (HTTP ${reply.status}).`,
