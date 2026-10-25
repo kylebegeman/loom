@@ -247,10 +247,16 @@ describe("DesktopBackendConfiguration", () => {
         const second = yield* configuration.resolvePrimary;
 
         assert.equal(first.executablePath, process.execPath);
-        assert.deepEqual(first.args.slice(0, 3), [
+        assert.deepEqual(first.args, [
+          "--report-on-fatalerror",
+          `--report-directory=${environment.logDir}`,
+          "--report-exclude-env",
+          "--report-exclude-network",
           "--require",
           environment.compileCachePath,
           environment.backendEntryPath,
+          "--bootstrap-fd",
+          "3",
         ]);
         assert.equal(first.entryPath, environment.backendEntryPath);
         assert.equal(first.cwd, environment.backendCwd);
