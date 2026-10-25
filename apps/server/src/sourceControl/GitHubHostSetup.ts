@@ -122,6 +122,8 @@ export const findExecutable = Effect.fn("GitHubHostSetup.findExecutable")(functi
 });
 
 export const GitHubHostStatus = Schema.Struct({
+  // fork: github-host-setup
+  account: Schema.optionalKey(Schema.String),
   executable: Schema.NullOr(Schema.String),
   state: Schema.Literals([
     "missing-cli",
@@ -178,7 +180,8 @@ export const make = Effect.fnUntraced(function* (releases: typeof RELEASES = REL
       maxOutputBytes: 64 * 1024,
       outputMode: "truncate",
     });
-  const authReady = Effect.fn("GitHubHostSetup.authReady")(function* (executable: string) {
+  // fork: github-host-setup
+  const authStatus = Effect.fn("GitHubHostSetup.authStatus")(function* (executable: string) {
     const result = yield* execute(executable, [
       "auth",
       "status",
@@ -193,8 +196,17 @@ export const make = Effect.fnUntraced(function* (releases: typeof RELEASES = REL
       )
     )
       return yield* new GitHubHostSetupError({ reason: "unavailable" });
-    return result.code === 0;
+    // fork: github-host-setup
+    const account =
+      /Logged in to github\.com account ([A-Za-z0-9][A-Za-z0-9-]{0,38})(?:\s|$)/i.exec(
+        `${result.stdout}\n${result.stderr}`,
+      )?.[1];
+    return { ready: result.code === 0, ...(account ? { account } : {}) };
   });
+  // fork: github-host-setup
+  const authReady = Effect.fn("GitHubHostSetup.authReady")((executable: string) =>
+    authStatus(executable).pipe(Effect.map((status) => status.ready)),
+  );
   const checkRepository = Effect.fn("GitHubHostSetup.checkRepository")(function* (
     repository: string,
   ) {
@@ -320,8 +332,15 @@ export const make = Effect.fnUntraced(function* (releases: typeof RELEASES = REL
       return yield* new GitHubHostSetupError({ reason: "repository-invalid" });
     const executable = yield* locate();
     if (executable === null) return { executable, state: "missing-cli" } as const;
-    if (!(yield* authReady(executable))) return { executable, state: "sign-in-required" } as const;
-    if (repository === undefined) return { executable, state: "signed-in" } as const;
+    // fork: github-host-setup
+    const authentication = yield* authStatus(executable);
+    if (!authentication.ready) return { executable, state: "sign-in-required" } as const;
+    if (repository === undefined)
+      return {
+        executable,
+        state: "signed-in",
+        ...(authentication.account ? { account: authentication.account } : {}),
+      } as const;
     return {
       executable,
       state: (yield* checkRepository(repository)) ? "git-ready" : "repository-unavailable",

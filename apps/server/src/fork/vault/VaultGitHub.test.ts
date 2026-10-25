@@ -1,3 +1,4 @@
+import * as VaultConnections from "./VaultConnections.ts";
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -795,4 +796,77 @@ it.effect.each([
     expect((yield* f.service.terminal(input, f.threadId).pipe(Effect.flip)).reason).toBe("denied");
     expect(f.terminalCalls()).toBe(1);
   }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "retains credentials for repository edits, checks versions and enforces owner-only capacity",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const { credential: _credential, ...input } = f.input;
+      expect((yield* f.service.save(input, "admin", Effect.void).pipe(Effect.flip)).reason).toBe(
+        "invalid-input",
+      );
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const edit = {
+        ...input,
+        expectedVersion: 1,
+        operationId: yield* f.id,
+        repositories: ["owner/repo", "owner/new"],
+      };
+      const saved = yield* f.service.save(edit, "admin", Effect.void);
+      expect(saved.repositories).toEqual(["owner/new", "owner/repo"]);
+      const raw = yield* Context.get(f.context, VaultCore.VaultCore).reveal({
+        id: input.id,
+        expectedVersion: 2,
+      });
+      expect(Redacted.value(raw.value)).toContain("synthetic-private-token");
+      let staleSessions = 0;
+      f.onSession(() => {
+        staleSessions++;
+      });
+      expect(yield* f.service.save(edit, "admin", Effect.void)).toEqual(saved);
+      expect(staleSessions).toBe(0);
+      expect(
+        (yield* f.service
+          .save({ ...edit, operationId: yield* f.id }, "admin", Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      const large = {
+        ...edit,
+        operationId: yield* f.id,
+        expectedVersion: 2,
+        repositories: Array.from({ length: 100 }, (_, i) => `owner/repo${i}`),
+      };
+      expect((yield* f.service.save(large, "admin", Effect.void).pipe(Effect.flip)).reason).toBe(
+        "invalid-input",
+      );
+      const policy = yield* f.access.snapshot;
+      yield* f.access.setOwnerPolicy(
+        { operationId: yield* f.id, expectedRevision: policy.revision, mode: "owner-trusted" },
+        "admin",
+        Effect.void,
+      );
+      expect((yield* f.service.save(large, "admin", Effect.void)).repositories).toHaveLength(100);
+      const resolved = yield* Context.get(f.context, VaultConnections.VaultConnections).resolve(
+        { kind: "github", connection: { resource: "Loom GitHub QA" }, repository: "owner/repo99" },
+        f.threadId,
+      );
+      expect(resolved.state).toBe("ready");
+      expect(resolved.selected?.repositories).toHaveLength(100);
+      const denied = yield* f.service
+        .test({ id: input.id, expectedVersion: 3, repository: "owner/missing" }, Effect.void)
+        .pipe(Effect.flip);
+      expect(denied).toMatchObject({
+        reason: "repository-denied",
+        repair: { id: input.id, repository: "owner/missing" },
+      });
+      f.deny();
+      expect(
+        (yield* f.service
+          .save({ ...large, operationId: yield* f.id, expectedVersion: 3 }, "admin", Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("repository-denied");
+      expect((yield* f.service.info(input.id)).item.version).toBe(3);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
 );

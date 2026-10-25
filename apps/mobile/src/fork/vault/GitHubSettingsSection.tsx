@@ -1,3 +1,7 @@
+import {
+  VAULT_GITHUB_REPOSITORY_LIMIT,
+  VAULT_GITHUB_OWNER_REPOSITORY_LIMIT,
+} from "@t3tools/contracts/fork";
 import { GitHubReadiness } from "./GitHubReadiness";
 import { GitHubProjectAccess } from "./GitHubProjectAccess";
 import { useAtomValue } from "@effect/atom-react";
@@ -38,7 +42,7 @@ export function VaultGitHubSettingsSection({
     canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-github")) return null;
   return (
-    <SettingsSection title="GitHub access">
+    <SettingsSection title="GitHub for agents (Vault)">
       {canRead ? (
         <Manager
           key={`${environmentId}:${canWrite}:${ownerMode}:${connected}`}
@@ -206,9 +210,7 @@ function Manager({
             <Text>
               {draft.expectedVersion === 0
                 ? "Use a dedicated fine-grained GitHub token. Your saved connections can be reused without entering credentials again."
-                : ownerMode
-                  ? "Replace this connection's credential. Agents can use the repositories allowed by the replacement."
-                  : "Replace this connection's credential. Existing project access stays in place; review it after changing the repository allowlist."}
+                : "Edit the repositories or name. Leave the credential blank to keep the saved credential; fill it in only to replace it."}
             </Text>
             {draft.type === "token" ? (
               <View className="gap-2 rounded-2xl bg-subtle p-3">
@@ -314,14 +316,15 @@ function Manager({
               autoCapitalize="none"
               autoCorrect={false}
               value={draft.repositories}
-              maxLength={8192}
+              maxLength={16000}
               editable={!cannotSave}
               onChangeText={(repositories) => setDraft({ ...draft, repositories })}
             />
             <Text>
               Paste GitHub repository URLs or owner/repository names, separated by commas or
-              newlines. Select up to 32 repositories allowed by the token or App. Loom verifies API
-              access before saving.{" "}
+              newlines. Select up to{" "}
+              {ownerMode ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT}{" "}
+              repositories allowed by the token or App. Loom verifies API access before saving.{" "}
               {ownerMode
                 ? "Owner access allows agents to use this saved connection without separate project approvals."
                 : "Saving this connection does not authorize any project."}
@@ -332,10 +335,10 @@ function Manager({
               disabled={cannotSave}
               onPress={() =>
                 void act(async () => {
-                  const input = makeVaultGitHubSave(draft, id());
+                  const input = makeVaultGitHubSave(draft, id(), ownerMode);
                   if (!input)
                     throw new Error(
-                      "Enter valid credentials and 1 to 32 owner/repository names. Check the connection name in advanced settings if needed.",
+                      `Enter 1 to ${ownerMode ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT} owner/repository names and a connection name. New connections also need a credential.`,
                     );
                   const result = await save({ environmentId, input });
                   if (result._tag === "Failure") throw squashAtomCommandFailure(result);

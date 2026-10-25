@@ -1,3 +1,10 @@
+import { useRouterState, useNavigate } from "@tanstack/react-router";
+import {
+  VaultGitHubRepository,
+  VAULT_GITHUB_REPOSITORY_LIMIT,
+  VAULT_GITHUB_OWNER_REPOSITORY_LIMIT,
+} from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
 import {
   LoomSettingsActions,
   LoomSettingsNotice,
@@ -37,6 +44,7 @@ import { GitHubProjectAccess } from "./GitHubProjectAccess";
 import { GitHubReadiness } from "./GitHubReadiness";
 import { runVault } from "./state";
 
+const isRepository = Schema.is(VaultGitHubRepository);
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime);
 const access = createVaultAccessAtoms(connectionAtomRuntime);
 const id = () => randomUUID().replaceAll("-", "");
@@ -53,6 +61,10 @@ async function perform(work: () => Promise<void>) {
 
 export function VaultGitHubSettingsSection() {
   const { environment } = useSettingsScope();
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  const params = new URLSearchParams(hash.split("?")[1] ?? "");
+  const repairId = params.get("connection");
+  const repository = params.get("repository");
   const configs = useServerConfigs();
   const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
@@ -71,6 +83,16 @@ export function VaultGitHubSettingsSection() {
   if (!canRead)
     return (
       <LoomSettingsNotice>Your connection does not include Vault inspection.</LoomSettingsNotice>
+    );
+  if (repairId && /^[a-f0-9]{32}$/.test(repairId) && repository && isRepository(repository))
+    return (
+      <GitHubRepair
+        key={`${environment.environmentId}:${repairId}:${repository}`}
+        environmentId={environment.environmentId}
+        id={repairId}
+        repository={repository}
+        canWrite={canWrite}
+      />
     );
   return (
     <GitHubManager
@@ -164,10 +186,10 @@ function Manager({
   };
   const save = () => {
     if (!draft || locked || !saveAllowed) return;
-    const input = makeVaultGitHubSave(draft, id());
+    const input = makeVaultGitHubSave(draft, id(), ownerTrusted);
     if (!input) {
       setError(
-        "Enter a connection name, credential and 1 to 32 GitHub repository URLs or owner/repository names.",
+        `Enter a connection name and 1 to ${ownerTrusted ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT} GitHub repositories. New connections also need a credential.`,
       );
       return;
     }
@@ -198,6 +220,7 @@ function Manager({
         draft?.id === info.item.id ? (
           <ConnectionEditor
             draft={draft}
+            ownerTrusted={ownerTrusted}
             disabled={locked || !saveAllowed}
             busy={busy}
             onChange={setDraft}
@@ -292,6 +315,7 @@ function Manager({
         <LoomSettingsPanel title="Connect GitHub">
           <ConnectionEditor
             draft={draft}
+            ownerTrusted={ownerTrusted}
             disabled={locked || !saveAllowed}
             busy={busy}
             onChange={setDraft}
@@ -344,6 +368,7 @@ function Manager({
 
 function ConnectionEditor({
   draft,
+  ownerTrusted,
   disabled,
   busy,
   onChange,
@@ -351,6 +376,7 @@ function ConnectionEditor({
   onCancel,
 }: {
   draft: VaultGitHubDraft;
+  ownerTrusted: boolean;
   disabled: boolean;
   busy: boolean;
   onChange: (draft: VaultGitHubDraft) => void;
@@ -395,6 +421,11 @@ function ConnectionEditor({
           repositories below.
         </p>
       )}
+      {draft.expectedVersion > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Leave the credential blank to keep the saved credential. Fill it in only to replace it.
+        </p>
+      ) : null}
       <label htmlFor={`${field}-secret`} className="flex min-w-0 flex-col gap-1 text-sm">
         {draft.type === "token" ? "Fine-grained token" : "App private key (RSA PEM)"}
         <Input
@@ -417,14 +448,16 @@ function ConnectionEditor({
           autoCapitalize="none"
           spellCheck={false}
           value={draft.repositories}
-          maxLength={4500}
+          maxLength={16000}
           disabled={disabled}
           onChange={(event) => onChange({ ...draft, repositories: event.target.value })}
         />
       </label>
       <p id={`${field}-repos-help`} className="text-sm text-muted-foreground">
         Paste GitHub repository URLs or owner/repository names, separated by commas or newlines.
-        Loom verifies up to 32 repositories before saving. Project access is chosen next.
+        Loom verifies up to{" "}
+        {ownerTrusted ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT}{" "}
+        repositories before saving.
       </p>
       <details>
         <summary className="cursor-pointer text-sm">Advanced connection settings</summary>
@@ -733,6 +766,121 @@ function Connection({
           </section>
         </div>
       </LoomSettingsDetails>
+    </LoomSettingsPanel>
+  );
+}
+
+function GitHubRepair({
+  environmentId,
+  id: itemId,
+  repository,
+  canWrite,
+}: {
+  environmentId: EnvironmentId;
+  id: string;
+  repository: string;
+  canWrite: boolean;
+}) {
+  const result = useAtomValue(atoms.info({ environmentId, input: { id: itemId } }));
+  const policy = useAtomValue(access.snapshot({ environmentId, input: {} }));
+  if (result._tag !== "Success")
+    return (
+      <VaultQueryFeedback
+        result={result}
+        loading="Loading GitHub connection…"
+        error={
+          result._tag === "Failure"
+            ? "Could not load this connection. Check this computer's Vault access."
+            : null
+        }
+        onRetry={() =>
+          appAtomRegistry.refresh(atoms.info({ environmentId, input: { id: itemId } }))
+        }
+      />
+    );
+  return (
+    <GitHubRepairEditor
+      key={result.value.item.version}
+      environmentId={environmentId}
+      info={result.value}
+      repository={repository}
+      canWrite={canWrite && !result.waiting}
+      ownerTrusted={
+        policy._tag === "Success" &&
+        !policy.waiting &&
+        policy.value.ownerPolicy?.mode === "owner-trusted"
+      }
+    />
+  );
+}
+function GitHubRepairEditor({
+  environmentId,
+  info,
+  repository,
+  canWrite,
+  ownerTrusted,
+}: {
+  environmentId: EnvironmentId;
+  info: VaultGitHubInfo;
+  repository: string;
+  canWrite: boolean;
+  ownerTrusted: boolean;
+}) {
+  const navigate = useNavigate();
+  const allowed = useAtomValue(atoms.save.permissionAtom(environmentId));
+  const [draft, setDraft] = useState<VaultGitHubDraft>({
+    id: info.item.id,
+    expectedVersion: info.item.version,
+    label: info.item.label,
+    repositories: [...new Set([...info.repositories, repository.toLowerCase()])].join(", "),
+    type: info.mechanism,
+    appId: "",
+    installationId: "",
+    secret: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const close = () => {
+    void navigate({
+      to: "/settings/loom",
+      search: {
+        machine: environmentId,
+        section: "vault-github",
+        project: undefined,
+        checkout: undefined,
+      },
+      hash: "loom-vault-github",
+    });
+  };
+  const save = async () => {
+    if (busy || !canWrite || !allowed) return;
+    const input = makeVaultGitHubSave(draft, id(), ownerTrusted);
+    if (!input) {
+      setError(
+        `Enter a name and up to ${ownerTrusted ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT} repositories. Leave the credential blank to keep it.`,
+      );
+      return;
+    }
+    setBusy(true);
+    const failure = await perform(async () => {
+      await runVault(atoms.save, { environmentId, input });
+      close();
+    });
+    setError(failure);
+    setBusy(false);
+  };
+  return (
+    <LoomSettingsPanel title={`Add ${repository} to ${info.item.label}`}>
+      <ConnectionEditor
+        draft={draft}
+        ownerTrusted={ownerTrusted}
+        disabled={busy || !canWrite || !allowed || info.item.state !== "active"}
+        busy={busy}
+        onChange={setDraft}
+        onSave={() => void save()}
+        onCancel={close}
+      />
+      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
     </LoomSettingsPanel>
   );
 }
