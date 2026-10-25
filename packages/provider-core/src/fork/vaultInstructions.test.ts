@@ -39,6 +39,7 @@ describe("LOOM_VAULT_INSTRUCTIONS", () => {
   it("steers longer SSH work to the terminal agent and reuses stored credentials", () => {
     expect(LOOM_VAULT_INSTRUCTIONS).toContain("short probes: 8 s, 2 KiB");
     expect(LOOM_VAULT_INSTRUCTIONS).toContain('argv ["personal-vps","cat > f.gz"]');
+    expect(LOOM_VAULT_INSTRUCTIONS).toContain("search it before `request_secret`");
   });
 
   it("separates credential availability from task, runtime and human administration authority", () => {
