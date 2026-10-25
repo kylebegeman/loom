@@ -286,9 +286,7 @@ describe("mobile source launch actions", () => {
 
   it("opens the Library form for a Library conversation that ran in its own worktree", async () => {
     await mount();
-    await act(() =>
-      launch({ ...source, branch: "feature/source", worktreePath: "/lanes/source" }),
-    );
+    await act(() => launch({ ...source, branch: "feature/source", worktreePath: "/lanes/source" }));
     expect(state.navigate).toHaveBeenCalledExactlyOnceWith(
       "LibraryStart",
       expect.objectContaining({ sourceThreadId: source.id, initialCopyId: binding.workingCopyId }),

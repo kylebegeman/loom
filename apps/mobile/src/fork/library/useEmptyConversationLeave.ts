@@ -32,7 +32,10 @@ export function useEmptyConversationLeave(
   const shell = useThreadShell(threadRef);
   const remove = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const leave = useEffectEvent(
-    (event: { preventDefault: () => void; data: { action: Parameters<typeof navigation.dispatch>[0] } }) => {
+    (event: {
+      preventDefault: () => void;
+      data: { action: Parameters<typeof navigation.dispatch>[0] };
+    }) => {
       if (threadRef === null || shell === null) return;
       const key = scopedThreadKey(threadRef);
       if (!takeEmptyLibraryConversation(key, shell)) return;

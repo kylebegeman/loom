@@ -257,7 +257,8 @@ function LibraryStartContent(props: {
       seed?.review.copy?.id ?? props.initialCopyId ?? null,
     ),
     [title, setTitle] = useState(
-      seed?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : LIBRARY_DEFAULT_CONVERSATION_TITLE),
+      seed?.review.title ??
+        (props.sourceArchiveId ? "Linked continuation" : LIBRARY_DEFAULT_CONVERSATION_TITLE),
     ),
     [modelKey, setModelKey] = useState<string | null>(
       seed?.review.model.key ??
