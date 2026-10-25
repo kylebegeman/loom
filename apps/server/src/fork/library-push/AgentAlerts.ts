@@ -12,6 +12,7 @@ import {
   type LibraryPushActivityRequest,
 } from "@t3tools/contracts/fork";
 import { type AgentAwarenessPhase, projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
+import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -21,7 +22,6 @@ import * as Stream from "effect/Stream";
 import { HttpClientRequest } from "effect/http";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
-import { isSnoozed } from "../../orchestration-v2/ThreadSettlementService.ts";
 import {
   makeAgentAwarenessPublishWorker,
   shouldPublishAgentAwarenessEvent,
@@ -117,8 +117,8 @@ const attentionOf = (
 
 /**
  * One look at a thread. The phases and the settled rule are the relay's, so every surface agrees on
- * what needs the user. Only top-level user threads alert, and a snoozed thread stays quiet until
- * something wakes it, as the sidebar shows it.
+ * what needs the user. Only top-level user threads alert, and a snoozed or settled thread keeps its
+ * completions quiet by the same rule as desktop alerts.
  */
 export const agentAlertStep = (
   previous: SeenThread | undefined,
@@ -144,7 +144,10 @@ export const agentAlertStep = (
   const fresh =
     previous?.working === true ||
     (attention.atMs !== null && input.nowMs - attention.atMs <= FRESH_MS);
-  return { seen, alert: fresh && !isSnoozed(shell, input.nowMs) ? attention.kind : null };
+  const muted =
+    attention.kind === "completed" &&
+    threadCompletionAlertMuted(shell, DateTime.makeUnsafe(input.nowMs));
+  return { seen, alert: fresh && !muted ? attention.kind : null };
 };
 
 /** Follows thread changes and posts each new transition once. */
