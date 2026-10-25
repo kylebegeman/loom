@@ -159,9 +159,11 @@ turn it on.
 ## Notifications from your Library
 
 Your Library can send notifications to Loom on your iPhone without a Connect
-account. For now it sends only test notifications. This needs a Loom build for
-iPhone that supports Library notifications, a Library with notifications turned
-on, and an iPhone signed in to the Library with Loom Identity.
+account. With agent alerts on, it tells your iPhone when an agent needs your
+approval or an answer, fails, reaches a usage limit or finishes. This needs a
+Loom build for iPhone that supports Library notifications, a Library with
+notifications turned on, and an iPhone signed in to the Library with Loom
+Identity.
 
 To turn them on, open **Settings > Notifications** on iPhone and turn on
 **Notifications from** your Library. iOS asks for permission the first time.
@@ -172,11 +174,25 @@ accepted its notification token, Loom registers the phone again; try the test
 again in a moment. Your Library turns notifications on with
 `LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
 **Push notifications** section in **Settings > Connections** on desktop or in a
-browser shows whether they are on, which Loom builds it sends to, and the
-iPhones that turned them on. If the iPhone says your Library doesn't send
-notifications to this build of Loom, add that build to `LOOM_LIBRARY_PUSH_TOPICS`
-on the Library. To have an agent send a test, choose **Copy ID** on the phone's row
-there and give the ID to the agent.
+browser shows whether they are on, whether it sends agent alerts, which Loom
+builds it sends to, and the iPhones that turned them on. If the iPhone says your
+Library doesn't send notifications to this build of Loom, add that build to
+`LOOM_LIBRARY_PUSH_TOPICS` on the Library. To have an agent send a test, choose
+**Copy ID** on the phone's row there and give the ID to the agent.
+
+Agent alerts have a switch of their own, `LOOM_LIBRARY_PUSH_ACTIVITY` in the
+Library's server environment. When more than one account can sign in to your
+Library, it sends alerts only to the accounts named in
+`LOOM_LIBRARY_PUSH_RECIPIENTS`. Alerts come from the Library's own conversations
+and from each computer your Library lists that has a Library connection and runs
+a Loom version with agent alerts. A computer connected to your Library after it
+started sends alerts once it restarts. An alert names no conversation, project
+or computer. Tap it to open the conversation, which needs a connection to that
+computer on this iPhone. Each conversation keeps one notification, the latest.
+Subagents, bot runs, and archived or settled conversations never alert. A
+snoozed conversation stays quiet when its agent finishes, but still alerts when
+it fails or asks you something. A computer sends at most 20 alerts an hour, and
+an iPhone gets at most 30.
 
 Turning the switch off on iPhone tells your Library to forget the phone. If the
 Library cannot be reached, the phone keeps your choice and tells it on the next

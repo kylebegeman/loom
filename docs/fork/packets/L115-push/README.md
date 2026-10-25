@@ -1,12 +1,13 @@
 # L115: Library push
 
-Status: Built, off (C04 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). Kyle's Apple setup,
-a build with the flag on and the go/no-go on agent alerts (C04-10) are pending.
+Status: Built, off (C04 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). Kyle's Apple setup
+and a build with the flag on are pending. Agent alerts (C04-10) are built behind a switch of their
+own, also off.
 
 A Library can send notifications to the Loom iPhone app with its own Apple push key, without T3
 Connect or T3's relay. This packet builds the device registry, the APNs sender, status and test
-on web, desktop, iPhone and MCP, and the iPhone's opt-in. The Library sends only test
-notifications so far.
+on web, desktop, iPhone and MCP, the iPhone's opt-in, and the agent alerts computers post to their
+Library.
 
 ## Why Loom builds this
 
@@ -25,9 +26,10 @@ Pushes cannot reach the Loom iPhone app today, for two independent reasons:
   `node:http2`; status, register, unregister and test RPCs; `loom_push_status` and
   `loom_push_test`; the iPhone opt-in, registration coordinator and test; a Push notifications
   section in Settings > Connections on web and desktop; the iOS build flag and its release
-  checks.
-- Out: agent alerts from computers (C04-10, see the notes below), Live Activities (K10), and
-  any change to upstream's relay or widget push paths, which stay tokenless.
+  checks; agent alerts (C04-10): each computer's watcher, the Library's activity route and its
+  limits.
+- Out: Live Activities (K10), actions such as approving from a notification, and any change to
+  upstream's relay or widget push paths, which stay tokenless.
 
 ## Off at four layers
 
@@ -41,6 +43,10 @@ Pushes cannot reach the Loom iPhone app today, for two independent reasons:
 4. **Device opt-in.** Each iPhone turns on "Notifications from <Library>" in Settings >
    Notifications. The iOS permission prompt comes only from that switch.
 
+Agent alerts add one more switch on the Library, `LOOM_LIBRARY_PUSH_ACTIVITY`. The Library
+advertises `library-push-activity` only while push runs, that switch is on and some account can
+receive alerts (see [Agent alerts](#agent-alerts-c04-10)).
+
 ## Operating it
 
 | Variable                          | Meaning                                                                                                |
@@ -50,6 +56,8 @@ Pushes cannot reach the Loom iPhone app today, for two independent reasons:
 | `LOOM_LIBRARY_PUSH_APNS_KEY_ID`   | The key's ID.                                                                                          |
 | `LOOM_LIBRARY_PUSH_APNS_KEY_FILE` | Path to the `.p8` file: owner-only mode such as 0600, at most 16 KiB, a P-256 key. Read once at start. |
 | `LOOM_LIBRARY_PUSH_TOPICS`        | Optional comma list of `bundleId:environment`, default `com.kylebegeman.loom:production`.              |
+| `LOOM_LIBRARY_PUSH_ACTIVITY`      | Agent alerts, read with the same values as `LOOM_LIBRARY_PUSH_ENABLED`. Off by default.                |
+| `LOOM_LIBRARY_PUSH_RECIPIENTS`    | Optional comma list of Identity subjects that get agent alerts. Needed when several can sign in.       |
 
 - Topics outside `LOOM_IOS_PUSH_BUNDLE_IDS` are ignored, and a list with no usable entry accepts
   nothing. Register refuses any other pair with `unsupported-app`, so no undeliverable row is
@@ -92,8 +100,8 @@ The iOS side of the setup is in
   computer and never return tokens. Agents cannot discover row ids, so a person copies one with
   **Copy ID** on the phone's row in the device list on web or desktop.
 - Limits: 10 devices per account, 50 per Library. Tests: 3 per device per 10 minutes and 1 per
-  account per 10 seconds. Rate-limit state, last delivery and the failing flag live in memory
-  and reset on restart.
+  account per 10 seconds. Agent alerts: 20 per computer and 30 per device per hour. Rate-limit
+  state, last delivery and the failing flag live in memory and reset on restart.
 
 ## Device lifetime and removal (A14)
 
@@ -155,28 +163,71 @@ Everything ships off at four layers, so each default is reversible.
 | K6  | `LOOM_MOBILE_LIBRARY_PUSH_ENABLED` defaults to `0`. Kyle turns it on for a TestFlight build after the Apple setup.      |
 | K7  | Per-device opt-in, default off.                                                                                         |
 | K8  | Row lifetime is the Identity session age cap, else 30 days, counted from registration (see above).                      |
-| K9  | Agent alerts from computers (C04-10) are not built. Kyle decides go or no-go.                                           |
+| K9  | Agent alerts from computers (C04-10): go. Built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default.                    |
 | K10 | Live Activities stay out until after C05.                                                                               |
+| K11 | Alert text is generic: title "Loom" and a body by kind. Thread or project titles would be Kyle's option.                |
+| K12 | Top-level user threads alert; a snoozed thread's finish stays quiet. Approving from a notification comes later.         |
 
-## C04-10 notes (not built)
+## Agent alerts (C04-10)
 
-- Custom data goes under the APNs payload key `body`, which Expo on iOS exposes as
-  `notification.content.data`.
-- Default text is generic: title "Loom" and a body by kind, with no thread, project, computer or
-  model names. Titles would be Kyle's option.
-- A second Library switch, `LOOM_LIBRARY_PUSH_ACTIVITY`, would gate it. Recipients are every
-  registered device when exactly one Identity subject is allowed, otherwise
-  `LOOM_LIBRARY_PUSH_RECIPIENTS`.
-- Proposed limits: 20 per computer per hour, 30 per device per hour, a 2 minute freshness window
-  and one collapsed notification per thread.
-- Computers would post with their publisher session, the environment taken from the subject and
-  a directory row required. They need no upstream edit.
+Each computer decides which of its threads need the user and posts that to its Library. The
+Library decides whose iPhones hear it and how often. The computer side is
+[`AgentAlerts.ts`](../../../../apps/server/src/fork/library-push/AgentAlerts.ts) and the route is
+[`http.ts`](../../../../apps/server/src/fork/library-push/http.ts).
+
+- **What alerts.** A top-level user thread that starts waiting for approval or an answer, fails,
+  reaches a usage limit or finishes. Phases and the settled rule come from the relay's
+  `projectThreadAwarenessV2`, so every surface agrees on what needs the user. Subagents, bot runs,
+  and archived, deleted or settled threads never alert. A snoozed thread's finish stays quiet.
+  The rule is the server's `isSnoozed`, so a failure or a pending question still alerts, just as
+  the sidebar wakes the thread for them.
+- **Once per transition.** A computer keys each transition by its request or run id and keeps the
+  last key per thread, so settling, unsettling or snoozing repeats nothing. At start it records
+  every thread without posting, so a restart repeats nothing either. A new transition is news
+  only if the computer saw the thread working since its last look, or the transition is at most
+  2 minutes old by the computer's own clock. The first keeps a finish that background work held
+  back, however long; the second drops old state that an unarchive or a transfer brings into
+  view. The request carries no timestamp, so the two clocks are never compared.
+- **Posting.** `POST /api/loom/library/push/activity` with `{ threadId, kind }`, at most 4 KiB,
+  over the computer's publisher session. The Library takes the environment from the session's
+  `loom-host:<environment>` subject and requires the `loom:library:publish` scope and a directory
+  row for that environment. The Library watches its own threads in process, with no row. A computer watches
+  only when it had a Library connection at start, as the directory reporter reads it, so a later
+  sign-in takes a restart. Nothing is queued or retried, since a late alert is worse than none.
+
+  | Library answer                       | Why                                                                                    | Computer                      |
+  | ------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------- |
+  | 200 `{ sent }`                       | Accepted. `sent` counts the devices Apple accepted.                                    | Carries on.                   |
+  | 404, 405, or a 2xx without that body | Alerts off, or a Library from before them.                                             | Stops posting for 30 minutes. |
+  | 401, 403, 409                        | No usable publisher session, or no directory row. A directory that is off places none. | Stops posting for 30 minutes. |
+  | 400, 413, 429                        | Invalid, too large, or the computer is over its hourly limit.                          | Drops that alert.             |
+  | 503, or no answer within 20 seconds  | The Library cannot read its directory or use its key, or cannot be reached.            | Stops posting for 1 minute.   |
+
+- **Recipients.** With one allowed Identity subject, that account. With several, only the ones
+  `LOOM_LIBRARY_PUSH_RECIPIENTS` names that can also sign in. Every live device of a recipient
+  gets the alert. With the switch on and no recipient, the Library logs a warning at start,
+  advertises no slug and answers 404.
+- **Payload.** Title "Loom" and a fixed body per kind, with no thread, project, computer or model
+  names. The data under the APNs key `body`, which Expo exposes as `notification.content.data`,
+  carries `environmentId`, `threadId` and a `/threads/...` `deepLink`. Upstream's notification
+  handler opens that thread on tap and keeps the banner quiet while the thread is on screen, so
+  no mobile code changed. The iPhone needs a connection to that computer, or upstream shows
+  "Thread unavailable". `apns-collapse-id` is `loom-agent-` and a digest of the environment and
+  thread, under Apple's 64-byte cap, so each thread keeps one notification and the latest
+  replaces it. Priority 10, expiry 5 minutes.
+- **Limits.** 20 per computer per hour, counting every accepted alert, sent or not. 30 per device
+  per hour, past which that device is skipped. Alerts count apart from tests but share the last
+  delivery and the failing flag, so the device list says "Last notification".
+- **Where it shows.** The slug drives the iPhone footer and the web and desktop section, which say
+  whether alerts are on. `loom_push_status` reports `alerts`.
+- **Known gaps.** On a Library with several accounts, the slug cannot tell a non-recipient apart,
+  so that account also reads that alerts are on. A computer on an older build posts nothing.
 
 ## Not verified live
 
 No real APNs traffic was sent. TLS and HTTP/2 from the Library to `api.push.apple.com`, the
-release `inspect` check against a signed flag-on IPA, and delivery to a real iPhone remain for
-the first device pass.
+release `inspect` check against a signed flag-on IPA, delivery to a real iPhone, and an agent
+alert from a second computer through its publisher session remain for the first device pass.
 
 ## Packet seams
 
