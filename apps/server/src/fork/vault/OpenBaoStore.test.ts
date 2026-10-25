@@ -8,6 +8,8 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as ServerConfig from "../../config.ts";
+import { OPENBAO_SETTINGS_FILE } from "./OpenBaoSettings.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 
 const privateToken = "synthetic-service-token";
@@ -22,6 +24,8 @@ const withStore = <A, E>(
     origin?: string;
     mode?: number;
     disabled?: boolean;
+    /** Gives the server a state directory, holding this settings file unless it is null. */
+    settingsFile?: { content?: string; mode?: number } | null;
     reply?: (request: HttpClientRequest.HttpClientRequest) => readonly [number, unknown];
   } = {},
 ) =>
@@ -31,6 +35,22 @@ const withStore = <A, E>(
     const tokenFile = directory + "/token";
     yield* fs.writeFileString(tokenFile, privateToken);
     yield* fs.chmod(tokenFile, options.mode ?? 0o600);
+    const config =
+      options.settingsFile === undefined
+        ? undefined
+        : yield* ServerConfig.ServerConfig.pipe(
+            Effect.provide(ServerConfig.layerTest(directory, directory)),
+          );
+    if (config && options.settingsFile) {
+      const path = `${config.stateDir}/${OPENBAO_SETTINGS_FILE}`;
+      yield* fs.makeDirectory(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+      yield* fs.writeFileString(
+        path,
+        options.settingsFile.content ??
+          JSON.stringify({ url: "https://file.example.test", tokenFile, mount: "kv" }),
+      );
+      yield* fs.chmod(path, options.settingsFile.mode ?? 0o600);
+    }
     const requests: Array<HttpClientRequest.HttpClientRequest> = [];
     const http = HttpClient.make((request) => {
       requests.push(request);
@@ -55,6 +75,7 @@ const withStore = <A, E>(
             },
       ),
       Effect.provideService(HostProcess.Platform, "darwin"),
+      config ? Effect.provideService(ServerConfig.ServerConfig, config) : (effect) => effect,
     );
     return yield* use({ store, requests, tokenFile });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
@@ -115,6 +136,69 @@ it.effect("checks engine seal state and the KV v2 mount", () =>
       );
       expect(JSON.stringify(requests)).not.toContain(privateToken);
     }),
+  ),
+);
+
+it.effect("reads its own settings file when the environment names no OpenBao settings", () =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect(yield* store.status).toEqual({
+          backend: "openbao",
+          state: "ready",
+          origin: "https://file.example.test",
+        });
+        expect(requests.map((r) => r.url)).toEqual([
+          "https://file.example.test/v1/sys/health",
+          "https://file.example.test/v1/kv/config",
+        ]);
+        expect(requests.every((r) => r.headers.authorization === `Bearer ${privateToken}`)).toBe(
+          true,
+        );
+      }),
+    { disabled: true, settingsFile: {} },
+  ),
+);
+
+it.effect("lets the environment replace the settings file", () =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect((yield* store.status).state).toBe("ready");
+        expect(requests.map((r) => r.url)).toEqual([
+          "https://vault.example.test/v1/sys/health",
+          "https://vault.example.test/v1/loom/config",
+        ]);
+      }),
+    { settingsFile: {} },
+  ),
+);
+
+it.effect("stays unconfigured without a settings file", () =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect((yield* store.status).state).toBe("unconfigured");
+        expect(requests).toHaveLength(0);
+      }),
+    { disabled: true, settingsFile: null },
+  ),
+);
+
+it.effect.each([
+  { mode: 0o644 },
+  { mode: 0o620 },
+  { content: "{" },
+  { content: JSON.stringify({ url: 1 }) },
+])("refuses a shared or malformed settings file: %j", (settingsFile) =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect((yield* store.status).state).toBe("misconfigured");
+        expect((yield* store.read("items/example").pipe(Effect.flip)).reason).toBe("configuration");
+        expect(requests).toHaveLength(0);
+      }),
+    { disabled: true, settingsFile },
   ),
 );
 

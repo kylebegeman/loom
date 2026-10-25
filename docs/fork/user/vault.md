@@ -33,6 +33,11 @@ Disabling blocks new personal-mode authorization; an already authenticated conne
 continue, and completed remote effects cannot be recalled. Restricted grants can still allow
 access after personal access is disabled.
 
+These limits apply to Loom's tools, not to the operating system. Agents run under the same
+account as Loom on that computer and can read the files it can read, including the token file
+Loom uses to reach OpenBao. Store dedicated development credentials in Vault and keep personal
+credentials out of it.
+
 ## Manage records
 
 Choose **Add item**, give it a name and kind, and enter its value. Secret values are hidden by
