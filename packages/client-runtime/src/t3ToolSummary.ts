@@ -272,6 +272,10 @@ export function summarizeT3ToolCalls(
         quantity(countEntities(entityIds("queuedRunId")), "queued message"),
       );
       break;
+    // fork: attention-status
+    case "queue-resume":
+      label = phrase("Resumed", "resume", `paused queues ${times}`);
+      break;
     case "question-list":
       label = phrase("Listed", "list", `pending questions ${times}`);
       break;
@@ -332,6 +336,10 @@ export function summarizeT3ToolCalls(
       break;
     case "environment-update":
       label = phrase("Updated", "update", `environment preferences ${times}`);
+      break;
+    // fork: mini-native-retention
+    case "storage-report":
+      label = phrase("Read", "read", `the storage cleanup report ${times}`);
       break;
     case "attachment-prepare":
       label = phrase(

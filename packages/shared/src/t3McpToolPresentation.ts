@@ -36,6 +36,7 @@ export type T3McpToolSummaryAction =
   | "queue-cancel"
   | "queue-reorder"
   | "queue-steer"
+  | "queue-resume" // fork: attention-status
   | "question-list"
   | "question-read"
   | "question-respond"
@@ -51,6 +52,7 @@ export type T3McpToolSummaryAction =
   | "project-clone"
   | "environment-read"
   | "environment-update"
+  | "storage-report" // fork: mini-native-retention
   | "attachment-prepare"
   | "attachment-discard"
   | "attachment-send"
@@ -283,6 +285,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Steer with", "Steering with", "Requested steering with", "a queued message"],
     "queue-steer",
   ),
+  t3_queue_resume: tool(["Resume", "Resuming", "Resumed", "a paused queue"], "queue-resume"), // fork: attention-status
   t3_pending_request_list: tool(
     ["List", "Listing", "Listed", "pending questions"],
     "question-list",
@@ -320,6 +323,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_environment_preferences_update: tool(
     ["Update", "Updating", "Updated", "environment preferences"],
     "environment-update",
+  ),
+  // fork: mini-native-retention
+  loom_storage_cleanup_report: tool(
+    ["Read", "Reading", "Read", "the storage cleanup report"],
+    "storage-report",
   ),
   t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
