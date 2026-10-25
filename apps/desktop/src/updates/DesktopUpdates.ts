@@ -755,7 +755,7 @@ export const make = Effect.gen(function* () {
           yield* Ref.set(installRunningBackendsRef, runningInstances);
           yield* Effect.forEach(
             instances,
-            (instance) => instance.stop({ timeout: Duration.seconds(5) }),
+            (instance) => instance.stop({ timeout: DesktopBackendPool.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
             { concurrency: "unbounded" },
           );
           yield* electronUpdater.quitAndInstall({

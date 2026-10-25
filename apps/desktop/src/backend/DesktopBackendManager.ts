@@ -37,9 +37,15 @@ const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(1);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
-// Same as the service launcher. A killed backend leaves its agents running,
-// and a busy one needs a few seconds to stop every provider session.
-const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(5);
+// fork: restart-continuity: same as the service launcher. A killed backend
+// leaves its agents running. Three of four measured install stops hit the old
+// 5 s cap (5001, 5002 and 5001 ms; the fourth took 4725 ms), so busy backends
+// were cut off while still stopping provider sessions.
+export const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
+// fork: restart-continuity: the grace, then SIGKILL and the spawner's
+// one-second wait for the process group, so a stop that returns has really
+// ended the backend instead of leaving it to outlive a quitting app.
+export const BACKEND_STOP_TIMEOUT = Duration.sum(BACKEND_TERMINATE_GRACE, Duration.seconds(2));
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 const { logWarning: logBackendProcessWarning } =
@@ -437,7 +443,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stdout: options.captureOutput ? "pipe" : "inherit",
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
-    forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
+    forceKillAfter: BACKEND_TERMINATE_GRACE, // fork: restart-continuity
     // wsl.exe drops additional file descriptors when forwarding to the Linux
     // side, so the WSL spawn path delivers the bootstrap envelope via stdin
     // (`--bootstrap-fd 0`) instead.
@@ -1062,7 +1068,13 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       onSome: (run) =>
         Effect.gen(function* () {
           const closed = yield* closeRun(run, parentScope, options);
+          // fork: restart-continuity: tells a stop that ran out of budget from one that finished.
+          yield* Effect.annotateCurrentSpan({ "backend.stopped_within_budget": closed });
           if (!closed) {
+            // fork: restart-continuity
+            yield* logInstanceWarning("backend still stopping when its stop budget ran out", {
+              timeoutMs: options?.timeout === undefined ? null : Duration.toMillis(options.timeout),
+            });
             return;
           }
           const cleanup = yield* mutex.withPermits(1)(

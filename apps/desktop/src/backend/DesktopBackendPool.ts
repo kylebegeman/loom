@@ -29,6 +29,7 @@ const { logWarning: logBackendPoolWarning } =
 export type BackendInstanceId = DesktopBackendManager.BackendInstanceId;
 export const BackendInstanceId = DesktopBackendManager.BackendInstanceId;
 export const PRIMARY_INSTANCE_ID = DesktopBackendManager.PRIMARY_INSTANCE_ID;
+export const BACKEND_STOP_TIMEOUT = DesktopBackendManager.BACKEND_STOP_TIMEOUT; // fork: restart-continuity
 export type DesktopBackendInstance = DesktopBackendManager.DesktopBackendInstance;
 export type BackendInstanceSpec = DesktopBackendManager.BackendInstanceSpec;
 

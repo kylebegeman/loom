@@ -262,7 +262,7 @@ describe("DesktopBackendManager", () => {
         assert.equal(spawnedCommand.options.additionalFds?.fd5?.type, "output");
         assert.equal(
           Duration.toMillis(Duration.fromInputUnsafe(spawnedCommand.options.forceKillAfter)),
-          5_000,
+          15_000,
         );
 
         assert.deepEqual(yield* decodeBootstrap(bootstrapJson), configWithObservability);
@@ -1596,7 +1596,10 @@ describe("DesktopBackendManager", () => {
         const started = yield* Queue.takeN(teardownStarted, 2);
         assert.deepEqual(started.toSorted(), ["instance1", "instance2"]);
 
-        yield* TestClock.adjust(Duration.seconds(5));
+        // The force kill is still in flight a moment before the budget runs out.
+        yield* TestClock.adjust(Duration.seconds(16));
+        assert.isUndefined(quitFiber.pollUnsafe());
+        yield* TestClock.adjust(Duration.seconds(1));
         yield* Fiber.join(quitFiber);
         assert.equal(yield* Queue.size(teardownFinished), 0);
 
