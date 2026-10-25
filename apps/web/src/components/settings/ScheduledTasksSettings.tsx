@@ -628,7 +628,7 @@ function ScheduledTaskRow({
           </span>
           {task.lastRunStatus !== "never" ? (
             <Badge variant={statusVariant(task.lastRunStatus)}>
-              {/* fork: scheduled-task-alerts - "succeeded" records only that the run started */}
+              {/* fork: scheduled-task-alerts - "succeeded" often records only that the run started */}
               {task.lastRunStatus === "succeeded" ? "started" : task.lastRunStatus}
             </Badge>
           ) : null}

@@ -162,7 +162,7 @@ export const ScheduledTaskRunStatus = Schema.Literals([
   "failed",
 ]).annotate({
   description:
-    "Last run. 'succeeded' means the run started (its thread was created or its message was sent), not that its turn succeeded; the thread shows how the turn ended. A 'failed' run gives its reason in lastRunError.",
+    "Last run. 'succeeded' means the run started (its thread was created or its message was sent), not that its turn succeeded; the thread shows how the turn ended. A run with Vault attachments instead stays 'running' until its turn ends and reports 'succeeded' only when the turn completed. A 'failed' run gives its reason in lastRunError.",
 });
 export type ScheduledTaskRunStatus = typeof ScheduledTaskRunStatus.Type;
 
