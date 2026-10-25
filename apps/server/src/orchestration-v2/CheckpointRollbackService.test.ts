@@ -1,3 +1,6 @@
+// fork: project-lifecycle
+import { CommandId } from "@t3tools/contracts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import {
@@ -52,17 +55,27 @@ import * as RuntimePolicy from "./RuntimePolicy.ts";
 const unrelatedProject = Option.some({
   workspaceRoot: "/nonexistent/t3-rollback-project",
 } as never);
-const layerCheckpointRollbackService = CheckpointRollbackService.layer.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
-      ServerSettings.layerTest(),
-      Layer.mock(GitWorkflow.GitWorkflowService)({}),
-      Layer.mock(ProjectStore.ProjectStoreV2)({ get: () => Effect.succeed(unrelatedProject) }),
+// fork: project-lifecycle
+const rollbackTestLayer = (store: Partial<CheckpointStore.CheckpointStore["Service"]> = {}) =>
+  CheckpointRollbackService.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        // fork: project-lifecycle
+        Layer.mock(CheckpointStore.CheckpointStore)({
+          captureCheckpoint: () => Effect.void,
+          ...store,
+        }),
+        Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
+        ServerSettings.layerTest(),
+        Layer.mock(GitWorkflow.GitWorkflowService)({}),
+        Layer.mock(ProjectStore.ProjectStoreV2)({ get: () => Effect.succeed(unrelatedProject) }),
+      ),
     ),
-  ),
-);
+  );
+
+// fork: project-lifecycle
+const layerCheckpointRollbackService = rollbackTestLayer();
 
 it.effect.each(["initial", "waiting"])(
   "rejects a non-ready checkpoint from %s before opening a session or restoring files",
@@ -462,6 +475,8 @@ it.effect.each([
         Layer.mergeAll(
           ThreadCommandExecutor.layer,
           NodeServices.layer,
+          // fork: project-lifecycle
+          Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
@@ -1117,7 +1132,8 @@ it.layer(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMe
 
         assert.deepEqual(history.rollbackCounts, [4]);
         assert.deepEqual(history.restored, [checkpointId(2)]);
-        assert.sameMembers(history.deletedRefs, [3, 4, 5, 6].map(checkpointId));
+        // fork: project-lifecycle -- later refs are kept for recovery.
+        assert.deepEqual(history.deletedRefs, []);
         const runs = yield* sql<{ ordinal: number; status: string }>`
           SELECT ordinal, status FROM orchestration_v2_projection_runs
           WHERE thread_id = ${threadId} ORDER BY ordinal`;
@@ -1161,7 +1177,8 @@ it.layer(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMe
           yield* history.rollback(0);
 
           assert.deepEqual(history.rollbackCounts, [1, 3, 3]);
-          assert.sameMembers(history.deletedRefs, [1, 2, 3, 4, 5, 6].map(history.checkpointId));
+          // fork: project-lifecycle
+          assert.deepEqual(history.deletedRefs, []);
           assert.sameMembers(
             history.committed
               .filter((event) => event.type === "run.updated")
@@ -1183,5 +1200,150 @@ it.layer(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMe
           );
         }),
     );
+  },
+);
+
+// fork: project-lifecycle
+it.effect.each(["undo", "changed", "running", "shared", "wrong-token"] as const)(
+  "preserves pre-restore files and validates undo: %s",
+  (mode) => {
+    const threadId = ThreadId.make("undo-thread");
+    const providerThreadId = ProviderThreadId.make("undo-provider");
+    const instanceId = ProviderInstanceId.make("undo-instance");
+    const scopeId = CheckpointScopeId.make("undo-scope");
+    const checkpointId = CheckpointId.make("undo-checkpoint");
+    const ref = CheckpointRef.make("refs/t3/checkpoint/undo-test");
+    const committed: OrchestrationV2DomainEvent[] = [];
+    let files = "my uncommitted edits";
+    let activeRunId: RunId | null = null;
+    const snapshots = new Map<CheckpointRef, string>([[ref, "checkpoint files"]]);
+    const projection = {
+      thread: {
+        id: threadId,
+        rollbackRequestId: CommandId.make("newer-request"),
+        worktreePath: process.cwd(),
+        activeProviderThreadId: providerThreadId,
+        modelSelection: { instanceId, model: "test" },
+      },
+      providerThread: {
+        id: providerThreadId,
+        providerSessionId: ProviderSessionId.make("undo-session"),
+        providerInstanceId: instanceId,
+      },
+      scope: { id: scopeId, cwd: process.cwd() },
+      checkpoint: { id: checkpointId, scopeId, ref, status: "ready", appRunOrdinal: null },
+      staleCheckpoints: [],
+      runsToRollback: [],
+      providerTurns: [],
+      rootNodes: [],
+      rolledBackAttemptIds: [],
+    } as unknown as ProjectionStore.ProjectionCheckpointRollbackContext;
+    const layerTest = rollbackTestLayer({
+      captureCheckpoint: ({ checkpointRef }) =>
+        Effect.sync(() => {
+          snapshots.set(checkpointRef, files);
+        }),
+      diffCheckpoints: ({ fromCheckpointRef, toCheckpointRef }) =>
+        Effect.succeed(
+          snapshots.get(fromCheckpointRef) === snapshots.get(toCheckpointRef)
+            ? ""
+            : "1\t1\tfile.txt\n",
+        ),
+      restoreCheckpoint: ({ checkpointRef }) =>
+        Effect.sync(() => {
+          const saved = snapshots.get(checkpointRef);
+          if (saved === undefined) return false;
+          files = saved;
+          return true;
+        }),
+      deleteCheckpointRefs: ({ checkpointRefs }) =>
+        Effect.sync(() => {
+          for (const key of checkpointRefs) snapshots.delete(key);
+        }),
+    }).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ThreadCommandExecutor.layer,
+          IdAllocator.layer,
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            restore: () =>
+              Effect.sync(() => {
+                files = "checkpoint files";
+              }),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            write: ({ events }) =>
+              Effect.sync(() => {
+                committed.push(...events);
+                return [];
+              }),
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getThread: () => Effect.succeed(projection.thread),
+            getThreadShell: () => Effect.succeed({ activeRunId } as never),
+            getCheckpointRollbackContext: () => Effect.succeed(projection),
+            getCheckpointContext: () =>
+              Effect.succeed({
+                checkpointScopes: [projection.scope],
+                checkpoints: [projection.checkpoint],
+                runs: [],
+              } as never),
+            getShellSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                threads: [],
+                archivedThreads: [],
+              }),
+          }),
+          Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+            open: () => Effect.succeed({} as never),
+          }),
+          Layer.mock(RuntimePolicy.RuntimePolicyV2)({ resolve: () => Effect.succeed({} as never) }),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+      assert.isTrue((yield* service.restoreState({ threadId, scopeId })).canRestoreFiles);
+      yield* service.execute({
+        threadId,
+        providerThreadId,
+        checkpointId,
+        scopeId,
+        requestId: CommandId.make("undo-request"),
+      });
+      assert.equal(files, "checkpoint files");
+      assert.ok(
+        committed.some(
+          (event) =>
+            event.type === "thread.metadata-updated" &&
+            event.payload.rollbackCompletedRequestId === "undo-request",
+        ),
+      );
+      const state = yield* service.restoreState({ threadId, scopeId });
+      assert.isNotNull(state.undoToken);
+      if (mode === "changed") files = "new work after restore";
+      if (mode === "running") activeRunId = RunId.make("new-run");
+      if (mode === "shared") {
+        Object.assign(projection.thread, { worktreePath: null });
+        const eligibility = yield* service.restoreState({ threadId, scopeId });
+        assert.isFalse(eligibility.canRestoreFiles);
+        assert.include(eligibility.reason!, "isolated worktree");
+      }
+      const undo = service.undoRestore({
+        threadId,
+        undoToken: mode === "wrong-token" ? "old-token" : state.undoToken!,
+      });
+      if (mode === "undo") {
+        yield* undo;
+        assert.equal(files, "my uncommitted edits");
+        assert.isNull((yield* service.restoreState({ threadId, scopeId })).undoToken);
+      } else {
+        assert.equal((yield* Effect.flip(undo))._tag, "CheckpointRestoreActionError");
+        assert.equal(files, mode === "changed" ? "new work after restore" : "checkpoint files");
+      }
+      assert.include([...snapshots.values()], "my uncommitted edits");
+    }).pipe(Effect.provide(layerTest));
   },
 );

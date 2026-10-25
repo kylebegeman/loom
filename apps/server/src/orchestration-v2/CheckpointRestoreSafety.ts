@@ -6,8 +6,9 @@ import type * as Path from "effect/Path";
 import type { ProjectionStoreV2 } from "./ProjectionStore.ts";
 import type * as ProjectStore from "./ProjectStore.ts";
 
+// fork: project-lifecycle
 export const SHARED_WORKSPACE_RESTORE_MESSAGE =
-  "File restore requires an isolated worktree. This workspace may contain changes from another thread. Rewind the conversation without restoring files instead.";
+  "File restore requires an isolated worktree. This workspace may contain changes from another thread. Keep the current files, or fork from this checkpoint into a separate worktree.";
 
 // A checkpoint snapshots the whole checkout. Check at command admission and
 // again before provider rollback so a newly shared worktree is rejected too.

@@ -420,6 +420,8 @@ export function layerWithRegistry<Error>(
   const layerCheckpointRollbackServiceProvided = CheckpointRollbackService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        // fork: project-lifecycle
+        layerCheckpointStore,
         layerCheckpointServiceProvided,
         layerEventSinkProvided,
         IdAllocator.layer,

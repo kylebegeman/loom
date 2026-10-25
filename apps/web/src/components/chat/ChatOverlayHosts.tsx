@@ -180,9 +180,14 @@ export function BranchRestoreConfirmHost(props: {
   );
 }
 
-interface PendingRevert {
+// fork: project-lifecycle -- the server checks the selected checkpoint before offering file restore.
+export interface PendingRevert {
   readonly turnCount: number;
-  readonly messageId: MessageId;
+  readonly messageId: MessageId | null;
+  readonly checkpointId: string | null;
+  readonly scopeId: string | null;
+  readonly canRestoreFiles: boolean;
+  readonly reason: string | null;
 }
 
 const revertConfirmAtom = makeThreadOverlayAtom<PendingRevert>("revert-confirm");
@@ -191,15 +196,18 @@ export function openRevertConfirm(threadKey: string, pending: PendingRevert): vo
   appAtomRegistry.set(revertConfirmAtom, { threadKey, value: pending });
 }
 
+// fork: project-lifecycle
 export function RevertConfirmHost(props: {
   readonly threadKey: string;
-  readonly onConfirm: (turnCount: number, messageId: MessageId, restoreFiles: boolean) => void;
+  readonly canOperate: boolean;
+  readonly onConfirm: (pending: PendingRevert, restoreFiles: boolean) => void;
+  readonly onFork: (checkpointId: string) => void;
 }) {
   const pending = useThreadOverlay(revertConfirmAtom, props.threadKey);
   const confirm = (restoreFiles: boolean) => {
     if (pending === null) return;
     closeThreadOverlay(revertConfirmAtom);
-    props.onConfirm(pending.turnCount, pending.messageId, restoreFiles);
+    props.onConfirm(pending, restoreFiles);
   };
   return (
     <AlertDialog
@@ -210,18 +218,46 @@ export function RevertConfirmHost(props: {
     >
       <AlertDialogPopup>
         <AlertDialogHeader>
-          <AlertDialogTitle>Edit from here?</AlertDialogTitle>
+          {/* fork: project-lifecycle */}
+          <AlertDialogTitle>
+            {pending?.messageId ? "Edit from here?" : "Roll back to here?"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Rewind chat to before this message. Your prompt and attachments return to the composer.
-            “Revert files too” also undoes your own edits.
+            {pending?.messageId
+              ? "Rewind chat to before this message. Your prompt and attachments return to the composer."
+              : "Rewind this conversation to the selected checkpoint."}
+            {
+              " Revert files too also undoes your own edits. You can undo the file restore while the files remain unchanged."
+            }
           </AlertDialogDescription>
+          {pending?.reason ? (
+            <p className="text-sm text-muted-foreground">{pending.reason}</p>
+          ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button variant="destructive-outline" onClick={() => confirm(true)}>
+          {pending?.checkpointId ? (
+            <Button
+              variant="outline"
+              disabled={!props.canOperate}
+              onClick={() => {
+                closeThreadOverlay(revertConfirmAtom);
+                props.onFork(pending.checkpointId!);
+              }}
+            >
+              Fork from here
+            </Button>
+          ) : null}
+          <Button
+            variant="destructive-outline"
+            disabled={!props.canOperate || !pending?.canRestoreFiles}
+            onClick={() => confirm(true)}
+          >
             Revert files too
           </Button>
-          <Button onClick={() => confirm(false)}>Revert and keep changes</Button>
+          <Button disabled={!props.canOperate} onClick={() => confirm(false)}>
+            Revert and keep changes
+          </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>

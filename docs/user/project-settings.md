@@ -498,7 +498,12 @@ Existing prompts for deleting a worktree manually remain available when this pol
 
 Choose **Delete now** to run the enabled rules immediately. The latest results show which
 worktrees were removed or kept and why, plus any failures.
-Results also list folders in the worktree folder that no thread uses, with their sizes; cleanup never removes them, so remove them manually if you want.
+<!-- fork: project-lifecycle -->
+
+Results also list folders in the worktree folder that no thread uses, with their sizes.
+Choose **Remove** for a clean orphan worktree. Loom checks again for local files,
+open programs and conversation ownership before removing it; its branch and commits stay saved.
+For work held by a conversation, use **Open conversation** or **Settle** to finish it.
 
 Browser captures and rotated logs have separate retention periods. Expired capture links stop
 working. Current logs, message attachments, and browser profiles are kept.

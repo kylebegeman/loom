@@ -404,6 +404,8 @@ export const layerExecutor: Layer.Layer<
           case "provider-thread.rollback":
             return checkpointRollback
               .execute({
+                // fork: project-lifecycle -- acknowledge this command even if another restore was queued.
+                requestId: effect.commandId,
                 threadId: effect.threadId,
                 providerThreadId: effect.request.providerThreadId,
                 checkpointId: effect.request.checkpointId,

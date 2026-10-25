@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import * as CheckpointRollbackService from "./orchestration-v2/CheckpointRollbackService.ts";
 import { computerNameConfigUpdates } from "./fork/computer-naming/config.ts"; // fork: computer-naming
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -1305,6 +1307,8 @@ export const layerWsRpc = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
+      // fork: project-lifecycle
+      const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -2412,7 +2416,13 @@ export const layerWsRpc = (
             const keybindingsConfig = yield* keybindings.removeKeybindingRule(rule);
             return { keybindings: keybindingsConfig, issues: [] };
           }),
-        [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
+        // fork: project-lifecycle
+        [WS_METHODS.checkpointRestoreState]: (input) => checkpointRollback.restoreState(input),
+        [WS_METHODS.checkpointUndoRestore]: (input) => checkpointRollback.undoRestore(input),
+        [WS_METHODS.serverRunStorageCleanup]: (input) =>
+          input.removeOrphanPath === undefined
+            ? storageCleanup.runNow
+            : storageCleanup.removeOrphan(input.removeOrphanPath),
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.serverGetSettings]: (_input) =>

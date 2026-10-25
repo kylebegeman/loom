@@ -1109,3 +1109,24 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestCrypto)),
   );
 });
+
+// fork: project-lifecycle
+it.effect("forks from the selected checkpoint without rewinding the source", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationV2Command[] = [];
+    const supervisor = yield* makeSupervisor({ commands, projects: [] });
+    yield* forkThreadFromRun({
+      commandId: CommandId.make("checkpoint-fork"),
+      sourceThreadId: v2ThreadId,
+      targetThreadId: ThreadId.make("checkpoint-fork-target"),
+      checkpointId: "selected-checkpoint",
+    }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+    expect(commands).toEqual([
+      expect.objectContaining({
+        type: "thread.fork",
+        sourceThreadId: v2ThreadId,
+        sourcePoint: { type: "checkpoint", checkpointId: "selected-checkpoint" },
+      }),
+    ]);
+  }).pipe(Effect.provide(layerTestCrypto)),
+);

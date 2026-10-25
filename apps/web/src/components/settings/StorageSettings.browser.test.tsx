@@ -16,6 +16,19 @@ const state = vi.hoisted(() => ({
   report: null as StorageCleanupReport | null,
 }));
 
+// fork: project-lifecycle -- row actions use navigation and live thread state.
+vi.mock("@tanstack/react-router", async (original) => ({
+  ...(await original<typeof import("@tanstack/react-router")>()),
+  useNavigate: () => vi.fn(),
+}));
+vi.mock("../../hooks/useThreadActions", () => ({
+  useThreadActions: () => ({ settleThread: vi.fn() }),
+}));
+vi.mock("../../state/entities", async (original) => ({
+  ...(await original<typeof import("../../state/entities")>()),
+  useThreadShells: () => [],
+}));
+
 vi.mock(import("../../state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");
@@ -263,4 +276,48 @@ it("shows orphan sizes and identifies failed worktrees with one connected machin
   );
   expect(container.textContent).toContain("6.29 MB");
   expect(container.textContent).toContain("0 B recovered.");
+});
+
+// fork: project-lifecycle
+it("removes only an orphan the server marked safe, using that row's path", async () => {
+  const row = {
+    kind: "worktree" as const,
+    outcome: "kept" as const,
+    path: "/worktrees/repo/clean",
+    projectPath: null,
+    threadId: null,
+    threadTitle: null,
+    reason: "No thread uses this worktree",
+    bytes: 1024,
+    files: null,
+    canRemove: true,
+  };
+  state.report = {
+    trigger: "manual",
+    startedAt: "2026-10-25T12:00:00.000Z",
+    finishedAt: "2026-10-25T12:00:01.000Z",
+    entries: [row, { ...row, path: "/worktrees/repo/dirty", canRemove: false }],
+    counts: { removed: 0, kept: 2, failed: 0 },
+    omittedCount: 0,
+    bytesFreed: 0,
+  };
+  state.run.mockResolvedValue({
+    _tag: "Success",
+    value: { ...state.report, entries: [{ ...row, outcome: "removed" }] },
+  });
+  await render();
+  await act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("Last run"))
+      ?.click(),
+  );
+  const removes = [...container.querySelectorAll("button")].filter(
+    (button) => button.textContent === "Remove",
+  );
+  expect(removes).toHaveLength(1);
+  await act(async () => removes[0]!.click());
+  expect(state.run).toHaveBeenCalledExactlyOnceWith({
+    environmentId: "env",
+    input: { removeOrphanPath: row.path },
+  });
 });

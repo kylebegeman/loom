@@ -16,6 +16,9 @@ import { WS_METHODS } from "./rpc.ts";
 export const CORE_CLIENT_GUARDED_RPC_SCOPES = {
   // fork: ext-core
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
+  // fork: project-lifecycle
+  [WS_METHODS.checkpointRestoreState]: AuthOrchestrationReadScope,
+  [WS_METHODS.checkpointUndoRestore]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,

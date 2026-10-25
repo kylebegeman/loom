@@ -427,6 +427,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
     ),
   ),
   rollbackRequestId: Schema.optional(CommandId),
+  // fork: project-lifecycle -- file-only restores have no rolled-back run to signal completion.
+  rollbackCompletedRequestId: Schema.optional(CommandId),
   rollbackFailure: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
