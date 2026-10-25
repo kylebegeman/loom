@@ -1,3 +1,4 @@
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { ServerProvider } from "@t3tools/contracts";
 import {
   DIRECTORY_FEATURE,
@@ -31,7 +32,6 @@ import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { MiniOffloadService } from "../mini-offload/MiniOffloadService.ts";
-import { resolveLibraryConnection } from "../project-library/LibraryConnection.ts";
 import { DIRECTORY_REPORT_ROUTE } from "./DirectoryService.ts";
 
 /** Without a change, a computer reports this often, so its entry stays under two minutes old. */
@@ -65,9 +65,8 @@ const FAILURE_REASONS: ReadonlySet<string> = new Set<FailureReason>([
 ]);
 const isFailureReason = (value: string): value is FailureReason => FAILURE_REASONS.has(value);
 
-/** A sign-in is read once at start, so a new one needs a restart. */
 const SIGNED_OUT_WARNING =
-  "This computer's Library sign-in is missing, expired or refused, so it cannot report to the directory. Sign it in to its Library again, then restart Loom.";
+  "This computer's Library sign-in is missing, expired or refused, so it cannot report to the directory. Open Settings > Connections on this computer for the sign-in repair. Loom reloads a replaced credential automatically.";
 const STOPPED_WARNING: Record<Stopped, string> = {
   "key-changed": new DirectoryError({ reason: "key-changed" }).message,
   "signed-out": SIGNED_OUT_WARNING,
@@ -103,10 +102,7 @@ const providerStatuses = (snapshot: ReadonlyArray<ServerProvider>) =>
     .map((provider) => ({ id: provider.instanceId, status: provider.status }));
 
 const make = Effect.gen(function* () {
-  // Resolved once, as the publisher does. The authority lists itself and reports to no one.
-  const connection = yield* resolveLibraryConnection.pipe(
-    Effect.orElseSucceed(() => ({ kind: "unavailable" }) as const),
-  );
+  const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
   const environment = yield* ServerEnvironment;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const providers = yield* ProviderRegistry.ProviderRegistry;
@@ -144,18 +140,15 @@ const make = Effect.gen(function* () {
   });
 
   const run = Effect.gen(function* () {
-    if (connection.kind === "unavailable") {
-      yield* Ref.set(status, { state: "signed-out", lastReportedAt: null });
-      return yield* Effect.logWarning(SIGNED_OUT_WARNING);
-    }
-    if (connection.kind !== "remote") return;
-    const library = connection;
+    const initial = yield* libraryConnection.current;
+    if (initial.kind === "none" || initial.kind === "authority") return;
 
     // Asked without the publisher token: the descriptor is public. Only a Library that answers
     // lacks the directory; a proxy's error page or an unreadable answer is an outage to retry.
-    const directorySupported = http
-      .execute(HttpClientRequest.get(library.endpoint(DESCRIPTOR_ROUTE)))
-      .pipe(
+    const directorySupported = (
+      library: Extract<LibraryConnection.LibraryConnection, { kind: "remote" }>,
+    ) =>
+      http.execute(HttpClientRequest.get(library.endpoint(DESCRIPTOR_ROUTE))).pipe(
         Effect.flatMap((response) => {
           if (response.status === 404) return Effect.succeed("unsupported" as const);
           if (response.status !== 200) return Effect.succeed("io" as const);
@@ -174,6 +167,7 @@ const make = Effect.gen(function* () {
 
     const post = Effect.fn("DirectoryReporter.post")(function* (
       report: DirectoryEnvironmentReport,
+      library: Extract<LibraryConnection.LibraryConnection, { kind: "remote" }>,
     ) {
       const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
         Effect.option,
@@ -228,7 +222,11 @@ const make = Effect.gen(function* () {
     let sequence = 0;
     let lastSent: { readonly fingerprint: string; readonly at: number } | null = null;
     const update = (next: Omit<DirectoryReporting, "lastReportedAt">) =>
-      Ref.update(status, (current) => ({ ...next, lastReportedAt: current.lastReportedAt }));
+      Ref.update(status, (current) => ({
+        ...current,
+        ...next,
+        lastReportedAt: current.lastReportedAt,
+      }));
 
     const unsupported = Effect.gen(function* () {
       supported = false;
@@ -252,8 +250,17 @@ const make = Effect.gen(function* () {
     });
 
     const step = Effect.gen(function* () {
+      const connection = yield* libraryConnection.current;
+      if (connection.kind !== "remote") {
+        if (connection.kind === "unavailable" && stopped !== "signed-out")
+          yield* Effect.logWarning(SIGNED_OUT_WARNING);
+        stopped = connection.kind === "unavailable" ? "signed-out" : null;
+        yield* update({ state: connection.kind === "unavailable" ? "signed-out" : "off" });
+        return { delay: CHECK_MS, wakeable: true };
+      }
+      const library = connection;
       if (!supported) {
-        const feature = yield* directorySupported;
+        const feature = yield* directorySupported(library);
         if (feature === "unsupported") return yield* unsupported;
         if (feature !== "supported") return yield* retry(feature);
         supported = true;
@@ -274,7 +281,7 @@ const make = Effect.gen(function* () {
       )
         return { delay: Math.min(CHECK_MS, HEARTBEAT_MS - (now - lastSent.at)), wakeable: true };
       sequence = Math.max(now, sequence + 1);
-      const outcome = yield* post({ ...description, sequence, reportedAt: isoAt(now) });
+      const outcome = yield* post({ ...description, sequence, reportedAt: isoAt(now) }, library);
       switch (outcome) {
         case "sent":
           if (failures > 0 || stopped !== null)
@@ -282,7 +289,11 @@ const make = Effect.gen(function* () {
           stopped = null;
           failures = 0;
           lastSent = { fingerprint, at: now };
-          yield* Ref.set(status, { state: "reporting", lastReportedAt: isoAt(now) });
+          yield* Ref.set(status, {
+            state: "reporting",
+            lastReportedAt: isoAt(now),
+            routes: description.routes,
+          });
           return { delay: CHECK_MS, wakeable: true };
         case "unsupported":
           return yield* unsupported;
@@ -311,10 +322,17 @@ const make = Effect.gen(function* () {
     );
   }).pipe(Effect.scoped);
 
-  return DirectoryReporter.of({ status: Ref.get(status), run });
+  return DirectoryReporter.of({
+    status: Effect.gen(function* () {
+      return { ...(yield* Ref.get(status)), signIn: yield* libraryConnection.status };
+    }),
+    run,
+  });
 });
 
-export const layer = Layer.effect(DirectoryReporter, make);
+export const layer = Layer.effect(DirectoryReporter, make).pipe(
+  Layer.provide(LibraryConnection.layer),
+);
 
 /** Runs the reporter once the server is active. */
 export const DirectoryReporterLive = Layer.effectDiscard(

@@ -9,6 +9,7 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  REACH_LIST_ROUTE,
   REACH_ENSURE_ROUTE,
   REACH_REMOVE_ROUTE,
   REACH_REQUEST_MAX_BYTES,
@@ -424,3 +425,26 @@ describe("reach routes", () => {
     ),
   );
 });
+
+it.live("lists reach diagnostics for a publisher without exposing connector credentials", () =>
+  run((f) =>
+    Effect.gen(function* () {
+      expect((yield* f.call("ensure", 1)).status).toBe(200);
+      const listed = yield* f.post(REACH_LIST_ROUTE, "{}");
+      expect(listed.status).toBe(200);
+      expect(listed.json).toMatchObject({ computers: [{ environmentId: STUDIO }] });
+      expect(listed.text).not.toContain(CONNECTOR_TOKEN_PREFIX);
+      expect(listed.text).not.toContain(CLOUDFLARE_TOKEN);
+      expect(listed.text).not.toContain(POCKET_ID_KEY);
+      for (const caller of [
+        sessionFor("mcp-client"),
+        sessionFor("owner", [AuthOrchestrationReadScope]),
+      ]) {
+        f.setCaller(caller);
+        expect((yield* f.post(REACH_LIST_ROUTE, "{}")).status).toBe(403);
+      }
+      f.setCaller(null);
+      expect((yield* f.post(REACH_LIST_ROUTE, "{}")).status).toBe(401);
+    }),
+  ),
+);

@@ -615,6 +615,14 @@ export const makeReachHarness = Effect.fn("ReachTesting.makeHarness")(function* 
       pinned: (environmentId) => Effect.succeed(pins.get(environmentId) ?? null),
     }),
     Layer.mock(AuthSessionRepository)({
+      listActive: ({ now }) =>
+        Effect.succeed(
+          [...sessions.values()].filter(
+            (session) =>
+              session.revokedAt === null &&
+              session.expiresAt.epochMilliseconds > now.epochMilliseconds,
+          ),
+        ),
       getById: ({ sessionId }) => Effect.succeed(Option.fromNullishOr(sessions.get(sessionId))),
     }),
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(LIBRARY_ID) }),

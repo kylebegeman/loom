@@ -1,3 +1,6 @@
+import { applyHostIdentity, HostIdentityRestart } from "./HostIdentity.ts";
+import type { ReachApplyIdentityInput } from "@t3tools/contracts/fork";
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { NonNegativeInt } from "@t3tools/contracts";
 import {
   type ReachBlocked,
@@ -61,7 +64,7 @@ const STOPPED_RETRY_MS = 15 * 60_000;
 const MESSAGES = {
   unreachable: "Your Library could not be reached. Loom keeps trying.",
   signedOut:
-    "Your Library refused this computer's sign-in. Sign it in to its Library again, then restart Loom.",
+    "Your Library refused this computer's sign-in. Open Settings > Connections on this computer for the sign-in repair. Loom reloads a replaced credential automatically.",
   keyChanged:
     "Your Library knows this computer by a different key. Retire this computer's reach address in the Library to start over.",
   notInDirectory: "Waiting for this computer to appear in your Library's directory.",
@@ -72,9 +75,8 @@ const MESSAGES = {
   storage: "This computer could not save its reach settings. Loom keeps trying.",
   noOrigin:
     "Reach needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
-  // The Library sign-in is read once at start, so a new one needs a restart to take effect.
   removeSignedOut:
-    "Sign this computer in to its Library again, then restart Loom to finish removing reach.",
+    "Replace this computer's Library credential to finish removing reach. Loom reloads it automatically.",
   removeOutdated: "Update Loom on your Library to finish removing reach.",
   removeNotReady: "Your Library is not set up for reach, so it cannot remove this address yet.",
   retired:
@@ -124,6 +126,7 @@ export interface ReachGuardState {
 export class ReachService extends Context.Service<
   ReachService,
   {
+    readonly applyIdentity: (input: ReachApplyIdentityInput) => Effect.Effect<void, ReachError>;
     readonly status: Effect.Effect<ReachStatus>;
     readonly changes: Stream.Stream<ReachStatus>;
     /** Answers once the intent is stored; provisioning continues and `changes` shows it. */
@@ -249,6 +252,9 @@ interface ConnectorRuntime {
 export const makeReachService = Effect.fn("ReachService.make")(function* (
   dependencies: ReachServiceDependencies,
 ) {
+  const identityContext =
+    yield* Effect.context<Effect.Services<ReturnType<typeof applyHostIdentity>>>();
+  const identityRestart = yield* Effect.serviceOption(HostIdentityRestart);
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
@@ -257,8 +263,8 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
   const environment = yield* HostProcess.Environment;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const rootScope = yield* Effect.scope;
-  // Read once, as the directory reporter does: a new Library sign-in needs a restart.
-  const connection = yield* resolveLibraryConnection.pipe(
+  const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
+  let connection = yield* resolveLibraryConnection.pipe(
     Effect.orElseSucceed(() => ({ kind: "unavailable" }) as const),
   );
 
@@ -324,7 +330,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
       Effect.result,
     );
 
-  const connectionBlock: ReachBlocked | null =
+  const connectionBlock = (): ReachBlocked | null =>
     connection.kind === "none"
       ? "no-library"
       : connection.kind === "authority"
@@ -350,7 +356,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
   };
 
   const view = (): ReachStatus => {
-    const blocked = connectionBlock ?? learned;
+    const blocked = connectionBlock() ?? learned;
     const warnings = new Set<ReachWarning>();
     if (connection.kind === "unavailable") warnings.add("library-signed-out");
     if (failure?.warning) warnings.add(failure.warning);
@@ -390,17 +396,34 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     }),
   );
 
-  const client: ReachLibraryClient | null =
-    connection.kind === "remote"
-      ? makeReachLibraryClient({
-          library: connection,
-          environmentId,
-          secrets,
-          lastSeq: () => saved.lastSeq,
-          saveSeq: (seq) =>
-            persist((current) => ({ ...current, lastSeq: Math.max(current.lastSeq, seq) })),
-        })
-      : null;
+  const refreshedClient = Effect.gen(function* () {
+    connection = yield* libraryConnection.current;
+    if (connection.kind !== "remote") return null;
+    return makeReachLibraryClient({
+      library: connection,
+      environmentId,
+      secrets,
+      lastSeq: () => saved.lastSeq,
+      saveSeq: (seq) =>
+        persist((current) => ({ ...current, lastSeq: Math.max(current.lastSeq, seq) })),
+    });
+  });
+  const client: ReachLibraryClient = {
+    ensure: (origin) =>
+      refreshedClient.pipe(
+        Effect.flatMap((current) =>
+          current === null
+            ? Effect.succeed({ kind: "signed-out" as const })
+            : current.ensure(origin),
+        ),
+      ),
+    remove: () =>
+      refreshedClient.pipe(
+        Effect.flatMap((current) =>
+          current === null ? Effect.succeed({ kind: "signed-out" as const }) : current.remove(),
+        ),
+      ),
+  };
 
   const stopConnector = Effect.suspend(() => {
     const runtime = connector;
@@ -644,7 +667,8 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
 
   const turnOn = Effect.gen(function* () {
     if (saved.removing) return yield* new ReachError({ reason: "busy" });
-    if (client === null) return yield* new ReachError({ reason: "unavailable" });
+    connection = yield* libraryConnection.current;
+    if (connection.kind !== "remote") return yield* new ReachError({ reason: "unavailable" });
     decided = true;
     const settled =
       (connector !== null && connector.status.state !== "error") ||
@@ -720,8 +744,25 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
   );
 
   return ReachService.of({
-    status: Effect.sync(view),
-    changes: SubscriptionRef.changes(state),
+    applyIdentity: (input) =>
+      applyHostIdentity(saved.prepared, input).pipe(
+        Effect.provideContext(
+          Option.isSome(identityRestart)
+            ? Context.add(identityContext, HostIdentityRestart, identityRestart.value)
+            : identityContext,
+        ),
+      ),
+    status: Effect.gen(function* () {
+      connection = yield* libraryConnection.current;
+      return view();
+    }),
+    changes: Stream.unwrap(
+      Effect.gen(function* () {
+        connection = yield* libraryConnection.current;
+        yield* publish;
+        return SubscriptionRef.changes(state);
+      }),
+    ),
     setEnabled,
     remove,
     forget,
@@ -734,7 +775,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
         runtime.status.metricsPort === null ? [] : [runtime.status.metricsPort],
       ),
   });
-});
+}, Effect.provide(LibraryConnection.layer));
 
 export const layer = Layer.effect(
   ReachService,

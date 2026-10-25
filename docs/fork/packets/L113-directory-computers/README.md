@@ -12,7 +12,11 @@ kept offline for each Library.
 - In: the directory list on Settings > Connections (desktop and web) and Settings > Computers
   (iPhone); Connect from a row, which reads the computer's Identity metadata from its published
   routes and signs in only when the computer uses the Library's issuer; a pairing fallback that
-  explains why and checks that the address reaches the listed computer.
+  explains why and checks that the address reaches the listed computer, including rows with no
+  usable route. The host shows its last published routes and Library sign-in expiry in its
+  connection details. Publisher renewal replaces the session at two thirds of its lifetime,
+  saves the successor atomically with mode 0600, and reloads credentials without a restart.
+  An older Library keeps the current sign-in and reports that it needs an update.
 - Out: public routes and per-computer Pocket ID resources (C03), a Command Palette entry and
   Settings search, which need edits in files other packets own.
 

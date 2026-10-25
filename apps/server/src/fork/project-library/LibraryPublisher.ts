@@ -1,3 +1,4 @@
+import * as LibraryConnection from "./LibraryConnection.ts";
 import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
@@ -202,6 +203,7 @@ const make = Effect.gen(function* () {
   const registrations = yield* PubSub.unbounded<LibraryWorkingCopy>();
   const copyRegistrations = Stream.fromPubSub(registrations);
   const registered = (copy: LibraryWorkingCopy) => PubSub.publish(registrations, copy);
+  const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
   const connection = yield* resolveLibraryConnection;
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
@@ -237,7 +239,7 @@ const make = Effect.gen(function* () {
     });
   };
   if (connection.kind === "none") return unavailable(false);
-  if (connection.kind === "unavailable") return unavailable(true);
+
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
   // Deleting a conversation removes its attachment files, and that can happen before its last
@@ -344,7 +346,8 @@ const make = Effect.gen(function* () {
       signOutPageReaders: () => noPages,
     });
   }
-  const { credential, endpoint, send } = connection;
+  const endpoint = (route: string) => route;
+  const send = libraryConnection.send;
   const execute = Effect.fnUntraced(function* (
     request: HttpClientRequest.HttpClientRequest,
     /** Keep the reason the Library gave for refusing, such as a full proposal queue. */
@@ -395,6 +398,8 @@ const make = Effect.gen(function* () {
   const descriptorService = yield* Effect.serviceOption(ServerEnvironment);
   const encodeComputer = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterComputerRequest));
   const info = Effect.gen(function* () {
+    const current = yield* libraryConnection.current;
+    const credential = current.kind === "remote" ? current.credential : null;
     const response = yield* execute(HttpClientRequest.get(endpoint("/api/loom/library/info")));
     const info = yield* response.json.pipe(
       Effect.flatMap(decodeInfo),
@@ -732,4 +737,6 @@ const make = Effect.gen(function* () {
     signOutPageReaders,
   });
 });
-export const layer = Layer.effect(LibraryPublisher, make);
+export const layer = Layer.effect(LibraryPublisher, make).pipe(
+  Layer.provide(LibraryConnection.layer),
+);

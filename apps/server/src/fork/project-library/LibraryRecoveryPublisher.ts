@@ -29,7 +29,7 @@ import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { isLibraryAuthorityEnv } from "./authority.ts";
 import { libraryComputerDirectory } from "./enrollment.ts";
-import { resolveLibraryConnection } from "./LibraryConnection.ts";
+import { readLibraryConnection } from "./LibraryConnection.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import {
   readRecoveryGrantClaims,
@@ -83,7 +83,10 @@ const make = Effect.gen(function* () {
     Option.isSome(portableConfig) &&
     Option.isSome(destinationIdentity) &&
     Option.isSome(portableHome)
-      ? yield* resolveLibraryConnection.pipe(
+      ? readLibraryConnection.pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(HttpClient.HttpClient, http),
           Effect.provideService(
             ConfigProvider.ConfigProvider,
             ConfigProvider.fromEnv({
@@ -99,7 +102,7 @@ const make = Effect.gen(function* () {
           Effect.provideService(HostProcess.HomeDirectory, portableHome.value),
           Effect.orElseSucceed(() => null),
         )
-      : null;
+      : Effect.succeed(null);
   const localAuthority = isLibraryAuthorityEnv(env);
   let credentialPath = env.LOOM_LIBRARY_CREDENTIAL_FILE?.trim();
   if (!localAuthority && !credentialPath) {
@@ -337,16 +340,17 @@ const make = Effect.gen(function* () {
                 return yield* new LibraryError({ reason: "archive-unverified" });
               body = archive.url === null ? archive.body : yield* readback(archive.url);
             } else {
+              const currentConnection = yield* portableConnection;
               if (
-                portableConnection === null ||
-                portableConnection.kind !== "remote" ||
-                (portableConnection.credential !== null &&
-                  portableConnection.credential.libraryEnvironmentId !== grant.libraryEnvironmentId)
+                currentConnection === null ||
+                currentConnection.kind !== "remote" ||
+                (currentConnection.credential !== null &&
+                  currentConnection.credential.libraryEnvironmentId !== grant.libraryEnvironmentId)
               )
                 return yield* new LibraryError({ reason: "publisher-unavailable" });
               const probe = yield* http
                 .execute(
-                  HttpClientRequest.get(portableConnection.endpoint("/api/loom/library/info")).pipe(
+                  HttpClientRequest.get(currentConnection.endpoint("/api/loom/library/info")).pipe(
                     HttpClientRequest.bearerToken(grant.accessToken),
                   ),
                 )
@@ -362,7 +366,7 @@ const make = Effect.gen(function* () {
               if (info.environmentId !== grant.libraryEnvironmentId || info.isAuthority === false)
                 return yield* recoveryGrantRefused();
               body = yield* remoteArchive(
-                portableConnection.endpoint(
+                currentConnection.endpoint(
                   `/api/loom/library/recovery-grants/${encodeURIComponent(grant.destinationEnvironmentId)}/${encodeURIComponent(copy.environmentId)}/${encodeURIComponent(copy.id)}/${metadata.sha256}`,
                 ),
                 grant.accessToken,

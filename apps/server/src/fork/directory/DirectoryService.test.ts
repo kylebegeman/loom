@@ -666,4 +666,28 @@ describe("DirectoryService", () => {
       );
     });
   });
+  it.effect(
+    "forwards reach diagnostics to the Library without leaking credentials in the result",
+    () => {
+      const listing = {
+        setup: { zone: "reach.example.test", cloudflare: "ready", identity: "missing", edge: null },
+        computers: [],
+      };
+      const asked: string[] = [];
+      return run(
+        {
+          env: { LOOM_LIBRARY_URL: LIBRARY, LOOM_LIBRARY_TOKEN: "computer-token" },
+          library: (url) => {
+            asked.push(url);
+            return Response.json(listing);
+          },
+        },
+        (directory) =>
+          Effect.gen(function* () {
+            expect(yield* directory.reachComputers).toEqual(listing);
+            expect(asked).toEqual([`${LIBRARY}/api/loom/reach/list`]);
+          }),
+      );
+    },
+  );
 });

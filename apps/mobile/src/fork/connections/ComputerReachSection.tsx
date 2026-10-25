@@ -1,6 +1,7 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   reachChangeErrorText,
+  directoryReportingText,
   reachView,
   supportsLoomFeature,
   type ReachConfirm,
@@ -8,7 +9,13 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthRelayReadScope, sessionGrantsScope, type EnvironmentId } from "@t3tools/contracts";
-import { REACH_FEATURE, REACH_FORGET_FEATURE, type ReachStatus } from "@t3tools/contracts/fork";
+import {
+  DIRECTORY_REPORTING_FEATURE,
+  REACH_FEATURE,
+  REACH_FORGET_FEATURE,
+  type ReachStatus,
+} from "@t3tools/contracts/fork";
+import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
@@ -23,7 +30,7 @@ import { cn } from "../../lib/cn";
 import { serverEnvironment } from "../../state/server";
 import { environmentSession, usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { REACH_INK, reach } from "./reach";
+import { REACH_INK, reach, directoryReporting } from "./reach";
 
 const FOOTER =
   "Your Library gives this computer its own address, so your devices can connect when they are away from your network and tailnet.";
@@ -132,6 +139,13 @@ export function ComputerReachSection({
     );
   }
 
+  const reportingSupported =
+    config !== null &&
+    supportsLoomFeature(config.environment.capabilities, DIRECTORY_REPORTING_FEATURE);
+  const reportingAtom = directoryReporting(connected && reportingSupported ? environmentId : null);
+  const reportingResult = useAtomValue(reportingAtom);
+  const reportingRefresh = useAtomRefresh(reportingAtom);
+  const report = Option.getOrNull(AsyncResult.value(reportingResult));
   const lines: { readonly tone: ReachTone; readonly text: string }[] = [];
   if (view.detail !== null)
     lines.push({ tone: view.status.tone === "danger" ? "danger" : "neutral", text: view.detail });
@@ -143,59 +157,87 @@ export function ComputerReachSection({
   if (notice !== null) lines.push({ tone: "neutral", text: notice });
 
   return (
-    <SettingsSection title="Reach" footer={FOOTER}>
-      <SettingsSwitchRow
-        icon="globe"
-        label="Reach from anywhere"
-        subtitle={view.status.text}
-        value={pending === "on" ? true : pending === "off" ? false : view.switch.checked}
-        disabled={view.switch.disabled || pending !== null}
-        onValueChange={change}
-      />
-      {lines.length > 0 ? (
-        <View className="gap-2 px-4 pb-4">
-          {lines.map((line) => (
-            <Text
-              key={`${line.tone}:${line.text}`}
-              selectable
-              className={cn("text-sm", REACH_INK[line.tone])}
-            >
-              {line.text}
-            </Text>
-          ))}
-        </View>
+    <>
+      {reportingSupported ? (
+        <SettingsSection title="Library sign-in and directory">
+          <View className="gap-2 px-4 py-3">
+            {(report
+              ? directoryReportingText(report)
+              : [
+                  !connected
+                    ? "Reconnect to check this computer's Library sign-in."
+                    : AsyncResult.isFailure(reportingResult)
+                      ? "Could not read this computer's Library sign-in. Try again."
+                      : "Checking Library sign-in...",
+                ]
+            ).map((text) => (
+              <Text key={text} className="text-sm text-foreground-muted">
+                {text}
+              </Text>
+            ))}
+          </View>
+          <SettingsActionRow
+            icon="arrow.clockwise"
+            label="Refresh Library status"
+            disabled={!connected || reportingResult.waiting}
+            onPress={reportingRefresh}
+          />
+        </SettingsSection>
       ) : null}
-      {view.actions.retry ? (
-        <SettingsActionRow icon="arrow.clockwise" label="Try again" onPress={refreshStatus} />
-      ) : null}
-      {address !== null && view.actions.copyAddress ? (
-        <SettingsActionRow
-          icon="doc.on.doc"
-          label="Copy address"
-          description={address.host}
-          onPress={() => copyAddress(address.url)}
+      <SettingsSection title="Reach" footer={FOOTER}>
+        <SettingsSwitchRow
+          icon="globe"
+          label="Reach from anywhere"
+          subtitle={view.status.text}
+          value={pending === "on" ? true : pending === "off" ? false : view.switch.checked}
+          disabled={view.switch.disabled || pending !== null}
+          onValueChange={change}
         />
-      ) : null}
-      {view.actions.remove ? (
-        <SettingsActionRow
-          icon="trash"
-          label="Remove address"
-          tone="danger"
-          loading={pending === "remove"}
-          disabled={pending !== null}
-          onPress={confirmRemove}
-        />
-      ) : null}
-      {view.actions.forget ? (
-        <SettingsActionRow
-          icon="xmark.circle.fill"
-          label="Forget reach on this computer"
-          tone="danger"
-          loading={pending === "forget"}
-          disabled={pending !== null}
-          onPress={confirmForget}
-        />
-      ) : null}
-    </SettingsSection>
+        {lines.length > 0 ? (
+          <View className="gap-2 px-4 pb-4">
+            {lines.map((line) => (
+              <Text
+                key={`${line.tone}:${line.text}`}
+                selectable
+                className={cn("text-sm", REACH_INK[line.tone])}
+              >
+                {line.text}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+        {view.actions.retry ? (
+          <SettingsActionRow icon="arrow.clockwise" label="Try again" onPress={refreshStatus} />
+        ) : null}
+        {address !== null && view.actions.copyAddress ? (
+          <SettingsActionRow
+            icon="doc.on.doc"
+            label="Copy address"
+            description={address.host}
+            onPress={() => copyAddress(address.url)}
+          />
+        ) : null}
+        {view.actions.remove ? (
+          <SettingsActionRow
+            icon="trash"
+            label="Remove address"
+            tone="danger"
+            loading={pending === "remove"}
+            disabled={pending !== null}
+            onPress={confirmRemove}
+          />
+        ) : null}
+        {view.actions.forget ? (
+          <SettingsActionRow
+            icon="xmark.circle.fill"
+            label="Forget reach on this computer"
+            tone="danger"
+            loading={pending === "forget"}
+            disabled={pending !== null}
+            onPress={confirmForget}
+          />
+        ) : null}
+      </SettingsSection>
+    </>
   );
 }

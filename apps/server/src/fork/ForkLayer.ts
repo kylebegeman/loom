@@ -1,3 +1,4 @@
+import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
 import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
 import * as ProjectOperations from "./project-library/ProjectOperations.ts";
 import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
@@ -308,6 +309,7 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  LibraryPublishingCredential.layer,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
   ProjectProfiles.layer.pipe(

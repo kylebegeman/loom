@@ -51,7 +51,9 @@ export function directoryComputerItem(row: DirectoryCatalogRow): DirectoryComput
   const parts = [
     row.report === null ? undefined : PLATFORM_TEXT[row.report.platform.os],
     row.proof?.text,
-    row.action === null ? "No address to connect to" : undefined,
+    row.action === "pair"
+      ? `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair instead`
+      : undefined,
   ].filter((part): part is string => part !== undefined);
   return { row, description: parts.join(" · "), connectable: row.action === "connect" };
 }

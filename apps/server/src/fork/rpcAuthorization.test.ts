@@ -460,6 +460,7 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
     Layer.succeed(
       ReachService,
       ReachService.of({
+        applyIdentity: () => record("applyIdentity", undefined),
         status: record("status", REACH_OFF),
         changes: Stream.fromEffect(record("watch", REACH_OFF)),
         setEnabled: (enabled) => record(enabled ? "on" : "off", { ...REACH_OFF, enabled }),
@@ -474,7 +475,8 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
       ReachProvisioner.of({
         ensure: () => Effect.die(new Error("ensure is a computer's HTTP route, not an RPC")),
         remove: () => Effect.die(new Error("remove is a computer's HTTP route, not an RPC")),
-        list: record("libraryList", {
+        list: Effect.die("RPC uses the authority-aware read"),
+        computers: record("libraryList", {
           setup: { zone: null, cloudflare: "missing", identity: "missing", edge: null },
           computers: [],
         }),
@@ -531,7 +533,8 @@ it.effect("each reach handler checks its own grant before the service runs", () 
     const admin = reachHandlers(AuthStandardClientScopes);
     yield* (yield* admin.handlers)[REACH.set]({ enabled: true });
     yield* (yield* admin.handlers)[REACH.forget]();
-    expect(admin.calls).toEqual(["on", "forget"]);
+    yield* (yield* admin.handlers)[REACH.applyIdentity]({ requirePasskey: true });
+    expect(admin.calls).toEqual(["on", "forget", "applyIdentity"]);
 
     const relayOnly = reachHandlers([AuthRelayReadScope, AuthRelayWriteScope]);
     const relay = yield* relayOnly.handlers;
@@ -543,6 +546,9 @@ it.effect("each reach handler checks its own grant before the service runs", () 
         relay[REACH.libraryRetire]({ environmentId: RETIRED.environmentId, endIdentity: false }),
       ),
     ).toMatchObject({ requiredScope: AuthSettingsWriteScope });
+    expect(yield* Effect.flip(relay[REACH.applyIdentity]({ requirePasskey: true }))).toMatchObject({
+      requiredScope: AuthSettingsWriteScope,
+    });
     expect(relayOnly.calls).toEqual([]);
 
     const unrelated = reachHandlers([AuthOrchestrationReadScope, AuthSettingsWriteScope]);

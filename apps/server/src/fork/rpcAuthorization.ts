@@ -471,6 +471,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [REACH.watch]: AuthRelayReadScope,
   // Upstream's tunnel grant. Identity sessions hold it only with LOOM_IDENTITY_ALLOW_ADMIN, and
   // terminal or full-access agent rights reach the same switch another way (D9).
+  [REACH.applyIdentity]: AuthSettingsWriteScope,
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
   [REACH.forget]: AuthRelayWriteScope,

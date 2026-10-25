@@ -32,6 +32,7 @@ const makeHarness = Effect.fn("ReachMcpTest.makeHarness")(function* (
   const calls: Array<string> = [];
   let status = CONNECTED;
   const reach = ReachService.of({
+    applyIdentity: () => Effect.void,
     status: Effect.sync(() => status),
     changes: Stream.make(status),
     setEnabled: (enabled) =>

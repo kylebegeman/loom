@@ -14,6 +14,7 @@ import {
 export const REACH_FEATURE = "reach";
 /** Advertised by every computer that also answers `loom.reach.forget`. */
 export const REACH_FORGET_FEATURE = "reach-forget";
+export const REACH_IDENTITY_APPLY_FEATURE = "reach-identity-apply";
 /**
  * Advertised by the Library authority once its directory runs and its reach zone and Cloudflare
  * token file are configured. It answers `loom.reach.library.*` and the two provisioning routes.
@@ -69,7 +70,7 @@ export type ReachWarning = typeof ReachWarning.Type;
 
 /**
  * Non-secret Loom Identity values the Library prepared for this computer. The computer adopts them
- * only through its own server environment; reach never changes Identity settings.
+ * only when its own admin applies them to private host configuration; environment variables take precedence.
  */
 export const ReachPrepared = Schema.Struct({
   issuer: UrlText,
@@ -94,6 +95,12 @@ export const ReachStatus = Schema.Struct({
 });
 export type ReachStatus = typeof ReachStatus.Type;
 
+export const ReachApplyIdentityInput = Schema.Struct({
+  requirePasskey: Schema.Boolean,
+  allowedSubjects: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
+});
+export type ReachApplyIdentityInput = typeof ReachApplyIdentityInput.Type;
+
 export const ReachSetInput = Schema.Struct({ enabled: Schema.Boolean });
 export type ReachSetInput = typeof ReachSetInput.Type;
 
@@ -103,10 +110,12 @@ export type ReachSetInput = typeof ReachSetInput.Type;
  * answer once the intent is stored, and the status carries what the Library said.
  */
 export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
-  reason: Schema.Literals(["unavailable", "busy", "storage"]),
+  reason: Schema.Literals(["unavailable", "busy", "storage", "identity-allowlist"]),
 }) {
   override get message(): string {
     switch (this.reason) {
+      case "identity-allowlist":
+        return "Enter the Loom account IDs allowed to sign in to this computer. A wildcard is not allowed.";
       case "unavailable":
         return "Reach cannot run on this computer right now. It needs a Library that supports reach and a current sign-in to it.";
       case "busy":
@@ -117,6 +126,7 @@ export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
   }
 }
 
+export const REACH_LIST_ROUTE = "/api/loom/reach/list";
 export const REACH_ENSURE_ROUTE = "/api/loom/reach/ensure";
 export const REACH_REMOVE_ROUTE = "/api/loom/reach/remove";
 /** The Library refuses a larger body before reading it. */
@@ -380,6 +390,7 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
 }
 
 export const REACH_WS_METHODS = {
+  applyIdentity: "loom.reach.applyIdentity",
   watch: "loom.reach.watch",
   set: "loom.reach.set",
   remove: "loom.reach.remove",
@@ -398,6 +409,11 @@ const libraryError = Schema.Union([ReachLibraryError, EnvironmentAuthorizationEr
  * a computer that advertises `REACH_FORGET_FEATURE`.
  */
 export const ReachRpcGroup = RpcGroup.make(
+  Rpc.make(REACH_WS_METHODS.applyIdentity, {
+    payload: ReachApplyIdentityInput,
+    success: Schema.Void,
+    error: computerError,
+  }),
   Rpc.make(REACH_WS_METHODS.watch, {
     payload: Schema.Struct({}),
     success: ReachStatus,

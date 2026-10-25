@@ -1,3 +1,48 @@
+import { DIRECTORY_WS_METHODS, type DirectoryReporting } from "@t3tools/contracts/fork";
+import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { createEnvironmentRpcQueryAtomFamily } from "../state/runtime.ts";
+import { AsyncResult, Atom } from "effect/reactivity";
+
+const idleReporting = Atom.make(AsyncResult.initial<DirectoryReporting, unknown>());
+export function createDirectoryReportingAtoms<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  const reporting = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:directory:reporting",
+    tag: DIRECTORY_WS_METHODS.reporting,
+    staleTimeMs: 15_000,
+  });
+  return (
+    environmentId: EnvironmentId | null,
+  ): Atom.Atom<AsyncResult.AsyncResult<DirectoryReporting, unknown>> =>
+    environmentId === null ? idleReporting : reporting({ environmentId, input: {} });
+}
+
+export function directoryReportingText(report: DirectoryReporting): readonly string[] {
+  const routes = report.routes;
+  const lines = [
+    routes === undefined
+      ? "Your Library lists this computer at: not reported yet"
+      : `Your Library lists this computer at: ${routes.length === 0 ? "none" : routes.map((route) => route.url).join(", ")}`,
+    `Directory reporting: ${report.state}.`,
+  ];
+  if (routes?.length === 0)
+    lines.push(
+      "Turn on Tailscale HTTPS or Reach from anywhere on this computer so other devices can find it. You can also pair a device using a reachable address.",
+    );
+  const signIn = report.signIn;
+  if (signIn?.expiresAt)
+    lines.push(
+      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${signIn.renewal === "automatic" && signIn.state !== "expired" ? " Renews automatically." : ""}`,
+    );
+  if (signIn?.repair) lines.push(signIn.repair);
+  else if (report.state === "signed-out")
+    lines.push(
+      "Your Library refused this computer's sign-in. Ask its administrator to replace the publisher credential on this computer. Loom reloads it automatically.",
+    );
+  return lines;
+}
+
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   type DirectoryEnvironment,
@@ -169,8 +214,8 @@ export interface DirectoryCatalogRow<
   /** Connected from this device now. The only thing that makes a row online. */
   readonly connected: boolean;
   readonly proof: DirectoryProofAge | null;
-  /** Set on a discovered computer with a route to try; see `directoryConnectPlan`. */
-  readonly action: "connect" | null;
+  /** Discovered computers can connect through a route or open the pairing form. */
+  readonly action: "connect" | "pair" | null;
 }
 
 /**
@@ -231,7 +276,7 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
       routes: environment.routes,
       machines: machinesBy.get(environment.environmentId) ?? [],
       connected: connected.has(environment.environmentId),
-      action: environment.routes.length > 0 ? "connect" : null,
+      action: environment.routes.length > 0 ? "connect" : "pair",
     });
   }
   return rows;

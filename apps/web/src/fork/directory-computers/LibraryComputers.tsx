@@ -244,8 +244,11 @@ function LibraryComputersSection({
           .filter(Boolean)
           .join(" · ");
         const note =
-          row.action === null
-            ? { text: "This computer has not shared an address this device can use.", error: false }
+          row.action === "pair"
+            ? {
+                text: `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair using an address this device can reach.`,
+                error: false,
+              }
             : state?.phase === "pairing"
               ? { text: state.reasonText, error: false }
               : state?.phase === "failed"
@@ -272,7 +275,11 @@ function LibraryComputersSection({
               ) : null
             }
           >
-            {row.action === null ? null : state?.phase === "signing-in" ? (
+            {row.action === "pair" ? (
+              <Button size="xs" variant="outline" onClick={() => onPair(row.environmentId, "")}>
+                Pair instead
+              </Button>
+            ) : row.action === null ? null : state?.phase === "signing-in" ? (
               <>
                 <span className="text-xs text-muted-foreground">Waiting for sign-in...</span>
                 <Button
