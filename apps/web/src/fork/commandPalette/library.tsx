@@ -18,13 +18,7 @@ import {
   type LibraryThreadIndex,
 } from "@t3tools/contracts/fork";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import {
-  FileTextIcon,
-  FolderGit2Icon,
-  MessageSquareDashedIcon,
-  SearchIcon,
-  SquarePenIcon,
-} from "lucide-react";
+import { FileTextIcon, FolderGit2Icon, SearchIcon, SquarePenIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -42,7 +36,6 @@ import {
   requestLibraryHistorySearch,
 } from "../project-library/actions";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "../project-library/state";
-import { useNoProjectStart } from "../project-library/useNoProjectStart";
 import { onForkCommand } from "../keybindings/forkCommandBus";
 import type { ForkCommandPaletteSource } from "./registry";
 
@@ -96,11 +89,6 @@ export interface LibraryPaletteContext {
    * page. Null when the Library cannot search.
    */
   readonly searchHistory: (() => Promise<void>) | null;
-  /** Leads New conversation in...; absent when no connected computer can run work. */
-  readonly startWithoutProject?: {
-    readonly computerLabel: string;
-    readonly run: () => Promise<void>;
-  } | null;
 }
 
 const icon = (Icon: typeof FolderGit2Icon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -174,7 +162,6 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
         readonly searchTerms: ReadonlyArray<string>;
         readonly shortcutCommand?: KeybindingCommand;
       },
-      leading: ReadonlyArray<CommandPaletteActionItem> = [],
     ) => {
       const items = projectItems(library, name, Icon, run);
       if (items.length === 0) return [];
@@ -185,25 +172,11 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
           title,
           icon: icon(Icon),
           addonIcon: icon(Icon, ADDON_ICON_CLASS),
-          groups: [{ value: `library-${name}`, label: "Projects", items: [...leading, ...items] }],
+          groups: [{ value: `library-${name}`, label: "Projects", items }],
           ...extra,
         },
       ];
     };
-    const withoutProject = library.startWithoutProject;
-    const noProjectItems: CommandPaletteActionItem[] = withoutProject
-      ? [
-          {
-            kind: "action",
-            value: "action:loom:library:new-conversation:no-project",
-            title: "No project",
-            description: `Starts on ${withoutProject.computerLabel}`,
-            searchTerms: ["no project", "without project", "none", withoutProject.computerLabel],
-            icon: icon(MessageSquareDashedIcon),
-            run: withoutProject.run,
-          },
-        ]
-      : [];
     return [
       ...(threadProjectId
         ? [
@@ -233,20 +206,22 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
             },
           ]
         : []),
-      ...(library.canStart
-        ? submenu(
-            "new-conversation",
-            "New conversation in...",
-            SquarePenIcon,
-            async (projectId) => {
-              openLibraryAction("new-conversation", projectId);
-            },
+      // The New conversation chooser is the one place a project is picked to start in: Enter
+      // starts with the defaults its row shows, and No project leads it.
+      ...(library.canStart && libraryPaletteProjects(library).length
+        ? [
             {
+              kind: "action" as const,
+              value: "action:loom:library:new-conversation",
+              title: "New conversation in...",
               searchTerms: ["library", "project", "new thread", "chat", "start"],
-              shortcutCommand: "loom.library.newConversationIn",
+              shortcutCommand: "loom.library.newConversationIn" as const,
+              icon: icon(SquarePenIcon),
+              run: async () => {
+                openLibraryAction("new-conversation");
+              },
             },
-            noProjectItems,
-          )
+          ]
         : []),
       ...(library.canEditBrief
         ? submenu(
@@ -354,7 +329,6 @@ export function useLibraryPaletteContext(
       : null,
   );
   const canUpdate = useLibraryPermission(projectLibrary.updateProject, authorityId);
-  const noProject = useNoProjectStart();
   return {
     projects,
     threadIndex: threadIndex.data,
@@ -383,21 +357,18 @@ export function useLibraryPaletteContext(
             : navigate({ to: "/library" }));
         }
       : null,
-    startWithoutProject: noProject && { computerLabel: noProject.label, run: noProject.start },
   };
 }
 
-const LIBRARY_SHORTCUTS = [
-  ["loom.library.goToProject", "action:loom:library:go-to-project"],
-  ["loom.library.newConversationIn", "action:loom:library:new-conversation"],
-] as const;
+const LIBRARY_SHORTCUTS = ["loom.library.goToProject", "loom.library.newConversationIn"] as const;
 
-export type LibraryShortcutCommand = (typeof LIBRARY_SHORTCUTS)[number][0];
+export type LibraryShortcutCommand = (typeof LIBRARY_SHORTCUTS)[number];
 
 /**
- * What a Library shortcut does: open the palette on its project picker, fall back to the Library's
- * own setup or project chooser when there is nothing to pick, or nothing at all when the action is
- * not permitted, like upstream's permission-gated preview shortcuts.
+ * What a Library shortcut does: Go to project opens the palette's project picker, or the Library
+ * page when there is nothing to pick, and New conversation in opens the New conversation chooser.
+ * Both walk through setup when no Library is connected, and do nothing when the action is not
+ * permitted, like upstream's permission-gated preview shortcuts.
  */
 export function libraryShortcutAction(
   command: LibraryShortcutCommand,
@@ -407,11 +378,12 @@ export function libraryShortcutAction(
     /** Null while the first page of projects loads; the palette then waits for its picker. */
     readonly liveProjects: number | null;
   },
-): "submenu" | "fallback" | null {
-  if (library.blocker?.kind === "setup") return "fallback";
-  if (library.blocker) return null;
-  if (command === "loom.library.newConversationIn" && !library.canStart) return null;
-  return library.liveProjects === 0 ? "fallback" : "submenu";
+): "projects" | "library" | "new-conversation" | null {
+  const setup = library.blocker?.kind === "setup";
+  if (library.blocker && !setup) return null;
+  if (command === "loom.library.newConversationIn")
+    return setup || library.canStart ? "new-conversation" : null;
+  return setup || library.liveProjects === 0 ? "library" : "projects";
 }
 
 /** Handles the Library shortcuts with the same rules the palette uses for its Library entries. */
@@ -419,15 +391,14 @@ export function useLibraryShortcuts() {
   const { blocker, canStart, liveProjects } = useLibraryPaletteState();
   const navigate = useNavigate();
   useEffect(() => {
-    const unsubscribes = LIBRARY_SHORTCUTS.map(([command, submenu]) =>
+    const unsubscribes = LIBRARY_SHORTCUTS.map((command) =>
       onForkCommand(command, () => {
         const action = libraryShortcutAction(command, { blocker, canStart, liveProjects });
-        if (action === "submenu") openCommandPalette({ submenu });
-        else if (action === "fallback") {
-          // Both fallbacks walk through setup when no Library is connected yet.
-          if (command === "loom.library.goToProject") void navigate({ to: "/library" });
-          else openLibraryAction("new-conversation");
-        }
+        if (action === "projects")
+          openCommandPalette({ submenu: "action:loom:library:go-to-project" });
+        // Both walk through setup when no Library is connected yet.
+        else if (action === "library") void navigate({ to: "/library" });
+        else if (action === "new-conversation") openLibraryAction("new-conversation");
       }),
     );
     return () => {

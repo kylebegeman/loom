@@ -1,7 +1,6 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
 import {
   libraryHoldsLocalRefs,
-  libraryWorkingThreadCounts,
   supportsLoomFeature,
   libraryStartIntent,
   libraryStartRepositoryProjects,
@@ -18,7 +17,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { IconButton } from "../../components/ui/IconButton";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { useEnvironmentQuery } from "../../state/query";
-import { useProjects, useServerConfigs, useThreadShells } from "../../state/entities";
+import { useProjects, useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -84,10 +83,9 @@ export function useNewTaskLibraryProjects(input: {
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
   const configs = useServerConfigs();
   const localProjects = useProjects();
-  const shells = useThreadShells();
-  // Keyed by project and independent of the search text, so typing only filters.
+  // Keyed by project and independent of the search text, so typing only filters. The computers
+  // are listed as web lists them, so both promise the same computer for a project.
   const starts = useMemo(() => {
-    const workingThreads = libraryWorkingThreadCounts(shells);
     const hosts = environments.map((entry) => {
       const capabilities = entry.serverConfig?.environment.capabilities;
       return {
@@ -96,8 +94,7 @@ export function useNewTaskLibraryProjects(input: {
         online: entry.entry.enabled && entry.connection.phase === "connected",
         supportsExecution:
           capabilities?.supportsExecution !== false &&
-          supportsLoomFeature(capabilities, "project-library") &&
-          operable.has(entry.environmentId),
+          supportsLoomFeature(capabilities, "project-library"),
         capabilities,
       };
     });
@@ -110,7 +107,7 @@ export function useNewTaskLibraryProjects(input: {
           threads: recent.data?.threads ?? [],
           hosts,
           remembered: authority.computers,
-          workingThreads,
+          operable,
           configs,
           localProject: (environmentId, projectId) =>
             localProjects.find(
@@ -127,7 +124,6 @@ export function useNewTaskLibraryProjects(input: {
     operable,
     configs,
     localProjects,
-    shells,
     authority.computers,
   ]);
 

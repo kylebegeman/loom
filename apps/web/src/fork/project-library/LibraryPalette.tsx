@@ -13,12 +13,19 @@ export interface LibraryPaletteItem {
   readonly id: string;
   readonly title: string;
   readonly description?: string | undefined;
+  /**
+   * Shown in place of the description but never searched. Enter takes the first match, so text
+   * that many rows share, such as the computer a start runs on, must not decide which row leads.
+   */
+  readonly summary?: string | undefined;
   readonly terms?: readonly string[] | undefined;
   readonly icon?: ReactNode;
   readonly next?: boolean | undefined;
   readonly selected?: boolean | undefined;
   readonly disabled?: boolean | undefined;
   readonly select: () => void;
+  /** A second step reached from the row's chevron or Right Arrow, while Enter runs `select`. */
+  readonly options?: (() => void) | undefined;
 }
 
 export function LibraryPaletteDialog({
@@ -109,12 +116,25 @@ export function LibraryPaletteView({
     kind: "action",
     value: item.id,
     title: item.title,
-    description: item.description,
+    description: item.summary ?? item.description,
     searchTerms: item.terms ?? [],
     icon: item.icon ?? <CircleIcon className="size-4" />,
     disabled: busy || item.disabled === true,
     titleTrailingContent: item.selected ? (
       <CheckIcon className="ml-auto size-4 text-muted-foreground" />
+    ) : item.options ? (
+      // Keyboard users reach this with Right Arrow. Base UI commits the row on click, so the
+      // chevron stops the click before it reaches the row.
+      <span
+        aria-hidden
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!busy && !item.disabled) item.options?.();
+        }}
+        className="-my-1 ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <ChevronRightIcon className="size-4" />
+      </span>
     ) : item.next ? (
       <ChevronRightIcon className="ml-auto size-4 text-muted-foreground" />
     ) : undefined,
@@ -174,6 +194,26 @@ export function LibraryPaletteView({
           : {}),
         onKeyDown: (event) => {
           if (event.nativeEvent.isComposing || busy) return;
+          const input = event.currentTarget;
+          const options =
+            event.key === "ArrowRight" &&
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            input.selectionStart === input.value.length &&
+            input.selectionEnd === input.value.length
+              ? selected?.options
+              : undefined;
+          if (options) {
+            (
+              event as typeof event & { preventBaseUIHandler?: () => void }
+            ).preventBaseUIHandler?.();
+            event.preventDefault();
+            event.stopPropagation();
+            options();
+            return;
+          }
           if (
             event.key === "Enter" ||
             event.key === "Escape" ||

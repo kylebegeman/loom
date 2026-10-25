@@ -2,6 +2,7 @@ import {
   libraryFolderOwner,
   libraryFolderOwnerIssue,
   libraryFolderTakeover,
+  libraryFolderTitle,
 } from "@t3tools/client-runtime/fork";
 import type { LibraryFolderRegistration, LibraryProject } from "@t3tools/contracts/fork";
 
@@ -85,11 +86,8 @@ export function libraryFolderRowAction(input: {
   if (input.registered === null || input.registered.length > 1) return null;
   const project = input.registered[0] ?? input.created;
   if (project) return { kind: "add", project };
-  const name = input.rootPath
-    .replace(/[\\/]+$/u, "")
-    .split(/[\\/]/u)
-    .at(-1);
-  return { kind: "create", title: input.title ?? (name || "Project") };
+  // Named as web names it, so a folder proposes the same project on every surface.
+  return { kind: "create", title: input.title ?? libraryFolderTitle(input.rootPath) };
 }
 
 /**

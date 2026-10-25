@@ -1,7 +1,11 @@
 import { LibraryTextPalette } from "./LibraryTextPalette";
-import { LibraryPaletteDialog, LibraryPaletteView } from "./LibraryPalette";
-import { LibraryFolderPalette } from "./LibraryFolderPalette";
-import { MonitorIcon, FolderPlusIcon } from "lucide-react";
+import {
+  LibraryPaletteDialog,
+  LibraryPaletteView,
+  type LibraryPaletteItem,
+} from "./LibraryPalette";
+import { LibraryFolderPalette, type LibraryBrowsedFolder } from "./LibraryFolderPalette";
+import { MonitorIcon, FolderInputIcon, FolderPlusIcon } from "lucide-react";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -18,15 +22,21 @@ import * as Schema from "effect/Schema";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useEnvironmentQuery } from "~/state/query";
 import { useLibraryAttempt } from "./attempts";
 
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import {
+  libraryFolderAction,
   libraryFolderOwner,
   libraryFolderOwnerIssue,
   libraryFolderRegistrations,
   libraryFolderTakeover,
+  libraryFolderTitle,
   libraryStartFolderProjects,
+  sameLibraryFolderAction,
+  type LibraryFolderAction,
+  type LibraryFolderOwner,
 } from "@t3tools/client-runtime/fork";
 import { folderProjectMatches } from "./folderProjectMatches";
 
@@ -52,7 +62,15 @@ const ImportAttempt = Schema.NullOr(
   }),
 );
 
-/** Import metadata separately from folder ownership; existing Library projects remain an explicit choice. */
+const lookupKey = (environmentId: EnvironmentId, path: string) => `${environmentId}\n${path}`;
+const ASSOCIATIONS_UNCHECKED =
+  "Could not check the Library's existing folder associations. Reconnect it and check this folder again.";
+
+/**
+ * Import metadata separately from folder ownership. The folder browser names what adding the
+ * browsed folder does and does it in one step; the confirmation page stays for retries, typed
+ * paths, naming a new project and choices that could not finish.
+ */
 export function ImportProjectDialog({
   open = true,
   embedded = false,
@@ -107,6 +125,15 @@ export function ImportProjectDialog({
   const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
   const [projectId, setProjectId] = useState(attempt?.project?.id ?? "choose");
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);
+  // Repository roots are checked as they are browsed, so their row can name the project they
+  // join. Other folders can hold many repositories and wait for Enter, as checks are costly.
+  const [lookups, setLookups] = useState<ReadonlyMap<string, LibraryFolderInspection>>(
+    () => new Map(),
+  );
+  const looking = useRef(new Set<string>());
+  const [browsed, setBrowsed] = useState<LibraryBrowsedFolder | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [chooseFrom, setChooseFrom] = useState<"project" | "folders">("project");
   // A project this dialog created for a folder. A failure after it was created clears the
   // attempt, and a retry must add the folder to this project rather than create another.
   const [created, setCreated] = useState<{
@@ -124,7 +151,16 @@ export function ImportProjectDialog({
     refresh: true,
     reportFailure: false,
   });
-  const [registeredCopies, setRegisteredCopies] = useState<readonly LibraryWorkingCopy[]>([]);
+  // The copies read with the last folder check. Rows use them once read, so a row never names a
+  // different action than Enter resolves to with the same data.
+  const [registeredCopies, setRegisteredCopies] = useState<readonly LibraryWorkingCopy[] | null>(
+    null,
+  );
+  const libraryCopies = useEnvironmentQuery(
+    open && page === "folders" && library.authorityId
+      ? projectLibrary.copies({ environmentId: library.authorityId, input: {} })
+      : null,
+  );
   const matchingProjects = (
     inspection: LibraryFolderInspection,
     copies: readonly LibraryWorkingCopy[],
@@ -148,62 +184,105 @@ export function ImportProjectDialog({
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, library.authorityId);
   const host = library.environments.find((entry) => entry.environmentId === hostId);
   const hostBlock = useAccessBlock(hostId, [projectLibrary.prepareCopy]);
-  const libraryBlock = useLibraryAccessBlock(
-    library.authorityId,
-    projectId === "new"
-      ? [projectLibrary.registerCopy, projectLibrary.createProject]
-      : [projectLibrary.registerCopy],
-  );
+  const registerBlock = useLibraryAccessBlock(library.authorityId, [projectLibrary.registerCopy]);
+  const createBlock = useLibraryAccessBlock(library.authorityId, [
+    projectLibrary.registerCopy,
+    projectLibrary.createProject,
+  ]);
+  const libraryBlock = projectId === "new" ? createBlock : registerBlock;
+  const canAdd = (creating: boolean) =>
+    canPrepare &&
+    canRegister &&
+    (!creating || canCreate) &&
+    library.connected &&
+    host?.connection.phase === "connected";
+  const blockFor = (creating: boolean) =>
+    canAdd(creating) ? null : (hostBlock ?? (creating ? createBlock : registerBlock));
+  const issueFor = (holder: LibraryFolderOwner | null, id: string) =>
+    attempt
+      ? null
+      : holder?.kind === "unchecked" && library.query.isPending
+        ? "Checking which project owns this folder..."
+        : libraryFolderOwnerIssue(holder, id === "choose" ? null : id);
+  /** What adding a folder does, from its check when there is one and its path otherwise. */
+  const folderTarget = (
+    path: string,
+    report: LibraryFolderInspection | null,
+    copies: readonly LibraryWorkingCopy[],
+  ) => {
+    const folderPath = report?.rootPath ?? path;
+    const owner = libraryFolderOwner(libraryFolderRegistrations(report), library.query.data);
+    const action = libraryFolderAction({
+      rootPath: folderPath,
+      owner,
+      created:
+        created?.environmentId === hostId && created.rootPath === folderPath
+          ? created.project
+          : null,
+      matches: report
+        ? matchingProjects(report, copies)
+        : libraryStartFolderProjects(library.query.data ?? [], copies, hostId ?? "", folderPath),
+    });
+    const id =
+      action.kind === "add" ? action.project.id : action.kind === "create" ? "new" : "choose";
+    return {
+      report,
+      owner,
+      action,
+      projectId: id,
+      title: libraryFolderTitle(folderPath),
+      issue: issueFor(owner, id),
+    };
+  };
+  /**
+   * Whether the folder may join a project of the user's choice. A current holder keeps its folder
+   * and a refusal applies to every project, so neither offers another one.
+   */
+  const choosable = (target: ReturnType<typeof folderTarget>) =>
+    target.report?.exists !== false && target.owner?.kind !== "current" && target.issue === null;
   const inspectFolder = async (path = rootPath) => {
-    if (!hostId || !path.trim()) return;
+    if (!hostId || !path.trim()) return null;
     setBusy(true);
     setError(null);
     const result = await inspect({ environmentId: hostId, input: { rootPath: path.trim() } });
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not check this folder.");
-    } else {
-      setInspection(result.value);
-      if (!result.value.exists)
-        setError("This folder no longer exists on this computer. Choose another folder.");
-      const copies = library.authorityId
-        ? await readCopies({ environmentId: library.authorityId, input: {} })
-        : null;
-      if (!copies || copies._tag === "Failure") {
-        setError(
-          "Could not check the Library's existing folder associations. Reconnect it and check this folder again.",
-        );
-        setProjectId("choose");
-        setBusy(false);
-        return null;
-      }
-      setRegisteredCopies(copies.value);
-      const owner = libraryFolderOwner(
-        libraryFolderRegistrations(result.value),
-        library.query.data,
-      );
-      const matches = matchingProjects(result.value, copies.value);
-      setProjectId(
-        owner?.kind === "current"
-          ? owner.project.id
-          : created?.environmentId === hostId && created.rootPath === result.value.rootPath
-            ? created.project.id
-            : matches.length === 1
-              ? matches[0]!.id
-              : matches.length > 1
-                ? "choose"
-                : "new",
-      );
-      if (!title)
-        setTitle(
-          result.value.rootPath
-            .replace(/[\\/]+$/, "")
-            .split(/[\\/]/)
-            .at(-1) ?? "Project",
-        );
+      setBusy(false);
+      return null;
     }
+    const report = result.value;
+    setInspection(report);
+    setLookups((previous) => new Map(previous).set(lookupKey(hostId, path), report));
+    if (!report.exists)
+      setError("This folder no longer exists on this computer. Choose another folder.");
+    const copies = library.authorityId
+      ? await readCopies({ environmentId: library.authorityId, input: {} })
+      : null;
+    if (!copies || copies._tag === "Failure") {
+      setError(ASSOCIATIONS_UNCHECKED);
+      setProjectId("choose");
+      setBusy(false);
+      return null;
+    }
+    setRegisteredCopies(copies.value);
+    const target = folderTarget(path, report, copies.value);
+    setProjectId(target.projectId);
+    if (!title) setTitle(target.title);
     setBusy(false);
-    return result._tag === "Success" ? result.value : null;
+    return target;
+  };
+  const lookUpFolder = async (folder: LibraryBrowsedFolder | null) => {
+    setBrowsed(folder);
+    if (!folder?.repository || !hostId || !canInspect) return;
+    const key = lookupKey(hostId, folder.path);
+    if (lookups.has(key) || looking.current.has(key)) return;
+    looking.current.add(key);
+    const result = await inspect({ environmentId: hostId, input: { rootPath: folder.path } });
+    looking.current.delete(key);
+    // A failed look-up only leaves the row naming its best guess; Enter checks again and reports.
+    if (result._tag === "Success")
+      setLookups((previous) => new Map(previous).set(key, result.value));
   };
   const inspectedInitial = useRef(false);
   const inspectInitial = useEffectEvent(() => {
@@ -232,21 +311,32 @@ export function ImportProjectDialog({
     library.query.isPending,
     attempt,
   ]);
-  const matches = inspection ? matchingProjects(inspection, registeredCopies) : [];
+  const matches = inspection ? matchingProjects(inspection, registeredCopies ?? []) : [];
   const findProject = (id: string) =>
     library.query.data?.find((project) => project.id === id && !project.archived) ??
     (created?.project.id === id ? created.project : undefined);
   const owner = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
-  const ownerIssue = attempt
-    ? null
-    : owner?.kind === "unchecked" && library.query.isPending
-      ? "Checking which project owns this folder..."
-      : libraryFolderOwnerIssue(owner, projectId === "choose" ? null : projectId);
-  const submit = async () => {
+  const ownerIssue = issueFor(owner, projectId);
+  /** Add a checked folder to a project, creating it first for "new". True once it is saved. */
+  const submit = async (target: {
+    readonly projectId: string;
+    readonly title: string;
+    readonly inspection: LibraryFolderInspection | null;
+  }) => {
     const authorityId = library.authorityId;
-    if (!hostId || !authorityId || busy || ownerIssue || (!attempt && !inspection?.exists)) return;
-    const existing = findProject(projectId);
-    if (!attempt && projectId !== "new" && !existing) return;
+    const { inspection } = target;
+    const holder = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
+    if (
+      !hostId ||
+      !authorityId ||
+      busy ||
+      issueFor(holder, target.projectId) ||
+      (!attempt && !inspection?.exists)
+    )
+      return false;
+    const existing = findProject(target.projectId);
+    if (!attempt && target.projectId !== "new" && !existing) return false;
+    const title = target.title.trim();
     setBusy(true);
     setError(null);
     let submitted = attempt;
@@ -258,12 +348,12 @@ export function ImportProjectDialog({
           ? null
           : {
               requestId: randomUUID(),
-              title: title.trim(),
+              title,
               brief,
               resources: inspection!.repositories.map((repository) => ({
                 id: randomUUID(),
                 kind: "repository" as const,
-                title: repository.relativePath === "." ? title.trim() : repository.relativePath,
+                title: repository.relativePath === "." ? title : repository.relativePath,
                 remoteUrl:
                   repository.remoteUrl?.startsWith("file:") || repository.remoteUrl?.startsWith("/")
                     ? null
@@ -352,9 +442,58 @@ export function ImportProjectDialog({
         );
       };
       await handleFailure().finally(() => setBusy(false));
-      return;
+      return false;
     }
     setBusy(false);
+    return true;
+  };
+  const openChoice = (from: "project" | "folders") => {
+    setChooseFrom(from);
+    setSearch("");
+    setPage("choose-project");
+  };
+  /**
+   * Run the action a browser row named. A fresh check that resolves differently, or that takes the
+   * folder from an archived project the row did not mention, only updates the row, so Enter never
+   * does something the row did not say.
+   */
+  const addFolder = async (
+    path: string,
+    shown: LibraryFolderAction,
+    shownTakeover: string | null,
+  ) => {
+    setRootPath(path);
+    setInspection(null);
+    setProgress("Checking this folder...");
+    const target = await inspectFolder(path);
+    setProgress(null);
+    if (
+      !target?.report?.exists ||
+      !sameLibraryFolderAction(target.action, shown) ||
+      libraryFolderTakeover(target.owner) !== shownTakeover
+    )
+      return;
+    setTitle(target.title);
+    if (target.action.kind === "choose") return openChoice("folders");
+    if (target.issue || !canAdd(target.action.kind === "create")) return;
+    setProgress("Adding folder...");
+    const added = await submit({ ...target, inspection: target.report });
+    setProgress(null);
+    if (!added) {
+      setSearch("");
+      setPage("project");
+    }
+  };
+  const chooseProjectFor = async (path: string) => {
+    setRootPath(path);
+    setInspection(null);
+    setProgress("Checking this folder...");
+    const target = await inspectFolder(path);
+    setProgress(null);
+    // A fresh check can show the folder held or refused, which only updates the rows.
+    if (!target || !choosable(target)) return;
+    setTitle(target.title);
+    openChoice("folders");
   };
   const reviewCleanup = async () => {
     if (!attempt?.copy || !library.authorityId) return;
@@ -391,11 +530,7 @@ export function ImportProjectDialog({
   const locked = attempt !== null;
   const selectedProject = findProject(projectId);
   const canImport =
-    canPrepare &&
-    canRegister &&
-    (projectId !== "new" || canCreate) &&
-    library.connected &&
-    host?.connection.phase === "connected" &&
+    canAdd(projectId === "new") &&
     !ownerIssue &&
     (!!attempt ||
       (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
@@ -425,9 +560,99 @@ export function ImportProjectDialog({
     : accessIssue?.repair
       ? "Restore access above to add this folder."
       : (accessIssue?.message ?? formIssue ?? "Checking this device's access...");
+  const folderActions = (folder: LibraryBrowsedFolder | null): LibraryPaletteItem[] => {
+    const icon = <FolderPlusIcon className="size-4" />;
+    const copies = registeredCopies ?? libraryCopies.data;
+    // Without the Library's projects and folder associations a row could only guess, and Enter
+    // would create a project that may already exist. A refresh keeps the last answer.
+    const unknown = !library.authorityId
+      ? null
+      : !library.query.data
+        ? (library.query.error ?? "Loading your Library projects...")
+        : !copies
+          ? libraryCopies.error
+            ? ASSOCIATIONS_UNCHECKED
+            : "Loading your Library projects..."
+          : null;
+    if (!folder || unknown)
+      return [
+        {
+          id: "add-folder",
+          title: "Add this folder",
+          description: folder && unknown ? unknown : undefined,
+          icon,
+          disabled: true,
+          select: () => {},
+        },
+      ];
+    const report = hostId ? (lookups.get(lookupKey(hostId, folder.path)) ?? null) : null;
+    const target = folderTarget(folder.path, report, copies ?? []);
+    const { action } = target;
+    const creating = action.kind === "create";
+    const block = blockFor(creating);
+    const folders = report?.repositories ?? [];
+    const description = () => {
+      if (report?.exists === false)
+        return "This folder no longer exists on this computer. Choose another folder.";
+      if (target.issue) return target.issue;
+      if (block) return block.repair ? "Restore access above to add this folder." : block.message;
+      if (!canAdd(creating)) return "Checking this device's access...";
+      if (action.kind === "choose") return "Several Library projects match these files.";
+      const takeover = libraryFolderTakeover(target.owner);
+      if (takeover) return takeover;
+      if (action.kind === "add")
+        return `Uses your Library project ${action.project.title}. Files stay here.`;
+      return folders.length > 1
+        ? `One new Library project for ${folders.length} repositories: ${folders.map((repository) => repository.relativePath).join(", ")}. Files stay here.`
+        : "A new Library project for these files. Files stay here.";
+    };
+    const others = (library.query.data ?? []).filter(
+      (project) => !project.archived && (action.kind !== "add" || project.id !== action.project.id),
+    );
+    return [
+      {
+        id: "add-folder",
+        title:
+          progress ??
+          (action.kind === "add"
+            ? `Add to ${action.project.title}`
+            : action.kind === "create"
+              ? `Create project ${action.title}`
+              : "Choose a project for this folder"),
+        description: description(),
+        icon,
+        next: action.kind === "choose",
+        disabled: report?.exists === false || target.issue !== null || !canAdd(creating),
+        select: () => void addFolder(folder.path, action, libraryFolderTakeover(target.owner)),
+      },
+      ...(action.kind !== "choose" && choosable(target) && others.length > 0
+        ? [
+            {
+              id: "add-to-another",
+              title: "Add to another project...",
+              icon: <FolderInputIcon className="size-4" />,
+              next: true,
+              disabled: !canAdd(false),
+              select: () => void chooseProjectFor(folder.path),
+            },
+          ]
+        : []),
+    ];
+  };
+  const browsedBlock =
+    page === "folders" && browsed
+      ? blockFor(
+          folderTarget(
+            browsed.path,
+            hostId ? (lookups.get(lookupKey(hostId, browsed.path)) ?? null) : null,
+            registeredCopies ?? libraryCopies.data ?? [],
+          ).action.kind === "create",
+        )
+      : null;
   const back = () => {
     setSearch("");
-    if (page === "choose-project" || page === "name" || page === "brief") setPage("project");
+    if (page === "choose-project") setPage(chooseFrom);
+    else if (page === "name" || page === "brief") setPage("project");
     else if (page === "project") setPage("folders");
     else if (page === "folders") setPage("computers");
     else onBack?.();
@@ -458,17 +683,15 @@ export function ImportProjectDialog({
         onClose={close}
         busy={busy}
         error={error}
-        onSelect={(path) => {
-          setRootPath(path);
-          setInspection(null);
-          void inspectFolder(path).then((report) => {
-            if (report?.exists) {
-              setSearch("");
-              setPage("project");
-            }
-          });
-        }}
-      />
+        actions={folderActions}
+        onFolderChange={(folder) => void lookUpFolder(folder)}
+      >
+        {browsedBlock?.repair ? (
+          <div className="px-4 py-2">
+            <LibraryAccessNotice block={browsedBlock} onLeave={onClose} />
+          </div>
+        ) : null}
+      </LibraryFolderPalette>
     ) : (
       <LibraryPaletteView
         key={page}
@@ -499,13 +722,14 @@ export function ImportProjectDialog({
         filter={page !== "name"}
         error={error ?? library.query.error}
         message={
-          attempt
+          progress ??
+          (attempt
             ? "An import is waiting for confirmation. Retry to finish the same import."
             : inspection
               ? `${inspection.rootPath} on ${host?.label ?? "the selected computer"}. Your files stay here.`
               : initialRootPath
                 ? "Checking this folder..."
-                : "Choose the computer whose folders you want to browse."
+                : "Choose the computer whose folders you want to browse.")
         }
         items={
           page === "computers" || page === "folders"
@@ -552,7 +776,23 @@ export function ImportProjectDialog({
                       select: () => {
                         setProjectId(project.id);
                         setSearch("");
-                        setPage("project");
+                        // From the folder browser a project with nothing to confirm is added
+                        // right away. The confirmation page explains anything that stops it and
+                        // names a takeover from an archived project, which no row here mentions.
+                        if (
+                          chooseFrom === "folders" &&
+                          issueFor(owner, project.id) === null &&
+                          libraryFolderTakeover(owner) === null &&
+                          canAdd(false)
+                        ) {
+                          setProgress("Adding folder...");
+                          void submit({ projectId: project.id, title, inspection }).then(
+                            (added) => {
+                              setProgress(null);
+                              if (!added) setPage("project");
+                            },
+                          );
+                        } else setPage("project");
                       },
                     })),
                 ]
@@ -574,7 +814,7 @@ export function ImportProjectDialog({
                       description: importDescription,
                       disabled: !canImport,
                       icon: <FolderPlusIcon className="size-4" />,
-                      select: () => void submit(),
+                      select: () => void submit({ projectId, title, inspection }),
                     },
                     ...(!inspection && rootPath && !attempt
                       ? [
@@ -596,10 +836,7 @@ export function ImportProjectDialog({
                         (projectId === "new" ? `New project: ${title}` : "Choose a project"),
                       next: true,
                       disabled: locked,
-                      select: () => {
-                        setSearch("");
-                        setPage("choose-project");
-                      },
+                      select: () => openChoice("project"),
                     },
                     ...(projectId === "new"
                       ? [
@@ -621,14 +858,6 @@ export function ImportProjectDialog({
                           },
                         ]
                       : []),
-                    {
-                      id: "folder",
-                      title: "Choose another folder",
-                      description: inspection?.rootPath,
-                      next: true,
-                      disabled: locked,
-                      select: () => setPage("folders"),
-                    },
                     ...(attempt?.copy?.state === "failed"
                       ? [
                           {

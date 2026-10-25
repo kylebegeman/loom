@@ -49,6 +49,9 @@ const state = vi.hoisted(() => ({
   navigate: vi.fn(),
   retainedQuery: {},
   historyQuery: {},
+  healthQuery: {},
+  operationsQuery: {},
+  threadIds: [] as string[],
   configsAtom: {},
   providersAtom: {},
   nextId: 0,
@@ -58,6 +61,8 @@ vi.mock("./state", () => ({
     ...state.commands,
     copies: () => state.retainedQuery,
     history: () => state.historyQuery,
+    copyHealth: () => state.healthQuery,
+    operations: () => state.operationsQuery,
   },
   useLibraryAuthority: state.authority,
   useLibraryPermission: () => true,
@@ -93,7 +98,7 @@ vi.mock("~/composerDraftStore", () => ({
   useComposerDraftStore: { getState: () => ({ setPrompt: vi.fn() }) },
 }));
 vi.mock("~/lib/utils", () => ({
-  newThreadId: () => "new-thread",
+  newThreadId: () => state.threadIds.shift() ?? "new-thread",
   randomUUID: () => `launch-request-${++state.nextId}`,
 }));
 vi.mock("@tanstack/react-router", () => ({
@@ -125,6 +130,7 @@ vi.mock("./LibraryPalette", () => ({
 }));
 
 import { NewConversationDialog, useLibraryConversationSetup } from "./NewConversationDialog";
+import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
 import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
 const environmentId = EnvironmentId.make("host");
@@ -235,7 +241,7 @@ async function click(label: string) {
       void launch.submit();
     });
   } else if (label === "Review latest source files") await act(() => launch.reviewLatest?.());
-  else if (label === "Choose files again") await act(() => launch.chooseFilesAgain?.());
+  else if (label === "Start over") await act(() => launch.startOver?.());
   else if (label === "Use files in this folder")
     await act(() => launch.selectFolder(launch.existingFolder!));
   else throw new Error(`Unknown launch operation: ${label}`);
@@ -286,6 +292,7 @@ beforeEach(() => {
     saveLibraryAttempt(key, null, storage);
   for (const command of Object.values(commands)) command.run.mockReset();
   state.nextId = 0;
+  state.threadIds = [];
   const serverConfig = {
     settings: {
       ...DEFAULT_SERVER_SETTINGS,
@@ -983,13 +990,13 @@ describe("portable project launch", () => {
     expectOpened();
   });
 
-  it("lets a failed transfer review files again without overwriting a destination whose response was lost", async () => {
+  it("starts over after a failed transfer without overwriting a destination whose response was lost", async () => {
     setup();
     commands.restoreCopy.run.mockResolvedValueOnce(failure("Destination disconnected"));
     await mount();
     await click("Start conversation");
     expect(storage.getItem(portableKey)).not.toBeNull();
-    await click("Choose files again");
+    await click("Start over");
     expect(storage.getItem(portableKey)).toBeNull();
     commands.inspectFolder.run.mockResolvedValue(
       AsyncResult.success({ rootPath: destinationCopy.rootPath, exists: true, repositories: [] }),
@@ -998,6 +1005,26 @@ describe("portable project launch", () => {
     expect(commands.restoreCopy.run).toHaveBeenCalledOnce();
     expect(launch.canCreate).toBe(false);
     expect(launch.existingFolder).toBeTruthy();
+  });
+
+  it("starts over in the abandoned destination after a remount instead of restoring a second set of files", async () => {
+    setup();
+    commands.restoreCopy.run.mockResolvedValueOnce(failure("Destination disconnected"));
+    await mount();
+    await act(() => launch.setRootPath("/work/custom"));
+    await click("Start conversation");
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount();
+    await click("Start over");
+    // The computer may still be restoring there, so the next start must look before writing.
+    expect(launch.rootPath).toBe("/work/custom");
+    commands.inspectFolder.run.mockResolvedValue(
+      AsyncResult.success({ rootPath: "/work/custom", exists: true, repositories: [] }),
+    );
+    await click("Start conversation");
+    expect(commands.restoreCopy.run).toHaveBeenCalledOnce();
+    expect(launch.existingFolder).toBe("/work/custom");
   });
 
   it("retries destination registration across remount without restoring or changing the destination identity", async () => {
@@ -1296,5 +1323,238 @@ describe("conversation palette ergonomics", () => {
         }),
       }),
     );
+  });
+});
+
+describe("held attempts and one-step starts", () => {
+  const readyFiles = { isPending: false, isSuccess: true, error: null, refresh: vi.fn() };
+  const chosenSettings = {
+    initialModelSelection: { instanceId, model: "chosen-model" },
+    initialRuntimeMode: "approval-required" as const,
+    initialInteractionMode: "plan" as const,
+  };
+  const promised: ConversationQuickStart = {
+    environmentId,
+    workingCopyId: restoredCopy.id,
+    modelSelection: { instanceId, model: "test-model" },
+    runtimeMode: DEFAULT_SERVER_SETTINGS.defaultRuntimeMode,
+  };
+  function dialog(launchPromise?: ConversationQuickStart, settle = vi.fn()) {
+    return (
+      <ConversationAutoStartContext
+        value={launchPromise ? { launch: launchPromise, settle } : null}
+      >
+        <NewConversationDialog
+          project={project}
+          initialHostId={environmentId}
+          copies={[restoredCopy]}
+          copiesQuery={readyFiles}
+          onChanged={onChanged}
+          onClose={onClose}
+        />
+      </ConversationAutoStartContext>
+    );
+  }
+  async function render(tree: ReturnType<typeof dialog>) {
+    await act(() => {
+      if (renderer) renderer.update(tree);
+      else renderer = create(tree);
+    });
+  }
+  async function remount(tree: ReturnType<typeof dialog>) {
+    await act(() => renderer?.unmount());
+    renderer = undefined;
+    await render(tree);
+  }
+  function action(title: string) {
+    return renderer!.root.findAllByType("button").find((node) => node.children.includes(title));
+  }
+  async function choose(title: string) {
+    expect(action(title)?.props.disabled).not.toBe(true);
+    await act(async () => action(title)!.props.onClick());
+  }
+  function withCapabilities(...features: string[]) {
+    const previous = state.authority();
+    const host = previous.environments[0];
+    state.authority.mockReturnValue({
+      ...previous,
+      environments: [
+        {
+          ...host,
+          serverConfig: {
+            ...host.serverConfig,
+            environment: {
+              capabilities: {
+                supportsExecution: true,
+                loomFeatures: ["project-library", "library-file-lifecycle", ...features],
+              },
+            },
+          },
+        },
+      ],
+    });
+  }
+
+  it("offers Retry and Start over in a reopened dialog, and starts a new conversation with the settings it showed", async () => {
+    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    await mount([], chosenSettings);
+    await click("Start conversation");
+    const first = savedAttempt();
+    expect(first).toMatchObject({ threadId, created: false });
+
+    // Reopened later with no error showing: the held attempt must still have a way out.
+    await remount(dialog());
+    expect(action("Retry conversation")).toBeDefined();
+    expect(action("Computer")?.props.disabled).toBe(true);
+    await choose("Start over");
+    expect(savedAttempt()).toBeNull();
+    expect(action("Retry conversation")).toBeUndefined();
+    expect(action("Computer")?.props.disabled).toBe(false);
+
+    state.threadIds.push("second-thread");
+    await choose("Start conversation");
+    expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
+    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        threadId: "second-thread",
+        modelSelection: { instanceId, model: "chosen-model" },
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+      }),
+    });
+    const registered = commands.registerThread.run.mock.calls[0]![0].input.requestId;
+    expect(registered).not.toBe(first.registerRequestId);
+    expect(savedAttempt()).toBeNull();
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: "second-thread" },
+    });
+  });
+
+  it("keeps a retry whose conversation was deleted, says so, and starts a new operation after Start over", async () => {
+    withCapabilities("project-workflows");
+    const detail =
+      "The conversation from an earlier try was deleted. Start over to begin a new one.";
+    commands.executeOperation.run
+      .mockResolvedValueOnce(
+        AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked", detail }))),
+      )
+      .mockResolvedValueOnce(AsyncResult.success({ result: { threadId } }));
+    await mount();
+    await click("Start conversation");
+    expect(launch.error).toBe(detail);
+    const first = savedAttempt();
+    expect(first).toMatchObject({ threadId });
+    expect(launch.startOver).not.toBeNull();
+
+    await click("Start over");
+    expect(launch.locked).toBe(false);
+    expect(launch.error).toBeNull();
+    state.threadIds.push("second-thread");
+    await click("Start conversation");
+    const [retried, fresh] = commands.executeOperation.run.mock.calls.map(([call]) => call.input);
+    expect(retried.operationId).toBe(`${first.registerRequestId}:launch`);
+    expect(fresh.operationId).not.toBe(retried.operationId);
+    expect(fresh.request.input.threadId).toBe("second-thread");
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: "second-thread" },
+    });
+  });
+
+  it("creates one conversation when started twice before the next render", async () => {
+    await mount([restoredCopy]);
+    await act(async () => {
+      await Promise.all([launch.submit(), launch.submit()]);
+    });
+    expect(commands.create.run).toHaveBeenCalledOnce();
+    expectOpened();
+  });
+
+  it("starts once from the project list, and a held attempt waits for Retry or Start over", async () => {
+    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    const settle = vi.fn();
+    await render(dialog(promised, settle));
+    expect(settle).toHaveBeenCalledOnce();
+    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+    expect(savedAttempt()).not.toBeNull();
+
+    await remount(dialog(promised, settle));
+    expect(settle).toHaveBeenCalledTimes(2);
+    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+    expect(action("Retry conversation")).toBeDefined();
+    expect(action("Start over")).toBeDefined();
+  });
+
+  it("shows the settings instead of starting when the promise no longer holds", async () => {
+    const settle = vi.fn();
+    await render(dialog({ ...promised, runtimeMode: "approval-required" }, settle));
+    expect(settle).toHaveBeenCalledOnce();
+    expect(action("Start conversation")?.props.disabled).toBe(false);
+    expect(JSON.stringify(renderer!.toJSON())).toContain(
+      "These settings differ from what the project list showed.",
+    );
+    expect(commands.resolveBinding.run).not.toHaveBeenCalled();
+  });
+
+  it("waits on the files' health check, and shows the settings when it fails", async () => {
+    withCapabilities("library-copy-health");
+    let health = { data: null, isPending: true, isSuccess: false, error: null as string | null };
+    state.query.mockImplementation((query: unknown) => ({
+      ...(query === state.healthQuery
+        ? health
+        : {
+            data: query === state.retainedQuery ? [restoredCopy] : undefined,
+            isPending: false,
+            isSuccess: true,
+            error: null,
+          }),
+      refresh: vi.fn(),
+    }));
+    const settle = vi.fn();
+    await render(dialog(promised, settle));
+    expect(action("Starting...")?.props.disabled).toBe(true);
+    expect(settle).not.toHaveBeenCalled();
+
+    health = {
+      data: null,
+      isPending: false,
+      isSuccess: false,
+      error: "Environment host is offline.",
+    };
+    await render(dialog(promised, settle));
+    expect(settle).toHaveBeenCalledOnce();
+    expect(action("Start conversation")?.props.disabled).toBe(false);
+    expect(JSON.stringify(renderer!.toJSON())).toContain(
+      "Could not check whether these files are up to date. Environment host is offline.",
+    );
+    expect(commands.resolveBinding.run).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting on files once the computer disconnects", async () => {
+    const loading = { isPending: true, isSuccess: false, error: null, refresh: vi.fn() };
+    const tree = () => (
+      <SetupHarness
+        project={project}
+        initialHostId={environmentId}
+        copies={[]}
+        copiesQuery={loading}
+        onChanged={onChanged}
+        onClose={onClose}
+      />
+    );
+    await act(() => {
+      renderer = create(tree());
+    });
+    expect(launch.checking).toBe(true);
+    const previous = state.authority();
+    state.authority.mockReturnValue({
+      ...previous,
+      environments: [{ ...previous.environments[0], connection: { phase: "backoff" } }],
+    });
+    await act(() => renderer!.update(tree()));
+    expect(launch.checking).toBe(false);
+    expect(launch.blocker).toBe("Reconnect the selected computer before starting.");
   });
 });

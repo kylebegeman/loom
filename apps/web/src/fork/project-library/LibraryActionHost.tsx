@@ -1,14 +1,33 @@
 import {
+  libraryLaunchInputs,
+  libraryQuickLaunch,
   libraryStartIntent,
   libraryStartRepositoryProjects,
   rankLibraryStartProjects,
+  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { ProjectTile } from "./ProjectIdentity";
 import { useEnvironmentQuery } from "~/state/query";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import { useEnvironmentProviders } from "~/state/environments";
+import { useProjects } from "~/state/entities";
+import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
+import { Kbd, KbdGroup } from "~/components/ui/kbd";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlusIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  FolderPlusIcon,
+  MessageSquareDashedIcon,
+  PlusIcon,
+} from "lucide-react";
 import {
   projectLibrary,
   useLibraryProject,
@@ -18,7 +37,8 @@ import {
 import { onLibraryAction, type LibraryConversationDefaults, type LibraryAction } from "./actions";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
-import { NewConversationDialog } from "./NewConversationDialog";
+import { NewConversationDialog, libraryConversationDefaults } from "./NewConversationDialog";
+import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
 import { LibrarySetup } from "./LibrarySetup";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
 import { useNoProjectStart } from "./useNoProjectStart";
@@ -31,19 +51,22 @@ export interface LibraryPaletteSession {
   readonly action: LibraryAction;
   readonly projectId?: string | undefined;
   readonly defaults?: LibraryConversationDefaults | undefined;
+  /** The project only leads the chooser; its settings open once the user picks it. */
+  readonly suggest?: boolean | undefined;
 }
 
 /** Library setup occupies the original command popup, including actions launched inside it. */
 export function useLibraryPaletteSession() {
   const [session, setSession] = useState<LibraryPaletteSession | null>(null);
   useEffect(() => {
-    return onLibraryAction((action, projectId, defaults) =>
+    return onLibraryAction((action, projectId, defaults, suggest) =>
       setSession((previous) => ({
         id: (previous?.id ?? 0) + 1,
         open: true,
         action,
         projectId,
         defaults,
+        suggest,
       })),
     );
   }, []);
@@ -79,7 +102,7 @@ export function LibraryActionHost({
       ? "create"
       : action === "import-folder"
         ? "import"
-        : session.projectId
+        : session.projectId && !session.suggest
           ? "conversation"
           : "project",
   );
@@ -87,6 +110,14 @@ export function LibraryActionHost({
   const [newTitle, setNewTitle] = useState("");
   const [initialResource, setInitialResource] = useState("");
   const [initialFolder, setInitialFolder] = useState("");
+  // A start a project row or a folder just added promised. `run` remounts the settings so they
+  // begin from its defaults.
+  const [quick, setQuick] = useState<{
+    readonly projectId: string;
+    readonly launch: ConversationQuickStart;
+    readonly run: number;
+    readonly pending: boolean;
+  } | null>(null);
   const recent = useEnvironmentQuery(
     catalog.authorityId
       ? projectLibrary.threadIndex({ environmentId: catalog.authorityId, input: { limit: 200 } })
@@ -105,9 +136,36 @@ export function LibraryActionHost({
     setVisited((previous) => ({ ...previous, [next]: true }));
     setStep(next);
   };
-  const choose = (project: LibraryProject, copy?: LibraryWorkingCopy) => {
+  // Inherited settings belong to their settings step, so only a chooser the user did not fill in
+  // starts in one step.
+  const quickStarts = useQuickStarts({
+    enabled:
+      action === "new-conversation" && (session.defaults === undefined || session.suggest === true),
+    authorityId: catalog.authorityId,
+    environments: catalog.environments,
+    computers: catalog.computers,
+    projects: catalog.query.data,
+    threads: recent.data?.threads,
+  });
+  /** `launch` is a start the user was promised; without it the project's settings open. */
+  const choose = (
+    project: LibraryProject,
+    copy?: LibraryWorkingCopy,
+    launch?: ConversationQuickStart,
+  ) => {
+    // Returning to the same project keeps its settings and draft. Anything else ends the start,
+    // whose computer would otherwise outrank the one holding a folder added since.
+    setQuick((previous) =>
+      launch
+        ? { projectId: project.id, launch, run: (previous?.run ?? 0) + 1, pending: true }
+        : previous?.projectId === project.id && !copy
+          ? { ...previous, pending: false }
+          : null,
+    );
     let nextDefaults = defaults;
-    if (requestedProject && requestedProject !== project.id && defaults)
+    // Files and repositories carry only into the project they came from, and never into a start,
+    // which runs on what its row showed.
+    if (defaults && (launch || (requestedProject && requestedProject !== project.id)))
       nextDefaults = {
         ...(defaults.environmentId ? { environmentId: defaults.environmentId } : {}),
         ...(defaults.modelSelection ? { modelSelection: defaults.modelSelection } : {}),
@@ -139,22 +197,32 @@ export function LibraryActionHost({
   const loadingProject = step === "conversation" && !project && library.project.isPending;
   const needsProject =
     step === "project" || (step === "conversation" && (!project || project.archived));
-  const back = () => setStep("project");
+  const back = () => {
+    setStep("project");
+    setQuick((previous) => (previous ? { ...previous, pending: false } : null));
+  };
+  const projectRow = (
+    entry: LibraryProject,
+    row: Omit<LibraryPaletteItem, "select" | "options">,
+  ): LibraryPaletteItem => {
+    const promise = quickStarts.starts.get(entry.id);
+    return {
+      ...row,
+      summary: promise?.summary ?? row.summary,
+      select: () => choose(entry, undefined, promise?.launch),
+      options: action === "new-conversation" ? () => choose(entry) : undefined,
+    };
+  };
+  const quickProject = quick?.projectId === project?.id ? quick : null;
   const noProject = useNoProjectStart();
-  const noProjectQuery = search.trim().toLocaleLowerCase();
   // A new chat need not belong to a project, so the way out leads, even during Library setup.
-  // This list keeps its order and Enter takes the first match, so while searching it must match
-  // its own terms: the computer name in its description would otherwise beat a project search.
   const noProjectItems: LibraryPaletteItem[] =
-    action === "new-conversation" &&
-    noProject &&
-    !loadingProject &&
-    NO_PROJECT_TERMS.some((term) => term.includes(noProjectQuery))
+    action === "new-conversation" && noProject && !loadingProject
       ? [
           {
             id: "no-project",
             title: "No project",
-            description: `Starts on ${noProject.label}`,
+            summary: `Starts on ${noProject.label}`,
             terms: NO_PROJECT_TERMS,
             icon: <MessageSquareDashedIcon className="size-4 text-muted-foreground" />,
             select: () => {
@@ -164,6 +232,25 @@ export function LibraryActionHost({
           },
         ]
       : [];
+  const projectRows = rankLibraryStartProjects(
+    catalog.query.data ?? [],
+    recent.data?.threads ?? [],
+  ).map((entry) => {
+    const brief = entry.brief.trim().split("\n")[0];
+    return projectRow(entry, {
+      id: entry.id,
+      title: entry.title,
+      description: brief || undefined,
+      summary: brief ? undefined : "Start a conversation",
+      terms: entry.resources.map((resource) => `${resource.title} ${resource.remoteUrl ?? ""}`),
+      icon: <ProjectTile project={entry} size="sm" />,
+      next: true,
+    });
+  });
+  // The project where the user is leads, ahead of No project, so Enter takes it.
+  const suggested = session.suggest
+    ? projectRows.filter((row) => row.id === session.projectId)
+    : [];
   return (
     <>
       {!library.authorityId || needsProject ? (
@@ -181,21 +268,53 @@ export function LibraryActionHost({
                 ? "Loading projects..."
                 : undefined
           }
-          error={catalog.query.error ?? library.project.error}
+          // A suggested project that no longer loads is only left out, not an error.
+          error={catalog.query.error ?? (step === "conversation" ? library.project.error : null)}
+          footerHints={
+            action === "new-conversation" && library.authorityId ? (
+              <>
+                <KbdGroup>
+                  <Kbd>
+                    <ArrowUpIcon />
+                  </Kbd>
+                  <Kbd>
+                    <ArrowDownIcon />
+                  </Kbd>
+                  <span>Navigate</span>
+                </KbdGroup>
+                <KbdGroup>
+                  <Kbd>Enter</Kbd>
+                  <span>Start</span>
+                </KbdGroup>
+                <KbdGroup>
+                  <Kbd>
+                    <ArrowRightIcon />
+                  </Kbd>
+                  <span>Options</span>
+                </KbdGroup>
+                <KbdGroup>
+                  <Kbd>Esc</Kbd>
+                  <span>Close</span>
+                </KbdGroup>
+              </>
+            ) : undefined
+          }
           items={
             !library.authorityId || loadingProject
               ? noProjectItems
               : [
+                  ...suggested,
                   ...noProjectItems,
-                  ...repositoryProjects.map((entry) => ({
-                    id: `repository:${entry.id}`,
-                    title: `Continue ${entry.title}`,
-                    description: "This repository is already part of this project",
-                    terms: [search],
-                    icon: <ProjectTile project={entry} size="sm" />,
-                    next: true,
-                    select: () => choose(entry),
-                  })),
+                  ...repositoryProjects.map((entry) =>
+                    projectRow(entry, {
+                      id: `repository:${entry.id}`,
+                      title: `Continue ${entry.title}`,
+                      description: "This repository is already part of this project",
+                      terms: [search],
+                      icon: <ProjectTile project={entry} size="sm" />,
+                      next: true,
+                    }),
+                  ),
                   ...(intent.kind !== "search"
                     ? [
                         {
@@ -223,20 +342,7 @@ export function LibraryActionHost({
                         },
                       ]
                     : []),
-                  ...rankLibraryStartProjects(
-                    catalog.query.data ?? [],
-                    recent.data?.threads ?? [],
-                  ).map((entry) => ({
-                    id: entry.id,
-                    title: entry.title,
-                    description: entry.brief.trim().split("\n")[0] || "Start a conversation",
-                    terms: entry.resources.map(
-                      (resource) => `${resource.title} ${resource.remoteUrl ?? ""}`,
-                    ),
-                    icon: <ProjectTile project={entry} size="sm" />,
-                    next: true,
-                    select: () => choose(entry),
-                  })),
+                  ...projectRows.filter((row) => !suggested.includes(row)),
                   ...(intent.kind === "search"
                     ? [
                         {
@@ -312,29 +418,147 @@ export function LibraryActionHost({
           initialRootPath={initialFolder}
           onBack={back}
           onClose={onClose}
-          onSaved={choose}
+          // The folder just added is where the user means to work, so it starts there when the
+          // settings need no choice.
+          onSaved={(saved, copy) =>
+            choose(
+              saved,
+              copy,
+              copy && quickStarts.start(saved, [copy], copy.environmentId)?.launch,
+            )
+          }
         />
       ) : null}
       {library.authorityId && project && !project.archived ? (
-        <NewConversationDialog
-          key={`${project.id}:${defaults?.workingCopyId ?? ""}`}
-          embedded
-          open={step === "conversation"}
-          project={project}
-          initialHostId={defaults?.environmentId}
-          initialCopyId={defaults?.workingCopyId}
-          initialResourceId={defaults?.resourceId}
-          initialResourceIds={defaults?.resourceIds}
-          initialModelSelection={defaults?.modelSelection}
-          initialRuntimeMode={defaults?.runtimeMode}
-          initialInteractionMode={defaults?.interactionMode}
-          copies={launchCopies}
-          copiesQuery={library.copies}
-          onChooseProject={back}
-          onChanged={library.refresh}
-          onClose={onClose}
-        />
+        <ConversationAutoStartContext
+          value={
+            quickProject?.pending && step === "conversation"
+              ? {
+                  launch: quickProject.launch,
+                  settle: () =>
+                    setQuick((previous) => (previous ? { ...previous, pending: false } : null)),
+                }
+              : null
+          }
+        >
+          <NewConversationDialog
+            key={`${project.id}:${defaults?.workingCopyId ?? ""}:${quickProject?.run ?? 0}`}
+            embedded
+            open={step === "conversation"}
+            project={project}
+            initialHostId={quickProject?.launch.environmentId ?? defaults?.environmentId}
+            initialCopyId={defaults?.workingCopyId}
+            initialResourceId={defaults?.resourceId}
+            initialResourceIds={defaults?.resourceIds}
+            initialModelSelection={defaults?.modelSelection}
+            initialRuntimeMode={defaults?.runtimeMode}
+            initialInteractionMode={defaults?.interactionMode}
+            copies={launchCopies}
+            copiesQuery={library.copies}
+            onChooseProject={back}
+            onChanged={library.refresh}
+            onClose={onClose}
+          />
+        </ConversationAutoStartContext>
       ) : null}
     </>
   );
+}
+
+type LibraryCatalog = ReturnType<typeof useLibraryProjects>;
+
+/**
+ * What Enter starts for each project: the computer, model and permissions its settings would
+ * open with, when they need no choice. Its inputs leave out the search, so typing reuses it.
+ */
+function useQuickStarts({
+  enabled,
+  authorityId,
+  environments,
+  computers: remembered,
+  projects,
+  threads,
+}: {
+  readonly enabled: boolean;
+  readonly authorityId: LibraryCatalog["authorityId"];
+  readonly environments: LibraryCatalog["environments"];
+  readonly computers: LibraryCatalog["computers"];
+  readonly projects: readonly LibraryProject[] | null | undefined;
+  readonly threads: readonly LibraryThreadSummary[] | undefined;
+}) {
+  const copies = useEnvironmentQuery(
+    enabled && authorityId
+      ? projectLibrary.copies({ environmentId: authorityId, input: { includeReleased: true } })
+      : null,
+  );
+  const providers = useEnvironmentProviders();
+  const localProjects = useProjects();
+  const hosts = environments.map((entry) => ({
+    environmentId: entry.environmentId,
+    label: entry.label,
+    online: entry.entry.enabled && entry.connection.phase === "connected",
+    supportsExecution:
+      entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
+      supportsLoomFeature(entry.serverConfig?.environment.capabilities, "project-library"),
+    capabilities: entry.serverConfig?.environment.capabilities,
+  }));
+  /** The start `project` offers from `from`, limited to one computer when `environmentId` is set. */
+  const start = (
+    project: LibraryProject,
+    from: readonly LibraryWorkingCopy[],
+    environmentId?: EnvironmentId,
+  ) => {
+    if (!enabled) return null;
+    const { computers } = libraryLaunchInputs({
+      project,
+      copies: [],
+      hosts,
+      remembered,
+      workingThreads: new Map(),
+    });
+    const quick = libraryQuickLaunch({
+      project,
+      copies: from,
+      computers: environmentId
+        ? computers.filter((computer) => computer.environmentId === environmentId)
+        : computers,
+      threads: threads ?? [],
+    });
+    const host = environments.find((entry) => entry.environmentId === quick?.environmentId);
+    if (!quick || !host?.serverConfig) return null;
+    const localProject =
+      localProjects.find(
+        (entry) =>
+          entry.environmentId === quick.environmentId && entry.id === quick.copy.rootLocalProjectId,
+      ) ?? null;
+    const defaults = libraryConversationDefaults({
+      settings: host.serverConfig.settings,
+      localProject,
+      project,
+      providers: providers.get(quick.environmentId) ?? [],
+    });
+    const { modelSelection, runtimeMode } = defaults;
+    if (!modelSelection) return null;
+    const model =
+      defaults.entries
+        .find((entry) => entry.instanceId === modelSelection.instanceId)
+        ?.models.find((entry) => entry.slug === modelSelection.model)?.name ?? modelSelection.model;
+    return {
+      launch: {
+        environmentId: quick.environmentId,
+        workingCopyId: quick.copy.id,
+        modelSelection,
+        runtimeMode,
+      },
+      summary: `${quick.label} · ${model} · ${runtimeModeConfig[runtimeMode].label}`,
+    };
+  };
+  const starts = new Map<string, NonNullable<ReturnType<typeof start>>>();
+  const library = copies.data;
+  if (library)
+    for (const project of projects ?? []) {
+      const promise = start(project, library);
+      if (promise) starts.set(project.id, promise);
+    }
+  return { starts, start };
 }

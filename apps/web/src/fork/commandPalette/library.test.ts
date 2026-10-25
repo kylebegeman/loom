@@ -107,40 +107,31 @@ afterEach(() => {
 describe("Library palette source", () => {
   it("lists live projects by most recent activity", () => {
     const list = items();
-    for (const value of [
-      "action:loom:library:go-to-project",
-      "action:loom:library:new-conversation",
-      "action:loom:library:project-brief",
-    ])
+    for (const value of ["action:loom:library:go-to-project", "action:loom:library:project-brief"])
       expect(titles(submenu(list, value))).toEqual(["Loom", "Iris"]);
   });
 
-  it("leads New conversation in... with No project on the computer it starts on", async () => {
-    const start = vi.fn(async () => {});
-    const list = items({ startWithoutProject: { computerLabel: "Dorothy", run: start } });
-    const menu = submenu(list, "action:loom:library:new-conversation");
-    expect(titles(menu)).toEqual(["No project", "Loom", "Iris"]);
-    expect(menu?.groups[0]?.items[0]?.description).toBe("Starts on Dorothy");
-    expect(titles(submenu(list, "action:loom:library:go-to-project"))).toEqual(["Loom", "Iris"]);
-    await run(menu?.groups[0]?.items[0]);
-    expect(start).toHaveBeenCalledOnce();
+  it("starts New conversation in... from the New conversation chooser, not a second picker", async () => {
+    const entry = items().find((item) => item.value === "action:loom:library:new-conversation");
+    expect(entry).toMatchObject({
+      kind: "action",
+      shortcutCommand: "loom.library.newConversationIn",
+    });
+    const requested: unknown[][] = [];
+    const stop = onLibraryAction((...args) => requested.push(args));
+    await run(entry);
+    stop();
+    // No project and every project's one-step start live in that chooser.
+    expect(requested).toEqual([["new-conversation"]]);
     // The root New thread without a project action covers a Library with nothing to pick.
-    expect(
-      items({ projects: [], startWithoutProject: { computerLabel: "Dorothy", run: start } }),
-    ).toEqual([]);
+    expect(items({ projects: [] })).toEqual([]);
   });
 
-  it("opens the chosen project, its brief and its new conversation", async () => {
+  it("opens the chosen project and its brief", async () => {
     const list = items();
     const first = (value: string) => submenu(list, value)?.groups[0]?.items[0];
     await run(first("action:loom:library:go-to-project"));
     expect(openProject).toHaveBeenLastCalledWith("loom");
-
-    const requested: Array<[string, string | undefined]> = [];
-    const stop = onLibraryAction((action, projectId) => requested.push([action, projectId]));
-    await run(first("action:loom:library:new-conversation"));
-    stop();
-    expect(requested).toEqual([["new-conversation", "loom"]]);
 
     openProject.mockClear();
     await run(first("action:loom:library:project-brief"));
@@ -291,24 +282,28 @@ describe("Library shortcuts", () => {
   const goTo = "loom.library.goToProject";
   const start = "loom.library.newConversationIn";
 
-  it("opens the palette's project picker when there is one", () => {
-    expect(libraryShortcutAction(goTo, ready)).toBe("submenu");
-    expect(libraryShortcutAction(start, ready)).toBe("submenu");
+  it("opens the palette's project picker, or the Library page when there is nothing to pick", () => {
+    expect(libraryShortcutAction(goTo, ready)).toBe("projects");
     // Still loading: the palette waits for its picker to appear.
-    expect(libraryShortcutAction(start, { ...ready, liveProjects: null })).toBe("submenu");
+    expect(libraryShortcutAction(goTo, { ...ready, liveProjects: null })).toBe("projects");
+    expect(libraryShortcutAction(goTo, { ...ready, liveProjects: 0 })).toBe("library");
+  });
+
+  it("opens the New conversation chooser, which also offers No project and new projects", () => {
+    expect(libraryShortcutAction(start, ready)).toBe("new-conversation");
+    expect(libraryShortcutAction(start, { ...ready, liveProjects: 0 })).toBe("new-conversation");
+    expect(libraryShortcutAction(start, { ...ready, liveProjects: null })).toBe("new-conversation");
   });
 
   it("does nothing for a conversation the user may not start", () => {
     expect(libraryShortcutAction(start, { ...ready, canStart: false })).toBeNull();
-    expect(libraryShortcutAction(goTo, { ...ready, canStart: false })).toBe("submenu");
+    expect(libraryShortcutAction(goTo, { ...ready, canStart: false })).toBe("projects");
   });
 
-  it("falls back to setup or the project chooser when there is nothing to pick", () => {
+  it("walks through setup when no Library is connected", () => {
     const setup = { ...ready, blocker: { kind: "setup" } as const, canStart: false };
-    expect(libraryShortcutAction(goTo, setup)).toBe("fallback");
-    expect(libraryShortcutAction(start, setup)).toBe("fallback");
-    expect(libraryShortcutAction(goTo, { ...ready, liveProjects: 0 })).toBe("fallback");
-    expect(libraryShortcutAction(start, { ...ready, liveProjects: 0 })).toBe("fallback");
+    expect(libraryShortcutAction(goTo, setup)).toBe("library");
+    expect(libraryShortcutAction(start, setup)).toBe("new-conversation");
   });
 
   it("does nothing while the Library is unusable", () => {

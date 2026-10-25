@@ -440,10 +440,15 @@ export function useThreadActions() {
       threadRef.threadId,
     );
     // fork: project-root-worktree: a Library conversation records its project's own folder as
-    // its worktree path, and that folder is never a worktree to remove with the thread.
+    // its worktree path, and that folder is never a worktree to remove with the thread. Case and
+    // separators are ignored because mistaking a worktree for the project's folder only keeps it
+    // on disk, while the opposite mistake offers to delete the project.
+    const folderKey = (path: string) =>
+      path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
     const orphanedWorktreePath =
-      linkedWorktreePath?.replace(/[\\/]+$/, "") ===
-      threadProject?.workspaceRoot.replace(/[\\/]+$/, "")
+      linkedWorktreePath !== null &&
+      threadProject !== null &&
+      folderKey(linkedWorktreePath) === folderKey(threadProject.workspaceRoot)
         ? null
         : linkedWorktreePath; // fork: project-root-worktree
     const displayWorktreePath = orphanedWorktreePath

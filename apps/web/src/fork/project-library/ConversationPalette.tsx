@@ -1,10 +1,28 @@
-import { useState, type ReactNode } from "react";
-import { CheckIcon, FolderIcon, MonitorIcon, SettingsIcon, PlayIcon, BotIcon } from "lucide-react";
+import {
+  createContext,
+  use,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  CheckIcon,
+  FolderIcon,
+  MonitorIcon,
+  SettingsIcon,
+  PlayIcon,
+  BotIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { isRepositoryResource } from "@t3tools/client-runtime/fork";
+import type { EnvironmentId, ModelSelection, RuntimeMode } from "@t3tools/contracts";
 import {
   getProviderOptionDescriptors,
   getProviderOptionCurrentLabel,
   buildProviderOptionSelectionsFromDescriptors,
+  modelSelectionsEqual,
 } from "@t3tools/shared/model";
 import { getProviderModelCapabilities } from "~/providerModels";
 import { runtimeModeConfig, runtimeModeOptions } from "~/components/chat/runtimeModeConfig";
@@ -16,6 +34,69 @@ import { LibraryFolderPalette } from "./LibraryFolderPalette";
 import type { useLibraryConversationSetup } from "./NewConversationDialog";
 
 type Setup = ReturnType<typeof useLibraryConversationSetup>;
+
+/** The computer, files, model and permissions a project row promised to start with. */
+export interface ConversationQuickStart {
+  readonly environmentId: EnvironmentId;
+  readonly workingCopyId: string;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+}
+
+/** A start the project list asked for, run once the settings it promised are settled. */
+export interface ConversationAutoStart {
+  readonly launch: ConversationQuickStart;
+  /** Called once the conversation starts, or its settings are shown instead. */
+  readonly settle: () => void;
+}
+
+export const ConversationAutoStartContext = createContext<ConversationAutoStart | null>(null);
+
+/**
+ * Whether a start the project list promised can run now. It runs only when the settings match
+ * the promise and nothing would be worth reading first. "settings" means the screen already shows
+ * why it cannot start, and "changed" means the settings no longer match what the row showed.
+ */
+export function conversationAutoStart(
+  setup: Pick<
+    Setup,
+    | "busy"
+    | "checking"
+    | "locked"
+    | "error"
+    | "existingFolder"
+    | "hostId"
+    | "canCreate"
+    | "blocker"
+    | "warning"
+    | "copy"
+    | "scope"
+    | "needsReopen"
+    | "needsPortable"
+    | "interactionMode"
+    | "runtimeMode"
+    | "modelSelection"
+  >,
+  launch: ConversationQuickStart,
+): "wait" | "start" | "settings" | "changed" {
+  if (setup.busy) return "wait";
+  // A failure or held attempt is final, so it never waits on files and never retries by itself.
+  if (setup.locked || setup.error || setup.existingFolder) return "settings";
+  if (setup.checking) return "wait";
+  if (!setup.canCreate || setup.blocker || setup.warning) return "settings";
+  return setup.hostId === launch.environmentId &&
+    setup.copy?.id === launch.workingCopyId &&
+    setup.copy.state === "ready" &&
+    !setup.needsReopen &&
+    !setup.needsPortable &&
+    setup.scope.length === 0 &&
+    setup.interactionMode === "default" &&
+    setup.runtimeMode === launch.runtimeMode &&
+    setup.modelSelection !== null &&
+    modelSelectionsEqual(setup.modelSelection, launch.modelSelection)
+    ? "start"
+    : "changed";
+}
 type Page =
   | "start"
   | "computers"
@@ -34,7 +115,31 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
   const [page, setPage] = useState<Page>("start");
   const [search, setSearch] = useState("");
   const [optionId, setOptionId] = useState<string | null>(null);
+  const auto = use(ConversationAutoStartContext);
+  const settled = useRef(false);
+  // Outlives the decision, so settings that no longer match the row say so until the user edits.
+  const [promise, setPromise] = useState(auto?.launch ?? null);
+  const autoStart = auto ? conversationAutoStart(s, auto.launch) : null;
+  // A decided start reads as starting until the submit marks the setup busy.
+  const waiting = autoStart === "wait" || autoStart === "start";
+  // The ref keeps a start that was already decided from running twice before the host clears it.
+  const finish = (start: boolean) => {
+    if (!auto || settled.current) return;
+    settled.current = true;
+    auto.settle();
+    if (start) void s.submit();
+  };
+  const decide = useEffectEvent((start: boolean) => finish(start));
+  useEffect(() => {
+    if (autoStart !== null && autoStart !== "wait") decide(autoStart === "start");
+  }, [autoStart]);
+  // Any other choice means the user is changing settings, so the promised start is off.
+  const leave = () => {
+    finish(false);
+    setPromise(null);
+  };
   const go = (next: Page) => {
+    leave();
     setSearch("");
     setOptionId(null);
     setPage(next);
@@ -320,16 +425,29 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
     items = [
       {
         id: "start",
-        title: s.busy
-          ? (s.operationPhase ?? "Starting...")
-          : s.locked
-            ? "Retry conversation"
-            : "Start conversation",
+        title:
+          s.busy || waiting
+            ? (s.operationPhase ?? "Starting...")
+            : s.locked
+              ? "Retry conversation"
+              : "Start conversation",
         description: `${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
         icon: <PlayIcon className="size-4 text-(--project-green)" />,
-        disabled: !s.canCreate,
+        disabled: !s.canCreate || waiting,
         select: () => void s.submit(),
       },
+      ...(s.startOver
+        ? [
+            {
+              id: "start-over",
+              title: "Start over",
+              description:
+                "Forget this attempt and choose settings again. A conversation it already created stays in your list.",
+              icon: <RotateCcwIcon className="size-4 text-muted-foreground" />,
+              select: s.startOver,
+            },
+          ]
+        : []),
       ...(s.existingFolder
         ? [
             {
@@ -350,9 +468,6 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         : []),
       ...(s.reviewLatest
         ? [{ id: "review-latest", title: "Review latest source files", select: s.reviewLatest }]
-        : []),
-      ...(s.chooseFilesAgain
-        ? [{ id: "choose-again", title: "Choose files again", select: s.chooseFilesAgain }]
         : []),
       ...(s.reviewFiles
         ? [
@@ -462,7 +577,16 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
               : "Search choices..."
       }
       query={page === "title" ? s.title : page === "path" ? s.rootPath : search}
-      onQueryChange={page === "title" ? s.setTitle : page === "path" ? s.setRootPath : setSearch}
+      onQueryChange={
+        page === "title"
+          ? s.setTitle
+          : page === "path"
+            ? s.setRootPath
+            : (value) => {
+                leave();
+                setSearch(value);
+              }
+      }
       onBack={page !== "start" || s.onChooseProject ? back : undefined}
       onClose={close}
       busy={s.busy}
@@ -471,7 +595,11 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
       error={s.error}
       message={
         page === "start"
-          ? (s.blocker ?? s.warning?.message)
+          ? (s.blocker ??
+            s.warning?.message ??
+            (promise && conversationAutoStart(s, promise) === "changed"
+              ? "These settings differ from what the project list showed. Review them, then start."
+              : undefined))
           : page === "models"
             ? "Set up a provider on this computer in Settings to choose a model."
             : undefined

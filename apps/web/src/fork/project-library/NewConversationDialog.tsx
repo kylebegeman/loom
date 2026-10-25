@@ -3,7 +3,7 @@ import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
 import { ConversationPalette } from "./ConversationPalette";
 import { LibraryPaletteDialog } from "./LibraryPalette";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   libraryContinuationContext,
   libraryCopyReadiness,
@@ -314,14 +314,25 @@ export function useLibraryConversationSetup({
   const [typedPath, setRootPath] = useState<string | null>(null);
   const [existingFolder, setExistingFolder] = useState<string | null>(null);
   const [localFolder, setLocalFolder] = useState<string | null>(null);
+  // Seeded from a saved attempt so Start over keeps the permissions and mode it showed instead of
+  // silently falling back to this computer's defaults.
   const [modelChoice, setModelChoice] = useState<ModelSelection | null>(
-    restoring?.launch?.requestedModelSelection ?? initialModelSelection ?? null,
+    attempt?.requestedModelSelection ??
+      restoring?.launch?.requestedModelSelection ??
+      initialModelSelection ??
+      null,
   );
   const [runtimeChoice, setRuntimeChoice] = useState<RuntimeMode | null>(
-    restoring?.launch?.requestedRuntimeMode ?? initialRuntimeMode ?? null,
+    attempt?.requestedRuntimeMode ??
+      restoring?.launch?.requestedRuntimeMode ??
+      initialRuntimeMode ??
+      null,
   );
   const [interactionChoice, setInteractionChoice] = useState<ProviderInteractionMode>(
-    restoring?.launch?.interactionMode ?? initialInteractionMode ?? "default",
+    attempt?.interactionMode ??
+      restoring?.launch?.interactionMode ??
+      initialInteractionMode ??
+      "default",
   );
   const [busy, setBusy] = useState(false);
   const [pulling, setPulling] = useState(false);
@@ -430,7 +441,27 @@ export function useLibraryConversationSetup({
       : attempt
         ? (allCopies.find((entry) => entry.id === attempt.binding.workingCopyId) ?? null)
         : (restoring?.copy ?? (filesPlan.kind === "local" ? filesPlan.copy : null));
-  const warning = attempt ? null : libraryLaunchWarning(chosen, copy, resourceId);
+  const checksHealth =
+    copy?.state === "ready" &&
+    supportsLoomFeature(host?.serverConfig?.environment.capabilities, LIBRARY_COPY_HEALTH_FEATURE);
+  const copyHealth = useEnvironmentQuery(
+    checksHealth
+      ? projectLibrary.copyHealth({
+          environmentId: copy.environmentId,
+          input: { workingCopyId: copy.id },
+        })
+      : null,
+  );
+  // A failed check leaves these files' freshness unknown, which is worth reading before starting.
+  const warning = attempt
+    ? null
+    : (libraryLaunchWarning(chosen, copy, resourceId) ??
+      (checksHealth && copyHealth.error
+        ? {
+            message: `Could not check whether these files are up to date. ${copyHealth.error}`,
+            pullPaths: null,
+          }
+        : null));
   const supportsReopen = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     LIBRARY_FILE_LIFECYCLE_FEATURE,
@@ -534,15 +565,6 @@ export function useLibraryConversationSetup({
   const providerEntry = defaults?.entries.find(
     (entry) => entry.instanceId === modelSelection?.instanceId,
   );
-  const copyHealth = useEnvironmentQuery(
-    copy &&
-      supportsLoomFeature(host?.serverConfig?.environment.capabilities, LIBRARY_COPY_HEALTH_FEATURE)
-      ? projectLibrary.copyHealth({
-          environmentId: copy.environmentId,
-          input: { workingCopyId: copy.id },
-        })
-      : null,
-  );
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const canPull = useLibraryPermission(vcsEnvironment.pull, hostId);
   const resolve = useAtomQueryRunner(projectLibrary.resolveBinding, {
@@ -595,9 +617,21 @@ export function useLibraryConversationSetup({
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
   const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
+  // `busy` is a render-time copy, so two calls before the next render, such as an automatic start
+  // and an Enter on the same row, would both pass it and each create a conversation.
+  const submitting = useRef(false);
   const submit = async () => {
     const authorityId = authority.authorityId;
-    if (!authorityId || !hostId || !modelSelection || busy || copiesReadiness !== "ready") return;
+    if (
+      !authorityId ||
+      !hostId ||
+      !modelSelection ||
+      busy ||
+      submitting.current ||
+      copiesReadiness !== "ready"
+    )
+      return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     let submittedPreparation = preparation;
@@ -1060,6 +1094,7 @@ export function useLibraryConversationSetup({
           : "Could not create the conversation. Retry the same request.",
       );
     }
+    submitting.current = false;
     setBusy(false);
   };
   /** Fast-forward the stale repositories, then launch on the refreshed copy. */
@@ -1097,6 +1132,8 @@ export function useLibraryConversationSetup({
     } else setReviewingFiles(true);
     setBusy(false);
   };
+  const connected =
+    authority.connected && host?.connection.phase === "connected" && host.entry.enabled;
   const canContinue =
     !needsSourceReview &&
     !busy &&
@@ -1141,9 +1178,7 @@ export function useLibraryConversationSetup({
     ) ||
       (canSetRetention && canRegisterCopy)) &&
     (continuation === undefined || (source.isSuccess && !source.isPending)) &&
-    authority.connected &&
-    host?.connection.phase === "connected" &&
-    host.entry.enabled;
+    connected;
   const supportsOperations = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     "project-workflows",
@@ -1158,6 +1193,12 @@ export function useLibraryConversationSetup({
   )?.phase;
   const canCreate =
     canContinue && modelSelection !== null && (!supportsOperations || canExecuteOperation);
+  // Only live connections deliver these; a disconnected computer's query waits without failing.
+  const checking =
+    connected &&
+    (copiesReadiness === "loading" ||
+      libraryCopyReadiness(retained) === "loading" ||
+      (checksHealth && libraryCopyReadiness(copyHealth) === "loading"));
   const rankOf = (environmentId: EnvironmentId) => {
     const index = ranking.candidates.findIndex(
       (candidate) => candidate.environmentId === environmentId,
@@ -1295,6 +1336,7 @@ export function useLibraryConversationSetup({
     needsPortable,
     locked,
     busy: busy || pulling,
+    checking,
     canCreate,
     warning,
     canPull,
@@ -1318,10 +1360,22 @@ export function useLibraryConversationSetup({
             setError(null);
           }
         : null,
-    chooseFilesAgain:
-      restoring && !restoring.copy && !attempt && error
+    // A saved attempt keeps retries on one operation, so a retry that keeps failing would
+    // otherwise hold these settings for good, including after the dialog closes and reopens with
+    // no error showing. The computer may still finish the abandoned request, so its files location
+    // stays: the next start then finds those files instead of preparing a second set elsewhere.
+    startOver:
+      locked && !busy && !pulling
         ? () => {
-            setRootPath(restoring.rootPath);
+            setRootPath(
+              restoring?.rootPath ??
+                preparation?.input.rootPath ??
+                reopening?.rootPath ??
+                typedPath,
+            );
+            saveAttempt(null);
+            savePreparation(null);
+            saveReopening(null);
             saveRestoring(null);
             setError(null);
             retained.refresh();

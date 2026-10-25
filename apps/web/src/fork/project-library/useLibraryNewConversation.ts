@@ -89,10 +89,14 @@ export function useLibraryNewConversation() {
         "new-conversation",
         scope.projectId,
         scope.resourceId ? { resourceId: scope.resourceId } : {},
+        { suggest: true },
       );
       return true;
     }
     if (!authority.authorityId) return false;
+    // Starting from a thread on purpose keeps its project. Otherwise the thread is only where the
+    // user happens to be, so its project leads the list instead of deciding the conversation.
+    const suggest = { suggest: !options?.inheritSettings };
     const sourceShell = options?.inheritSettings ? readThreadShell(thread) : null;
     // The project form cannot select an explicit branch; reuse that checkout and its lane.
     if (sourceShell?.branch) return false;
@@ -123,16 +127,21 @@ export function useLibraryNewConversation() {
         input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
       });
       if (saved._tag === "Success" && saved.value) {
-        openLibraryAction("new-conversation", saved.value.projectId, {
-          ...launchDefaults,
-          environmentId: thread.environmentId,
-          ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
-          ...(saved.value.resourceIds.length === 1
-            ? { resourceId: saved.value.resourceIds[0]! }
-            : saved.value.resourceIds.length > 1
-              ? { resourceIds: saved.value.resourceIds }
-              : {}),
-        });
+        openLibraryAction(
+          "new-conversation",
+          saved.value.projectId,
+          {
+            ...launchDefaults,
+            environmentId: thread.environmentId,
+            ...(saved.value.workingCopyId ? { workingCopyId: saved.value.workingCopyId } : {}),
+            ...(saved.value.resourceIds.length === 1
+              ? { resourceId: saved.value.resourceIds[0]! }
+              : saved.value.resourceIds.length > 1
+                ? { resourceIds: saved.value.resourceIds }
+                : {}),
+          },
+          suggest,
+        );
         return true;
       }
       if (saved._tag === "Failure") {
@@ -158,24 +167,34 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      openLibraryAction("new-conversation", recovered.projectId, {
-        ...launchDefaults,
-        environmentId: thread.environmentId,
-        workingCopyId: recovered.workingCopyId,
-        ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
-      });
+      openLibraryAction(
+        "new-conversation",
+        recovered.projectId,
+        {
+          ...launchDefaults,
+          environmentId: thread.environmentId,
+          workingCopyId: recovered.workingCopyId,
+          ...(recovered.resourceId ? { resourceId: recovered.resourceId } : {}),
+        },
+        suggest,
+      );
       return true;
     }
-    openLibraryAction("new-conversation", result.value.projectId, {
-      ...launchDefaults,
-      environmentId: result.value.environmentId,
-      workingCopyId: result.value.workingCopyId,
-      ...(result.value.resourceIds.length === 1
-        ? { resourceId: result.value.resourceIds[0]! }
-        : result.value.resourceIds.length > 1
-          ? { resourceIds: result.value.resourceIds }
-          : {}),
-    });
+    openLibraryAction(
+      "new-conversation",
+      result.value.projectId,
+      {
+        ...launchDefaults,
+        environmentId: result.value.environmentId,
+        workingCopyId: result.value.workingCopyId,
+        ...(result.value.resourceIds.length === 1
+          ? { resourceId: result.value.resourceIds[0]! }
+          : result.value.resourceIds.length > 1
+            ? { resourceIds: result.value.resourceIds }
+            : {}),
+      },
+      suggest,
+    );
     return true;
   };
   return useStableCallback(openConversation);

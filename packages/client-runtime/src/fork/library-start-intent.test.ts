@@ -5,12 +5,17 @@ import type {
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
 import {
+  libraryFolderAction,
   libraryFolderOwner,
   libraryFolderOwnerIssue,
   libraryFolderRegistrations,
   libraryFolderTakeover,
+  libraryFolderTitle,
+  libraryQuickLaunch,
   libraryStartIntent,
+  sameLibraryFolderAction,
   libraryStartFolderProjects,
   libraryStartRepositoryProjects,
   rankLibraryStartProjects,
@@ -323,5 +328,187 @@ describe("a folder's registered owner", () => {
     expect(libraryFolderRegistrations(null)).toEqual([]);
     const all = [registration("old"), older];
     expect(libraryFolderRegistrations({ registration: older, registrations: all })).toBe(all);
+  });
+});
+
+describe("one-step folder actions", () => {
+  const holder = (projectId: string) => ({
+    workingCopyId: `copy-${projectId}`,
+    projectId,
+    projectTitle: projectId,
+    ownership: "borrowed" as const,
+  });
+  const app = project("app");
+  const docs = project("docs");
+
+  it("names a new project after the folder, ignoring trailing separators", () => {
+    expect(libraryFolderTitle("/Users/kyle/Aspect Avy/")).toBe("Aspect Avy");
+    expect(libraryFolderTitle("C:\\Projects\\App\\")).toBe("App");
+    expect(libraryFolderTitle("/")).toBe("Project");
+    expect(
+      libraryFolderAction({ rootPath: "/work/site/", owner: null, created: null, matches: [] }),
+    ).toEqual({ kind: "create", title: "site" });
+  });
+
+  it("prefers the current holder, then a project made for the folder, then a single match", () => {
+    const owner = libraryFolderOwner([holder("app")], [app, docs]);
+    expect(
+      libraryFolderAction({ rootPath: "/work/app", owner, created: docs, matches: [docs] }),
+    ).toEqual({ kind: "add", project: app });
+    const archived = libraryFolderOwner(
+      [holder("old")],
+      [app, { ...project("old"), archived: true }],
+    );
+    expect(
+      libraryFolderAction({
+        rootPath: "/work/app",
+        owner: archived,
+        created: docs,
+        matches: [app],
+      }),
+    ).toEqual({ kind: "add", project: docs });
+    expect(
+      libraryFolderAction({ rootPath: "/work/app", owner: null, created: null, matches: [app] }),
+    ).toEqual({ kind: "add", project: app });
+    expect(
+      libraryFolderAction({
+        rootPath: "/work/app",
+        owner: null,
+        created: null,
+        matches: [app, docs],
+      }),
+    ).toEqual({ kind: "choose" });
+  });
+
+  it("runs a shown action only when a fresh check resolves to the same one", () => {
+    const add = { kind: "add" as const, project: app };
+    expect(
+      sameLibraryFolderAction(add, { kind: "add", project: { ...app, title: "Renamed" } }),
+    ).toBe(true);
+    expect(sameLibraryFolderAction(add, { kind: "add", project: docs })).toBe(false);
+    expect(sameLibraryFolderAction(add, { kind: "create", title: "app" })).toBe(false);
+    expect(
+      sameLibraryFolderAction({ kind: "create", title: "app" }, { kind: "create", title: "app" }),
+    ).toBe(true);
+    expect(
+      sameLibraryFolderAction({ kind: "create", title: "app" }, { kind: "create", title: "site" }),
+    ).toBe(false);
+    expect(sameLibraryFolderAction({ kind: "choose" }, { kind: "choose" })).toBe(true);
+    expect(sameLibraryFolderAction({ kind: "choose" }, add)).toBe(false);
+  });
+});
+
+describe("starting a conversation without the settings step", () => {
+  const DOROTHY = EnvironmentId.make("dorothy");
+  const BOOK = EnvironmentId.make("book");
+  const computers: LibraryLaunchComputer[] = [
+    {
+      environmentId: DOROTHY,
+      label: "Dorothy",
+      online: true,
+      supportsExecution: true,
+      workingThreads: 0,
+    },
+    {
+      environmentId: BOOK,
+      label: "MacBook",
+      online: false,
+      supportsExecution: true,
+      workingThreads: 0,
+    },
+  ];
+  const app: LibraryProject = {
+    ...project("project"),
+    resources: [
+      { id: "app", title: "App", remoteUrl: null, relativePath: ".", defaultBranch: null },
+    ],
+  };
+  const copyOn = (
+    id: string,
+    environmentId: EnvironmentId,
+    overrides: Partial<LibraryWorkingCopy> = {},
+  ) => ({
+    ...copy(id),
+    environmentId,
+    ownership: "borrowed" as const,
+    repositories: [
+      {
+        resourceId: "app",
+        path: `/work/${id}`,
+        localProjectId: ProjectId.make(id),
+        branch: null,
+        head: null,
+      },
+    ],
+    ...overrides,
+  });
+  const quick = (copies: readonly LibraryWorkingCopy[], target: LibraryProject = app) =>
+    libraryQuickLaunch({ project: target, copies, computers, threads: [] });
+
+  it("starts on the online computer holding the project's one ready copy", () => {
+    const ready = copyOn("ready", DOROTHY);
+    expect(
+      quick([ready, copyOn("offline", BOOK), { ...copy("other"), projectId: "other" }]),
+    ).toEqual({
+      environmentId: DOROTHY,
+      label: "Dorothy",
+      copy: ready,
+    });
+  });
+
+  it("leaves the choice to the settings when files need attention or a choice", () => {
+    expect(quick([])).toBeNull();
+    expect(quick([copyOn("offline", BOOK)])).toBeNull();
+    expect(quick([copyOn("a", DOROTHY), copyOn("b", DOROTHY)])).toBeNull();
+    expect(
+      quick([
+        copyOn("behind", DOROTHY, {
+          health: {
+            copyId: "behind",
+            environmentId: DOROTHY,
+            checkedAt: now,
+            repositories: [
+              {
+                resourceId: "app",
+                branch: "main",
+                upstream: "origin/main",
+                ahead: 0,
+                behind: 2,
+                uncommittedFiles: 0,
+                unpushedCommits: 0,
+                checkedAt: now,
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toBeNull();
+    expect(
+      quick([copyOn("ready", DOROTHY)], { ...app, profile: { requiredTools: [{ id: "node" }] } }),
+    ).toBeNull();
+    expect(quick([copyOn("ready", DOROTHY)], { ...app, archived: true })).toBeNull();
+  });
+
+  it("promises only the files the settings would use on that computer", () => {
+    const ready = copyOn("ready", DOROTHY);
+    // Saved files from a released copy make the settings ask which files to use.
+    const released = copyOn("released", DOROTHY, {
+      ownership: "managed",
+      state: "released",
+      recovery: {
+        sha256: "a".repeat(64),
+        byteLength: 100,
+        archiveKey: "archive",
+        verifiedAt: now,
+      },
+    });
+    expect(quick([ready, released])).toBeNull();
+    // A copy that no longer covers the project is not one of the choices.
+    const partial = copyOn("partial", DOROTHY, { repositories: [] });
+    expect(quick([ready, partial])).toEqual({
+      environmentId: DOROTHY,
+      label: "Dorothy",
+      copy: ready,
+    });
   });
 });

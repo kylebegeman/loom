@@ -30,13 +30,14 @@ import {
   type ProviderInteractionMode,
 } from "@t3tools/contracts";
 import {
+  LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
@@ -109,6 +110,8 @@ export function LibraryStartRouteScreen({
 }>) {
   const authority = useLibraryAuthority();
   const preferences = useAtomValue(mobilePreferencesAtom);
+  // Start over remounts the screen, so every choice comes from the route again as on a fresh open.
+  const [restarts, setRestarts] = useState(0);
   const project = useEnvironmentQuery(
     authority.environmentId
       ? library.project({
@@ -144,7 +147,7 @@ export function LibraryStartRouteScreen({
   );
   return project.data && AsyncResult.isSuccess(preferences) ? (
     <LibraryStartContent
-      key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}:${route.params.initialCopyId ?? ""}:${route.params.sourceThreadId ?? ""}`}
+      key={`${restarts}:${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}:${route.params.initialCopyId ?? ""}:${route.params.sourceThreadId ?? ""}`}
       project={project.data}
       projectReady={project.isSuccess && !project.isPending && project.error === null}
       projectNotice={
@@ -159,7 +162,9 @@ export function LibraryStartRouteScreen({
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
-      startNow={route.params.startNow}
+      // Starting over is a deliberate step back to the settings, so it never starts by itself.
+      startNow={restarts === 0 && route.params.startNow === true}
+      onStartOver={() => setRestarts((count) => count + 1)}
     />
   ) : (
     <LibraryPage title="New conversation" back>
@@ -184,7 +189,8 @@ function LibraryStartContent(props: {
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
-  startNow?: boolean | undefined;
+  startNow: boolean;
+  onStartOver: () => void;
 }) {
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
@@ -207,8 +213,9 @@ function LibraryStartContent(props: {
         : undefined,
     ),
   );
-  // Decided once, when the files are known. A saved attempt or any change here leaves it to Start.
-  const autoStart = useRef(props.startNow === true && !saved);
+  // Decided once, when the files are known. A saved attempt, any change here or any start, manual
+  // or automatic, leaves it to Start.
+  const autoStart = useRef(props.startNow && !saved);
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const [selectedScope, setScope] = useState<string | null>(
@@ -624,6 +631,8 @@ function LibraryStartContent(props: {
     });
   }
   async function start() {
+    // A Start pressed while the tapped row's start waits must not be followed by that one.
+    autoStart.current = false;
     if (busy.current || folderBusy.current || !canStart || !execution || !authority.environmentId)
       return;
     const current = appAtomRegistry.get(environmentPresentations.presentationAtom(execution));
@@ -932,25 +941,28 @@ function LibraryStartContent(props: {
     }
   }
   /**
-   * Forgets a saved attempt whose retry keeps failing, so the settings unlock. Work it finished
-   * stays: a conversation it created remains in the list, and prepared files remain registered.
+   * Forgets a saved attempt, so the screen opens as if it never ran and the settings unlock. Work
+   * it finished stays: a conversation it created remains in the list, and prepared files remain
+   * registered, so a fresh start can pick them.
    */
   async function startOver() {
     if (busy.current || folderBusy.current) return;
-    await savePreferences({
-      transform: (current) => {
-        const next = { ...current.loomLibraryLaunches };
-        delete next[attemptKey];
-        return { loomLibraryLaunches: next };
-      },
-    });
-    receipt.current = emptyLibraryLaunchReceipt();
-    requestId.current = uuidv4();
-    threadId.current = ThreadId.make(uuidv4());
-    reviewed.current = null;
-    setReviewState(null);
-    setProgress(emptyLibraryLaunchReceipt());
-    setError(null);
+    // Held while the attempt is forgotten, so Resume cannot run it meanwhile.
+    busy.current = true;
+    try {
+      await savePreferences({
+        transform: (current) => {
+          const next = { ...current.loomLibraryLaunches };
+          delete next[attemptKey];
+          return { loomLibraryLaunches: next };
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+    // A failed attempt can leave files registered that the catalog read before it does not list.
+    if (authority.environmentId) refreshLibraryWork(authority.environmentId, props.project.id);
+    props.onStartOver();
   }
   async function reviewLatestSourceFiles() {
     if (
@@ -1009,13 +1021,45 @@ function LibraryStartContent(props: {
     }
     if (pulled) await start();
   }
-  const warned = warning !== null;
-  useEffect(() => {
-    if (!autoStart.current || !copiesKnown || !props.projectReady) return;
+  // What the tapped row or folder handed in, as this screen resolves it now. Files it fell back
+  // to, or a copy that has to be restored first, are for the user to review.
+  const promised =
+    execution !== null &&
+    execution === props.reuseEnvironmentId &&
+    (props.reuseRootPath === undefined
+      ? mode === "reuse" &&
+        selectedCopy !== null &&
+        selectedCopy.id === props.initialCopyId &&
+        selectedCopy.state === "ready"
+      : mode === "folder");
+  // The copy's live health decides whether it is behind, which the user should see first.
+  const healthCopy =
+    props.startNow &&
+    promised &&
+    mode === "reuse" &&
+    supportsLoomFeature(config?.environment.capabilities, LIBRARY_COPY_HEALTH_FEATURE)
+      ? selectedCopy
+      : null;
+  const health = useEnvironmentQuery(
+    healthCopy
+      ? library.copyHealth({
+          environmentId: healthCopy.environmentId,
+          input: { workingCopyId: healthCopy.id },
+        })
+      : null,
+  );
+  const autoStartWaiting =
+    !copiesKnown || copies.isPending || !props.projectReady || health.isPending;
+  const autoStartReady = canStart && promised && warning === null;
+  const decideAutoStart = useEffectEvent((ready: boolean) => {
+    if (!autoStart.current) return;
     autoStart.current = false;
-    // oxlint-disable-next-line react/set-state-in-effect -- The tapped row asked for this launch; it runs once the files are known.
-    if (canStart && !warned) void start();
-  }, [copiesKnown, props.projectReady, canStart, warned, start]);
+    if (ready) void start();
+  });
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- The tapped row asked for this launch; it runs once what it waits on has settled.
+    if (!autoStartWaiting) decideAutoStart(autoStartReady);
+  }, [autoStartWaiting, autoStartReady]);
   if (!authority.environmentId) return <LibraryAuthorityScreen />;
   const computerLabel =
     selectedHost?.label ??
@@ -1461,7 +1505,8 @@ function LibraryStartContent(props: {
           void start();
         }}
       />
-      {error && progress.intent && pending === null ? (
+      {/* Offered with no error too: a saved attempt reopened later shows only its retry. */}
+      {progress.intent && pending === null ? (
         <Button
           label="Start over"
           tone="text"
@@ -1479,7 +1524,11 @@ function LibraryStartContent(props: {
           label="Conversation options"
           description={title || "Title, context and setup"}
           detail={showOptions ? "Done" : "Edit"}
-          onPress={() => setShowOptions((value) => !value)}
+          onPress={() => {
+            // A title or context being edited is not what the tapped row promised to start with.
+            autoStart.current = false;
+            setShowOptions((value) => !value);
+          }}
         />
       </SettingsSection>
       {showOptions ? (

@@ -932,6 +932,54 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  // A launch uploads nothing itself: it creates the conversation, binds it and sets the copy's
+  // retention, and a pass can scan the creation before the binding exists.
+  it.effect("publishes a launched conversation and its file retention on the journal fence", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const bindings = yield* Ref.make<Effect.Success<typeof workspace.bindings>>([]);
+        const current = yield* Ref.make(receipt);
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            bindings: Ref.get(bindings),
+            receipts: Ref.get(current).pipe(Effect.map((value) => [value])),
+            get: () => Ref.get(current),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({ cleanupTemporaryCopies: () => Effect.void }),
+          ),
+        );
+        yield* f.event(1, "thread.created", "{}");
+        yield* service.drain;
+        expect(yield* Ref.get(f.requests)).toEqual([]);
+        yield* Ref.set(bindings, [{ threadId, resolved }]);
+        yield* Ref.update(current, (value) => ({
+          ...value,
+          copy: { ...value.copy, keepOnComputer: false },
+        }));
+        yield* service.drain;
+        const history = yield* Ref.get(f.requests);
+        expect(history.map((request) => request.entries[0]?.thread.summary.threadId)).toEqual([
+          threadId,
+        ]);
+        expect(history[0]).toMatchObject({ authorityId: "authority", authorityEpoch: 1 });
+        const copies = yield* Ref.get(f.registered);
+        expect(copies.at(-1)?.copy.keepOnComputer).toBe(false);
+        for (const request of copies)
+          expect(request).toMatchObject({ authorityId: "authority", authorityEpoch: 1 });
+        expect((yield* service.status).threads[0]?.pending).toBe(false);
+      }),
+    ),
+  );
   it.effect("skips a copy whose project the Library no longer has and registers the rest", () =>
     run((f) =>
       Effect.gen(function* () {

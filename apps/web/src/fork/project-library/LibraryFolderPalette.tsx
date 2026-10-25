@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ensureBrowseDirectoryPath,
@@ -7,26 +7,42 @@ import {
 import { FolderIcon, CornerLeftUpIcon, CheckIcon, HouseIcon } from "lucide-react";
 import { filesystemEnvironment, useFilesystemReadAccess } from "~/state/filesystem";
 import { useEnvironmentQuery } from "~/state/query";
-import { LibraryPaletteView } from "./LibraryPalette";
+import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
+
+/** The folder being browsed, once its listing has loaded. */
+export interface LibraryBrowsedFolder {
+  readonly path: string;
+  /** The folder is a Git repository root. */
+  readonly repository: boolean;
+}
 
 export function LibraryFolderPalette({
   environmentId,
   computerName,
   initialPath,
   onSelect,
+  actions,
+  onFolderChange,
   onBack,
   onClose,
   busy = false,
   error,
+  children,
 }: {
   readonly environmentId: EnvironmentId;
   readonly computerName: string;
   readonly initialPath: string;
-  readonly onSelect: (path: string) => void;
+  readonly onSelect?: ((path: string) => void) | undefined;
+  /** Rows that act on the browsed folder, in place of "Use this folder". */
+  readonly actions?:
+    | ((folder: LibraryBrowsedFolder | null) => readonly LibraryPaletteItem[])
+    | undefined;
+  readonly onFolderChange?: ((folder: LibraryBrowsedFolder | null) => void) | undefined;
   readonly onBack: () => void;
   readonly onClose: () => void;
   readonly busy?: boolean | undefined;
   readonly error?: string | null | undefined;
+  readonly children?: ReactNode;
 }) {
   const [path, setPath] = useState(ensureBrowseDirectoryPath(initialPath.trim() || "~/"));
   const [query, setQuery] = useState("");
@@ -51,7 +67,17 @@ export function LibraryFolderPalette({
     setPath(ensureBrowseDirectoryPath(next));
     setQuery("");
   };
-  const entries = (ready ? (listing.data?.entries ?? []) : []).filter(
+  const listed = ready ? (listing.data?.entries ?? []) : [];
+  const folderPath = ready && currentPath ? currentPath : null;
+  const repository = folderPath !== null && listed.some((entry) => entry.name === ".git");
+  const folder = folderPath === null ? null : { path: folderPath, repository };
+  const reportFolder = useEffectEvent((path: string | null, repository: boolean) =>
+    onFolderChange?.(path === null ? null : { path, repository }),
+  );
+  useEffect(() => {
+    reportFolder(folderPath, repository);
+  }, [folderPath, repository]);
+  const entries = listed.filter(
     (entry) =>
       (!entry.name.startsWith(".") || filter.startsWith(".")) &&
       entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
@@ -87,18 +113,20 @@ export function LibraryFolderPalette({
       items={[
         ...(filter
           ? []
-          : [
-              {
-                id: "select-folder",
-                title: "Use this folder",
-                description: currentPath,
-                icon: <CheckIcon className="size-4" />,
-                disabled: !ready || !currentPath,
-                select: () => {
-                  if (ready && currentPath) onSelect(currentPath);
+          : actions
+            ? actions(folder)
+            : [
+                {
+                  id: "select-folder",
+                  title: "Use this folder",
+                  description: currentPath,
+                  icon: <CheckIcon className="size-4" />,
+                  disabled: !ready || !currentPath,
+                  select: () => {
+                    if (ready && currentPath) onSelect?.(currentPath);
+                  },
                 },
-              },
-            ]),
+              ]),
         ...entries.map((entry) => ({
           id: entry.fullPath,
           title: entry.name,
@@ -132,6 +160,8 @@ export function LibraryFolderPalette({
           : []),
         ...(listing.error ? [{ id: "retry", title: "Try again", select: listing.refresh }] : []),
       ]}
-    />
+    >
+      {children}
+    </LibraryPaletteView>
   );
 }

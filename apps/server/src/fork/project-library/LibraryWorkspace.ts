@@ -2945,7 +2945,13 @@ const make = Effect.gen(function* () {
               existing === null &&
               (yield* projections.getThreadShell(input.threadId))?.latestRunId != null
             )
-              return yield* new LibraryError({ reason: "blocked" });
+              // Without a detail, "blocked" reads as a busy working copy. A launch retry lands here
+              // when its conversation was used before binding finished, and only starting over helps.
+              return yield* new LibraryError({
+                reason: "blocked",
+                detail:
+                  "This conversation already has work, so it can no longer be linked to Library files. Start a new conversation instead.",
+              });
             yield* store.bind(input.threadId, resolved, input.project);
             return resolved;
           }),

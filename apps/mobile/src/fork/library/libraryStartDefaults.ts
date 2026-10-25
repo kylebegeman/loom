@@ -1,10 +1,7 @@
 import {
-  libraryLaunchChoice,
   libraryLaunchDefaults,
   libraryLaunchInputs,
-  libraryLaunchRanking,
-  libraryLaunchWarning,
-  libraryPortableRecoveryPlan,
+  libraryQuickLaunch,
   type LibraryLaunchHost,
   type LibraryLaunchRememberedComputer,
 } from "@t3tools/client-runtime/fork";
@@ -28,12 +25,10 @@ export interface LibraryStartDefaults {
 }
 
 /**
- * What a tap on a Library project in New task starts with: the computer and files the start
- * screen would preselect for the whole project, with its model and permissions. It ranks with
- * published copy health and the recent conversation index instead of asking each computer, so the
- * row hands this computer and copy to the start screen rather than letting it rank again. Null
- * when starting needs a decision first, such as no ready computer, files to prepare, restore or
- * choose, a copy that is behind or broken, required tools to check, or no model.
+ * What a tap on a Library project in New task starts with: the computer and files web's project
+ * list promises for the same project, with the model and permissions the start screen picks there.
+ * The row hands that computer and copy to the start screen rather than letting it rank again. Null
+ * when starting needs a decision first, or when the start screen would not start there as it is.
  */
 export function libraryStartDefaults(input: {
   readonly project: LibraryProject;
@@ -41,7 +36,8 @@ export function libraryStartDefaults(input: {
   readonly threads: readonly LibraryThreadSummary[];
   readonly hosts: readonly LibraryLaunchHost[];
   readonly remembered: readonly LibraryLaunchRememberedComputer[];
-  readonly workingThreads: ReadonlyMap<EnvironmentId, number>;
+  /** Computers this device may start conversations on. */
+  readonly operable: ReadonlySet<EnvironmentId>;
   readonly configs: ReadonlyMap<EnvironmentId, ServerConfig>;
   readonly localProject: (
     environmentId: EnvironmentId,
@@ -49,35 +45,27 @@ export function libraryStartDefaults(input: {
   ) => LegacyProjectSettingsFields | null;
 }): LibraryStartDefaults | null {
   const { project } = input;
-  if (project.archived || (project.profile?.requiredTools?.length ?? 0) > 0) return null;
-  const copies = input.copies.filter(
-    (copy) => copy.projectId === project.id && libraryLaunchCopyMatchesScope(project, copy, null),
-  );
+  // Ranked without working threads, as web ranks, so a row never moves as threads start and stop.
   const { computers } = libraryLaunchInputs({
     project,
-    copies,
+    copies: [],
     hosts: input.hosts,
     remembered: input.remembered,
-    workingThreads: input.workingThreads,
+    workingThreads: new Map(),
   });
-  const ranking = libraryLaunchRanking({
+  const quick = libraryQuickLaunch({
     project,
-    copies,
+    copies: input.copies,
     computers,
-    threads: input.threads.filter((thread) => thread.projectId === project.id),
-    resourceId: null,
+    threads: input.threads,
   });
-  const { hostId, candidate } = libraryLaunchChoice({ ranking, hostId: null, copyId: null });
-  if (hostId === null || candidate?.kind !== "copy") return null;
-  const copy = copies.find((entry) => entry.id === candidate.copyId);
-  if (copy?.state !== "ready" || libraryLaunchWarning(candidate, copy, null) !== null) return null;
-  const recovery = libraryPortableRecoveryPlan({
-    project,
-    copies,
-    destinationEnvironmentId: hostId,
-    resourceIds: null,
-  });
-  if (recovery.kind !== "local" || recovery.copy.id !== copy.id) return null;
+  if (quick === null) return null;
+  const { environmentId, copy } = quick;
+  // The start screen runs work only where this device has conversation access.
+  if (!input.operable.has(environmentId)) return null;
+  // The start screen offers whole-project files only when their repositories match the project
+  // exactly, so a folder still holding a removed repository needs a choice there.
+  if (!libraryLaunchCopyMatchesScope(project, copy, null)) return null;
   // The start screen reads the local project the same way for the whole project.
   const repositories = libraryRepositories(project);
   const localProjectId =
@@ -85,12 +73,12 @@ export function libraryStartDefaults(input: {
       ? (copy.repositories.find((entry) => entry.resourceId === repositories[0]!.id)
           ?.localProjectId ?? null)
       : (copy.rootLocalProjectId ?? null);
-  const config = input.configs.get(hostId) ?? null;
+  const config = input.configs.get(environmentId) ?? null;
   const { defaultModel } = libraryConversationModels({
     config,
     projectDefaultSelection: project.profile?.defaultModelSelection ?? null,
     localProjectId,
-    localProject: localProjectId ? input.localProject(hostId, localProjectId) : null,
+    localProject: localProjectId ? input.localProject(environmentId, localProjectId) : null,
     savedSelection: null,
   });
   if (defaultModel === null) return null;
@@ -99,10 +87,10 @@ export function libraryStartDefaults(input: {
     localProjectId,
   }).runtimeMode;
   return {
-    environmentId: hostId,
+    environmentId,
     copyId: copy.id,
     summary: [
-      computers.find((computer) => computer.environmentId === hostId)?.label,
+      quick.label,
       defaultModel.label,
       RUNTIME_MODE_CHOICES.find((choice) => choice.mode === runtimeMode)?.label,
     ]

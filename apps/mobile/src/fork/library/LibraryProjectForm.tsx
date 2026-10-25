@@ -339,15 +339,9 @@ function LibraryProjectForm({
         rememberLibraryFolderProject(authority.environmentId, existingFolder, result.value);
       refreshLibraryProject(authority.environmentId, result.value.id);
       setAwaitingResult(false);
-      navigation.dispatch(
-        existingFolder && !initial
-          ? StackActions.replace("LibraryStart", {
-              projectId: result.value.id,
-              reuseEnvironmentId: existingFolder.environmentId,
-              reuseRootPath: existingFolder.rootPath,
-            })
-          : StackActions.replace("LibraryProject", { projectId: result.value.id }),
-      );
+      if (existingFolder && !initial) addFolderTo(result.value, null);
+      else
+        navigation.dispatch(StackActions.replace("LibraryProject", { projectId: result.value.id }));
     } catch (cause) {
       if (cause instanceof LibraryError && cause.reason !== "io") {
         setAwaitingResult(false);
@@ -360,6 +354,8 @@ function LibraryProjectForm({
       setPending(false);
     }
   }
+  // A folder joins its project when its first conversation starts there, so adding it starts that
+  // conversation unless the start screen finds something to decide first.
   const addFolderTo = (project: LibraryProject, copyId: string | null) => {
     if (!existingFolder) return;
     navigation.dispatch(
@@ -367,6 +363,7 @@ function LibraryProjectForm({
         projectId: project.id,
         reuseEnvironmentId: existingFolder.environmentId,
         ...(copyId ? { initialCopyId: copyId } : { reuseRootPath: existingFolder.rootPath }),
+        startNow: true,
       }),
     );
   };

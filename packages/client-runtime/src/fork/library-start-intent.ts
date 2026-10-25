@@ -5,8 +5,11 @@ import type {
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { libraryLaunchChoice, libraryLaunchRanking } from "./library-launch-choice.ts";
+import { libraryPortableRecoveryPlan } from "./library-portable-recovery.ts";
 import { libraryResourceFromInput } from "./library-project.ts";
 
 export type LibraryStartIntent =
@@ -14,18 +17,21 @@ export type LibraryStartIntent =
   | { readonly kind: "repository"; readonly url: string; readonly title: string }
   | { readonly kind: "search"; readonly text: string };
 
+/** The project name a folder suggests: its last path segment. */
+export function libraryFolderTitle(path: string) {
+  return (
+    path
+      .trim()
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .at(-1) || "Project"
+  );
+}
+
 export function libraryStartIntent(value: string): LibraryStartIntent {
   const text = value.trim();
   if (/^(?:\/|~[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(text))
-    return {
-      kind: "folder",
-      path: text,
-      title:
-        text
-          .replace(/[\\/]+$/, "")
-          .split(/[\\/]/)
-          .at(-1) || "Project",
-    };
+    return { kind: "folder", path: text, title: libraryFolderTitle(text) };
   const resource = libraryResourceFromInput(text, []);
   if (resource && resource.kind !== "link" && resource.remoteUrl)
     return { kind: "repository", url: resource.remoteUrl, title: resource.title };
@@ -211,4 +217,90 @@ export function libraryFolderTakeover(owner: LibraryFolderOwner | null) {
       ? ` Conversations from ${listTitles(archived)} stay in the archive.`
       : ` ${archived.length === 1 ? "Its" : "Their"} conversations stay in the archive.`;
   return `Takes this folder over from ${from}.${archive}`;
+}
+
+/** What adding a folder does once its owner and matching projects are known. */
+export type LibraryFolderAction =
+  | { readonly kind: "add"; readonly project: LibraryProject }
+  | { readonly kind: "choose" }
+  | { readonly kind: "create"; readonly title: string };
+
+/**
+ * The project a folder joins: the current project holding it, then a project this flow already
+ * created for it, then the single project its association or repositories match. Several matches
+ * need a choice, and no match makes a project named after the folder.
+ */
+export function libraryFolderAction(input: {
+  readonly rootPath: string;
+  readonly owner: LibraryFolderOwner | null;
+  readonly created: LibraryProject | null;
+  readonly matches: readonly LibraryProject[];
+}): LibraryFolderAction {
+  if (input.owner?.kind === "current") return { kind: "add", project: input.owner.project };
+  if (input.created) return { kind: "add", project: input.created };
+  if (input.matches.length === 1) return { kind: "add", project: input.matches[0]! };
+  if (input.matches.length > 1) return { kind: "choose" };
+  return { kind: "create", title: libraryFolderTitle(input.rootPath) };
+}
+
+/** True when two folder actions would do the same thing, so a shown action can run unconfirmed. */
+export function sameLibraryFolderAction(left: LibraryFolderAction, right: LibraryFolderAction) {
+  if (left.kind === "add") return right.kind === "add" && right.project.id === left.project.id;
+  if (left.kind === "create") return right.kind === "create" && right.title === left.title;
+  return right.kind === "choose";
+}
+
+/**
+ * Where a new conversation in this project can start without a settings step: the preselected
+ * computer when its one copy of the whole project is ready and not known to be behind, changed or
+ * broken. Projects with required tools wait for each computer's check, so they always show the
+ * settings first. Null means the settings decide.
+ */
+export function libraryQuickLaunch(input: {
+  readonly project: LibraryProject;
+  /**
+   * The Library's copies; other projects' copies are ignored. Released copies are needed to know
+   * when saved files elsewhere on the computer make the settings ask which files to use.
+   */
+  readonly copies: readonly LibraryWorkingCopy[];
+  readonly computers: readonly LibraryLaunchComputer[];
+  readonly threads: readonly LibraryThreadSummary[];
+}) {
+  const { project } = input;
+  if (project.archived || (project.profile?.requiredTools?.length ?? 0) > 0) return null;
+  const repositories = project.resources.filter((resource) => resource.kind !== "link").length;
+  // Loom-made copies of part of a project cannot start a whole-project conversation.
+  const copies = input.copies.filter(
+    (copy) =>
+      copy.projectId === project.id &&
+      (copy.ownership !== "managed" || copy.repositories.length === repositories),
+  );
+  const { candidate } = libraryLaunchChoice({
+    ranking: libraryLaunchRanking({
+      project,
+      copies,
+      computers: input.computers,
+      threads: input.threads,
+      resourceId: null,
+    }),
+    hostId: null,
+    copyId: null,
+  });
+  if (
+    candidate?.kind !== "copy" ||
+    candidate.freshness === "stale" ||
+    candidate.freshness === "broken"
+  )
+    return null;
+  // The settings take their files from this plan, not from the ranking, so the row promises only
+  // the copy they would use: it asks for a choice when the computer holds several usable copies.
+  const files = libraryPortableRecoveryPlan({
+    project,
+    copies: input.copies,
+    destinationEnvironmentId: candidate.environmentId,
+    resourceIds: null,
+  });
+  if (files.kind !== "local" || files.copy.id !== candidate.copyId || files.copy.state !== "ready")
+    return null;
+  return { environmentId: candidate.environmentId, label: candidate.label, copy: files.copy };
 }
