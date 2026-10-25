@@ -7,6 +7,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+// fork: project-lifecycle
+import type * as Scope from "effect/Scope";
 import * as PlatformError from "effect/PlatformError";
 import type * as SqlClient from "effect/sql/SqlClient";
 import type { MigrationError } from "effect/sql/Migrator";
@@ -68,18 +70,18 @@ import {
   type ProviderReplayGate,
 } from "@t3tools/provider-testing/replayGate";
 
-export function makeReplayServerConfig(
-  scenario: string,
-): Effect.Effect<
+export function makeReplayServerConfig(scenario: string): Effect.Effect<
   ServerConfig.ServerConfig["Service"],
   PlatformError.PlatformError,
-  FileSystem.FileSystem | Path.Path
+  // fork: project-lifecycle
+  FileSystem.FileSystem | Path.Path | Scope.Scope
 > {
   const safeScenario = scenario.replace(/[^a-z0-9_-]+/gi, "-");
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectory({
+    // fork: project-lifecycle
+    const baseDir = yield* fs.makeTempDirectoryScoped({
       prefix: `t3-orchestration-v2-replay-${safeScenario}-`,
     });
     const stateDir = path.join(baseDir, "userdata");

@@ -1,3 +1,4 @@
+import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off - Lanes are real folders the test inspects directly.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -758,7 +759,7 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("steers a running agent once, then clears tmp once the lane is idle", () =>
+  it.live("steers a running agent once and keeps fresh tmp files when it becomes idle", () =>
     Effect.gen(function* () {
       const t = yield* setup;
       t.threads.push(thread("worker", { activeRunId: RunId.make("run-1") }));
@@ -780,10 +781,9 @@ describe("ProjectLifecycleService", () => {
       expect(t.sent[0]!.text).not.toContain("—");
 
       t.threads[0] = thread("worker");
-      const status = yield* service.tick();
-      expect(NodeFS.readdirSync(created.tmpPath)).toEqual([]);
+      yield* service.tick();
+      expect(NodeFS.readdirSync(created.tmpPath)).toEqual(["scratch"]);
       expect(NodeFS.readFileSync(`${created.dataPath}/keep`, "utf8")).toBe("notes");
-      expect(laneOf(status, t.checkout)?.usedBytes).toBeLessThan(500_000);
     }).pipe(Effect.scoped),
   );
 
@@ -860,26 +860,28 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.live("clears auxiliary tmp files without deleting a nested registered checkout", () =>
-    Effect.gen(function* () {
-      const t = yield* setup;
-      t.threads.push(thread("root"));
-      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
-      yield* t.store.updateLane(parent.id, { capBytes: 1_000_000, device: null });
-      const service = yield* t.create;
-      const tmp = `${parent.laneDir}/space/tmp`;
-      const nested = `${tmp}/feature`;
-      NodeFS.mkdirSync(nested);
-      NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
-      NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
-      t.threads.push(
-        thread("nested", { worktreePath: nested, activeRunId: RunId.make("nested-run") }),
-      );
+  it.effect(
+    "removes day-old tmp files from active lanes while keeping nested registered checkouts",
+    () =>
+      Effect.gen(function* () {
+        const t = yield* setup;
+        t.threads.push(thread("root", { activeRunId: RunId.make("root-run") }));
+        const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+        const service = yield* t.create;
+        const tmp = `${parent.laneDir}/space/tmp`;
+        const nested = `${tmp}/feature`;
+        NodeFS.mkdirSync(nested);
+        NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
+        NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
+        t.threads.push(
+          thread("nested", { worktreePath: nested, activeRunId: RunId.make("nested-run") }),
+        );
 
-      yield* service.tick();
-      expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("active thread files");
-      expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
-    }).pipe(Effect.scoped),
+        yield* TestClock.setTime(NodeFS.statSync(`${tmp}/scratch`).ctimeMs + 25 * 60 * 60 * 1000);
+        yield* service.tick();
+        expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("active thread files");
+        expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+      }).pipe(Effect.scoped),
   );
 
   it.live("freeing all scopes keeps registered project checkouts and removes auxiliary files", () =>

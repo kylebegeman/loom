@@ -706,6 +706,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             ),
           ),
         );
+        const destinationContext = yield* Layer.build(destinationLayer);
         const destination = yield* Effect.gen(function* () {
           return {
             service: yield* LibraryWorkspace.LibraryWorkspace,
@@ -713,7 +714,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             config: yield* ServerConfig.ServerConfig,
             context: yield* Effect.context<Layer.Success<typeof destinationLayer>>(),
           };
-        }).pipe(Effect.provide(destinationLayer));
+        }).pipe(Effect.provide(destinationContext));
         expect(destination.config.stateDir).not.toBe(sourceConfig.stateDir);
         const destinationRoot = path.join(parent, "destination", "renamed-copy");
         const input = {
