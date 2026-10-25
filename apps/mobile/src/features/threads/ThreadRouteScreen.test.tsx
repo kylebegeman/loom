@@ -134,6 +134,9 @@ vi.mock("./GitActionProgressOverlay", () => ({ GitActionProgressOverlay: () => n
 vi.mock("./git/GitOverviewSheet", () => ({ GitOverviewSheet: () => null }));
 vi.mock("./thread-inspector-content-stack", () => ({ ThreadInspectorContentStack: () => null }));
 vi.mock("./ThreadHeader", () => ({ ThreadHeader: () => null }));
+// fork: source-control-cockpit
+vi.mock("../../fork/source-control-cockpit/GitRecovery", () => ({ GitRecovery: () => null }));
+vi.mock("../../components/ui/Button", () => ({ Button: () => null }));
 vi.mock("./useThreadConversationDetails", () => ({ useThreadConversationDetails: () => {} }));
 vi.mock("./use-worktree-setup", () => ({
   useWorktreeSetup: () => ({ snapshot: null, visible: null }),
