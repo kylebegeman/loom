@@ -41,7 +41,10 @@ const makeStubInstance = (
     },
     displayName: undefined,
     enabled: true,
-    snapshot: {} as ProviderInstance["snapshot"],
+    // fork: server-weight
+    snapshot: {
+      getSnapshot: Effect.succeed({ auth: { status: "unknown" } }),
+    } as ProviderInstance["snapshot"],
     orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
     textGeneration,
   }) satisfies ProviderInstance;
@@ -62,6 +65,41 @@ const makeStubRegistry = (
 };
 
 describe("TextGeneration.make", () => {
+  // fork: server-weight
+  it.effect("does not invoke an unauthenticated provider", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("grok");
+      const instance = makeStubInstance(instanceId, makeStubTextGeneration({}));
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([
+            {
+              ...instance,
+              snapshot: {
+                ...instance.snapshot,
+                getSnapshot: Effect.succeed({ auth: { status: "unauthenticated" } } as never),
+              },
+            },
+          ]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("Unauthenticated generation must not resolve links"),
+          }),
+        ),
+      );
+      const result = yield* generation
+        .generateThreadTitle({
+          cwd: "/repo",
+          message: "Title",
+          modelSelection: createModelSelection(instanceId, "grok"),
+        })
+        .pipe(Effect.result);
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(result.failure.detail).toContain("Sign in");
+    }),
+  );
   it.effect("retains supplied subject context in the provider prompt", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("codex");

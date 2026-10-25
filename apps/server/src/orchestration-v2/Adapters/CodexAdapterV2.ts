@@ -1,3 +1,5 @@
+// fork: server-weight
+import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
@@ -1466,6 +1468,10 @@ const layerCodexAppServerClientFactoryCommand = (
                 }),
             ),
           );
+          // fork: server-weight
+          yield* trackProviderProcess(handle, { threadId: input.threadId, cwd: options.cwd }).pipe(
+            Effect.provideService(Scope.Scope, scope),
+          );
           const context = yield* Layer.build(CodexClient.layerChildProcess(handle, options));
           return yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
             Effect.provide(context),
@@ -1586,6 +1592,10 @@ export const layerAppServerClientFactory: Layer.Layer<
                 cause,
               }),
           ),
+        );
+        // fork: server-weight -- this app-server can serve multiple threads, so unknown ownership blocks all resumes.
+        yield* trackProviderProcess(handle, { shared: true }).pipe(
+          Effect.provideService(Scope.Scope, scope),
         );
         const protocolLogger = makeCodexAppServerProtocolLogger({
           nativeEventLogger,

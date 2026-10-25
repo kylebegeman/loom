@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - only node:perf_hooks exposes the event loop delay histogram, and node:os the load average.
+// fork: server-weight
+import * as NodeCrypto from "node:crypto";
 import * as NodeOS from "node:os";
 import * as NodePerfHooks from "node:perf_hooks";
 
@@ -56,6 +58,9 @@ export interface EventLoopReadings {
   >;
   readonly rssBytes: number;
   readonly heapUsedBytes: number;
+  // fork: server-weight
+  readonly externalBytes: number;
+  readonly arrayBuffersBytes: number;
   /** Wall time the readings cover. */
   readonly elapsedMs: number;
   /** One-minute load average, undefined on Windows. */
@@ -65,6 +70,25 @@ export interface EventLoopReadings {
 
 // Node skips the first gap after a reset, so a stall right at a sample boundary can be missed.
 const makeNodeSampler = Effect.gen(function* () {
+  // fork: server-weight -- a one-iteration crypto job measures libuv queue latency without tuning it.
+  yield* Effect.gen(function* () {
+    for (let sample = 0; sample < 60; sample++) {
+      const start = NodePerfHooks.performance.now();
+      yield* Effect.callback<void>((resume) => {
+        NodeCrypto.pbkdf2("", "", 1, 1, "sha256", () => resume(Effect.void));
+      });
+      const durationMs = Math.round(NodePerfHooks.performance.now() - start);
+      if (durationMs >= 50)
+        yield* Effect.logInfo("Startup threadpool probe delayed", { durationMs }).pipe(
+          Effect.withSpan("server.startup.threadpool-latency", {
+            root: true,
+            attributes: { durationMs },
+          }),
+        );
+      yield* Effect.sleep("1 second");
+    }
+  }).pipe(Effect.forkScoped);
+
   const histogram = yield* Effect.acquireRelease(
     Effect.sync(() => {
       const histogram = NodePerfHooks.monitorEventLoopDelay({ resolution: RESOLUTION_MS });
@@ -98,6 +122,9 @@ const makeNodeSampler = Effect.gen(function* () {
       },
       rssBytes: memory.rss,
       heapUsedBytes: memory.heapUsed,
+      // fork: server-weight
+      externalBytes: memory.external,
+      arrayBuffersBytes: memory.arrayBuffers,
       elapsedMs: nextSampledAt - sampledAt,
       // Windows has no load average and reports 0, which a running process never sees elsewhere.
       loadAverage: NodeOS.loadavg()[0] || undefined,
@@ -200,6 +227,10 @@ export const layerWith = (
           minorPageFaults: usage.minorPageFault,
           involuntaryContextSwitches: usage.involuntaryContextSwitches,
           rssMb: Math.round(rssBytes / 1024 / 1024),
+          // fork: server-weight -- native response buffers can exhaust memory before the JS heap fills.
+          heapUsedMb: Math.round(readings.heapUsedBytes / 1024 / 1024),
+          externalMb: Math.round(readings.externalBytes / 1024 / 1024),
+          arrayBuffersMb: Math.round(readings.arrayBuffersBytes / 1024 / 1024),
         };
         yield* Effect.logWarning(`event loop stalled for ${delayMaxMs} ms`).pipe(
           Effect.withSpan("server.eventLoop.stall", { root: true, level: "Warn", attributes }),

@@ -479,6 +479,18 @@ export const makeTraceSink = Effect.fn("makeTraceSink")(function* (options: Trac
   return {
     filePath: options.filePath,
     push(record) {
+      // fork: server-weight -- keep slow/contended statements and every failure, not fast successes.
+      const failed =
+        record.type === "effect-span"
+          ? record.exit._tag !== "Success"
+          : record.status?.code === "2" || record.status?.code === "ERROR";
+      if (
+        record.name === "sqlite" &&
+        record.durationMs < 50 &&
+        !(Number(record.attributes["db.lock_wait_ms"] ?? 0) > 0) &&
+        !failed
+      )
+        return;
       try {
         const text = `${JSON.stringify(record)}\n`;
         const bytes = Buffer.byteLength(text);

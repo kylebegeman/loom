@@ -191,25 +191,29 @@ export const layer = Layer.effectDiscard(
     };
     const passiveListenerOptions = { passive: true } as const;
 
+    // fork: server-weight -- reconnect renews just that environment without waiting for the timer.
+    // Idle checks are covered by the report span; do not trace one no-op per offline computer.
+    const reportEnvironment = Effect.fnUntraced(
+      function* (environmentId: EnvironmentId) {
+        const state = yield* registry.state(environmentId);
+        if (state.phase !== "connected") return;
+        const observedAtMs = yield* Clock.currentTimeMillis;
+        yield* registry.run(
+          environmentId,
+          request(
+            WS_METHODS.serverReportClientActivity,
+            createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
+          ),
+        );
+      },
+      (effect) => effect.pipe(Effect.ignoreCause),
+    );
     const report = Effect.gen(function* () {
-      const observedAtMs = yield* Clock.currentTimeMillis;
       const entries = yield* SubscriptionRef.get(registry.entries);
-      yield* Effect.forEach(
-        entries.keys(),
-        (environmentId) =>
-          registry
-            .run(
-              environmentId,
-              request(
-                WS_METHODS.serverReportClientActivity,
-                createActivityReport(environmentId, lastInteractionAtMs, observedAtMs),
-              ),
-            )
-            // Not `ignore`: tearing down an environment mid-request interrupts its report,
-            // and an interrupt leaking out here would end the reporting loop for good.
-            .pipe(Effect.ignoreCause),
-        { concurrency: "unbounded", discard: true },
-      );
+      yield* Effect.forEach(entries.keys(), reportEnvironment, {
+        concurrency: "unbounded",
+        discard: true,
+      });
     }).pipe(Effect.withSpan("web.backgroundActivity.report"));
 
     yield* Effect.acquireRelease(
@@ -239,7 +243,22 @@ export const layer = Layer.effectDiscard(
     );
 
     yield* SubscriptionRef.changes(registry.entries).pipe(
-      Stream.runForEach(() => Effect.sync(requestReport)),
+      // fork: server-weight -- catalog entries do not change when an existing connection returns.
+      Stream.switchMap((entries) =>
+        Stream.mergeAll(
+          Array.from(entries.keys(), (environmentId) =>
+            registry.stateChanges(environmentId).pipe(
+              Stream.map((state) => state.phase),
+              Stream.changes,
+              Stream.filter((phase) => phase === "connected"),
+              Stream.map(() => environmentId),
+              Stream.catchCause(() => Stream.empty),
+            ),
+          ),
+          { concurrency: "unbounded" },
+        ),
+      ),
+      Stream.runForEach(reportEnvironment),
       Effect.forkScoped,
     );
     yield* Stream.fromQueue(reportRequests).pipe(

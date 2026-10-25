@@ -1,3 +1,7 @@
+// fork: server-weight
+import { runShutdownPhase } from "../process/fork/runtimePhase.ts";
+// fork: server-weight
+import { ProviderProcesses, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -380,14 +384,16 @@ export const layerWithOptions = (
           );
         },
       );
+      // fork: server-weight
+      const providerProcesses = yield* ProviderProcesses;
       const layerScope = yield* Effect.scope;
-      // Ctrl+C, or a stop that signals the whole process group, reaches the
-      // provider CLIs with the server. They report their own background work
-      // stopped before shutdown captures restart continuations, so provider
-      // events after the signal are dropped; restart recovery owns that state.
+      // fork: server-weight -- detached providers do not share the backend's process group.
+      // Signal them before async teardown, and let restart recovery own their final events.
       const shutdownSignal = { received: false };
       const onShutdownSignal = () => {
         shutdownSignal.received = true;
+        // fork: server-weight
+        providerProcesses.signalAll();
       };
       yield* Effect.acquireRelease(
         Effect.sync(() => {
@@ -2168,7 +2174,13 @@ export const layerWithOptions = (
       });
       yield* Effect.addFinalizer(() =>
         shutdown.pipe(
-          Effect.ensuring(closeScopeWithin(sessionScopes, { reason: "server_shutdown" })),
+          // fork: server-weight
+          Effect.ensuring(
+            runShutdownPhase(
+              "providerSessions.layer-teardown",
+              closeScopeWithin(sessionScopes, { reason: "server_shutdown" }),
+            ),
+          ),
         ),
       );
 
@@ -2179,6 +2191,15 @@ export const layerWithOptions = (
             input.providerSessionId,
             Effect.gen(function* () {
               const cwd = input.runtimePolicy.cwd;
+              // fork: server-weight -- manual starts must not race a refused restart cleanup either.
+              if (providerProcesses.blocks(input.threadId, cwd ?? undefined)) {
+                return yield* new ProviderSessionOpenError({
+                  instanceId: input.modelSelection.instanceId,
+                  providerSessionId: input.providerSessionId,
+                  cause:
+                    "A previous agent is still running in this folder. Stop it before continuing.",
+                });
+              }
               if (cwd !== null) {
                 const workspaceIsDirectory = yield* fileSystem.stat(cwd).pipe(
                   Effect.map((stat) => stat.type === "Directory"),
@@ -2256,6 +2277,8 @@ export const layerWithOptions = (
                       }),
                 })
                 .pipe(
+                  // fork: server-weight
+                  Effect.provideService(AgentScopeThreadId, input.threadId),
                   Effect.provideService(Scope.Scope, sessionScope),
                   // The session cleanup runs first, and the close is
                   // time-boxed: this runs under the session's open lock, so an
@@ -2425,6 +2448,8 @@ export const layerWithOptions = (
         release: releaseEntry,
         detach: Effect.fn("ProviderSessionManager.detach")(
           function* (input) {
+            // fork: server-weight -- Stop also retries an orphan that has no live session entry.
+            yield* providerProcesses.stop(input.threadId);
             const key = sessionKey(input.providerSessionId);
             const currentEntry = (yield* Ref.get(sessions)).get(key);
             let detachedProviderThreads: ReadonlyArray<OrchestrationV2ProviderThread> = [];

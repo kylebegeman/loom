@@ -1086,7 +1086,8 @@ const make = Effect.fn("makeWithDatabase")(function* (
     start: bigint,
   ): Acquired => ({
     connection: target.name,
-    lockWaitMs: Number((clock.monotonicTimeNanosUnsafe() - start) / 1000n) / 1000,
+    // fork: server-weight -- sub-millisecond acquisition bookkeeping is not actionable contention.
+    lockWaitMs: Number((clock.monotonicTimeNanosUnsafe() - start) / 1_000_000n),
   });
 
   const writerBorrowBatchSize = 16;

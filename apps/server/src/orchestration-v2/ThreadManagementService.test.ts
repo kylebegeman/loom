@@ -1,3 +1,5 @@
+// fork: server-weight
+import { ProviderProcesses } from "@t3tools/shared/AgentScope";
 import { expect, it } from "@effect/vitest";
 import {
   CommandId,
@@ -1077,3 +1079,29 @@ it.effect.each([
     expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
   }),
 );
+
+// fork: server-weight
+it.effect("Stop retries previous provider cleanup after committing the command", () => {
+  const calls: string[] = [];
+  const layer = layerDispatchChokepointTest(ServerSettings.layerTest())(calls).pipe(
+    Layer.provide(
+      Layer.succeed(ProviderProcesses, {
+        ...ProviderProcesses.defaultValue(),
+        stop: (threadId) =>
+          Effect.sync(() => {
+            calls.push(`stop:${threadId}`);
+          }),
+      }),
+    ),
+  );
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    const threadId = ThreadId.make("thread:thread-management:chokepoint");
+    yield* threads.dispatch({
+      type: "thread.stop",
+      commandId: CommandId.make("stop:previous-provider"),
+      threadId,
+    });
+    expect(calls).toEqual(["thread.stop", `stop:${threadId}`]);
+  }).pipe(Effect.provide(layer));
+});

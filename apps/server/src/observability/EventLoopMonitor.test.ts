@@ -27,6 +27,9 @@ const stalled: EventLoopMonitor.EventLoopReadings = {
   },
   rssBytes: 1536 * 1024 * 1024,
   heapUsedBytes: 512 * 1024 * 1024,
+  // fork: server-weight
+  externalBytes: 128 * 1024 * 1024,
+  arrayBuffersBytes: 64 * 1024 * 1024,
   elapsedMs: 30_000,
   loadAverage: 219.43,
   cpuCount: 18,
@@ -76,6 +79,10 @@ describe("EventLoopMonitor", () => {
         minorPageFaults: 20_031,
         involuntaryContextSwitches: 57,
         rssMb: 1536,
+        // fork: server-weight
+        heapUsedMb: 512,
+        externalMb: 128,
+        arrayBuffersMb: 64,
       });
       assert.deepStrictEqual(
         span!.events.map(([name, , attributes]) => [name, attributes["effect.logLevel"]]),
@@ -156,6 +163,10 @@ describe("EventLoopMonitor", () => {
             minorPageFaults: 20_031,
             involuntaryContextSwitches: 57,
             rssMb: 1536,
+            // fork: server-weight
+            heapUsedMb: 512,
+            externalMb: 128,
+            arrayBuffersMb: 64,
           },
         ],
       );

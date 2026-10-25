@@ -446,6 +446,43 @@ describe("observability", () => {
         ),
     );
 
+    // fork: server-weight
+    it.effect("retains slow, contended and failed sqlite statements", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "trace-sqlite-" });
+          const tracePath = path.join(dir, "trace.ndjson");
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes: 100_000,
+            maxFiles: 1,
+            batchWindowMs: 10_000,
+          });
+          sink.push(makeRecord("sqlite"));
+          sink.push({ ...makeRecord("sqlite", "slow"), durationMs: 50 });
+          sink.push({
+            ...makeRecord("sqlite", "contended"),
+            attributes: { "db.lock_wait_ms": 0.1 },
+          });
+          sink.push({
+            ...makeRecord("sqlite", "failure"),
+            type: "effect-span",
+            exit: { _tag: "Failure", cause: "failed" },
+          });
+          sink.push(makeRecord("other"));
+          yield* sink.close();
+          expect((yield* readTraceRecords(tracePath)).map((record) => record.name)).toEqual([
+            "sqlite",
+            "sqlite",
+            "sqlite",
+            "other",
+          ]);
+        }),
+      ),
+    );
+
     it.effect("flushes buffered trace records on close", () =>
       Effect.scoped(
         Effect.gen(function* () {

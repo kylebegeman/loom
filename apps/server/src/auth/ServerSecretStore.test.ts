@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+// fork: server-weight
+import * as TestClock from "effect/testing/TestClock";
 import * as Ref from "effect/Ref";
 import * as PlatformError from "effect/PlatformError";
 
@@ -265,3 +267,60 @@ it.layer(NodeServices.layer)("ServerSecretStore.layer", (it) => {
     }).pipe(Effect.provide(layerRemoveFailureSecretStore())),
   );
 });
+
+// fork: server-weight
+it.effect("refreshes only readiness values off the read path and invalidates local mutations", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    let remote = new TextEncoder().encode("false");
+    let reads = 0;
+    const refresh = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    let hold = false;
+    const store = yield* ServerSecretStore.make.pipe(
+      Effect.provideService(FileSystem.FileSystem, {
+        ...fs,
+        readFile: () =>
+          Effect.gen(function* () {
+            reads += 1;
+            const captured = remote.slice();
+            if (hold) {
+              yield* Deferred.succeed(refresh, undefined);
+              yield* Deferred.await(release);
+            }
+            return captured;
+          }),
+      }),
+    );
+    const name = "cloud-publish-agent-activity";
+    const decode = (value: Option.Option<Uint8Array>) =>
+      new TextDecoder().decode(Option.getOrThrow(value));
+    assert.equal(reads, 3);
+    assert.equal(decode(yield* store.get(name)), "false");
+    remote = new TextEncoder().encode("true");
+    hold = true;
+    yield* TestClock.adjust("5 seconds");
+    assert.equal(decode(yield* store.get(name)), "false");
+    yield* Deferred.await(refresh);
+    assert.equal(reads, 4);
+    // A blocked refresh cannot stall readiness, or overwrite a later local value.
+    assert.equal(decode(yield* store.get(name)), "false");
+    yield* store.set(name, new TextEncoder().encode("local"));
+    yield* Deferred.succeed(release, undefined);
+    yield* TestClock.adjust("0 millis");
+    const value = yield* store.get(name);
+    assert.equal(decode(value), "local");
+    Option.getOrThrow(value).fill(0);
+    assert.equal(decode(yield* store.get(name)), "local");
+    yield* store.remove(name);
+    assert.isTrue(Option.isNone(yield* store.get(name)));
+    hold = false;
+    yield* TestClock.adjust("5 seconds");
+    yield* store.get(name);
+    yield* TestClock.adjust("0 millis");
+    assert.equal(decode(yield* store.get(name)), "true");
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(layerServerConfig().pipe(Layer.provideMerge(NodeServices.layer))),
+  ),
+);

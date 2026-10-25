@@ -29,13 +29,18 @@ const account = {
 const fixture = () => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const faults = {
+    reads: 0,
     lost: false,
     denied: false,
     beforeWrite: null as null | (() => Effect.Effect<void>),
   };
   const store = Layer.succeed(Store.OpenBaoStore, {
     status: Effect.succeed({ backend: "openbao" as const, state: "ready" as const, origin: null }),
-    read: (path: string) => Effect.sync(() => records.get(path) ?? null),
+    read: (path: string) =>
+      Effect.sync(() => {
+        if (path.endsWith("registry-v1")) faults.reads += 1;
+        return records.get(path) ?? null;
+      }),
     keys: (prefix: string) =>
       Effect.succeed(
         [...records.keys()]
@@ -486,3 +491,25 @@ it.effect(
       }),
     ),
 );
+
+it.effect("caches an absent ledger until a local write attempt", () => {
+  const f = fixture();
+  return Effect.gen(function* () {
+    const service = yield* Accounts.VaultTestAccounts;
+    yield* service.snapshot("client:one");
+    yield* service.quarantineLeases(() => Effect.succeed(false));
+    yield* service.snapshot("client:one");
+    expect(f.faults.reads).toBe(1);
+    yield* service.apply(
+      {
+        operationId: "f".repeat(32),
+        expectedRevision: 0,
+        change: { type: "collection-save", collection },
+      },
+      "client:one",
+      Effect.void,
+    );
+    expect((yield* service.snapshot("client:one")).collections).toHaveLength(1);
+    expect(f.faults.reads).toBe(2);
+  }).pipe(Effect.provide(f.layer.pipe(Layer.provideMerge(NodeServices.layer))));
+});

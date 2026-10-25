@@ -92,9 +92,14 @@ const make = Effect.gen(function* () {
     );
   // The reserved branch is outside every project hash; existing profiles/* rights cover it.
   const path = `environments/${yield* hash(environmentId)}/profiles/_test_accounts/registry-v1`;
+  let ledgerMissing = false;
   const load = Effect.fn("VaultTestAccounts.load")(function* () {
+    if (ledgerMissing) return { ledger: empty, version: 0 };
     const record = yield* store.read(path);
-    if (!record) return { ledger: empty, version: 0 };
+    if (!record) {
+      ledgerMissing = true;
+      return { ledger: empty, version: 0 };
+    }
     const decoded = decodeLedger(Redacted.value(record.value));
     if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-response" });
     return { ledger: decoded.value, version: record.version };
@@ -127,6 +132,8 @@ const make = Effect.gen(function* () {
         accounts,
       }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-response" })));
       // CAS includes the observed lease identities. Never clear a newer owner's reservation.
+      // A failed write may have committed; the next read must resolve that ambiguity.
+      ledgerMissing = false;
       yield* store.write(path, Redacted.make(encoded), loaded.version);
     }),
     snapshot: Effect.fn("VaultTestAccounts.snapshot")(function* (actor) {
@@ -262,6 +269,8 @@ const make = Effect.gen(function* () {
           loaded.ledger.accounts.find((a) => a.id === c.id)!.lease!.expiresAt <= committingAt)
       )
         return yield* new VaultError({ reason: "conflict" });
+      // A failed write may have committed; the next read must resolve that ambiguity.
+      ledgerMissing = false;
       yield* store.write(path, Redacted.make(encoded), loaded.version);
       return view(next, actor, committingAt);
     }),
