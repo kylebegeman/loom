@@ -154,7 +154,16 @@ export const ScheduledTaskUpsertSchedule = Schema.Union([
 });
 export type ScheduledTaskUpsertSchedule = typeof ScheduledTaskUpsertSchedule.Type;
 
-export const ScheduledTaskRunStatus = Schema.Literals(["never", "running", "succeeded", "failed"]);
+// fork: scheduled-task-alerts
+export const ScheduledTaskRunStatus = Schema.Literals([
+  "never",
+  "running",
+  "succeeded",
+  "failed",
+]).annotate({
+  description:
+    "Last run. 'succeeded' means the run started (its thread was created or its message was sent), not that its turn succeeded; the thread shows how the turn ended. A 'failed' run gives its reason in lastRunError.",
+});
 export type ScheduledTaskRunStatus = typeof ScheduledTaskRunStatus.Type;
 
 export const ScheduledTaskWebhookEndpoint = Schema.Struct({

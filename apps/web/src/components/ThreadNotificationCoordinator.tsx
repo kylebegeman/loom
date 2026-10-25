@@ -17,12 +17,14 @@ import {
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react"; // fork: scheduled-task-alerts
 
 // fork: respectful-notifications
 import { systemNotificationBody } from "../fork/respectful-notifications/notificationBody";
 // fork: respectful-notifications
 import { deliverDesktopNotification } from "../fork/respectful-notifications/notificationDelivery";
+// fork: scheduled-task-alerts
+import { ScheduledTaskFailureAlerts } from "../fork/scheduled-task-alerts/ScheduledTaskFailureAlerts";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -118,12 +120,15 @@ export function ThreadNotificationCoordinator() {
   if (mode === "off" && !inAppNotificationsEnabled) return null;
 
   return environmentIds.map((environmentId) => (
-    <EnvironmentNotifications
-      key={environmentId}
-      environmentId={environmentId}
-      onNotification={onNotification}
-      onClear={onClear} // fork: respectful-notifications
-    />
+    <Fragment key={environmentId}>
+      <EnvironmentNotifications
+        environmentId={environmentId}
+        onNotification={onNotification}
+        onClear={onClear} // fork: respectful-notifications
+      />
+      {/* fork: scheduled-task-alerts */}
+      <ScheduledTaskFailureAlerts environmentId={environmentId} onNotification={onNotification} />
+    </Fragment>
   ));
 }
 

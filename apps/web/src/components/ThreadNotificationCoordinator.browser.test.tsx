@@ -167,6 +167,11 @@ vi.mock(import("./ui/toast"), async (original) => {
   };
 });
 
+// fork: scheduled-task-alerts: covered by its own tests; it would subscribe to tasks here.
+vi.mock(import("../fork/scheduled-task-alerts/ScheduledTaskFailureAlerts"), () => ({
+  ScheduledTaskFailureAlerts: () => null,
+}));
+
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
 
 let root: Root;
