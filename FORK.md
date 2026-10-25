@@ -610,22 +610,30 @@ restores a successor revoked since. Renewals run one at a time.
 after revocation or once the window closes.
 
 The `restart-continuity` seams let Loom quit, restart and update without cutting off a busy
-backend, and make a slow or fatal start explain itself. `DesktopBackendManager.ts` (13 marker
-lines) raises the backend's SIGTERM grace from 5 s to 15 s, because three of four measured
-install stops hit the old cap while still stopping provider sessions, and its stop budget adds
-2 s so a stop that returns has really ended the process. `DesktopBackendPool.ts` (1) re-exports
-that budget for the quit in `DesktopApp.ts` (1) and the update install in `DesktopUpdates.ts`
-(1). `serviceLauncher.ts` (1) uses the same 15 s grace, and `ProviderSessionManager.ts` (1)
-corrects a comment that names it. Keep the graces equal and the budget longer than the grace.
-The manager also records why the last readiness probe failed and logs a slow start as still
-waiting, not as a kill. `DesktopBackendConfiguration.ts` (1) adds `--report-on-fatalerror`
-with the report in the log directory; keep `--report-exclude-env`, since the environment
-carries provider keys. `DesktopConnectionCatalogStore.ts` (2) traces the startup catalog read
-apart from safe storage. `DesktopWindow.ts` (2) hides a closed macOS main window so its
-renderer keeps raising notifications. Any new quit path must set `quitting` or destroy the
-windows before a close event, or it will only hide the window. Tests carry the rest:
-`DesktopWindow.test.ts` (6), `DesktopBackendManager.test.ts` (4) and
-`DesktopBackendConfiguration.test.ts` (1).
+backend, stop the agents a killed backend leaves behind, and make a slow or fatal start explain
+itself. `DesktopBackendManager.ts` (19 marker lines) raises the backend's SIGTERM grace from 5 s
+to 15 s, because three of four measured install stops hit the old cap while still stopping
+provider sessions. Its stop budget adds 2 s so a stop that returns has really ended the process,
+and 2 s more for the provider cleanup below. `DesktopBackendPool.ts` (1) re-exports that budget
+for the quit in `DesktopApp.ts` (1) and the update install in `DesktopUpdates.ts` (1).
+`serviceLauncher.ts` (1) uses the same 15 s grace, and `ProviderSessionManager.ts` (1) corrects
+a comment that names it. Keep the graces equal and the budget longer than the grace plus the
+cleanup. Provider CLIs lead their own process groups, so they outlive a backend that is
+force-killed or crashes, and otherwise only the next server start reaps them. When the primary
+local backend exits, the manager has `apps/desktop/src/fork/orphaned-providers/` read that
+backend's provider ledger and stop the groups it still owned, the way the server's reap does:
+the identity is pinned at spawn and each group is re-verified with `ps` before a signal. The
+ledger schema and `ps` parsing live in `@t3tools/shared/fork/provider-processes` for both
+sides; the desktop never writes the ledger. The manager also records why the last readiness
+probe failed and logs a slow start as still waiting, not as a kill.
+`DesktopBackendConfiguration.ts` (3) adds `--report-on-fatalerror` with the report in the log
+directory, and names the provider ledger only for the primary local backend, never WSL's; keep
+`--report-exclude-env`, since the environment carries provider keys.
+`DesktopConnectionCatalogStore.ts` (2) traces the startup catalog read apart from safe storage.
+`DesktopWindow.ts` (2) hides a closed macOS main window so its renderer keeps raising
+notifications. Any new quit path must set `quitting` or destroy the windows before a close
+event, or it will only hide the window. Tests carry the rest: `DesktopWindow.test.ts` (6),
+`DesktopBackendManager.test.ts` (11) and `DesktopBackendConfiguration.test.ts` (2).
 
 The `restart-compaction` seams let the Loom desktop app run the doctor's database repair itself
 during a restart, so desktop users never need `t3 doctor`. The repair lives in
