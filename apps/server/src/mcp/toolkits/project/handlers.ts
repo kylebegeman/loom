@@ -31,7 +31,7 @@ const encodeLaunchKey = Schema.encodeEffect(
 const isLibraryError = Schema.is(LibraryError);
 
 function projectFailure(error: Project.ProjectServiceError) {
-  if (error._tag === "ProjectOperationError") return unavailable();
+  if (error._tag === "ProjectOperationError") return unavailable(error); // fork: mcp-refusals
   const message =
     error._tag === "ProjectNotFoundError"
       ? "The project was not found."
@@ -213,7 +213,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 message: error.message,
               });
             }
-            return unavailable();
+            return unavailable(error); // fork: mcp-refusals
           }),
         );
         const thread = result.projection.thread;

@@ -19,7 +19,9 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
   OrchestratorMcpFailure,
+  type OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   type OrchestratorMcpCapabilitiesResult,
+  type OrchestratorMcpModelCatalog, // fork: agent-catalog
   type OrchestratorMcpCreateThreadsInput,
   type OrchestratorMcpCreateThreadsResult,
   type OrchestratorMcpCreatedThread,
@@ -141,6 +143,7 @@ type TerminalTaskStatus = Extract<
 export interface OrchestratorMcpServiceShape {
   readonly capabilities: (
     scope: McpInvocationScope,
+    input?: OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
   ) => Effect.Effect<OrchestratorMcpCapabilitiesResult, OrchestratorMcpFailure>;
   readonly delegateTask: (
     scope: McpInvocationScope,
@@ -238,6 +241,11 @@ export const isLiveCallerShell = (
     ) ??
       false));
 
+// fork: mcp-refusals -- a provider process can outlive its turn, as a background subagent or one
+// left over from before a restart does, and only the thread's next turn gives it a run to act for.
+export const ENDED_RUN_REPAIR =
+  "Your turn has ended: put what you need in your final reply, and call this tool again in the thread's next turn.";
+
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
   if (!isThreadManagementError(error)) return failure("orchestration_error", errorMessage(error));
   switch (error._tag) {
@@ -315,6 +323,29 @@ function providerConstraints(
     constraints.push("Provider is not authenticated.");
   }
   return constraints;
+}
+
+// fork: agent-catalog -- instances share a catalog only when their model lists match exactly,
+// so every instance still reports its own hidden models, options and current values. The first
+// list for a driver is keyed by the driver kind; a different one gets a numbered key.
+function shareModelCatalogs<
+  Provider extends { readonly driverKind: string; readonly models: OrchestratorMcpModelCatalog },
+>(providers: ReadonlyArray<Provider>) {
+  const catalogs = new Map<string, OrchestratorMcpModelCatalog>();
+  const keysByContent = new Map<string, string>();
+  const shared = providers.map(({ models, ...provider }) => {
+    if (models.length === 0) return { ...provider, modelCatalog: null };
+    const content = JSON.stringify(models);
+    let key = keysByContent.get(content);
+    if (key === undefined) {
+      key = provider.driverKind;
+      for (let suffix = 2; catalogs.has(key); suffix += 1) key = `${provider.driverKind}-${suffix}`;
+      keysByContent.set(content, key);
+      catalogs.set(key, models);
+    }
+    return { ...provider, modelCatalog: key };
+  });
+  return { providers: shared, modelCatalogs: Object.fromEntries(catalogs) };
 }
 
 /**
@@ -1190,7 +1221,7 @@ const make = Effect.gen(function* () {
   ) => {
     const notActive = failure(
       "parent_not_active",
-      "The calling provider no longer owns an active thread run.",
+      `The calling provider no longer owns an active thread run. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
     );
     const activeRun = ThreadManagementService.latestActiveRun(parent);
     if (parent.thread.archivedAt === null && activeRun === undefined) {
@@ -1895,7 +1926,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Asking for a secret requires an active run owned by this MCP provider session.",
+          `Asking for a secret requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const runId = run.id;
@@ -2008,9 +2039,20 @@ const make = Effect.gen(function* () {
       return { status, secretRef: secretRef.value };
     }),
 
-    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope) {
+    capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope, input = {}) {
       const { parent, limits } = yield* loadCaller(scope);
-      const providers = yield* loadProviders;
+      // fork: agent-catalog
+      const providers = (yield* loadProviders).filter(
+        (provider) =>
+          (input.providerInstanceId === undefined ||
+            provider.instanceId === input.providerInstanceId) &&
+          (input.driverKind === undefined || provider.driver === input.driverKind),
+      );
+      if (providers.length === 0 && (input.providerInstanceId ?? input.driverKind) !== undefined)
+        return yield* failure(
+          "invalid_request",
+          "No provider instance matches providerInstanceId or driverKind. Call orchestrator_capabilities without them to list every instance.",
+        );
       const orchestrationCapableInstanceIds = yield* loadOrchestrationCapableInstanceIds();
       const modelPreferences = yield* serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providerModelPreferences ?? {}),
@@ -2023,38 +2065,41 @@ const make = Effect.gen(function* () {
         inheritedOptions: parent?.thread.modelSelection.options ?? [],
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
-        providers: providers.map((provider) => {
-          const constraints = providerConstraints(
-            provider,
-            orchestrationCapableInstanceIds.has(provider.instanceId),
-          );
-          return {
-            providerInstanceId: provider.instanceId,
-            driverKind: provider.driver,
-            displayName: provider?.displayName ?? null,
-            models:
-              provider?.models
-                .filter(
-                  (model) =>
-                    model.isCustom ||
-                    !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
-                )
-                .map((model) => ({
-                  id: model.slug,
-                  label: model.name ?? null,
-                  ...(model.capabilities?.optionDescriptors === undefined
-                    ? {}
-                    : { options: model.capabilities.optionDescriptors }),
-                })) ?? [],
-            ...(provider.supportedRuntimeModes === undefined ||
-            provider.supportedRuntimeModes.length === 0
-              ? {}
-              : { runtimeModes: [...provider.supportedRuntimeModes] }),
-            canRunChildTask: constraints.length === 0,
-            canRunCrossProviderChildTask: constraints.length === 0,
-            constraints: [...constraints],
-          };
-        }),
+        // fork: agent-catalog -- sets providers and modelCatalogs.
+        ...shareModelCatalogs(
+          providers.map((provider) => {
+            const constraints = providerConstraints(
+              provider,
+              orchestrationCapableInstanceIds.has(provider.instanceId),
+            );
+            return {
+              providerInstanceId: provider.instanceId,
+              driverKind: provider.driver,
+              displayName: provider?.displayName ?? null,
+              models:
+                provider?.models
+                  .filter(
+                    (model) =>
+                      model.isCustom ||
+                      !modelPreferences[provider.instanceId]?.hiddenModels.includes(model.slug),
+                  )
+                  .map((model) => ({
+                    id: model.slug,
+                    label: model.name ?? null,
+                    ...(model.capabilities?.optionDescriptors === undefined
+                      ? {}
+                      : { options: model.capabilities.optionDescriptors }),
+                  })) ?? [],
+              ...(provider.supportedRuntimeModes === undefined ||
+              provider.supportedRuntimeModes.length === 0
+                ? {}
+                : { runtimeModes: [...provider.supportedRuntimeModes] }),
+              canRunChildTask: constraints.length === 0,
+              canRunCrossProviderChildTask: constraints.length === 0,
+              constraints: [...constraints],
+            };
+          }),
+        ),
         features: {
           appOwnedSubagents: true,
           asyncPolling: true,
@@ -2079,7 +2124,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* failure(
           "parent_not_active",
-          "Delegated tasks require an active run owned by this MCP provider session.",
+          `Delegated tasks require an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
         );
       }
       const providers = yield* loadProviders;
@@ -2444,7 +2489,7 @@ const make = Effect.gen(function* () {
         ) {
           return yield* failure(
             "parent_not_active",
-            "Thread creation requires an active run owned by this MCP provider session.",
+            `Thread creation requires an active run owned by this MCP provider session. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
           );
         }
         const parentNodeId = parentRun.rootNodeId;

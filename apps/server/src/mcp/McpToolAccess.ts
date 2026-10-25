@@ -79,8 +79,9 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
       ? Effect.fail(
           new OrchestratorMcpFailure({
             code: "capability_denied",
+            // fork: mcp-refusals
             message:
-              "This tool changes the environment, and this MCP client was approved for read-only access.",
+              "This tool changes the environment, and this MCP client was approved for read-only access. Ask the user to revoke this client in Settings → Connections and approve its next sign-in with Supervised or Full access.",
           }),
         )
       : Effect.void,

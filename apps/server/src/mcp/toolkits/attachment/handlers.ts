@@ -103,13 +103,14 @@ export const layer = McpToolAccess.toLayer(
               createdBy: "agent",
               creationSource: "mcp",
             }).pipe(
-              Effect.mapError((error) =>
-                error._tag === "AttachmentClaimError"
-                  ? new OrchestratorMcpFailure({
-                      code: "orchestration_error",
-                      message: error.message,
-                    })
-                  : unavailable(),
+              Effect.mapError(
+                (error) =>
+                  error._tag === "AttachmentClaimError"
+                    ? new OrchestratorMcpFailure({
+                        code: "orchestration_error",
+                        message: error.message,
+                      })
+                    : unavailable(error), // fork: mcp-refusals
               ),
             );
             return {

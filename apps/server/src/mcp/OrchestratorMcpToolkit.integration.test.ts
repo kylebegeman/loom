@@ -1535,14 +1535,18 @@ describe("orchestrator MCP toolkit", () => {
                 }),
                 expect.objectContaining({
                   providerInstanceId: codexInstanceId,
-                  models: [
-                    expect.objectContaining({
-                      id: codexModel,
-                      options: [expect.objectContaining({ id: "reasoning", type: "select" })],
-                    }),
-                  ],
+                  modelCatalog: "codex", // fork: agent-catalog
                 }),
               ]),
+              // fork: agent-catalog
+              modelCatalogs: expect.objectContaining({
+                codex: [
+                  expect.objectContaining({
+                    id: codexModel,
+                    options: [expect.objectContaining({ id: "reasoning", type: "select" })],
+                  }),
+                ],
+              }),
             });
 
             const scheduleTool = server.tools.find(({ tool }) => tool.name === "schedule_task");

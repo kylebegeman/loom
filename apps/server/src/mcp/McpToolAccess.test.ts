@@ -1,10 +1,17 @@
 import { expect, it } from "@effect/vitest";
 import {
+  AttachmentUploadSigningKeyError, // fork: mcp-refusals
+  CommandId, // fork: mcp-refusals
   EnvironmentId,
+  GitCommandError, // fork: mcp-refusals
   OrchestratorMcpFailure,
+  PreviewSessionLookupError, // fork: mcp-refusals
+  ProjectId, // fork: mcp-refusals
   ProviderInstanceId,
   ProviderInteractionMode,
   RuntimeMode,
+  ScheduledTaskError, // fork: mcp-refusals
+  ServerSettingsError, // fork: mcp-refusals
   ThreadId,
 } from "@t3tools/contracts";
 import { botRunThreadId } from "@t3tools/contracts/fork";
@@ -13,12 +20,25 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
-import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
+import {
+  OrchestratorProjectionError,
+  OrchestratorProviderAdapterError, // fork: mcp-refusals
+} from "../orchestration-v2/Orchestrator.ts";
+import { ThreadLaunchError } from "../orchestration-v2/ThreadLaunchService.ts"; // fork: mcp-refusals
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { ThreadSearchError } from "../orchestration-v2/ThreadSearch.ts"; // fork: mcp-refusals
+import { ProjectOperationError } from "../project/ProjectService.ts"; // fork: mcp-refusals
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
+// fork: mcp-refusals
+import { unavailable } from "./threadAccess.ts";
+import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
+import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
+import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import { ThreadToolkit } from "./toolkits/thread/tools.ts";
+import { WorktreeToolkit } from "./toolkits/worktree/tools.ts";
 
 const supervisedThreadId = ThreadId.make("thread:supervised");
 const planThreadId = ThreadId.make("thread:plan");
@@ -351,3 +371,84 @@ it.effect("refuses a change when the calling thread cannot be read", () =>
     ),
   ),
 );
+
+// fork: mcp-refusals -- a refusal an agent cannot act on makes it stop or loop and ask the user.
+const decodeRefusal = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ code: Schema.String, message: Schema.String })),
+);
+
+it.effect.each([
+  ["a read-only client", readOnlyClient, "revoke this client in Settings → Connections"],
+  ["a provider whose turn ended", ended, "call this tool again in the thread's next turn"],
+] as const)("tells %s how to get access back", ([, scope, repair]) =>
+  McpServer.McpServer.pipe(
+    Effect.flatMap((server) => server.callTool({ name: "writes", arguments: {} })),
+    Effect.flatMap(({ content }) =>
+      decodeRefusal(content.map((part) => (part.type === "text" ? part.text : "")).join("")),
+    ),
+    Effect.map(({ message }) => expect(message).toContain(repair)),
+    Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+    Effect.provideService(McpSchema.McpServerClient, mcpClient),
+    Effect.provide(
+      probeServer(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+        }),
+      ),
+    ),
+  ),
+);
+
+it("points each failure cause at a real next step without repeating its details", () => {
+  const secret = "/Users/someone/private/workspace";
+  const commandId = CommandId.make("mcp-refusal-command");
+  const projectId = ProjectId.make("project:refusal");
+  const tools = new Set(
+    [
+      OrchestratorToolkit,
+      ProjectToolkit,
+      ThreadToolkit,
+      WorktreeToolkit,
+      PreviewControlsToolkit,
+    ].flatMap((toolkit) => Object.keys(toolkit.tools)),
+  );
+  const fallback = unavailable().message;
+  expect(fallback).toContain("tell the user");
+  for (const error of [
+    new OrchestratorProjectionError({ threadId: supervisedThreadId, cause: new Error(secret) }),
+    new OrchestratorProviderAdapterError({
+      commandId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      cause: new Error(secret),
+    }),
+    new ThreadManagement.ThreadManagementProjectionLoadError({
+      projectId,
+      threadId: supervisedThreadId,
+      cause: new Error(secret),
+    }),
+    new ProjectOperationError({
+      operation: "normalize-workspace",
+      workspaceRoot: secret,
+      cause: new Error(secret),
+    }),
+    new ThreadLaunchError({
+      operation: "provision-worktree",
+      commandId,
+      projectId,
+      cause: new Error(secret),
+    }),
+    new GitCommandError({ operation: "listRefs", command: "git", cwd: secret, detail: secret }),
+    new ServerSettingsError({ settingsPath: secret, operation: "read-file" }),
+    new ScheduledTaskError({ message: secret }),
+    new ThreadSearchError({ operation: "query", cause: new Error(secret) }),
+    new PreviewSessionLookupError({ threadId: secret, tabId: secret }),
+    new AttachmentUploadSigningKeyError({ cause: new Error(secret) }),
+  ]) {
+    const { message } = unavailable(error);
+    expect(message, error._tag).not.toContain(secret);
+    expect(message, error._tag).not.toBe(fallback);
+    const named = message.match(/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g) ?? [];
+    for (const tool of named) expect(tools, message).toContain(tool);
+    expect(named.length > 0 || message.includes("the user"), message).toBe(true);
+  }
+});
