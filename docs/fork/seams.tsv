@@ -792,3 +792,10 @@ apps/server/src/cli/server.ts	reach	2
 apps/mobile/src/features/keyboard/CommandPalette.tsx	library	5
 apps/web/src/hooks/useHandleNewThread.test.ts	library-projects	5
 apps/web/src/hooks/useHandleNewThread.ts	library-projects	4
+apps/mobile/src/features/threads/SecretRequestCard.tsx	vault-core	6
+apps/server/src/sourceControl/GitHubHostSetup.test.ts	github-host-setup	2
+apps/server/src/sourceControl/GitHubHostSetup.ts	github-host-setup	5
+apps/server/src/sourceControl/GitHubSetupFlow.test.ts	github-host-setup	1
+apps/server/src/sourceControl/GitHubSetupFlow.ts	github-host-setup	2
+apps/server/src/vcs/GitVcsDriverCore.ts	github-host-setup	1
+apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	6
