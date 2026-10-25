@@ -1,3 +1,7 @@
+// fork: attention-status
+import { ThreadAttentionButton } from "../fork/attention/ThreadAttention";
+import { useEnvironment } from "../state/environments";
+import { MonitorOffIcon, PauseCircleIcon } from "lucide-react";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner"; // fork: library-projects
 import { projectLibrary } from "~/fork/project-library/state"; // fork: library-projects
 import { LibrarySavedThreads } from "~/fork/project-library/LibrarySavedThreads"; // fork: library-projects
@@ -1682,6 +1686,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  // fork: attention-status
+  const connected = useEnvironment(thread.environmentId)?.connection.phase === "connected";
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
   const isWoke =
@@ -1695,56 +1701,67 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
-  const topStatus =
-    status === "working"
-      ? {
-          label: thread.goal?.status === "active" ? "Goal" : "Working",
-          icon: "working" as const,
-          className: "text-info",
-        }
-      : status === "waiting"
+  // fork: attention-status
+  const lastKnownStatus =
+    status === "paused"
+      ? { label: "Paused", icon: "paused" as const, className: "text-warning-foreground" }
+      : status === "working"
         ? {
-            label: "Waiting",
-            icon: "waiting" as const,
-            className: "text-muted-foreground",
+            label: thread.goal?.status === "active" ? "Goal" : "Working",
+            icon: "working" as const,
+            className: "text-info",
           }
-        : status === "approval"
+        : status === "waiting"
           ? {
-              label: "Approval",
-              icon: "approval" as const,
-              className: "text-warning-foreground",
+              label: "Waiting",
+              icon: "waiting" as const,
+              className: "text-muted-foreground",
             }
-          : status === "input"
+          : status === "approval"
             ? {
-                label: "Input",
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
+                label: "Approval",
+                icon: "approval" as const,
+                className: "text-warning-foreground",
               }
-            : status === "limited"
+            : status === "input"
               ? {
-                  label: "Limited",
-                  icon: "failed" as const,
-                  className: "text-warning",
+                  label: "Input",
+                  icon: "input" as const,
+                  className: "text-indigo-600 dark:text-indigo-300",
                 }
-              : status === "failed"
+              : status === "limited"
                 ? {
-                    label: "Failed",
+                    label: "Limited",
                     icon: "failed" as const,
-                    className: "text-error",
+                    className: "text-warning",
                   }
-                : isWoke
+                : status === "failed"
                   ? {
-                      label: "Woke",
-                      icon: "woke" as const,
-                      className: "text-warning",
+                      label: "Failed",
+                      icon: "failed" as const,
+                      className: "text-error",
                     }
-                  : isUnread
+                  : isWoke
                     ? {
-                        label: "Done",
-                        icon: "done" as const,
-                        className: "text-success",
+                        label: "Woke",
+                        icon: "woke" as const,
+                        className: "text-warning",
                       }
-                    : null;
+                    : isUnread
+                      ? {
+                          label: "Done",
+                          icon: "done" as const,
+                          className: "text-success",
+                        }
+                      : null;
+  // fork: attention-status
+  const topStatus = connected
+    ? lastKnownStatus
+    : {
+        label: `Offline, last seen ${lastKnownStatus?.label ?? "Ready"}`,
+        icon: "offline" as const,
+        className: "text-muted-foreground",
+      };
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -1950,6 +1967,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     shouldRecede &&
       status === "working" &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
+    // fork: attention-status
+    !connected && !props.isActive && "opacity-60",
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
     props.sortable?.isDragging &&
@@ -2402,7 +2421,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             topStatus.className,
                           )}
                         >
-                          {topStatus.icon === "working" ? (
+                          {/* fork: attention-status */}
+                          {topStatus.icon === "offline" ? (
+                            <MonitorOffIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "paused" ? (
+                            <PauseCircleIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "working" ? (
                             <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "waiting" ? (
                             <CircleDotDashedIcon aria-hidden className="size-4 shrink-0" />
@@ -2419,7 +2443,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             wrapper around the ticking duration would make
                             screen readers announce every second. */}
                           <span role="status">{topStatus.label}</span>
-                          {status === "working" ? (
+                          {/* fork: attention-status */}
+                          {connected && status === "working" ? (
                             <span aria-hidden>
                               <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                             </span>
@@ -2787,6 +2812,8 @@ export default function Sidebar() {
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  // fork: attention-status
+  const resumeQueue = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, "resume queue");
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -4325,6 +4352,8 @@ export default function Sidebar() {
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
+              // fork: attention-status
+              queueHeld: thread.queueHeld ?? false,
               canOperate: readEnvironmentScope(
                 threadRef.environmentId,
                 AuthOrchestrationOperateScope,
@@ -4373,6 +4402,13 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          // fork: attention-status
+          case "resume-queue":
+            await resumeQueue({
+              environmentId: thread.environmentId,
+              input: { threadId: thread.id },
+            });
+            return;
           case "workspace-handoff": // fork: workspace-handoff
             openWorkspaceHandoff(threadRef);
             return;
@@ -4678,6 +4714,10 @@ export default function Sidebar() {
         className="min-h-full"
         fixedHeader={
           <SidebarGroup className="z-[1]">
+            {/* fork: attention-status */}
+            <div className="flex justify-end">
+              <ThreadAttentionButton />
+            </div>
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}

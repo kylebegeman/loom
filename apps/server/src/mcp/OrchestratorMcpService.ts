@@ -1,4 +1,9 @@
 import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-projects
+// fork: attention-status
+import {
+  selectAttentionThreadShells,
+  pendingSubagentAttentionRequests,
+} from "@t3tools/contracts/fork";
 import {
   CommandId,
   type RunId,
@@ -781,9 +786,23 @@ function threadPullRequests(
 function listItemFromShell(
   shell: OrchestrationV2ThreadShell,
   nowMs: number,
+  // fork: attention-status
+  pendingRequest = shell.pendingRuntimeRequest,
 ): OrchestratorMcpThreadListItem {
   return {
     threadId: shell.id,
+    // fork: attention-status
+    projectId: shell.projectId,
+    archived: shell.archivedAt !== null,
+    queueHeld: shell.queueHeld ?? false,
+    lastErrorClass: shell.lastErrorClass ?? null,
+    pendingRequest:
+      pendingRequest === null
+        ? null
+        : {
+            kind: pendingRequest.kind,
+            createdAt: DateTime.formatIso(pendingRequest.createdAt),
+          },
     title: shell.title,
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
@@ -796,7 +815,8 @@ function listItemFromShell(
     linkedPullRequest: shell.linkedPullRequest ?? null,
     pullRequests: threadPullRequests(shell.pullRequests),
     ...threadSettlement(shell),
-    ...threadSnooze(shell, nowMs),
+    // fork: attention-status
+    ...threadSnooze({ ...shell, pendingRuntimeRequest: pendingRequest }, nowMs),
     parentThreadId: shell.lineage.parentThreadId,
     relationshipToParent: shell.lineage.relationshipToParent,
     itemCount: shell.visibleItemCount,
@@ -2637,18 +2657,47 @@ const make = Effect.gen(function* () {
     ),
     listThreads: Effect.fn("OrchestratorMcpService.listThreads")(function* (scope, input) {
       const { parent } = yield* loadCaller(scope);
-      const projectId = yield* resolveProjectTarget(parent, input.projectId);
-      const projectThreads = yield* threadManagement
-        .listProjectThreads({
-          projectId,
-          includeSubagents: input.includeSubagents !== false,
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`),
-          ),
+      // fork: attention-status
+      if (input.allProjects && input.projectId !== undefined) {
+        return yield* failure("invalid_request", "Choose projectId or allProjects, not both.");
+      }
+      const projectId = input.allProjects
+        ? null
+        : yield* resolveProjectTarget(parent, input.projectId);
+      const archived = input.archived ?? "exclude";
+      const allThreads = yield* Effect.gen(function* () {
+        if (projectId !== null && archived === "exclude") {
+          return yield* threadManagement.listProjectThreads({ projectId, includeSubagents: true });
+        }
+        const locations: ReadonlyArray<"active" | "archive"> =
+          archived === "include"
+            ? ["active", "archive"]
+            : [archived === "only" ? "archive" : "active"];
+        const snapshots = yield* Effect.forEach(locations, (location) =>
+          threadManagement.getShellSnapshot({ location }),
         );
+        return snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]);
+      }).pipe(
+        Effect.mapError((error) =>
+          failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`),
+        ),
+      );
       const nowMs = yield* Clock.currentTimeMillis;
+      const projectThreads = (
+        input.attention
+          ? selectAttentionThreadShells(allThreads, nowMs)
+          : allThreads.toSorted(
+              (left, right) =>
+                DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt) ||
+                right.id.localeCompare(left.id),
+            )
+      ).filter(
+        (thread) =>
+          (projectId === null || thread.projectId === projectId) &&
+          (input.includeSubagents === true || thread.lineage.relationshipToParent !== "subagent"),
+      );
+      // fork: attention-status
+      const childRequests = pendingSubagentAttentionRequests(allThreads);
       const statuses = input.statuses === undefined ? null : new Set(input.statuses);
       const titleContains = input.titleContains?.toLocaleLowerCase();
       const filtered = projectThreads
@@ -2660,7 +2709,17 @@ const make = Effect.gen(function* () {
             input.settled === undefined || threadSettlement(thread).settled === input.settled,
         )
         .filter(
-          (thread) => input.snoozed === undefined || isSnoozed(thread, nowMs) === input.snoozed,
+          // fork: attention-status
+          (thread) =>
+            input.snoozed === undefined ||
+            isSnoozed(
+              {
+                ...thread,
+                pendingRuntimeRequest:
+                  thread.pendingRuntimeRequest ?? childRequests.get(thread.id) ?? null,
+              },
+              nowMs,
+            ) === input.snoozed,
         )
         .filter(
           (thread) =>
@@ -2673,7 +2732,14 @@ const make = Effect.gen(function* () {
       return {
         projectId,
         currentThreadId: parent?.thread.id ?? null,
-        threads: page.map((shell) => listItemFromShell(shell, nowMs)),
+        // fork: attention-status
+        threads: page.map((shell) =>
+          listItemFromShell(
+            shell,
+            nowMs,
+            shell.pendingRuntimeRequest ?? childRequests.get(shell.id) ?? null,
+          ),
+        ),
         nextCursor,
         total: filtered.length,
       } satisfies OrchestratorMcpThreadListResult;

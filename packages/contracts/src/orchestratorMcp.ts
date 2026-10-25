@@ -32,6 +32,9 @@ import {
 } from "./threadPullRequest.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
+  // fork: attention-status
+  OrchestrationV2ProviderFailureClass,
+  OrchestrationV2RuntimeRequest,
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
@@ -313,6 +316,10 @@ const OrchestratorMcpProjectTarget = Schema.optional(
 
 export const OrchestratorMcpThreadListInput = Schema.Struct({
   projectId: OrchestratorMcpProjectTarget,
+  // fork: attention-status
+  allProjects: Schema.optional(Schema.Boolean),
+  attention: Schema.optional(Schema.Boolean),
+  archived: Schema.optional(Schema.Literals(["exclude", "include", "only"])),
   statuses: Schema.optional(
     Schema.Array(OrchestratorMcpThreadStatus).check(Schema.isMaxLength(10)),
   ),
@@ -336,6 +343,17 @@ export type OrchestratorMcpThreadPullRequest = typeof OrchestratorMcpThreadPullR
 
 export const OrchestratorMcpThreadListItem = Schema.Struct({
   threadId: ThreadId,
+  // fork: attention-status
+  projectId: ProjectId,
+  archived: Schema.Boolean,
+  queueHeld: Schema.Boolean,
+  lastErrorClass: Schema.NullOr(OrchestrationV2ProviderFailureClass),
+  pendingRequest: Schema.NullOr(
+    Schema.Struct({
+      kind: OrchestrationV2RuntimeRequest.fields.kind,
+      createdAt: IsoDateTime,
+    }),
+  ),
   title: Schema.String,
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
@@ -361,7 +379,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
 export type OrchestratorMcpThreadListItem = typeof OrchestratorMcpThreadListItem.Type;
 
 export const OrchestratorMcpThreadListResult = Schema.Struct({
-  projectId: ProjectId,
+  // fork: attention-status - Null identifies an all-projects result.
+  projectId: Schema.NullOr(ProjectId),
   currentThreadId: Schema.NullOr(ThreadId),
   threads: Schema.Array(OrchestratorMcpThreadListItem),
   nextCursor: Schema.NullOr(NonNegativeInt),

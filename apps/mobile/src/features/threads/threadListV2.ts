@@ -64,6 +64,8 @@ export type ThreadListV2Status =
   | "waiting"
   | "failed"
   | "limited"
+  // fork: attention-status
+  | "paused"
   | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
 
@@ -159,6 +161,8 @@ export function resolveThreadListV2Status(
     | "pendingSubagentRequest"
     | "runtime"
     | "blockedOnThreadWait"
+    // fork: attention-status
+    | "queueHeld"
   >,
 ): ThreadListV2Status {
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
@@ -167,6 +171,8 @@ export function resolveThreadListV2Status(
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
   }
+  // fork: attention-status
+  if (thread.queueHeld) return "paused";
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }

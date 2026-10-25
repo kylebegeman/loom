@@ -1,3 +1,11 @@
+// fork: attention-status
+import { useAtomValueWhileVisible, useHomeRouteVisible } from "./home-route-visibility";
+// fork: attention-status
+import {
+  ThreadAttentionHeader,
+  type AttentionFilter,
+} from "../../fork/attention/ThreadAttentionHeader";
+import { environmentThreadShells } from "../../state/threads";
 // fork: library - Library projects scope the thread list and list saved threads.
 import {
   parseLibraryProjectScope,
@@ -554,6 +562,24 @@ export function HomeScreen(props: HomeScreenProps) {
     const id = setInterval(() => setNow(new Date().toISOString()), 60_000);
     return () => clearInterval(id);
   });
+  // fork: attention-status
+  const homeVisible = useHomeRouteVisible();
+  const attentionThreads = useAtomValueWhileVisible(
+    environmentThreadShells.attentionThreadShellsAtom,
+    homeVisible,
+  );
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>("all");
+  const attentionKeys = new Set(
+    attentionThreads
+      .filter(
+        (thread) =>
+          attentionFilter !== "waiting" ||
+          thread.hasPendingApprovals ||
+          thread.hasPendingUserInput ||
+          thread.pendingSubagentRequest != null,
+      )
+      .map((thread) => `${thread.environmentId}:${thread.id}`),
+  );
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
     providersByEnvironmentId,
@@ -628,6 +654,9 @@ export function HomeScreen(props: HomeScreenProps) {
       threads: props.threads.filter(
         (thread) =>
           thread.archivedAt === null &&
+          // fork: attention-status
+          (attentionFilter === "all" ||
+            attentionKeys.has(`${thread.environmentId}:${thread.id}`)) &&
           (v2ScopedProjectKeys === null ||
             v2ScopedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId))),
       ),
@@ -914,6 +943,16 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ListHeader = (
     <>
       {listHeader}
+      {/* fork: attention-status */}
+      <ThreadAttentionHeader
+        threads={attentionThreads}
+        filter={attentionFilter}
+        onFilter={(filter) => {
+          setAttentionFilter(filter);
+          setNavigationView("threads");
+        }}
+        onSelect={props.onSelectThread}
+      />
       {/* fork: project-navigation */}
       <ProjectNavigationControl
         view={navigationView}

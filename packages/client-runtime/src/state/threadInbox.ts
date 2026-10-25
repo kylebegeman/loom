@@ -6,6 +6,8 @@ type WorkingThreadInput = Pick<
   | "hasActionableProposedPlan"
   | "hasPendingApprovals"
   | "hasPendingUserInput"
+  // fork: attention-status
+  | "queueHeld"
   | "pendingSubagentRequest"
   | "interactionMode"
   | "latestRun"
@@ -13,7 +15,8 @@ type WorkingThreadInput = Pick<
 >;
 
 export function isThreadWorking(thread: WorkingThreadInput): boolean {
-  if (thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
+  // fork: attention-status
+  if (thread.queueHeld || thread.hasPendingApprovals || thread.hasPendingUserInput) return false;
   if (thread.pendingSubagentRequest != null) return false;
   if (!threadRuntimeIsActive(thread.runtime) && thread.runtime?.status !== "idle") return false;
   const run = thread.latestRun;

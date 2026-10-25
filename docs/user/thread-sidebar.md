@@ -13,6 +13,26 @@ does not move conversations or change the computer they run on.
 and its conversations across your computers. Use **Settings → Projects** for project
 settings. Returning from either restores the conversation you left.
 
+<!-- fork: attention-status -->
+
+## Find work that needs you
+
+**N need you** above the thread list counts approvals, questions, paused queues and failed or
+limited runs across your enabled computers. Select it to visit the oldest waiting thread;
+repeat to move through the list. On web and desktop, use **Go to next thread that needs you**
+in the command palette or `Cmd+Shift+U` on macOS (`Ctrl+Shift+U` on Windows and Linux).
+The palette's **Waiting on you** group lists questions and approvals. On mobile, the status
+filter offers **Needs you** and **Waiting on you**. Snoozed work stays out until it wakes.
+The desktop badge follows this count, so focusing Loom does not clear unresolved work.
+Offline rows show their last known status.
+
+A **Paused** thread has queued messages waiting to run. Choose **Resume queue** from the
+thread's menu after a restart, stop or run failure. You can also ask an agent to find paused
+queues across this computer's projects and resume them.
+
+To reopen an archived conversation, go to **Settings → Archive**, search its title and choose
+**Unarchive and open**. You can also ask an agent to find and reopen an archived conversation.
+
 ## Start a thread
 
 On web and desktop, hover a thread or focus it with the keyboard and choose **+**

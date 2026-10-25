@@ -92,3 +92,4 @@ export * from "./library-push.ts";
 export * from "./project-workflows.ts";
 
 export * from "./library-agent-reads.ts";
+export * from "./thread-attention.ts";

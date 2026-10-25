@@ -1271,6 +1271,35 @@ describe("orchestrator MCP toolkit", () => {
             if (queuedUserRun === undefined) {
               return yield* Effect.die(new Error("Queued user follow-up missing."));
             }
+            // fork: attention-status
+            yield* (yield* EventSink.EventSinkV2).write({
+              events: [
+                {
+                  id: EventId.make("event:mcp:held-queue"),
+                  type: "run.updated",
+                  threadId: parentThreadId,
+                  occurredAt: yield* DateTime.now,
+                  payload: { ...queuedUserRun, queueHeld: true },
+                },
+              ],
+            });
+            const attentionList = yield* invoke("t3_thread_list", {
+              allProjects: true,
+              attention: true,
+              limit: 100,
+            });
+            const attentionResult = yield* decodeThreadListResult(
+              attentionList.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(attentionResult.projectId).toBeNull();
+            expect(
+              attentionResult.threads.find((thread) => thread.threadId === parentThreadId),
+            ).toMatchObject({ projectId, queueHeld: true });
+            expect(
+              attentionResult.threads.every((thread) => thread.relationshipToParent !== "subagent"),
+            ).toBe(true);
+            expect((yield* invoke("t3_queue_resume", {})).isError).toBe(false);
+            expect((yield* orchestrator.getThreadShell(parentThreadId))?.queueHeld).toBe(false);
             const queueFirstPage = yield* invoke("t3_queue_list", { limit: 1 });
             expect(queueFirstPage.isError).toBe(false);
             expect(queueFirstPage.structuredContent).toMatchObject({
@@ -2882,6 +2911,49 @@ describe("orchestrator MCP toolkit", () => {
               listed.threads.some((thread) => thread.relationshipToParent === "subagent"),
             ).toBe(false);
 
+            // fork: attention-status
+            const allProjectList = yield* invoke("t3_thread_list", {
+              allProjects: true,
+              limit: 100,
+            });
+            const allProjectResult = yield* decodeThreadListResult(
+              allProjectList.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(
+              allProjectResult.threads.some((thread) => thread.threadId === foreignThreadId),
+            ).toBe(true);
+            expect(
+              allProjectResult.threads.some((thread) => thread.relationshipToParent === "subagent"),
+            ).toBe(false);
+            expect(
+              (yield* invoke("t3_thread_list", { allProjects: true, projectId })).isError,
+            ).toBe(true);
+            expect(
+              (yield* invoke("t3_thread_organize", {
+                threadId: foreignThreadId,
+                action: "archive",
+              })).isError,
+            ).toBe(false);
+            for (const archived of ["exclude", "include", "only"] as const) {
+              const result = yield* invoke("t3_thread_list", {
+                allProjects: true,
+                archived,
+                titleContains: "Renamed from another project",
+              });
+              const page = yield* decodeThreadListResult(result.structuredContent).pipe(
+                Effect.orDie,
+              );
+              expect(page.threads.map((thread) => thread.threadId)).toEqual(
+                archived === "exclude" ? [] : [foreignThreadId],
+              );
+              if (archived !== "exclude") expect(page.threads[0]?.archived).toBe(true);
+            }
+            expect(
+              (yield* invoke("t3_thread_organize", {
+                threadId: foreignThreadId,
+                action: "unarchive",
+              })).isError,
+            ).toBe(false);
             const upgradedCall = yield* invoke("delegate_task", {
               task: cancellationPrompt,
               target: {
@@ -2922,6 +2994,13 @@ describe("orchestrator MCP toolkit", () => {
             ).toMatchObject({ state: "disposed" });
             yield* expectOffersToStay(0);
 
+            // fork: attention-status
+            yield* orchestrator.dispatch({
+              type: "thread.snooze",
+              commandId: CommandId.make("command:attention:parent-snooze"),
+              threadId: parentThreadId,
+              snoozedUntil: "2099-01-01T00:00:00.000Z",
+            });
             const questionWait = yield* invoke("delegate_task", {
               task: cancellationPrompt,
               title: "Wait question",
@@ -2973,6 +3052,25 @@ describe("orchestrator MCP toolkit", () => {
                 (task) => task.id === question.id,
               )?.completionWake,
             ).toBe("always");
+            // fork: attention-status - A child's question wakes its visible parent in the client too.
+            const waitingOnUser = yield* invoke("t3_thread_list", {
+              allProjects: true,
+              attention: true,
+              snoozed: false,
+              limit: 100,
+            });
+            const waitingOnUserPage = yield* decodeThreadListResult(
+              waitingOnUser.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(
+              waitingOnUserPage.threads.find((row) => row.threadId === parentThreadId),
+            ).toMatchObject({ snoozed: false, pendingRequest: { kind: "user_input" } });
+            yield* orchestrator.dispatch({
+              type: "thread.unsnooze",
+              commandId: CommandId.make("command:attention:parent-unsnooze"),
+              threadId: parentThreadId,
+              reason: "user",
+            });
             yield* invoke("task_cancel", {
               taskId: question.id,
               clientRequestId: "cancel-wait-question-1",

@@ -3366,6 +3366,8 @@ export function GeneralSettingsPanel() {
 }
 
 export function ArchivedThreadsPanel() {
+  // fork: attention-status
+  const [titleFilter, setTitleFilter] = useState("");
   const { scope, groups: projectGroups, environments } = useSettingsScope();
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const {
@@ -3400,10 +3402,15 @@ export function ArchivedThreadsPanel() {
       }),
     );
     const threads = archivedSnapshots.flatMap(({ environmentId, snapshot }) =>
-      snapshot.threads.map((thread) => ({
-        ...presentThreadShell(environmentId, thread),
-        environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
-      })),
+      // fork: attention-status
+      snapshot.threads
+        .filter((thread) =>
+          thread.title.toLocaleLowerCase().includes(titleFilter.trim().toLocaleLowerCase()),
+        )
+        .map((thread) => ({
+          ...presentThreadShell(environmentId, thread),
+          environmentLabel: environmentLabels.get(environmentId) ?? environmentId,
+        })),
     );
     const hasMultipleEnvironments =
       new Set(
@@ -3475,14 +3482,16 @@ export function ArchivedThreadsPanel() {
     if (!api) return;
     const clicked = await api.contextMenu.show(
       [
-        { id: "unarchive", label: "Unarchive" },
+        // fork: attention-status
+        { id: "unarchive", label: "Unarchive and open" },
         { id: "delete", label: "Delete", destructive: true },
       ],
       position,
     );
 
     if (clicked === "unarchive") {
-      const result = await unarchiveThread(threadRef);
+      // fork: attention-status
+      const result = await unarchiveThread(threadRef, { navigate: true });
       if (result._tag === "Success") {
         refreshArchivedThreads();
       } else if (!isAtomCommandInterrupted(result)) {
@@ -3517,6 +3526,14 @@ export function ArchivedThreadsPanel() {
 
   return (
     <SettingsPageContainer>
+      {/* fork: attention-status */}
+      <Input
+        type="search"
+        aria-label="Search archived thread titles"
+        placeholder="Search archived threads"
+        value={titleFilter}
+        onChange={(event) => setTitleFilter(event.currentTarget.value)}
+      />
       {archivedGroups.length === 0 ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
@@ -3524,6 +3541,7 @@ export function ArchivedThreadsPanel() {
         >
           <SettingsRow
             title={
+              // fork: attention-status
               <span className="inline-flex items-center gap-2">
                 {isLoadingArchive ? (
                   <Spinner size="sm" tone="muted" />
@@ -3534,13 +3552,19 @@ export function ArchivedThreadsPanel() {
                   ? "Loading archived threads"
                   : archiveError
                     ? "Could not load archived threads"
-                    : "No archived threads"}
+                    : titleFilter.trim()
+                      ? "No archived threads match this search"
+                      : "No archived threads"}
               </span>
             }
             description={
+              // fork: attention-status
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+                : (archiveError ??
+                  (titleFilter.trim()
+                    ? "Try a different title."
+                    : "Archived threads will appear here."))
             }
           />
         </SettingsSection>
@@ -3597,8 +3621,10 @@ export function ArchivedThreadsPanel() {
                     className="shrink-0"
                     onClick={() => {
                       void (async () => {
+                        // fork: attention-status
                         const result = await unarchiveThread(
                           scopeThreadRef(thread.environmentId, thread.id),
+                          { navigate: true },
                         );
                         if (result._tag === "Success") {
                           refreshArchivedThreads();
@@ -3619,7 +3645,8 @@ export function ArchivedThreadsPanel() {
                     }}
                   >
                     <ArchiveX className="size-3.5" />
-                    <span>Unarchive</span>
+                    {/* fork: attention-status */}
+                    <span>Unarchive and open</span>
                   </Button>
                 }
               />

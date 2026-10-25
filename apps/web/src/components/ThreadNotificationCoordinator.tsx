@@ -1,3 +1,5 @@
+// fork: respectful-notifications
+import { useAttentionBadge } from "../fork/attention/useAttentionBadge";
 import {
   type PendingSubagentRequest,
   presentThreadShell,
@@ -27,7 +29,6 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
-  setNotificationBadge,
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
@@ -35,6 +36,8 @@ import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
 export function ThreadNotificationCoordinator() {
+  // fork: respectful-notifications
+  useAttentionBadge();
   const environmentIds = useEnvironmentIds();
   const mode = useClientSettings((settings) => settings.notificationMode);
   const inAppNotificationsEnabled = useClientSettings(
@@ -51,10 +54,8 @@ export function ThreadNotificationCoordinator() {
     // fork: respectful-notifications
     notification.addEventListener("close", () => {
       if (pending.current.get(notification.tag)?.notification !== notification) return;
-      pending.current.delete(notification.tag);
-      setNotificationBadge(pending.current.size);
+      pending.current.delete(notification.tag); // fork: respectful-notifications
     });
-    setNotificationBadge(pending.current.size);
   };
 
   // fork: respectful-notifications
@@ -62,34 +63,30 @@ export function ThreadNotificationCoordinator() {
     const value = pending.current.get(tag);
     if (!value) return;
     value.notification.close();
-    pending.current.delete(tag);
-    setNotificationBadge(pending.current.size);
+    pending.current.delete(tag); // fork: respectful-notifications
   };
 
   useEffect(() => {
     const activeIds = new Set(environmentIds);
-    const count = pending.current.size;
+    // fork: respectful-notifications
     for (const [tag, entry] of pending.current) {
       if (activeIds.has(entry.environmentId)) continue;
       entry.notification.close();
       pending.current.delete(tag);
     }
-    if (count !== pending.current.size) setNotificationBadge(pending.current.size);
   }, [environmentIds]);
 
   // fork: respectful-notifications
   useEffect(() => {
     if (previews) return;
     for (const { notification } of pending.current.values()) notification.close();
-    pending.current.clear();
-    setNotificationBadge(0);
+    pending.current.clear(); // fork: respectful-notifications
   }, [previews]);
 
   useEffect(() => {
     const clear = () => {
       for (const { notification } of pending.current.values()) notification.close();
-      pending.current.clear();
-      setNotificationBadge(0);
+      pending.current.clear(); // fork: respectful-notifications
     };
     clear();
     if (!hasDesktopNotifications(mode)) return;
@@ -176,7 +173,12 @@ function EnvironmentNotifications({
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       // fork: respectful-notifications
       const attention =
-        status === "input" || status === "approval" || status === "failed" || status === "limited"
+        // fork: respectful-notifications
+        status === "input" ||
+        status === "approval" ||
+        status === "failed" ||
+        status === "limited" ||
+        status === "paused"
           ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
@@ -207,13 +209,16 @@ function EnvironmentNotifications({
       const title =
         kind === "completion"
           ? "Thread completed"
-          : status === "approval"
-            ? "Approval needed"
-            : status === "limited"
-              ? "Usage limit reached"
-              : status === "failed"
-                ? "Thread failed"
-                : "Input needed";
+          : // fork: respectful-notifications
+            status === "paused"
+            ? "Queue paused"
+            : status === "approval"
+              ? "Approval needed"
+              : status === "limited"
+                ? "Usage limit reached"
+                : status === "failed"
+                  ? "Thread failed"
+                  : "Input needed";
       if (hasNotificationSound(mode)) {
         void playNotificationSound(kind, () =>
           hasNotificationSound(getClientSettings().notificationMode),

@@ -600,7 +600,9 @@ export interface ThreadStatusPill {
     | "Pending Approval"
     | "Awaiting Input"
     | "Waiting"
-    | "Plan Ready";
+    | "Plan Ready"
+    // fork: attention-status
+    | "Paused";
   colorClass: string;
   dotClass: string;
   pulse: boolean;
@@ -610,6 +612,8 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
   "Awaiting Input": 4,
   Failed: 3.5,
+  // fork: attention-status
+  Paused: 3.5,
   Working: 3,
   Connecting: 3,
   Waiting: 2.5,
@@ -630,6 +634,8 @@ type ThreadStatusInput = Pick<
   lastVisitedAt?: string | null | undefined;
   pendingBackgroundTasks?: SidebarThreadSummary["pendingBackgroundTasks"] | undefined;
   blockedOnThreadWait?: boolean | undefined;
+  // fork: attention-status
+  queueHeld?: boolean | undefined;
 };
 
 export interface ThreadJumpHintVisibilityController {
@@ -887,6 +893,8 @@ export type SidebarThreadStatus =
   | "waiting"
   | "failed"
   | "limited"
+  // fork: attention-status
+  | "paused"
   | "ready";
 
 export function shouldRecedeSidebarThread(input: {
@@ -911,6 +919,8 @@ type SidebarThreadStatusInput = Pick<
   | "pendingSubagentRequest"
   | "runtime"
   | "blockedOnThreadWait"
+  // fork: attention-status
+  | "queueHeld"
 >;
 
 export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): SidebarThreadStatus {
@@ -920,6 +930,8 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
     return "input";
   }
+  // fork: attention-status
+  if (thread.queueHeld) return "paused";
   if (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) {
     return "waiting";
   }
@@ -946,6 +958,8 @@ export type SidebarV2TopStatusKind =
   | "input"
   | "waiting"
   | "woke"
+  // fork: attention-status
+  | "paused"
   | "working";
 
 export function resolveSidebarV2TopStatus(input: {
@@ -965,6 +979,8 @@ export function resolveSidebarV2TopStatus(input: {
   if (input.status === "input") {
     return "input";
   }
+  // fork: attention-status
+  if (input.status === "paused") return "paused";
   if (input.status === "failed" || input.status === "limited") {
     return input.status;
   }
@@ -1114,6 +1130,15 @@ export function resolveThreadStatusPill(input: {
       pulse: false,
     };
   }
+
+  // fork: attention-status
+  if (thread.queueHeld)
+    return {
+      label: "Paused",
+      colorClass: "text-warning-foreground",
+      dotClass: "bg-warning",
+      pulse: false,
+    };
 
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
