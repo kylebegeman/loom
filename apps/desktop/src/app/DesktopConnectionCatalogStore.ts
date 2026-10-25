@@ -473,28 +473,38 @@ export const make = Effect.gen(function* () {
 
   return DesktopConnectionCatalogStore.of({
     get: Effect.gen(function* () {
-      const document = yield* readDocument(fileSystem, catalogPath);
+      const document = yield* readDocument(fileSystem, catalogPath).pipe(
+        Effect.withSpan("desktop.connectionCatalogStore.get.read"), // fork: restart-continuity
+      );
       if (Option.isNone(document)) {
         return yield* migrateLegacyCatalog;
       }
-      if (!(yield* encryptionAvailable)) {
-        return Option.none<string>();
-      }
-      const decrypted = yield* decodeSecretBytes(catalogPath, document.value.encryptedCatalog).pipe(
-        Effect.flatMap((encryptedCatalog) =>
-          safeStorage.decryptString(encryptedCatalog).pipe(
-            Effect.mapError(
-              (cause) =>
-                new DesktopConnectionCatalogStoreProtectionError({
-                  operation: "decrypt-catalog",
-                  catalogPath,
-                  cause,
-                }),
+      // fork: restart-continuity: a startup get took up to 15 s. Its own span
+      // separates safe storage, which can wait on the keychain in the
+      // availability check as well as the decrypt, from the file read.
+      return yield* Effect.gen(function* () {
+        if (!(yield* encryptionAvailable)) {
+          return Option.none<string>();
+        }
+        const decrypted = yield* decodeSecretBytes(
+          catalogPath,
+          document.value.encryptedCatalog,
+        ).pipe(
+          Effect.flatMap((encryptedCatalog) =>
+            safeStorage.decryptString(encryptedCatalog).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DesktopConnectionCatalogStoreProtectionError({
+                    operation: "decrypt-catalog",
+                    catalogPath,
+                    cause,
+                  }),
+              ),
             ),
           ),
-        ),
-      );
-      return Option.some(decrypted);
+        );
+        return Option.some(decrypted);
+      }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get.decrypt"));
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
       if (!(yield* encryptionAvailable)) {
