@@ -65,6 +65,7 @@ const launchOperationParameters = Schema.Struct({
 });
 // The full archive still validates and encodes the result. Only its advertised projection is
 // loose; encoding it again as a record preserves every field without inlining the turn unions.
+// MCP requires JSON structured content, and the projection's own encoding keeps DateTime values.
 const historyResult = Schema.toEncoded(
   Schema.Struct({
     ...Library.LibraryThreadArchive.fields,
@@ -73,7 +74,7 @@ const historyResult = Schema.toEncoded(
         "Saved thread projection, including thread, messages, turnItems, visibleTurnItems and updatedAt.",
     }),
   }),
-).pipe(Schema.decodeTo(Library.LibraryThreadArchive));
+).pipe(Schema.decodeTo(Schema.toCodecJson(Library.LibraryThreadArchive)));
 export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_workstreams", {
     description: "List optional durable workstreams and linked work for a project.",

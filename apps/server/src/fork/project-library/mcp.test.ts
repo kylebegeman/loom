@@ -154,9 +154,10 @@ it.effect.each([
 );
 
 const historyTool = ProjectLibraryToolkit.tools.loom_library_history;
-const encodeOriginalArchive = Schema.encodeEffect(Library.LibraryThreadArchive);
+const encodeOriginalArchive = Schema.encodeEffect(Schema.toCodecJson(Library.LibraryThreadArchive));
 const encodeUnknownOriginalArchive = Schema.encodeUnknownEffect(Library.LibraryThreadArchive);
 const encodeUnknownAdvertisedArchive = Schema.encodeUnknownEffect(historyTool.successSchema);
+const isJson = Schema.is(Schema.Json);
 
 it.effect.each([false, true])(
   "keeps encoded history bytes unchanged with optional context %s",
@@ -235,6 +236,8 @@ it.effect.each([false, true])(
         .pipe(Effect.flatMap(Stream.runCollect));
       expect(results).toHaveLength(1);
       expect(results[0]!.isFailure).toBe(false);
+      // MCP rejects structured content that is not plain JSON.
+      expect(isJson(results[0]!.encodedResult)).toBe(true);
       const encoded = JSON.stringify(results[0]!.encodedResult);
       expect(encoded).toBe(expected);
       const advertised = Tool.getJsonSchemaFromSchema(historyTool.successSchema);

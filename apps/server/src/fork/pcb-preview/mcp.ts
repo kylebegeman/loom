@@ -21,7 +21,8 @@ export const PcbToolkit = Toolkit.make(
       cursor: W.PcbHistoryInput.fields.cursor,
       limit: W.PcbHistoryInput.fields.limit,
     }),
-    success: W.PcbHistory,
+    // MCP structured content must be plain JSON; capturedAt is a DateTime.
+    success: Schema.toCodecJson(W.PcbHistory),
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
   })
