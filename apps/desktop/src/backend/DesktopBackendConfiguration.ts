@@ -122,7 +122,8 @@ const nodeBinDirOf = (nodePath: string): string => {
   return lastSlash > 0 ? nodePath.slice(0, lastSlash) : "/usr/bin";
 };
 
-const backendChildEnvPatch = (): Record<string, string | undefined> =>
+// fork: restart-compaction: exported so the doctor run before startup gets the same environment.
+export const backendChildEnvPatch = (): Record<string, string | undefined> =>
   Object.fromEntries(DESKTOP_BACKEND_ENV_NAMES.map((name) => [name, undefined]));
 
 const getWslEnvEntryName = (entry: string): string => {
@@ -533,6 +534,8 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         onSome: (resourceMonitorPath) => ({ resourceMonitorPath }),
       }),
       ...buildObservabilityFragment(input.observabilitySettings),
+      // fork: restart-compaction: DesktopApp compacts this database before starting it.
+      restartCompaction: true,
     };
 
     return {
@@ -542,6 +545,13 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       // so the setting does not leak into the provider and terminal processes
       // the backend starts.
       args: [
+        // fork: restart-continuity: a heap OOM or other fatal error leaves a
+        // Node report beside the logs. The environment is left out because it
+        // carries provider keys and tokens.
+        "--report-on-fatalerror",
+        `--report-directory=${environment.logDir}`,
+        "--report-exclude-env",
+        "--report-exclude-network",
         ...(environment.isPackaged ? ["--require", environment.compileCachePath] : []),
         environment.backendEntryPath,
         "--bootstrap-fd",

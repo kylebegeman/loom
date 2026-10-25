@@ -247,10 +247,17 @@ describe("DesktopBackendConfiguration", () => {
         const second = yield* configuration.resolvePrimary;
 
         assert.equal(first.executablePath, process.execPath);
-        assert.deepEqual(first.args.slice(0, 3), [
+        // fork: restart-continuity: the report flags lead the args.
+        assert.deepEqual(first.args, [
+          "--report-on-fatalerror",
+          `--report-directory=${environment.logDir}`,
+          "--report-exclude-env",
+          "--report-exclude-network",
           "--require",
           environment.compileCachePath,
           environment.backendEntryPath,
+          "--bootstrap-fd",
+          "3",
         ]);
         assert.equal(first.entryPath, environment.backendEntryPath);
         assert.equal(first.cwd, environment.backendCwd);
@@ -343,6 +350,21 @@ describe("DesktopBackendConfiguration", () => {
 
         assert.equal(primary.bootstrap.shellEnvironmentPrepared, true);
         assert.isUndefined(wsl.bootstrap.shellEnvironmentPrepared);
+      }),
+    ),
+  );
+
+  // fork: restart-compaction: the desktop compacts only the database on this machine.
+  it.effect("only the local primary backend offers compaction at restart", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+
+        const primary = yield* configuration.resolvePrimary;
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+
+        assert.equal(primary.bootstrap.restartCompaction, true);
+        assert.isUndefined(wsl.bootstrap.restartCompaction);
       }),
     ),
   );

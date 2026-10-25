@@ -38,6 +38,7 @@ import { PreviewLinksRpcGroup, PREVIEW_LINKS_WS_METHODS } from "./preview-links.
 import { DirectoryRpcGroup } from "./directory.ts";
 import { ReachRpcGroup, REACH_WS_METHODS } from "./reach.ts";
 import { LibraryPushRpcGroup } from "./library-push.ts";
+import { DatabaseCompactionRpcGroup } from "./database-compaction.ts";
 import {
   BotBatchesRpcGroup,
   BotDraftsRpcGroup,
@@ -124,6 +125,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   BotVersionsRpcGroup,
   BotPipelinesRpcGroup,
   BotsAnywhereRpcGroup,
+  DatabaseCompactionRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 

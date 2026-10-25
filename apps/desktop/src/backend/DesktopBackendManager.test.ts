@@ -20,7 +20,12 @@ import * as Sink from "effect/Sink";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import {
+  HttpClient,
+  HttpClientError, // fork: restart-continuity
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
@@ -262,7 +267,7 @@ describe("DesktopBackendManager", () => {
         assert.equal(spawnedCommand.options.additionalFds?.fd5?.type, "output");
         assert.equal(
           Duration.toMillis(Duration.fromInputUnsafe(spawnedCommand.options.forceKillAfter)),
-          5_000,
+          15_000, // fork: restart-continuity
         );
 
         assert.deepEqual(yield* decodeBootstrap(bootstrapJson), configWithObservability);
@@ -313,6 +318,62 @@ describe("DesktopBackendManager", () => {
         );
       }).pipe(Effect.provide(layer));
     }),
+  );
+
+  // fork: restart-continuity
+  it.effect("says why the last readiness probe failed", () =>
+    Effect.gen(function* () {
+      const lastProbe = Effect.fn(function* (
+        respond: (
+          request: HttpClientRequest.HttpClientRequest,
+        ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>,
+      ) {
+        const requested = yield* Deferred.make<void>();
+        const readiness = yield* DesktopBackendManager.waitForHttpReady({
+          executablePath: baseConfig.executablePath,
+          entryPath: baseConfig.entryPath,
+          cwd: baseConfig.cwd,
+          httpBaseUrl: baseConfig.httpBaseUrl,
+          timeout: Duration.millis(1_500),
+        }).pipe(
+          Effect.flip,
+          Effect.provide(
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make((request) =>
+                Deferred.succeed(requested, void 0).pipe(Effect.andThen(respond(request))),
+              ),
+            ),
+          ),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(requested);
+        yield* TestClock.adjust(Duration.millis(1_500));
+        return (yield* Fiber.join(readiness)).lastProbe;
+      });
+      const refused = (request: HttpClientRequest.HttpClientRequest) =>
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.TransportError({
+            request,
+            cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3773"), {
+              code: "ECONNREFUSED",
+            }),
+          }),
+        });
+
+      assert.equal(
+        yield* lastProbe((request) => Effect.fail(refused(request))),
+        "connection refused; the backend is not listening yet",
+      );
+      assert.equal(
+        yield* lastProbe(() => Effect.never),
+        "no answer within 1000ms; the connection was not refused",
+      );
+      assert.equal(
+        yield* lastProbe((request) => Effect.succeed(responseForRequest(request, 503))),
+        "answered HTTP 503",
+      );
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("reports bootstrap encoding failures with stable process context", () =>
@@ -1596,7 +1657,11 @@ describe("DesktopBackendManager", () => {
         const started = yield* Queue.takeN(teardownStarted, 2);
         assert.deepEqual(started.toSorted(), ["instance1", "instance2"]);
 
-        yield* TestClock.adjust(Duration.seconds(5));
+        // fork: restart-continuity: the force kill is still in flight a moment
+        // before the budget runs out.
+        yield* TestClock.adjust(Duration.seconds(16));
+        assert.isUndefined(quitFiber.pollUnsafe());
+        yield* TestClock.adjust(Duration.seconds(1));
         yield* Fiber.join(quitFiber);
         assert.equal(yield* Queue.size(teardownFinished), 0);
 

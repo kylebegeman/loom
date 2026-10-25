@@ -1,5 +1,6 @@
 // fork: mini-native-retention
 import { EasDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import { RestartCompactionState } from "./fork/database-compaction.ts"; // fork: restart-compaction
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -1051,6 +1052,9 @@ export const DatabaseStorageStatus = Schema.Struct({
   incrementalVacuumEnabled: Schema.Boolean,
   /** Command to run on the host to reclaim the space offline. */
   compactCommand: Schema.String,
+  // fork: restart-compaction: present only when a desktop shell compacts this
+  // database at restart; without it, clients offer the doctor command.
+  restartCompaction: Schema.optionalKey(RestartCompactionState),
 });
 export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
 

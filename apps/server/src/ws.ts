@@ -225,6 +225,7 @@ import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import { ForkRpcGroup } from "@t3tools/contracts/fork"; // fork: ext-core
 import { makeForkRpcLayer } from "./fork/rpc.ts"; // fork: ext-core
+import { makeDatabaseCompactionRpcLayer } from "./fork/database-compaction/rpc.ts"; // fork: restart-compaction
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -3281,6 +3282,7 @@ export const layer = Layer.unwrap(
               heldSession, // fork: identity-renewal
             ).pipe(
               Layer.merge(makeForkRpcLayer(session)), // fork: ext-core
+              Layer.merge(makeDatabaseCompactionRpcLayer(session)), // fork: restart-compaction
               Layer.provideMerge(RpcSerialization.layerJson),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
