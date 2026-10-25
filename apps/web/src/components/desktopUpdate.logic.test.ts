@@ -8,7 +8,7 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
   getDesktopUpdateIdleTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateInstallConfirmationTitle, // fork: machine-updates
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
   isDesktopUpdateButtonDisabled,
@@ -299,33 +299,34 @@ describe("desktop update UI helpers", () => {
     expect(getArm64IntelBuildWarningDescription(state)).toContain("Download the available update");
   });
 
-  it("includes the downloaded version in the install confirmation copy", () => {
+  // fork: machine-updates
+  it("includes the downloaded version in the install confirmation title", () => {
     expect(
-      getDesktopUpdateInstallConfirmationMessage({
+      getDesktopUpdateInstallConfirmationTitle({
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.1",
       }),
-    ).toContain("Install update 1.1.1 and restart Loom?"); // fork: brand
+    ).toBe("Install update 1.1.1 and restart Loom"); // fork: brand
   });
 
-  it("falls back to generic install confirmation copy when no version is available", () => {
+  it("falls back to a generic install confirmation title when no version is available", () => {
     expect(
-      getDesktopUpdateInstallConfirmationMessage({
+      getDesktopUpdateInstallConfirmationTitle({
         availableVersion: null,
         downloadedVersion: null,
       }),
-    ).toContain("Install update and restart Loom?"); // fork: brand
+    ).toBe("Install update and restart Loom"); // fork: brand
   });
 
-  it("keeps the same install confirmation copy across desktop platforms", () => {
+  it("names the available version before its download finishes", () => {
     expect(
-      getDesktopUpdateInstallConfirmationMessage({
+      getDesktopUpdateInstallConfirmationTitle({
         availableVersion: "1.1.0",
-        downloadedVersion: "1.1.0",
+        downloadedVersion: null,
       }),
     ).toBe(
       // fork: brand
-      "Install update 1.1.0 and restart Loom?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
+      "Install update 1.1.0 and restart Loom",
     );
   });
 });

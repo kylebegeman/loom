@@ -125,9 +125,12 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     run: async ({
       downloadLocal,
       installLocal,
+      installLocalWhenIdle, // fork: machine-updates
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
+      // fork: machine-updates: waits for local agents instead of the restart countdown.
+      installLocalWhenIdle?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
     }) => {
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
@@ -249,7 +252,10 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
             providers: outcome.providers,
           });
         if (outcome.localReady && installLocal) {
-          if (await waitForUpdateRestart(UPDATE_RESTART_DELAY_MS)) {
+          // fork: machine-updates
+          if (installLocalWhenIdle) {
+            await installLocalWhenIdle(reportLocalError);
+          } else if (await waitForUpdateRestart(UPDATE_RESTART_DELAY_MS)) {
             setUpdateEverythingRun(
               (run) => run && { ...run, phase: "installing", restartAt: null },
             );
