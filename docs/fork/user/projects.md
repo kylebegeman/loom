@@ -13,6 +13,10 @@ choose, which may be remote. With search empty, **No project** comes first, then
 projects. **No project** starts right away on the computer you are working on, or on another
 connected computer that can run work.
 
+To make a project without starting a conversation, open **New project** and choose **Empty
+project**, **Existing folder** or **Git repository**, or type a name, folder path or Git URL. A
+project from a Git URL continues into choosing the computer and folder to clone it into.
+
 Continue through the same searchable popup to choose files, computer and conversation
 settings. The final preview explains what will start. The **+** on an existing thread
 keeps its settings as the starting point for the next conversation.

@@ -119,6 +119,8 @@ import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
 import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import * as VaultApprovalAlerts from "./library-push/VaultApprovalAlerts.ts";
+import * as LibraryConnection from "./project-library/LibraryConnection.ts";
 import { LibraryPushHttpRoutes } from "./library-push/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -134,8 +136,17 @@ const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultStore)),
 );
+// New approval requests alert the owner's iPhones through the one Library push instance.
+const layerApprovalNotifications = ApprovalNotifications.layer.pipe(
+  Layer.provide(
+    VaultApprovalAlerts.layer.pipe(
+      Layer.provide(Layer.merge(LibraryPushLive, LibraryConnection.layer)),
+      Layer.provide(FetchHttpClient.layer),
+    ),
+  ),
+);
 const layerVaultAccess = VaultAccess.layer.pipe(
-  Layer.provide(ApprovalNotifications.stub),
+  Layer.provide(layerApprovalNotifications),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
 );
 

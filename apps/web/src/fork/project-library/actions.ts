@@ -27,7 +27,10 @@ interface LibraryActionDetail {
   readonly suggest?: boolean;
 }
 
-/** Every entry point opens the same flow, including first-time Library setup. */
+/**
+ * Every entry point opens the same flow, including first-time Library setup. `create-project`
+ * asks how to start; `import-folder` goes straight to choosing a folder.
+ */
 export function openLibraryAction(
   action: LibraryAction,
   projectId?: string,
@@ -96,6 +99,35 @@ export function dropLibraryBriefEdit(projectId: string) {
 export function onLibraryBriefEdit(listener: () => void) {
   window.addEventListener(BRIEF_EVENT, listener);
   return () => window.removeEventListener(BRIEF_EVENT, listener);
+}
+
+const CLONE_EVENT = "loom:library:clone";
+let pendingClone: { readonly projectId: string; readonly hostId?: EnvironmentId } | null = null;
+
+/**
+ * Asks the project page to clone the project's repositories onto a computer, starting on
+ * `hostId` when given. Like a brief request, it waits for that project's page to mount.
+ */
+export function requestLibraryClone(projectId: string, hostId?: EnvironmentId) {
+  pendingClone = { projectId, ...(hostId ? { hostId } : {}) };
+  window.dispatchEvent(new Event(CLONE_EVENT));
+}
+
+/** Taken once by the page of the project the last request named. */
+export function takeLibraryClone(projectId: string) {
+  if (pendingClone?.projectId !== projectId) return null;
+  const request = pendingClone;
+  pendingClone = null;
+  return request;
+}
+
+export function dropLibraryClone(projectId: string) {
+  if (pendingClone?.projectId === projectId) pendingClone = null;
+}
+
+export function onLibraryClone(listener: () => void) {
+  window.addEventListener(CLONE_EVENT, listener);
+  return () => window.removeEventListener(CLONE_EVENT, listener);
 }
 
 const HISTORY_SEARCH_EVENT = "loom:library:search-history";

@@ -334,7 +334,7 @@ export function CommandPalette(props: {
         kind: "action",
         title: "Add project",
         searchTerms: ["folder", "clone", "repository", "git"],
-        run: () => navigation.navigate("AddProject"),
+        run: () => navigation.navigate("LibraryCreate"), // fork: library - Asks how the project starts.
       },
       {
         key: "settings",

@@ -96,9 +96,12 @@ and explicitly retry through ordinary authorized adapters. One-time consumption,
 workload correlation and step-up authentication remain separate work.
 
 `ApprovalNotifications` owns bounded, per-process attempt observations and uses an independently
-supplied transport adapter. Production supplies an explicit stub, never a delivery receipt.
-Only a newly committed pending request can initiate an attempt; inbox reads, identical request
-replays, service restarts and decisions never dispatch notifications. No external message is sent.
+supplied transport adapter. Production uses the Library push adapter,
+[`VaultApprovalAlerts.ts`](../../../../apps/server/src/fork/library-push/VaultApprovalAlerts.ts),
+which reports `stubbed` when no Library sends agent alerts. Only a newly committed pending
+request can initiate an attempt; inbox reads, identical request replays, service restarts and
+decisions never dispatch notifications. Only `{ threadId, kind }` leaves the computer; the
+Library adds fixed text and a link to the computer's settings.
 The authoritative inbox stays usable when an attempt fails or no delivery observation exists.
 
 Capability `vault-approvals` gates web/desktop and native mobile inboxes. They use shared guarded
@@ -237,7 +240,9 @@ The notification service reserves at most one attempt per request per process. I
 Young entries are not evicted to admit more attempts. A full observation map suppresses additional
 attempts while the request remains visible and decidable. The adapter receives only request,
 thread, project and item IDs, the requested action and deadline, without secret values, command
-bodies, destination URLs or approval grants. The current production adapter returns `stubbed`.
+bodies, destination URLs or approval grants, and the production adapter forwards only the thread
+ID. `delivered` means the Library reported at least one device accepted the alert; no device, an
+error or a 400 from a Library without the `vault-approval` kind is `unconfirmed`.
 
 Concurrent duplicates observe one reservation. Attempts are limited to two seconds; typed failure,
 timeout and interruption cleanup produce `unconfirmed`, never a false delivered receipt. These

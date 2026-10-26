@@ -58,9 +58,11 @@ sets a sign-in limit; otherwise, sign in again when it expires. Existing pairing
 Connect remain available. Changing your Library selection does not move records from the
 previous Library.
 
-**New project** needs only a name. Add repositories, reference links or a brief whenever
-useful. **Add existing folder** finds repositories in a folder and suggests an existing
-project when the repository origins and layout match. This leaves your files in place.
+**New project** asks how to start. **Empty project** needs only a name, and **Git
+repository** clones a Git URL onto the computer and folder you choose once the project exists.
+Add repositories, reference links or a brief whenever useful. **Existing folder**, also
+**Add existing folder** in the command palette, finds repositories in a folder and suggests an
+existing project when the repository origins and layout match. This leaves your files in place.
 When you browse to a folder, Loom says what adding it will do, such as joining a matching
 project or creating a new one, and Enter does exactly that. If adding a folder does not
 finish, Add existing folder offers to retry it or start over, and you can still browse to a

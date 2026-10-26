@@ -54,7 +54,7 @@ separation and self-hosting option are product requirements. Proposed behavior a
 subject to design review; the following choices are not resolved by selection:
 
 - Initial approvers are destination environment clients with `access:write`. Fresh human authentication and platform account eligibility remain open.
-- Pending requests last ten minutes; timed approvals last five or fifteen minutes. The current request queue retains metadata for 24 hours with a 128-entry cap. External notification transports remain stubbed, with no initial channel selected. Delivery
+- Pending requests last ten minutes; timed approvals last five or fifteen minutes. The current request queue retains metadata for 24 hours with a 128-entry cap. Decided, Kyle 2026-10-25: requests notify only through existing channels, never email or SMS: the "needs you" attention on desktop and web, and the Library push to the owner's iPhone. Alerts carry no secret values, at most the action, a safe item label, the requesting thread and expiry, and a tap opens the approval in Loom. The iPhone alert is built: it sends only the requesting thread, and a tap opens that computer's settings, which hold the approval inbox. Desktop and web attention is not wired yet. Delivery
   observations use process memory with 24h/128 bounds; restart does not replay alerts. A future
   durable delivery requirement uses a separate versioned sidecar, never a policy-format bump.
 

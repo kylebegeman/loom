@@ -143,6 +143,7 @@ packages/contracts/src/settings.ts	project-lifecycle	6
 apps/mobile/app.config.ts	fleet-connect	1
 apps/mobile/app.config.ts	library-push	2
 apps/mobile/src/App.tsx	library-push	2
+apps/mobile/src/features/agent-awareness/notificationPayload.ts	library-push	2
 apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	library-push	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-push	2
 apps/mobile/src/state/use-remote-environment-registry.ts	library-push	2
@@ -248,7 +249,7 @@ apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	5
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	2
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	1
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
-apps/web/src/components/CommandPalette.tsx	library-palette	46
+apps/web/src/components/CommandPalette.tsx	library-palette	47
 apps/web/src/components/CommandPalette.tsx	sites	8
 scripts/build-cli-archive.ts	library-semantic-search	3
 apps/server/package.json	-	"onnxruntime-web": "1.30.0"
@@ -268,7 +269,7 @@ apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
 apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
-apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	20
+apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	21
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	4
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	1
@@ -424,6 +425,7 @@ apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	5
 apps/web/src/components/CommandPalette.logic.ts	bots	1
 apps/mobile/src/features/cloud/dpop.ts	secure-native-random	1
 apps/mobile/src/features/cloud/dpop.test.ts	secure-native-random	2
+apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts	secure-native-random	1
 apps/server/package.json	-	"@env-spec/parser": "0.6.0"
 apps/web/src/composer-logic.ts	ext-composer-menu	3
 apps/mobile/src/Stack.tsx	bots	2
@@ -747,7 +749,7 @@ apps/server/src/auth/LibraryPublishingCredential.test.ts	project-library	3
 apps/server/src/auth/LibraryPublishingCredential.ts	project-library	7
 apps/server/src/cli/server.ts	reach	2
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	reach	2
-apps/mobile/src/features/keyboard/CommandPalette.tsx	library	5
+apps/mobile/src/features/keyboard/CommandPalette.tsx	library	6
 apps/web/src/hooks/useHandleNewThread.test.ts	library-projects	5
 apps/web/src/hooks/useHandleNewThread.ts	library-projects	4
 apps/mobile/src/features/threads/SecretRequestCard.tsx	vault-core	6

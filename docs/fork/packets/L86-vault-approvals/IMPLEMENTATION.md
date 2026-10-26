@@ -14,7 +14,7 @@ remain open. See TECHNICAL for the reader and downgrade contract.
 
 The existing access service now atomically stores bounded durable requests, reviewed timed
 decisions and grants in its existing policy. Web/desktop and mobile inboxes expose approve,
-deny, cancel, expired status and revoke. MCP can create, inspect or cancel its authenticated requester's own pending request, but cannot decide it. Notification transport is a supplied stub. Existing grant enforcement applies.
+deny, cancel, expired status and revoke. MCP can create, inspect or cancel its authenticated requester's own pending request, but cannot decide it. A new request alerts the owner's iPhone through the Library push path. Existing grant enforcement applies.
 
 Requester status and cancellation now use the trusted invocation identity. Durable correlation
 stores a caller's opaque operation reference and the server's current run, without command
@@ -34,7 +34,7 @@ persisted. Policy format stays 3.
 Recovery validation now rejects concurrent policy/status changes and backend outages, reconciles
 lost approval replies, and provides actionable repair guidance with focused failure/race coverage.
 
-Bounded process-local notification observations are implemented with an explicit stub transport,
+Bounded process-local notification observations are implemented over the Library push transport,
 24h/128 limits, single in-process attempts, a two-second deadline, interruption cleanup and
 shared web/mobile status copy. Reads and restarts never resend. Kyle selected memory storage;
 policy stays 3 and no sidecar is written.

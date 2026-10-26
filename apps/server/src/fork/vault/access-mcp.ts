@@ -93,7 +93,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }),
   Tool.make("loom_vault_access_request", {
     description:
-      "Request temporary Vault access for the authenticated thread. An optional waitingOperationId is an opaque correlation reference; the server binds its own current run. Entries and retry evidence are retained for 24 hours; use new IDs after that window. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals. After approval, recheck access before explicitly retrying the operation; no automatic resumption or notification transport is provided.",
+      "Request temporary Vault access for the authenticated thread. An optional waitingOperationId is an opaque correlation reference; the server binds its own current run. Entries and retry evidence are retained for 24 hours; use new IDs after that window. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals; when this computer's Library sends agent alerts, the owner's iPhone is alerted, and the request status reports whether that alert was delivered. After approval, recheck access before explicitly retrying the operation; no automatic resumption is provided.",
     parameters: Schema.Struct({
       ...VaultApprovalCreate.fields,
       threadId: Schema.optional(ThreadId),

@@ -25,13 +25,17 @@ export const LIBRARY_PUSH_ACTIVITY_MAX_BYTES = 4 * 1024;
 /** Keeps the APNs payload, which carries the id three times, far below Apple's 4 KB. */
 export const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
 
-/** `limited` is a run that failed on a usage limit. */
+/**
+ * `limited` is a run that failed on a usage limit. `vault-approval` is a Vault access request from
+ * the thread waiting for a decision; a Library from before it answers 400, so that alert is lost.
+ */
 export const LibraryPushActivityKind = Schema.Literals([
   "approval",
   "input",
   "failed",
   "limited",
   "completed",
+  "vault-approval",
 ]);
 export type LibraryPushActivityKind = typeof LibraryPushActivityKind.Type;
 

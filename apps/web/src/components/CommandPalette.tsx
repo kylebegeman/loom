@@ -292,10 +292,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   });
   const setOpen = (open: boolean) => dispatch({ _tag: "SetOpen", open });
   const toggleMode = (mode: SearchOverlayMode) => dispatch({ _tag: "ToggleMode", mode });
-  // fork: library-palette - The Library takes over adding folders and starting conversations.
+  // fork: library-palette - The Library takes over adding projects and starting conversations.
   const openAddProject = (environmentId?: EnvironmentId) => {
     if (
-      openLibraryAction("import-folder", undefined, environmentId ? { environmentId } : undefined)
+      openLibraryAction("create-project", undefined, environmentId ? { environmentId } : undefined)
     ) {
       setOpen(false);
       return;
@@ -1770,7 +1770,27 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
-      searchTerms: ["new project", "create project", "empty", "repository", "repo", "git init"],
+      // New project offers every way in, so cloning terms find it rather than the folder shortcut.
+      searchTerms: [
+        "new project",
+        "create project",
+        "add project",
+        "empty",
+        "folder",
+        "repository",
+        "repo",
+        "git",
+        "git init",
+        "clone",
+        "remote",
+        "url",
+        ...sourceControlClients.definitions.flatMap((definition) =>
+          definition.pickerLabel
+            .toLowerCase()
+            .split(/[^a-z0-9]+/u)
+            .filter(Boolean),
+        ),
+      ],
       title: "New project",
       icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
       keepOpen: true,
@@ -1783,23 +1803,15 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:add-project",
+    // fork: library-palette - This shortcut only adds a folder; New project offers cloning.
     searchTerms: [
       "add project",
       "folder",
       "directory",
       "browse",
-      "clone",
-      "remote",
       "repository",
       "repo",
       "git",
-      ...sourceControlClients.definitions.flatMap((definition) =>
-        definition.pickerLabel
-          .toLowerCase()
-          .split(/[^a-z0-9]+/u)
-          .filter(Boolean),
-      ),
-      "url",
       "environment",
     ],
     title: "Add existing folder", // fork: fleet-connections

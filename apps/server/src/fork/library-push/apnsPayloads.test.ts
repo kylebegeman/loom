@@ -92,4 +92,30 @@ describe("agentAlertRequest", () => {
     });
     expect(new TextEncoder().encode(longest.collapseId).length).toBeLessThanOrEqual(64);
   });
+
+  it("opens a Vault request's computer settings and expires with the request", () => {
+    const vault = agentAlertRequest({ environmentId, threadId, kind: "vault-approval" });
+    expect(vault).toEqual({
+      payload: {
+        aps: {
+          alert: { title: "Loom", body: "An agent is asking for Vault access." },
+          sound: "default",
+          "thread-id": "environment-1/thread-1",
+        },
+        // The requesting thread stays, so an app without the settings link opens the thread.
+        body: {
+          environmentId: "environment-1",
+          threadId: "thread-1",
+          deepLink: "/settings/environments/environment-1",
+        },
+      },
+      priority: 10,
+      expiresInSeconds: 600,
+      collapseId: expect.stringMatching(/^loom-vault-[\w-]{22}$/),
+    });
+    // The run finishing afterwards must not replace the request on the phone.
+    expect(vault.collapseId).not.toBe(
+      agentAlertRequest({ environmentId, threadId, kind: "completed" }).collapseId,
+    );
+  });
 });

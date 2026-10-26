@@ -38,6 +38,7 @@ import {
 } from "./state";
 
 import { libraryResourceFromInput, validateResources } from "@t3tools/client-runtime/fork";
+import { holdsGitRemote } from "./newProjectChoices";
 
 const decodeBlueprint = Schema.decodeUnknownOption(Schema.fromJsonString(LibraryBlueprint));
 const isLibraryError = Schema.is(LibraryError);
@@ -59,7 +60,8 @@ export function ProjectEditorDialog({
   onBack,
   initialTitle = "",
   initialResource = "",
-  continueToConversation = false,
+  initialPage = "name",
+  continueTo = "project",
   authorityId,
   onSaved,
   onClose,
@@ -69,7 +71,10 @@ export function ProjectEditorDialog({
   readonly onBack?: (() => void) | undefined;
   readonly initialTitle?: string | undefined;
   readonly initialResource?: string | undefined;
-  readonly continueToConversation?: boolean;
+  /** Where the form opens; a blueprint fills in the name page once imported. */
+  readonly initialPage?: "name" | "blueprint";
+  /** What follows a save: the project page, a conversation, or cloning its repositories. */
+  readonly continueTo?: "project" | "conversation" | "clone";
   readonly authorityId: EnvironmentId;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
@@ -97,7 +102,9 @@ export function ProjectEditorDialog({
     (entry) =>
       !entry.archived && entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
   );
-  const [page, setPage] = useState<"name" | "repository" | "brief" | "color" | "blueprint">("name");
+  const [page, setPage] = useState<"name" | "repository" | "brief" | "color" | "blueprint">(
+    initialPage,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -150,10 +157,12 @@ export function ProjectEditorDialog({
     setBusy(false);
   };
 
+  // A form that opened on the blueprint leaves from it until a blueprint fills in the name page.
   const back = () => {
-    if (page !== "name") setPage("name");
+    if (page !== "name" && !(page === initialPage && !profile)) setPage("name");
     else onBack?.();
   };
+  const clones = continueTo === "clone" && holdsGitRemote(resources, initialResource);
   const parsed = libraryResourceFromInput(resourceDraft, resources);
   const target = parsed ? (parsed.kind === "link" ? parsed.url : parsed.remoteUrl) : null;
   const resourceError =
@@ -237,9 +246,11 @@ export function ProjectEditorDialog({
         message={
           attempt
             ? "Creation is waiting for confirmation. Retry to finish the same project."
-            : continueToConversation
+            : continueTo === "conversation"
               ? "Create a project, then start a conversation. Repositories and a brief are optional."
-              : "A shared home for your work. Repositories and a brief are optional."
+              : clones
+                ? "Create the project, then choose where to clone it. A brief is optional."
+                : "A shared home for your work. Repositories and a brief are optional."
         }
         items={
           page === "repository"
@@ -299,9 +310,12 @@ export function ProjectEditorDialog({
                         : title.trim()
                           ? `Create “${title.trim()}”`
                           : "Enter a project name",
-                    description: continueToConversation
-                      ? "Continue to your conversation"
-                      : "Open project",
+                    description:
+                      continueTo === "conversation"
+                        ? "Continue to your conversation"
+                        : clones
+                          ? "Then choose where to clone it"
+                          : "Open project",
                     disabled: !canSave || !title.trim(),
                     // The draft's mark previews name and color; an automatic color waits for an id.
                     icon: (

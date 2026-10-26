@@ -83,7 +83,14 @@ import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projec
 import { ProjectTabs } from "./ProjectTabs";
 import { LibraryHistorySearch } from "./LibraryHistorySearch";
 import { ProjectBriefProposals } from "./ProjectBriefProposals";
-import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
+import {
+  dropLibraryBriefEdit,
+  dropLibraryClone,
+  onLibraryBriefEdit,
+  onLibraryClone,
+  takeLibraryBriefEdit,
+  takeLibraryClone,
+} from "./actions";
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
@@ -114,8 +121,14 @@ export function LibraryProjectPage({
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
-  // Leaving before the project loads drops the palette's brief request with it.
-  useEffect(() => () => dropLibraryBriefEdit(projectId), [projectId]);
+  // Leaving before the project loads drops the palette's requests with it.
+  useEffect(
+    () => () => {
+      dropLibraryBriefEdit(projectId);
+      dropLibraryClone(projectId);
+    },
+    [projectId],
+  );
   const project = library.project.data;
   if (!library.authorityId)
     return (
@@ -176,6 +189,19 @@ function ProjectView({
     };
     open();
     return onLibraryBriefEdit(open);
+  }, [project.id]);
+  // A project made from a Git URL continues here into cloning it, as Prepare on a computer does.
+  useEffect(() => {
+    const open = () => {
+      const request = takeLibraryClone(project.id);
+      if (request)
+        setCopyRequest({
+          strategy: "clone",
+          ...(request.hostId ? { hostId: request.hostId } : {}),
+        });
+    };
+    open();
+    return onLibraryClone(open);
   }, [project.id]);
   const [addingResource, setAddingResource] = useState(false);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);

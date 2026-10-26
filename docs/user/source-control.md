@@ -143,28 +143,28 @@ Merging a stack lands it through GitCafe, and updating a branch restacks the lay
 
 ## Start, clone, or publish a project
 
-To start from nothing, choose **New project** in the command palette (`Cmd/Ctrl+K`), or
-**New project** under **Add Project** on any client, choose the computer, and type a name.
-T3 Code makes a Git repository in that computer's project folder with a README, an icon,
-and a first commit, then opens a new thread in it. The destination path is shown before
-creation. The default folder is `~/.t3/projects`; managed Mini hosts use their SSD workspace folder. Until the project has a thread, new
-threads work in its folder, even when your default is a new worktree. The folder is named after the project,
-like `pinball-stats` for "Pinball Stats". Turn on **Create private repository on GitHub** to also
-publish it. If Git has no name or email on that machine, the project is created without the
-first commit.
+Choose **New project** in the command palette (`Cmd/Ctrl+K`) or on the Projects page, or use any
+**Add project** button, then pick how the project starts:
 
-To open a folder already on a computer, choose **Existing folder** under **Add Project**.
-The folder must exist on the selected computer. In **Computers**, you can return to recent
-conversation history or start a new conversation there. Saved history remains readable when
-a computer is offline; reconnect it to run work.
+- **Empty project** starts from a name. Add repositories, links or a brief whenever useful.
+- **Existing folder** adds a folder already on a computer and leaves its files in place.
+- **Git repository** clones a repository. Paste its Git URL, such as `github.com/owner/repo` or
+  `git@github.com:owner/repo.git`, confirm the project name, then choose the computer and folder
+  to clone it into. Closing that last step keeps the project without files. Files are prepared
+  when you start a conversation, or from **Add files** on the project page. The mobile app skips
+  the clone step and clones when you start work.
+- **From a blueprint** creates a project from a pasted blueprint, when your Library supports
+  blueprints.
 
-Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
-provider or paste a Git URL, then choose where to save it. The project opens right away while the
-clone runs in the background: you can write your first prompt, and sending waits until the files
-are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
-toast or from the banner above the composer. When the host refuses the machine's SSH key, T3 Code
-clones over HTTPS with Git's credentials for that host instead, and the project's remote uses the
-HTTPS URL.
+You can also type into **New project** directly: a Git URL offers **Clone** first, a folder path
+offers **Use folder**, and anything else becomes the project's name. **Add project** on a
+computer in **Computers** starts the folder and clone steps on that computer, and **Add existing
+folder** in the command palette goes straight to choosing a folder. When the host refuses the
+computer's SSH key, the clone uses HTTPS with Git's credentials for that host instead, and the
+project's remote uses the HTTPS URL.
+
+In **Computers**, you can return to recent conversation history or start a new conversation
+there. Saved history remains readable when a computer is offline; reconnect it to run work.
 
 For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
