@@ -85,6 +85,7 @@ vi.mock("react-native", () => ({
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     dispatch: (input: unknown) => state.draftRequests.push(input),
+    getState: () => ({ index: 0, routes: [{ key: "home", name: "Home" }] }),
     navigate: (route: string, params: unknown) => state.navigationRequests.push({ route, params }),
   }),
   CommonActions: { reset: (input: unknown) => input },
