@@ -32,6 +32,8 @@ export class NamedProjects extends Context.Service<
 >()("t3/fork/file-placement/NamedProjects") {}
 
 const Records = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String));
+const decodeRecords = Schema.decodeEffect(Records);
+const encodeRecords = Schema.encodeEffect(Records);
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -39,7 +41,7 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const recordsPath = path.join(config.stateDir, "fork", "file-placement", "named-projects.json");
   const saved = yield* fs.readFileString(recordsPath).pipe(
-    Effect.flatMap(Schema.decodeEffect(Records)),
+    Effect.flatMap(decodeRecords),
     Effect.asSome,
     Effect.catchIf(
       (cause) => "reason" in cause && cause.reason._tag === "NotFound",
@@ -66,7 +68,7 @@ const make = Effect.gen(function* () {
     yield* Ref.set(roots, next);
     // Never overwrite records this server could not read.
     if (!readable) return;
-    yield* Schema.encodeEffect(Records)(Object.fromEntries(next)).pipe(
+    yield* encodeRecords(Object.fromEntries(next)).pipe(
       Effect.flatMap((contents) =>
         writeFileStringAtomically({ filePath: recordsPath, contents: `${contents}\n` }),
       ),
