@@ -76,7 +76,7 @@ import { makeProfileSettings } from "./LibraryProfileSettings.ts";
 import { validLibraryResources } from "./policy.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import * as SetupMarker from "../../workspace/setupMarker.ts";
-import { proveGitPublication } from "../../workspace/gitPublication.ts";
+import { proveRepositoryPublication } from "../../workspace/gitPublication.ts";
 import {
   managedProjectProcessReason,
   restoreManagedProjectCheckout,
@@ -250,6 +250,11 @@ const EXECUTION_DISABLED =
 const FILL_CANCELLED =
   "Downloading these files was cancelled. Retry from the conversation to finish getting them.";
 const CLONE_CONCURRENCY = 3;
+const CREDENTIAL_GIT_VARIABLE =
+  /^GIT_(?:SSH|SSH_COMMAND|SSH_VARIANT|ASKPASS|CONFIG_GLOBAL|CONFIG_SYSTEM|CONFIG_NOSYSTEM|EXEC_PATH|SSL_\w+|HTTP_\w+|PROXY_\w+|ALLOW_PROTOCOL|PROTOCOL_FROM_USER)$/;
+// `git ls-files -v` tags hiding an edit from status: skip-worktree, or lowercase for assume-unchanged.
+const HIDDEN_INDEX_ENTRY = /^(?:S|[a-z]) /;
+const INDEX_LISTING_BYTES = 64 * 1024 * 1024;
 type FillReport = (
   resource: LibraryResource,
   progress: LibraryGitFetch.LibraryCloneProgress,
@@ -336,8 +341,17 @@ const make = Effect.gen(function* () {
     GIT_NO_REPLACE_OBJECTS: "1",
   };
   // The publication proof fetches with this computer's Git credentials, as a clone does, so a
-  // private repository can prove its commits are pushed. It never prompts.
-  const credentialedGitEnvironment = { ...hostEnvironment, GIT_TERMINAL_PROMPT: "0" };
+  // private repository can prove its commits are pushed. It never prompts. Of the Git variables
+  // it keeps only those that reach a remote: others can point it at another repository.
+  const credentialedGitEnvironment = {
+    ...Object.fromEntries(
+      Object.entries(hostEnvironment).filter(
+        ([key]) => !key.startsWith("GIT_") || CREDENTIAL_GIT_VARIABLE.test(key),
+      ),
+    ),
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+  };
   const placements = yield* ProjectPlacement.ProjectPlacement;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
@@ -485,6 +499,24 @@ const make = Effect.gen(function* () {
     receipt.copy.rootPath === rootPath &&
     receipt.copy.state !== "released" &&
     receipt.copy.registered !== false;
+  /** Whether a copy's checkout of `resource` is still at the path and remote the project names. */
+  const keepsResource = (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    resource: LibraryResource,
+  ) => {
+    const original = receipt.project.resources.find(
+      (entry) => entry.id === resource.id && entry.kind !== "link",
+    );
+    return (
+      original !== undefined &&
+      path.resolve(receipt.copy.rootPath, original.relativePath) ===
+        path.resolve(receipt.copy.rootPath, resource.relativePath) &&
+      (original.remoteUrl === null
+        ? resource.remoteUrl === null
+        : resource.remoteUrl !== null &&
+          normalizeGitRemoteUrl(original.remoteUrl) === normalizeGitRemoteUrl(resource.remoteUrl))
+    );
+  };
   const git = Effect.fnUntraced(function* (
     cwd: string,
     args: ReadonlyArray<string>,
@@ -1167,8 +1199,6 @@ const make = Effect.gen(function* () {
     rootPath: string,
     reserve = false,
     report?: FillReport,
-    /** The server claimed this empty folder for the request, so a new copy may start in it. */
-    claimed = false,
   ) {
     if (!supportsExecution)
       return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
@@ -1248,22 +1278,11 @@ const make = Effect.gen(function* () {
     }
     if (existing?.copy.state === "released") return existing.copy;
     const compatible = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
-      selected.every((resource) => {
-        const original = receipt.project.resources.find(
-          (entry) => entry.id === resource.id && entry.kind !== "link",
-        );
-        return (
-          original !== undefined &&
+      selected.every(
+        (resource) =>
           receipt.copy.repositories.some((entry) => entry.resourceId === resource.id) &&
-          path.resolve(rootPath, original.relativePath) ===
-            path.resolve(rootPath, resource.relativePath) &&
-          (original.remoteUrl === null
-            ? resource.remoteUrl === null
-            : resource.remoteUrl !== null &&
-              normalizeGitRemoteUrl(original.remoteUrl) ===
-                normalizeGitRemoteUrl(resource.remoteUrl))
-        );
-      });
+          keepsResource(receipt, resource),
+      );
     const reusable = receipts.find(
       (receipt) =>
         receipt.copy.rootPath === rootPath &&
@@ -1399,15 +1418,13 @@ const make = Effect.gen(function* () {
     if (existing === undefined) {
       if (input.strategy === "reuse") {
         if (!(yield* fs.exists(rootPath))) return yield* new LibraryError({ reason: "not-found" });
-      } else if (!(claimed && (yield* emptyOrMissing(rootPath)))) {
-        if (yield* fs.exists(rootPath))
-          return yield* new LibraryError({
-            reason: "blocked",
-            detail:
-              "A folder already exists at this location. Choose an empty location for new files, or add the existing folder instead.",
-          });
-        yield* fs.makeDirectory(rootPath, { recursive: true });
-      }
+      } else if (!(yield* emptyOrMissing(rootPath)))
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "A folder already exists at this location. Choose an empty location for new files, or add the existing folder instead.",
+        });
+      else yield* fs.makeDirectory(rootPath, { recursive: true });
       const info = yield* fs.stat(rootPath);
       if (info.type !== "Directory") return yield* new LibraryError({ reason: "invalid" });
       const snapshot = input.strategy === "reuse" ? yield* projections.getShellSnapshot() : null;
@@ -1869,22 +1886,10 @@ const make = Effect.gen(function* () {
     if (selected.length === 0 && !receipt.rootCheckpointRepository)
       return yield* new LibraryError({ reason: "context-copy-required" });
     for (const repository of selected) {
-      const original = receipt.project.resources.find(
-        (resource) => resource.id === repository.resourceId && resource.kind !== "link",
-      );
       const current = project.resources.find(
         (resource) => resource.id === repository.resourceId && resource.kind !== "link",
       );
-      if (
-        original === undefined ||
-        current === undefined ||
-        path.resolve(copy.rootPath, original.relativePath) !==
-          path.resolve(copy.rootPath, current.relativePath) ||
-        (original.remoteUrl === null
-          ? current.remoteUrl !== null
-          : current.remoteUrl === null ||
-            normalizeGitRemoteUrl(original.remoteUrl) !== normalizeGitRemoteUrl(current.remoteUrl))
-      )
+      if (current === undefined || !keepsResource(receipt, current))
         return yield* new LibraryError({ reason: "invalid" });
       if (!(yield* fs.exists(repository.path)))
         return yield* new LibraryError({ reason: "not-found" });
@@ -2018,20 +2023,48 @@ const make = Effect.gen(function* () {
   });
 
   /**
-   * Why removing a copy's repositories could lose work, or null when each is clean, every branch
-   * and tag is on a remote (fetched with this computer's credentials) and its only ignored files
-   * are regenerable output such as node_modules. `.env` files and local databases count as work.
+   * Why removing a copy's repositories could lose work, or null when each is clean, everything
+   * its refs, stashes and reflogs reach is on its project's remote (fetched with this computer's
+   * credentials) and its only ignored files are regenerable output such as node_modules. `.env`
+   * files, local databases, submodules and any other repository in the folder count as work.
    */
   const unpublishedWork = Effect.fn("LibraryWorkspace.unpublishedWork")(function* (
-    copy: LibraryWorkingCopy,
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
   ) {
+    const copy = receipt.copy;
+    const expected = new Set(copy.repositories.map((repository) => repository.path));
+    if (receipt.rootCheckpointRepository) expected.add(copy.rootPath);
+    if ((yield* workingRepositories(copy)).some((found) => !expected.has(found)))
+      return "another repository or worktree in these files";
     for (const repository of copy.repositories) {
       const changes = yield* git(
         repository.path,
-        ["--no-optional-locks", "status", "--porcelain=v1", "-z"],
+        [
+          "--no-optional-locks",
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+          "--ignore-submodules=none",
+        ],
         true,
       );
       if (changes !== "") return "uncommitted changes";
+      // Deinitialized submodules keep their commits here, with no folder to find.
+      if (yield* fs.exists(path.join(repository.path, ".git", "modules")))
+        return "submodule history";
+      const index = yield* runner.run({
+        command: "git",
+        args: ["-c", "core.fsmonitor=false", "ls-files", "-v", "-z"],
+        cwd: repository.path,
+        env: isolatedGitEnvironment,
+        extendEnv: false,
+        timeout: "2 minutes",
+        maxOutputBytes: INDEX_LISTING_BYTES,
+      });
+      if (index.code !== 0) return "unreadable index";
+      if (index.stdout.split("\0").some((entry) => HIDDEN_INDEX_ENTRY.test(entry)))
+        return "files whose changes Git status hides";
       const ignored = yield* git(
         repository.path,
         ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
@@ -2042,16 +2075,29 @@ const make = Effect.gen(function* () {
           ? "unreadable ignored files"
           : yield* landedIgnoredFileBlocker(repository.path, ignored).pipe(
               Effect.provideService(GitVcsDriver.GitVcsDriver, gitDriver),
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
               Effect.orElseSucceed(() => "unreadable ignored files"),
             );
       if (ignoredBlocker !== null) return `ignored local files such as ${ignoredBlocker}`;
-      const publication = yield* proveGitPublication((args) =>
-        git(repository.path, args, false, credentialedGitEnvironment).pipe(
-          Effect.filterOrFail(
-            (output): output is string => output !== null,
-            () => new LibraryError({ reason: "io" }),
+      // Only the project's own remote counts: another remote can be a local folder, or this one.
+      const resource = receipt.project.resources.find(
+        (entry) => entry.id === repository.resourceId && entry.kind !== "link",
+      );
+      const publication = yield* proveRepositoryPublication(
+        (args) =>
+          git(repository.path, args, false, credentialedGitEnvironment).pipe(
+            Effect.filterOrFail(
+              (output): output is string => output !== null,
+              () => new LibraryError({ reason: "io" }),
+            ),
           ),
-        ),
+        resource?.remoteUrl != null && validLibraryResources([resource])
+          ? [resource.remoteUrl]
+          : [],
+      ).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
       );
       if (!publication.published) return publication.reason;
     }
@@ -2083,9 +2129,42 @@ const make = Effect.gen(function* () {
     receipt.rootCheckpointRepository || receipt.copy.repositories.length === 0
       ? Effect.succeed(false)
       : Effect.gen(function* () {
-          if ((yield* unpublishedWork(receipt.copy)) !== null) return false;
+          if ((yield* unpublishedWork(receipt)) !== null) return false;
           return (yield* strayEntry(receipt.copy)) === null;
         }).pipe(Effect.orElseSucceed(() => false));
+
+  /**
+   * Whether a project or another copy now lives at or inside the folder a release set aside. A
+   * search for existing checkouts can offer that folder, and its next retry would delete it.
+   */
+  const removalPathInUse = Effect.fn("LibraryWorkspace.removalPathInUse")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    removalPath: string,
+  ) {
+    if (
+      (yield* projects.listShells()).some((project) =>
+        contained(removalPath, project.workspaceRoot),
+      )
+    )
+      return true;
+    return (yield* store.receipts).some(
+      (other) =>
+        other.copy.id !== receipt.copy.id &&
+        other.copy.state !== "released" &&
+        other.copy.registered !== false &&
+        contained(removalPath, other.copy.rootPath),
+    );
+  });
+  /** A copy whose folder and set-aside folder are both gone may sit on an unplugged disk. */
+  const folderUnavailable = Effect.fn("LibraryWorkspace.folderUnavailable")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  ) {
+    return (
+      !(yield* fs.exists(receipt.copy.rootPath)) &&
+      (receipt.removalPath === null || !(yield* fs.exists(receipt.removalPath))) &&
+      !(yield* fs.exists(path.dirname(receipt.copy.rootPath)))
+    );
+  });
 
   const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
     receipt: LibraryWorkspaceStore.WorkspaceReceipt,
@@ -2147,8 +2226,11 @@ const make = Effect.gen(function* () {
       )) !== null
     )
       return false;
-    if (!rootExists) return true;
-    if ((yield* unpublishedWork(copy)) !== null) return false;
+    if (!rootExists)
+      return (
+        !(yield* folderUnavailable(receipt)) && !(yield* removalPathInUse(receipt, processPath))
+      );
+    if ((yield* unpublishedWork(receipt)) !== null) return false;
     // A discussion's synthetic Git repository has no upstream. Its full history is archived.
     if (
       receipt.rootCheckpointRepository &&
@@ -2470,7 +2552,6 @@ const make = Effect.gen(function* () {
           releaseReviewToken: input.reviewToken,
           removalPath,
         };
-        yield* store.put(receipt);
       } else if (receipt.copy.ownership === "managed") {
         if (Option.isNone(recoveryPublisher) || !recoveryPublisher.value.configured)
           return yield* new LibraryError({ reason: "publisher-unavailable" });
@@ -2481,6 +2562,7 @@ const make = Effect.gen(function* () {
           Effect.fn("LibraryWorkspace.recordReleaseArchive")(function* (saved) {
             const pending = {
               ...saved,
+              publishedRelease: undefined,
               reopenRequestId: undefined,
               releaseRequestId: input.requestId,
               releaseReviewToken: input.reviewToken,
@@ -2528,9 +2610,16 @@ const make = Effect.gen(function* () {
           });
         if (isHistoryAcknowledged && !(yield* canCleanUp(receipt, isHistoryAcknowledged)))
           return yield* new LibraryError({ reason: "blocked", detail: COPY_IN_USE });
+        // Recorded only now, so a change found by the checks above leaves no pending release.
+        if (receipt.publishedRelease === true) yield* store.put(receipt);
         yield* fs.rename(receipt.copy.rootPath, removalPath);
       }
       if (yield* fs.exists(removalPath)) {
+        if (yield* removalPathInUse(receipt, removalPath))
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: `Loom kept ${removalPath} because a project on this computer now uses it. Remove that project, then retry.`,
+          });
         const identity = fileIdentity(yield* fs.stat(removalPath));
         if (
           (yield* fs.realPath(removalPath)) !== removalPath ||
@@ -2545,6 +2634,11 @@ const make = Effect.gen(function* () {
         yield* fs.remove(removalPath, { recursive: true });
       }
     }
+    if (!(yield* fs.exists(receipt.copy.rootPath)) && (yield* folderUnavailable(receipt)))
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
+      });
     const released = {
       ...receipt,
       releaseRequestId: input.requestId,
@@ -2552,6 +2646,8 @@ const make = Effect.gen(function* () {
       copy: { ...receipt.copy, state: "released" as const, updatedAt: yield* now },
     };
     yield* store.put(released);
+    for (const cwd of [released.copy.rootPath, ...released.copy.repositories.map((r) => r.path)])
+      yield* SetupMarker.clear(cwd).pipe(Effect.provide(restorationServices), Effect.ignore);
     // Keep the retry archive until the deletion and released state are durably recorded.
     yield* removeArchiveCache(released);
     return released.copy;
@@ -2581,7 +2677,13 @@ const make = Effect.gen(function* () {
           detail:
             "Loom is already removing these files. Let the removal finish before changing whether they stay on this computer.",
         });
-      receipt = { ...receipt, releaseRequestId: null, releaseReviewToken: null, removalPath: null };
+      receipt = {
+        ...receipt,
+        publishedRelease: undefined,
+        releaseRequestId: null,
+        releaseReviewToken: null,
+        removalPath: null,
+      };
     }
     const copy = { ...receipt.copy, keepOnComputer: input.keepOnComputer, updatedAt: yield* now };
     yield* store.put({ ...receipt, copy });
@@ -2972,6 +3074,16 @@ const make = Effect.gen(function* () {
             directory: path.dirname(rootPath),
             prefix: ".loom-restore-",
           });
+          // Staged paths stop existing with the stage, published or not, so their markers go too.
+          const stagedMarkers: Array<string> = [];
+          yield* Effect.addFinalizer(() =>
+            Effect.forEach(
+              stagedMarkers,
+              (cwd) =>
+                SetupMarker.clear(cwd).pipe(Effect.provide(restorationServices), Effect.ignore),
+              { discard: true },
+            ),
+          );
           const archivePath = path.join(staging, "recovery.tar.gz");
           yield* retriever.retrievePortable({ grant: input.grant, archivePath });
           if (
@@ -3066,8 +3178,9 @@ const make = Effect.gen(function* () {
             return yield* new LibraryError({ reason: "archive-unverified" });
           for (const repository of source.repositories) {
             const relativePath = restoredPath(repository);
-            if (relativePath !== ".")
-              yield* ensureRestoreSetupPending(path.resolve(restored, relativePath));
+            if (relativePath === ".") continue;
+            stagedMarkers.push(path.resolve(restored, relativePath));
+            yield* ensureRestoreSetupPending(path.resolve(restored, relativePath));
           }
           receipt = {
             ...receipt!,
@@ -3084,7 +3197,8 @@ const make = Effect.gen(function* () {
               (yield* fs.readDirectory(rootPath)).length !== 0
             )
               return yield* occupied();
-            yield* fs.remove(rootPath);
+            // Node removes a directory only when asked to recurse. This one was just found empty.
+            yield* fs.remove(rootPath, { recursive: true });
           }
           yield* fs.rename(restored, rootPath);
           yield* Effect.scoped(
@@ -3797,9 +3911,13 @@ const make = Effect.gen(function* () {
       .toSorted(
         (left, right) => Date.parse(right.copy.updatedAt) - Date.parse(left.copy.updatedAt),
       );
+    // A copy whose repository sits at another path or remote cannot serve the project now.
     const covers = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
-      selected.every((resource) =>
-        receipt.copy.repositories.some((repository) => repository.resourceId === resource?.id),
+      selected.every(
+        (resource) =>
+          resource !== undefined &&
+          receipt.copy.repositories.some((repository) => repository.resourceId === resource.id) &&
+          keepsResource(receipt, resource),
       );
     for (const receipt of own) {
       if (
@@ -3906,6 +4024,31 @@ const make = Effect.gen(function* () {
    * Resolves a prepare that left the folder to this computer. A retry returns to the folder its
    * request already has. The client's strategy is only a hint; the placement decides it.
    */
+  const claimProjectFolder = (title: string) =>
+    placements.claimFolder(title).pipe(
+      Effect.mapError(
+        (cause) =>
+          new LibraryError({
+            reason: "blocked",
+            detail: `Loom could not make a folder for these files in the Projects folder: ${cause.message}`,
+            cause,
+          }),
+      ),
+    );
+  /** A folder claimed for a request that recorded nothing is the server's to take back. */
+  const releaseClaim = Effect.fn("LibraryWorkspace.releaseClaim")(
+    function* (requestId: string, rootPath: string) {
+      const recorded = (yield* store.receipts).some(
+        (receipt) =>
+          receipt.requestId === requestId ||
+          receipt.registrationRequests?.some((request) => request.requestId === requestId),
+      );
+      if (!recorded && (yield* fs.exists(rootPath)) && (yield* emptyOrMissing(rootPath)))
+        yield* fs.remove(rootPath, { recursive: true });
+    },
+    (effect) => Effect.ignore(effect),
+  );
+
   const placeCopy = Effect.fn("LibraryWorkspace.placeCopy")(function* (
     input: LibraryPrepareCopyRequest,
   ) {
@@ -3973,16 +4116,7 @@ const make = Effect.gen(function* () {
       );
       if (reclaimed) return { request, claimed: true };
     }
-    const rootPath = yield* placements.claimFolder(input.project.title).pipe(
-      Effect.mapError(
-        (cause) =>
-          new LibraryError({
-            reason: "blocked",
-            detail: `Loom could not make a folder for these files in the Projects folder: ${cause.message}`,
-            cause,
-          }),
-      ),
-    );
+    const rootPath = yield* claimProjectFolder(input.project.title);
     return { request: { ...request, rootPath }, claimed: true };
   });
 
@@ -4005,7 +4139,11 @@ const make = Effect.gen(function* () {
             const rootPath = yield* canonicalRoot(placed.request.rootPath);
             const copy = yield* withWorkspaceLease(
               rootPath,
-              prepareCopy(placed.request, rootPath, true, undefined, placed.claimed === true),
+              prepareCopy(placed.request, rootPath, true),
+            ).pipe(
+              Effect.onError(() =>
+                placed.claimed === true ? releaseClaim(input.requestId, rootPath) : Effect.void,
+              ),
             );
             return { copy, request: placed.request };
           }),
@@ -4114,10 +4252,22 @@ const make = Effect.gen(function* () {
           "prepare",
           mapIo(
             Effect.gen(function* () {
-              if (input.rootPath === undefined)
-                return yield* new LibraryError({ reason: "invalid" });
-              const rootPath = yield* canonicalRoot(input.rootPath);
-              return yield* withWorkspaceLease(rootPath, restoreCopy(input, rootPath));
+              // Like a prepare, a restore without a location gets a new folder, never other files.
+              const earlier =
+                input.rootPath === undefined
+                  ? (yield* store.receipts).find((saved) => saved.requestId === input.requestId)
+                  : undefined;
+              const claimed = input.rootPath === undefined && earlier === undefined;
+              const rootPath = yield* canonicalRoot(
+                input.rootPath ??
+                  earlier?.copy.rootPath ??
+                  (yield* claimProjectFolder(input.project.title)),
+              );
+              return yield* withWorkspaceLease(rootPath, restoreCopy(input, rootPath)).pipe(
+                Effect.onError(() =>
+                  claimed ? releaseClaim(input.requestId, rootPath) : Effect.void,
+                ),
+              );
             }),
           ),
         )
