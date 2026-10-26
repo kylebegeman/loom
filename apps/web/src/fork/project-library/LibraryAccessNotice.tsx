@@ -4,7 +4,8 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { SavedIdentitySignIn } from "~/fork/identity/ComputerIdentityAccess";
 import { useEnvironment } from "~/state/environments";
-import type { EnvironmentAccessBlock } from "./state";
+import { accessRepairTarget } from "./accessBlock";
+import { type EnvironmentAccessBlock, useLibraryAuthorityId } from "./state";
 
 /**
  * Says why a Library action is unavailable for access reasons and offers the repair where the
@@ -21,6 +22,7 @@ export function LibraryAccessNotice({
   readonly onLeave?: (() => void) | undefined;
 }) {
   const environment = useEnvironment(block?.environmentId ?? null);
+  const libraryId = useLibraryAuthorityId();
   if (!block) return null;
   if (!block.repair)
     return (
@@ -29,6 +31,7 @@ export function LibraryAccessNotice({
       </p>
     );
   const signIn = block.repair === "sign-in" && environment ? environment.entry : null;
+  const target = accessRepairTarget(block, libraryId, environment !== null);
   return (
     <Alert variant="warning" role="status" controlAlignment="first-line">
       {signIn ? <KeyRoundIcon /> : <UnplugIcon />}
@@ -39,10 +42,12 @@ export function LibraryAccessNotice({
           <Button
             size="sm"
             variant={signIn ? "ghost" : "outline"}
-            render={<Link to="/settings/connections" />}
+            render={
+              <Link to="/settings/connections" {...(target === null ? {} : { hash: target })} />
+            }
             onClick={onLeave}
           >
-            Open connections
+            {target === null ? "Open connections" : "Library sign-in"}
           </Button>
         </div>
       </AlertDescription>

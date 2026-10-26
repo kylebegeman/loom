@@ -27,7 +27,8 @@ export type IdentityCredential = BearerConnectionCredential & {
   readonly identity: NonNullable<BearerConnectionCredential["identity"]>;
 };
 
-const RENEWAL_MAX_LEAD_MS = 10 * 60_000;
+/** Renewal starts at most this long before a sign-in ends. */
+export const IDENTITY_RENEWAL_MAX_LEAD_MS = 10 * 60_000;
 const RENEWAL_MIN_LEAD_MS = 30_000;
 const RETRY_INITIAL_MS = 30_000;
 const RETRY_MAX_MS = 5 * 60_000;
@@ -48,7 +49,7 @@ export function isIdentityCredential(
  * at least 30 seconds before expiry. Anchoring at first sight keeps the time stable across wakes.
  */
 export function identityRenewalDueAt(expiresAt: number, observedAt: number): number {
-  const lead = Math.min(RENEWAL_MAX_LEAD_MS, Math.max(0, expiresAt - observedAt) / 4);
+  const lead = Math.min(IDENTITY_RENEWAL_MAX_LEAD_MS, Math.max(0, expiresAt - observedAt) / 4);
   return expiresAt - Math.max(RENEWAL_MIN_LEAD_MS, lead);
 }
 

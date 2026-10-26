@@ -1,5 +1,5 @@
 import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession";
-import { LibrarySetup } from "~/fork/project-library/LibrarySetup"; // fork: library-setup
+import { LibrarySignInSettings } from "~/fork/project-library/LibrarySignInSettings"; // fork: library-sign-in
 import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
@@ -1482,8 +1482,8 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
-      {/* fork: library-setup */}
-      <LibrarySetup showConnectionsLink={false} />
+      {/* fork: library-sign-in */}
+      <LibrarySignInSettings />
       {/* fork: fleet-connections */}
       <ComputerConnectionsHome
         // fork: directory-computers

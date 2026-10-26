@@ -39,8 +39,21 @@ export const LOOM_IDENTITY_PASSKEY_REQUIRED = "passkey_required";
 export const LoomIdentityAccount = Schema.Struct({
   issuer: Schema.String,
   subject: Schema.String,
+  /** Display only, from the ID token at sign-in. Matching uses `issuer` and `subject`. */
+  name: Schema.optional(Schema.String),
+  email: Schema.optional(Schema.String),
 });
 export type LoomIdentityAccount = typeof LoomIdentityAccount.Type;
+
+/** Copies an account without the other fields of whatever object carries it. */
+export function loomIdentityAccount(account: LoomIdentityAccount): LoomIdentityAccount {
+  return {
+    issuer: account.issuer,
+    subject: account.subject,
+    ...(account.name === undefined ? {} : { name: account.name }),
+    ...(account.email === undefined ? {} : { email: account.email }),
+  };
+}
 export const LoomIdentitySessionResult = Schema.Struct({
   ...AuthAccessTokenResult.fields,
   environmentId: EnvironmentId,

@@ -5,6 +5,10 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import type { SettingsSearchItemId } from "~/components/settings/settingsSearch";
+
+/** The Library block in Settings > Connections, also reachable from the command palette. */
+export const LIBRARY_SIGN_IN_TARGET = "library-sign-in" satisfies SettingsSearchItemId;
 
 export interface AccessTarget {
   readonly label: string;
@@ -74,4 +78,18 @@ function explain(target: AccessTarget): Omit<AccessBlock, "label"> | null {
     message: `This device's access to ${target.label} does not include ${missing.join(" or ")}. ${target.identity ? "Sign in again" : "Pair it again"} with that permission.`,
     repair: target.identity ? "sign-in" : "connection",
   };
+}
+
+/**
+ * Where a block's repair lives: the Library block when the Library's own sign-in lapsed or this
+ * device no longer saves the Library, otherwise the computer's place in Connections.
+ */
+export function accessRepairTarget(
+  block: Pick<AccessBlock, "repair"> & { readonly environmentId: string },
+  libraryId: string | null,
+  saved: boolean,
+): typeof LIBRARY_SIGN_IN_TARGET | null {
+  return block.environmentId === libraryId && (block.repair === "sign-in" || !saved)
+    ? LIBRARY_SIGN_IN_TARGET
+    : null;
 }

@@ -11,6 +11,7 @@ import {
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
+  LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   LibraryError,
   LibraryOperation,
   LibraryOperationInput,
@@ -62,7 +63,7 @@ const denied = (reason: "session" | "turn" | "workload" | "owner" = "session", t
             ? threadId?.startsWith("workload:")
               ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
               : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel."
-            : "This device's sign-in is no longer current. Sign in again from Connections in Settings, then retry.",
+            : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 const Workload = Schema.Struct({

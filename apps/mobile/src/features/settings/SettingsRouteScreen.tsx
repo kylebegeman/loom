@@ -44,6 +44,7 @@ import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
+import { useLibrarySignInStatus } from "../../fork/library/LibrarySignInStatus"; // fork: library-sign-in
 
 export function SettingsRouteScreen() {
   const surface = useWorkspaceSurface();
@@ -114,6 +115,7 @@ function ConfiguredSettingsRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const libraryRow = useLibraryRow(); // fork: library-sign-in
   const accountLabel = !isLoaded
     ? "Checking"
     : !isSignedIn
@@ -132,6 +134,7 @@ function ConfiguredSettingsRouteScreen() {
           onPress: () => navigation.navigate("SettingsAuth"),
         },
         environmentsRow(Object.keys(savedConnectionsById).length),
+        libraryRow, // fork: library-sign-in
         {
           id: "SettingsNotifications",
           icon: "bell.badge",
@@ -145,14 +148,30 @@ function ConfiguredSettingsRouteScreen() {
 
 function LocalSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const libraryRow = useLibraryRow(); // fork: library-sign-in
   return (
     <SettingsList
       connections={[
         environmentsRow(Object.keys(savedConnectionsById).length),
+        libraryRow, // fork: library-sign-in
         ...LibraryPush.rows(), // fork: library-push
       ]}
     />
   );
+}
+
+/** The Library's sign-in state, one tap from its sign-in. */
+function useLibraryRow(): SettingsListRow {
+  const navigation = useNavigation();
+  const status = useLibrarySignInStatus();
+  return {
+    id: "LibrarySettings",
+    icon: "server.rack",
+    label: "Library",
+    value: status.environmentId === null ? "Not connected" : status.stateLabel,
+    valuePosition: "trailing",
+    onPress: () => navigation.navigate("LibrarySettings"),
+  };
 }
 
 function environmentsRow(count: number): SettingsListRow {
@@ -280,7 +299,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
       title: "Projects & conversations",
       rows: [
         route("Library", "folder", "Projects"),
-        route("LibrarySettings", "server.rack", "Library connection"),
         ...(selectedProjectKey !== null
           ? [
               page("SettingsProjectOverview", "folder", "Computer folders", {

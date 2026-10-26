@@ -1,6 +1,11 @@
 import { AuthOrchestrationOperateScope, AuthSettingsWriteScope } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
-import { accessBlock, type AccessTarget } from "./accessBlock";
+import {
+  accessBlock,
+  accessRepairTarget,
+  LIBRARY_SIGN_IN_TARGET,
+  type AccessTarget,
+} from "./accessBlock";
 
 // The decision reads only grant fields; the rest of the session shape is irrelevant here.
 const session = (fields: {
@@ -83,4 +88,17 @@ it("sends a turned-off or missing connection to Connections", () => {
     repair: "connection",
     message: "Library is not connected. Reconnect it to continue.",
   });
+});
+
+it("leads an expired Library sign-in to the Library block, other computers to Connections", () => {
+  const block = accessBlock({ ...library, session: session({ authenticated: false }) })!;
+  expect(accessRepairTarget({ ...block, environmentId: "library" }, "library", true)).toBe(
+    LIBRARY_SIGN_IN_TARGET,
+  );
+  expect(accessRepairTarget({ ...block, environmentId: "worker" }, "library", true)).toBeNull();
+  const offline = accessBlock({ ...library, identity: false, phase: "offline" })!;
+  expect(accessRepairTarget({ ...offline, environmentId: "library" }, "library", true)).toBeNull();
+  expect(accessRepairTarget({ ...offline, environmentId: "library" }, "library", false)).toBe(
+    LIBRARY_SIGN_IN_TARGET,
+  );
 });

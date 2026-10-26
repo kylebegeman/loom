@@ -166,7 +166,7 @@ export function ReleaseCopyDialog({
           </ul>
         ) : null}
         <LibraryErrorNotice error={status.error} onRetry={status.refresh} />
-        <LibraryErrorNotice error={error} />
+        <LibraryErrorNotice error={error} onLeave={onClose} />
       </div>
     </LibraryDialog>
   );
