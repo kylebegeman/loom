@@ -703,6 +703,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         ready: false,
         tunnel: { state: "off", message: null },
         gateway: { state: "off", message: null },
+        library: { state: "off", message: null },
       });
       const error = yield* Effect.flip(service.share({ port: 5173 }, owner));
       expect(error.reason).toBe("not-configured");
@@ -1521,6 +1522,52 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
         machine: "dorothy",
         suffix: "bagels.top",
       });
+    }),
+  );
+
+  it.effect("shows whether the Library registered this computer's preview hosts", () =>
+    Effect.gen(function* () {
+      const library = yield* makeLibrary;
+      const harness = yield* makeHarness({ library });
+      const registered = yield* harness.service.configure({ settings: ready });
+      expect(registered.library).toEqual({ state: "registered", message: null });
+
+      const refusal = "Sign this computer in to your Library.";
+      library.answer(Effect.fail(new LibraryError({ reason: "blocked", detail: refusal })));
+      const refused = yield* harness.service.configure({
+        settings: { ...ready, defaultLifetime: "1h" },
+      });
+      expect(refused.library).toEqual({ state: "error", message: refusal });
+      expect((yield* harness.service.snapshot).setup.library).toEqual(refused.library);
+
+      library.answer(Effect.fail(new LibraryError({ reason: "io" })));
+      yield* TestClock.adjust("30 minutes");
+      yield* Queue.take(library.calls);
+      const unreachable = yield* harness.service.configure({ settings: ready });
+      expect(unreachable.library?.state).toBe("error");
+      expect(unreachable.library?.message).toContain("could not reach the Library");
+
+      library.answer(Effect.fail(new LibraryError({ reason: "not-found" })));
+      const older = yield* harness.service.configure({
+        settings: { ...ready, defaultLifetime: "1h" },
+      });
+      expect(older.library).toEqual({ state: "unsupported", message: null });
+
+      library.answer(Effect.succeed(library.access));
+      const renamed = yield* harness.service.configure({
+        settings: { ...ready, machine: "nora" },
+      });
+      expect(renamed.library).toEqual({ state: "registered", message: null });
+      const off = yield* harness.service.configure({ settings: { ...ready, enabled: false } });
+      expect(off.library).toEqual({ state: "off", message: null });
+    }),
+  );
+
+  it.effect("says when no Library is connected to register preview hosts with", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const setup = yield* harness.service.configure({ settings: ready });
+      expect(setup.library).toEqual({ state: "not-connected", message: null });
     }),
   );
 

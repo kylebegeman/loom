@@ -28,6 +28,7 @@ vi.mock("@effect/atom-react", () => ({
 }));
 vi.mock("@t3tools/client-runtime/fork", () => ({
   supportsLoomFeature: (_capabilities: unknown, feature: string) => feature === "preview-links",
+  previewLibraryStatus: () => null,
 }));
 vi.mock("~/components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({ environment: { environmentId: "preview-env" } }),

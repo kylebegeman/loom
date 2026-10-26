@@ -126,6 +126,17 @@ export type PreviewTunnelState = typeof PreviewTunnelState.Type;
 export const PreviewGatewayState = Schema.Literals(["off", "listening", "error"]);
 export type PreviewGatewayState = typeof PreviewGatewayState.Type;
 
+/** Whether this computer's Library knows its preview hosts and signs cold browsers in to them. */
+export const PreviewLibraryState = Schema.Literals([
+  "off",
+  "not-connected",
+  "registering",
+  "registered",
+  "unsupported",
+  "error",
+]);
+export type PreviewLibraryState = typeof PreviewLibraryState.Type;
+
 export const PreviewLinksSetup = Schema.Struct({
   settings: PreviewLinksSettings,
   tokenStored: Schema.Boolean,
@@ -133,6 +144,10 @@ export const PreviewLinksSetup = Schema.Struct({
   ready: Schema.Boolean,
   tunnel: Schema.Struct({ state: PreviewTunnelState, message: Schema.NullOr(Schema.String) }),
   gateway: Schema.Struct({ state: PreviewGatewayState, message: Schema.NullOr(Schema.String) }),
+  /** Absent from servers that predate it. */
+  library: Schema.optionalKey(
+    Schema.Struct({ state: PreviewLibraryState, message: Schema.NullOr(Schema.String) }),
+  ),
 });
 export type PreviewLinksSetup = typeof PreviewLinksSetup.Type;
 

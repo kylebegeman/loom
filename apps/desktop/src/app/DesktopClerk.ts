@@ -21,6 +21,13 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
+// fork: clerk-token-mode
+import {
+  CLERK_TOKEN_STORE,
+  clerkTokenFile,
+  ownerOnlyTokenStorage,
+  restrictTokenFile,
+} from "../fork/clerk-tokens/OwnerOnlyTokenStorage.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
@@ -85,7 +92,10 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
 
 function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
   return createClerkBridge({
-    storage: storage({ path: stateDir }),
+    storage: ownerOnlyTokenStorage(
+      clerkTokenFile(stateDir),
+      storage({ path: stateDir, name: CLERK_TOKEN_STORE }),
+    ), // fork: clerk-token-mode
     manageSingleInstanceLock: false,
     passkeys: true,
     renderer: {
@@ -118,6 +128,13 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("second-instance", (_event: unknown, argv: readonly string[]) => {
     handleSecondInstance(argv);
   });
+
+  // fork: clerk-token-mode
+  yield* Effect.try(() => restrictTokenFile(clerkTokenFile(environment.stateDir))).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not make the Clerk token file owner-only", cause),
+    ),
+  );
 
   yield* Effect.acquireRelease(
     Effect.try({

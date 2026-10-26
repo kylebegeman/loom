@@ -210,6 +210,8 @@ const LIBRARY_KEY_PREFIX = "library:";
 const LIBRARY_ACCESS_REFRESH_INTERVAL = Duration.minutes(30);
 /** How long saving settings waits on the Library before leaving the rest to the background. */
 const LIBRARY_ACCESS_SAVE_WAIT = Duration.seconds(5);
+/** The hosts one registration asks the Library to sign browsers in for. */
+const previewHosts = (settings: PreviewLinksSettings) => `${settings.machine}.${settings.suffix}`;
 /** Tickets and nonces kept as spent. Full means a flood of fresh tickets, so new ones fail. */
 const MAX_SPENT_TICKETS = 1024;
 // A ticket still verifies this long past its expiry, so it has to stay spent until then. The
@@ -390,6 +392,11 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const spentTickets = new Map<string, number>();
   /** The Library that signs cold browsers in, or null while none has said it will. */
   let libraryIssuer: PreviewTicketIssuer | null = null;
+  /** The last registration answer, for the machine and suffix it was asked about. */
+  let libraryAnswer: {
+    readonly hosts: string;
+    readonly status: NonNullable<PreviewLinksSetup["library"]>;
+  } | null = null;
   /** The realpath each folder link serves, by link id. */
   const folderRoots = new Map(saved.folderRoots.map(({ linkId, root }) => [linkId, root]));
   /** Running folder servers by link id. Only the backing reconcile closes them. */
@@ -551,12 +558,21 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       : { state: "listening", message: null };
   };
 
+  const librarySetup = (): NonNullable<PreviewLinksSetup["library"]> => {
+    if (!isPreviewReady(settings)) return { state: "off", message: null };
+    if (!publisher.enabled) return { state: "not-connected", message: null };
+    return libraryAnswer?.hosts === previewHosts(settings)
+      ? libraryAnswer.status
+      : { state: "registering", message: null };
+  };
+
   const currentSetup = (): PreviewLinksSetup => ({
     settings,
     tokenStored: tunnelToken !== null,
     ready: isPreviewReady(settings),
     tunnel: tunnelSetup(),
     gateway: gatewaySetup(),
+    library: librarySetup(),
   });
   const currentSnapshot = (): PreviewLinksSnapshot => ({ setup: currentSetup(), links });
 
@@ -966,6 +982,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       const suffix = isPreviewReady(settings) ? settings.suffix : null;
       if (suffix === null) {
         libraryIssuer = null;
+        libraryAnswer = null;
         if (!libraryRegistered) return Effect.void;
         return publisher.registerPreviews(null).pipe(
           Effect.matchEffect({
@@ -980,6 +997,11 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
         );
       }
       libraryRegistered = true;
+      const hosts = previewHosts(settings);
+      const answered = (status: NonNullable<PreviewLinksSetup["library"]>) =>
+        Effect.sync(() => {
+          libraryAnswer = { hosts, status };
+        }).pipe(Effect.andThen(publish));
       return publisher.registerPreviews({ machine: settings.machine, suffix }).pipe(
         Effect.matchEffect({
           onSuccess: (access) => {
@@ -987,19 +1009,37 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
             return libraryIssuer === null
               ? Effect.logWarning("Ignoring the Library's preview sign-in, which is not usable", {
                   origin: access.origin,
-                })
-              : Effect.void;
+                }).pipe(
+                  Effect.andThen(
+                    answered({
+                      state: "error",
+                      message: "The Library answered with a preview sign-in Loom cannot use.",
+                    }),
+                  ),
+                )
+              : answered({ state: "registered", message: null });
           },
           onFailure: (error) => {
             // An older Library has no preview sign-in, so browsers keep entering from Loom.
             if (error.reason === "not-found") {
               libraryIssuer = null;
               libraryRegistered = false;
-              return Effect.void;
+              return answered({ state: "unsupported", message: null });
             }
             return Effect.logWarning("Could not refresh preview sign-in with the Library", {
               reason: error.reason,
-            });
+            }).pipe(
+              Effect.andThen(
+                answered({
+                  state: "error",
+                  // Only a refusal carries a reason written for people; the rest did not reach it.
+                  message:
+                    error.reason === "blocked"
+                      ? error.message
+                      : "Loom could not reach the Library to register these preview hosts. It tries again on its own.",
+                }),
+              ),
+            );
           },
         }),
       );
@@ -1052,14 +1092,14 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const configure = (input: PreviewLinksConfigureInput) =>
     saveSettings(input).pipe(
       Effect.andThen(gatewayStarted),
-      Effect.map(() => currentSetup()),
-      Effect.tap(() =>
+      Effect.andThen(
         Effect.forkIn(refreshLibraryAccess, rootScope).pipe(
           Effect.flatMap((fiber) =>
             Fiber.await(fiber).pipe(Effect.timeoutOption(LIBRARY_ACCESS_SAVE_WAIT)),
           ),
         ),
       ),
+      Effect.map(() => currentSetup()),
     );
 
   const share = Effect.fn("PreviewLinksService.share")(function* (

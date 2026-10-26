@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
-import type { PreviewLink, PreviewPage } from "@t3tools/contracts/fork";
+import type { PreviewLink, PreviewLinksSetup, PreviewPage } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import {
   canRestorePreviewPage,
   formatPreviewDuration,
+  previewLibraryStatus,
   previewLinkBackingLabel,
   previewPageControls,
   previewPageSummary,
@@ -39,6 +40,40 @@ function page(overrides: Partial<PreviewPage> = {}): PreviewPage {
 
 const ended = (overrides: Partial<PreviewPage> = {}) =>
   page({ state: "ended", endedAt: at(-HOUR), restorableUntil: at(6 * DAY), ...overrides });
+
+describe("previewLibraryStatus", () => {
+  const setup = (library?: PreviewLinksSetup["library"]): PreviewLinksSetup => ({
+    settings: {
+      enabled: true,
+      suffix: "bagels.top",
+      machine: "dorothy",
+      defaultLifetime: "12h",
+      gatewayPort: 3779,
+    },
+    tokenStored: true,
+    ready: true,
+    tunnel: { state: "connected", message: null },
+    gateway: { state: "listening", message: null },
+    ...(library === undefined ? {} : { library }),
+  });
+
+  it("shows nothing for older servers or while previews are off", () => {
+    expect(previewLibraryStatus(setup())).toBeNull();
+    expect(previewLibraryStatus(setup({ state: "off", message: null }))).toBeNull();
+  });
+
+  it("flags only a failed registration, with the server's reason", () => {
+    expect(previewLibraryStatus(setup({ state: "registered", message: null }))).toMatchObject({
+      label: "Registered",
+      problem: false,
+    });
+    expect(
+      previewLibraryStatus(setup({ state: "error", message: "Sign this computer in." })),
+    ).toEqual({ label: "Not registered", detail: "Sign this computer in.", problem: true });
+    for (const state of ["registering", "not-connected", "unsupported"] as const)
+      expect(previewLibraryStatus(setup({ state, message: null }))?.problem).toBe(false);
+  });
+});
 
 describe("formatPreviewDuration", () => {
   it("formats whole units, rounded down", () => {

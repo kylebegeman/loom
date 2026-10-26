@@ -25,7 +25,11 @@ import {
   preparedConnect,
   launchAgent,
   nextLoomVersion,
+  iosDelivered,
   iosPublishConfig,
+  nodeCandidates,
+  requiredNodeVersion,
+  resolveNode,
   unlockIosSigningKeychain,
   iosSourceQualification,
   automaticIosEnvironment,
@@ -78,6 +82,30 @@ vi.mock("node:process", async (importOriginal) => {
 });
 
 const COMMIT = "cdbf78ca63edbd1289a81deecba28c2bcfcf73fd";
+const ENGINE_NODE = "26.12.1";
+const FNM_NODE = NodePath.join(
+  NodeOS.homedir(),
+  ".local/share/fnm/node-versions",
+  `v${ENGINE_NODE}`,
+  "installation/bin/node",
+);
+const nodeProbe = (version: string) => ({
+  pid: 1,
+  output: [null, `${version}\n`, ""],
+  stdout: `${version}\n`,
+  stderr: "",
+  status: 0,
+  signal: null,
+});
+const missingCommand = (command: string) => ({
+  pid: 0,
+  output: [null, "", ""],
+  stdout: "",
+  stderr: "",
+  status: null,
+  signal: null,
+  error: Object.assign(new Error(`spawnSync ${command} ENOENT`), { code: "ENOENT" }),
+});
 const CONNECT_FILE = {
   enabled: true,
   mobileEnabled: true,
@@ -376,6 +404,8 @@ describe("prepared Connect decision", () => {
       vi.resetAllMocks();
       for (const key of [...T3_TRACING_KEYS, "LOOM_CONNECT_RETIRED", "T3CODE_RELAY_URL"])
         vi.stubEnv(key, "inherited");
+      vi.stubEnv("FNM_DIR", "");
+      vi.stubEnv("XDG_DATA_HOME", "");
       let installEnv: NodeJS.ProcessEnv | undefined;
       vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command, rawArgs, options) => {
         const args = [...rawArgs!];
@@ -384,6 +414,8 @@ describe("prepared Connect decision", () => {
           installEnv = options?.env;
           throw new Error("Build boundary reached");
         }
+        if (args[0] === "-p")
+          return command === FNM_NODE ? nodeProbe(ENGINE_NODE) : missingCommand(command);
         if (command === "security") stdout = '1) 0123456789 "Loom Local Code Signing"';
         else if (command === "gh") {
           if (args[0] !== "release" || args[1] !== "list")
@@ -394,6 +426,8 @@ describe("prepared Connect decision", () => {
           stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
         else if (args[0] === "rev-parse") stdout = COMMIT;
         else if (args[0] === "cat-file") stdout = "commit";
+        else if (args[0] === "show" && args[1] === `${COMMIT}:package.json`)
+          stdout = JSON.stringify({ engines: { node: ENGINE_NODE } });
         else if (!["fetch", "tag", "checkout", "status", "restore"].includes(args[0]!))
           throw new Error(`Unexpected Git command: ${args.join(" ")}`);
         return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
@@ -415,6 +449,7 @@ describe("prepared Connect decision", () => {
         vi.mocked(NodeFSP.rm).mockResolvedValue();
         await expect(main("prepare")).rejects.toThrow("Build boundary reached");
         expect(installEnv).toBeDefined();
+        expect(installEnv?.PATH?.split(NodePath.delimiter)[1]).toBe(NodePath.dirname(FNM_NODE));
         for (const key of T3_TRACING_KEYS) expect(installEnv).not.toHaveProperty(key);
         expect(installEnv?.LOOM_CONNECT_RETIRED).toBe(retired);
         expect(installEnv?.T3CODE_RELAY_URL).toBe(
@@ -1100,6 +1135,98 @@ describe("Loom update publishing", () => {
   });
 });
 
+describe("publisher Node", () => {
+  it("requires the exact Node pinned by package.json engines", () => {
+    expect(requiredNodeVersion(JSON.stringify({ engines: { node: ENGINE_NODE } }))).toBe(
+      ENGINE_NODE,
+    );
+    for (const manifest of [
+      {},
+      { engines: {} },
+      { engines: { node: ">=24" } },
+      { engines: { node: "26" } },
+    ])
+      expect(() => requiredNodeVersion(JSON.stringify(manifest))).toThrow(
+        "engines.node pinned to an exact version",
+      );
+  });
+
+  it("looks only in install locations that survive fnm shells and Homebrew upgrades", () => {
+    const candidates = nodeCandidates(ENGINE_NODE, {}, "/Users/loom");
+    expect(candidates).toEqual([
+      "/Users/loom/.local/share/fnm/node-versions/v26.12.1/installation/bin/node",
+      "/Users/loom/Library/Application Support/fnm/node-versions/v26.12.1/installation/bin/node",
+      "/Users/loom/.fnm/node-versions/v26.12.1/installation/bin/node",
+      "/opt/homebrew/opt/node@26/bin/node",
+      "/opt/homebrew/opt/node/bin/node",
+    ]);
+    expect(nodeCandidates(ENGINE_NODE, { FNM_DIR: "/fnm" }, "/Users/loom")[0]).toBe(
+      "/fnm/node-versions/v26.12.1/installation/bin/node",
+    );
+    expect(candidates.some((path) => path.includes("multishell") || path.includes("Cellar"))).toBe(
+      false,
+    );
+  });
+
+  it("selects the first candidate that reports the pinned version and names the fix when none does", () => {
+    const candidates = ["/missing/node", "/opt/homebrew/opt/node@26/bin/node", "/fnm/node"];
+    try {
+      vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command) =>
+        command === "/missing/node"
+          ? missingCommand(command)
+          : nodeProbe(command === "/fnm/node" ? ENGINE_NODE : "26.9.0"),
+      );
+      expect(resolveNode(ENGINE_NODE, candidates)).toBe("/fnm/node");
+      expect(() => resolveNode("26.13.0", candidates)).toThrow(
+        /Node 26\.13\.0 \(package\.json engines\.node\)[\s\S]*\/fnm\/node[\s\S]*fnm install 26\.13\.0/,
+      );
+    } finally {
+      vi.resetAllMocks();
+    }
+  });
+
+  it("names a build tool missing from the build Node's PATH instead of a bare ENOENT", async () => {
+    const stats = await NodeFSP.stat(import.meta.filename);
+    const tag = "loom-v0.0.48-nightly.20261013.3044";
+    vi.resetAllMocks();
+    vi.stubEnv("FNM_DIR", "");
+    vi.stubEnv("XDG_DATA_HOME", "");
+    vi.mocked(NodeChildProcess.spawnSync).mockImplementation((command, rawArgs) => {
+      const args = [...rawArgs!];
+      let stdout = "";
+      if (command === "pnpm") return missingCommand(command);
+      if (args[0] === "-p")
+        return command === FNM_NODE ? nodeProbe(ENGINE_NODE) : missingCommand(command);
+      if (command === "security") stdout = '1) 0123456789 "Loom Local Code Signing"';
+      else if (command === "gh") stdout = "";
+      else if (args[0] === "remote") stdout = "https://github.com/kylebegeman/loom.git";
+      else if (args[0] === "for-each-ref") stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
+      else if (args[0] === "rev-parse") stdout = COMMIT;
+      else if (args[0] === "cat-file") stdout = "commit";
+      else if (args[0] === "show") stdout = JSON.stringify({ engines: { node: ENGINE_NODE } });
+      return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
+    });
+    try {
+      vi.mocked(NodeFS.existsSync).mockReturnValue(false);
+      vi.mocked(NodeFSP.mkdir).mockResolvedValue(undefined);
+      vi.mocked(NodeFSP.mkdtemp).mockResolvedValue("/nonexistent/loom-build-staging");
+      vi.mocked(NodeFSP.stat).mockImplementation(async (path) => {
+        if (String(path).includes("Loom Builds"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return stats;
+      });
+      vi.mocked(NodeFSP.writeFile).mockResolvedValue();
+      vi.mocked(NodeFSP.rm).mockResolvedValue();
+      await expect(main("prepare")).rejects.toThrow(
+        `pnpm is not installed on the publisher's PATH: ${NodePath.join(NodeOS.homedir(), "Library/Application Support/Loom Updates/source/node_modules/.bin")}${NodePath.delimiter}${NodePath.dirname(FNM_NODE)}`,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetAllMocks();
+    }
+  });
+});
+
 describe("optional Loom iOS delivery", () => {
   const ownConfig = {
     enabled: true,
@@ -1224,6 +1351,23 @@ it("does not inherit interactive build or export overrides into automatic iOS de
   };
   expect(automaticIosEnvironment(env)).toEqual({ ASC_PROFILE: "some-profile", PATH: "/usr/bin" });
   expect(env.LOOM_IOS_BUILD_NUMBER).toBe("1");
+});
+
+it("skips iOS delivery only for a confirmed upload of the same source, team and app", () => {
+  const config = { teamId: "23W93ZUURR", appId: "1234567890" };
+  const delivered = {
+    sourceSha: COMMIT,
+    ...config,
+    buildNumber: "358.58.76",
+    artifactSha256: "b".repeat(64),
+    buildId: "apple-build",
+  };
+  expect(iosDelivered(delivered, COMMIT, config)).toBe(true);
+  expect(iosDelivered({ ...delivered, buildId: undefined }, COMMIT, config)).toBe(false);
+  expect(iosDelivered({ ...delivered, artifactSha256: undefined }, COMMIT, config)).toBe(false);
+  expect(iosDelivered(delivered, "a".repeat(40), config)).toBe(false);
+  expect(iosDelivered(delivered, COMMIT, { ...config, appId: "1234567891" })).toBe(false);
+  expect(iosDelivered(null, COMMIT, config)).toBe(false);
 });
 
 describe("publisher logs", () => {

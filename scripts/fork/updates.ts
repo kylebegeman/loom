@@ -325,6 +325,7 @@ export function buildEnvironment(
   env: NodeJS.ProcessEnv,
   connect?: LoomConnectConfig | null,
   connectRetired = false,
+  node?: string,
 ) {
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
@@ -364,7 +365,7 @@ export function buildEnvironment(
     ...(connect === null && connectRetired ? { LOOM_CONNECT_RETIRED: "1" } : {}),
     PATH: [
       NodePath.join(sourceDir, "node_modules/.bin"),
-      NodePath.dirname(NodeProcess.execPath),
+      ...(node === undefined ? [] : [NodePath.dirname(node)]),
       "/opt/homebrew/opt/rustup/bin",
       "/opt/homebrew/bin",
       "/usr/local/bin",
@@ -381,6 +382,68 @@ export function buildEnvironment(
     COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
     GIT_TERMINAL_PROMPT: "0",
   };
+}
+
+const EXACT_NODE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+/** Builds run on the exact Node the release source pins, not on whichever Node runs the publisher. */
+export function requiredNodeVersion(packageJson: string) {
+  const manifest: unknown = JSON.parse(packageJson);
+  const engines =
+    manifest && typeof manifest === "object" && "engines" in manifest ? manifest.engines : null;
+  const node = engines && typeof engines === "object" && "node" in engines ? engines.node : null;
+  if (typeof node !== "string" || !EXACT_NODE_VERSION.test(node))
+    throw new Error(
+      `Loom builds need package.json engines.node pinned to an exact version, not ${JSON.stringify(node)}.`,
+    );
+  return node;
+}
+
+// Only install locations that stay put: fnm's multishell links and Homebrew's Cellar paths move.
+export function nodeCandidates(
+  version: string,
+  env: NodeJS.ProcessEnv = NodeProcess.env,
+  home = NodeOS.homedir(),
+) {
+  const fnmRoots = [
+    env.FNM_DIR,
+    NodePath.join(env.XDG_DATA_HOME || NodePath.join(home, ".local/share"), "fnm"),
+    NodePath.join(home, "Library/Application Support/fnm"),
+    NodePath.join(home, ".fnm"),
+  ].filter((root): root is string => root !== undefined && root !== "");
+  return [
+    ...new Set([
+      ...fnmRoots.map((root) =>
+        NodePath.join(root, "node-versions", `v${version}`, "installation/bin/node"),
+      ),
+      `/opt/homebrew/opt/node@${version.split(".")[0]}/bin/node`,
+      "/opt/homebrew/opt/node/bin/node",
+    ]),
+  ];
+}
+
+export function resolveNode(version: string, candidates = nodeCandidates(version)) {
+  for (const candidate of candidates) {
+    const probe = NodeChildProcess.spawnSync(candidate, ["-p", "process.versions.node"], {
+      encoding: "utf8",
+      env: {},
+    });
+    if (probe.status === 0 && probe.stdout.trim() === version) return candidate;
+  }
+  throw new Error(
+    [
+      `Loom builds need Node ${version} (package.json engines.node), and no stable install of it was found in:`,
+      ...candidates.map((candidate) => `  ${candidate}`),
+      `Install it with \`fnm install ${version}\`, install pnpm with that Node's npm, then run \`node scripts/fork/updates.ts enable\` from the Loom checkout.`,
+    ].join("\n"),
+  );
+}
+
+/** The Node a release's own package.json pins, read from the commit rather than the working tree. */
+function releaseNode(commit: string) {
+  return resolveNode(
+    requiredNodeVersion(run("git", ["show", `${commit}:package.json`], { cwd: SOURCE_DIR })),
+  );
 }
 
 const MAIN_LOG_MAX_BYTES = 10 * 1024 * 1024;
@@ -427,16 +490,23 @@ export async function withBuildLog<T>(record: string, body: () => Promise<T>): P
 function run(
   command: string,
   args: string[],
-  options: { cwd?: string; stream?: boolean; connect?: PreparedConnect } = {},
+  options: { cwd?: string; stream?: boolean; connect?: PreparedConnect; node?: string } = {},
 ) {
   const sourceDir = options.cwd ?? SOURCE_DIR;
-  const { connect } = options;
+  const { connect, node } = options;
+  // Retirement reaches only builds, and only from the decision their record froze.
+  const env = connect
+    ? buildEnvironment(
+        sourceDir,
+        NodeProcess.env,
+        connect.connectConfig,
+        connect.connectRetired,
+        node,
+      )
+    : buildEnvironment(sourceDir, NodeProcess.env, publisherConnectConfig(), false, node);
   const result = NodeChildProcess.spawnSync(command, args, {
     cwd: options.cwd,
-    // Retirement reaches only builds, and only from the decision their record froze.
-    env: connect
-      ? buildEnvironment(sourceDir, NodeProcess.env, connect.connectConfig, connect.connectRetired)
-      : buildEnvironment(sourceDir, NodeProcess.env, publisherConnectConfig()),
+    env,
     encoding: "utf8",
     stdio: options.stream && buildLogFd !== undefined ? ["ignore", buildLogFd, buildLogFd] : "pipe",
     maxBuffer: 8 * 1024 * 1024,
@@ -449,6 +519,10 @@ function run(
     console.log(
       `${new Date().toISOString()} ${command} ${args[0] ?? ""}: ${result.status === 0 ? "done" : "failed"}`,
     );
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT")
+    throw new Error(`${command} is not installed on the publisher's PATH: ${env.PATH}`, {
+      cause: result.error,
+    });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
@@ -602,11 +676,11 @@ async function releaseState(release: Release) {
   return raw === "false" ? "published" : raw === "true" ? "draft" : "missing";
 }
 
-function ensureBlockmap(zip: string) {
+function ensureBlockmap(zip: string, node: string) {
   // Reuse the pinned packager's block-map implementation after signing changes
   // the ZIP. The map electron-builder made for the unsigned ZIP is no longer valid.
   run(
-    NodeProcess.execPath,
+    node,
     [
       "--input-type=module",
       "-e",
@@ -619,7 +693,7 @@ function ensureBlockmap(zip: string) {
   `,
       zip,
     ],
-    { cwd: SOURCE_DIR },
+    { cwd: SOURCE_DIR, node },
   );
 }
 
@@ -673,7 +747,7 @@ async function prepare(release: Release) {
   const zip = NodePath.join(artifacts, release.filename);
   const manifest = NodePath.join(artifacts, `${release.channel}-mac.yml`);
   if (await exists(NodePath.join(artifacts, "ready"))) {
-    if (!(await exists(`${zip}.blockmap`))) ensureBlockmap(zip);
+    if (!(await exists(`${zip}.blockmap`))) ensureBlockmap(zip, releaseNode(release.commit));
     return { record, zip, manifest, ...(await preparedConnect(record, release.commit)) };
   }
   const configured = publisherConnectConfig();
@@ -698,6 +772,7 @@ async function prepare(release: Release) {
       `An incomplete or older build already exists at ${record}; inspect it before retrying.`,
     );
 
+  const node = releaseNode(release.commit);
   run("git", ["checkout", "--quiet", "--detach", release.commit], { cwd: SOURCE_DIR });
   if (run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: SOURCE_DIR })) {
     throw new Error(`The isolated build checkout has changes: ${SOURCE_DIR}`);
@@ -705,13 +780,19 @@ async function prepare(release: Release) {
   const staging = await NodeFSP.mkdtemp(NodePath.join(STATE_DIR, "build-"));
   try {
     console.log(`Building Loom ${release.version} (${release.commit.slice(0, 10)}).`);
-    run("pnpm", ["install", "--frozen-lockfile"], { cwd: SOURCE_DIR, stream: true, connect });
-    run(NodeProcess.execPath, ["scripts/update-release-package-versions.ts", release.version], {
+    run("pnpm", ["install", "--frozen-lockfile"], {
       cwd: SOURCE_DIR,
       stream: true,
+      connect,
+      node,
+    });
+    run(node, ["scripts/update-release-package-versions.ts", release.version], {
+      cwd: SOURCE_DIR,
+      stream: true,
+      node,
     });
     run(
-      NodeProcess.execPath,
+      node,
       [
         "scripts/build-desktop-artifact.ts",
         "--platform",
@@ -725,7 +806,7 @@ async function prepare(release: Release) {
         "--output-dir",
         staging,
       ],
-      { cwd: SOURCE_DIR, stream: true, connect },
+      { cwd: SOURCE_DIR, stream: true, connect, node },
     );
     const zipNames = (await NodeFSP.readdir(staging)).filter((filename) =>
       filename.endsWith("-arm64.zip"),
@@ -778,7 +859,7 @@ async function prepare(release: Release) {
       NodePath.join(stagedRecord, "Loom.app"),
       stagedZip,
     ]);
-    ensureBlockmap(stagedZip);
+    ensureBlockmap(stagedZip, node);
     await NodeFSP.writeFile(
       NodePath.join(stagedRecord, "updates", NodePath.basename(manifest)),
       await updateManifest(stagedZip, release),
@@ -982,7 +1063,15 @@ export function launchAgent(node: string, script: string, logPath: string) {
 `;
 }
 
+/** The scheduled publisher runs on the checkout's pinned Node, at a path that survives shell sessions. */
+async function publisherNode() {
+  const checkout = NodeURL.fileURLToPath(new URL("../../package.json", import.meta.url));
+  const manifest = (await exists(checkout)) ? checkout : NodePath.join(SOURCE_DIR, "package.json");
+  return resolveNode(requiredNodeVersion(await NodeFSP.readFile(manifest, "utf8")));
+}
+
 async function enable() {
+  const node = await publisherNode();
   const tools = NodePath.join(STATE_DIR, "tools/scripts");
   await NodeFSP.mkdir(NodePath.join(tools, "fork"), { recursive: true });
   await NodeFSP.mkdir(NodePath.join(tools, "lib"), { recursive: true });
@@ -1007,11 +1096,11 @@ async function enable() {
   await capPublisherLog(LOG_PATH);
   if (await exists(PLIST_PATH))
     run("launchctl", ["bootout", `gui/${NodeProcess.getuid!()}`, PLIST_PATH]);
-  await NodeFSP.writeFile(PLIST_PATH, launchAgent(NodeProcess.execPath, script, LOG_PATH));
+  await NodeFSP.writeFile(PLIST_PATH, launchAgent(node, script, LOG_PATH));
   run("plutil", ["-lint", PLIST_PATH]);
   run("launchctl", ["bootstrap", `gui/${NodeProcess.getuid!()}`, PLIST_PATH]);
   console.log(
-    `Loom will check for a merged integration every 30 minutes while you are logged in.\nLog: ${LOG_PATH}`,
+    `Loom will check for a merged integration every 30 minutes while you are logged in.\nNode: ${node}\nLog: ${LOG_PATH}`,
   );
 }
 
@@ -1175,6 +1264,24 @@ export function iosSourceQualification(
     : "pending";
 }
 
+/** A confirmed upload of this exact source leaves nothing to build, inspect or upload again. */
+export function iosDelivered(
+  receipt: unknown,
+  commit: string,
+  config: { readonly teamId: string; readonly appId: string },
+) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
+  const value = receipt as Record<string, unknown>;
+  return (
+    typeof value.buildId === "string" &&
+    value.buildId.trim() !== "" &&
+    typeof value.artifactSha256 === "string" &&
+    value.sourceSha === commit &&
+    value.teamId === config.teamId &&
+    value.appId === config.appId
+  );
+}
+
 export function automaticIosEnvironment(env: NodeJS.ProcessEnv) {
   const result = { ...env };
   for (const key of ["LOOM_IOS_BUILD_NUMBER", "LOOM_IOS_SOURCE_SHA", "LOOM_IOS_EXPORT_OPTIONS"])
@@ -1187,6 +1294,13 @@ async function publishIos(release: Release) {
   if (!(await exists(configPath))) return;
   const config = iosPublishConfig(JSON.parse(await NodeFSP.readFile(configPath, "utf8")));
   if (!config) return;
+  const output = NodePath.join(STATE_DIR, "ios", release.recordName);
+  const receipt = NodePath.join(output, "loom-ios-release.json");
+  if (
+    (await exists(receipt)) &&
+    iosDelivered(JSON.parse(await NodeFSP.readFile(receipt, "utf8")), release.commit, config)
+  )
+    return;
   const runs = JSON.parse(
     run("gh", [
       "run",
@@ -1232,6 +1346,7 @@ async function publishIos(release: Release) {
     );
     return;
   }
+  const node = releaseNode(release.commit);
   if (config.signingKeychain && config.signingKeychainPasswordFile)
     unlockIosSigningKeychain(config.signingKeychain, config.signingKeychainPasswordFile);
   const { connectConfig, connectRetired } = await preparedConnect(
@@ -1239,20 +1354,13 @@ async function publishIos(release: Release) {
     release.commit,
   );
   const result = NodeChildProcess.spawnSync(
-    NodeProcess.execPath,
-    [
-      script,
-      "release",
-      "--output-dir",
-      NodePath.join(STATE_DIR, "ios", release.recordName),
-      "--source-sha",
-      release.commit,
-    ],
+    node,
+    [script, "release", "--output-dir", output, "--source-sha", release.commit],
     {
       cwd: SOURCE_DIR,
       env: {
         ...automaticIosEnvironment(
-          buildEnvironment(SOURCE_DIR, NodeProcess.env, connectConfig, connectRetired),
+          buildEnvironment(SOURCE_DIR, NodeProcess.env, connectConfig, connectRetired, node),
         ),
         ASC_PROFILE: config.profile,
         ASC_STRICT_AUTH: "true",
@@ -1373,10 +1481,6 @@ export async function main(
     );
     return;
   }
-  if (!NodeProcess.versions.node.startsWith("24."))
-    throw new Error(
-      "Run the Loom publisher with Node 24, matching the repository's engine requirement.",
-    );
   if (NodeProcess.platform !== "darwin" || NodeProcess.arch !== "arm64")
     throw new Error("The local Loom publisher requires an Apple Silicon Mac.");
   if (options.command === "enable") return enable();
@@ -1389,8 +1493,11 @@ export async function main(
     return;
   }
   if (options.command === "status") {
+    const node = await publisherNode().catch((error: unknown) =>
+      error instanceof Error ? (error.message.split("\n")[0] ?? error.message) : String(error),
+    );
     console.log(
-      `Scheduler: ${(await exists(PLIST_PATH)) ? "installed" : "not installed"}\nConnect for new builds: ${describePublisherConnect()}\nBuilds: ${BUILDS_DIR}\nLog: ${LOG_PATH}`,
+      `Scheduler: ${(await exists(PLIST_PATH)) ? "installed" : "not installed"}\nNode for builds: ${node}\nConnect for new builds: ${describePublisherConnect()}\nBuilds: ${BUILDS_DIR}\nLog: ${LOG_PATH}`,
     );
     return;
   }

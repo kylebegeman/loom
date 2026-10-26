@@ -17,6 +17,7 @@ import {
   parseLoomConnectConfig,
   type LoomConnectConfig,
 } from "./connect-config.ts";
+import { requiredNodeVersion } from "./updates.ts";
 
 const BUNDLE_ID = "com.kylebegeman.loom";
 const BUNDLE_IDS = [BUNDLE_ID, `${BUNDLE_ID}.sharing`, `${BUNDLE_ID}.widgets`] as const;
@@ -27,6 +28,8 @@ const UPSTREAM_TEAM_ID = "ARK85ZXQ4Z";
 const SOURCE_ROOT = NodePath.resolve(NodeURL.fileURLToPath(new URL("../..", import.meta.url)));
 const RECEIPT_FILE = "loom-ios-release.json";
 const COMPLETED_ARTIFACT_LIMIT = 2;
+// Upload evidence for older builds is never read again once newer builds have shipped.
+const COMPLETED_RECORD_LIMIT = 6;
 const BULKY_ARTIFACTS = [
   "Loom.ipa",
   "Loom.xcarchive",
@@ -647,9 +650,11 @@ export async function pruneCompletedIosBuilds(
   outputDir: string,
   current: Pick<IosReleaseReceipt, "sourceRoot" | "teamId" | "appId">,
   limit = COMPLETED_ARTIFACT_LIMIT,
+  recordLimit = COMPLETED_RECORD_LIMIT,
 ) {
-  if (!Number.isSafeInteger(limit) || limit < 1)
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(recordLimit))
     throw new Error("Keep at least one completed build.");
+  if (recordLimit < limit) throw new Error("Keep at least as many records as built artifacts.");
   const parent = NodePath.dirname(outputDir);
   await ownedPath(parent);
   const completed: { directory: string; receipt: IosReleaseReceipt }[] = [];
@@ -675,14 +680,24 @@ export async function pruneCompletedIosBuilds(
     }
   }
   completed.sort((a, b) => compareBuildNumbers(b.receipt.buildNumber, a.receipt.buildNumber));
-  const retained = new Set([outputDir]);
-  for (const item of completed) {
-    if (retained.size >= limit) break;
-    retained.add(item.directory);
-  }
+  const newest = (count: number) => {
+    const kept = new Set([outputDir]);
+    for (const item of completed) {
+      if (kept.size >= count) break;
+      kept.add(item.directory);
+    }
+    return kept;
+  };
+  const retained = newest(limit);
+  const recorded = newest(recordLimit);
   const removed: string[] = [];
   for (const item of completed) {
     if (retained.has(item.directory)) continue;
+    if (!recorded.has(item.directory)) {
+      await NodeFSP.rm(item.directory, { recursive: true, force: true });
+      removed.push(item.directory);
+      continue;
+    }
     for (const artifact of BULKY_ARTIFACTS) {
       const filename = NodePath.join(item.directory, artifact);
       if (await ownedPath(filename)) {
@@ -1260,8 +1275,15 @@ async function main() {
     console.log(JSON.stringify(configFor(SOURCE_ROOT, teamId, "1")));
     return;
   }
-  if (NodeProcess.platform !== "darwin" || !NodeProcess.versions.node.startsWith("24."))
-    throw new Error("Local iOS release commands require macOS and Node 24.");
+  if (NodeProcess.platform !== "darwin")
+    throw new Error("Local iOS release commands require macOS.");
+  const node = requiredNodeVersion(
+    await NodeFSP.readFile(NodePath.join(SOURCE_ROOT, "package.json"), "utf8"),
+  );
+  if (NodeProcess.versions.node !== node)
+    throw new Error(
+      `Local iOS release commands require Node ${node} (package.json engines.node), not ${NodeProcess.versions.node}.`,
+    );
   const outputDir = args.outputDir!;
   await NodeFSP.mkdir(outputDir, { recursive: true, mode: 0o700 });
   const realOutput = await NodeFSP.realpath(outputDir);

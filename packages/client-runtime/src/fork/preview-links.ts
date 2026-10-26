@@ -1,6 +1,7 @@
 import {
   PREVIEW_LINKS_WS_METHODS as P,
   type PreviewLink,
+  type PreviewLinksSetup,
   type PreviewPage,
   type PreviewPageAction,
   type PreviewPageKind,
@@ -15,6 +16,57 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../state/runtime.ts";
+
+export interface PreviewLibraryStatus {
+  readonly label: string;
+  readonly detail: string;
+  readonly problem: boolean;
+}
+
+/**
+ * Whether browsers outside Loom sign in to this computer's previews through its Library. Null while
+ * previews are off, and from servers that predate the state.
+ */
+export function previewLibraryStatus(setup: PreviewLinksSetup): PreviewLibraryStatus | null {
+  const library = setup.library;
+  switch (library?.state) {
+    case undefined:
+    case "off":
+      return null;
+    case "registered":
+      return {
+        label: "Registered",
+        detail: "Browsers outside Loom sign in through your Library.",
+        problem: false,
+      };
+    case "registering":
+      return {
+        label: "Registering",
+        detail: "Telling your Library about this computer's preview addresses.",
+        problem: false,
+      };
+    case "not-connected":
+      return {
+        label: "Not connected",
+        detail:
+          "This computer has no Library, so other browsers are asked to open links from Loom.",
+        problem: false,
+      };
+    case "unsupported":
+      return {
+        label: "Not supported",
+        detail:
+          "Your Library cannot sign browsers in to previews, so other browsers are asked to open links from Loom.",
+        problem: false,
+      };
+    case "error":
+      return {
+        label: "Not registered",
+        detail: library.message ?? "Your Library did not register this computer's previews.",
+        problem: true,
+      };
+  }
+}
 
 /** Preview links belong to the computer that serves the port; every request stays on that host. */
 export function createPreviewLinksAtoms<R, E>(

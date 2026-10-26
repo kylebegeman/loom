@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { previewLibraryStatus, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
@@ -91,6 +91,7 @@ function EnvironmentPreviewLinks({
       JSON.stringify(draftFromSettings(setup.settings)) || trimmedToken.length > 0;
   const disabled = !canSave || action.busy;
   const status = setupStatus(setup);
+  const library = previewLibraryStatus(setup);
   const openCount = links.filter((link) => link.state === "open").length;
   // Ending a container link removes its container, so only the other links can come back.
   const restoreNote = links.some(
@@ -342,6 +343,20 @@ function EnvironmentPreviewLinks({
             <dt className="font-medium">Tunnel</dt>
             <dd className="text-muted-foreground wrap-anywhere">{tunnelStatus(setup)}</dd>
           </div>
+          {library && (
+            <div className="grid min-w-0 gap-1 sm:grid-cols-[5rem_minmax(0,1fr)]">
+              <dt className="font-medium">Library</dt>
+              <dd
+                className={
+                  library.problem
+                    ? "text-destructive-foreground wrap-anywhere"
+                    : "text-muted-foreground wrap-anywhere"
+                }
+              >
+                {library.label}: {library.detail}
+              </dd>
+            </div>
+          )}
         </dl>
       </LoomSettingsPanel>
       <LoomSettingsPanel

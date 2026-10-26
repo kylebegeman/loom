@@ -14,6 +14,7 @@ import {
   PreviewPagesList,
   PreviewPageTitle,
   PreviewPageUpdateInput,
+  PreviewLibraryState,
   PreviewTunnelState,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -113,11 +114,12 @@ const pageSource = (
 export const PreviewLinksToolkit = Toolkit.make(
   Tool.make("loom_preview_links_list", {
     description:
-      "Show whether preview links are set up on this computer and the links this thread has shared, with their state and expiry.",
+      "Show whether preview links are set up on this computer, whether its Library signs browsers in to them (`library`: registered, or why not), and the links this thread has shared, with their state and expiry.",
     parameters: Tool.EmptyParams,
     success: Schema.Struct({
       ready: Schema.Boolean,
       tunnel: PreviewTunnelState,
+      library: PreviewLibraryState,
       links: Schema.Array(PreviewLink),
     }),
     failure,
@@ -242,6 +244,7 @@ export const previewLinksHandlers = McpToolAccess.toLayer(
             Effect.map(({ snapshot, links }) => ({
               ready: snapshot.setup.ready,
               tunnel: snapshot.setup.tunnel.state,
+              library: snapshot.setup.library?.state ?? "off",
               links,
             })),
           ),
