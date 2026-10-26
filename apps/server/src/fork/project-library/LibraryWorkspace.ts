@@ -330,6 +330,7 @@ const make = Effect.gen(function* () {
   const environmentId = yield* identity.getEnvironmentId;
   const homeDirectory = yield* HostProcess.HomeDirectory;
   const hostEnvironment = yield* HostProcess.Environment;
+  const pathKey = SetupMarker.pathKey(yield* HostProcess.Platform);
   const isolatedGitEnvironment = {
     ...Object.fromEntries(
       Object.entries(hostEnvironment).filter(([key]) => !key.startsWith("GIT_")),
@@ -487,8 +488,9 @@ const make = Effect.gen(function* () {
     );
   });
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+  const samePath = (left: string, right: string) => pathKey(left) === pathKey(right);
   const contained = (root: string, candidate: string) => {
-    const relative = path.relative(root, candidate);
+    const relative = path.relative(pathKey(root), pathKey(candidate));
     return (
       relative === "" ||
       (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
@@ -496,7 +498,7 @@ const make = Effect.gen(function* () {
   };
   /** One folder belongs to one current project. A retired receipt only serves its old conversations. */
   const holdsRoot = (receipt: LibraryWorkspaceStore.WorkspaceReceipt, rootPath: string) =>
-    receipt.copy.rootPath === rootPath &&
+    samePath(receipt.copy.rootPath, rootPath) &&
     receipt.copy.state !== "released" &&
     receipt.copy.registered !== false;
   /** Whether a copy's checkout of `resource` is still at the path and remote the project names. */
@@ -1164,7 +1166,7 @@ const make = Effect.gen(function* () {
         saved.copy.environmentId === environmentId &&
         saved.copy.registered !== false &&
         saved.copy.state !== "released" &&
-        saved.copy.rootPath !== rootPath &&
+        !samePath(saved.copy.rootPath, rootPath) &&
         (contained(rootPath, saved.copy.rootPath) || contained(saved.copy.rootPath, rootPath)),
     );
     if (around !== undefined)
@@ -1285,7 +1287,7 @@ const make = Effect.gen(function* () {
       );
     const reusable = receipts.find(
       (receipt) =>
-        receipt.copy.rootPath === rootPath &&
+        samePath(receipt.copy.rootPath, rootPath) &&
         receipt.copy.ownership === "borrowed" &&
         receipt.copy.registered !== false &&
         receipt.copy.projectId === input.project.id &&
@@ -1379,7 +1381,7 @@ const make = Effect.gen(function* () {
     }
     const retired = receipts.find(
       (receipt) =>
-        receipt.copy.rootPath === rootPath &&
+        samePath(receipt.copy.rootPath, rootPath) &&
         receipt.copy.ownership === "borrowed" &&
         receipt.copy.registered === false &&
         receipt.copy.projectId === input.project.id &&
@@ -4201,7 +4203,7 @@ const make = Effect.gen(function* () {
         live.some(
           (other) =>
             other !== receipt &&
-            other.copy.rootPath === receipt.copy.rootPath &&
+            samePath(other.copy.rootPath, receipt.copy.rootPath) &&
             other.copy.projectId === receipt.copy.projectId &&
             newer(other, receipt),
         )

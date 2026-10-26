@@ -4388,6 +4388,44 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       }),
   );
 
+  it.effect("finds a folder's holder when its receipt spells the folder in another case", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { rootPath, old, next } = yield* takenFolder("spelled");
+      const service = yield* withOwnerLookup((projectId) =>
+        projectId === old.id ? Effect.succeed(old) : Effect.die(`unexpected lookup ${projectId}`),
+      ).pipe(Effect.provideService(HostProcess.Platform, "darwin"));
+      const copy = yield* service.prepareCopy({
+        requestId: "spelled-old",
+        project: old,
+        rootPath,
+        strategy: "reuse",
+      });
+      const saved = yield* store.get(copy.id);
+      const respelled = path.join(path.dirname(rootPath), path.basename(rootPath).toUpperCase());
+      yield* store.put({ ...saved, copy: { ...saved.copy, rootPath: respelled } });
+
+      const inspection = yield* service.inspectFolder({ rootPath });
+      expect(inspection.registrations?.map((registration) => registration.workingCopyId)).toEqual([
+        copy.id,
+      ]);
+      expect(
+        yield* Effect.flip(
+          service.prepareCopy({
+            requestId: "spelled-next",
+            project: next,
+            rootPath,
+            strategy: "reuse",
+          }),
+        ),
+      ).toMatchObject({
+        reason: "blocked",
+        detail: "This folder already belongs to Old app. Add it to that project instead.",
+      });
+    }),
+  );
+
   it.effect(
     "asks the Library about every holder at once, so a slow answer is waited out once",
     () =>
