@@ -37,7 +37,10 @@ const target = EnvironmentId.make("mini");
 
 describe("addProjectToMachine", () => {
   it("follows a reused checkout's project and keeps files that checkout already has", async () => {
-    const written = Promise.withResolvers<unknown>();
+    let resolveWritten: (request: unknown) => void = () => {};
+    const written = new Promise<unknown>((resolve) => {
+      resolveWritten = resolve;
+    });
     mocks.executeAtomQuery.mockImplementation(
       async (
         _registry,
@@ -65,7 +68,7 @@ describe("addProjectToMachine", () => {
             reused: true,
           },
         };
-      written.resolve(request);
+      resolveWritten(request);
       return { _tag: "Success", value: {} };
     });
 
@@ -81,7 +84,7 @@ describe("addProjectToMachine", () => {
     });
 
     expect(projectId).toBe("existing");
-    expect(await written.promise).toEqual({
+    expect(await written).toEqual({
       environmentId: target,
       input: {
         cwd: "/Users/kyle/Projects/corbelo",
