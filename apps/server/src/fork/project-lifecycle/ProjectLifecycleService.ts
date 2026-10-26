@@ -189,6 +189,27 @@ const exists = (path: string) =>
     ),
   );
 
+/**
+ * A checkout counts as deleted only when it is not found inside a readable parent. An unplugged
+ * volume or a denied folder reads as present, so its lane and kept files wait for it.
+ */
+const checkoutDeleted = (path: string) =>
+  Effect.promise(() =>
+    NodeFSP.access(path).then(
+      () => false,
+      (cause: unknown) =>
+        cause instanceof Error && "code" in cause && cause.code === "ENOENT"
+          ? NodeFSP.access(
+              NodePath.dirname(path),
+              NodeFSP.constants.R_OK | NodeFSP.constants.X_OK,
+            ).then(
+              () => true,
+              () => false,
+            )
+          : false,
+    ),
+  );
+
 const writeAtomically = (path: string, contents: string, mode = 0o644) =>
   node(`write ${path}`, async () => {
     await NodeFSP.mkdir(NodePath.dirname(path), { recursive: true });
@@ -262,7 +283,8 @@ builds can use \`${shims}/lane-slot command...\`.
 
 Agents free space with the \`loom_project_lifecycle_free\` tool and raise the cap with
 \`loom_project_lifecycle_grow\`. Loom removes this lane when every thread using the checkout is
-settled or archived. The checkout itself is never touched.
+settled or archived, or an hour after the checkout is deleted while none of them runs. The
+checkout itself is never touched.
 `;
 };
 
@@ -1265,7 +1287,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   const trackCheckouts = Effect.fn("ProjectLifecycle.trackCheckouts")(function* (now: number) {
     for (const laneId of missingSince.keys()) if (!lanes.has(laneId)) missingSince.delete(laneId);
     for (const lane of lanes.values()) {
-      if (yield* exists(lane.checkoutPath)) missingSince.delete(lane.id);
+      if (!(yield* checkoutDeleted(lane.checkoutPath))) missingSince.delete(lane.id);
       else if (!missingSince.has(lane.id)) missingSince.set(lane.id, now);
     }
   });

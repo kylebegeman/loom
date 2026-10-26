@@ -1404,6 +1404,30 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps a lane whose checkout's volume is unplugged or denied", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("lane-worker", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("lane-worker"));
+      const kept = `${lane.laneDir}/space/data/kept.txt`;
+      NodeFS.writeFileSync(kept, "keep");
+      const volume = NodePath.dirname(t.worktree);
+      const unplugged = `${volume}-unplugged`;
+      NodeFS.renameSync(volume, unplugged);
+      expect(laneOf(yield* t.service.tick(), t.worktree)?.checkoutMissing).toBeNull();
+      yield* TestClock.adjust("2 hours");
+      expect(laneOf(yield* t.service.tick(), t.worktree)).toBeDefined();
+      NodeFS.renameSync(unplugged, volume);
+
+      NodeFS.chmodSync(volume, 0o000);
+      yield* Effect.addFinalizer(() => Effect.sync(() => NodeFS.chmodSync(volume, 0o755)));
+      expect(laneOf(yield* t.service.tick(), t.worktree)?.checkoutMissing).toBeNull();
+      yield* TestClock.adjust("2 hours");
+      expect(laneOf(yield* t.service.tick(), t.worktree)).toBeDefined();
+      expect(NodeFS.readFileSync(kept, "utf8")).toBe("keep");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("keeps a lane whose checkout is gone while a holder runs", () =>
     Effect.gen(function* () {
       const t = yield* setup;
