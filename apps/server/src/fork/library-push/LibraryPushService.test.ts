@@ -766,6 +766,7 @@ describe("LibraryPushService agent alerts", () => {
 
       expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "approval" })).toEqual({
         sent: 1,
+        devices: 1,
       });
       yield* push.alert(STUDIO, { threadId: THREAD, kind: "completed" });
       yield* push.alert(STUDIO, { threadId: ThreadId.make("thread-2"), kind: "completed" });
@@ -791,9 +792,21 @@ describe("LibraryPushService agent alerts", () => {
       expect(completed?.payload.aps.alert.body).toBe("An agent finished.");
       expect(completed?.collapseId).toBe(approval?.collapseId);
       expect(other?.collapseId).not.toBe(approval?.collapseId);
-      expect((yield* push.status(identity(env, "alice"))).devices[0]?.lastDelivery).toMatchObject(
-        { outcome: "sent" },
-      );
+      expect((yield* push.status(identity(env, "alice"))).devices[0]?.lastDelivery).toMatchObject({
+        outcome: "sent",
+      });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("tells the computer when no recipient has an iPhone registered", () =>
+    Effect.gen(function* () {
+      const { env, push, apns } = yield* ready(ALERTS_FOR_ALICE);
+      yield* push.register(identity(env, "bob"), registration({ token: BOB_TOKEN }));
+      expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "approval" })).toEqual({
+        sent: 0,
+        devices: 0,
+      });
+      expect(apns.sent).toEqual([]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -809,11 +822,11 @@ describe("LibraryPushService agent alerts", () => {
 
       for (let count = 0; count < 10; count++) yield* send(LAPTOP);
       // The laptop is under its own limit, but the phone has heard enough this hour.
-      expect(yield* send(LAPTOP)).toEqual({ sent: 0 });
+      expect(yield* send(LAPTOP)).toEqual({ sent: 0, devices: 1 });
       expect(apns.sent).toHaveLength(30);
 
       yield* TestClock.adjust("1 hour");
-      expect(yield* send(STUDIO)).toEqual({ sent: 1 });
+      expect(yield* send(STUDIO)).toEqual({ sent: 1, devices: 1 });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -824,6 +837,7 @@ describe("LibraryPushService agent alerts", () => {
       apns.control.respond = () => "bad-token";
       expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "failed" })).toEqual({
         sent: 0,
+        devices: 1,
       });
       expect((yield* push.status(identity(env, "alice"))).devices).toEqual([]);
       expect(secrets.storedSubjects()).toEqual([]);

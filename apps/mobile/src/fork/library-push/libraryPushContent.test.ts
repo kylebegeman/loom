@@ -67,6 +67,7 @@ const content = (overrides: Overrides = {}): LibraryPushContent => {
     activity: IDLE_ACTIVITY,
     status: { state: "ready", reason: null },
     served: null,
+    devices: null,
     libraryLabel: "Home Library",
     test: { phase: "idle" },
     ...rest,
@@ -112,6 +113,45 @@ describe("libraryPushContent", () => {
       kind: "not-allowed",
       toggle: { value: false, disabled: true, description: LIBRARY_PUSH_COPY.notAllowed },
     });
+  });
+
+  it("says how many iPhones hear the Library, and how to add one when none do", () => {
+    expect(content({ record: null, devices: 2 }).message).toEqual({
+      text: "2 iPhones get notifications from this Library.",
+      tone: "muted",
+    });
+    expect(
+      content({ record: null, devices: 0, chosen: library({ alerts: true }) }).message,
+    ).toEqual({
+      text: `${LIBRARY_PUSH_COPY.noDevicesAlerts} ${LIBRARY_PUSH_COPY.turnOnSteps}`,
+      tone: "danger",
+    });
+    expect(content({ record: null, devices: 0 }).message).toEqual({
+      text: `${LIBRARY_PUSH_COPY.noDevices} ${LIBRARY_PUSH_COPY.turnOnSteps}`,
+      tone: "muted",
+    });
+    // A connection without an Identity account registers nothing until it signs in.
+    expect(
+      content({ record: null, devices: 0, chosen: library({ account: null, alerts: true }) })
+        .message?.text,
+    ).toBe(`${LIBRARY_PUSH_COPY.noDevicesAlerts} ${LIBRARY_PUSH_COPY.signInSteps}`);
+    expect(content({ record: null }).message).toBeNull();
+  });
+
+  it("counts the iPhones that hear the Library once this one is registered", () => {
+    expect(content({ record: registered, devices: 1 }).message).toEqual({
+      text: "1 iPhone gets notifications from this Library.",
+      tone: "muted",
+    });
+    expect(
+      content({
+        record: registered,
+        devices: 1,
+        status: { state: "failing", reason: "key-rejected" },
+      }).message,
+    ).toEqual({ text: LIBRARY_PUSH_COPY.keyRejected, tone: "danger" });
+    // The Library dropped this iPhone; it registers again on its own, so no warning shows.
+    expect(content({ record: registered, devices: 0 }).message).toBeNull();
   });
 
   it("always lets an opted-in iPhone turn notifications off", () => {
@@ -313,6 +353,8 @@ describe("libraryPushContent", () => {
       { activity: { running: null, failure: "register", failureReason: "invalid" } },
       { record: optedOut, activity: { ...IDLE_ACTIVITY, failure: "unregister" } },
       { record: registered, test: { phase: "failed", reason: "off" } },
+      { record: registered, devices: 2 },
+      { record: null, devices: 0, chosen: library({ alerts: true, account: null }) },
     ];
     const kinds = new Set<LibraryPushContentKind>();
     const texts: Array<string> = [];
@@ -329,8 +371,14 @@ describe("libraryPushContent", () => {
     }
     expect(kinds.size).toBe(17);
     for (const value of Object.values(LIBRARY_PUSH_COPY)) {
-      texts.push(typeof value === "function" ? value("Home Library") : value);
+      if (typeof value === "string") texts.push(value);
     }
+    texts.push(
+      LIBRARY_PUSH_COPY.toggleLabelFor("Home Library"),
+      LIBRARY_PUSH_COPY.registered("Home Library"),
+      LIBRARY_PUSH_COPY.deviceCount(1),
+      LIBRARY_PUSH_COPY.deviceCount(2),
+    );
     expect(texts.filter((text) => text.includes(EM_DASH))).toEqual([]);
   });
 });

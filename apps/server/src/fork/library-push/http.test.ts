@@ -10,7 +10,9 @@ import {
 import {
   DirectoryError,
   LIBRARY_PUSH_ACTIVITY_ROUTE,
+  LIBRARY_PUSH_READINESS_ROUTE,
   type LibraryPushActivityRequest,
+  type LibraryPushDevice,
   LibraryPushError,
   type LibraryPushErrorReason,
 } from "@t3tools/contracts/fork";
@@ -26,6 +28,19 @@ import { LibraryPushService } from "./LibraryPushService.ts";
 
 const STUDIO = EnvironmentId.make("environment-studio");
 const ACTIVITY = JSON.stringify({ threadId: "thread-1", kind: "completed" });
+const PHONE = {
+  id: "AAAAAAAAAAAAAAAAAAAAAA",
+  deviceId: "per-install-device-id",
+  label: "Kyle's iPhone",
+  bundleId: "com.kylebegeman.loom",
+  apsEnvironment: "production",
+  appVersion: null,
+  registeredAt: "2026-10-24T12:00:00.000Z",
+  refreshedAt: "2026-10-24T12:00:00.000Z",
+  expiresAt: "2026-10-31T12:00:00.000Z",
+  mine: false,
+  lastDelivery: null,
+} satisfies LibraryPushDevice;
 
 const sessionFor = (
   subject: string,
@@ -42,17 +57,28 @@ const fixture = Effect.fn("test.fixture")(function* (
     readonly alerts?: boolean;
     readonly pinned?: Effect.Effect<null, DirectoryError>;
     readonly refuse?: LibraryPushErrorReason;
+    readonly devices?: ReadonlyArray<LibraryPushDevice>;
   } = {},
 ) {
   const sent: Array<{
     readonly environmentId: EnvironmentId;
     readonly request: LibraryPushActivityRequest;
   }> = [];
-  const state = { caller: sessionFor(`loom-host:${STUDIO}`) as EnvironmentAuth.AuthenticatedSession | null };
+  const state = {
+    caller: sessionFor(`loom-host:${STUDIO}`) as EnvironmentAuth.AuthenticatedSession | null,
+  };
   const context = yield* Layer.build(
     Layer.mergeAll(
       Layer.mock(LibraryPushService)({
         alerts: options.alerts ?? true,
+        status: () =>
+          Effect.succeed({
+            state: "ready",
+            reason: null,
+            key: { teamId: "TEAM123456", keyId: "KEY1234567" },
+            devices: options.devices ?? [],
+            topics: [{ bundleId: "com.kylebegeman.loom", apsEnvironment: "production" }],
+          }),
         alert: (environmentId, request) =>
           options.refuse === undefined
             ? Effect.sync(() => {
@@ -100,7 +126,17 @@ const fixture = Effect.fn("test.fixture")(function* (
         json: response.headers.get("content-type")?.includes("json") ? JSON.parse(text) : null,
       };
     });
-  return { post, sent, state };
+  const get = (path: string) =>
+    Effect.promise(async () => {
+      const response = await web.handler(new Request(`http://library.example.test${path}`));
+      const text = await response.text();
+      return {
+        status: response.status,
+        cacheControl: response.headers.get("cache-control"),
+        text,
+      };
+    });
+  return { post, get, sent, state };
 });
 
 describe("library push activity route", () => {
@@ -195,6 +231,48 @@ describe("library push activity route", () => {
         [400, "invalid"],
       ]);
       expect(sent).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("library push readiness route", () => {
+  it.effect("tells a computer how many iPhones are registered, and nothing about them", () =>
+    Effect.gen(function* () {
+      const { get } = yield* fixture({ devices: [PHONE] });
+      const answer = yield* get(LIBRARY_PUSH_READINESS_ROUTE);
+      expect(answer).toMatchObject({ status: 200, cacheControl: "no-store" });
+      expect(JSON.parse(answer.text)).toEqual({
+        state: "ready",
+        reason: null,
+        alerts: true,
+        devices: 1,
+      });
+      for (const detail of [PHONE.id, PHONE.deviceId, PHONE.label, "TEAM123456"])
+        expect(answer.text).not.toContain(detail);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("counts no iPhones and alerts off as they are", () =>
+    Effect.gen(function* () {
+      const { get } = yield* fixture({ alerts: false });
+      expect(JSON.parse((yield* get(LIBRARY_PUSH_READINESS_ROUTE)).text)).toEqual({
+        state: "ready",
+        reason: null,
+        alerts: false,
+        devices: 0,
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("admits only a computer's publisher session", () =>
+    Effect.gen(function* () {
+      const { get, state } = yield* fixture({ devices: [PHONE] });
+      state.caller = sessionFor("pocket-id:alice");
+      expect((yield* get(LIBRARY_PUSH_READINESS_ROUTE)).status).toBe(403);
+      state.caller = sessionFor(`loom-host:${STUDIO}`, [AuthOrchestrationReadScope]);
+      expect((yield* get(LIBRARY_PUSH_READINESS_ROUTE)).status).toBe(403);
+      state.caller = null;
+      expect((yield* get(LIBRARY_PUSH_READINESS_ROUTE)).status).toBe(401);
     }).pipe(Effect.scoped),
   );
 });

@@ -39,7 +39,11 @@ import * as Semaphore from "effect/Semaphore";
 import { identityAccountFromSession } from "../../auth/identityPolicy.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ApnsClient from "./ApnsClient.ts";
-import { agentAlertRequest, type ApnsAlertRequest, LIBRARY_PUSH_TEST_ALERT } from "./apnsPayloads.ts";
+import {
+  agentAlertRequest,
+  type ApnsAlertRequest,
+  LIBRARY_PUSH_TEST_ALERT,
+} from "./apnsPayloads.ts";
 import { libraryPushActivitySwitchOn, libraryPushConfig } from "./config.ts";
 import {
   applyRegistration,
@@ -80,8 +84,8 @@ const UPSTREAM_TEAM_ID = "ARK85ZXQ4Z";
 const DEVICE_TOKEN = /^(?:[0-9a-fA-F]{2}){8,200}$/;
 
 /**
- * Agents reach the service only through MCP tools that answer on this Library. They act as the
- * operator, and those tools never list devices.
+ * Agents, and computers reading the Library's readiness, act as the operator. Neither is ever
+ * shown a device: they get a count.
  */
 export type LibraryPushCaller =
   | {
@@ -221,11 +225,7 @@ interface SendPlan {
 }
 
 /** Drops slots older than the window and keys left without one. */
-const pruneSlots = (
-  slots: Map<string, ReadonlyArray<number>>,
-  nowMs: number,
-  windowMs: number,
-) => {
+const pruneSlots = (slots: Map<string, ReadonlyArray<number>>, nowMs: number, windowMs: number) => {
   for (const [key, times] of slots) {
     const recent = times.filter((at) => nowMs - at < windowMs);
     if (recent.length === 0) slots.delete(key);
@@ -616,7 +616,8 @@ const make = Effect.gen(function* () {
     if (recipients === null) return yield* refuse("off");
     if (sender === null) return yield* refuse("misconfigured");
     const plan = yield* planAlert(recipients, environmentId);
-    if (plan.sends.length === 0) return { sent: 0 } satisfies LibraryPushActivityReply;
+    const devices = plan.targets.length;
+    if (plan.sends.length === 0) return { sent: 0, devices } satisfies LibraryPushActivityReply;
     const results = yield* sendAll(
       sender.send,
       plan.sends,
@@ -625,6 +626,7 @@ const make = Effect.gen(function* () {
     yield* settle(plan, results);
     return {
       sent: results.filter((result) => result.delivery.outcome === "sent").length,
+      devices,
     } satisfies LibraryPushActivityReply;
   });
 

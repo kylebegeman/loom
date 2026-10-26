@@ -8,6 +8,7 @@ import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import * as ApprovalNotificationTransport from "../vault/ApprovalNotificationTransport.ts";
 import { postLibraryActivity } from "./AgentAlerts.ts";
 import { LibraryPushService } from "./LibraryPushService.ts";
+import { UnheardAlertNotices } from "./UnheardAlertNotices.ts";
 
 /**
  * Vault approval alerts (L86). A new pending request reaches the owner's iPhones the way agent
@@ -18,6 +19,7 @@ import { LibraryPushService } from "./LibraryPushService.ts";
 const make = Effect.gen(function* () {
   const library = yield* LibraryConnection.LibraryConnectionService;
   const push = yield* LibraryPushService;
+  const notices = yield* UnheardAlertNotices;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   // Owns each send, so the caller giving up on its short wait never cancels a post in flight.
   const scope = yield* Effect.scope;
@@ -38,6 +40,8 @@ const make = Effect.gen(function* () {
     if (answer === null || answer === "unsupported") return "stubbed" as const;
     if (typeof answer !== "string" && answer.sent > 0) return "delivered" as const;
     // Accepted for no device means nobody heard it, which is no delivery either.
+    if (typeof answer !== "string" && answer.devices === 0)
+      yield* notices.post(request.threadId, "vault");
     yield* Effect.logDebug("Vault approval alert not confirmed", {
       outcome: typeof answer === "string" ? answer : "no-device",
     });

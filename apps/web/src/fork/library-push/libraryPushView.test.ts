@@ -140,20 +140,41 @@ describe("libraryPushView", () => {
     });
   });
 
-  it("reports ready with no phones yet", () => {
-    expect(view(AsyncResult.success(status()))).toMatchObject({
+  it("warns that a ready Library with no phones reaches no one, and says how to add one", () => {
+    const result = view(AsyncResult.success(status()));
+    expect(result).toMatchObject({
       status: "ready",
-      headline: { tone: "success" },
+      headline: {
+        tone: "warning",
+        text: "On, but no iPhone is registered, so notifications reach no one.",
+      },
       key: "Apple key ABCDE12345, team 23W93ZUURR.",
       devices: [],
-      empty: "No iPhones are registered yet.",
+      empty: { tone: "warning" },
       error: null,
       retry: false,
     });
+    expect(result.empty?.text).toMatch(/^No iPhone is registered\. /);
+    expect(result.empty?.text).toContain("sign in to this Library with your passkey");
+    expect(result.empty?.text).toContain("allow them");
   });
 
-  it("keeps today's ready line for a Library from before the served list", () => {
-    expect(view(AsyncResult.success(status()))).toMatchObject({
+  it("counts the registered phones in the ready line", () => {
+    expect(view(AsyncResult.success(status({ devices: [device()] }))).headline).toEqual({
+      tone: "success",
+      text: "On for 1 iPhone. Others signed in to this Library can turn on notifications in Loom's settings.",
+    });
+    expect(
+      view(
+        AsyncResult.success(
+          status({ devices: [device(), device({ id: "BBBBBBBBBBBBBBBBBBBBBB" })] }),
+        ),
+      ).headline?.text,
+    ).toMatch(/^On for 2 iPhones\. /);
+  });
+
+  it("keeps today's ready line where this connection cannot count the phones", () => {
+    expect(view(AsyncResult.success(status()), { canRemove: false })).toMatchObject({
       status: "ready",
       headline: {
         tone: "success",
@@ -167,6 +188,7 @@ describe("libraryPushView", () => {
     const result = view(
       AsyncResult.success(
         status({
+          devices: [device()],
           topics: [
             { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" },
             { bundleId: "com.kylebegeman.loom.dev", apsEnvironment: "sandbox" },
@@ -301,9 +323,12 @@ describe("libraryPushView", () => {
   });
 
   it("says whether the Library sends agent alerts wherever it can send at all", () => {
-    const ready = AsyncResult.success(status());
+    const ready = AsyncResult.success(status({ devices: [device()] }));
     expect(view(ready, { alerts: true }).alerts).toBe(
       "Agent alerts are on: the Library notifies your iPhones when an agent on any of your computers needs your approval or an answer, fails, reaches a usage limit or finishes.",
+    );
+    expect(view(AsyncResult.success(status()), { alerts: true }).alerts).toBe(
+      "Agent alerts are on, but no iPhone hears them yet. Loom notes each missed alert and Vault approval request in its thread.",
     );
     expect(view(ready).alerts).toBe(
       "Agent alerts are off, so the Library sends only test notifications. They are turned on in the Library's server environment.",
@@ -334,8 +359,11 @@ describe("libraryPushView", () => {
   });
 
   it("says why a connection without Settings permission sees no phones", () => {
-    expect(view(AsyncResult.success(status()), { canRemove: false, canTest: false }).empty).toBe(
-      "This connection can't list the Library's iPhones. Use a device signed in with your Loom account or paired with Settings permission.",
+    expect(view(AsyncResult.success(status()), { canRemove: false, canTest: false }).empty).toEqual(
+      {
+        tone: "neutral",
+        text: "This connection can't list the Library's iPhones. Use a device signed in with your Loom account or paired with Settings permission.",
+      },
     );
   });
 

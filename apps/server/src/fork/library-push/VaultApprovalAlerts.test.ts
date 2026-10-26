@@ -19,6 +19,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import * as ApprovalNotifications from "../vault/ApprovalNotifications.ts";
 import { LibraryPushService } from "./LibraryPushService.ts";
+import { type UnheardAlert, UnheardAlertNotices } from "./UnheardAlertNotices.ts";
 import * as VaultApprovalAlerts from "./VaultApprovalAlerts.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("computer-1");
@@ -72,10 +73,13 @@ const libraryPush = (
     },
   });
 
+type Notice = { readonly threadId: ThreadId; readonly alert: UnheardAlert };
+
 /** The real notification service, sending through the adapter over the given channels. */
 const alertsLayer = (
   connection: LibraryConnection.LibraryConnection,
   push: Layer.Layer<LibraryPushService> = libraryPush(false),
+  notices: Array<Notice> = [],
 ) =>
   ApprovalNotifications.layer.pipe(
     Layer.provide(VaultApprovalAlerts.layer),
@@ -85,6 +89,9 @@ const alertsLayer = (
           current: Effect.succeed(connection),
         }),
         push,
+        Layer.mock(UnheardAlertNotices)({
+          post: (threadId, alert) => Effect.sync(() => void notices.push({ threadId, alert })),
+        }),
         Layer.succeed(ServerEnvironmentIdentity, {
           getEnvironmentId: Effect.succeed(ENVIRONMENT_ID),
         }),
@@ -95,6 +102,7 @@ const alertsLayer = (
 const deliveryOf = (
   connection: LibraryConnection.LibraryConnection,
   push?: Layer.Layer<LibraryPushService>,
+  notices?: Array<Notice>,
 ) =>
   Effect.gen(function* () {
     const notifications = yield* ApprovalNotifications.ApprovalNotifications;
@@ -102,7 +110,7 @@ const deliveryOf = (
     // A replay of the same request never sends again.
     yield* notifications.pending(request);
     return (yield* notifications.outcomes([request]))[0]?.delivery;
-  }).pipe(Effect.provide(alertsLayer(connection, push)));
+  }).pipe(Effect.provide(alertsLayer(connection, push, notices)));
 
 const bodyOf = (outgoing: HttpClientRequest.HttpClientRequest) =>
   outgoing.body._tag === "Uint8Array" ? new TextDecoder().decode(outgoing.body.body) : null;
@@ -199,6 +207,32 @@ describe("VaultApprovalAlerts", () => {
           libraryPush(true, () => answer),
         ),
       ).toBe("unconfirmed");
+    }),
+  );
+
+  it.effect("tells the requesting thread when the Library has no iPhone registered", () =>
+    Effect.gen(function* () {
+      const notices: Array<Notice> = [];
+      const unheard = answering(() => Response.json({ sent: 0, devices: 0 }));
+      expect(yield* deliveryOf(unheard, undefined, notices)).toBe("unconfirmed");
+      const own = libraryPush(true, () => Effect.succeed({ sent: 0, devices: 0 }));
+      expect(yield* deliveryOf({ kind: "authority" }, own, notices)).toBe("unconfirmed");
+      expect(notices).toEqual([
+        { threadId: THREAD_ID, alert: "vault" },
+        { threadId: THREAD_ID, alert: "vault" },
+      ]);
+    }),
+  );
+
+  it.effect.each<readonly [string, () => Response]>([
+    ["an iPhone missed it", () => Response.json({ sent: 0, devices: 1 })],
+    ["an older Library does not count iPhones", () => Response.json({ sent: 0 })],
+    ["it was delivered", () => Response.json({ sent: 1, devices: 1 })],
+  ])("leaves the thread alone when %s", ([, response]) =>
+    Effect.gen(function* () {
+      const notices: Array<Notice> = [];
+      yield* deliveryOf(answering(response), undefined, notices);
+      expect(notices).toEqual([]);
     }),
   );
 

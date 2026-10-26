@@ -142,9 +142,10 @@ describe("agentAlertStep", () => {
       "failed",
       null,
     ]);
-    expect(alertsFor([running(), ended("failed", 0, { lastErrorClass: "usage_limit" })])).toEqual(
-      [null, "limited"],
-    );
+    expect(alertsFor([running(), ended("failed", 0, { lastErrorClass: "usage_limit" })])).toEqual([
+      null,
+      "limited",
+    ]);
   });
 
   it("keeps a snoozed thread's result quiet, and lets a failure or a question wake it", () => {
@@ -203,6 +204,7 @@ const harness = Effect.fn("test.harness")(function* (
   yield* TestClock.setTime(NOW);
   const shells = new Map(initial.map((thread) => [thread.id, thread]));
   const posts: Array<LibraryPushActivityRequest> = [];
+  const unheard: Array<ThreadId> = [];
   const alerts = yield* makeAgentAlerts({
     environmentId: ENVIRONMENT_ID,
     post: (request) =>
@@ -210,6 +212,7 @@ const harness = Effect.fn("test.harness")(function* (
         posts.push(request);
         return outcomes.shift() ?? "sent";
       }),
+    unheard: (threadId) => Effect.sync(() => void unheard.push(threadId)),
   }).pipe(
     Effect.provide(
       Layer.mock(ThreadManagementService)({
@@ -238,7 +241,7 @@ const harness = Effect.fn("test.harness")(function* (
     yield* change(running({ id: threadId }));
     yield* change(ended("completed", 0, { id: threadId }));
   });
-  return { posts, change, finish };
+  return { posts, unheard, change, finish };
 });
 
 const posted = (threadId: ThreadId, kind: LibraryPushActivityKind) => ({ threadId, kind });
@@ -274,6 +277,16 @@ describe("makeAgentAlerts", () => {
       yield* TestClock.adjust(1_000);
       yield* finish(ThreadId.make("after"));
       expect(posts.map((post) => post.threadId)).toEqual(["first", "after"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("tells the thread when its alert reached no iPhone, and keeps posting", () =>
+    Effect.gen(function* () {
+      const { posts, unheard, finish } = yield* harness([], ["unheard", "sent"]);
+      yield* finish(ThreadId.make("first"));
+      yield* finish(ThreadId.make("second"));
+      expect(posts.map((post) => post.threadId)).toEqual(["first", "second"]);
+      expect(unheard).toEqual(["first"]);
     }).pipe(Effect.scoped),
   );
 
@@ -322,6 +335,9 @@ describe("remoteAgentAlertPost", () => {
   );
 
   it.effect.each<readonly [string, AgentAlertOutcome, () => Response]>([
+    ["no registered iPhone", "unheard", () => Response.json({ sent: 0, devices: 0 })],
+    ["an iPhone over its limit", "sent", () => Response.json({ sent: 0, devices: 1 })],
+    ["an older Library's reply", "sent", () => Response.json({ sent: 0 })],
     ["an app page", "unsupported", () => new Response("<html></html>", { status: 200 })],
     ["another JSON shape", "unsupported", () => Response.json({ ok: true })],
     ["404", "unsupported", () => new Response(null, { status: 404 })],

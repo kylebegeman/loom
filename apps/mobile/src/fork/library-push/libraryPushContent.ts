@@ -45,6 +45,16 @@ export const LIBRARY_PUSH_COPY = {
   identityRequired: "Sign in to the Library with Loom Identity to get notifications.",
   unsupportedApp: "Your Library doesn't send notifications to this build of Loom.",
   registered: (library: string) => `On. Registered with ${library}.`,
+  deviceCount: (count: number) =>
+    count === 1
+      ? "1 iPhone gets notifications from this Library."
+      : `${count} iPhones get notifications from this Library.`,
+  noDevices: "No iPhone gets notifications from this Library yet.",
+  noDevicesAlerts:
+    "No iPhone gets notifications from this Library, so agent alerts and Vault approval requests reach no one.",
+  turnOnSteps: "Turn this on and allow notifications when iOS asks.",
+  signInSteps:
+    "Sign in to this Library with your passkey, then turn this on and allow notifications when iOS asks.",
   theLibrary: "the Library",
   keyRejected: "The Library can't sign notifications. Check its Apple key.",
   keyUnusable: "The Library can't use its Apple push key.",
@@ -113,6 +123,8 @@ export interface LibraryPushContentInput {
   } | null;
   /** Whether that status lists this build; null when it has not answered or has no list. */
   readonly served: boolean | null;
+  /** How many devices that status lists; null when it has not answered. */
+  readonly devices: number | null;
   readonly libraryLabel: string | null;
   readonly test: LibraryPushTestState;
 }
@@ -201,6 +213,27 @@ const testDescription = (test: LibraryPushTestState): string | null => {
         : `${LIBRARY_PUSH_COPY.testFailed} ${detail}`;
     }
   }
+};
+
+/**
+ * The Library lists an account's own devices to it and every device to an operator, so the count
+ * means nothing to a connection that is neither.
+ */
+const deviceCountOf = (input: LibraryPushContentInput, library: LibraryPushLibrary) =>
+  library.account === null && !library.canChange ? null : input.devices;
+
+/** Off on this iPhone: says who hears the Library now, and the steps when no one does. */
+const availableMessage = (
+  count: number | null,
+  library: LibraryPushLibrary,
+): LibraryPushMessage | null => {
+  if (count === null) return null;
+  if (count > 0) return { text: LIBRARY_PUSH_COPY.deviceCount(count), tone: "muted" };
+  const steps =
+    library.account === null ? LIBRARY_PUSH_COPY.signInSteps : LIBRARY_PUSH_COPY.turnOnSteps;
+  return library.alerts === true
+    ? { text: `${LIBRARY_PUSH_COPY.noDevicesAlerts} ${steps}`, tone: "danger" }
+    : { text: `${LIBRARY_PUSH_COPY.noDevices} ${steps}`, tone: "muted" };
 };
 
 const BASE = {
@@ -306,7 +339,14 @@ function switchContent(input: LibraryPushContentInput): Omit<LibraryPushContent,
       kind: "not-served",
       toggle: offeredOnlyOff(LIBRARY_PUSH_COPY.unsupportedApp),
     };
-  if (record === null || !value) return { ...BASE, kind: "available", toggle: toggle(null) };
+  const count = deviceCountOf(input, library);
+  if (record === null || !value)
+    return {
+      ...BASE,
+      kind: "available",
+      toggle: toggle(null),
+      message: availableMessage(count, library),
+    };
 
   if (input.permission === "denied") {
     return {
@@ -368,7 +408,12 @@ function switchContent(input: LibraryPushContentInput): Omit<LibraryPushContent,
     toggle: toggle(
       LIBRARY_PUSH_COPY.registered(input.libraryLabel ?? LIBRARY_PUSH_COPY.theLibrary),
     ),
-    message: keyMessage(input.status),
+    // A count of 0 here is this iPhone dropped by the Library, which it re-registers on its own.
+    message:
+      keyMessage(input.status) ??
+      (count !== null && count > 0
+        ? { text: LIBRARY_PUSH_COPY.deviceCount(count), tone: "muted" }
+        : null),
     test: { description: testDescription(input.test), loading: input.test.phase === "sending" },
   };
 }

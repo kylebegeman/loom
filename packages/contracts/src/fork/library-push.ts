@@ -51,9 +51,18 @@ export const LibraryPushActivityRequest = Schema.Struct({
 });
 export type LibraryPushActivityRequest = typeof LibraryPushActivityRequest.Type;
 
-/** How many iPhones Apple accepted the alert for. None is not a failure. */
-export const LibraryPushActivityReply = Schema.Struct({ sent: NonNegativeInt });
+/**
+ * How many iPhones Apple accepted the alert for. None is not a failure. `devices` counts the
+ * recipients' registered iPhones, so 0 means no one could have heard it; an older Library omits it.
+ */
+export const LibraryPushActivityReply = Schema.Struct({
+  sent: NonNegativeInt,
+  devices: Schema.optionalKey(NonNegativeInt),
+});
 export type LibraryPushActivityReply = typeof LibraryPushActivityReply.Type;
+
+/** Where a computer's publisher session reads whether its Library can deliver alerts. */
+export const LIBRARY_PUSH_READINESS_ROUTE = "/api/loom/library/push/readiness";
 
 /**
  * Outer allowlist of Loom's iOS bundle IDs. The Library's `LOOM_LIBRARY_PUSH_TOPICS` narrows it
@@ -214,6 +223,18 @@ export const LibraryPushStatus = Schema.Struct({
   topics: Schema.optionalKey(Schema.Array(LibraryPushServedTopic)),
 });
 export type LibraryPushStatus = typeof LibraryPushStatus.Type;
+
+/**
+ * What a computer's publisher session learns about its Library's push: how many iPhones are
+ * registered, never which ones. `alerts` is whether the Library sends agent alerts.
+ */
+export const LibraryPushReadiness = Schema.Struct({
+  state: LibraryPushState,
+  reason: Schema.NullOr(LibraryPushStatusReason),
+  alerts: Schema.Boolean,
+  devices: NonNegativeInt,
+});
+export type LibraryPushReadiness = typeof LibraryPushReadiness.Type;
 
 export const LibraryPushUnregisterRequest = Schema.Struct({ id: LibraryPushDeviceRowId });
 export type LibraryPushUnregisterRequest = typeof LibraryPushUnregisterRequest.Type;

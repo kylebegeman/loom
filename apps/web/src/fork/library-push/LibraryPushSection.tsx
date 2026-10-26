@@ -207,9 +207,9 @@ function LibraryPushBody({
         ) : null}
       </div>
       {view.empty ? (
-        <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground sm:px-4">
-          {view.empty}
-        </p>
+        <div className="px-3 py-3 sm:px-4">
+          <LineText line={view.empty} />
+        </div>
       ) : null}
       {view.devices.map((device) => {
         const busy = pending?.id === device.id ? pending.action : null;

@@ -65,6 +65,7 @@ import type { DirectoryService } from "./directory/DirectoryService.ts";
 import type { ReachService } from "./reach/ReachService.ts";
 import type { ReachProvisioner } from "./reach/library/ReachProvisioner.ts";
 import type { LibraryPushService } from "./library-push/LibraryPushService.ts";
+import type { LibraryPushReadinessService } from "./library-push/LibraryPushReadiness.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -136,7 +137,8 @@ export type ForkServices =
   | DirectoryReporter
   | ReachService
   | ReachProvisioner
-  | LibraryPushService;
+  | LibraryPushService
+  | LibraryPushReadinessService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

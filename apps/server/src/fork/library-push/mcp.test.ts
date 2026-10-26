@@ -13,6 +13,8 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
+import * as LibraryPushReadiness from "./LibraryPushReadiness.ts";
 import { AGENT_CALLER, type LibraryPushCaller, LibraryPushService } from "./LibraryPushService.ts";
 import { LibraryPushToolkit, libraryPushHandlers } from "./mcp.ts";
 import { libraryPushRowId } from "./registry.ts";
@@ -61,14 +63,31 @@ const setup = Effect.fn("test.setup")(function* (topics?: ReadonlyArray<typeof D
     alerts: true,
     alert: () => Effect.die("unused"),
   });
+  // The real readiness service, on the Library itself.
+  const readiness = yield* LibraryPushReadiness.LibraryPushReadinessService.pipe(
+    Effect.provide(
+      LibraryPushReadiness.layer.pipe(
+        Layer.provide(
+          Layer.merge(
+            Layer.succeed(LibraryPushService, service),
+            Layer.mock(LibraryConnection.LibraryConnectionService)({
+              current: Effect.succeed({ kind: "authority" }),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
   const toolkit = yield* LibraryPushToolkit.pipe(
     Effect.provide(
       McpToolAccess.HandlersLayer.layer(libraryPushHandlers).pipe(
         Layer.provide(
           Layer.succeed(
             ForkRuntime,
-            // Only the push service; the tools never read any other fork service.
-            Context.make(LibraryPushService, service) as unknown as Context.Context<ForkServices>,
+            // Only push; the tools never read any other fork service.
+            Context.make(LibraryPushService, service).pipe(
+              Context.add(LibraryPushReadiness.LibraryPushReadinessService, readiness),
+            ) as unknown as Context.Context<ForkServices>,
           ),
         ),
       ),
