@@ -33,6 +33,8 @@ import * as Schema from "effect/Schema";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
+import * as Duration from "effect/Duration";
+import * as TestClock from "effect/testing/TestClock";
 import { expect, vi } from "vite-plus/test";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
@@ -62,6 +64,10 @@ import { layerMemory } from "../../persistence/Sqlite.ts";
 import * as LibraryPublisher from "./LibraryPublisher.ts";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
@@ -125,6 +131,7 @@ const projections = Layer.mock(ProjectionStore.ProjectionStoreV2)({
     Effect.succeed({ schemaVersion: 1, snapshotSequence: 0, threads: [], archivedThreads: [] }),
 });
 const cloneSources = new Map<string, string>();
+const publicationFetchEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
 const cloneFailures = new Map<string, string>();
 const publisherFailures = new Set<string>();
 const publisherEdits = new Map<string, { path: string; contents: string }>();
@@ -138,6 +145,8 @@ const runnerLayer = Layer.effect(
     const runner = yield* ProcessRunner.make();
     return ProcessRunner.ProcessRunner.of({
       run: (input) => {
+        if (input.command === "git" && input.args.includes("--no-write-fetch-head"))
+          publicationFetchEnvs.push(input.env);
         if (input.command !== "git" || input.args[0] !== "clone") return runner.run(input);
         return Effect.gen(function* () {
           const remoteIndex = input.args.indexOf("--") + 1;
@@ -234,8 +243,22 @@ const broadcasterLayer = Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
   refreshLocalStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`local:${cwd}`), vcsStatus)),
   refreshStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`fetch:${cwd}`), vcsStatus)),
 });
+/** Registered project folders and lanes roots the placement guard sees. */
+const placementProjects: ProjectStore.ProjectRow[] = [];
+const lanesRoots: string[] = [];
+const placementLayer = ProjectPlacement.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(ProjectStore.ProjectStoreV2)({ list: () => Effect.succeed(placementProjects) }),
+      Layer.succeed(ProjectPlacement.LanesRoots, { roots: Effect.sync(() => [...lanesRoots]) }),
+    ),
+  ),
+  Layer.provideMerge(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
+  Layer.provideMerge(ServerSettings.layerTest()),
+);
 const hostDependencies = Layer.mergeAll(
   store,
+  placementLayer,
   broadcasterLayer,
   projectLayer,
   projections,
@@ -4460,6 +4483,341 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       });
       yield* service.status({ workingCopyId: managed.id });
       expect(spawned).toContain("tar");
+    }),
+  );
+
+  /** A one-repository project titled `title` whose remote clones from a fresh local repository. */
+  const singleRepositoryProject = Effect.fnUntraced(function* (id: string, title: string) {
+    const path = yield* Path.Path;
+    const source = path.join(yield* makeTemp, "source");
+    yield* initRepo(source);
+    const remoteUrl = `https://example.test/placement/${id}.git`;
+    cloneSources.set(remoteUrl, source);
+    const project: LibraryProject = {
+      ...makeProject([
+        { id: "app", title: "App", relativePath: "app", remoteUrl, defaultBranch: "main" },
+      ]),
+      id: `project:${id}`,
+      title,
+    };
+    return { project, source, remoteUrl };
+  });
+
+  it.effect(
+    "places a copy without rootPath in a new Projects folder, flat for one repository",
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const projectsRoot = yield* (yield* ProjectPlacement.ProjectPlacement).projectsRoot;
+        const first = yield* singleRepositoryProject("placed-first", "Placed Clone");
+        const second = yield* singleRepositoryProject("placed-second", "Placed Clone");
+
+        expect(yield* service.placement({ project: first.project })).toMatchObject({
+          action: "clone",
+          ownership: "managed",
+          rootPath: path.join(projectsRoot, "placed-clone"),
+        });
+        const copy = yield* service.prepareCopy({
+          requestId: "placed-first",
+          project: first.project,
+          strategy: "reuse",
+        });
+        expect(copy).toMatchObject({
+          rootPath: path.join(projectsRoot, "placed-clone"),
+          ownership: "managed",
+          state: "ready",
+        });
+        expect(copy.repositories.map((repository) => repository.path)).toEqual([copy.rootPath]);
+        expect(copy.repositories[0]?.localProjectId).toBe(copy.rootLocalProjectId);
+        expect(yield* git(copy.rootPath, ["rev-parse", "--show-toplevel"])).toBe(copy.rootPath);
+
+        // A retry returns the same copy, and the placement now points at it.
+        expect(
+          (yield* service.prepareCopy({
+            requestId: "placed-first",
+            project: first.project,
+            strategy: "clone",
+          })).id,
+        ).toBe(copy.id);
+        expect(yield* service.placement({ project: first.project })).toMatchObject({
+          action: "use",
+          copyId: copy.id,
+        });
+
+        const twin = yield* service.prepareCopy({
+          requestId: "placed-second",
+          project: second.project,
+          strategy: "clone",
+        });
+        expect(twin.rootPath).toBe(path.join(projectsRoot, "placed-clone-2"));
+      }),
+  );
+
+  it.effect("borrows a checkout of the repository already in the Projects folder", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const projectsRoot = yield* (yield* ProjectPlacement.ProjectPlacement).projectsRoot;
+      const { project, remoteUrl } = yield* singleRepositoryProject("borrowed", "Borrowed app");
+      const checkout = path.join(projectsRoot, "my-checkout-of-borrowed");
+      yield* initRepo(checkout, remoteUrl);
+
+      expect(yield* service.placement({ project })).toMatchObject({
+        action: "reuse-existing",
+        ownership: "borrowed",
+        rootPath: checkout,
+      });
+      const copy = yield* service.prepareCopy({
+        requestId: "borrowed-placement",
+        project,
+        strategy: "clone",
+      });
+      expect(copy).toMatchObject({ rootPath: checkout, ownership: "borrowed", state: "ready" });
+      expect(copy.repositories.map((repository) => repository.path)).toEqual([checkout]);
+      expect(cloneCalls).not.toContain(remoteUrl);
+    }),
+  );
+
+  it.effect("refuses a rootPath inside Loom's data, another copy or a lanes folder", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const parent = yield* makeTemp;
+      const outer = yield* service.prepareCopy({
+        requestId: "guard-outer",
+        project: { ...makeProject([]), id: "project:guard-outer" },
+        rootPath: path.join(parent, "outer"),
+        strategy: "clone",
+      });
+      const lanes = path.join(parent, "lanes");
+      yield* fs.makeDirectory(lanes);
+      lanesRoots.push(lanes);
+      const refuse = (rootPath: string, index: number) =>
+        service
+          .prepareCopy({
+            requestId: `guard-refused-${index}`,
+            project: { ...makeProject([]), id: "project:guard-inner" },
+            rootPath,
+            strategy: "clone",
+          })
+          .pipe(Effect.flip);
+      const refusals = yield* Effect.forEach(
+        [
+          path.join(config.stateDir, "inside"),
+          path.join(outer.rootPath, "inside"),
+          path.join(lanes, "inside"),
+        ],
+        refuse,
+      ).pipe(Effect.ensuring(Effect.sync(() => lanesRoots.splice(lanesRoots.indexOf(lanes), 1))));
+      expect(refusals.map((refusal) => refusal.reason)).toEqual(["blocked", "blocked", "blocked"]);
+      expect(refusals[2]?.detail).toContain("a lanes folder");
+      expect(yield* fs.exists(path.join(lanes, "inside"))).toBe(false);
+    }),
+  );
+
+  /** A temporary one-repository copy pushed to a local remote, unused for longer than cleanup waits. */
+  const unusedPublishedCopy = Effect.fnUntraced(function* (id: string) {
+    const path = yield* Path.Path;
+    const parent = yield* makeTemp;
+    const service = yield* LibraryWorkspace.LibraryWorkspace;
+    const { project, source } = yield* singleRepositoryProject(id, `Unused ${id}`);
+    const copy = yield* service.prepareCopy({
+      requestId: id,
+      project,
+      rootPath: path.join(parent, "files"),
+      strategy: "clone",
+    });
+    yield* git(copy.rootPath, ["remote", "set-url", "origin", source]);
+    yield* git(copy.rootPath, ["fetch", "origin"]);
+    yield* TestClock.adjust(Duration.days(8));
+    return copy;
+  });
+
+  it.effect("proves publication with this computer's Git config, not the isolated one", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const credentials = path.join(yield* makeTemp, "gitconfig");
+      yield* fs.writeFileString(credentials, "[credential]\n\thelper = store\n");
+      const copy = yield* unusedPublishedCopy("credentialed-proof");
+      publicationFetchEnvs.length = 0;
+      const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(HostProcess.Environment, {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: credentials,
+        }),
+      );
+      yield* cleaner.cleanupTemporaryCopies(() => Effect.succeed(true));
+      expect(publicationFetchEnvs.length).toBeGreaterThan(0);
+      for (const env of publicationFetchEnvs) {
+        expect(env?.GIT_CONFIG_GLOBAL).toBe(credentials);
+        expect(env?.GIT_TERMINAL_PROMPT).toBe("0");
+      }
+      // Every commit was on its remote and nothing else was local, so no archive was kept.
+      const receipt = yield* store.get(copy.id);
+      expect(receipt.copy.state).toBe("released");
+      expect(receipt.publishedRelease).toBe(true);
+      expect(receipt.archivePath).toBeNull();
+      expect(yield* fs.exists(copy.rootPath)).toBe(false);
+    }),
+  );
+
+  it.effect.each([
+    [".env", false],
+    ["node_modules", true],
+  ] as const)("cleans up an unused copy holding ignored %s: %s", ([ignored, removed]) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* unusedPublishedCopy(`ignored-${ignored.replace(".", "dot-")}`);
+      yield* fs.writeFileString(
+        path.join(copy.rootPath, ".git", "info", "exclude"),
+        `${ignored}\n`,
+      );
+      if (ignored === ".env")
+        yield* fs.writeFileString(path.join(copy.rootPath, ".env"), "TOKEN=local\n");
+      else {
+        yield* fs.makeDirectory(path.join(copy.rootPath, "node_modules", "left-pad"), {
+          recursive: true,
+        });
+        yield* fs.writeFileString(
+          path.join(copy.rootPath, "node_modules", "left-pad", "index.js"),
+          "module.exports = 1;\n",
+        );
+      }
+      yield* service.cleanupTemporaryCopies(() => Effect.succeed(true));
+      expect((yield* store.get(copy.id)).copy.state).toBe(removed ? "released" : "ready");
+      expect(yield* fs.exists(copy.rootPath)).toBe(!removed);
+    }),
+  );
+
+  it.effect("marks a copy whose folder was deleted as missing when the workspace starts", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* service.prepareCopy({
+        requestId: "reconcile-missing",
+        project: { ...makeProject([]), id: "project:reconcile-missing" },
+        rootPath: path.join(yield* makeTemp, "gone"),
+        strategy: "clone",
+      });
+      yield* fs.remove(copy.rootPath, { recursive: true });
+      yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+      );
+      expect((yield* store.get(copy.id)).copy.state).toBe("missing");
+    }),
+  );
+
+  it.effect("removes the archive a newer snapshot replaces", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* service.prepareCopy({
+        requestId: "superseded-archive",
+        project: { ...makeProject([]), id: "project:superseded-archive" },
+        rootPath: path.join(yield* makeTemp, "snapshots"),
+        strategy: "clone",
+      });
+      const notes = path.join(copy.rootPath, "notes.txt");
+      const snapshot = Effect.fnUntraced(function* (requestId: string) {
+        const review = yield* service.status({ workingCopyId: copy.id });
+        yield* service.snapshotCopy({
+          requestId,
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        });
+        return (yield* store.get(copy.id)).archivePath;
+      });
+      yield* fs.writeFileString(notes, "first\n");
+      const first = yield* snapshot("superseded-first");
+      yield* fs.writeFileString(notes, "second\n");
+      const second = yield* snapshot("superseded-second");
+      expect(first).not.toBeNull();
+      expect(second).not.toBe(first);
+      expect(yield* fs.exists(second!)).toBe(true);
+      expect(yield* fs.exists(first!)).toBe(false);
+    }),
+  );
+
+  it.effect("restores a one-repository copy in its flat layout on another computer", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const config = yield* ServerConfig.ServerConfig;
+      const parent = yield* makeTemp;
+      const { project } = yield* singleRepositoryProject("flat-restore", "Flat restore");
+      const copy = yield* service.prepareCopy({
+        requestId: "flat-restore-source",
+        project,
+        rootPath: path.join(parent, "source"),
+        strategy: "clone",
+      });
+      expect(copy.repositories[0]?.path).toBe(copy.rootPath);
+      yield* fs.writeFileString(path.join(copy.rootPath, "local.txt"), "local work\n");
+      const review = yield* service.status({ workingCopyId: copy.id });
+      const saved = yield* service.snapshotCopy({
+        requestId: "flat-restore-snapshot",
+        workingCopyId: copy.id,
+        reviewToken: review.reviewToken!,
+      });
+      const archive = path.join(parent, "authority.tar.gz");
+      yield* fs.copyFile(
+        path.join(config.stateDir, "project-library", "recovery", saved.recovery!.sha256),
+        archive,
+      );
+      const destinationEnvironmentId = EnvironmentId.make("flat-restore-target");
+      const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
+      const destination = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(
+          Layer.fresh(LibraryWorkspace.layer).pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(
+                Layer.fresh(hostDependencies),
+                Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(destinationEnvironmentId),
+                }),
+                Layer.succeed(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
+                  ...publisher,
+                  retrievePortable: (input) =>
+                    fs
+                      .copyFile(archive, input.archivePath)
+                      .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      const destinationRoot = path.join(parent, "destination", "flat");
+      const restored = yield* destination.restoreCopy({
+        requestId: "flat-restore",
+        project,
+        rootPath: destinationRoot,
+        grant: {
+          sourceCopy: saved,
+          destinationEnvironmentId,
+          libraryEnvironmentId: EnvironmentId.make("flat-restore-authority"),
+          expiresAt: "2099-01-01T00:00:00Z",
+          accessToken: "test-grant",
+        },
+      });
+      expect(restored.repositories.map((repository) => repository.path)).toEqual([destinationRoot]);
+      expect(yield* fs.readFileString(path.join(destinationRoot, "local.txt"))).toBe(
+        "local work\n",
+      );
     }),
   );
 });

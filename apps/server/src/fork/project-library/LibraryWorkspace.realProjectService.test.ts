@@ -26,6 +26,9 @@ import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentServic
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
+import * as VcsProcess from "../../vcs/VcsProcess.ts";
+import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as LibraryGitFetch from "./LibraryGitFetch.ts";
@@ -58,6 +61,10 @@ const realProjects = RuntimeLayer.layerProjectService.pipe(
 const dependencies = Layer.mergeAll(
   realProjects,
   Store.layer,
+  ProjectPlacement.layerWithProjectStore.pipe(
+    Layer.provideMerge(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
+    Layer.provideMerge(ServerSettings.layerTest()),
+  ),
   ProjectionStore.layer,
   ProcessRunner.layer,
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
