@@ -29,6 +29,7 @@ import {
 import { forkParked } from "../../serverActivation.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { LibraryPushService } from "./LibraryPushService.ts";
+import { UnheardAlertNotices } from "./UnheardAlertNotices.ts";
 
 /**
  * Agent alerts (C04-10). Each computer decides which of its threads need the user and tells its
@@ -40,7 +41,14 @@ const FRESH_MS = 2 * 60_000;
 /** The post is one small JSON body, so a Library that takes longer is down. */
 const POST_TIMEOUT = "20 seconds";
 
-export type AgentAlertOutcome = "sent" | "dropped" | "unsupported" | "refused" | "unreachable";
+/** `unheard` is an alert the Library accepted while no recipient had an iPhone registered. */
+export type AgentAlertOutcome =
+  | "sent"
+  | "unheard"
+  | "dropped"
+  | "unsupported"
+  | "refused"
+  | "unreachable";
 type AgentAlertPost = (request: LibraryPushActivityRequest) => Effect.Effect<AgentAlertOutcome>;
 
 /**
@@ -49,6 +57,8 @@ type AgentAlertPost = (request: LibraryPushActivityRequest) => Effect.Effect<Age
  */
 const PAUSE_MS: Readonly<Record<AgentAlertOutcome, number>> = {
   sent: 0,
+  // An iPhone can register at any moment, and the thread says what was missed.
+  unheard: 0,
   // Invalid, too large or over the hourly limit: only that one alert is lost.
   dropped: 0,
   // A Library from before alerts, or with them off, answers the same way until it is redeployed.
@@ -154,6 +164,8 @@ export const agentAlertStep = (
 export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
   readonly environmentId: EnvironmentId;
   readonly post: AgentAlertPost;
+  /** Tells the thread its alert reached no iPhone. */
+  readonly unheard: (threadId: ThreadId) => Effect.Effect<void>;
 }) {
   const threads = yield* ThreadManagementService;
   const seen = new Map<ThreadId, SeenThread>();
@@ -175,6 +187,7 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
       seen.set(threadId, step.seen);
       if (step.alert === null || nowMs < pausedUntilMs) return;
       const outcome = yield* input.post({ threadId, kind: step.alert });
+      if (outcome === "unheard") yield* input.unheard(threadId);
       if (PAUSE_MS[outcome] > 0)
         pausedUntilMs = (yield* Clock.currentTimeMillis) + PAUSE_MS[outcome];
       yield* Effect.logDebug("Agent alert posted", { kind: step.alert, outcome });
@@ -202,7 +215,7 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
 
 const decodeReply = Schema.decodeUnknownEffect(LibraryPushActivityReply);
 
-type MissingReply = Exclude<AgentAlertOutcome, "sent">;
+type MissingReply = Exclude<AgentAlertOutcome, "sent" | "unheard">;
 
 const outcomeOfStatus = (status: number): MissingReply => {
   switch (status) {
@@ -260,18 +273,22 @@ export const postLibraryActivity = (
       Effect.orElseSucceed((): MissingReply => "unreachable"),
     );
 
+/** A Library from before the device count omits it, so its accepted alerts all read as sent. */
+const acceptedOutcome = (reply: LibraryPushActivityReply): AgentAlertOutcome =>
+  reply.devices === 0 ? "unheard" : "sent";
+
 export const remoteAgentAlertPost =
   (library: RemoteLibrary): AgentAlertPost =>
   (request) =>
     postLibraryActivity(library, request).pipe(
-      Effect.map((answer) => (typeof answer === "string" ? answer : "sent")),
+      Effect.map((answer) => (typeof answer === "string" ? answer : acceptedOutcome(answer))),
     );
 
 const authorityPost =
   (push: LibraryPushService["Service"], environmentId: EnvironmentId): AgentAlertPost =>
   (request) =>
     push.alert(environmentId, request).pipe(
-      Effect.as<AgentAlertOutcome>("sent"),
+      Effect.map(acceptedOutcome),
       Effect.catchTags({
         LibraryPushError: (error) =>
           Effect.succeed<AgentAlertOutcome>(
@@ -305,7 +322,12 @@ export const AgentAlertsLive = Layer.effectDiscard(
           : null;
     if (post === null) return;
     const threads = yield* ThreadManagementService;
-    const alerts = yield* makeAgentAlerts({ environmentId, post });
+    const notices = yield* UnheardAlertNotices;
+    const alerts = yield* makeAgentAlerts({
+      environmentId,
+      post,
+      unheard: (threadId) => notices.post(threadId, "agent"),
+    });
     yield* forkParked(
       alerts.seed.pipe(
         // Without the seed a thread's first look goes by time alone, which still alerts nothing old.

@@ -117,6 +117,7 @@ function LibraryNotificationsContent() {
     activity,
     status: status === null ? null : { state: status.state, reason: status.reason },
     served: status === null || build === null ? null : libraryPushServes(status.topics, build),
+    devices: status === null ? null : status.devices.length,
     libraryLabel: saved?.environmentLabel ?? null,
     test,
   });

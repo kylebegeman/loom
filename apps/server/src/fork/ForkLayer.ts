@@ -119,6 +119,8 @@ import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
 import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import * as LibraryPushReadiness from "./library-push/LibraryPushReadiness.ts";
+import * as UnheardAlertNotices from "./library-push/UnheardAlertNotices.ts";
 import * as VaultApprovalAlerts from "./library-push/VaultApprovalAlerts.ts";
 import * as LibraryConnection from "./project-library/LibraryConnection.ts";
 import { LibraryPushHttpRoutes } from "./library-push/http.ts";
@@ -136,11 +138,19 @@ const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultStore)),
 );
+// Agent and Vault alerts the Library accepted for no iPhone say so in their thread.
+const layerUnheardAlertNotices = UnheardAlertNotices.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(RuntimeLayer.layerEventSink, ProjectionStore.layer, ThreadCommandExecutor.layer),
+  ),
+);
 // New approval requests alert the owner's iPhones through the one Library push instance.
 const layerApprovalNotifications = ApprovalNotifications.layer.pipe(
   Layer.provide(
     VaultApprovalAlerts.layer.pipe(
-      Layer.provide(Layer.merge(LibraryPushLive, LibraryConnection.layer)),
+      Layer.provide(
+        Layer.mergeAll(LibraryPushLive, LibraryConnection.layer, layerUnheardAlertNotices),
+      ),
       Layer.provide(FetchHttpClient.layer),
     ),
   ),
@@ -526,7 +536,16 @@ const ForkServicesLive = Layer.mergeAll(
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
   // On the Library, alerts for its own threads go straight to this one push service instance.
-  AgentAlertsLive.pipe(Layer.provideMerge(LibraryPushLive), Layer.provide(FetchHttpClient.layer)),
+  AgentAlertsLive.pipe(
+    Layer.provideMerge(LibraryPushLive),
+    Layer.provide(layerUnheardAlertNotices),
+    Layer.provide(FetchHttpClient.layer),
+  ),
+  // `loom_push_status` reads the Library's push here, or asks the Library from another computer.
+  LibraryPushReadiness.layer.pipe(
+    Layer.provide(Layer.merge(LibraryPushLive, LibraryConnection.layer)),
+    Layer.provide(FetchHttpClient.layer),
+  ),
   // Reads the worker identities the one Mini instance keeps from its readiness checks.
   DirectoryReporter.DirectoryReporterLive.pipe(
     Layer.provideMerge(

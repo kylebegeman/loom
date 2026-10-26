@@ -1,8 +1,9 @@
 # L115: Library push
 
-Status: Built, off (C04 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). Kyle's Apple setup
-and a build with the flag on are pending. Agent alerts (C04-10) are built behind a switch of their
-own, also off.
+Status: Built (C04 of [Loom-owned connections](../LOOM-CONNECTIONS.md)). Push and agent alerts
+(C04-10) each have a switch in the Library's server environment, and both are on for Kyle's
+Library. Alerts reach someone only once an iPhone signs in with a passkey and turns notifications
+on; until then every surface below says so.
 
 A Library can send notifications to the Loom iPhone app with its own Apple push key, without T3
 Connect or T3's relay. This packet builds the device registry, the APNs sender, status and test
@@ -95,20 +96,28 @@ The iOS side of the setup is in
   with Loom Identity.
 - An Identity caller sees and changes only its own devices. A session with `settings:write` that
   is not an Identity session acts as operator and can remove or test any row by id.
-- `loom_push_status` returns the state, reason, key IDs and a device count only. `loom_push_test`
-  needs an explicit row id and full access. Both act only on the Library, never forward from a
-  computer and never return tokens. Agents cannot discover row ids, so a person copies one with
-  **Copy ID** on the phone's row in the device list on web or desktop.
+- `loom_push_status` returns the state, reason, `alerts` and a device count, never a device or
+  token. On the Library it adds the key IDs and served builds. On another computer it reads
+  `GET /api/loom/library/push/readiness` over the publisher session, which answers only state,
+  reason, `alerts` and the count; a Library from before that route reads as needing an update.
+  `loom_push_test` needs an explicit row id and full access, and acts only on the Library. Agents
+  cannot discover row ids, so a person copies one with **Copy ID** on the phone's row in the
+  device list on web or desktop.
 - Limits: 10 devices per account, 50 per Library. Tests: 3 per device per 10 minutes and 1 per
   account per 10 seconds. Agent alerts: 20 per computer and 30 per device per hour. Rate-limit
   state, last delivery and the failing flag live in memory and reset on restart.
 
 ## Device lifetime and removal (A14)
 
-- A row lasts `LOOM_IDENTITY_MAX_SESSION_AGE`, else 30 days. K8 wanted the earlier of that and
-  the sign-in's own cap, but the session the phone registers on does not expose its sign-in time,
-  so `expiresAt` is now plus the TTL. A phone in use re-registers on a Library connect when its
+- A row's `expiresAt` is its last refresh plus `LOOM_IDENTITY_MAX_SESSION_AGE`, else 30 days.
+  K8 wanted the earlier of that and the sign-in's own cap, but the session the phone registers on
+  does not expose its sign-in time. A phone in use re-registers on a Library connect when its
   record is over 24 hours old, and the Library extends a row at most every 12 hours.
+- Re-registering needs a live Identity session, and Identity caps one at its passkey sign-in plus
+  the same max age; a refresh grant cannot extend it. With the Library's 7 days, a phone that
+  keeps connecting refreshes its row last just before its session ends, so the row lapses about
+  14 days after the last passkey sign-in, and sooner when the phone stops connecting earlier.
+  Then alerts reach no one until the phone signs in again. Changing this is decision D-11.
 - On a connect with a fresher record, the phone reads the Library's status once, as its
   Notifications screen does when it opens. A list that lacks the phone's row (an operator's
   Remove, or Apple refusing the token) clears its registration, so it registers again at once.
@@ -162,7 +171,7 @@ Everything ships off at four layers, so each default is reversible.
 | K5  | `LOOM_LIBRARY_PUSH_TOPICS`, default `com.kylebegeman.loom:production`, inside the `LOOM_IOS_PUSH_BUNDLE_IDS` allowlist. |
 | K6  | `LOOM_MOBILE_LIBRARY_PUSH_ENABLED` defaults to `0`. Kyle turns it on for a TestFlight build after the Apple setup.      |
 | K7  | Per-device opt-in, default off.                                                                                         |
-| K8  | Row lifetime is the Identity session age cap, else 30 days, counted from registration (see above).                      |
+| K8  | Row lifetime is the Identity session age cap, else 30 days, from the last refresh (see above). Open again as D-11.      |
 | K9  | Agent alerts from computers (C04-10): go. Built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default.                    |
 | K10 | Live Activities stay out until after C05.                                                                               |
 | K11 | Alert text is generic: title "Loom" and a body by kind. Thread or project titles would be Kyle's option.                |
@@ -197,12 +206,16 @@ Library decides whose iPhones hear it and how often. The computer side is
 
   | Library answer                       | Why                                                                                    | Computer                      |
   | ------------------------------------ | -------------------------------------------------------------------------------------- | ----------------------------- |
-  | 200 `{ sent }`                       | Accepted. `sent` counts the devices Apple accepted.                                    | Carries on.                   |
+  | 200 `{ sent, devices }`              | Accepted. `sent` counts Apple's acceptances, `devices` the recipients' live iPhones.   | Carries on.                   |
   | 404, 405, or a 2xx without that body | Alerts off, or a Library from before them.                                             | Stops posting for 30 minutes. |
   | 401, 403, 409                        | No usable publisher session, or no directory row. A directory that is off places none. | Stops posting for 30 minutes. |
   | 400, 413, 429                        | Invalid, too large, or the computer is over its hourly limit.                          | Drops that alert.             |
   | 503, or no answer within 20 seconds  | The Library cannot read its directory or use its key, or cannot be reached.            | Stops posting for 1 minute.   |
 
+- **No iPhone registered.** A reply with `devices: 0` adds a notice to the thread, "No iPhone got
+  this alert", with the steps to register one: at most one per thread, kind and UTC day, since the
+  notice's id is its receipt. A Vault approval does the same and stays unconfirmed in the inbox. A
+  Library from before the count omits it, so its replies add nothing.
 - **Recipients.** With one allowed Identity subject, that account. With several, only the ones
   `LOOM_LIBRARY_PUSH_RECIPIENTS` names that can also sign in. Every live device of a recipient
   gets the alert. With the switch on and no recipient, the Library logs a warning at start,
@@ -225,7 +238,9 @@ Library decides whose iPhones hear it and how often. The computer side is
   per hour, past which that device is skipped. Alerts count apart from tests but share the last
   delivery and the failing flag, so the device list says "Last notification".
 - **Where it shows.** The slug drives the iPhone footer and the web and desktop section, which say
-  whether alerts are on. `loom_push_status` reports `alerts`.
+  whether alerts are on. Both count the iPhones a connection can see; at 0 the web and desktop
+  headline warns and lists the steps, and the iPhone does the same beside its switch.
+  `loom_push_status` reports `alerts` and the count from any computer.
 - **Known gaps.** On a Library with several accounts, the slug cannot tell a non-recipient apart,
   so that account also reads that alerts are on. A computer on an older build posts nothing.
 

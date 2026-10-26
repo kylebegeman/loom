@@ -2,7 +2,9 @@ import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_PUSH_ACTIVITY_MAX_BYTES,
   LIBRARY_PUSH_ACTIVITY_ROUTE,
+  LIBRARY_PUSH_READINESS_ROUTE,
   LibraryPushActivityRequest,
+  type LibraryPushReadiness,
 } from "@t3tools/contracts/fork";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -18,7 +20,7 @@ import {
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { DirectoryService } from "../directory/DirectoryService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
-import { LibraryPushService } from "./LibraryPushService.ts";
+import { AGENT_CALLER, LibraryPushService } from "./LibraryPushService.ts";
 
 const HOST_SUBJECT_PREFIX = "loom-host:";
 const NO_STORE = { "cache-control": "no-store" } as const;
@@ -111,13 +113,48 @@ const activityRoute = withForkRuntime(
   Effect.orElseSucceed(() => text("Library push unavailable", 503)),
 );
 
+/** A count only, so a computer can tell whether its alerts reach anyone. */
+const readinessRoute = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const session = yield* (yield* EnvironmentAuth.EnvironmentAuth).authenticateHttpRequest(
+      request,
+    );
+    if (publisherOf(session) === null) return text("Access denied", 403);
+    const push = yield* LibraryPushService;
+    const status = yield* push.status(AGENT_CALLER);
+    return HttpServerResponse.jsonUnsafe(
+      {
+        state: status.state,
+        reason: status.reason,
+        alerts: push.alerts,
+        devices: status.devices.length,
+      } satisfies LibraryPushReadiness,
+      { headers: NO_STORE },
+    );
+  }),
+).pipe(
+  Effect.catchTags({
+    ServerAuthMissingCredentialError: () => Effect.succeed(text("Authentication required", 401)),
+    ServerAuthInvalidCredentialError: () => Effect.succeed(text("Authentication required", 401)),
+  }),
+  Effect.orElseSucceed(() => text("Library push unavailable", 503)),
+);
+
 export const LibraryPushHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
-    return HttpRouter.add(
-      "POST",
-      LIBRARY_PUSH_ACTIVITY_ROUTE,
-      activityRoute.pipe(Effect.provideService(ForkRuntime, runtime)),
+    return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        LIBRARY_PUSH_ACTIVITY_ROUTE,
+        activityRoute.pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "GET",
+        LIBRARY_PUSH_READINESS_ROUTE,
+        readinessRoute.pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
     );
   }),
 );

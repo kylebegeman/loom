@@ -1,12 +1,9 @@
-import { NonNegativeInt, OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
+  LibraryError,
   LibraryPushDeliveryReason,
   LibraryPushDeviceRowId,
   LibraryPushError,
-  LibraryPushKeySummary,
-  LibraryPushServedTopic,
-  LibraryPushState,
-  LibraryPushStatusReason,
   LibraryPushTestDelivery,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -18,18 +15,8 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import { LibraryPushAgentStatus, LibraryPushReadinessService } from "./LibraryPushReadiness.ts";
 import { AGENT_CALLER, LibraryPushService } from "./LibraryPushService.ts";
-
-/** Agents learn whether push works, never who registered what. */
-export const LibraryPushAgentStatus = Schema.Struct({
-  state: LibraryPushState,
-  reason: Schema.NullOr(LibraryPushStatusReason),
-  key: Schema.NullOr(LibraryPushKeySummary),
-  deviceCount: NonNegativeInt,
-  topics: Schema.optionalKey(Schema.Array(LibraryPushServedTopic)),
-  alerts: Schema.Boolean,
-});
-export type LibraryPushAgentStatus = typeof LibraryPushAgentStatus.Type;
 
 export const LibraryPushAgentTestResult = Schema.Struct({
   deliveries: Schema.Array(
@@ -45,9 +32,9 @@ export type LibraryPushAgentTestResult = typeof LibraryPushAgentTestResult.Type;
 export const LibraryPushToolkit = Toolkit.make(
   Tool.make("loom_push_status", {
     description:
-      "Read whether this Library can send iPhone notifications: off, misconfigured, ready or failing, with the reason, the Apple Team ID and Key ID, how many devices are registered, and `topics`, the app builds (bundle ID and APNs environment) its push settings accept. An empty `topics` means those settings name no usable build, so every iPhone is refused; it is absent while push is off. `alerts` says whether the Library also sends agent alerts, which tell iPhones when an agent on any of its computers needs approval or an answer, fails, reaches a usage limit or finishes. Answers only for the Library this agent runs on and never asks another computer. Returns no device names, push tokens, key material or file paths.",
+      "Read whether this computer's Library can send iPhone notifications: off, misconfigured, ready or failing, with the reason, how many iPhones are registered, and whether it sends agent alerts, which tell iPhones when an agent on any of its computers needs approval or an answer, fails, reaches a usage limit or finishes. A `deviceCount` of 0 means no alert or Vault approval request reaches anyone until someone signs in to the Library with a passkey in Loom on an iPhone and allows notifications. On the Library itself it also returns the Apple Team ID and Key ID and `topics`, the app builds (bundle ID and APNs environment) its push settings accept: empty when none is usable, absent while push is off. Another computer asks its Library over its sign-in and gets no key or builds. A computer without a Library answers off. Returns no device names, push tokens, key material or file paths.",
     success: LibraryPushAgentStatus,
-    failure: OrchestratorMcpFailure,
+    failure: Schema.Union([LibraryError, OrchestratorMcpFailure]),
   })
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
@@ -83,18 +70,9 @@ export const libraryPushHandlers = McpToolAccess.toLayer(
       );
     return {
       loom_push_status: McpToolAccess.reads(() =>
-        onLibrary((service) =>
-          service.status(AGENT_CALLER).pipe(
-            Effect.map((status): LibraryPushAgentStatus => ({
-              state: status.state,
-              reason: status.reason,
-              key: status.key,
-              deviceCount: status.devices.length,
-              ...(status.topics === undefined ? {} : { topics: status.topics }),
-              alerts: service.alerts,
-            })),
-          ),
-        ),
+        withForkRuntime(
+          Effect.flatMap(LibraryPushReadinessService, (readiness) => readiness.current),
+        ).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_push_test: McpToolAccess.writesEnvironment(({ id }) =>
         onLibrary((service) => service.test(AGENT_CALLER, { id })).pipe(

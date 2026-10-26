@@ -243,6 +243,13 @@ snoozed conversation stays quiet when its agent finishes, but still alerts when
 it fails or asks you something. A computer sends at most 20 alerts an hour, and
 an iPhone gets at most 30.
 
+With no iPhone registered, alerts reach no one. The **Push notifications**
+section and the iPhone's switch both say so with the steps to fix it, and a
+conversation whose alert or Vault request went unheard gets a notice, at most
+once a day. An iPhone's registration renews while it connects with a current
+sign-in. When your Library's sign-in limit runs out, sign in again with your
+passkey to keep notifications coming.
+
 Turning the switch off on iPhone tells your Library to forget the phone. If the
 Library cannot be reached, the phone keeps your choice and tells it on the next
 connection. Signing in to the Library with a different account turns the switch

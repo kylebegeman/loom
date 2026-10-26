@@ -84,7 +84,7 @@ export interface LibraryPushView {
   readonly alerts: string | null;
   readonly devices: readonly LibraryPushDeviceView[];
   /** The line shown in place of an empty device list. */
-  readonly empty: string | null;
+  readonly empty: LibraryPushLine | null;
   /** A refresh failed while an earlier answer is still shown. */
   readonly error: string | null;
   /** The section reads the status here, so it offers Refresh. */
@@ -105,6 +105,10 @@ const ALERTS_ON_TEXT =
   "Agent alerts are on: the Library notifies your iPhones when an agent on any of your computers needs your approval or an answer, fails, reaches a usage limit or finishes.";
 const ALERTS_OFF_TEXT =
   "Agent alerts are off, so the Library sends only test notifications. They are turned on in the Library's server environment.";
+const ALERTS_UNHEARD_TEXT =
+  "Agent alerts are on, but no iPhone hears them yet. Loom notes each missed alert and Vault approval request in its thread.";
+const NO_DEVICE_STEPS =
+  "To register an iPhone, open Loom on it, sign in to this Library with your passkey, then turn on Library notifications in Settings and allow them when iOS asks.";
 
 const BUNDLE_NAMES: Readonly<Record<LibraryPushBundleId, string>> = {
   "com.kylebegeman.loom": "Loom",
@@ -241,7 +245,30 @@ function buildsLine(status: LibraryPushStatus): string | null {
   return `Builds it sends to: ${status.topics.map(buildName).join(", ")}.`;
 }
 
-function stateLines(status: LibraryPushStatus): {
+const iPhones = (count: number) => (count === 1 ? "1 iPhone" : `${count} iPhones`);
+
+/** `count` is null when this connection sees only part of the device list, or none of it. */
+function readyLine(count: number | null): LibraryPushLine {
+  if (count === null)
+    return {
+      tone: "success",
+      text: "On. iPhones signed in to this Library can turn on notifications in Loom's settings.",
+    };
+  if (count === 0)
+    return {
+      tone: "warning",
+      text: "On, but no iPhone is registered, so notifications reach no one.",
+    };
+  return {
+    tone: "success",
+    text: `On for ${iPhones(count)}. Others signed in to this Library can turn on notifications in Loom's settings.`,
+  };
+}
+
+function stateLines(
+  status: LibraryPushStatus,
+  count: number | null,
+): {
   readonly headline: LibraryPushLine;
   readonly hint: string | null;
 } {
@@ -270,13 +297,7 @@ function stateLines(status: LibraryPushStatus): {
         hint: "Check the key in your Apple developer account. A test that gets through clears this.",
       };
     case "ready":
-      return {
-        headline: {
-          tone: "success",
-          text: "On. iPhones signed in to this Library can turn on notifications in Loom's settings.",
-        },
-        hint: null,
-      };
+      return { headline: readyLine(count), hint: null };
   }
 }
 
@@ -330,27 +351,37 @@ export function libraryPushView(input: LibraryPushViewInput): LibraryPushView {
           refreshable: true,
           retry: true,
         };
-  const { headline, hint } = stateLines(status);
+  // The Library lists every device to a connection that may remove them, and its own to an account.
+  const count = input.canRemove ? status.devices.length : null;
+  const { headline, hint } = stateLines(status, count);
   // A misconfigured or off Library cannot sign a test; a failing one can, and a test that gets
   // through is how it recovers.
   const canSend = status.state === "ready" || status.state === "failing";
   const devices = status.devices.map((device) => deviceView(device, input, canSend));
   const noApp = servesNoApp(status);
+  const alertsLine = !input.alerts
+    ? ALERTS_OFF_TEXT
+    : count === 0
+      ? ALERTS_UNHEARD_TEXT
+      : ALERTS_ON_TEXT;
   return {
     status: noApp ? "no-app" : status.state,
     headline,
     hint,
     key: status.key === null ? null : `Apple key ${status.key.keyId}, team ${status.key.teamId}.`,
     builds: buildsLine(status),
-    alerts: canSend && !noApp ? (input.alerts ? ALERTS_ON_TEXT : ALERTS_OFF_TEXT) : null,
+    alerts: canSend && !noApp ? alertsLine : null,
     devices,
     // With no app served, nothing can register, and the headline already says why.
     empty:
       devices.length > 0 || status.state === "off" || noApp
         ? null
         : input.canRemove
-          ? "No iPhones are registered yet."
-          : "This connection can't list the Library's iPhones. Use a device signed in with your Loom account or paired with Settings permission.",
+          ? { tone: "warning", text: `No iPhone is registered. ${NO_DEVICE_STEPS}` }
+          : {
+              tone: "neutral",
+              text: "This connection can't list the Library's iPhones. Use a device signed in with your Loom account or paired with Settings permission.",
+            },
     error: failure,
     refreshable: true,
     refreshing: input.result.waiting,
