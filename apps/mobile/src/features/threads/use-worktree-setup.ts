@@ -11,6 +11,8 @@ export function useWorktreeSetup(input: {
   preparing: boolean;
   turnStarted: boolean;
   followUpSent: boolean;
+  /** Watches again after a settled setup was resumed, until its next snapshot arrives. */
+  resumedAfter?: number | null;
 }) {
   const key = JSON.stringify([input.environmentId, input.threadId]);
   const [held, setHeld] = useState<{ key: string; snapshot: WorktreeSetupSnapshot } | null>(null);
@@ -18,7 +20,9 @@ export function useWorktreeSetup(input: {
   const query = useEnvironmentQuery(
     input.environmentId &&
       input.threadId &&
-      (live?.phase === "running" || (!live && input.preparing))
+      (live?.phase === "running" ||
+        (!live && input.preparing) ||
+        (live !== null && input.resumedAfter != null && live.sequence <= input.resumedAfter))
       ? vcsEnvironment.worktreeSetup({
           environmentId: input.environmentId,
           input: { threadId: input.threadId },
