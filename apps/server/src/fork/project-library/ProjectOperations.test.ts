@@ -30,6 +30,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -37,6 +38,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { SessionStore } from "../../auth/SessionStore.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { OrchestratorDispatchError } from "../../orchestration-v2/Orchestrator.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
@@ -105,8 +107,28 @@ const fixture = Effect.gen(function* () {
     readonly { branch: string | null; worktreePath: string | null }[]
   >([]);
   const boundIn = yield* Ref.make<readonly (string | undefined)[]>([]);
+  const boundCopies = yield* Ref.make<readonly string[]>([]);
+  const conversations = yield* Ref.make<
+    ReadonlyMap<string, { worktreePath: string | null; branch: string | null; ran: boolean }>
+  >(new Map());
+  const reservations = yield* Ref.make<readonly string[]>([]);
+  const reservedState = yield* Ref.make<"preparing" | "ready">("preparing");
+  const fillGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
+  const fillFailure = yield* Ref.make<LibraryError | null>(null);
+  const fills = yield* Ref.make(0);
+  const moves = yield* Ref.make<readonly { worktreePath: string; moved: boolean }[]>([]);
+  const changes = yield* Queue.unbounded<void>();
+  const whileMakingWorktree = yield* Ref.make<Effect.Effect<void>>(Effect.void);
+  const reservedCopy = (requestId: string) => ({
+    ...copyFor(project),
+    id: `reserved:${requestId}`,
+    environmentId,
+  });
   const external = Layer.mergeAll(
-    Layer.mock(ProjectWorkflows)({ changed: Effect.void, changes: Stream.empty }),
+    Layer.mock(ProjectWorkflows)({
+      changed: Queue.offer(changes, undefined).pipe(Effect.asVoid),
+      changes: Stream.empty,
+    }),
     Layer.mock(LibraryService)({
       createProject: () =>
         Effect.gen(function* () {
@@ -153,8 +175,29 @@ const fixture = Effect.gen(function* () {
             repositoryPaths: paths,
           })),
         ),
+      reserveCopy: (input) =>
+        Ref.update(reservations, (ids) => [...ids, input.requestId]).pipe(
+          Effect.andThen(Ref.get(reservedState)),
+          Effect.map((state) => ({ ...reservedCopy(input.requestId), state })),
+        ),
+      fillCopy: (input) =>
+        Effect.gen(function* () {
+          yield* Ref.update(fills, (count) => count + 1);
+          const gate = yield* Ref.get(fillGate);
+          if (gate !== null) yield* Deferred.await(gate);
+          const failure = yield* Ref.get(fillFailure);
+          if (failure !== null) return yield* failure;
+          return { ...copyFor(project), id: input.workingCopyId, environmentId };
+        }),
+      moveThread: (input) =>
+        input.move.pipe(
+          Effect.tap((moved) =>
+            Ref.update(moves, (list) => [...list, { worktreePath: input.worktreePath, moved }]),
+          ),
+        ),
       bindThread: (input) =>
         Ref.update(boundIn, (paths) => [...paths, input.worktreePath]).pipe(
+          Effect.andThen(Ref.update(boundCopies, (ids) => [...ids, input.binding.workingCopyId])),
           Effect.andThen(Ref.get(failBind)),
           Effect.flatMap((fail) =>
             fail
@@ -181,34 +224,67 @@ const fixture = Effect.gen(function* () {
         Effect.fail(new LibraryError({ reason: "blocked", detail: "The reviewed files changed." })),
     }),
     Layer.mock(ThreadManagementService)({
-      // Only what the launch reads: whether the conversation it created still exists.
-      getThreadShell: () =>
-        Ref.get(threadDeleted).pipe(
-          Effect.map(
-            (deleted) =>
-              ({
-                deletedAt: deleted ? DateTime.makeUnsafe("2026-10-25T00:00:00Z") : null,
-              }) as OrchestrationV2ThreadShell,
-          ),
-        ),
+      // Only what the launch reads: each conversation it created, its folder and whether it ran.
+      getThreadShell: (threadId) =>
+        Effect.gen(function* () {
+          const thread = (yield* Ref.get(conversations)).get(threadId);
+          if (thread === undefined) return null;
+          return {
+            worktreePath: thread.worktreePath,
+            branch: thread.branch,
+            latestRunId: thread.ran ? "run" : null,
+            deletedAt: (yield* Ref.get(threadDeleted))
+              ? DateTime.makeUnsafe("2026-10-25T00:00:00Z")
+              : null,
+          } as OrchestrationV2ThreadShell;
+        }),
       dispatch: (command) =>
-        Ref.update(dispatched, (ids) => [...ids, command.commandId]).pipe(
-          Effect.andThen(
-            command.type === "thread.create"
-              ? Ref.update(createdIn, (list) => [
-                  ...list,
-                  { branch: command.branch, worktreePath: command.worktreePath },
-                ])
-              : Effect.void,
-          ),
-          Effect.as({ sequence: 1, storedEvents: [] }),
-        ),
+        Effect.gen(function* () {
+          yield* Ref.update(dispatched, (ids) => [...ids, command.commandId]);
+          if (command.type === "thread.create") {
+            yield* Ref.update(createdIn, (list) => [
+              ...list,
+              { branch: command.branch, worktreePath: command.worktreePath },
+            ]);
+            // A repeated create does nothing, as the orchestrator's command receipt makes it.
+            yield* Ref.update(conversations, (map) =>
+              map.has(command.threadId)
+                ? map
+                : new Map(map).set(command.threadId, {
+                    worktreePath: command.worktreePath,
+                    branch: command.branch,
+                    ran: false,
+                  }),
+            );
+          }
+          if (command.type === "thread.metadata.update") {
+            const thread = (yield* Ref.get(conversations)).get(command.threadId)!;
+            if (
+              (command.expectedEmpty === true && thread.ran) ||
+              (command.expectedWorktreePath !== undefined &&
+                command.expectedWorktreePath !== thread.worktreePath)
+            )
+              return yield* new OrchestratorDispatchError({
+                commandId: command.commandId,
+                commandType: command.type,
+              });
+            yield* Ref.update(conversations, (map) =>
+              new Map(map).set(command.threadId, {
+                ...thread,
+                worktreePath: command.worktreePath ?? thread.worktreePath,
+                branch: command.branch ?? thread.branch,
+              }),
+            );
+          }
+          return { sequence: 1, storedEvents: [] };
+        }),
     }),
     Layer.mock(GitWorkflowService)({
       hasCommit: () => Effect.succeed(false),
       localStatus: () => Effect.succeed({ refName: "main" } as VcsStatusLocalResult),
       createWorktree: (input) =>
         Ref.update(worktreesMade, (made) => [...made, input]).pipe(
+          Effect.andThen(Effect.flatten(Ref.get(whileMakingWorktree))),
           Effect.andThen(Ref.get(worktreePath)),
           Effect.map((path) => ({
             worktree: { path, refName: input.newRefName ?? input.refName },
@@ -232,6 +308,16 @@ const fixture = Effect.gen(function* () {
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   );
   return {
+    changes,
+    whileMakingWorktree,
+    boundCopies,
+    conversations,
+    reservations,
+    reservedState,
+    fillGate,
+    fillFailure,
+    fills,
+    moves,
     repositoryPaths,
     worktreePath,
     worktreesMade,
@@ -256,13 +342,10 @@ const fixture = Effect.gen(function* () {
     revokeAfterRead,
   };
 });
-const run = <A, E, R>(
-  use: (
-    state: Effect.Success<typeof fixture> & {
-      service: ProjectOperations.ProjectOperations["Service"];
-    },
-  ) => Effect.Effect<A, E, R>,
-) =>
+type State = Effect.Success<typeof fixture> & {
+  service: ProjectOperations.ProjectOperations["Service"];
+};
+const run = <A, E, R>(use: (state: State) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     yield* runForkMigrationSet(ProjectLibraryMigrations);
     const state = yield* fixture;
@@ -270,6 +353,62 @@ const run = <A, E, R>(
       use({ ...state, service }),
     ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
   }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+
+// Each save announces a change, so the operation is read again only after one.
+const settled = (state: State, id: string) =>
+  Effect.gen(function* () {
+    for (;;) {
+      const operation = (yield* state.service.list({})).find((entry) => entry.id === id);
+      if (operation !== undefined && operation.state !== "queued" && operation.state !== "running")
+        return operation;
+      yield* Queue.take(state.changes);
+    }
+  });
+const filesLaunch = (
+  threadId: string,
+  workspace?: "worktree",
+): LibraryOperationInput & { kind: "launch" } => ({
+  kind: "launch",
+  input: {
+    project,
+    keepOnComputer: true,
+    ...(workspace === undefined ? {} : { workspace }),
+    binding: {
+      projectId: project.id,
+      projectRevision: project.revision,
+      environmentId,
+      workingCopyId: `${threadId}-files`,
+      resourceIds: [],
+    },
+    files: {
+      requestId: `${threadId}-files`,
+      project,
+      rootPath: "/work/new-copy",
+      strategy: "clone",
+      resourceIds: [],
+    },
+    threadId: ThreadId.make(threadId),
+    title: "Review",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+    runtimeMode: "approval-required",
+    interactionMode: "plan",
+  },
+});
+const holdFiles = (state: State) =>
+  Deferred.make<void>().pipe(Effect.tap((gate) => Ref.set(state.fillGate, gate)));
+const worktreeFolder = (state: State) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "library-launch-" }),
+    );
+    const worktree = path.join(root, "worktree");
+    yield* fs.makeDirectory(worktree);
+    yield* Ref.set(state.worktreePath, worktree);
+    yield* Ref.set(state.repositoryPaths, ["/work/project"]);
+    return worktree;
+  });
 
 describe("Project operations", () => {
   it.effect(
@@ -784,6 +923,114 @@ describe("Project operations", () => {
       }),
     ),
   );
+  it.effect("opens a launch's conversation in its reserved files before they download", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const gate = yield* holdFiles(state);
+        const request = filesLaunch("files-thread");
+        const opened = yield* state.service.execute("files-launch", request, actor);
+        expect(opened).toMatchObject({ state: "running", result: { threadId: "files-thread" } });
+        expect(yield* Ref.get(state.conversations)).toEqual(
+          new Map([["files-thread", { worktreePath: "/work/project", branch: null, ran: false }]]),
+        );
+        expect(yield* Ref.get(state.boundCopies)).toEqual(["reserved:files-thread-files"]);
+        expect(yield* Ref.get(state.retentionSaves)).toBe(0);
+
+        const retried = yield* state.service.execute("files-launch", request, actor);
+        expect(retried.result).toEqual({ threadId: "files-thread" });
+        expect(yield* Ref.get(state.dispatched)).toEqual(["files-launch:create"]);
+        expect(yield* Ref.get(state.reservations)).toEqual(["files-thread-files"]);
+
+        yield* Deferred.succeed(gate, undefined);
+        expect((yield* settled(state, "files-launch")).state).toBe("succeeded");
+        expect(yield* Ref.get(state.fills)).toBe(1);
+        expect(yield* Ref.get(state.retentionSaves)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("keeps the conversation when its files fail to download and finishes on resume", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const gate = yield* holdFiles(state);
+        yield* Ref.set(
+          state.fillFailure,
+          new LibraryError({ reason: "io", detail: "The download stopped." }),
+        );
+        const request = filesLaunch("unfilled-thread");
+        expect((yield* state.service.execute("files-unfilled", request, actor)).result).toEqual({
+          threadId: "unfilled-thread",
+        });
+        yield* Deferred.succeed(gate, undefined);
+        expect(yield* settled(state, "files-unfilled")).toMatchObject({
+          state: "failed",
+          result: { threadId: "unfilled-thread" },
+        });
+        expect([...(yield* Ref.get(state.conversations)).keys()]).toEqual(["unfilled-thread"]);
+        expect(yield* Ref.get(state.retentionSaves)).toBe(0);
+
+        yield* Ref.set(state.fillFailure, null);
+        yield* state.service.resume("files-unfilled", actor);
+        expect((yield* settled(state, "files-unfilled")).state).toBe("succeeded");
+        expect([...(yield* Ref.get(state.conversations)).keys()]).toEqual(["unfilled-thread"]);
+        expect(yield* Ref.get(state.fills)).toBe(2);
+        expect(yield* Ref.get(state.retentionSaves)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("moves a conversation into its worktree once the files it is made from arrive", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const worktree = yield* worktreeFolder(state);
+        const gate = yield* holdFiles(state);
+        yield* state.service.execute("files-worktree", filesLaunch("moved", "worktree"), actor);
+        expect(yield* Ref.get(state.worktreesMade)).toEqual([]);
+        expect((yield* Ref.get(state.conversations)).get("moved")?.worktreePath).toBe(
+          "/work/project",
+        );
+
+        yield* Deferred.succeed(gate, undefined);
+        expect((yield* settled(state, "files-worktree")).state).toBe("succeeded");
+        const made = yield* Ref.get(state.worktreesMade);
+        expect(made).toHaveLength(1);
+        expect((yield* Ref.get(state.conversations)).get("moved")).toEqual({
+          worktreePath: worktree,
+          branch: made[0]!.newRefName,
+          ran: false,
+        });
+        expect(yield* Ref.get(state.moves)).toEqual([{ worktreePath: worktree, moved: true }]);
+      }),
+    ),
+  );
+
+  it.effect.each([
+    { name: "before its files arrive", whileMakingWorktree: false },
+    { name: "while its worktree is made", whileMakingWorktree: true },
+  ])("keeps a conversation whose first message went ahead $name in its folder", (example) =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* worktreeFolder(state);
+        const gate = yield* holdFiles(state);
+        yield* state.service.execute("files-ran", filesLaunch("ran", "worktree"), actor);
+        const message = Ref.update(state.conversations, (map) =>
+          new Map(map).set("ran", { ...map.get("ran")!, ran: true }),
+        );
+        if (example.whileMakingWorktree) yield* Ref.set(state.whileMakingWorktree, message);
+        else yield* message;
+
+        yield* Deferred.succeed(gate, undefined);
+        expect((yield* settled(state, "files-ran")).state).toBe("succeeded");
+        expect((yield* Ref.get(state.conversations)).get("ran")?.worktreePath).toBe(
+          "/work/project",
+        );
+        expect(yield* Ref.get(state.moves)).toEqual(
+          example.whileMakingWorktree ? [{ worktreePath: expect.any(String), moved: false }] : [],
+        );
+      }),
+    ),
+  );
+
   it.effect("requires current authorization and the original subject for operation control", () =>
     run((state) =>
       Effect.gen(function* () {

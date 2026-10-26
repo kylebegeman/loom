@@ -103,6 +103,21 @@ it.effect.each([
     },
   },
   {
+    name: "files reserved for the launch",
+    input: {
+      ...launch,
+      binding: { ...launch.binding, workingCopyId: "files-request" },
+      workspace: "worktree",
+      files: {
+        requestId: "files-request",
+        project: { ...project, color: null, futureField: "ignored by the original decoder" },
+        rootPath: "/work/new-copy",
+        strategy: "clone",
+        resourceIds: [resource.id],
+      },
+    },
+  },
+  {
     name: "null optional project fields",
     input: {
       ...launch,

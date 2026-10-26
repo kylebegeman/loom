@@ -176,6 +176,11 @@ export class LibraryWorkspaceStore extends Context.Service<
       resolved: LibraryResolvedBinding,
       project?: LibraryProject,
     ) => Effect.Effect<void, LibraryError>;
+    /** Moves a bound conversation between its copy's folder and a worktree made from it. */
+    readonly moveBinding: (
+      threadId: ThreadId,
+      resolved: LibraryResolvedBinding,
+    ) => Effect.Effect<void, LibraryError>;
     readonly importBindings: (input: {
       readonly receipts: ReadonlyArray<WorkspaceReceipt>;
       readonly bindings: ReadonlyArray<{
@@ -515,6 +520,30 @@ const make = Effect.gen(function* () {
             yield* write({
               ...database,
               bindings: [...database.bindings, { threadId, resolved, project: pinnedProject }],
+            });
+          }),
+        ),
+      ),
+    moveBinding: (threadId, resolved) =>
+      locks.withLock(
+        databasePath,
+        mapIo(
+          Effect.gen(function* () {
+            const database = yield* read;
+            const existing = database.bindings.find((row) => row.threadId === threadId)?.resolved;
+            if (
+              existing === undefined ||
+              (existing.worktreeOf ?? existing.cwd) !== (resolved.worktreeOf ?? resolved.cwd) ||
+              existing.localProjectId !== resolved.localProjectId ||
+              (yield* encodeThreadBinding(existing.binding)) !==
+                (yield* encodeThreadBinding(resolved.binding))
+            )
+              return yield* new LibraryError({ reason: "request-conflict" });
+            yield* write({
+              ...database,
+              bindings: database.bindings.map((row) =>
+                row.threadId === threadId ? { ...row, resolved } : row,
+              ),
             });
           }),
         ),

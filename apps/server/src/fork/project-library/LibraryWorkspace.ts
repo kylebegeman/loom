@@ -167,6 +167,16 @@ export class LibraryWorkspace extends Context.Service<
       readonly worktreePath?: string | undefined;
     }) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
     /**
+     * Moves a conversation bound to its copy's folder into a worktree made from that folder, as a
+     * worktree start whose files arrived after it opened does. `move` puts the conversation there
+     * and answers false when it refuses, which leaves the conversation in the copy's folder.
+     */
+    readonly moveThread: (input: {
+      readonly threadId: ThreadId;
+      readonly worktreePath: string;
+      readonly move: Effect.Effect<boolean, LibraryError>;
+    }) => Effect.Effect<boolean, LibraryError>;
+    /**
      * The local projects of this computer's registered borrowed folders, each with the binding its
      * conversations' history is saved under. Folders Loom manages bind their conversations instead.
      */
@@ -3224,6 +3234,36 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // The binding moves first, because dispatch refuses moving a bound conversation anywhere else.
+  // The move dispatches a command, so it never runs under the copy's lock, which a dispatch's
+  // own file check can wait on.
+  const moveThread = Effect.fn("LibraryWorkspace.moveThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly worktreePath: string;
+    readonly move: Effect.Effect<boolean, LibraryError>;
+  }) {
+    const current = yield* store.getBinding(input.threadId);
+    if (current === null) return yield* new LibraryError({ reason: "invalid" });
+    const folder = yield* threadFolder({ binding: current.binding });
+    const moved = yield* threadFolder({
+      binding: current.binding,
+      worktreePath: input.worktreePath,
+    });
+    if (current.cwd !== folder.cwd && current.cwd !== moved.cwd)
+      return yield* new LibraryError({ reason: "invalid" });
+    const rebind = (resolved: LibraryResolvedBinding) =>
+      locks.withLock(
+        copyKey(current.binding.workingCopyId),
+        store.moveBinding(input.threadId, resolved),
+      );
+    yield* rebind(moved);
+    const applied = yield* input.move.pipe(
+      Effect.onError(() => rebind(folder).pipe(Effect.ignore)),
+    );
+    if (!applied) yield* rebind(folder);
+    return applied;
+  });
+
   /**
    * A reservation whose conversations were all deleted before its files arrived never ran
    * anything, so only its download is lost. A conversation still being created holds no binding
@@ -3502,6 +3542,20 @@ const make = Effect.gen(function* () {
     return folder.resolved;
   });
 
+  // A copy refreshes the mirrors this computer already keeps for the project's repositories it
+  // does not clone itself, in the background, so a later copy of them starts current.
+  const refreshMirrors = (input: LibraryPrepareCopyRequest) =>
+    Effect.forEach(
+      input.project.resources,
+      (resource) =>
+        resource.kind === "link" ||
+        resource.remoteUrl === null ||
+        (input.strategy === "clone" &&
+          (input.resourceIds === undefined || input.resourceIds.includes(resource.id)))
+          ? Effect.void
+          : gitFetch.warmMirror({ remoteUrl: resource.remoteUrl, create: false }),
+      { discard: true },
+    );
   // Only the overlap and takeover checks share one lock, so a download never holds up the rest.
   const reserveCopy = (input: LibraryPrepareCopyRequest) =>
     locks
@@ -3514,7 +3568,10 @@ const make = Effect.gen(function* () {
           }),
         ),
       )
-      .pipe(Effect.tap((copy) => fillProfile(input, copy)));
+      .pipe(
+        Effect.tap((copy) => fillProfile(input, copy)),
+        Effect.tap(() => refreshMirrors(input)),
+      );
 
   return LibraryWorkspace.of({
     historyFolders: historyFolders(),
@@ -3700,6 +3757,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       ),
+    moveThread: (input) => mapIo(moveThread(input)),
   });
 });
 

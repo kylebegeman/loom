@@ -1770,6 +1770,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     Effect.gen(function* () {
       const parent = yield* makeTemp;
       const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
       const project = yield* remoteProject(parent, "reserve");
       const threads = new Map<ThreadId, FakeThread>();
       const service = yield* workspaceWithThreads(threads);
@@ -1809,6 +1810,25 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(ready.state).toBe("ready");
       expect(ready.rootLocalProjectId).toBe(root.localProjectId);
       expect(yield* service.resolveBinding({ binding: binding(["web"]) })).toEqual(web);
+
+      const worktree = path.join(parent, "worktrees", "web");
+      yield* git(web.cwd, ["worktree", "add", "-b", "moved", worktree]);
+      const receipts = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const boundCwd = receipts
+        .getBinding(threadId)
+        .pipe(Effect.map((current) => current?.cwd ?? null));
+      const move = (applied: Effect.Effect<boolean, LibraryError>) =>
+        service.moveThread({ threadId, worktreePath: worktree, move: applied });
+      expect(yield* move(Effect.succeed(false))).toBe(false);
+      expect(yield* boundCwd).toBe(web.cwd);
+      yield* move(Effect.fail(new LibraryError({ reason: "io" }))).pipe(Effect.flip);
+      expect(yield* boundCwd).toBe(web.cwd);
+      // The conversation's folder guard reads the binding, so it moves before the conversation.
+      const movedCwd = yield* fs.realPath(worktree);
+      expect(yield* move(boundCwd.pipe(Effect.map((cwd) => cwd === movedCwd)))).toBe(true);
+      expect(yield* boundCwd).toBe(movedCwd);
+      expect(yield* move(Effect.succeed(true))).toBe(true);
+      expect(yield* boundCwd).toBe(movedCwd);
     }),
   );
   it.effect("downloads a reserved copy once however many conversations wait on it", () =>

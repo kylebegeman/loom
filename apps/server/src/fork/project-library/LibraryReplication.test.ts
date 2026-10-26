@@ -105,6 +105,7 @@ const workspace = WorkspaceStore.LibraryWorkspaceStore.of({
   followArchived: () => Effect.void,
   importBindings: () => Effect.void,
   bind: () => Effect.void,
+  moveBinding: () => Effect.void,
   repositoriesForRoot: () => Effect.succeed([]),
   validateThreadCwd: (input) => Effect.succeed(input.cwd),
   savedThreads: Effect.succeed([]),
