@@ -11,6 +11,8 @@ import {
   emptyLibraryLaunchReceipt,
   bindLibraryLaunchConversation,
   launchLibraryConversation,
+  launchLibraryConversationNow,
+  libraryLaunchFilesPlan,
   encodeLibraryLaunchAttempt,
   readLibraryLaunchAttempt,
 } from "./libraryLaunch";
@@ -467,4 +469,139 @@ it("uses the durable launch boundary and preserves the same identity after a los
   expect(ports.bind).not.toHaveBeenCalled();
   expect(ports.registerHistory).not.toHaveBeenCalled();
   expect(receipt.historyRegistered).toBe(true);
+});
+
+describe("library conversation launch on computers that fill files after opening it", () => {
+  const review = {
+    authorityEnvironmentId: EnvironmentId.make("authority"),
+    model: {
+      key: "codex",
+      selection: { instanceId: ProviderInstanceId.make("codex"), model: "model" },
+    },
+    title: "Project discussion",
+    mode: "clone" as const,
+    rootPath: "/Projects/AspectAvy-v3",
+    copy: null,
+    carryContext: "",
+  };
+  const plan = (supported: boolean, receipt = emptyLibraryLaunchReceipt(), requestId = "request") =>
+    libraryLaunchFilesPlan({
+      supported,
+      requestId,
+      project,
+      resourceIds: input.resourceIds,
+      receipt,
+      review,
+    });
+
+  it("opens a fresh clone with one launch and none of the older chain's calls", async () => {
+    const h = harness(),
+      receipt = emptyLibraryLaunchReceipt();
+    const files = plan(true, receipt)!;
+    const execute = vi.fn(async () => {});
+    const target = await launchLibraryConversationNow(input, receipt, "request", files, {
+      execute,
+      progress: h.ports.progress,
+      persist: async () => {},
+    });
+    expect(target).toEqual({ environmentId: host, threadId });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith("request:launch", {
+      threadId,
+      project,
+      binding: {
+        projectId: project.id,
+        projectRevision: project.revision,
+        workingCopyId: "request:files",
+        environmentId: host,
+        resourceIds: ["ios"],
+      },
+      files: {
+        requestId: "request:files",
+        project,
+        rootPath: review.rootPath,
+        strategy: "clone",
+        resourceIds: ["ios"],
+      },
+    });
+    for (const port of [h.ports.prepare, h.ports.registerCopy, h.ports.resolve, h.ports.create])
+      expect(port).not.toHaveBeenCalled();
+    expect(receipt.threadCreated && receipt.threadBound).toBe(true);
+  });
+
+  it("resumes a saved attempt with the same operation and reserved files", async () => {
+    const receipt = emptyLibraryLaunchReceipt();
+    let serialized = "";
+    const persist = async () => {
+      serialized = encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "saved-request",
+        threadId,
+        receipt,
+        review,
+      });
+    };
+    const execute = vi.fn(async (_operationId: string, _launch: unknown) => {});
+    execute.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(
+      launchLibraryConversationNow(
+        input,
+        receipt,
+        "saved-request",
+        plan(true, receipt, "saved-request")!,
+        {
+          execute,
+          progress: () => {},
+          persist,
+        },
+      ),
+    ).rejects.toThrow("connection lost");
+
+    const restored = readLibraryLaunchAttempt(serialized)!;
+    const files = libraryLaunchFilesPlan({
+      supported: true,
+      requestId: restored.requestId,
+      project: restored.receipt.intent!.project,
+      resourceIds: restored.receipt.intent!.resourceIds,
+      receipt: restored.receipt,
+      review: restored.review,
+    })!;
+    await launchLibraryConversationNow(input, restored.receipt, restored.requestId, files, {
+      execute,
+      progress: () => {},
+      persist: async () => {},
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[1]).toEqual(execute.mock.calls[0]);
+    expect(execute.mock.calls[1]![0]).toBe("saved-request:launch");
+  });
+
+  it("binds an existing ready copy directly", () => {
+    expect(
+      libraryLaunchFilesPlan({
+        supported: true,
+        requestId: "request",
+        project,
+        resourceIds: ["ios"],
+        receipt: emptyLibraryLaunchReceipt(),
+        review: { ...review, mode: "reuse", rootPath: "", copy },
+      }),
+    ).toEqual({ kind: "copy", copy });
+  });
+
+  it("keeps the older chain without the feature or once that chain has started", () => {
+    expect(plan(false)).toBeNull();
+    const advanced = { ...emptyLibraryLaunchReceipt(), copy };
+    expect(plan(true, advanced)).toBeNull();
+    expect(
+      libraryLaunchFilesPlan({
+        supported: true,
+        requestId: "request",
+        project,
+        resourceIds: ["ios"],
+        receipt: emptyLibraryLaunchReceipt(),
+        review: { ...review, mode: "reuse", rootPath: "", copy: { ...copy, state: "released" } },
+      }),
+    ).toBeNull();
+  });
 });

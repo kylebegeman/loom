@@ -23,6 +23,10 @@ export interface WorktreeSetupCardProps {
   working: boolean;
   onCancel: () => void;
   onWorkLocally: (() => void) | null;
+  /** The computer Library project files are prepared on. */
+  computerLabel: string | null;
+  /** Resumes a failed Library file preparation. */
+  onRetry: (() => void) | null;
 }
 
 function elapsed(start: string | null, end: string | null, now: number) {
@@ -49,20 +53,30 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
   const now = useVisibleSecondClock(running || working);
   const failed =
     snapshot.phase === "failed" || snapshot.stages.some((stage) => stage.status === "failed");
+  const projectFiles = snapshot.kind === "project-files";
+  const computer = props.computerLabel ?? "this computer";
   const label =
-    handedOff && working
-      ? `Working for ${elapsed(turnStartedAt, null, now) ?? "0s"}`
-      : running
-        ? handedOff
-          ? "Setup continues…"
-          : "Preparing workspace…"
+    projectFiles && !(handedOff && working)
+      ? running
+        ? `Preparing files on ${computer}…`
         : snapshot.phase === "cancelled"
-          ? "Workspace setup cancelled"
-          : snapshot.phase === "failed"
-            ? "Workspace setup failed"
-            : failed
-              ? "Setup script failed"
-              : "Workspace ready";
+          ? "File preparation cancelled"
+          : failed
+            ? `Couldn't prepare files on ${computer}`
+            : "Files ready"
+      : handedOff && working
+        ? `Working for ${elapsed(turnStartedAt, null, now) ?? "0s"}`
+        : running
+          ? handedOff
+            ? "Setup continues…"
+            : "Preparing workspace…"
+          : snapshot.phase === "cancelled"
+            ? "Workspace setup cancelled"
+            : snapshot.phase === "failed"
+              ? "Workspace setup failed"
+              : failed
+                ? "Setup script failed"
+                : "Workspace ready";
 
   return (
     <View accessibilityLabel="Workspace setup" className="py-1">
@@ -138,6 +152,20 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
                 animate={!detailsOpen}
               />
             ))}
+          {projectFiles && snapshot.phase === "failed" ? (
+            <>
+              {snapshot.error ? (
+                <Text
+                  selectable
+                  numberOfLines={3}
+                  className="ml-8 mt-1 text-xs text-danger-foreground"
+                >
+                  {snapshot.error}
+                </Text>
+              ) : null}
+              <FilesActions onRetry={props.onRetry} onCancel={props.onCancel} />
+            </>
+          ) : null}
         </View>
       ) : null}
       {detailsOpen ? (
@@ -189,17 +217,49 @@ function HeaderLabel({
   );
 }
 
+function FilesActions({
+  onRetry,
+  onCancel,
+  onClose,
+}: Pick<WorktreeSetupCardProps, "onRetry" | "onCancel"> & { onClose?: () => void }) {
+  return (
+    <View className="mt-2 flex-row items-center justify-end gap-4">
+      <Button
+        label="Cancel"
+        tone="secondary"
+        accessibilityLabel="Cancel preparing project files"
+        onPress={() => {
+          onClose?.();
+          onCancel();
+        }}
+      />
+      {onRetry ? (
+        <Button
+          label="Retry"
+          accessibilityLabel="Retry preparing project files"
+          onPress={() => {
+            onClose?.();
+            onRetry();
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function SetupDetailsSheet({
   snapshot,
   turnStarted,
   onCancel,
   onWorkLocally,
+  onRetry,
   onClose,
   now,
 }: WorktreeSetupCardProps & { onClose: () => void; now: number }) {
   const insets = useSafeAreaInsets();
   const [bodyHeight, setBodyHeight] = useState(0);
-  const canCancel = snapshot.phase === "running" && !turnStarted;
+  const projectFiles = snapshot.kind === "project-files";
+  const canCancel = snapshot.phase === "running" && (projectFiles || !turnStarted);
   return (
     <WorktreeSetupSheet height={bodyHeight} onClose={onClose}>
       <ScrollView
@@ -228,18 +288,23 @@ function SetupDetailsSheet({
             {snapshot.error}
           </Text>
         ) : null}
+        {projectFiles && snapshot.phase === "failed" ? (
+          <FilesActions onRetry={onRetry} onCancel={onCancel} onClose={onClose} />
+        ) : null}
         {canCancel ? (
           <View className="mt-3 flex-row items-center justify-end gap-4 border-t border-border pt-1">
             <Button
-              label="Cancel setup"
+              label={projectFiles ? "Cancel" : "Cancel setup"}
               tone="danger"
-              accessibilityLabel="Cancel worktree setup"
+              accessibilityLabel={
+                projectFiles ? "Cancel preparing project files" : "Cancel worktree setup"
+              }
               onPress={() => {
                 onClose();
                 onCancel();
               }}
             />
-            {onWorkLocally ? (
+            {onWorkLocally && !projectFiles ? (
               <Button
                 label="Work locally"
                 tone="secondary"
@@ -278,7 +343,7 @@ function StageRow({
       ? null
       : stage.status === "skipped"
         ? (stage.detail ?? "skipped")
-        : stage.id === "checkout" && stage.status === "running" && stage.percent !== null
+        : stage.status === "running" && stage.percent !== null
           ? `${stage.percent}%`
           : stage.detail;
   return (

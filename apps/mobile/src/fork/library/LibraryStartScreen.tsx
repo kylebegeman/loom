@@ -33,6 +33,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
   ThreadId,
+  type ProjectId,
   type RuntimeMode,
   type ProviderInteractionMode,
 } from "@t3tools/contracts";
@@ -40,6 +41,7 @@ import {
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_LAUNCH_FILES_FEATURE,
   LIBRARY_PORTABLE_RECOVERY_FEATURE,
   LIBRARY_WORKTREE_STARTS_FEATURE,
   type LibraryLaunchWorkspace,
@@ -90,6 +92,9 @@ import {
   emptyLibraryLaunchReceipt,
   bindLibraryLaunchConversation,
   launchLibraryConversation,
+  launchLibraryConversationNow,
+  libraryLaunchFilesPlan,
+  libraryLaunchOperationId,
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
   type LibraryLaunchAttempt,
@@ -380,7 +385,12 @@ function LibraryStartContent(props: {
   const [launchedThread, setLaunchedThread] = useState<Awaited<
     ReturnType<typeof launchLibraryConversation>
   > | null>(null);
-  usePreventRemove((pending !== null || folderPending) && launchedThread === null, () => undefined);
+  // A launch that opens the conversation first fills its files on the computer, so leaving is safe.
+  const [instantLaunch, setInstantLaunch] = useState(false);
+  usePreventRemove(
+    ((pending !== null && !instantLaunch) || folderPending) && launchedThread === null,
+    () => undefined,
+  );
   useEffect(() => {
     if (launchedThread && pending === null)
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
@@ -826,7 +836,59 @@ function LibraryStartContent(props: {
       setError("Reconnect the library used to start this preparation before resuming it.");
       return;
     }
+    const executeLaunch = async (
+      operationId: string,
+      input: Parameters<Parameters<typeof launchLibraryConversationNow>[4]["execute"]>[1],
+      localProjectId: ProjectId | null,
+      managed: boolean,
+    ) => {
+      const currentModels = buildModelOptions(
+        config,
+        review.model.selection,
+        undefined,
+        localProjectId,
+      );
+      if (!currentModels.some((model) => model.key === review.model.key && !model.isUnavailable))
+        throw new Error(
+          "This model is unavailable for the chosen workspace. Review provider settings.",
+        );
+      unwrap(
+        await executeOperation({
+          environmentId: execution,
+          input: {
+            operationId,
+            request: {
+              kind: "launch",
+              input: {
+                ...input,
+                title: review.title,
+                modelSelection: review.model.selection,
+                runtimeMode:
+                  review.runtimeMode ??
+                  libraryLaunchDefaults({ settings: config?.settings, localProjectId }).runtimeMode,
+                interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+                ...(!offline && managed && review.keepOnComputer !== undefined
+                  ? { keepOnComputer: review.keepOnComputer }
+                  : {}),
+                ...(review.workspace ? { workspace: review.workspace } : {}),
+              },
+            },
+          },
+        }),
+      );
+    };
+    const instantFiles = libraryLaunchFilesPlan({
+      supported:
+        !offline &&
+        supportsLoomFeature(config?.environment.capabilities, LIBRARY_LAUNCH_FILES_FEATURE),
+      requestId: requestId.current,
+      project: launchProject,
+      resourceIds,
+      receipt: receipt.current,
+      review,
+    });
     busy.current = true;
+    setInstantLaunch(instantFiles !== null);
     setPending("Preparing conversation…");
     setError(null);
     try {
@@ -839,226 +901,217 @@ function LibraryStartContent(props: {
               sequence: source.data.summary.sequence,
             }
           : undefined);
-      const target = await launchLibraryConversation(
-        {
-          project: launchProject,
-          executionEnvironmentId: execution,
-          resourceIds,
-          threadId: threadId.current,
-          ...(continuation ? { continuationOf: continuation } : {}),
-        },
-        receipt.current,
-        {
-          persist,
-          prepare: async (intent) => {
-            if (review.recoverySource) {
-              return preparePortableLibraryLaunchCopy(
-                {
-                  sourceCopy: review.recoverySource,
-                  project: intent.project,
-                  destinationEnvironmentId: execution,
-                  authorityEnvironmentId: authority.environmentId!,
-                  rootPath: review.rootPath,
-                  resourceIds: intent.resourceIds,
-                  requestId: requestId.current,
-                },
+      const intent = {
+        project: launchProject,
+        executionEnvironmentId: execution,
+        resourceIds,
+        threadId: threadId.current,
+        ...(continuation ? { continuationOf: continuation } : {}),
+      };
+      const reportProgress = (label: string) => {
+        setProgress({ ...receipt.current });
+        setPending(label);
+      };
+      const target = instantFiles
+        ? await launchLibraryConversationNow(
+            intent,
+            receipt.current,
+            requestId.current,
+            instantFiles,
+            {
+              // Only a clone makes files Loom manages; a chosen folder stays the user's.
+              execute: (operationId, input) =>
+                executeLaunch(
+                  operationId,
+                  input,
+                  null,
+                  instantFiles.kind === "files"
+                    ? instantFiles.request.strategy === "clone"
+                    : instantFiles.copy.ownership === "managed",
+                ),
+              progress: reportProgress,
+              persist,
+            },
+          )
+        : await launchLibraryConversation(intent, receipt.current, {
+            persist,
+            prepare: async (intent) => {
+              if (review.recoverySource) {
+                return preparePortableLibraryLaunchCopy(
+                  {
+                    sourceCopy: review.recoverySource,
+                    project: intent.project,
+                    destinationEnvironmentId: execution,
+                    authorityEnvironmentId: authority.environmentId!,
+                    rootPath: review.rootPath,
+                    resourceIds: intent.resourceIds,
+                    requestId: requestId.current,
+                  },
+                  receipt.current,
+                  {
+                    readStatus: async (input) => unwrap(await readSourceStatus(input)),
+                    snapshot: async (input) => unwrap(await snapshotCopy(input)),
+                    registerCopy: async (input) => {
+                      unwrap(
+                        await registerCopy({ environmentId: authority.environmentId!, input }),
+                      );
+                    },
+                    authorize: async (input) => unwrap(await authorizeRecovery(input)),
+                    restore: async (input) => unwrap(await restoreCopy(input)),
+                    persist,
+                    progress: setPending,
+                  },
+                );
+              }
+              const copy =
+                review.mode === "reuse" &&
+                review.copy &&
+                (review.copy.ownership === "managed" || offlineReady)
+                  ? review.copy.state === "released"
+                    ? await restoreLibraryLaunchCopy(
+                        review.copy,
+                        `${requestId.current}:reopen`,
+                        async (input) => {
+                          if (
+                            !supportsFileLifecycle ||
+                            !appAtomRegistry.get(library.reopenCopy.permissionAtom(execution))
+                          )
+                            throw new Error(
+                              "This computer needs permission to restore saved project files.",
+                            );
+                          return unwrap(await reopen(input));
+                        },
+                      )
+                    : review.copy
+                  : unwrap(
+                      await prepare({
+                        environmentId: execution,
+                        input: {
+                          requestId: `${requestId.current}:prepare`,
+                          project: intent.project,
+                          rootPath:
+                            review.mode === "reuse" && review.copy
+                              ? review.copy.rootPath
+                              : review.rootPath,
+                          strategy: review.mode === "clone" ? "clone" : "reuse",
+                          resourceIds: intent.resourceIds,
+                        },
+                      }),
+                    );
+              if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
+                throw new Error("The prepared folder does not match the selected files.");
+              return copy;
+            },
+            registerCopy: async (copy) => {
+              if (
+                offlineReady &&
+                copy.id === offlineCopy?.id &&
+                copy.registered !== false &&
+                copy.state === "ready"
+              )
+                return;
+              unwrap(
+                await registerCopy({
+                  environmentId: authority.environmentId!,
+                  input: { requestId: `${requestId.current}:copy`, copy },
+                }),
+              );
+            },
+            resolve: async (input) =>
+              unwrap(
+                await resolve({
+                  environmentId: execution,
+                  input,
+                }),
+              ),
+            durableLaunch: supportsLoomFeature(
+              config?.environment.capabilities,
+              "project-workflows",
+            )
+              ? async (input) => {
+                  const localProjectId = receipt.current.resolved?.localProjectId;
+                  if (!localProjectId)
+                    throw new Error("Review the selected files before starting.");
+                  await executeLaunch(
+                    libraryLaunchOperationId(requestId.current),
+                    input,
+                    localProjectId,
+                    receipt.current.copy?.ownership === "managed",
+                  );
+                }
+              : undefined,
+            create: async (localProjectId) => {
+              const currentModels = buildModelOptions(
+                config,
+                review.model.selection,
+                undefined,
+                localProjectId,
+              );
+              if (
+                !currentModels.some(
+                  (model) => model.key === review.model.key && !model.isUnavailable,
+                )
+              )
+                throw new Error(
+                  "This model is unavailable for the chosen workspace. Review provider settings.",
+                );
+              unwrap(
+                await create({
+                  environmentId: execution,
+                  input: {
+                    commandId: CommandId.make(`${requestId.current}:thread`),
+                    threadId: threadId.current,
+                    projectId: localProjectId,
+                    title: review.title,
+                    modelSelection: review.model.selection,
+                    runtimeMode:
+                      review.runtimeMode ??
+                      libraryLaunchDefaults({
+                        settings: config?.settings,
+                        localProjectId,
+                      }).runtimeMode,
+                    interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+                    branch: null,
+                    worktreePath: null,
+                  },
+                }),
+              );
+            },
+            bind: (input) =>
+              bindLibraryLaunchConversation(
+                input,
                 receipt.current,
+                review.keepOnComputer,
+                requestId.current,
                 {
-                  readStatus: async (input) => unwrap(await readSourceStatus(input)),
-                  snapshot: async (input) => unwrap(await snapshotCopy(input)),
+                  bind: async (input) => {
+                    unwrap(await bind({ environmentId: execution, input }));
+                  },
+                  setRetention: async (input) => {
+                    if (!supportsFileLifecycle)
+                      throw new Error("Update this computer to save the Keep files setting.");
+                    return unwrap(await setRetention({ environmentId: execution, input }));
+                  },
                   registerCopy: async (input) => {
                     unwrap(await registerCopy({ environmentId: authority.environmentId!, input }));
                   },
-                  authorize: async (input) => unwrap(await authorizeRecovery(input)),
-                  restore: async (input) => unwrap(await restoreCopy(input)),
                   persist,
-                  progress: setPending,
                 },
+              ),
+            snapshot: async () =>
+              unwrap(
+                await snapshot({ environmentId: execution, input: { threadId: threadId.current } }),
+              ),
+            registerHistory: async (archive) => {
+              unwrap(
+                await registerThread({
+                  environmentId: authority.environmentId!,
+                  input: { requestId: `${requestId.current}:history`, thread: archive },
+                }),
               );
-            }
-            const copy =
-              review.mode === "reuse" &&
-              review.copy &&
-              (review.copy.ownership === "managed" || offlineReady)
-                ? review.copy.state === "released"
-                  ? await restoreLibraryLaunchCopy(
-                      review.copy,
-                      `${requestId.current}:reopen`,
-                      async (input) => {
-                        if (
-                          !supportsFileLifecycle ||
-                          !appAtomRegistry.get(library.reopenCopy.permissionAtom(execution))
-                        )
-                          throw new Error(
-                            "This computer needs permission to restore saved project files.",
-                          );
-                        return unwrap(await reopen(input));
-                      },
-                    )
-                  : review.copy
-                : unwrap(
-                    await prepare({
-                      environmentId: execution,
-                      input: {
-                        requestId: `${requestId.current}:prepare`,
-                        project: intent.project,
-                        rootPath:
-                          review.mode === "reuse" && review.copy
-                            ? review.copy.rootPath
-                            : review.rootPath,
-                        strategy: review.mode === "clone" ? "clone" : "reuse",
-                        resourceIds: intent.resourceIds,
-                      },
-                    }),
-                  );
-            if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
-              throw new Error("The prepared folder does not match the selected files.");
-            return copy;
-          },
-          registerCopy: async (copy) => {
-            if (
-              offlineReady &&
-              copy.id === offlineCopy?.id &&
-              copy.registered !== false &&
-              copy.state === "ready"
-            )
-              return;
-            unwrap(
-              await registerCopy({
-                environmentId: authority.environmentId!,
-                input: { requestId: `${requestId.current}:copy`, copy },
-              }),
-            );
-          },
-          resolve: async (input) =>
-            unwrap(
-              await resolve({
-                environmentId: execution,
-                input,
-              }),
-            ),
-          durableLaunch: supportsLoomFeature(config?.environment.capabilities, "project-workflows")
-            ? async (input) => {
-                const localProjectId = receipt.current.resolved?.localProjectId;
-                if (!localProjectId) throw new Error("Review the selected files before starting.");
-                const currentModels = buildModelOptions(
-                  config,
-                  review.model.selection,
-                  undefined,
-                  localProjectId,
-                );
-                if (
-                  !currentModels.some(
-                    (model) => model.key === review.model.key && !model.isUnavailable,
-                  )
-                )
-                  throw new Error(
-                    "This model is unavailable for the chosen workspace. Review provider settings.",
-                  );
-                unwrap(
-                  await executeOperation({
-                    environmentId: execution,
-                    input: {
-                      operationId: `${requestId.current}:launch`,
-                      request: {
-                        kind: "launch",
-                        input: {
-                          ...input,
-                          title: review.title,
-                          modelSelection: review.model.selection,
-                          runtimeMode:
-                            review.runtimeMode ??
-                            libraryLaunchDefaults({ settings: config?.settings, localProjectId })
-                              .runtimeMode,
-                          interactionMode:
-                            review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-                          ...(!offline &&
-                          receipt.current.copy?.ownership === "managed" &&
-                          review.keepOnComputer !== undefined
-                            ? { keepOnComputer: review.keepOnComputer }
-                            : {}),
-                          ...(review.workspace ? { workspace: review.workspace } : {}),
-                        },
-                      },
-                    },
-                  }),
-                );
-              }
-            : undefined,
-          create: async (localProjectId) => {
-            const currentModels = buildModelOptions(
-              config,
-              review.model.selection,
-              undefined,
-              localProjectId,
-            );
-            if (
-              !currentModels.some((model) => model.key === review.model.key && !model.isUnavailable)
-            )
-              throw new Error(
-                "This model is unavailable for the chosen workspace. Review provider settings.",
-              );
-            unwrap(
-              await create({
-                environmentId: execution,
-                input: {
-                  commandId: CommandId.make(`${requestId.current}:thread`),
-                  threadId: threadId.current,
-                  projectId: localProjectId,
-                  title: review.title,
-                  modelSelection: review.model.selection,
-                  runtimeMode:
-                    review.runtimeMode ??
-                    libraryLaunchDefaults({
-                      settings: config?.settings,
-                      localProjectId,
-                    }).runtimeMode,
-                  interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-                  branch: null,
-                  worktreePath: null,
-                },
-              }),
-            );
-          },
-          bind: (input) =>
-            bindLibraryLaunchConversation(
-              input,
-              receipt.current,
-              review.keepOnComputer,
-              requestId.current,
-              {
-                bind: async (input) => {
-                  unwrap(await bind({ environmentId: execution, input }));
-                },
-                setRetention: async (input) => {
-                  if (!supportsFileLifecycle)
-                    throw new Error("Update this computer to save the Keep files setting.");
-                  return unwrap(await setRetention({ environmentId: execution, input }));
-                },
-                registerCopy: async (input) => {
-                  unwrap(await registerCopy({ environmentId: authority.environmentId!, input }));
-                },
-                persist,
-              },
-            ),
-          snapshot: async () =>
-            unwrap(
-              await snapshot({ environmentId: execution, input: { threadId: threadId.current } }),
-            ),
-          registerHistory: async (archive) => {
-            unwrap(
-              await registerThread({
-                environmentId: authority.environmentId!,
-                input: { requestId: `${requestId.current}:history`, thread: archive },
-              }),
-            );
-          },
-          progress: (label) => {
-            setProgress({ ...receipt.current });
-            setPending(label);
-          },
-        },
-      );
+            },
+            progress: reportProgress,
+          });
       if (props.sourceArchiveId && review.carryContext.trim()) {
         setComposerDraftText(scopedThreadKey(target), review.carryContext);
         await flushComposerDrafts();
@@ -1088,6 +1141,7 @@ function LibraryStartContent(props: {
       busy.current = false;
       setProgress({ ...receipt.current });
       setPending(null);
+      setInstantLaunch(false);
     }
   }
   /**

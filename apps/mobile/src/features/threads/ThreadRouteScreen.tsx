@@ -8,7 +8,7 @@ import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
-import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { worktreeSetupBlocksSend } from "./worktree-setup-state";
 import { AppBar } from "../../components/ui/AppBar";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
@@ -927,6 +927,8 @@ function ThreadRouteContent(
     );
   };
   const setupTurnStartedAt = composer.selectedThreadActivityRun?.startedAt ?? null;
+  // fork: library-launch-files: the sequence a resumed file preparation must move past.
+  const [filesResumedAfter, setFilesResumedAfter] = useState<number | null>(null);
   const { snapshot: worktreeSetupSnapshot, visible: worktreeSetup } = useWorktreeSetup({
     environmentId: selectedThread?.environmentId ?? null,
     threadId: selectedThread?.id ?? null,
@@ -943,10 +945,11 @@ function ThreadRouteContent(
       ).length +
         composer.selectedThreadQueueCount >
       1,
+    resumedAfter: filesResumedAfter,
   });
   const awaitingBootstrapTurn =
     worktreeSetup !== null
-      ? worktreeSetup.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup)
+      ? worktreeSetupBlocksSend(worktreeSetup)
       : (selectedThreadDetail?.runs.some((run) => run.status === "preparing") ?? false);
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup);
   const handleCancelWorktreeSetup = () => {
@@ -954,6 +957,27 @@ function ThreadRouteContent(
     void cancelWorktreeSetup({
       environmentId: selectedThread.environmentId,
       input: { threadId: selectedThread.id },
+    });
+  };
+  // fork: library-launch-files: Library files fill through a durable operation, not a worktree setup.
+  const resumeFilesOperation = useAtomCommand(library.resumeOperation, "retry preparing files");
+  const cancelFilesOperation = useAtomCommand(library.cancelOperation, "cancel preparing files");
+  const filesOperationId =
+    worktreeSetup?.kind === "project-files" ? (worktreeSetup.operationId ?? null) : null;
+  const handleRetryFiles = async () => {
+    if (!selectedThread || !worktreeSetup || !filesOperationId) return;
+    const resumedAfter = worktreeSetup.sequence;
+    const result = await resumeFilesOperation({
+      environmentId: selectedThread.environmentId,
+      input: { operationId: filesOperationId },
+    });
+    if (result._tag === "Success") setFilesResumedAfter(resumedAfter);
+  };
+  const handleCancelFiles = () => {
+    if (!selectedThread || !filesOperationId) return;
+    void cancelFilesOperation({
+      environmentId: selectedThread.environmentId,
+      input: { operationId: filesOperationId },
     });
   };
   const startLocalThread = useAtomCommand(threadEnvironment.startTurn, "work locally");
@@ -1120,8 +1144,16 @@ function ThreadRouteContent(
                   turnStartedAt: setupTurnStartedAt,
                   working: composer.activeWorkStartedAt !== null,
                   turnStarted: setupTurnStartedAt !== null,
-                  onCancel: handleCancelWorktreeSetup,
-                  onWorkLocally: setupMessage && selectedThreadProject ? handleWorkLocally : null,
+                  onCancel:
+                    worktreeSetup.kind === "project-files"
+                      ? handleCancelFiles
+                      : handleCancelWorktreeSetup,
+                  onWorkLocally:
+                    worktreeSetup.kind !== "project-files" && setupMessage && selectedThreadProject
+                      ? handleWorkLocally
+                      : null,
+                  computerLabel: selectedEnvironmentConnection?.environmentLabel ?? null,
+                  onRetry: filesOperationId ? () => void handleRetryFiles() : null,
                 }
               : null
           }

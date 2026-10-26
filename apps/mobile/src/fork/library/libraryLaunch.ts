@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LibraryLaunchWorkspace,
+  type LibraryPrepareCopyRequest,
   LibraryProject,
   type LibraryResolveBindingRequest,
   type LibraryRegisterCopyRequest,
@@ -148,25 +149,8 @@ export async function bindLibraryLaunchConversation(
   }
 }
 
-/** A retry resumes accepted milestones; the composer opens only after binding and registration. */
-export async function launchLibraryConversation(
-  input: LibraryLaunchIntent,
-  receipt: LibraryLaunchReceipt,
-  ports: {
-    prepare: (intent: LibraryLaunchIntent) => Promise<LibraryWorkingCopy>;
-    registerCopy: (copy: LibraryWorkingCopy) => Promise<void>;
-    resolve: (
-      input: LibraryResolveBindingRequest & { readonly project: LibraryProject },
-    ) => Promise<LibraryResolvedBinding>;
-    durableLaunch?: ((input: LibraryLaunchBindingInput) => Promise<void>) | undefined;
-    create: (localProjectId: ProjectId) => Promise<void>;
-    bind: (input: LibraryLaunchBindingInput) => Promise<void>;
-    snapshot: () => Promise<LibraryThreadArchive>;
-    registerHistory: (archive: LibraryThreadArchive) => Promise<void>;
-    progress: (label: string) => void;
-    persist?: () => Promise<void>;
-  },
-) {
+/** The first try pins the destination and context; a retry must name the same ones. */
+function recordLibraryLaunchIntent(input: LibraryLaunchIntent, receipt: LibraryLaunchReceipt) {
   if (!receipt.intent) {
     receipt.intent = {
       ...input,
@@ -190,6 +174,29 @@ export async function launchLibraryConversation(
     throw new Error(
       "This preparation already has a reviewed destination and context. Resume the original conversation.",
     );
+  return intent;
+}
+
+/** A retry resumes accepted milestones; the composer opens only after binding and registration. */
+export async function launchLibraryConversation(
+  input: LibraryLaunchIntent,
+  receipt: LibraryLaunchReceipt,
+  ports: {
+    prepare: (intent: LibraryLaunchIntent) => Promise<LibraryWorkingCopy>;
+    registerCopy: (copy: LibraryWorkingCopy) => Promise<void>;
+    resolve: (
+      input: LibraryResolveBindingRequest & { readonly project: LibraryProject },
+    ) => Promise<LibraryResolvedBinding>;
+    durableLaunch?: ((input: LibraryLaunchBindingInput) => Promise<void>) | undefined;
+    create: (localProjectId: ProjectId) => Promise<void>;
+    bind: (input: LibraryLaunchBindingInput) => Promise<void>;
+    snapshot: () => Promise<LibraryThreadArchive>;
+    registerHistory: (archive: LibraryThreadArchive) => Promise<void>;
+    progress: (label: string) => void;
+    persist?: () => Promise<void>;
+  },
+) {
+  const intent = recordLibraryLaunchIntent(input, receipt);
   await ports.persist?.();
   if (!receipt.copy) {
     ports.progress("Preparing working files…");
@@ -263,5 +270,97 @@ export async function launchLibraryConversation(
     receipt.historyRegistered = true;
     await ports.persist?.();
   }
+  return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
+}
+
+/** The durable launch operation; the attempt's saved request id keeps it the same on retry. */
+export const libraryLaunchOperationId = (requestId: string) => `${requestId}:launch`;
+
+/** What a computer with `library-launch-files` opens the conversation on. */
+export type LibraryLaunchFiles =
+  | { readonly kind: "files"; readonly request: LibraryPrepareCopyRequest }
+  | { readonly kind: "copy"; readonly copy: LibraryWorkingCopy };
+
+/**
+ * Computers with `library-launch-files` take one launch. Restored files, released or borrowed
+ * files, and an attempt the older chain already advanced finish the way they started.
+ */
+export function libraryLaunchFilesPlan(input: {
+  readonly supported: boolean;
+  readonly requestId: string;
+  readonly project: LibraryProject;
+  readonly resourceIds: readonly string[];
+  readonly receipt: LibraryLaunchReceipt;
+  readonly review: Pick<
+    (typeof LibraryLaunchAttempt.Type)["review"],
+    "mode" | "rootPath" | "copy" | "recoverySource"
+  >;
+}): LibraryLaunchFiles | null {
+  const { review, receipt } = input;
+  if (!input.supported || review.recoverySource || receipt.copy || receipt.resolved) return null;
+  if (review.mode === "reuse")
+    return review.copy?.ownership === "managed" && review.copy.state === "ready"
+      ? { kind: "copy", copy: review.copy }
+      : null;
+  return {
+    kind: "files",
+    request: {
+      requestId: `${input.requestId}:files`,
+      project: input.project,
+      rootPath: review.rootPath,
+      strategy: review.mode === "clone" ? "clone" : "reuse",
+      resourceIds: [...input.resourceIds],
+    },
+  };
+}
+
+/**
+ * One durable launch: the computer creates and binds the conversation, then fills any reserved
+ * files after `execute` returns. A retry sends the same operation, so it never makes a second one.
+ */
+export async function launchLibraryConversationNow(
+  input: LibraryLaunchIntent,
+  receipt: LibraryLaunchReceipt,
+  requestId: string,
+  files: LibraryLaunchFiles,
+  ports: {
+    execute: (
+      operationId: string,
+      input: LibraryLaunchBindingInput & { readonly files?: LibraryPrepareCopyRequest },
+    ) => Promise<void>;
+    progress: (label: string) => void;
+    persist: () => Promise<void>;
+  },
+) {
+  const intent = recordLibraryLaunchIntent(input, receipt);
+  if (files.kind === "copy" && files.copy.environmentId !== intent.executionEnvironmentId)
+    throw new Error(
+      "The working copy belongs to another computer. Review your selected destination.",
+    );
+  const binding: LibraryThreadBinding = {
+    ...(files.kind === "copy"
+      ? libraryBinding(intent.project, files.copy, intent.resourceIds)
+      : {
+          projectId: intent.project.id,
+          projectRevision: intent.project.revision,
+          workingCopyId: files.request.requestId,
+          environmentId: intent.executionEnvironmentId,
+          resourceIds: [...intent.resourceIds],
+        }),
+    ...(intent.continuationOf ? { continuationOf: intent.continuationOf } : {}),
+  };
+  // Saved first, so leaving or a lost reply resumes this operation instead of starting another.
+  await ports.persist();
+  ports.progress("Starting conversation…");
+  await ports.execute(libraryLaunchOperationId(requestId), {
+    threadId: intent.threadId,
+    binding,
+    project: intent.project,
+    ...(files.kind === "files" ? { files: files.request } : {}),
+  });
+  receipt.threadCreated = true;
+  receipt.threadBound = true;
+  receipt.historyRegistered = true;
+  await ports.persist();
   return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
 }
