@@ -329,7 +329,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_copy_restore", {
     description:
-      "Restore verified saved project files into a new location on this computer using a destination-specific Library grant. Preserves local files, unpushed Git work and checkpoint refs, creates new destination project identities, and never overwrites an existing folder. Retain requestId for retries; renew expired grants. Keeps files until the new conversation is bound and retention is explicitly chosen.",
+      "Restore verified saved project files into a new folder on this computer using a destination-specific Library grant. Omit rootPath to let this computer choose a new folder; pass one only for a folder the user named. Preserves local files, unpushed Git work and checkpoint refs, creates new destination project identities, and never overwrites an existing folder. Retain requestId for retries; renew expired grants. Keeps files until the new conversation is bound and retention is explicitly chosen.",
     parameters: Library.LibraryRestoreCopyRequest,
     success: Library.LibraryWorkingCopy,
     failure,

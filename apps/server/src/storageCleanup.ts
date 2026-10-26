@@ -168,10 +168,11 @@ const nestedRepository = Effect.fnUntraced(function* (cwd: string, entry: string
   }
   return null;
 });
+// fork: file-placement
 /**
  * The "landed" rule for `git ls-files --others --ignored --exclude-standard --directory -z`
- * output: the first ignored entry that holds local data, or null when every entry is
- * regenerable output or an empty folder. `.env` files and local databases block removal.
+ * output: the first entry holding local data, or null when all are regenerable or empty. `.env`
+ * files, local databases and any repository or worktree nested in ignored output keep the folder.
  * @public
  */
 export const landedIgnoredFileBlocker = Effect.fn("StorageCleanup.landedIgnoredFileBlocker")(
