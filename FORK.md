@@ -1085,7 +1085,6 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/connection/useConnectionController.ts`             | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/keyboard/CommandPalette.tsx`                       | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/projects/AddProjectScreen.tsx`                     | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
-| `apps/mobile/src/features/projects/AddProjectSourceRoute.tsx`                | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx`              | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
