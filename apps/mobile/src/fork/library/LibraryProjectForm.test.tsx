@@ -49,6 +49,7 @@ vi.mock("../../state/entities", () => ({ useProjects: () => [] }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
 vi.mock("./libraryProjectColors", () => ({ useLibraryProjectColorValue: () => () => "#000" }));
 vi.mock("./LibraryProfileSection", () => ({ LibraryProfileSection: () => null }));
+vi.mock("./LibraryFolderPicker", () => ({ LibraryFolderPicker: () => null }));
 vi.mock("./LibraryBriefSuggestions", () => ({ LibraryBriefSuggestionsSetting: () => null }));
 vi.mock("./LibraryScreens", () => ({
   LibraryPage: ({ children }: { children: ReactNode }) => <main>{children}</main>,

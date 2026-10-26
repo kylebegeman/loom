@@ -5,6 +5,7 @@ import {
   getProjectPreparationDestination,
   projectPreparationSource,
   matchingProjectPreparationCopies,
+  serverChoosesFolders,
   supportsLoomFeature,
   type ProjectPreparationSource,
 } from "@t3tools/client-runtime/fork";
@@ -33,11 +34,13 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { preparationReceiptKey } from "./projectPreparationReceipt";
 import { useProjectPreparationReceipt } from "./useProjectPreparationReceipt";
 import { uuidv4 } from "../../lib/uuid";
-import { useProject, useProjects, useServerConfigs } from "../../state/entities";
+import { useProject, useProjects, useServerConfigs, waitForProject } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import { sourceControlEnvironment } from "../../state/sourceControl";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 
 const checkout = createProjectCheckoutAtoms(connectionAtomRuntime);
@@ -82,6 +85,9 @@ function ProjectPreparationContent(props: {
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope);
   const writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const review = useAtomQueryRunner(checkout.preview, { reportFailure: false, refresh: true });
+  const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
+    reportFailure: false,
+  });
   const [reviewedSource, setSource] = useState<ProjectPreparationSource>(() =>
     projectPreparationSource({}),
   );
@@ -127,9 +133,12 @@ function ProjectPreparationContent(props: {
   const canClone =
     destinationId !== null && operable.has(destinationId) && writable.has(destinationId);
   const newProjectsRoot = destinationId ? configs.get(destinationId)?.newProjectsRoot : null;
-  const proposal = source.ready
-    ? getProjectPreparationDestination({ newProjectsRoot, remoteUrl: source.remoteUrl })
-    : null;
+  // The computer picks the folder, or reuses a checkout it has, so nothing is typed or proposed.
+  const serverChosen = destinationId ? serverChoosesFolders(configs.get(destinationId)) : false;
+  const proposal =
+    source.ready && !serverChosen
+      ? getProjectPreparationDestination({ newProjectsRoot, remoteUrl: source.remoteUrl })
+      : null;
   const plan =
     destinationId && sourceProject
       ? buildProjectPreparationPlan({
@@ -139,11 +148,12 @@ function ProjectPreparationContent(props: {
             connected: destinationConnected,
             canClone,
             newProjectsRoot,
+            serverChosenFolders: serverChosen,
           },
           projectId: receipt?.projectId ?? request.projectId,
           title: receipt?.title ?? sourceProject.title,
           createdAt: receipt?.createdAt ?? request.createdAt,
-          ...(receipt
+          ...(receipt && (receipt.destinationPath !== "" || !serverChosen)
             ? { destinationPath: receipt.destinationPath }
             : proposal
               ? { destinationPath: proposal }
@@ -223,26 +233,89 @@ function ProjectPreparationContent(props: {
       if (mounted.current) setBusy(false);
     }
   };
-  const continuePreparation = () => {
-    if (!source.ready || !destinationId || !sourceProject) return;
+  const computersReady = (destination: EnvironmentId) => {
     const sourceCurrent = appAtomRegistry.get(
       environmentPresentations.presentationAtom(props.sourceEnvironmentId),
     );
+    const current = appAtomRegistry.get(environmentPresentations.presentationAtom(destination));
+    return (
+      (receipt !== null ||
+        (sourceCurrent?.entry.enabled === true &&
+          sourceCurrent.connection.phase === "connected" &&
+          readEnvironmentScope(props.sourceEnvironmentId, AuthOrchestrationReadScope))) &&
+      current?.entry.enabled === true &&
+      current.connection.phase === "connected" &&
+      readEnvironmentScope(destination, AuthOrchestrationOperateScope) &&
+      readEnvironmentScope(destination, AuthSourceControlWriteScope)
+    );
+  };
+  // The computer answers with the folder it used and, for a reused checkout, that project.
+  const startOnComputer = async () => {
     if (
-      !receipt &&
-      (sourceCurrent?.entry.enabled !== true ||
-        sourceCurrent.connection.phase !== "connected" ||
-        !readEnvironmentScope(props.sourceEnvironmentId, AuthOrchestrationReadScope))
+      busyRef.current ||
+      !source.ready ||
+      !destinationId ||
+      plan?.kind !== "create" ||
+      !computersReady(destinationId)
     )
       return;
-    const current = appAtomRegistry.get(environmentPresentations.presentationAtom(destinationId));
-    if (
-      current?.entry.enabled !== true ||
-      current.connection.phase !== "connected" ||
-      !readEnvironmentScope(destinationId, AuthOrchestrationOperateScope) ||
-      !readEnvironmentScope(destinationId, AuthSourceControlWriteScope)
-    )
-      return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    const requested = {
+      sourceEnvironmentId: props.sourceEnvironmentId,
+      sourceProjectId: props.sourceProjectId,
+      destinationEnvironmentId: destinationId,
+      projectId: plan.input.projectId,
+      title: plan.input.title,
+      createdAt: plan.input.createdAt,
+      remoteUrl: source.remoteUrl,
+      repositoryKey: source.repositoryKey,
+    };
+    const failure = (fallback: string) => (cause: unknown) =>
+      cause instanceof Error ? cause.message : fallback;
+    const problem = await (
+      receipt
+        ? Promise.resolve(null)
+        : receiptState
+            .save({ ...requested, destinationPath: "" })
+            .then(
+              () => null,
+              failure("The preparation receipt could not be saved. No clone was started."),
+            )
+    ).then(async (saveProblem) => {
+      if (saveProblem !== null) return saveProblem;
+      const result = await startProjectClone({ environmentId: destinationId, input: plan.input });
+      if (AsyncResult.isFailure(result))
+        return failure("The clone could not be started.")(squashAtomCommandFailure(result));
+      const started = result.value;
+      await receiptState
+        .settle({
+          ...requested,
+          projectId: started.projectId,
+          destinationPath: started.destinationPath ?? started.cwd,
+        })
+        .catch(() => undefined);
+      const project = await waitForProject(
+        { environmentId: destinationId, projectId: started.projectId },
+        15_000,
+      );
+      if (project === null)
+        return "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.";
+      if (mounted.current)
+        navigation.navigate("ProjectHome", {
+          environmentId: destinationId,
+          projectId: started.projectId,
+        });
+      return null;
+    });
+    busyRef.current = false;
+    if (!mounted.current) return;
+    setBusy(false);
+    setError(problem);
+  };
+  const continuePreparation = () => {
+    if (!source.ready || !destinationId || !sourceProject || !computersReady(destinationId)) return;
     if (!receipt && plan?.kind === "existing") {
       navigation.navigate("ProjectHome", {
         environmentId: plan.project.environmentId,
@@ -343,7 +416,12 @@ function ProjectPreparationContent(props: {
             </SettingsSection>
             <SettingsSection title="Choose a computer">
               {environments
-                .filter((environment) => environment.environmentId !== props.sourceEnvironmentId)
+                .filter(
+                  (environment) =>
+                    environment.environmentId !== props.sourceEnvironmentId &&
+                    configs.get(environment.environmentId)?.environment.capabilities
+                      .supportsExecution !== false,
+                )
                 .map((environment, index) => {
                   const connected =
                     environment.entry.enabled && environment.connection.phase === "connected";
@@ -414,7 +492,13 @@ function ProjectPreparationContent(props: {
                     />
                   </View>
                 ))}
-                {proposal ? (
+                {serverChosen ? (
+                  <Text selectable className="text-sm text-foreground-muted">
+                    {receipt?.destinationPath
+                      ? `Files are in ${receipt.destinationPath}`
+                      : "Loom puts the files in this computer's Projects folder, or uses a checkout it already has."}
+                  </Text>
+                ) : proposal ? (
                   <Text selectable className="text-sm text-foreground-muted">
                     {receipt ? "Submitted folder" : "Suggested folder"}:{" "}
                     {receipt?.destinationPath ?? proposal}
@@ -428,23 +512,36 @@ function ProjectPreparationContent(props: {
                   <Text className="text-sm text-foreground-muted">
                     {plan?.kind === "blocked"
                       ? plan.reason
-                      : "Review and edit the destination folder in the next step before starting the clone."}
+                      : serverChosen
+                        ? "Loom clones the repository on this computer and opens the project."
+                        : "Review and edit the destination folder in the next step before starting the clone."}
                   </Text>
                 )}
                 <Button
                   tone="primary"
                   label={
-                    receipt
-                      ? "Review saved preparation"
-                      : plan?.kind === "existing"
-                        ? "Open existing checkout"
-                        : "Review clone destination"
+                    serverChosen && plan?.kind === "create"
+                      ? busy
+                        ? "Preparing…"
+                        : receipt
+                          ? "Retry preparation"
+                          : "Prepare this computer"
+                      : receipt
+                        ? "Review saved preparation"
+                        : plan?.kind === "existing"
+                          ? "Open existing checkout"
+                          : "Review clone destination"
                   }
                   disabled={
                     !canContinue ||
+                    busy ||
                     (!receipt && plan?.kind === "blocked" && matchingCopies.length > 1)
                   }
-                  onPress={continuePreparation}
+                  onPress={
+                    serverChosen && plan?.kind === "create"
+                      ? () => void startOnComputer()
+                      : continuePreparation
+                  }
                 />
               </View>
             ) : null}

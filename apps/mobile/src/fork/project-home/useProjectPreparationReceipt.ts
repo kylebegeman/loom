@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import {
   recordPreparationReceipt,
+  settlePreparationReceipt,
   type ProjectPreparationReceipt,
 } from "./projectPreparationReceipt";
 
@@ -28,5 +29,15 @@ export function useProjectPreparationReceipt(key: string | null) {
     },
     [savePreferences],
   );
-  return { loaded, receipt, invalid, save } as const;
+  const settle = useCallback(
+    async (next: ProjectPreparationReceipt) => {
+      await savePreferences({
+        transform: (current) => ({
+          loomProjectPreparations: settlePreparationReceipt(current.loomProjectPreparations, next),
+        }),
+      });
+    },
+    [savePreferences],
+  );
+  return { loaded, receipt, invalid, save, settle } as const;
 }

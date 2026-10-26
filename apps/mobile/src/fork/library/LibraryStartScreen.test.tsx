@@ -46,6 +46,8 @@ const state = vi.hoisted(() => ({
   readStatus: Object.assign(vi.fn(), { permissionAtom: () => true }),
   snapshotCopy: Object.assign(vi.fn(), { permissionAtom: () => true }),
   executeOperation: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  inspectFolder: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  placement: null as { action: string; rootPath: string; ownership: string; reason: string } | null,
   create: vi.fn(),
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
@@ -144,6 +146,8 @@ vi.mock("./libraryState", () => ({
     resolveBinding: state.resolve,
     snapshotThread: state.snapshot,
     executeOperation: state.executeOperation,
+    inspectFolder: state.inspectFolder,
+    placement: { resultAtom: () => "placement" },
     operations: () => "operations",
   },
 }));
@@ -202,7 +206,13 @@ vi.mock("../../state/query", () => ({
         }
       : {
           data:
-            query === "project" ? state.project : query === "copies" ? state.copies : state.source,
+            query === "project"
+              ? state.project
+              : query === "copies"
+                ? state.copies
+                : query === "placement"
+                  ? state.placement
+                  : state.source,
           error:
             query === "copies" ? state.copiesError : query === "history" ? state.sourceError : null,
           isPending:
@@ -391,6 +401,9 @@ vi.mock("./LibraryScreens", () => ({
 vi.mock("./LibraryProfileReadiness", () => ({
   LibraryProfileReadiness: () => <span>Setup checks</span>,
 }));
+vi.mock("./LibraryFolderPicker", () => ({
+  LibraryFolderPicker: () => <span>Folder browser</span>,
+}));
 vi.mock("./LibraryFolderStorage", () => ({
   LibraryFolderStorage: () => <button>Review folder storage</button>,
 }));
@@ -517,6 +530,7 @@ beforeEach(() => {
   state.healthPending = false;
   state.source = null;
   state.warning = null;
+  state.placement = null;
   state.shells = [];
   state.shares = [];
   state.draftAttachments = [];
@@ -1457,6 +1471,41 @@ describe("portable project files on mobile", () => {
       input: { requestId: expect.stringContaining(":reopen"), workingCopyId: copy.id },
     });
     expect(state.restore).not.toHaveBeenCalled();
+    expect(state.prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe("Library starts on computers that choose folders", () => {
+  it("previews where the computer puts new files and leaves the folder out of the launch", async () => {
+    state.copies = [];
+    const capable = makeComputer(computerA, "MacBook", true, ["library-launch-files"]);
+    state.computers[0] = {
+      ...capable,
+      serverConfig: { ...capable.serverConfig, serverChosenFolders: true },
+    };
+    state.placement = {
+      action: "clone",
+      rootPath: "/Users/kyle/Projects/loom-2",
+      ownership: "managed",
+      reason: "New folder in Projects",
+    };
+    state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+    params = { ...params, reuseEnvironmentId: computerA };
+    await render();
+    await click("Files");
+    expect(container.textContent).toContain(
+      "Loom will put the files in /Users/kyle/Projects/loom-2",
+    );
+    expect(
+      container.querySelector("textarea[aria-label='Project folder on selected computer']"),
+    ).toBeNull();
+    expect(button("Choose another folder").disabled).toBe(false);
+    await click("Start work");
+    expect(state.executeOperation).toHaveBeenCalledOnce();
+    const files = state.executeOperation.mock.calls[0]![0].input.request.input.files;
+    expect(files).toMatchObject({ project, strategy: "clone" });
+    expect(files).not.toHaveProperty("rootPath");
+    expect(state.inspectFolder).not.toHaveBeenCalled();
     expect(state.prepare).not.toHaveBeenCalled();
   });
 });

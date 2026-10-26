@@ -4,7 +4,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   libraryLaunchCopyMatchesScope,
   libraryLaunchCopiesForScope,
-  libraryFreshRootPath,
   libraryLaunchPathOverlaps,
   restoreLibraryLaunchCopy,
 } from "./libraryLaunchFiles";
@@ -114,33 +113,11 @@ describe("mobile launch file safety", () => {
     ).toBe(true);
   });
 
-  it("chooses a versioned fresh folder when the old folder is already recorded", () => {
-    expect(libraryFreshRootPath(project, [copy], host, "/Projects")).toBe("/Projects/example-v2");
-    expect(
-      libraryFreshRootPath(
-        project,
-        [copy, { ...copy, rootPath: "/Projects/example-v2" }],
-        host,
-        "/Projects",
-      ),
-    ).toBe("/Projects/example-v2-2");
-    expect(libraryFreshRootPath(project, [copy], host, undefined)).toBe("/Projects/example-v2");
-    expect(libraryFreshRootPath(project, [copy], EnvironmentId.make("other"), "/Projects")).toBe(
-      "/Projects/example",
-    );
-  });
-  it("avoids enclosing workspaces and treats Windows roots consistently", () => {
-    expect(libraryFreshRootPath(project, [copy], host, "/Projects/example/work")).toBe(
-      "/Projects/example-v2",
-    );
+  it("treats Windows roots consistently when checking overlapping folders", () => {
     expect(libraryLaunchPathOverlaps("C:\\Projects\\Example", "c:/projects/example/app")).toBe(
       true,
     );
     expect(libraryLaunchPathOverlaps("/Projects/example", "/Projects/example-v2")).toBe(false);
-  });
-  it("does not search forever for a sibling of a filesystem root", () => {
-    for (const rootPath of ["/", "C:\\"])
-      expect(libraryFreshRootPath(project, [{ ...copy, rootPath }], host, undefined)).toBe("");
   });
   it("reopens saved files with a stable request and rejects a changed destination", async () => {
     const restored = { ...copy, state: "ready" as const };

@@ -48,6 +48,7 @@ import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import { LibraryNewProjectChoices, type LibraryCreateStart } from "./LibraryNewProjectChoices";
 import {
   libraryActiveCopies,
+  libraryAddResource,
   libraryStartIntent,
   libraryProfileChange,
   libraryProfileProblem,
@@ -243,14 +244,25 @@ function LibraryProjectForm({
       setPasteProblem("That's already in this project.");
       return;
     }
+    const id = uuidv4();
+    // A repository at the project root moves into its own folder once a second one joins it.
+    const folders = new Map(
+      libraryAddResource(existing, { ...parsed, id }).map((entry) => [
+        entry.id,
+        entry.relativePath,
+      ]),
+    );
     setResources((current) => [
-      ...current,
+      ...current.map((draft) => ({
+        ...draft,
+        relativePath: folders.get(draft.id) ?? draft.relativePath,
+      })),
       {
-        id: uuidv4(),
+        id,
         kind: parsed.kind === "link" ? "link" : "repository",
         title: parsed.title,
         url,
-        relativePath: parsed.relativePath,
+        relativePath: folders.get(id) ?? parsed.relativePath,
         defaultBranch: "",
       },
     ]);

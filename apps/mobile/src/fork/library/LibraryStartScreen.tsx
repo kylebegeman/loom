@@ -17,10 +17,15 @@ import {
   libraryLaunchDefaults,
   libraryLaunchWarning,
   libraryLaunchWorkspace,
+  libraryPlacementLine,
+  libraryPlacementReuses,
+  libraryPlacementStrategy,
   libraryPortableRecoveryPlan,
   markLibraryConversationStarted,
+  serverChoosesFolders,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
+import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
 import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
 import {
   squashAtomCommandFailure,
@@ -106,8 +111,8 @@ import { libraryConversationModels } from "./libraryModels";
 import type { LibrarySourceSettings } from "./librarySourceLaunch";
 import { LibraryFolderStorage } from "./LibraryFolderStorage";
 import { preparePortableLibraryLaunchCopy } from "./libraryPortableLaunch";
+import { LibraryFolderPicker } from "./LibraryFolderPicker";
 import {
-  libraryFreshRootPath,
   libraryLaunchCopyMatchesScope,
   libraryLaunchCopiesForScope,
   libraryLaunchPathOverlaps,
@@ -406,6 +411,7 @@ function LibraryStartContent(props: {
     title: string;
     mode: "reuse" | "folder" | "clone";
     rootPath: string;
+    placementStrategy?: "reuse" | "clone";
     copy: LibraryWorkingCopy | null;
     recoverySource?: LibraryWorkingCopy;
     carryContext: string;
@@ -661,13 +667,65 @@ function LibraryStartContent(props: {
     mode === "folder" || (mode === "reuse" && selectedCopy?.ownership === "borrowed")
       ? true
       : (keepFiles ?? (mode === "reuse" ? selectedCopy?.keepOnComputer !== false : false));
+  // A capable computer resolves and guards its own folder, so a new copy sends none unless one was
+  // picked. Restoring saved files still names the folder it restores into.
+  const choosesFolders = serverChoosesFolders(config);
+  const serverPlaces = reviewState
+    ? reviewState.placementStrategy !== undefined
+    : choosesFolders && mode === "clone" && typedPath === null && !recoverySource;
+  const placementQuery = useEnvironmentQuery(
+    execution &&
+      choosesFolders &&
+      mode === "clone" &&
+      typedPath === null &&
+      progress.intent === null
+      ? library.placement.resultAtom({
+          environmentId: execution,
+          input: { projectId: launchProject.id, resourceIds: [...resourceIds] },
+        })
+      : null,
+  );
+  const placement = placementQuery.error === null ? placementQuery.data : null;
   const rootPath =
     typedPath ??
     (mode === "clone"
-      ? libraryFreshRootPath(launchProject, knownCopies ?? [], execution, config?.newProjectsRoot)
+      ? (placement?.rootPath ??
+        (config?.newProjectsRoot
+          ? getNewProjectPathPreview(config.newProjectsRoot, launchProject.title)
+          : ""))
       : "");
+  const placementReuses = reviewState
+    ? reviewState.placementStrategy === "reuse"
+    : serverPlaces && placement !== null && libraryPlacementReuses(placement);
+  const placementText = placement
+    ? libraryPlacementLine(placement)
+    : placementQuery.isPending && !reviewState
+      ? "Checking where Loom will put the files…"
+      : "Loom chooses a folder on this computer when you start.";
+  const [pickingFolder, setPickingFolder] = useState(false);
+  const canInspect = useAtomValue(library.inspectFolder.permissionAtom(execution));
+  const inspectFolder = useAtomCommand(library.inspectFolder, { reportFailure: false });
+  // A picked folder with repositories is used as it is; an empty or missing one gets new files.
+  async function chooseFolder(path: string) {
+    if (!execution || folderBusy.current) return;
+    pin();
+    setPickingFolder(false);
+    setKeepFiles(null);
+    if (recoverySource || !canInspect) {
+      setRootPath(path);
+      return;
+    }
+    onFolderPending(true);
+    const result = await inspectFolder({ environmentId: execution, input: { rootPath: path } });
+    onFolderPending(false);
+    const found = AsyncResult.isSuccess(result) ? result.value : null;
+    const existing = found !== null && found.exists && found.repositories.length > 0;
+    setMode(existing ? "folder" : "clone");
+    setRootPath(found?.rootPath ?? path);
+  }
   const overlappingRoot =
     mode !== "reuse" &&
+    !serverPlaces &&
     (knownCopies ?? []).some(
       (copy) =>
         copy.environmentId === execution &&
@@ -756,7 +814,7 @@ function LibraryStartContent(props: {
     (progress.copy !== null || (!recoveryAmbiguous && recoveryUnavailable === null)) &&
     (progress.copy !== null || mode === "reuse"
       ? progress.copy !== null || selectedCopy !== null
-      : rootPath.trim().length > 0 &&
+      : (serverPlaces || rootPath.trim().length > 0) &&
         (recoverySource
           ? canRestoreCopy && canAuthorizeRecovery
           : canPrepare && (mode !== "clone" || (execution !== null && writable.has(execution))))) &&
@@ -799,6 +857,7 @@ function LibraryStartContent(props: {
       if (!catalog.isSuccess || catalog.isPending || catalog.data === null) return;
       if (
         mode !== "reuse" &&
+        !serverPlaces &&
         catalog.data.some(
           (copy) =>
             copy.environmentId === execution &&
@@ -820,7 +879,8 @@ function LibraryStartContent(props: {
         ...(interactionMode ? { interactionMode } : {}),
         title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         mode,
-        rootPath: rootPath.trim(),
+        rootPath: serverPlaces ? "" : rootPath.trim(),
+        ...(serverPlaces ? { placementStrategy: libraryPlacementStrategy(placement) } : {}),
         copy: selectedCopy,
         ...(recoverySource ? { recoverySource } : {}),
         carryContext,
@@ -989,11 +1049,14 @@ function LibraryStartContent(props: {
                         input: {
                           requestId: `${requestId.current}:prepare`,
                           project: intent.project,
-                          rootPath:
-                            review.mode === "reuse" && review.copy
-                              ? review.copy.rootPath
-                              : review.rootPath,
-                          strategy: review.mode === "clone" ? "clone" : "reuse",
+                          ...(review.mode === "reuse" && review.copy
+                            ? { rootPath: review.copy.rootPath }
+                            : review.placementStrategy
+                              ? {}
+                              : { rootPath: review.rootPath }),
+                          strategy:
+                            review.placementStrategy ??
+                            (review.mode === "clone" ? "clone" : "reuse"),
                           resourceIds: intent.resourceIds,
                         },
                       }),
@@ -1293,9 +1356,11 @@ function LibraryStartContent(props: {
           ? "Use an existing folder"
           : recoverySource || recoveryAmbiguous
             ? "Restore source files when starting"
-            : rootPath.trim()
-              ? "Prepare project files when starting"
-              : "Choose a folder before starting";
+            : placementReuses
+              ? "Use files in this folder"
+              : serverPlaces || rootPath.trim()
+                ? "Prepare project files when starting"
+                : "Choose a folder before starting";
   const retentionStatus = keepOnComputer
     ? "Files stay kept."
     : "Temporary files, saved work stays.";
@@ -1534,7 +1599,11 @@ function LibraryStartContent(props: {
             <SettingsSection title="Working files">
               <View className="gap-2 p-4">
                 <Text selectable className="text-sm text-foreground">
-                  {mode === "reuse" ? displayedCopy?.rootPath : rootPath || "Choose a folder"}
+                  {mode === "reuse"
+                    ? displayedCopy?.rootPath
+                    : serverPlaces
+                      ? placementText
+                      : rootPath || "Choose a folder"}
                 </Text>
                 <Text className="text-sm text-foreground-muted">
                   {mode === "reuse"
@@ -1545,7 +1614,9 @@ function LibraryStartContent(props: {
                       ? "Files stay here until you change their setting in the project."
                       : recoverySource
                         ? "Loom restores saved files here, including local changes and work that has not been pushed."
-                        : "Loom prepares the files here when you start work."}
+                        : placementReuses
+                          ? "Start with the files already here."
+                          : "Loom prepares the files here when you start work."}
                 </Text>
               </View>
               {eligible.map((copy) => (
@@ -1595,19 +1666,51 @@ function LibraryStartContent(props: {
               />
               {mode !== "reuse" ? (
                 <View className="gap-2 p-4">
-                  <TextInput
-                    accessibilityLabel="Project folder on selected computer"
-                    placeholder="Absolute project folder on this computer"
-                    value={rootPath}
-                    onChangeText={(text) => {
-                      pin();
-                      setRootPath(text);
-                    }}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!locked}
-                    className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-                  />
+                  {choosesFolders ? (
+                    <>
+                      <Button
+                        label={pickingFolder ? "Hide folders" : "Choose another folder"}
+                        tone="text"
+                        disabled={locked}
+                        onPress={() => {
+                          pin();
+                          setPickingFolder((value) => !value);
+                        }}
+                      />
+                      {typedPath !== null && mode === "clone" ? (
+                        <Button
+                          label="Use the suggested folder"
+                          tone="text"
+                          disabled={locked}
+                          onPress={() => {
+                            pin();
+                            setRootPath(null);
+                          }}
+                        />
+                      ) : null}
+                      {pickingFolder ? (
+                        <LibraryFolderPicker
+                          environmentId={execution}
+                          disabled={locked}
+                          onChoose={(path) => void chooseFolder(path)}
+                        />
+                      ) : null}
+                    </>
+                  ) : (
+                    <TextInput
+                      accessibilityLabel="Project folder on selected computer"
+                      placeholder="Absolute project folder on this computer"
+                      value={rootPath}
+                      onChangeText={(text) => {
+                        pin();
+                        setRootPath(text);
+                      }}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!locked}
+                      className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+                    />
+                  )}
                   {mode === "folder" && repositories.length > 0 ? (
                     <Text className="text-xs text-foreground-muted">
                       Choose the folder containing{" "}

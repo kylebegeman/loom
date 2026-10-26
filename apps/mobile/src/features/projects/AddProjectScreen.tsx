@@ -127,7 +127,8 @@ const environmentOptionOrder = Order.mapInput(
   (environment: EnvironmentOption) => ({ label: environment.label }),
 );
 
-function platformFromOs(os: string | null | undefined): string {
+// fork: file-placement - Exported with the browser below for the Library folder picker.
+export function platformFromOs(os: string | null | undefined): string {
   if (os === "windows") return "Win32";
   if (os === "darwin") return "MacIntel";
   if (os === "linux") return "Linux";
@@ -306,8 +307,9 @@ function ProjectPathInput(props: {
   );
 }
 
-function useBrowsePathInput(
-  environment: EnvironmentOption | null,
+// fork: file-placement - Exported, needing only what it reads, for the Library folder picker.
+export function useBrowsePathInput(
+  environment: Pick<EnvironmentOption, "environmentId" | "baseDirectory" | "platform"> | null, // fork: file-placement
   pinnedDirectoryName = "",
   reviewedDestinationPath: string | null = null, // fork: project-home
 ) {
@@ -936,8 +938,9 @@ export function AddProjectRepositoryScreen(props: {
   );
 }
 
-function FolderBrowser(props: {
-  readonly environment: EnvironmentOption;
+// fork: file-placement - Exported, needing only what it reads, for the Library folder picker.
+export function FolderBrowser(props: {
+  readonly environment: Pick<EnvironmentOption, "environmentId" | "platform">; // fork: file-placement
   readonly pathInput: string;
   readonly setPathInput: (path: string) => void;
   readonly navigateToBrowsePath: (input: {
