@@ -106,6 +106,9 @@ const workspace = WorkspaceStore.LibraryWorkspaceStore.of({
   bind: () => Effect.void,
   repositoriesForRoot: () => Effect.succeed([]),
   validateThreadCwd: (input) => Effect.succeed(input.cwd),
+  savedThreads: Effect.succeed([]),
+  savedBinding: () => Effect.succeed(null),
+  saveHistory: () => Effect.void,
 });
 const health: LibraryCopyHealth = {
   copyId: copy.id,
@@ -292,6 +295,41 @@ const serviceFor = (
     }),
     Effect.provideService(HistorySource.LibraryHistorySource, { snapshotThread }),
   );
+const savedStateDir = ServerConfig.layerTest(process.cwd(), {
+  prefix: "library-replication-saved-",
+});
+// The real history source over a real host store, for conversations saved without a binding.
+const savingService = (
+  f: Effect.Success<typeof fixture>,
+  store: WorkspaceStore.LibraryWorkspaceStore["Service"],
+  historyFolders: Workspace.LibraryWorkspace["Service"]["historyFolders"],
+) =>
+  Effect.gen(function* () {
+    const identity = Layer.succeed(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(source),
+    });
+    const sources = yield* HistorySource.LibraryHistorySource.pipe(
+      Effect.provide(
+        HistorySource.layer.pipe(
+          Layer.provide(Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, store)),
+          Layer.provide(identity),
+        ),
+      ),
+    );
+    return yield* Replication.LibraryReplication.pipe(
+      Effect.provide(Replication.layer),
+      Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+      Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, store),
+      Effect.provide(identity),
+      Effect.provideService(HistorySource.LibraryHistorySource, sources),
+      Effect.provide(
+        Layer.mock(Workspace.LibraryWorkspace)({
+          cleanupTemporaryCopies: () => Effect.void,
+          historyFolders,
+        }),
+      ),
+    );
+  });
 const pendingLimit = (bytes: number) =>
   Effect.provide(
     ConfigProvider.layer(
@@ -578,6 +616,7 @@ describe("durable Library history replication", () => {
             }),
             Effect.provide(
               Layer.mock(Workspace.LibraryWorkspace)({
+                historyFolders: Effect.succeed([]),
                 cleanupTemporaryCopies: (isHistoryAcknowledged) =>
                   Effect.gen(function* () {
                     if (!(yield* isHistoryAcknowledged(threadId))) return;
@@ -669,6 +708,7 @@ describe("durable Library history replication", () => {
           }),
           Effect.provide(
             Layer.mock(Workspace.LibraryWorkspace)({
+              historyFolders: Effect.succeed([]),
               cleanupTemporaryCopies: (isHistoryAcknowledged) =>
                 Effect.gen(function* () {
                   for (const [copyId, related] of [
@@ -716,6 +756,7 @@ describe("durable Library history replication", () => {
         ).pipe(
           Effect.provide(
             Layer.mock(Workspace.LibraryWorkspace)({
+              historyFolders: Effect.succeed([]),
               cleanupTemporaryCopies: (isHistoryAcknowledged) =>
                 Effect.gen(function* () {
                   const saved = yield* Effect.filter(threads, isHistoryAcknowledged);
@@ -755,6 +796,7 @@ describe("durable Library history replication", () => {
             }),
             Effect.provide(
               Layer.mock(Workspace.LibraryWorkspace)({
+                historyFolders: Effect.succeed([]),
                 cleanupTemporaryCopies: (isHistoryAcknowledged) =>
                   Effect.gen(function* () {
                     const saved = yield* isHistoryAcknowledged(threadId);
@@ -921,7 +963,10 @@ describe("durable Library history replication", () => {
             snapshotThread: () => Ref.get(f.archive),
           }),
           Effect.provide(
-            Layer.mock(Workspace.LibraryWorkspace)({ cleanupTemporaryCopies: () => Effect.void }),
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Effect.void,
+              historyFolders: Effect.succeed([]),
+            }),
           ),
         );
         const copyRegistrations = Ref.get(f.registered).pipe(
@@ -969,7 +1014,10 @@ describe("durable Library history replication", () => {
             snapshotThread: () => Ref.get(f.archive),
           }),
           Effect.provide(
-            Layer.mock(Workspace.LibraryWorkspace)({ cleanupTemporaryCopies: () => Effect.void }),
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Effect.void,
+              historyFolders: Effect.succeed([]),
+            }),
           ),
         );
         yield* f.event(1, "thread.created", "{}");
@@ -1025,6 +1073,7 @@ describe("durable Library history replication", () => {
           }),
           Effect.provide(
             Layer.mock(Workspace.LibraryWorkspace)({
+              historyFolders: Effect.succeed([]),
               cleanupTemporaryCopies: () => Ref.update(cleanups, (count) => count + 1),
             }),
           ),
@@ -1396,6 +1445,146 @@ describe("durable Library history replication", () => {
           ),
         ),
       ),
+  );
+  it.effect("saves a conversation in a borrowed project folder without binding its folder", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const archive = yield* Ref.get(f.archive);
+        const thread = archive.projection.thread;
+        yield* projections.apply({
+          id: EventId.make("native-created"),
+          threadId,
+          type: "thread.created",
+          payload: thread,
+          occurredAt: thread.createdAt,
+        });
+        yield* projections.apply({
+          id: EventId.make("native-message"),
+          threadId,
+          type: "message.updated",
+          payload: archive.projection.messages[0]!,
+          occurredAt: thread.createdAt,
+        });
+        yield* f.event(1, "thread.created", "{}");
+        yield* f.event(2, "message.updated", '{"streaming":false}');
+        const store = yield* WorkspaceStore.LibraryWorkspaceStore.pipe(
+          Effect.provide(WorkspaceStore.layer),
+        );
+        yield* store.put(receipt);
+        const service = yield* savingService(f, store, Effect.succeed([{ resolved, project }]));
+        yield* service.drain;
+        expect(
+          (yield* Ref.get(f.requests)).flatMap((request) =>
+            request.entries.map((entry) => entry.thread.summary),
+          ),
+        ).toMatchObject([
+          {
+            threadId,
+            projectId: project.id,
+            workingCopyId: copy.id,
+            localProjectId,
+            resourceIds: [resource.id],
+          },
+        ]);
+        // Saving never takes over where the conversation runs.
+        expect(yield* store.getBinding(threadId)).toBeNull();
+        expect((yield* service.status).threads).toMatchObject([{ threadId, pending: false }]);
+      }).pipe(Effect.provide(Layer.merge(ProjectionStore.layer, savedStateDir))),
+    ),
+  );
+  it.effect("backfills earlier conversations one at a time, newest first, after new work", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const archive = yield* Ref.get(f.archive);
+        let sequence = 0;
+        const seed = (id: ThreadId, at: string) =>
+          Effect.gen(function* () {
+            const occurredAt = DateTime.makeUnsafe(at);
+            yield* projections.apply({
+              id: EventId.make(`${id}-created`),
+              threadId: id,
+              type: "thread.created",
+              payload: {
+                ...archive.projection.thread,
+                id,
+                lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+                createdAt: occurredAt,
+                updatedAt: occurredAt,
+              },
+              occurredAt,
+            });
+            yield* projections.apply({
+              id: EventId.make(`${id}-message`),
+              threadId: id,
+              type: "message.updated",
+              payload: {
+                ...archive.projection.messages[0]!,
+                id: MessageId.make(`${id}-message`),
+                threadId: id,
+                createdAt: occurredAt,
+                updatedAt: occurredAt,
+              },
+              occurredAt,
+            });
+            for (const [eventType, payload] of [
+              ["thread.created", "{}"],
+              ["message.updated", '{"streaming":false}'],
+            ]) {
+              sequence += 1;
+              yield* f.sql`INSERT INTO orchestration_events (sequence,event_id,stream_version,occurred_at,actor_kind,metadata_json,application_event_version,aggregate_kind,stream_id,event_type,payload_json) VALUES (${sequence},${`event-${sequence}`},${sequence},${at},'server','{}',2,'thread',${id},${eventType},${payload})`;
+            }
+          });
+        const older = ThreadId.make("older-thread");
+        const newer = ThreadId.make("newer-thread");
+        const fresh = ThreadId.make("fresh-thread");
+        yield* seed(older, "2026-10-01T00:00:00.000Z");
+        yield* seed(newer, "2026-10-02T00:00:00.000Z");
+        const store = yield* WorkspaceStore.LibraryWorkspaceStore.pipe(
+          Effect.provide(WorkspaceStore.layer),
+        );
+        yield* store.put(receipt);
+        const folders = yield* Ref.make<
+          Effect.Success<Workspace.LibraryWorkspace["Service"]["historyFolders"]>
+        >([]);
+        const service = yield* savingService(f, store, Ref.get(folders));
+        const uploaded = Ref.get(f.requests).pipe(
+          Effect.map((requests) =>
+            requests.flatMap((request) => request.entries.map((entry) => entry.thread.summary)),
+          ),
+          Effect.map((summaries) => summaries.map((summary) => summary.threadId)),
+        );
+        yield* service.drain;
+        // The folder starts saving after both conversations were last touched.
+        yield* Ref.set(folders, [{ resolved, project }]);
+        yield* TestClock.adjust("10 minutes");
+        yield* service.drain;
+        expect(yield* uploaded).toEqual([newer]);
+        expect((yield* service.status).threads).toMatchObject([
+          { threadId: newer, pending: false },
+          { threadId: older, acknowledgedSequence: 0 },
+        ]);
+        // A conversation with new work goes ahead of the backlog, and a flush sends only it.
+        yield* seed(fresh, "2026-10-03T00:00:00.000Z");
+        yield* service.flush;
+        expect(yield* uploaded).toEqual([newer, fresh]);
+        yield* service.drain;
+        expect(yield* uploaded).toEqual([newer, fresh, older]);
+        expect(yield* store.getBinding(older)).toBeNull();
+        // Unregistering the folder stops saving and hides its conversations from status.
+        yield* store.put({ ...receipt, copy: { ...copy, registered: false } });
+        expect((yield* service.statusFor([fresh])).threads).toEqual([]);
+        yield* seed(ThreadId.make("unsaved-thread"), "2026-10-04T00:00:00.000Z");
+        yield* TestClock.adjust("10 minutes");
+        yield* service.drain;
+        expect(yield* uploaded).toEqual([newer, fresh, older]);
+        yield* store.put(receipt);
+        expect((yield* service.statusFor([fresh])).threads).toMatchObject([
+          { threadId: fresh, pending: false },
+        ]);
+      }).pipe(Effect.provide(Layer.merge(ProjectionStore.layer, savedStateDir))),
+    ),
   );
   it.effect(
     "keeps one unacknowledged snapshot per conversation and coalesces later milestones",

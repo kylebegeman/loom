@@ -18,6 +18,7 @@ import {
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
   LIBRARY_BRIEF_SUGGESTION_WS_METHODS as SUGGEST,
   LIBRARY_WS_METHODS as L,
+  type LibraryReplicationStatusRequest,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as LibraryBriefSuggestions from "./LibraryBriefSuggestions.ts";
@@ -52,9 +53,13 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
 
   return {
     [L.subscribeRefreshes]: () => auth.stream(L.subscribeRefreshes, library.subscribeRefreshes),
-    [L.replicationStatus]: () => auth.effect(L.replicationStatus, replication.status),
-    [L.flushHistory]: () =>
-      auth.effect(L.flushHistory, replication.flush.pipe(Effect.andThen(replication.status))),
+    [L.replicationStatus]: (input: LibraryReplicationStatusRequest) =>
+      auth.effect(L.replicationStatus, replication.statusFor(input.threadIds)),
+    [L.flushHistory]: (input: LibraryReplicationStatusRequest) =>
+      auth.effect(
+        L.flushHistory,
+        replication.flush.pipe(Effect.andThen(replication.statusFor(input.threadIds))),
+      ),
     [L.preparation]: (input: { readonly requestId: string }) =>
       auth.effect(L.preparation, workspace.preparation(input)),
     [L.snapshotThread]: (input: Parameters<typeof history.snapshotThread>[0]) =>

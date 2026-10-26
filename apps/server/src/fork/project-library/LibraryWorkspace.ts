@@ -132,6 +132,11 @@ export class LibraryWorkspace extends Context.Service<
     readonly resolveBinding: (
       input: LibraryResolveBindingRequest,
     ) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
+    /**
+     * Binds a conversation that has not run to its copy. One that already has work in a borrowed
+     * folder's own project is saved instead: its history goes to the Library while it keeps
+     * running wherever it started.
+     */
     readonly bindThread: (input: {
       readonly threadId: ThreadId;
       readonly binding: LibraryThreadBinding;
@@ -139,6 +144,17 @@ export class LibraryWorkspace extends Context.Service<
       /** The conversation's own worktree, made from the bound copy folder when it started. */
       readonly worktreePath?: string | undefined;
     }) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
+    /**
+     * The local projects of this computer's registered borrowed folders, each with the binding its
+     * conversations' history is saved under. Folders Loom manages bind their conversations instead.
+     */
+    readonly historyFolders: Effect.Effect<
+      ReadonlyArray<{
+        readonly resolved: LibraryResolvedBinding;
+        readonly project: LibraryProject;
+      }>,
+      LibraryError
+    >;
   }
 >()("t3/fork/project-library/LibraryWorkspace") {}
 
@@ -3012,7 +3028,94 @@ const make = Effect.gen(function* () {
     });
   }, mapIo);
 
+  // Derived the way a launch binds a new conversation, and checked by the same resolution.
+  const historyFolders = Effect.fn("LibraryWorkspace.historyFolders")(function* () {
+    const folders: Array<{ resolved: LibraryResolvedBinding; project: LibraryProject }> = [];
+    for (const { copy, project, rootLocalProjectId } of yield* store.receipts) {
+      if (
+        copy.environmentId !== environmentId ||
+        copy.ownership !== "borrowed" ||
+        copy.state !== "ready" ||
+        copy.registered === false ||
+        project.archived
+      )
+        continue;
+      const scopes = [
+        ...(rootLocalProjectId === null
+          ? []
+          : [{ localProjectId: rootLocalProjectId, resourceIds: [] as string[] }]),
+        ...copy.repositories.map((repository) => ({
+          localProjectId: repository.localProjectId,
+          resourceIds: [repository.resourceId],
+        })),
+      ];
+      for (const scope of scopes) {
+        if (
+          scope.localProjectId.startsWith("library-copy:") ||
+          folders.some((folder) => folder.resolved.localProjectId === scope.localProjectId)
+        )
+          continue;
+        const resolved = yield* Effect.result(
+          resolveBinding({
+            project,
+            binding: {
+              projectId: copy.projectId,
+              projectRevision: copy.projectRevision,
+              environmentId,
+              workingCopyId: copy.id,
+              resourceIds: scope.resourceIds,
+            },
+          }),
+        );
+        if (resolved._tag === "Success") folders.push({ resolved: resolved.success, project });
+      }
+    }
+    return folders;
+  }, mapIo);
+
+  // A conversation with work cannot move into a copy, so a borrowed folder's own conversation is
+  // saved where it runs. Its scope follows its project, whatever the request named.
+  const saveThreadHistory = Effect.fnUntraced(function* (
+    input: { readonly threadId: ThreadId; readonly binding: LibraryThreadBinding },
+    threadProjectId: string,
+  ) {
+    const folder = (yield* historyFolders()).find(
+      ({ resolved }) =>
+        resolved.localProjectId === threadProjectId &&
+        resolved.binding.workingCopyId === input.binding.workingCopyId &&
+        resolved.binding.projectId === input.binding.projectId &&
+        resolved.binding.projectRevision === input.binding.projectRevision &&
+        resolved.binding.environmentId === input.binding.environmentId,
+    );
+    // Without a detail, "blocked" reads as a busy working copy; only starting over helps here.
+    if (folder === undefined)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "This conversation already has work, so it can no longer be linked to Library files. Start a new conversation instead.",
+      });
+    yield* store.saveHistory({
+      project: folder.project,
+      threads: [
+        {
+          threadId: input.threadId,
+          localProjectId: folder.resolved.localProjectId,
+          binding: folder.resolved.binding,
+        },
+      ],
+    });
+    const saved = yield* store.savedBinding(input.threadId);
+    if (
+      saved === null ||
+      saved.binding.workingCopyId !== folder.resolved.binding.workingCopyId ||
+      saved.binding.projectRevision !== folder.resolved.binding.projectRevision
+    )
+      return yield* new LibraryError({ reason: "request-conflict" });
+    return folder.resolved;
+  });
+
   return LibraryWorkspace.of({
+    historyFolders: historyFolders(),
     threadProject: (input) => store.getBoundProject(input.threadId),
     threadBinding: (input) =>
       store.getBinding(input.threadId).pipe(Effect.map((resolved) => resolved?.binding ?? null)),
@@ -3175,25 +3278,23 @@ const make = Effect.gen(function* () {
             const thread = yield* projections.getThread(input.threadId);
             const localProject = yield* projects.getById(thread.projectId);
             const threadCwd = thread.worktreePath ?? Option.getOrNull(localProject)?.workspaceRoot;
-            if (
+            const elsewhere =
               thread.projectId !== resolved.localProjectId ||
               threadCwd === undefined ||
               !(yield* fs.exists(threadCwd)) ||
-              (yield* fs.realPath(threadCwd)) !== resolved.cwd
-            )
-              return yield* new LibraryError({ reason: "invalid" });
+              (yield* fs.realPath(threadCwd)) !== resolved.cwd;
             const existing = yield* store.getBinding(input.threadId);
+            const latestRunId = (yield* projections.getThreadShell(input.threadId))?.latestRunId;
+            // A conversation that ran, or that runs elsewhere with messages (compaction can drop an
+            // old one's runs), is saved where it is. A launch retry lands here when its
+            // conversation was used before binding finished.
             if (
               existing === null &&
-              (yield* projections.getThreadShell(input.threadId))?.latestRunId != null
+              (latestRunId != null ||
+                (elsewhere && (yield* projections.getMessageCount(input.threadId)) > 0))
             )
-              // Without a detail, "blocked" reads as a busy working copy. A launch retry lands here
-              // when its conversation was used before binding finished, and only starting over helps.
-              return yield* new LibraryError({
-                reason: "blocked",
-                detail:
-                  "This conversation already has work, so it can no longer be linked to Library files. Start a new conversation instead.",
-              });
+              return yield* saveThreadHistory(input, thread.projectId);
+            if (elsewhere) return yield* new LibraryError({ reason: "invalid" });
             yield* store.bind(input.threadId, resolved, input.project);
             return resolved;
           }),

@@ -584,6 +584,11 @@ export const LibraryReplicationStatus = Schema.Struct({
   ),
 });
 export type LibraryReplicationStatus = typeof LibraryReplicationStatus.Type;
+/** `threadIds` limits the reported conversations; a flush still uploads every pending one. */
+export const LibraryReplicationStatusRequest = Schema.Struct({
+  threadIds: Schema.optional(Schema.Array(ThreadId).check(Schema.isMaxLength(100))),
+});
+export type LibraryReplicationStatusRequest = typeof LibraryReplicationStatusRequest.Type;
 export const LIBRARY_WS_METHODS = {
   subscribeRefreshes: "loom.library.subscribe-refreshes",
   replicationStatus: "loom.library.replication-status",
@@ -629,12 +634,12 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
     stream: true,
   }),
   Rpc.make(LIBRARY_WS_METHODS.replicationStatus, {
-    payload: Schema.Struct({}),
+    payload: LibraryReplicationStatusRequest,
     success: LibraryReplicationStatus,
     error,
   }),
   Rpc.make(LIBRARY_WS_METHODS.flushHistory, {
-    payload: Schema.Struct({}),
+    payload: LibraryReplicationStatusRequest,
     success: LibraryReplicationStatus,
     error,
   }),

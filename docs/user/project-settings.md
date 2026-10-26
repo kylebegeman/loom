@@ -104,6 +104,12 @@ that shared project's preferences. Use **Files → Computer details → Computer
 for local actions and overrides. Folders not yet added offer **Add folder to Projects** in their
 settings, with the existing location filled in.
 
+Conversations in an added existing folder save to your Library automatically once they have a
+message, including ones in worktrees, and keep running where they started. Conversations from
+before the folder was added catch up one at a time in the background; until a conversation's
+history reaches the Library, its header shows **Not saved to Library yet**. **Stop using this
+folder** or archiving the project stops saving; adding the folder again resumes it.
+
 If you rename or move a folder yourself, choose **Update folder location** from
 its working files or computer folder settings and enter its current path on that
 computer. Loom keeps the same project and conversations. This updates the saved

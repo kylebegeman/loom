@@ -21,7 +21,10 @@ export function LibraryReplicationNotice(props: {
 }) {
   const status = useEnvironmentQuery(
     props.sourceConnected
-      ? library.replicationStatus({ environmentId: props.summary.environmentId, input: {} })
+      ? library.replicationStatus({
+          environmentId: props.summary.environmentId,
+          input: { threadIds: [props.summary.threadId] },
+        })
       : null,
   );
   const canFlush = useAtomValue(library.flushHistory.permissionAtom(props.summary.environmentId));
@@ -36,10 +39,16 @@ export function LibraryReplicationNotice(props: {
     setPending(true);
     setError(null);
     try {
-      const result = await flush({ environmentId: props.summary.environmentId, input: {} });
+      const result = await flush({
+        environmentId: props.summary.environmentId,
+        input: { threadIds: [props.summary.threadId] },
+      });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       appAtomRegistry.refresh(
-        library.replicationStatus({ environmentId: props.summary.environmentId, input: {} }),
+        library.replicationStatus({
+          environmentId: props.summary.environmentId,
+          input: { threadIds: [props.summary.threadId] },
+        }),
       );
       refreshLibraryWork(props.authorityEnvironmentId, props.summary.projectId);
       props.onRefresh();

@@ -2,6 +2,7 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
   LibraryProject,
+  LibraryThreadBinding,
   LibraryWorkingCopy,
   LibraryResolvedBinding,
 } from "@t3tools/contracts/fork";
@@ -72,6 +73,22 @@ const Database = Schema.Struct({
   receipts: Schema.Array(WorkspaceReceipt),
   bindings: Schema.Array(StoredBinding),
 });
+/** A conversation whose history the Library saves while it keeps running wherever it started. */
+export const SavedThread = Schema.Struct({
+  threadId: ThreadId,
+  localProjectId: ProjectId,
+  binding: LibraryThreadBinding,
+  /** It was already there when saving began, so it waits its turn in the backfill. */
+  backfill: Schema.optional(Schema.Boolean),
+});
+export type SavedThread = typeof SavedThread.Type;
+// Kept apart from workspaces.json, which every turn reads: execution never needs these records.
+// Each binding's project manifest is stored once per revision.
+const SavedHistory = Schema.Struct({
+  version: Schema.Literal(1),
+  projects: Schema.Array(LibraryProject),
+  threads: Schema.Array(SavedThread),
+});
 const ReceiptIdentity = Schema.Struct({
   copyId: Schema.String,
   projectId: Schema.String,
@@ -102,6 +119,21 @@ const decodeDatabase = Schema.decodeEffect(Codec);
 const encodeDatabase = Schema.encodeEffect(Codec);
 const encodeBinding = Schema.encodeEffect(Schema.fromJsonString(LibraryResolvedBinding));
 const encodeProject = Schema.encodeEffect(Schema.fromJsonString(LibraryProject));
+const SavedCodec = Schema.fromJsonString(SavedHistory);
+const decodeSaved = Schema.decodeEffect(SavedCodec);
+const encodeSaved = Schema.encodeEffect(SavedCodec);
+const encodeThreadBinding = Schema.encodeEffect(Schema.fromJsonString(LibraryThreadBinding));
+// Unregistering or archiving the folder's project stops its saving; registering it again resumes.
+const savesHistory = (receipts: ReadonlyArray<WorkspaceReceipt>, saved: SavedThread) => {
+  const receipt = receipts.find((row) => row.copy.id === saved.binding.workingCopyId);
+  return (
+    receipt !== undefined &&
+    receipt.copy.ownership === "borrowed" &&
+    receipt.copy.state === "ready" &&
+    receipt.copy.registered !== false &&
+    !receipt.project.archived
+  );
+};
 
 /** Host receipts remain available when the central Library is disconnected. */
 export class LibraryWorkspaceStore extends Context.Service<
@@ -131,6 +163,24 @@ export class LibraryWorkspaceStore extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<LibraryProject | null, LibraryError>;
     readonly bindings: Effect.Effect<ReadonlyArray<typeof StoredBinding.Type>, LibraryError>;
+    /** Saved conversations without a binding whose folder still saves history, in recorded order. */
+    readonly savedThreads: Effect.Effect<ReadonlyArray<SavedThread>, LibraryError>;
+    readonly savedBinding: (threadId: ThreadId) => Effect.Effect<
+      {
+        readonly localProjectId: ProjectId;
+        readonly binding: LibraryThreadBinding;
+        readonly project: LibraryProject;
+      } | null,
+      LibraryError
+    >;
+    /**
+     * Records conversations to save without binding them. A bound or already saved conversation
+     * keeps what it has, except that a request without `backfill` moves it out of the backfill.
+     */
+    readonly saveHistory: (input: {
+      readonly project: LibraryProject;
+      readonly threads: ReadonlyArray<SavedThread>;
+    }) => Effect.Effect<void, LibraryError>;
     readonly repositoriesForRoot: (
       cwd: string,
       threadId?: ThreadId,
@@ -171,26 +221,51 @@ const make = Effect.gen(function* () {
     (yield* fs.exists(path.join(externalDirectory, "project-library", "host", "workspaces.json")))
       ? path.join(externalDirectory, "project-library", "host")
       : path.join(config.stateDir, "project-library", "host");
+  // Turns and replication read these files every few seconds and decoding a large one takes
+  // milliseconds. Every write renames a new file into place, so its inode, time and size identify
+  // one decoded value.
+  const cachedFile = <A, E>(
+    target: string,
+    empty: A,
+    decode: (contents: string) => Effect.Effect<A, E>,
+  ) => {
+    let cached: { readonly key: string; readonly value: A } | undefined;
+    return mapIo(
+      Effect.gen(function* () {
+        if (!(yield* fs.exists(target))) return empty;
+        const info = yield* fs.stat(target);
+        const key = `${Option.getOrNull(info.ino)}:${Option.getOrNull(info.mtime)?.getTime()}:${info.size}`;
+        if (cached?.key === key) return cached.value;
+        const value = yield* decode(yield* fs.readFileString(target));
+        cached = { key, value };
+        return value;
+      }),
+    );
+  };
   const databasePath = path.join(directory, "workspaces.json");
-  const read = mapIo(
-    Effect.gen(function* () {
-      if (!(yield* fs.exists(databasePath)))
-        return { version: 1 as const, receipts: [], bindings: [] };
-      return yield* decodeDatabase(yield* fs.readFileString(databasePath));
-    }),
+  const read = cachedFile(
+    databasePath,
+    { version: 1 as const, receipts: [], bindings: [] },
+    decodeDatabase,
   );
-  const write = Effect.fnUntraced(function* (database: typeof Database.Type) {
+  const savedPath = path.join(directory, "saved-history.json");
+  const readSaved = cachedFile(
+    savedPath,
+    { version: 1 as const, projects: [], threads: [] },
+    decodeSaved,
+  );
+  const writeFile = Effect.fnUntraced(function* (target: string, contents: string) {
     yield* fs.makeDirectory(directory, { recursive: true });
     const temporary = path.join(directory, `workspaces-${yield* randomUuidV4}.pending`);
     yield* Effect.gen(function* () {
-      yield* fs.writeFileString(temporary, yield* encodeDatabase(database), {
-        flag: "wx",
-        mode: 0o600,
-      });
+      yield* fs.writeFileString(temporary, contents, { flag: "wx", mode: 0o600 });
       yield* Effect.scoped(fs.open(temporary).pipe(Effect.flatMap((file) => file.sync)));
-      yield* fs.rename(temporary, databasePath);
+      yield* fs.rename(temporary, target);
       yield* Effect.scoped(fs.open(directory).pipe(Effect.flatMap((file) => file.sync)));
     }).pipe(Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.ignore)));
+  });
+  const write = Effect.fnUntraced(function* (database: typeof Database.Type) {
+    yield* writeFile(databasePath, yield* encodeDatabase(database));
   });
   const get = Effect.fnUntraced(function* (workingCopyId: string) {
     const receipt = (yield* read).receipts.find((row) => row.copy.id === workingCopyId);
@@ -203,6 +278,72 @@ const make = Effect.gen(function* () {
   return LibraryWorkspaceStore.of({
     receipts: read.pipe(Effect.map((database) => database.receipts)),
     bindings: read.pipe(Effect.map((database) => database.bindings)),
+    savedThreads: Effect.gen(function* () {
+      const database = yield* read;
+      const bound = new Set(database.bindings.map((row) => row.threadId));
+      return (yield* readSaved).threads.filter(
+        (row) => !bound.has(row.threadId) && savesHistory(database.receipts, row),
+      );
+    }),
+    savedBinding: (threadId) =>
+      mapIo(
+        Effect.gen(function* () {
+          const database = yield* read;
+          if (database.bindings.some((row) => row.threadId === threadId)) return null;
+          const saved = yield* readSaved;
+          const entry = saved.threads.find((row) => row.threadId === threadId);
+          if (entry === undefined || !savesHistory(database.receipts, entry)) return null;
+          const project = saved.projects.find(
+            (row) =>
+              row.id === entry.binding.projectId && row.revision === entry.binding.projectRevision,
+          );
+          if (project === undefined) return yield* new LibraryError({ reason: "invalid" });
+          return { localProjectId: entry.localProjectId, binding: entry.binding, project };
+        }),
+      ),
+    saveHistory: (input) =>
+      locks.withLock(
+        savedPath,
+        mapIo(
+          Effect.gen(function* () {
+            const bound = new Set((yield* read).bindings.map((row) => row.threadId));
+            const saved = yield* readSaved;
+            const threads = new Map(saved.threads.map((row) => [row.threadId, row]));
+            let changed = false;
+            for (const thread of input.threads) {
+              if (
+                thread.binding.projectId !== input.project.id ||
+                thread.binding.projectRevision !== input.project.revision
+              )
+                return yield* new LibraryError({ reason: "invalid" });
+              if (bound.has(thread.threadId)) continue;
+              const previous = threads.get(thread.threadId);
+              if (previous === undefined) threads.set(thread.threadId, thread);
+              else if (
+                previous.backfill === true &&
+                thread.backfill !== true &&
+                (yield* encodeThreadBinding(previous.binding)) ===
+                  (yield* encodeThreadBinding(thread.binding))
+              )
+                threads.set(thread.threadId, { ...previous, backfill: false });
+              else continue;
+              changed = true;
+            }
+            if (!changed) return;
+            const pinned = saved.projects.some(
+              (row) => row.id === input.project.id && row.revision === input.project.revision,
+            );
+            yield* writeFile(
+              savedPath,
+              yield* encodeSaved({
+                version: 1,
+                projects: pinned ? saved.projects : [...saved.projects, input.project],
+                threads: [...threads.values()],
+              }),
+            );
+          }),
+        ),
+      ),
     get,
     getBinding,
     getBoundProject: (threadId) =>

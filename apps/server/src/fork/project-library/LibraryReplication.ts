@@ -48,27 +48,29 @@ export class LibraryReplication extends Context.Service<
     readonly flush: Effect.Effect<void, LibraryError>;
     /** Publishes this computer's copy health now, if it changed since the last report. */
     readonly reportCopyHealth: Effect.Effect<void, LibraryError>;
-    readonly status: Effect.Effect<
-      {
-        readonly enabled: boolean;
-        readonly journalId: string | null;
-        readonly acknowledgedSequence: number;
-        readonly pendingEntries: number;
-        readonly pendingBytes: number;
-        readonly maxPendingBytes: number;
-        readonly lastFailure: LibraryError["reason"] | null;
-        readonly threads: readonly {
-          readonly threadId: ThreadId;
-          readonly queuedSequence: number;
-          readonly acknowledgedSequence: number;
-          readonly currentSequence: number;
-          readonly pending: boolean;
-        }[];
-      },
-      LibraryError
-    >;
+    readonly status: Effect.Effect<ReplicationStatus, LibraryError>;
+    /** Lists only those of these conversations that are bound or saved, or all without a list. */
+    readonly statusFor: (
+      threadIds: ReadonlyArray<ThreadId> | undefined,
+    ) => Effect.Effect<ReplicationStatus, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryReplication") {}
+type ReplicationStatus = {
+  readonly enabled: boolean;
+  readonly journalId: string | null;
+  readonly acknowledgedSequence: number;
+  readonly pendingEntries: number;
+  readonly pendingBytes: number;
+  readonly maxPendingBytes: number;
+  readonly lastFailure: LibraryError["reason"] | null;
+  readonly threads: readonly {
+    readonly threadId: ThreadId;
+    readonly queuedSequence: number;
+    readonly acknowledgedSequence: number;
+    readonly currentSequence: number;
+    readonly pending: boolean;
+  }[];
+};
 
 const archiveJson = Schema.toCodecJson(LibraryThreadArchive);
 const wireCodec = Schema.fromJsonString(
@@ -109,6 +111,9 @@ const MILESTONE_EVENTS = `event_type IN ('thread.created','thread.metadata-updat
   OR (event_type='message.updated' AND json_extract(payload_json,'$.streaming')=0)`;
 // Navigation changes nothing a reader of the history sees.
 const NAVIGATION_EVENTS = `event_type IN ('thread.visited','thread.marked-unread','thread.pin-reordered','thread.active-reordered')`;
+// Folders that save their conversations are checked again this often, so a newly registered one's
+// existing conversations join the backfill.
+const FOLDER_RECHECK_MS = 10 * 60 * 1000;
 
 type TurnItem = LibraryThreadArchive["projection"]["turnItems"][number];
 // Covers every place libraryAttachments reads, and keeps each collection's length so a delta's
@@ -141,6 +146,17 @@ const withoutAttachments = (
   };
 };
 
+const disabledStatus = Effect.succeed<ReplicationStatus>({
+  enabled: false,
+  journalId: null,
+  acknowledgedSequence: 0,
+  pendingEntries: 0,
+  pendingBytes: 0,
+  maxPendingBytes: 0,
+  lastFailure: null,
+  threads: [],
+});
+
 const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
   if (!publisher.enabled)
@@ -148,16 +164,8 @@ const make = Effect.gen(function* () {
       drain: Effect.void,
       flush: Effect.void,
       reportCopyHealth: Effect.void,
-      status: Effect.succeed({
-        enabled: false,
-        journalId: null,
-        acknowledgedSequence: 0,
-        pendingEntries: 0,
-        pendingBytes: 0,
-        maxPendingBytes: 0,
-        lastFailure: null,
-        threads: [],
-      }),
+      status: disabledStatus,
+      statusFor: () => disabledStatus,
     });
   const sql = yield* SqlClient.SqlClient;
   const maxPendingBytes = yield* Config.Int("LOOM_LIBRARY_MAX_PENDING_BYTES").pipe(
@@ -187,6 +195,16 @@ const make = Effect.gen(function* () {
   // deletion, or the history was purged. Nothing more is sent for them while this service runs;
   // a restart refuses each one once more.
   const withheld = new Set<ThreadId>();
+  // Saved conversations whose snapshot failed. Unlike a bound one, a failure here never holds back
+  // the journal; the conversation is tried again at its next milestone or restart.
+  const skipped = new Set<ThreadId>();
+  let folders: Effect.Success<Workspace.LibraryWorkspace["Service"]["historyFolders"]> = [];
+  let foldersCheckedAt: number | undefined;
+  // Conversations seen at a milestone whose project saves nothing, until the folders change.
+  const outside = new Set<ThreadId>();
+  // Conversations from before saving began trickle in one at a time while nothing else waits to
+  // upload, spaced by their size like any snapshot.
+  let backfillAfter = 0;
   let reconciled = false;
   let prunedBaselines = false;
   let supportsDeltas = false;
@@ -333,13 +351,111 @@ const make = Effect.gen(function* () {
     );
     return { result: "queued" as const, bytes: bytes + wireBytes };
   });
+  // A conversation is saved once it has a message: the Library's New conversation flow binds it
+  // before then, and a binding replaces what a saved record would upload.
+  const withMessages = sql.literal(
+    "EXISTS (SELECT 1 FROM orchestration_v2_projection_messages m WHERE m.thread_id=t.thread_id)",
+  );
+  // Finds conversations in folders that save without a binding: all of them when the folders are
+  // checked, and otherwise only unknown ones that just reached a milestone.
+  const saveFolderHistory = Effect.fn("LibraryReplication.saveFolderHistory")(function* (
+    active: ReadonlySet<ThreadId>,
+  ) {
+    if (Option.isNone(workspace)) return false;
+    const now = yield* Clock.currentTimeMillis;
+    let saved = false;
+    if (foldersCheckedAt === undefined || now - foldersCheckedAt >= FOLDER_RECHECK_MS) {
+      foldersCheckedAt = now;
+      folders = yield* workspace.value.historyFolders;
+      outside.clear();
+      for (const { resolved, project } of folders) {
+        // Newest first, so the backfill reaches recent work before old work.
+        const rows = yield* sql<{ thread_id: string }>`
+          SELECT thread_id FROM orchestration_v2_projection_threads t
+          WHERE project_id=${resolved.localProjectId} AND deleted_at IS NULL AND ${withMessages}
+          ORDER BY updated_at DESC`;
+        if (rows.length === 0) continue;
+        yield* workspaces.saveHistory({
+          project,
+          threads: rows.map((row) => ({
+            threadId: ThreadId.make(row.thread_id),
+            localProjectId: resolved.localProjectId,
+            binding: resolved.binding,
+            backfill: true,
+          })),
+        });
+        saved = true;
+      }
+    }
+    const unknown = [...active].filter((threadId) => !outside.has(threadId));
+    if (unknown.length === 0 || folders.length === 0) return saved;
+    const rows = yield* sql<{ thread_id: string; project_id: string; messages: number }>`
+      SELECT thread_id, project_id, ${withMessages} AS messages
+      FROM orchestration_v2_projection_threads t
+      WHERE thread_id IN ${sql.in(unknown)} AND deleted_at IS NULL`;
+    for (const row of rows) {
+      const folder = folders.find(({ resolved }) => resolved.localProjectId === row.project_id);
+      if (folder === undefined) outside.add(ThreadId.make(row.thread_id));
+      else if (row.messages === 1) {
+        yield* workspaces.saveHistory({
+          project: folder.project,
+          threads: [
+            {
+              threadId: ThreadId.make(row.thread_id),
+              localProjectId: folder.resolved.localProjectId,
+              binding: folder.resolved.binding,
+            },
+          ],
+        });
+        saved = true;
+      }
+    }
+    return saved;
+  });
+  const queueSaved = (threadId: ThreadId, queuedSequence: number | undefined, bytes: number) =>
+    queueThread(threadId, queuedSequence, bytes).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("A saved conversation could not be snapshotted for the Library", {
+          threadId,
+          cause,
+        }).pipe(
+          Effect.andThen(Effect.sync(() => skipped.add(threadId))),
+          Effect.as({ result: "skipped" as const, bytes: 0 }),
+        ),
+      ),
+    );
   // The pass's own statements trace under the drain's span. Work repeated for every thread runs
   // with tracing off below: fnUntraced drops only its own span, not the statements inside. A
   // flush passes the threads it has already snapshotted.
   const capture = Effect.fnUntraced(function* (flushed: Set<ThreadId> | undefined) {
     const current = yield* state;
+    const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
+      SELECT sequence,stream_id,CASE WHEN ${milestone} THEN 1 ELSE 0 END AS milestone
+      FROM orchestration_events
+      WHERE application_event_version=2 AND aggregate_kind='thread' AND sequence>${current.scan_sequence}
+      ORDER BY sequence LIMIT ${EVENT_SCAN_LIMIT}`;
     const bindings = yield* workspaces.bindings;
-    const bound = new Set(bindings.map((entry) => entry.threadId));
+    let saved = yield* workspaces.savedThreads;
+    const known = new Set([...bindings, ...saved].map((entry) => entry.threadId));
+    const active = new Set(
+      events
+        .filter((event) => event.milestone === 1)
+        .map((event) => ThreadId.make(event.stream_id))
+        .filter((threadId) => !known.has(threadId)),
+    );
+    // Finding them must never hold back the history of conversations already saved.
+    if (
+      yield* saveFolderHistory(active).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Library folders could not be checked for conversations to save", {
+            cause,
+          }).pipe(Effect.as(false)),
+        ),
+      )
+    )
+      saved = yield* workspaces.savedThreads;
+    const savedIds = new Set(saved.map((entry) => entry.threadId));
+    const bound = new Set([...bindings.map((entry) => entry.threadId), ...savedIds]);
     const queued = new Map(
       (yield* sql<{
         thread_id: string;
@@ -364,6 +480,14 @@ const make = Effect.gen(function* () {
         queued.set(entry.threadId, imported.sequence);
       } else if (!withheld.has(entry.threadId)) deferred.add(entry.threadId);
     }
+    for (const entry of saved)
+      if (
+        entry.backfill !== true &&
+        !queued.has(entry.threadId) &&
+        !withheld.has(entry.threadId) &&
+        !skipped.has(entry.threadId)
+      )
+        deferred.add(entry.threadId);
     if (!reconciled) {
       // Compaction keeps only a thread's newest whole-thread event, so a later reorder can
       // replace the milestone that made it dirty. A reorder after the queued snapshot therefore
@@ -392,17 +516,13 @@ const make = Effect.gen(function* () {
         if (bound.has(threadId) && !flushed.has(threadId)) deferred.add(threadId);
       }
     }
-    const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
-      SELECT sequence,stream_id,CASE WHEN ${milestone} THEN 1 ELSE 0 END AS milestone
-      FROM orchestration_events
-      WHERE application_event_version=2 AND aggregate_kind='thread' AND sequence>${current.scan_sequence}
-      ORDER BY sequence LIMIT ${EVENT_SCAN_LIMIT}`;
     const dirty = new Map<ThreadId, number>();
     for (const event of events) {
       const threadId = ThreadId.make(event.stream_id);
       if (event.milestone === 1 && bound.has(threadId)) dirty.set(threadId, event.sequence);
     }
     for (const [threadId, sequence] of dirty) {
+      skipped.delete(threadId);
       if ((queued.get(threadId) ?? -1) < sequence) deferred.add(threadId);
     }
     const last = events.at(-1);
@@ -411,7 +531,17 @@ const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     let added = false;
     let snapshotsQueued = 0;
-    if (deferred.size > 0) {
+    const backlog =
+      flushed === undefined && now >= backfillAfter
+        ? saved.filter(
+            (entry) =>
+              entry.backfill === true &&
+              !queued.has(entry.threadId) &&
+              !withheld.has(entry.threadId) &&
+              !skipped.has(entry.threadId),
+          )
+        : [];
+    if (deferred.size > 0 || backlog.length > 0) {
       // octet_length reads each payload's size from its record header, not its pages.
       const outbox = yield* sql<{
         thread_id: string;
@@ -422,7 +552,7 @@ const make = Effect.gen(function* () {
       const outstanding = new Set(outbox.map((row) => row.thread_id));
       let pendingBytes = outbox.reduce((total, row) => total + row.bytes, 0);
       for (const threadId of deferred) {
-        if (!bound.has(threadId) || withheld.has(threadId)) {
+        if (!bound.has(threadId) || withheld.has(threadId) || skipped.has(threadId)) {
           deferred.delete(threadId);
           oversized.delete(threadId);
           spacedUntil.delete(threadId);
@@ -439,11 +569,13 @@ const make = Effect.gen(function* () {
         } else if (waiting === undefined && spaced && flushed === undefined) continue;
         if (outstanding.has(threadId)) continue;
         // A snapshot that does not fit stays deferred without holding back smaller ones. Any
-        // other failure ends this pass and keeps the conversation deferred. A backlog can defer
-        // hundreds of conversations, so their snapshots run with tracing off.
-        const queuedThread = yield* queueThread(threadId, queued.get(threadId), pendingBytes).pipe(
-          Effect.withTracerEnabled(false),
-        );
+        // other failure of a bound conversation ends this pass and keeps it deferred. A backlog
+        // can defer hundreds of conversations, so their snapshots run with tracing off.
+        const queuedThread = yield* (savedIds.has(threadId) ? queueSaved : queueThread)(
+          threadId,
+          queued.get(threadId),
+          pendingBytes,
+        ).pipe(Effect.withTracerEnabled(false));
         if (queuedThread.result === "waiting") continue;
         deferred.delete(threadId);
         flushed?.add(threadId);
@@ -451,6 +583,19 @@ const make = Effect.gen(function* () {
           added = true;
           snapshotsQueued += 1;
           pendingBytes += queuedThread.bytes;
+        }
+      }
+      const next = backlog.find((entry) => !deferred.has(entry.threadId));
+      if (next !== undefined && !added && outstanding.size === 0) {
+        const backfilled = yield* queueSaved(next.threadId, undefined, pendingBytes).pipe(
+          Effect.withTracerEnabled(false),
+        );
+        if (backfilled.result === "waiting") deferred.add(next.threadId);
+        if (backfilled.result === "queued") {
+          added = true;
+          snapshotsQueued += 1;
+          backfillAfter =
+            now + Math.floor(backfilled.bytes / SNAPSHOT_SPACING_BYTES_PER_SECOND) * 1000;
         }
       }
     }
@@ -729,28 +874,38 @@ const make = Effect.gen(function* () {
       Effect.tapError((error) => Ref.set(failure, error.reason)),
       Effect.withSpan("LibraryReplication.flush"),
     );
-  const status = mapIo(
-    Effect.gen(function* () {
-      const current = (yield* readState)[0];
-      const outbox = (yield* sql<{
-        count: number;
-        bytes: number;
-      }>`SELECT COUNT(*) AS count,COALESCE(SUM(octet_length(payload_json)),0) AS bytes FROM fork_library_source_outbox`)[0];
-      const count = outbox?.count ?? 0;
-      const bindings = yield* workspaces.bindings;
-      const threads = yield* Effect.forEach(bindings, (entry) => threadStatus(entry.threadId));
-      return {
-        enabled: true,
-        journalId: current?.journal_id ?? null,
-        acknowledgedSequence: current?.acknowledged_sequence ?? 0,
-        pendingEntries: count,
-        pendingBytes: outbox?.bytes ?? 0,
-        maxPendingBytes,
-        lastFailure: yield* Ref.get(failure),
-        threads,
-      };
-    }),
-  );
+  // Without a filter, every bound or saved conversation is checked; a client showing one
+  // conversation asks for it alone.
+  const statusOf = (threadIds: ReadonlyArray<ThreadId> | undefined) =>
+    mapIo(
+      Effect.gen(function* () {
+        const current = (yield* readState)[0];
+        const outbox = (yield* sql<{
+          count: number;
+          bytes: number;
+        }>`SELECT COUNT(*) AS count,COALESCE(SUM(octet_length(payload_json)),0) AS bytes FROM fork_library_source_outbox`)[0];
+        const count = outbox?.count ?? 0;
+        const requested = threadIds === undefined ? undefined : new Set(threadIds);
+        const history = [
+          ...new Set(
+            [...(yield* workspaces.bindings), ...(yield* workspaces.savedThreads)].map(
+              (entry) => entry.threadId,
+            ),
+          ),
+        ].filter((threadId) => requested === undefined || requested.has(threadId));
+        const threads = yield* Effect.forEach(history, threadStatus);
+        return {
+          enabled: true,
+          journalId: current?.journal_id ?? null,
+          acknowledgedSequence: current?.acknowledged_sequence ?? 0,
+          pendingEntries: count,
+          pendingBytes: outbox?.bytes ?? 0,
+          maxPendingBytes,
+          lastFailure: yield* Ref.get(failure),
+          threads,
+        };
+      }),
+    );
   // A stuck journal fails the same way every five seconds, so only a new failure is logged.
   let loggedFailure: string | null = null;
   yield* ServerActivation.forkParked(
@@ -807,6 +962,12 @@ const make = Effect.gen(function* () {
     yield* ServerActivation.forkParked(documents.run);
   }
   yield* ServerActivation.forkParked(copyHealth.run);
-  return LibraryReplication.of({ drain, flush, status, reportCopyHealth: copyHealth.report });
+  return LibraryReplication.of({
+    drain,
+    flush,
+    status: statusOf(undefined),
+    statusFor: statusOf,
+    reportCopyHealth: copyHealth.report,
+  });
 });
 export const layer = Layer.effect(LibraryReplication, make);

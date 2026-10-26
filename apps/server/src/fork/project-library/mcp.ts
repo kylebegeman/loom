@@ -355,7 +355,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_thread_bind", {
     description:
-      "Bind a newly created empty conversation to its reviewed computer, copy and project context. Existing bindings are immutable. Use a linked new conversation for another computer.",
+      "Bind a newly created empty conversation to its reviewed computer, copy and project context. Existing bindings are immutable. A conversation that already has work in a borrowed folder's own project is saved instead: the Library keeps its history while it keeps running where it started, and loom_library_history_flush uploads it now. Use a linked new conversation for another computer.",
     parameters: Schema.Struct({
       threadId: ThreadId,
       binding: Library.LibraryThreadBinding,
@@ -385,7 +385,8 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history_flush", {
     description:
-      "Upload the latest committed snapshot of every bound conversation and its referenced assets from this computer now, without waiting for snapshot spacing. A conversation too large for the upload outbox keeps waiting and fails the call as storage-limit after the others upload. Never retries an ambiguous provider dispatch.",
+      "Upload the latest committed snapshot of every bound or saved conversation and its referenced assets from this computer now, without waiting for snapshot spacing. Conversations from before their folder started saving upload one at a time in the background; loom_library_thread_bind moves one into this upload. Pass threadIds to report only those conversations. A conversation too large for the upload outbox keeps waiting and fails the call as storage-limit after the others upload. Never retries an ambiguous provider dispatch.",
+    parameters: Library.LibraryReplicationStatusRequest,
     success: Library.LibraryReplicationStatus,
     failure,
     dependencies,
@@ -666,10 +667,10 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_brief_proposals: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.briefProposals(input))),
       ),
-      loom_library_history_flush: McpToolAccess.writesEnvironment(() =>
+      loom_library_history_flush: McpToolAccess.writesEnvironment((input) =>
         onHost(
           Effect.flatMap(Replication.LibraryReplication, (service) =>
-            service.flush.pipe(Effect.andThen(service.status)),
+            service.flush.pipe(Effect.andThen(service.statusFor(input.threadIds))),
           ),
         ),
       ),
