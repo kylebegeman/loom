@@ -1,4 +1,4 @@
-import { devNull } from "node:os"; // fork: hermetic-git-tests
+import * as NodeOS from "node:os"; // fork: hermetic-git-tests
 
 // Override inherited autocrlf, signing and init-branch settings through env so every git child gets stable fixtures.
 const entries: ReadonlyArray<readonly [key: string, value: string]> = [
@@ -18,5 +18,5 @@ entries.forEach(([key, value], index) => {
 });
 
 // fork: hermetic-git-tests -- a developer's global url.*.insteadOf rewrites the remotes tests assert on.
-process.env.GIT_CONFIG_GLOBAL = devNull;
+process.env.GIT_CONFIG_GLOBAL = NodeOS.devNull;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
