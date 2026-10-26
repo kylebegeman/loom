@@ -1,0 +1,4 @@
+# Git's global config in server tests. Runners without a login name need an author to commit.
+[user]
+	name = T3 Code Tests
+	email = tests@t3code.invalid
