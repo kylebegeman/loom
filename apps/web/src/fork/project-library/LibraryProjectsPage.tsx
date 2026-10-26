@@ -1,6 +1,5 @@
 import { ProjectPreservationCenter } from "./ProjectPreservation";
 import { useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   ChevronRightIcon,
@@ -74,7 +73,7 @@ import {
   LibrarySearch,
   LibraryStateBadge,
 } from "./LibraryControls";
-import { ProjectEditorDialog } from "./ProjectEditorDialog";
+import { openLibraryAction } from "./actions";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { TidyProjectDialog } from "./TidyProjectDialog";
 import { LibraryHistorySearch } from "./LibraryHistorySearch";
@@ -115,7 +114,6 @@ export function LibraryProjectsPage() {
   const catalog = useLibraryProjects(true);
   const [, selectProject] = useSelectedLibraryProject();
   const localProjects = useSidebarProjectGroups();
-  const navigate = useNavigate();
   const [preferences, setPreferences] = useLocalStorage(
     PREFERENCES_KEY,
     DEFAULT_PREFERENCES,
@@ -130,7 +128,6 @@ export function LibraryProjectsPage() {
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
   const [preservationOpen, setPreservationOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [tidying, setTidying] = useState<ProjectEntry | null>(null);
   const [importing, setImporting] = useState<{
     hostId?: EnvironmentId;
@@ -235,13 +232,8 @@ export function LibraryProjectsPage() {
       else next.add(color);
       return next;
     });
-  const saved = (project: { id: string }) => {
-    setCreating(false);
-    setImporting(null);
-    selectProject(project.id);
-    catalog.query.refresh();
-    void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
-  };
+  // The palette asks how the project starts: a name, a folder or a Git URL.
+  const createProject = () => openLibraryAction("create-project");
   const refresh = () => {
     catalog.query.refresh();
     copies.refresh();
@@ -309,12 +301,7 @@ export function LibraryProjectsPage() {
             Add existing folder
           </Button>
           {/* Without a Library there is nowhere to create; the setup below says so. */}
-          <Button
-            shape="pill"
-            size="sm"
-            onClick={() => setCreating(true)}
-            disabled={!createAvailable}
-          >
+          <Button shape="pill" size="sm" onClick={createProject} disabled={!createAvailable}>
             <PlusIcon />
             New project
           </Button>
@@ -519,11 +506,7 @@ export function LibraryProjectsPage() {
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent className="flex-row justify-center">
-                  <Button
-                    shape="pill"
-                    onClick={() => setCreating(true)}
-                    disabled={!createAvailable}
-                  >
+                  <Button shape="pill" onClick={createProject} disabled={!createAvailable}>
                     <PlusIcon />
                     Create your first project
                   </Button>
@@ -609,13 +592,6 @@ export function LibraryProjectsPage() {
             })}
           </ul>
         </FoldedSection>
-      ) : null}
-      {creating && catalog.authorityId ? (
-        <ProjectEditorDialog
-          authorityId={catalog.authorityId}
-          onClose={() => setCreating(false)}
-          onSaved={saved}
-        />
       ) : null}
       {tidying ? (
         <TidyProjectDialog

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
-import { onLibraryAction, openLibraryAction } from "./actions";
+import {
+  dropLibraryClone,
+  onLibraryAction,
+  onLibraryClone,
+  openLibraryAction,
+  requestLibraryClone,
+  takeLibraryClone,
+} from "./actions";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -45,15 +52,18 @@ describe("project actions before Library connection", () => {
     unsubscribe();
   });
 
-  it("preserves the explicitly chosen computer before a project exists", () => {
-    vi.stubGlobal("window", new EventTarget());
-    const listener = vi.fn();
-    const unsubscribe = onLibraryAction(listener);
-    const defaults = { environmentId: EnvironmentId.make("remote") };
-    openLibraryAction("import-folder", undefined, defaults);
-    expect(listener).toHaveBeenCalledExactlyOnceWith("import-folder", undefined, defaults);
-    unsubscribe();
-  });
+  it.each(["create-project", "import-folder"] as const)(
+    "preserves the explicitly chosen computer before a project exists for %s",
+    (action) => {
+      vi.stubGlobal("window", new EventTarget());
+      const listener = vi.fn();
+      const unsubscribe = onLibraryAction(listener);
+      const defaults = { environmentId: EnvironmentId.make("remote") };
+      openLibraryAction(action, undefined, defaults);
+      expect(listener).toHaveBeenCalledExactlyOnceWith(action, undefined, defaults);
+      unsubscribe();
+    },
+  );
 
   it("routes project, import and conversation intents through one host", () => {
     vi.stubGlobal("window", new EventTarget());
@@ -65,5 +75,28 @@ describe("project actions before Library connection", () => {
     }
     expect(listener).toHaveBeenCalledTimes(3);
     unsubscribe();
+  });
+});
+
+describe("cloning a project made from a Git URL", () => {
+  it("is taken once, by the page of the project it names", () => {
+    vi.stubGlobal("window", new EventTarget());
+    const listener = vi.fn();
+    const unsubscribe = onLibraryClone(listener);
+    const laptop = EnvironmentId.make("laptop");
+    requestLibraryClone("harbor", laptop);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(takeLibraryClone("other")).toBeNull();
+    expect(takeLibraryClone("harbor")).toEqual({ projectId: "harbor", hostId: laptop });
+    expect(takeLibraryClone("harbor")).toBeNull();
+    unsubscribe();
+  });
+
+  it("is dropped when its project's page closes before taking it", () => {
+    vi.stubGlobal("window", new EventTarget());
+    requestLibraryClone("harbor");
+    dropLibraryClone("other");
+    dropLibraryClone("harbor");
+    expect(takeLibraryClone("harbor")).toBeNull();
   });
 });

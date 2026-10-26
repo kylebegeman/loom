@@ -100,23 +100,23 @@ vi.mock("./state", async () => {
     },
     useLibraryProjects: () => {
       useRevision();
+      const dorothy = {
+        environmentId: "dorothy",
+        label: "Dorothy",
+        entry: { enabled: true },
+        connection: { phase: "connected" },
+        serverConfig: {
+          settings: {},
+          environment: {
+            capabilities: { supportsExecution: true, loomFeatures: state.features },
+          },
+        },
+      };
       return {
         authorityId: state.authorityId,
         offline: state.offline,
-        environments: [
-          {
-            environmentId: "dorothy",
-            label: "Dorothy",
-            entry: { enabled: true },
-            connection: { phase: "connected" },
-            serverConfig: {
-              settings: {},
-              environment: {
-                capabilities: { supportsExecution: true, loomFeatures: state.features },
-              },
-            },
-          },
-        ],
+        environment: dorothy,
+        environments: [dorothy],
         computers: [],
         query: { data: state.projects, isPending: false, refresh: state.refresh },
       };
@@ -138,10 +138,12 @@ vi.mock("./LibraryPalette", () => ({
       <p role="alert">{props.error}</p>
       {props.children}
       {props.items
-        .filter((item) =>
-          [item.title, item.description ?? "", ...(item.terms ?? [])].some((value) =>
-            value.toLowerCase().includes(props.query.toLowerCase()),
-          ),
+        .filter(
+          (item) =>
+            props.filter === false ||
+            [item.title, item.description ?? "", ...(item.terms ?? [])].some((value) =>
+              value.toLowerCase().includes(props.query.toLowerCase()),
+            ),
         )
         .map((item) => (
           <button
@@ -174,6 +176,12 @@ vi.mock("./ProjectEditorDialog", () => ({
       onBack={props.onBack}
       label="Project name"
       save={() => props.onSaved(state.projects[0]!)}
+      details={JSON.stringify({
+        initialTitle: props.initialTitle,
+        initialResource: props.initialResource,
+        initialPage: props.initialPage,
+        continueTo: props.continueTo,
+      })}
     />
   ),
 }));
@@ -243,7 +251,7 @@ function DraftStep({
 }
 
 import { LibraryActionHost, useLibraryPaletteSession } from "./LibraryActionHost";
-import { openLibraryAction, type LibraryConversationDefaults } from "./actions";
+import { openLibraryAction, takeLibraryClone, type LibraryConversationDefaults } from "./actions";
 
 function HostHarness() {
   const palette = useLibraryPaletteSession();
@@ -447,18 +455,21 @@ it("shows the settings for a folder whose project cannot start in one step", asy
   expect(launch()).toMatchObject({ initialHostId: copy.environmentId, initialCopyId: copy.id });
   expect(launch().autoStart).toBeNull();
 });
-it.each(["create-project", "import-folder"] as const)(
-  "standalone %s opens project home without launching a conversation",
-  async (action) => {
-    await act(() => openLibraryAction(action));
-    await click("Save");
-    expect(state.navigate).toHaveBeenCalledWith({
-      to: "/library/$projectId",
-      params: { projectId: project.id },
-    });
-    expect(container.querySelector('[aria-label="Conversation title"]')).toBeNull();
-  },
-);
+it.each([
+  { action: "create-project" as const, choice: "Empty project" },
+  { action: "import-folder" as const, choice: null },
+])("standalone $action opens project home without launching a conversation", async (entry) => {
+  await act(() => openLibraryAction(entry.action));
+  if (entry.choice) await click(entry.choice);
+  await click("Save");
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/library/$projectId",
+    params: { projectId: project.id },
+  });
+  expect(container.querySelector('[aria-label="Conversation title"]')).toBeNull();
+  // Only a project started from a Git URL continues into cloning.
+  expect(takeLibraryClone(project.id)).toBeNull();
+});
 it("resumes the requested action after connecting the Library", async () => {
   state.authorityId = null;
   await act(() => openLibraryAction("create-project"));
@@ -467,7 +478,80 @@ it("resumes the requested action after connecting the Library", async () => {
     state.authorityId = "library";
     state.offline = false;
   });
-  expect(input("Project name")).not.toBeNull();
+  expect(button("Empty project")).toBeDefined();
+});
+it("asks how a new project starts and returns there from each step with its draft", async () => {
+  state.features = ["project-library", "project-workflows"];
+  await act(() => openLibraryAction("create-project"));
+  // Existing projects and No project belong to starting a conversation, not to this choice.
+  const titles = Array.from(container.querySelectorAll("button")).map((entry) => entry.textContent);
+  expect(titles).toEqual([
+    "Empty project",
+    "Existing folder",
+    "Git repository",
+    "From a blueprint",
+  ]);
+  await click("Empty project");
+  await type("Project name", "Draft project");
+  await click("Back");
+  expect(container.textContent).toContain("Return to your project draft");
+  await click("Empty project");
+  expect(input("Project name").value).toBe("Draft project");
+  await click("Back");
+  await click("Existing folder");
+  await type("Folder", "/work/browsed");
+  await click("Back");
+  await click("Existing folder");
+  expect(input("Folder").value).toBe("/work/browsed");
+  await click("Back");
+  await click("From a blueprint");
+  expect(launch()).toMatchObject({ initialPage: "blueprint", continueTo: "project" });
+});
+it("leads with what was typed: a folder path, a Git URL or a name", async () => {
+  await act(() => openLibraryAction("create-project"));
+  await type("Search projects", "/work/typed");
+  await click("Use folder: typed");
+  expect(launch().initialRootPath).toBe("/work/typed");
+  await click("Back");
+  await type("Search projects", "Harbor notes");
+  await click("New project: Harbor notes");
+  expect(launch()).toMatchObject({ initialTitle: "Harbor notes", initialResource: "" });
+  await click("Back");
+  await type("Search projects", "github.com/example/harbor");
+  await click("Clone harbor");
+  expect(launch()).toMatchObject({
+    initialTitle: "harbor",
+    initialResource: "https://github.com/example/harbor",
+    continueTo: "clone",
+  });
+});
+it("clones a Git URL onto the computer the request named once the project is created", async () => {
+  const laptop = EnvironmentId.make("laptop");
+  await act(() => openLibraryAction("create-project", undefined, { environmentId: laptop }));
+  await click("Git repository");
+  expect(button("Paste a Git URL").disabled).toBe(true);
+  await type("Search projects", "https://example.com/docs");
+  expect(button("Not a Git repository URL").disabled).toBe(true);
+  await type("Search projects", "git@github.com:example/harbor.git");
+  await click("Clone harbor");
+  // Back returns to the chooser, and the Git page keeps the address.
+  await click("Back");
+  await click("Git repository");
+  await click("Clone harbor");
+  await click("Save");
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/library/$projectId",
+    params: { projectId: project.id },
+  });
+  expect(takeLibraryClone(project.id)).toEqual({ projectId: project.id, hostId: laptop });
+});
+it("skips cloning when the saved project holds no Git remote", async () => {
+  state.projects = [second];
+  await act(() => openLibraryAction("create-project"));
+  await type("Search projects", "github.com/example/harbor");
+  await click("Clone harbor");
+  await click("Save");
+  expect(takeLibraryClone(second.id)).toBeNull();
 });
 it("waits for a requested project instead of flashing the project chooser", async () => {
   state.pending = true;
@@ -520,15 +604,6 @@ it("lets a project search beat No project when its computer shares the project's
   expect(button("Alpha")).toBeDefined();
   await type("Search projects", "without");
   expect(button("No project")).toBeDefined();
-});
-it("offers No project only when the chooser starts a conversation", async () => {
-  await act(() => openLibraryAction("create-project"));
-  await click("Back");
-  expect(button("Alpha")).toBeDefined();
-  expect(button("No project")).toBeUndefined();
-  // Here Enter opens the project, so neither start nor options are named.
-  expect(button("Alpha").dataset.enter).toBeUndefined();
-  expect(button("Options Alpha")).toBeUndefined();
 });
 
 it("starts a ready project from Enter with the defaults its row shows, and offers its settings", async () => {
