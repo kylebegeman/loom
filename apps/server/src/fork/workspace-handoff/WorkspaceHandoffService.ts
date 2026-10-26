@@ -376,10 +376,11 @@ const make = Effect.gen(function* () {
       !(yield* fs.exists(project.workspaceRoot)) ||
       (yield* fs.readDirectory(project.workspaceRoot)).length === 0
     )
-      yield* clones.cloneRepository({
-        remoteUrl: offer.remoteUrl,
-        destinationPath: project.workspaceRoot,
-      });
+      yield* clones.cloneRepository(
+        { remoteUrl: offer.remoteUrl, destinationPath: project.workspaceRoot },
+        // The project's own row would otherwise refuse its missing or empty root.
+        { allowReuseOf: project.workspaceRoot },
+      );
     const origin = yield* command(project.workspaceRoot, ["remote", "get-url", "origin"]);
     if (
       origin.exitCode !== 0 ||

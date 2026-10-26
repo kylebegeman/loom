@@ -16,6 +16,8 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
+import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectCloneTracker from "./ProjectCloneTracker.ts";
 import { parseGitCloneProgressLine } from "./gitCloneProgress.ts";
@@ -37,6 +39,7 @@ const trackerLayer = (
     Layer.provide(
       Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)(repositories),
     ),
+    Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))), // fork: file-placement
     Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
     Layer.provide(NodeServices.layer),
   );
@@ -447,6 +450,51 @@ describe("ProjectCloneTracker", () => {
         expect(yield* tracker.get(projectId)).toBeNull();
       }).pipe(Effect.provide(third.layer));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("a finished clone whose receipt outlived it is not offered for removal", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-clone-restart-" });
+      const destinationPath = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-clone-restart-dest-",
+      });
+      const running = Deferred.makeUnsafe<void>();
+      const first = makeHarness({
+        baseDir,
+        clone: () => Deferred.succeed(running, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+      yield* Effect.gen(function* () {
+        const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+        yield* tracker.start({ ...startInput, destinationPath }, first.hooks);
+        yield* Deferred.await(running);
+        // git finished and the user started working, but the receipt was never removed.
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const run = (args: ReadonlyArray<string>) =>
+          git.execute({ operation: "test.git", cwd: destinationPath, args });
+        yield* run(["init", "--quiet"]);
+        yield* fileSystem.writeFileString(`${destinationPath}/notes.md`, "work\n");
+        yield* run(["add", "notes.md"]);
+        yield* run(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        yield* fileSystem.writeFileString(`${destinationPath}/draft.md`, "unsaved\n");
+      }).pipe(Effect.provide(first.layer));
+
+      const second = makeHarness({ baseDir });
+      yield* Effect.gen(function* () {
+        const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+        expect(yield* tracker.get(projectId)).toBeNull();
+      }).pipe(Effect.provide(second.layer));
+      expect(yield* fileSystem.readFileString(`${destinationPath}/draft.md`)).toBe("unsaved\n");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        GitVcsDriver.layer.pipe(
+          Layer.provide(VcsProcess.layer),
+          Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-clone-git-" })),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
   );
 
   it.effect("a deleted project's clone does not come back after a restart", () =>

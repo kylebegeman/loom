@@ -22,9 +22,12 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as Settings from "../../serverSettings.ts";
+import * as SourceControlProviderRegistry from "../../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRepository from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectLifecycle from "../project-lifecycle/ProjectLifecycleService.ts";
 import * as Handoff from "./WorkspaceHandoffService.ts";
@@ -34,238 +37,281 @@ const platform = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "handoff-test-" })),
   Layer.provideMerge(NodeServices.layer),
 );
-const fixture = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
-  const git = yield* GitVcsDriver.GitVcsDriver;
-  const root = yield* fs.makeTempDirectoryScoped();
-  const remote = `${root}/remote`;
-  const source = `${root}/source`;
-  const destination = `${root}/destination`;
-  const execute = (cwd: string, args: string[]) =>
-    git.execute({ operation: "handoff-test", cwd, args });
-  yield* fs.makeDirectory(remote);
-  yield* execute(remote, ["init", "--bare", "-b", "main"]);
-  yield* execute(root, ["clone", remote, source]);
-  yield* execute(source, ["config", "user.email", "test@example.test"]);
-  yield* execute(source, ["config", "user.name", "Handoff test"]);
-  yield* fs.writeFileString(`${source}/tracked.txt`, "saved work\n");
-  yield* fs.writeFileString(`${source}/.gitignore`, ".env\nnode_modules/\n");
-  yield* execute(source, ["add", "."]);
-  yield* execute(source, ["commit", "-m", "saved"]);
-  yield* execute(source, ["push", "-u", "origin", "main"]);
-  yield* execute(source, ["checkout", "-b", "feature"]);
-  yield* execute(source, ["push", "-u", "origin", "feature"]);
-  yield* execute(root, ["clone", remote, destination]);
-  const now = DateTime.makeUnsafe("2026-10-12T00:00:00Z");
-  let sourceShell = {
-    id: ThreadId.make("source-thread"),
-    projectId: ProjectId.make("source-project"),
-    title: "Saved work",
-    branch: "feature",
-    worktreePath: null,
-    status: "completed",
-    archivedAt: null,
-    deletedAt: null,
-    activeRunId: null,
-    pendingRuntimeRequest: null,
-    pendingBackgroundTasks: [],
-    latestUserMessageAt: null,
-    latestRunRequestedAt: null,
-    latestRunStartedAt: null,
-    latestRunCompletedAt: null,
-    latestRunId: null,
-    settledOverride: null,
-    updatedAt: now,
-  } as unknown as OrchestrationV2ThreadShell;
-  let prepared: {
-    id: ThreadId;
-    projectId: ProjectId;
-    worktreePath: string;
-    branch: string;
-    modelSelection: ModelSelection;
-    runtimeMode: RuntimeMode;
-  } | null = null;
-  let provider: ServerProvider | undefined = {
-    instanceId: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId,
-    enabled: true,
-    installed: true,
-    status: "ready",
-    auth: { status: "authenticated" },
-    models: [
-      {
-        slug: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
-        aliases: [],
-      },
-    ],
-  } as unknown as ServerProvider;
-  let providerChecks = 0;
-  let setupFails = false;
-  let laneData: string | null = null;
-  let deliveryCount = 0;
-  let delivered = false;
-  let launchCount = 0;
-  const receipts = new Map<string, CommandReceiptStore.CommandReceiptV2>();
-  const contextFor = (isSource: boolean) =>
-    Layer.build(Handoff.layer).pipe(
-      Effect.provideService(ProviderRegistry.ProviderRegistry, {
-        refreshInstance: () =>
-          Effect.sync(() => {
-            providerChecks++;
-            return provider ? [provider] : [];
-          }),
-      } as unknown as ProviderRegistry.ProviderRegistry["Service"]),
-      Effect.provideService(CommandReceiptStore.CommandReceiptStoreV2, {
-        getByCommandId: (id) => Effect.succeed(Option.fromNullishOr(receipts.get(id))),
-        insertIfAbsent: () => Effect.die("unused"),
-        upsert: () => Effect.die("unused"),
-        getProjectByCommandId: () => Effect.die("unused"),
-      } as CommandReceiptStore.CommandReceiptStoreV2["Service"]),
-      Effect.provideService(ProjectionStore.ProjectionStoreV2, {
-        getThreadShell: () => Effect.sync(() => (isSource ? sourceShell : null)),
-      } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
-      Effect.provideService(ThreadManagement.ThreadManagementService, {
-        getThreadSnapshotWindow: () =>
-          Effect.succeed({
-            projection: {
-              messages: [
+/** Real placement guard and clone service, with the destination project registered at its root. */
+const realClones = (workspaceRoot: string) =>
+  SourceControlRepository.layer.pipe(
+    Layer.provide(
+      ProjectPlacement.layer.pipe(
+        Layer.provide(
+          Layer.mock(ProjectStore.ProjectStoreV2)({
+            list: () =>
+              Effect.succeed([
                 {
-                  id: "initial",
-                  role: "user",
-                  text: "Keep the source until the destination is ready.",
+                  projectId: ProjectId.make("destination-project"),
+                  title: "Destination",
+                  workspaceRoot,
+                  defaultModelSelection: null,
+                  defaultThreadEnvMode: null,
+                  autoPull: false,
+                  faviconPath: null,
+                  projectIcon: null,
+                  scripts: [],
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                  deletedAt: null,
                 },
-              ],
-            },
+              ]),
           }),
-        getTimelinePage: () => Effect.succeed({ items: [] }),
-        getMessageCount: () => Effect.succeed(1),
-        getThreadRecords: () =>
-          Effect.sync(() => ({
-            thread: prepared,
-            messages: delivered ? [{ id: "handoff:request-1234:message" }] : [],
-          })),
-        sendToThread: () =>
-          Effect.sync(() => {
-            if (!delivered) deliveryCount++;
-            delivered = true;
-            return {} as never;
-          }),
-        dispatch: (command: import("@t3tools/contracts").OrchestrationV2Command) =>
-          Effect.sync(() => {
-            receipts.set(command.commandId, {
-              commandId: command.commandId,
-              threadId: "threadId" in command ? command.threadId : ThreadId.make("unused"),
-              commandType: command.type,
-              status: "accepted",
-              acceptedAt: now,
-              resultSequence: 1 as never,
-              error: null,
-            });
-            if (command.type === "thread.settle")
-              sourceShell = { ...sourceShell, settledOverride: "settled" };
-            return {} as never;
-          }),
-      } as unknown as ThreadManagement.ThreadManagementService["Service"]),
-      Effect.provideService(ThreadLaunch.ThreadLaunchService, {
-        launch: (input: ThreadLaunch.ThreadLaunchInput) =>
-          Effect.gen(function* () {
-            expect(input.waitForPreparation).toBe(true);
-            const strategy = input.workspaceStrategy;
-            if (strategy.type !== "worktree")
-              return yield* Effect.die("expected a managed worktree");
-            const worktree = `${root}/worktree`;
-            if (prepared === null) {
-              launchCount++;
-              yield* execute(destination, [
-                "worktree",
-                "add",
-                "-b",
-                strategy.branch!,
-                worktree,
-                strategy.baseRef,
-              ]).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ThreadLaunch.ThreadLaunchError({
-                      operation: "provision-worktree",
-                      commandId: input.commandId,
-                      projectId: input.projectId,
-                      cause,
-                    }),
-                ),
-              );
-              prepared = {
-                id: input.threadId!,
-                projectId: input.projectId,
-                branch: strategy.branch!,
-                worktreePath: worktree,
-                modelSelection: input.modelSelection,
-                runtimeMode: input.runtimeMode,
-              };
-            }
-            if (setupFails)
-              return yield* Effect.fail(
-                new ThreadLaunch.ThreadLaunchError({
-                  operation: "run-setup-script",
-                  commandId: input.commandId,
-                  projectId: input.projectId,
-                  cause: "test failure",
-                }),
-              );
-            return { threadId: prepared.id } as never;
-          }),
-      } as unknown as ThreadLaunch.ThreadLaunchService["Service"]),
-      Effect.provideService(ProjectService.ProjectService, {
-        getById: (id: ProjectId) =>
-          Effect.succeed(Option.some({ id, workspaceRoot: isSource ? source : destination })),
-      } as unknown as ProjectService.ProjectService["Service"]),
-      Effect.provideService(ServerEnvironment.ServerEnvironment, {
-        getEnvironmentId: Effect.succeed(
-          EnvironmentId.make(isSource ? "source-host" : "destination-host"),
         ),
-      } as ServerEnvironment.ServerEnvironment["Service"]),
-      Effect.provideService(Settings.ServerSettingsService, {
-        getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-      } as unknown as Settings.ServerSettingsService["Service"]),
-      Effect.provideService(SourceControlRepository.SourceControlRepositoryService, {
-        cloneRepository: (input: { remoteUrl: string; destinationPath: string }) =>
-          execute(root, ["clone", input.remoteUrl, input.destinationPath]).pipe(
-            Effect.as({} as never),
+        Layer.provide(Settings.layerTest()),
+      ),
+    ),
+    Layer.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
+      }),
+    ),
+  );
+const makeFixture = (options?: { readonly realClone?: boolean }) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const git = yield* GitVcsDriver.GitVcsDriver;
+    const root = yield* fs.makeTempDirectoryScoped();
+    const remote = `${root}/remote`;
+    const source = `${root}/source`;
+    const destination = `${root}/destination`;
+    const execute = (cwd: string, args: string[]) =>
+      git.execute({ operation: "handoff-test", cwd, args });
+    yield* fs.makeDirectory(remote);
+    yield* execute(remote, ["init", "--bare", "-b", "main"]);
+    yield* execute(root, ["clone", remote, source]);
+    yield* execute(source, ["config", "user.email", "test@example.test"]);
+    yield* execute(source, ["config", "user.name", "Handoff test"]);
+    yield* fs.writeFileString(`${source}/tracked.txt`, "saved work\n");
+    yield* fs.writeFileString(`${source}/.gitignore`, ".env\nnode_modules/\n");
+    yield* execute(source, ["add", "."]);
+    yield* execute(source, ["commit", "-m", "saved"]);
+    yield* execute(source, ["push", "-u", "origin", "main"]);
+    yield* execute(source, ["checkout", "-b", "feature"]);
+    yield* execute(source, ["push", "-u", "origin", "feature"]);
+    yield* execute(root, ["clone", remote, destination]);
+    const now = DateTime.makeUnsafe("2026-10-12T00:00:00Z");
+    let sourceShell = {
+      id: ThreadId.make("source-thread"),
+      projectId: ProjectId.make("source-project"),
+      title: "Saved work",
+      branch: "feature",
+      worktreePath: null,
+      status: "completed",
+      archivedAt: null,
+      deletedAt: null,
+      activeRunId: null,
+      pendingRuntimeRequest: null,
+      pendingBackgroundTasks: [],
+      latestUserMessageAt: null,
+      latestRunRequestedAt: null,
+      latestRunStartedAt: null,
+      latestRunCompletedAt: null,
+      latestRunId: null,
+      settledOverride: null,
+      updatedAt: now,
+    } as unknown as OrchestrationV2ThreadShell;
+    let prepared: {
+      id: ThreadId;
+      projectId: ProjectId;
+      worktreePath: string;
+      branch: string;
+      modelSelection: ModelSelection;
+      runtimeMode: RuntimeMode;
+    } | null = null;
+    let provider: ServerProvider | undefined = {
+      instanceId: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId,
+      enabled: true,
+      installed: true,
+      status: "ready",
+      auth: { status: "authenticated" },
+      models: [
+        {
+          slug: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+          aliases: [],
+        },
+      ],
+    } as unknown as ServerProvider;
+    let providerChecks = 0;
+    let setupFails = false;
+    let laneData: string | null = null;
+    let deliveryCount = 0;
+    let delivered = false;
+    let launchCount = 0;
+    const receipts = new Map<string, CommandReceiptStore.CommandReceiptV2>();
+    const clones = options?.realClone
+      ? Context.get(
+          yield* Layer.build(realClones(destination)),
+          SourceControlRepository.SourceControlRepositoryService,
+        )
+      : ({
+          cloneRepository: (input: { remoteUrl: string; destinationPath: string }) =>
+            execute(root, ["clone", input.remoteUrl, input.destinationPath]).pipe(
+              Effect.as({} as never),
+            ),
+        } as unknown as SourceControlRepository.SourceControlRepositoryService["Service"]);
+    const contextFor = (isSource: boolean) =>
+      Layer.build(Handoff.layer).pipe(
+        Effect.provideService(ProviderRegistry.ProviderRegistry, {
+          refreshInstance: () =>
+            Effect.sync(() => {
+              providerChecks++;
+              return provider ? [provider] : [];
+            }),
+        } as unknown as ProviderRegistry.ProviderRegistry["Service"]),
+        Effect.provideService(CommandReceiptStore.CommandReceiptStoreV2, {
+          getByCommandId: (id) => Effect.succeed(Option.fromNullishOr(receipts.get(id))),
+          insertIfAbsent: () => Effect.die("unused"),
+          upsert: () => Effect.die("unused"),
+          getProjectByCommandId: () => Effect.die("unused"),
+        } as CommandReceiptStore.CommandReceiptStoreV2["Service"]),
+        Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+          getThreadShell: () => Effect.sync(() => (isSource ? sourceShell : null)),
+        } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
+        Effect.provideService(ThreadManagement.ThreadManagementService, {
+          getThreadSnapshotWindow: () =>
+            Effect.succeed({
+              projection: {
+                messages: [
+                  {
+                    id: "initial",
+                    role: "user",
+                    text: "Keep the source until the destination is ready.",
+                  },
+                ],
+              },
+            }),
+          getTimelinePage: () => Effect.succeed({ items: [] }),
+          getMessageCount: () => Effect.succeed(1),
+          getThreadRecords: () =>
+            Effect.sync(() => ({
+              thread: prepared,
+              messages: delivered ? [{ id: "handoff:request-1234:message" }] : [],
+            })),
+          sendToThread: () =>
+            Effect.sync(() => {
+              if (!delivered) deliveryCount++;
+              delivered = true;
+              return {} as never;
+            }),
+          dispatch: (command: import("@t3tools/contracts").OrchestrationV2Command) =>
+            Effect.sync(() => {
+              receipts.set(command.commandId, {
+                commandId: command.commandId,
+                threadId: "threadId" in command ? command.threadId : ThreadId.make("unused"),
+                commandType: command.type,
+                status: "accepted",
+                acceptedAt: now,
+                resultSequence: 1 as never,
+                error: null,
+              });
+              if (command.type === "thread.settle")
+                sourceShell = { ...sourceShell, settledOverride: "settled" };
+              return {} as never;
+            }),
+        } as unknown as ThreadManagement.ThreadManagementService["Service"]),
+        Effect.provideService(ThreadLaunch.ThreadLaunchService, {
+          launch: (input: ThreadLaunch.ThreadLaunchInput) =>
+            Effect.gen(function* () {
+              expect(input.waitForPreparation).toBe(true);
+              const strategy = input.workspaceStrategy;
+              if (strategy.type !== "worktree")
+                return yield* Effect.die("expected a managed worktree");
+              const worktree = `${root}/worktree`;
+              if (prepared === null) {
+                launchCount++;
+                yield* execute(destination, [
+                  "worktree",
+                  "add",
+                  "-b",
+                  strategy.branch!,
+                  worktree,
+                  strategy.baseRef,
+                ]).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ThreadLaunch.ThreadLaunchError({
+                        operation: "provision-worktree",
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        cause,
+                      }),
+                  ),
+                );
+                prepared = {
+                  id: input.threadId!,
+                  projectId: input.projectId,
+                  branch: strategy.branch!,
+                  worktreePath: worktree,
+                  modelSelection: input.modelSelection,
+                  runtimeMode: input.runtimeMode,
+                };
+              }
+              if (setupFails)
+                return yield* Effect.fail(
+                  new ThreadLaunch.ThreadLaunchError({
+                    operation: "run-setup-script",
+                    commandId: input.commandId,
+                    projectId: input.projectId,
+                    cause: "test failure",
+                  }),
+                );
+              return { threadId: prepared.id } as never;
+            }),
+        } as unknown as ThreadLaunch.ThreadLaunchService["Service"]),
+        Effect.provideService(ProjectService.ProjectService, {
+          getById: (id: ProjectId) =>
+            Effect.succeed(Option.some({ id, workspaceRoot: isSource ? source : destination })),
+        } as unknown as ProjectService.ProjectService["Service"]),
+        Effect.provideService(ServerEnvironment.ServerEnvironment, {
+          getEnvironmentId: Effect.succeed(
+            EnvironmentId.make(isSource ? "source-host" : "destination-host"),
           ),
-      } as unknown as SourceControlRepository.SourceControlRepositoryService["Service"]),
-      Effect.provideService(ProjectLifecycle.ProjectLifecycleService, {
-        currentBuildEnvironment: () =>
-          Effect.succeed(laneData === null ? null : { spacePath: laneData }),
-      } as unknown as ProjectLifecycle.ProjectLifecycleService["Service"]),
-    );
-  const src = Context.get(yield* contextFor(true), Handoff.WorkspaceHandoffService);
-  const dst = Context.get(yield* contextFor(false), Handoff.WorkspaceHandoffService);
-  return {
-    src,
-    dst,
-    root,
-    fs,
-    source,
-    destination,
-    execute,
-    projectId: ProjectId.make("destination-project"),
-    sourceShell: () => sourceShell,
-    changeSource: () => {
-      sourceShell = { ...sourceShell, title: "Changed work" };
-    },
-    failSetup: (fail: boolean) => {
-      setupFails = fail;
-    },
-    useLane: (space: string) => {
-      laneData = space;
-    },
-    setProvider: (changes: Partial<ServerProvider> | null) => {
-      provider = changes === null ? undefined : { ...provider!, ...changes };
-    },
-    providerChecks: () => providerChecks,
-    deliveryCount: () => deliveryCount,
-    launchCount: () => launchCount,
-  };
-});
+        } as ServerEnvironment.ServerEnvironment["Service"]),
+        Effect.provideService(Settings.ServerSettingsService, {
+          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        } as unknown as Settings.ServerSettingsService["Service"]),
+        Effect.provideService(SourceControlRepository.SourceControlRepositoryService, clones),
+        Effect.provideService(ProjectLifecycle.ProjectLifecycleService, {
+          currentBuildEnvironment: () =>
+            Effect.succeed(laneData === null ? null : { spacePath: laneData }),
+        } as unknown as ProjectLifecycle.ProjectLifecycleService["Service"]),
+      );
+    const src = Context.get(yield* contextFor(true), Handoff.WorkspaceHandoffService);
+    const dst = Context.get(yield* contextFor(false), Handoff.WorkspaceHandoffService);
+    return {
+      src,
+      dst,
+      root,
+      fs,
+      source,
+      destination,
+      execute,
+      projectId: ProjectId.make("destination-project"),
+      sourceShell: () => sourceShell,
+      changeSource: () => {
+        sourceShell = { ...sourceShell, title: "Changed work" };
+      },
+      failSetup: (fail: boolean) => {
+        setupFails = fail;
+      },
+      useLane: (space: string) => {
+        laneData = space;
+      },
+      setProvider: (changes: Partial<ServerProvider> | null) => {
+        provider = changes === null ? undefined : { ...provider!, ...changes };
+      },
+      providerChecks: () => providerChecks,
+      deliveryCount: () => deliveryCount,
+      launchCount: () => launchCount,
+    };
+  });
+const fixture = makeFixture();
 const run = <A, E>(effect: Effect.Effect<A, E, Effect.Services<typeof fixture>>) =>
   effect.pipe(Effect.provide(platform), Effect.scoped);
 
@@ -381,6 +427,23 @@ describe("destination-first workspace handoff", () => {
           "saved work\n",
         );
         expect(f.sourceShell().settledOverride).toBeNull();
+      }),
+    ),
+  );
+  it.live("clones into the destination project's own missing or empty root", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* makeFixture({ realClone: true });
+        const offer = yield* f.src.offer({
+          threadId: ThreadId.make("source-thread"),
+          requestId: "request-1234",
+        });
+        yield* f.fs.remove(f.destination, { recursive: true });
+        yield* f.fs.makeDirectory(f.destination);
+        const receipt = yield* f.dst.prepare({ offer, projectId: f.projectId });
+        expect(yield* f.fs.readFileString(`${receipt.worktreePath}/tracked.txt`)).toBe(
+          "saved work\n",
+        );
       }),
     ),
   );

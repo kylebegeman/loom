@@ -228,6 +228,8 @@ apps/mobile/src/lib/storage.test.ts	project-home	1
 apps/server/src/ws.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
 apps/server/src/project/ProjectService.ts	file-placement	3
+apps/server/src/project/ProjectCloneTracker.ts	file-placement	5
+apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	3
 apps/server/src/project/ProjectService.test.ts	file-placement	2
 apps/server/src/ws.ts	file-placement	1
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
@@ -767,6 +769,8 @@ apps/server/src/sourceControl/GitHubHostSetup.test.ts	github-host-setup	2
 apps/server/src/sourceControl/GitHubHostSetup.ts	github-host-setup	5
 apps/server/src/sourceControl/GitHubSetupFlow.test.ts	github-host-setup	1
 apps/server/src/sourceControl/GitHubSetupFlow.ts	github-host-setup	2
+apps/server/src/sourceControl/SourceControlRepositoryService.ts	file-placement	8
+apps/server/src/sourceControl/SourceControlRepositoryService.test.ts	file-placement	2
 apps/server/src/vcs/GitVcsDriverCore.ts	github-host-setup	1
 apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	6
 apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	4

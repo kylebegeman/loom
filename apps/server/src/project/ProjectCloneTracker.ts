@@ -32,6 +32,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 
 export class ProjectCloneTracker extends Context.Service<
@@ -112,6 +113,7 @@ interface TrackedClone {
 /** @public */
 export const make = Effect.gen(function* () {
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+  const git = yield* GitVcsDriver.GitVcsDriver; // fork: file-placement
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const receiptsDir = path.join((yield* ServerConfig.ServerConfig).stateDir, "project-clones");
@@ -264,8 +266,8 @@ export const make = Effect.gen(function* () {
         onProgress: (update) =>
           Queue.offer(pulses, undefined).pipe(Effect.andThen(progress(projectId, update))),
         timeoutMs: null,
-        // The project is registered at this destination now, so the placement guard would refuse it.
-        destinationPrepared: true,
+        // fork: file-placement: the project registered here is the clone's own, so only its row is exempt.
+        allowReuseOf: tracked.input.destinationPath,
       },
     );
   }, Effect.scoped);
@@ -495,6 +497,22 @@ export const make = Effect.gen(function* () {
     yield* remove(projectId);
   });
 
+  // fork: file-placement
+  // HEAD resolves once git has fetched. A receipt can outlive such a clone, and Retry or Remove would delete it.
+  const cloneFinished = (destinationPath: string) =>
+    git
+      .execute({
+        operation: "ProjectCloneTracker.cloneFinished",
+        cwd: destinationPath,
+        args: ["--git-dir", ".git", "rev-parse", "--verify", "--quiet", "HEAD"],
+        allowNonZeroExit: true,
+        timeoutMs: 10_000,
+      })
+      .pipe(
+        Effect.map((result) => result.exitCode === 0),
+        Effect.orElseSucceed(() => false),
+      );
+
   // A receipt left by an earlier run means its clone never finished; a gone folder means its project went too.
   const restore = Effect.fn("ProjectCloneTracker.restore")(function* () {
     const entries = yield* fileSystem
@@ -512,7 +530,8 @@ export const make = Effect.gen(function* () {
         Option.isNone(receipt) ||
         !(yield* fileSystem
           .exists(receipt.value.destinationPath)
-          .pipe(Effect.orElseSucceed(() => false)))
+          .pipe(Effect.orElseSucceed(() => false))) ||
+        (yield* cloneFinished(receipt.value.destinationPath)) // fork: file-placement
       ) {
         yield* fileSystem.remove(file, { force: true }).pipe(Effect.ignore);
         continue;
