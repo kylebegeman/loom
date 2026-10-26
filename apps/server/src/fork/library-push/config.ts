@@ -4,7 +4,7 @@ import {
   type LibraryPushBundleId,
 } from "@t3tools/contracts/fork";
 
-import { identitySessionPrefix, parseMaxSessionAge } from "../../auth/identityPolicy.ts";
+import { identitySessionPrefix } from "../../auth/identityPolicy.ts";
 import { isLibraryAuthorityEnv } from "../project-library/authority.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -23,8 +23,11 @@ export const DEFAULT_LIBRARY_PUSH_TOPICS: ReadonlyArray<LibraryPushTopic> = [
   { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" },
 ];
 
-/** Row lifetime when the Library sets no `LOOM_IDENTITY_MAX_SESSION_AGE`. */
-export const DEFAULT_LIBRARY_PUSH_TTL_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * Row lifetime after its last refresh. It ignores the Identity session age on purpose, so alerts
+ * keep reaching a phone whose sign-in lapsed until it has been away this long (D-11).
+ */
+export const LIBRARY_PUSH_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 /** Same literals as `isLibraryAuthorityEnv`, so the advertised slug and the service always agree. */
 export const libraryPushSwitchOn = (env: Env) =>
@@ -111,13 +114,6 @@ export const parseLibraryPushTopics = (
   return topics;
 };
 
-export const libraryPushTtlSeconds = (env: Env) => {
-  const setting = trimmed(env.LOOM_IDENTITY_MAX_SESSION_AGE);
-  return (
-    (setting === null ? null : parseMaxSessionAge(setting)) ?? DEFAULT_LIBRARY_PUSH_TTL_SECONDS
-  );
-};
-
 export type LibraryPushConfig =
   | {
       readonly _tag: "Off";
@@ -149,7 +145,7 @@ export const libraryPushConfig = (env: Env): LibraryPushConfig => {
     keyId: trimmed(env.LOOM_LIBRARY_PUSH_APNS_KEY_ID)!,
     keyFile: trimmed(env.LOOM_LIBRARY_PUSH_APNS_KEY_FILE)!,
     topics: parseLibraryPushTopics(env.LOOM_LIBRARY_PUSH_TOPICS),
-    ttlSeconds: libraryPushTtlSeconds(env),
+    ttlSeconds: LIBRARY_PUSH_TTL_SECONDS,
     // identityAccountFromSession takes the issuer the same way, so stored rows compare equal.
     issuer: env.LOOM_IDENTITY_ISSUER!.trim(),
     allowedSubjects: subjectList(env.LOOM_IDENTITY_ALLOWED_SUBJECTS),

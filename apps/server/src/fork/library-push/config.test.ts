@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import { isLibraryAuthorityEnv } from "../project-library/authority.ts";
 import {
-  DEFAULT_LIBRARY_PUSH_TTL_SECONDS,
+  LIBRARY_PUSH_TTL_SECONDS,
   libraryPushActivityAdvertised,
   libraryPushAdvertised,
   libraryPushAlertRecipients,
@@ -80,17 +80,14 @@ describe("library push config", () => {
     expect(libraryPushSwitchOn({})).toBe(false);
   });
 
-  it("takes the row lifetime from the Identity sign-in limit, else 30 days", () => {
+  it("keeps a row 60 days whatever the Identity sign-in limit", () => {
     const ttl = (value?: string) => {
       const config = libraryPushConfig({ ...FULL, LOOM_IDENTITY_MAX_SESSION_AGE: value });
       return config._tag === "On" ? config.ttlSeconds : null;
     };
-    expect(ttl()).toBe(DEFAULT_LIBRARY_PUSH_TTL_SECONDS);
-    expect(DEFAULT_LIBRARY_PUSH_TTL_SECONDS).toBe(30 * 24 * 60 * 60);
-    expect(ttl("7d")).toBe(7 * 24 * 60 * 60);
-    expect(ttl("3600")).toBe(3600);
-    // PocketId refuses to start on a limit outside its range; push then keeps its default.
-    expect(ttl("5m")).toBe(DEFAULT_LIBRARY_PUSH_TTL_SECONDS);
+    expect(LIBRARY_PUSH_TTL_SECONDS).toBe(60 * 24 * 60 * 60);
+    expect(ttl()).toBe(LIBRARY_PUSH_TTL_SECONDS);
+    expect(ttl("7d")).toBe(LIBRARY_PUSH_TTL_SECONDS);
   });
 
   it("says why push is off", () => {
@@ -115,7 +112,11 @@ describe("library push config", () => {
   });
 
   it("runs agent alerts only with their switch, working push and someone to receive them", () => {
-    const on = { ...FULL, LOOM_LIBRARY_PUSH_ACTIVITY: "yes", LOOM_LIBRARY_PUSH_RECIPIENTS: "alice" };
+    const on = {
+      ...FULL,
+      LOOM_LIBRARY_PUSH_ACTIVITY: "yes",
+      LOOM_LIBRARY_PUSH_RECIPIENTS: "alice",
+    };
     expect(libraryPushActivityAdvertised(on)).toBe(true);
     expect(libraryPushConfig(on)).toMatchObject({ _tag: "On", alertRecipients: ["alice"] });
     const off = [

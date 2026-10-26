@@ -109,15 +109,14 @@ The iOS side of the setup is in
 
 ## Device lifetime and removal (A14)
 
-- A row's `expiresAt` is its last refresh plus `LOOM_IDENTITY_MAX_SESSION_AGE`, else 30 days.
-  K8 wanted the earlier of that and the sign-in's own cap, but the session the phone registers on
-  does not expose its sign-in time. A phone in use re-registers on a Library connect when its
-  record is over 24 hours old, and the Library extends a row at most every 12 hours.
-- Re-registering needs a live Identity session, and Identity caps one at its passkey sign-in plus
-  the same max age; a refresh grant cannot extend it. With the Library's 7 days, a phone that
-  keeps connecting refreshes its row last just before its session ends, so the row lapses about
-  14 days after the last passkey sign-in, and sooner when the phone stops connecting earlier.
-  Then alerts reach no one until the phone signs in again. Changing this is decision D-11.
+- A row's `expiresAt` is its last refresh plus 60 days (`LIBRARY_PUSH_TTL_SECONDS`). A phone in
+  use re-registers on a Library connect when its record is over 24 hours old, and the Library
+  extends a row at most every 12 hours.
+- The lifetime ignores the Identity session age on purpose (D-11, 2026-10-26). Re-registering
+  needs a live session, which Identity caps at the passkey sign-in plus its max age (7 days on the
+  Library). Tying the row to that cap made alerts stop about 14 days after the last passkey
+  sign-in. Now alerts keep reaching the phone for 60 days after its last refresh, even when its
+  sign-in has lapsed; the next sign-in refreshes the row.
 - On a connect with a fresher record, the phone reads the Library's status once, as its
   Notifications screen does when it opens. A list that lacks the phone's row (an operator's
   Remove, or Apple refusing the token) clears its registration, so it registers again at once.
@@ -171,7 +170,7 @@ Everything ships off at four layers, so each default is reversible.
 | K5  | `LOOM_LIBRARY_PUSH_TOPICS`, default `com.kylebegeman.loom:production`, inside the `LOOM_IOS_PUSH_BUNDLE_IDS` allowlist. |
 | K6  | `LOOM_MOBILE_LIBRARY_PUSH_ENABLED` defaults to `0`. Kyle turns it on for a TestFlight build after the Apple setup.      |
 | K7  | Per-device opt-in, default off.                                                                                         |
-| K8  | Row lifetime is the Identity session age cap, else 30 days, from the last refresh (see above). Open again as D-11.      |
+| K8  | Row lifetime is 60 days from the last refresh, independent of the Identity session age (D-11, see above).               |
 | K9  | Agent alerts from computers (C04-10): go. Built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default.                    |
 | K10 | Live Activities stay out until after C05.                                                                               |
 | K11 | Alert text is generic: title "Loom" and a body by kind. Thread or project titles would be Kyle's option.                |
