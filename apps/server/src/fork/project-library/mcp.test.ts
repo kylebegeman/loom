@@ -270,5 +270,5 @@ it("advertises compact Library schemas with reference-free inputs", () => {
   expect(Buffer.byteLength(input)).toBeLessThan(3_000);
   expect(
     Buffer.byteLength(JSON.stringify(Tool.getJsonSchemaFromSchema(historyTool.successSchema))),
-  ).toBeLessThan(8_000);
+  ).toBeLessThan(9_000);
 });

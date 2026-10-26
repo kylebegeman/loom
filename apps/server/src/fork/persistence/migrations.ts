@@ -11,6 +11,7 @@ import { CodeGraphMigrations } from "../code-graph/migrations.ts";
 import { PreviewAccessMigrations } from "../preview-access/migrations.ts";
 import { PreviewPagesMigrations } from "../preview-pages/libraryMigrations.ts";
 import { BotsMigrations } from "../bots/migrations.ts";
+import { AgentReceiptsMigrations } from "../agent-receipts/migrations.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/sql/Migrator";
@@ -41,6 +42,7 @@ export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
   PreviewAccessMigrations,
   PreviewPagesMigrations,
   BotsMigrations,
+  AgentReceiptsMigrations,
 ];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;

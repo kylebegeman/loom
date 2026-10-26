@@ -46,6 +46,7 @@ import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecyc
 import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.ts";
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
+import type { AgentReceipts } from "./agent-receipts/AgentReceipts.ts";
 import type { BotBatches } from "./bots/BotBatches.ts";
 import type { BotsService } from "./bots/BotsService.ts";
 import type { BotLibraryClient } from "./bots/BotLibraryClient.ts";
@@ -117,6 +118,7 @@ export type ForkServices =
   | AppleBuildService
   | DeviceQaService
   | CodeGraphService
+  | AgentReceipts
   | BotsService
   | BotBatches
   | BotDrafts

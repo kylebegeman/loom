@@ -36,6 +36,7 @@ import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
 import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "@t3tools/contracts/fork";
 import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import { CODE_GRAPH_WS_METHODS as G } from "@t3tools/contracts/fork";
+import { AGENT_RECEIPTS_WS_METHODS as AR } from "@t3tools/contracts/fork";
 import { PREVIEW_LINKS_WS_METHODS as PL } from "@t3tools/contracts/fork";
 import { DIRECTORY_WS_METHODS as DIR } from "@t3tools/contracts/fork";
 import { REACH_WS_METHODS as REACH } from "@t3tools/contracts/fork";
@@ -445,6 +446,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [G.status]: AuthOrchestrationReadScope,
   [G.subscribeStatus]: AuthOrchestrationReadScope,
   [G.list]: AuthOrchestrationReadScope,
+  [AR.list]: AuthOrchestrationReadScope,
+  [AR.get]: AuthOrchestrationReadScope,
   [G.summary]: AuthOrchestrationReadScope,
   [G.search]: AuthOrchestrationReadScope,
   [G.neighborhood]: AuthOrchestrationReadScope,

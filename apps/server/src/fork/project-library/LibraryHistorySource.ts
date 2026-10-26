@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import { receiptsForArchive } from "../agent-receipts/AgentReceipts.ts";
 import { isWithheld, withheldError } from "../deleted-history/deletedHistory.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 
@@ -68,6 +69,7 @@ const make = Effect.gen(function* () {
           new TextEncoder().encode(`${environmentId}\0${input.threadId}`),
         ),
       );
+      const receipts = yield* receiptsForArchive(sql, input.threadId, snapshot.snapshotSequence);
       const latestRun = projection.runs.reduce<(typeof projection.runs)[number] | undefined>(
         (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
         undefined,
@@ -97,6 +99,7 @@ const make = Effect.gen(function* () {
         },
         context,
         projection,
+        ...(receipts.length === 0 ? {} : { receipts }),
       } satisfies LibraryThreadArchive;
     },
     Effect.mapError((cause) =>

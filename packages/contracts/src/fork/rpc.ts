@@ -34,6 +34,7 @@ import {
 } from "./apple-build-tooling.ts";
 import { DeviceQaRpcGroup, DEVICE_QA_WS_METHODS } from "./device-qa.ts";
 import { CodeGraphRpcGroup, CODE_GRAPH_WS_METHODS } from "./code-graph.ts";
+import { AgentReceiptsRpcGroup } from "./agent-receipts.ts";
 import { PreviewLinksRpcGroup, PREVIEW_LINKS_WS_METHODS } from "./preview-links.ts";
 import { DirectoryRpcGroup } from "./directory.ts";
 import { ReachRpcGroup, REACH_WS_METHODS } from "./reach.ts";
@@ -126,6 +127,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   BotPipelinesRpcGroup,
   BotsAnywhereRpcGroup,
   DatabaseCompactionRpcGroup,
+  AgentReceiptsRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
