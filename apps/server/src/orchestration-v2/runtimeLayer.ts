@@ -103,6 +103,7 @@ const layerLegacyV1ThreadImporterProvided = LegacyV1ThreadImporter.layer.pipe(
 export const layerProjectService = ProjectService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
+      LibraryWorkspaceStore.layer, // fork: library-projects
       ProjectStore.layer,
       ProjectionStore.layer,
       layerEventSinkProvided,

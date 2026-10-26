@@ -28,6 +28,10 @@ import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
+import * as ProjectCloneTracker from "../../project/ProjectCloneTracker.ts";
+import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentService.ts";
+import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
+import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
@@ -60,6 +64,10 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.mock(GitVcsDriver.GitVcsDriver)({}),
   Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+  Layer.mock(ProjectPlacement.ProjectPlacement)({}),
+  Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+  Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+  Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),

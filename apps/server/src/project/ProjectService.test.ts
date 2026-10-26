@@ -10,8 +10,11 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as FileSystem from "effect/FileSystem";
 
 import * as ServerConfig from "../config.ts";
+import { copyFor } from "../fork/project-library/Library.testkit.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import {
   orchestrationCommandDuration,
   orchestrationCommandsTotal,
@@ -25,11 +28,13 @@ import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
+import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
 
 const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot.replace(/\/$/, "")),
@@ -69,7 +74,7 @@ const layerTestFor = (
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
-    Layer.provide(NodeServices.layer),
+    Layer.provideMerge(NodeServices.layer),
   );
 
 const layerTest = layerTestFor(layerMetadata);
@@ -80,6 +85,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   ProjectionStore.layer,
   IdAllocator.layer,
   ThreadCommandExecutor.layer,
+  Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({ receipts: Effect.succeed([]) }),
 ).pipe(
   Layer.provideMerge(LegacyV1ThreadImporter.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink))),
   Layer.provideMerge(ProjectEnrichmentService.layer),
@@ -88,7 +94,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-race-" })),
-  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(NodeServices.layer),
 );
 
 const waitForProject = Effect.fn("ProjectServiceTest.waitForProject")(function* (
@@ -700,4 +706,101 @@ it.effect("rejects an update that waited on the lock while its project was delet
       "Update race",
     );
   }).pipe(Effect.provide(layerProjectServiceDependencies)),
+);
+
+const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceipt => {
+  const project = {
+    id: "library-project",
+    title: "Library project",
+    brief: "",
+    revision: 1,
+    resources: [],
+    archived: false,
+    createdAt: "2026-10-15T00:00:00.000Z",
+    updatedAt: "2026-10-15T00:00:00.000Z",
+  };
+  return {
+    requestId: "copy",
+    fingerprint: "copy",
+    project,
+    copy: { ...copyFor(project), rootPath, repositories: [], ownership: "managed" },
+    rootLocalProjectId: null,
+    rootCheckpointRepository: true,
+    legacyThreadIds: [],
+    rootIdentity: null,
+    releaseRequestId: null,
+    releaseReviewToken: null,
+    removalPath: null,
+    archivePath: null,
+    archiveDigest: null,
+  };
+};
+
+it.effect("refuses to repoint a project whose folder the Library manages", () =>
+  Effect.gen(function* () {
+    const service = yield* ProjectService.make.pipe(
+      Effect.provide(
+        Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+          receipts: Effect.succeed([libraryReceipt("/work/library-copy")]),
+        }),
+      ),
+    );
+    const projectId = ProjectId.make("project:library-root");
+    yield* service.create({
+      commandId: CommandId.make("command:library-root:create"),
+      projectId,
+      title: "Library copy",
+      workspaceRoot: "/work/library-copy",
+    });
+    const refused = yield* service
+      .update({
+        commandId: CommandId.make("command:library-root:move"),
+        projectId,
+        workspaceRoot: "/work/elsewhere",
+      })
+      .pipe(Effect.flip);
+    assert.equal(refused._tag, "ProjectLocationManagedError");
+    const renamed = yield* service.update({
+      commandId: CommandId.make("command:library-root:rename"),
+      projectId,
+      title: "Renamed",
+    });
+    assert.deepEqual([renamed.title, renamed.workspaceRoot], ["Renamed", "/work/library-copy"]);
+  }).pipe(Effect.provide(layerProjectServiceDependencies)),
+);
+
+it.effect("refuses to repoint a project in a folder Loom cloned and manages", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "project-service-managed-" }),
+    );
+    const workspaceRoot = `${root}/app`;
+    yield* fs.makeDirectory(`${workspaceRoot}/.git`, { recursive: true });
+    yield* markManagedProjectCheckout(
+      workspaceRoot,
+      buildRepositoryIdentity({
+        rootPath: workspaceRoot,
+        remoteName: "origin",
+        remoteUrl: "https://github.com/example/app.git",
+        originUrl: "https://github.com/example/app.git",
+      }),
+    );
+    const service = yield* ProjectService.ProjectService;
+    const projectId = ProjectId.make("project:managed-root");
+    yield* service.create({
+      commandId: CommandId.make("command:managed-root:create"),
+      projectId,
+      title: "Managed",
+      workspaceRoot,
+    });
+    const refused = yield* service
+      .update({
+        commandId: CommandId.make("command:managed-root:move"),
+        projectId,
+        workspaceRoot: `${root}/elsewhere`,
+      })
+      .pipe(Effect.flip);
+    assert.equal(refused._tag, "ProjectLocationManagedError");
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );

@@ -13,11 +13,15 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as DateTime from "effect/DateTime";
+import * as Stream from "effect/Stream";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import { makeProjectCloneHooks } from "../../../project/ProjectCloneCompletion.ts";
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
@@ -41,7 +45,9 @@ function projectFailure(error: Project.ProjectServiceError) {
       ? "The project was not found."
       : error._tag === "ProjectConflictError"
         ? "The workspace is already registered to a project."
-        : "The project is not empty; force=true is required to delete it.";
+        : error._tag === "ProjectLocationManagedError"
+          ? error.reason
+          : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
@@ -332,18 +338,45 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         .pipe(Effect.mapError(projectFailure));
     }),
   ),
-  t3_project_clone: McpToolAccess.writesEnvironment((input) =>
+  t3_project_clone: McpToolAccess.writesEnvironment(({ title, ...input }) =>
     Effect.gen(function* () {
-      const repositories = yield* Repositories.SourceControlRepositoryService;
-      return yield* repositories.cloneRepository(input).pipe(
-        Effect.mapError(
-          (error) =>
-            new OrchestratorMcpFailure({
-              code: "orchestration_error",
-              message: error.detail,
-            }),
-        ),
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const hooks = yield* makeProjectCloneHooks();
+      const commandId = yield* newCommandId();
+      const result = yield* tracker
+        .start(
+          {
+            ...input,
+            projectId: ProjectId.make(commandId),
+            title:
+              title ??
+              Repositories.repositoryFolderTitle(input.remoteUrl ?? input.repository ?? "", null),
+            createdAt: DateTime.formatIso(yield* DateTime.now),
+          },
+          hooks,
+        )
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({
+                code: "orchestration_error",
+                message:
+                  error._tag === "SourceControlRepositoryError" ? error.detail : error.message,
+              }),
+          ),
+        );
+      const settled = yield* tracker.stream.pipe(
+        Stream.map((clones) => clones.find((clone) => clone.projectId === result.projectId)),
+        Stream.filter((clone) => clone === undefined || clone.phase !== "running"),
+        Stream.runHead,
+        Effect.map(Option.flatMap(Option.fromUndefinedOr)),
       );
+      if (Option.isNone(settled)) return { ...result, phase: "done" as const };
+      return {
+        ...result,
+        phase: settled.value.phase,
+        ...(settled.value.error === null ? {} : { error: settled.value.error }),
+      };
     }),
   ),
 });

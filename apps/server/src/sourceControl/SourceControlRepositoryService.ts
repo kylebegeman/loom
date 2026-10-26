@@ -89,7 +89,7 @@ export interface SourceControlCloneOptions extends SourceControlPrepareOptions {
   readonly timeoutMs?: number | null;
 }
 
-function repositoryFolderTitle(
+export function repositoryFolderTitle(
   remoteUrl: string,
   repository: SourceControlRepositoryInfo | null,
 ): string {

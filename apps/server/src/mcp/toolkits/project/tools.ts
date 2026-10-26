@@ -15,8 +15,9 @@ import {
   ProjectUpdatePayload,
   ProjectId,
   OrchestratorMcpFailure,
+  ProjectClonePhase,
+  ProjectCloneStartResult,
   SourceControlCloneRepositoryInput,
-  SourceControlCloneRepositoryResult,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as ServerConfig from "../../../config.ts";
@@ -27,8 +28,10 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProjectEnrichmentService from "../../../project/ProjectEnrichmentService.ts";
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
-import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -88,12 +91,21 @@ const ProjectDeleteTool = Tool.make("t3_project_delete", {
 const ProjectCloneTool = Tool.make("t3_project_clone", {
   ...shared,
   description:
-    "Clone a repository (`destinationPath` new or empty). Register after with `t3_project_create`.",
-  parameters: SourceControlCloneRepositoryInput,
-  success: SourceControlCloneRepositoryResult,
+    "Clone a repository and register it as a project. Omit `destinationPath`: an existing checkout is reused (`reused: true`) or Loom picks a folder in the Projects folder. Waits for the clone; `phase` is done, failed or cancelled.",
+  parameters: Schema.Struct({
+    ...SourceControlCloneRepositoryInput.fields,
+    title: Schema.optional(TrimmedNonEmptyString),
+  }),
+  success: Schema.Struct({
+    ...ProjectCloneStartResult.fields,
+    phase: ProjectClonePhase,
+    error: Schema.optionalKey(Schema.String),
+  }),
   dependencies: [
     ...shared.dependencies,
-    SourceControlRepositoryService.SourceControlRepositoryService,
+    ProjectCloneTracker.ProjectCloneTracker,
+    RepositoryIdentityResolver.RepositoryIdentityResolver,
+    ProjectEnrichmentService.ProjectEnrichmentService,
   ],
 })
   .annotate(Tool.Destructive, true)

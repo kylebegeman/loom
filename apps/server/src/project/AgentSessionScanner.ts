@@ -34,6 +34,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
+import { managedWorktreesDirectories } from "../worktreesDirectory.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import {
   createTranscriptJsonReader,
@@ -636,7 +637,7 @@ export const make = Effect.gen(function* () {
   const homeDir = yield* HostProcess.HomeDirectory;
   // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
   const excludedProjectRoots = new Set(
-    [homeDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
+    [homeDir, baseDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
       normalizeProjectPathForComparison(path.resolve(directory)),
     ),
   );
@@ -645,15 +646,24 @@ export const make = Effect.gen(function* () {
     path.join(homeDir, "Documents", "Codex"),
   ];
 
-  const isExcludedProjectPath = (candidatePath: string) =>
+  const managedRoot = path.resolve(serverConfig.managedProjectsRoot ?? baseDir);
+  // The default Projects folder sits beside these, so exclude Loom's folders rather than baseDir.
+  const readLoomRoots = serverSettings.getSettings.pipe(
+    Effect.map((settings) => managedWorktreesDirectories(settings, worktreesDir, path, homeDir)),
+    Effect.orElseSucceed(() => [worktreesDir]),
+    Effect.map((worktrees) => [
+      path.resolve(serverConfig.stateDir),
+      path.join(managedRoot, "scratch"),
+      ...worktrees,
+    ]),
+  );
+
+  const isExcludedProjectPath = (candidatePath: string, loomRoots: ReadonlyArray<string>) =>
     excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
-    excludedProjectAncestors.some((ancestor) =>
+    [...excludedProjectAncestors, ...loomRoots].some((ancestor) =>
       normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
         normalizeForWorktreeMatch(ancestor, foldWorktreeCase),
       ),
-    ) ||
-    normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-      normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
     ) ||
     isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
 
@@ -1186,6 +1196,7 @@ export const make = Effect.gen(function* () {
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
+    const loomRoots = yield* readLoomRoots;
 
     const merged = new Map<
       string,
@@ -1204,7 +1215,7 @@ export const make = Effect.gen(function* () {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if (isExcludedProjectPath(resolved)) continue;
+      if (isExcludedProjectPath(resolved, loomRoots)) continue;
       let key = directoryKeys.get(resolved);
       if (key === undefined) {
         const stats = yield* statOption(resolved);
@@ -1216,7 +1227,7 @@ export const make = Effect.gen(function* () {
           .realPath(resolved)
           .pipe(Effect.orElseSucceed(() => resolved));
         // Symlinks can disguise excluded worktree paths; re-check their targets.
-        if (isExcludedProjectPath(realPath)) {
+        if (isExcludedProjectPath(realPath, loomRoots)) {
           key = "";
         } else {
           const gitIdentity = yield* readGitIdentity(resolved);
@@ -1308,7 +1319,9 @@ export const make = Effect.gen(function* () {
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
-    if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
+    const loomRoots = yield* readLoomRoots;
+    if (isExcludedProjectPath(root, loomRoots) || isExcludedProjectPath(realRoot, loomRoots))
+      return Stream.empty;
     const rootIdentity = yield* directoryIdentity(root);
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;

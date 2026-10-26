@@ -13,7 +13,11 @@ const isMissingWorkspaceRoot = Schema.is(WorkspaceRootNotExistsError);
 const isFileWorkspaceRoot = Schema.is(WorkspaceRootNotDirectoryError);
 
 export function projectMutationFailureMessage(error: ProjectServiceError): string {
-  if (error._tag === "ProjectNotEmptyError" || error._tag === "ProjectConflictError")
+  if (
+    error._tag === "ProjectNotEmptyError" ||
+    error._tag === "ProjectConflictError" ||
+    error._tag === "ProjectLocationManagedError"
+  )
     return error.message;
   if (error._tag === "ProjectOperationError" && error.operation === "normalize-workspace") {
     if (isMissingWorkspaceRoot(error.cause))

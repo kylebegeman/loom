@@ -5,6 +5,7 @@ import {
   ExecutionEnvironmentDescriptor,
   OrchestratorMcpFailure,
   ServerSettings,
+  ServerFolders,
   ServerSettingsPatch,
   StorageCleanupReport,
 } from "@t3tools/contracts";
@@ -13,6 +14,8 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
 import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -43,14 +46,20 @@ const shared = {
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
   ...shared,
   description:
-    "Read this server's identity and preferences. Providers and models: `orchestrator_capabilities`.",
+    "Read this server's identity, preferences and the folders Loom places projects, worktrees, lanes and scratch work in. Providers and models: `orchestrator_capabilities`.",
   success: Schema.Struct({
     environmentId: ExecutionEnvironmentDescriptor.fields.environmentId,
     label: Schema.String,
     serverVersion: Schema.String,
     platform: ExecutionEnvironmentDescriptor.fields.platform,
     preferences: Schema.Struct(PreferenceFields),
+    folders: ServerFolders,
   }),
+  dependencies: [
+    ...shared.dependencies,
+    ProjectPlacement.ProjectPlacement,
+    ManagedProjectFolders.ManagedProjectFolders,
+  ],
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);

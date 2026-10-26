@@ -12,8 +12,10 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -32,6 +34,8 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
@@ -75,6 +79,15 @@ export class ProjectConflictError extends Schema.TaggedError<ProjectConflictErro
   }
 }
 
+export class ProjectLocationManagedError extends Schema.TaggedError<ProjectLocationManagedError>()(
+  "ProjectLocationManagedError",
+  { projectId: ProjectId, workspaceRoot: Schema.String, reason: Schema.String },
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 export class ProjectNotEmptyError extends Schema.TaggedError<ProjectNotEmptyError>()(
   "ProjectNotEmptyError",
   { projectId: ProjectId },
@@ -109,6 +122,7 @@ export type ProjectServiceError =
   | ProjectNotFoundError
   | ProjectConflictError
   | ProjectNotEmptyError
+  | ProjectLocationManagedError
   | ProjectOperationError;
 
 export class ProjectService extends Context.Service<
@@ -157,6 +171,9 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
+  const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
 
   const toProject = (
     row: ProjectStore.ProjectRow,
@@ -362,6 +379,31 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // Moving the record would orphan the receipt that recovery and cleanup rely on.
+  const assertLocationMovable = Effect.fn("ProjectService.assertLocationMovable")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    const refuse = (reason: string) =>
+      new ProjectLocationManagedError({ projectId, workspaceRoot, reason });
+    const libraryOwned = yield* libraryCheckoutOwners(workspaceRoot).pipe(
+      Effect.mapError(() => refuse("Could not check whether the Library manages this folder.")),
+    );
+    if (libraryOwned.length > 0)
+      return yield* refuse(
+        "The Library manages this folder. Use Project files to restore it or choose another location.",
+      );
+    const managed = yield* readManagedProjectCheckout(workspaceRoot).pipe(
+      Effect.mapError(() => refuse("Could not check whether Loom manages this folder.")),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    if (managed !== null)
+      return yield* refuse(
+        "Loom manages this folder's location and recovery. Its location cannot be changed.",
+      );
+  });
+
   const update: ProjectService["Service"]["update"] = Effect.fn("ProjectService.update")(
     function* (input) {
       const existing = yield* readRow(input.projectId);
@@ -376,6 +418,8 @@ export const make = Effect.gen(function* () {
               projectId: input.projectId,
               workspaceRoot: input.workspaceRoot,
             });
+      if (workspaceRoot !== previousRoot)
+        yield* assertLocationMovable(input.projectId, previousRoot);
       yield* commit({
         type: "project.meta.update",
         commandId: input.commandId,
