@@ -1334,8 +1334,12 @@ describe("ProjectLifecycleService", () => {
       NodeFS.writeFileSync(`${t.home}/lane-id`, lane.id);
       // ps reports the link's name on Linux and its path on macOS; both name Docker's backend.
       const executable = `${t.home}/com.docker.backend`;
-      NodeFS.symlinkSync("/bin/sleep", executable);
-      const backend = NodeChildProcess.spawn(executable, ["60"], { stdio: "ignore" }).pid!;
+      // Bash keeps the link's name, where uutils sleep refuses one and Node hides it on Linux. Its
+      // read waits on a stdin pipe this test never writes.
+      NodeFS.symlinkSync("/bin/bash", executable);
+      const backend = NodeChildProcess.spawn(executable, ["-c", "read -t 60"], {
+        stdio: ["pipe", "ignore", "ignore"],
+      }).pid!;
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           if (alive(backend)) process.kill(backend, "SIGKILL");

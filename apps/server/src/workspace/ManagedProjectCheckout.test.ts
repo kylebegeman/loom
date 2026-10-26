@@ -21,6 +21,7 @@ import { runCheckoutProcess } from "./checkoutProcess.ts";
 import {
   archiveManagedProjectCheckout,
   assertManagedProjectOwned,
+  managedProjectProcessReason,
   markManagedProjectCheckout,
   ownershipReceiptPath,
   readManagedProjectCheckout,
@@ -475,5 +476,78 @@ describe("Managed primary project checkouts", () => {
         expect(yield* readManagedProjectCheckout(other)).toBeNull();
       }),
     ),
+  );
+
+  it.effect("looks past Linux login helpers whose working folders the kernel hides", () =>
+    Effect.gen(function* () {
+      const root = "/home/kyle/Projects/app";
+      type Process = {
+        readonly uid: number;
+        readonly cwd?: string;
+        readonly statusUid?: number;
+        readonly permitted?: string;
+      };
+      const session: Record<string, Process> = {
+        "1116": { uid: 1001, permitted: "0000000800000000" },
+        "1167": { uid: 1001, statusUid: 0 },
+        "2000": { uid: 1002 },
+        "3000": { uid: 1001, cwd: "/home/kyle" },
+      };
+      const reason = (processes: Record<string, Process>, ownEffective = "0000000000000000") => {
+        const at = (target: string) => processes[target.split("/")[2] ?? ""];
+        const denied = (target: string) =>
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "readLink",
+            pathOrDescriptor: target,
+          });
+        return managedProjectProcessReason(root).pipe(
+          Effect.provide(
+            Layer.merge(
+              Path.layer,
+              FileSystem.layerNoop({
+                readDirectory: () => Effect.succeed(["self", ...Object.keys(processes)]),
+                exists: (target) => Effect.succeed(at(target) !== undefined),
+                stat: (target) => {
+                  const entry = at(target);
+                  if (entry === undefined) return Effect.fail(denied(target));
+                  const status = target.endsWith("/status");
+                  return Effect.succeed({
+                    type: status ? "File" : "Directory",
+                    uid: Option.some(status ? (entry.statusUid ?? entry.uid) : entry.uid),
+                  } as FileSystem.File.Info);
+                },
+                readLink: (target) => {
+                  const cwd = at(target)?.cwd;
+                  return cwd === undefined ? Effect.fail(denied(target)) : Effect.succeed(cwd);
+                },
+                readFileString: (target) => {
+                  if (target === "/proc/self/status")
+                    return Effect.succeed(`CapEff:\t${ownEffective}\n`);
+                  const entry = at(target);
+                  return entry === undefined
+                    ? Effect.fail(denied(target))
+                    : Effect.succeed(`CapPrm:\t${entry.permitted ?? "0000000000000000"}\n`);
+                },
+              }),
+            ),
+          ),
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(HostProcess.UserId, 1001),
+        );
+      };
+
+      expect(yield* reason(session)).toBeNull();
+      expect(yield* reason({ ...session, "4000": { uid: 1001 } })).toBe(
+        "process working directories could not be verified",
+      );
+      expect(yield* reason(session, "0000000800000000")).toBe(
+        "process working directories could not be verified",
+      );
+      expect(yield* reason({ ...session, "5000": { uid: 1001, cwd: `${root}/src` } })).toBe(
+        "a process is using the project folder",
+      );
+    }),
   );
 });

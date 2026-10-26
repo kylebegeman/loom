@@ -1178,6 +1178,22 @@ it("stops repairing when a session gives up, changes nothing or runs out of roun
     "repair round 1 stopped: UNREPAIRABLE: upstream's own test fails",
   );
 
+  const partial = repairFixture(
+    `echo kept > apps/seam.ts; printf "Reapplied the seam.\\nUNREPAIRABLE: the rest needs Kyle\\n"`,
+  );
+  const partialResult = partial.repair();
+  expect(partialResult.status).toBe(1);
+  expect(partialResult.stderr).toContain(
+    "repair round 1 stopped: UNREPAIRABLE: the rest needs Kyle",
+  );
+  expect(partial.git("log", "--format=%s", "-1")).toBe(
+    `fix(fork): partial repair round 1 after upstream ${NIGHTLY}`,
+  );
+  expect(partial.git("log", "-1", "--format=%b")).toContain(
+    "Stopped before the check passed: UNREPAIRABLE: the rest needs Kyle",
+  );
+  expect(partial.git("status", "--porcelain")).toBe("");
+
   const idle = repairFixture("printf 'Looks fine.\\nREPAIRED\\n'");
   const idleResult = idle.repair();
   expect(idleResult.status).toBe(1);

@@ -322,7 +322,6 @@ it.live("SSH CLI preserves a real child exit code after named selection", () =>
       }),
     ]).pipe(
       Effect.provide(NodeServices.layer),
-      Effect.provideService(HostProcess.Platform, "darwin"),
       Effect.provideService(HostProcess.Environment, f.environment),
       Effect.provideService(FetchHttpClient.Fetch, f.fetchImplementation),
       Effect.flip,
