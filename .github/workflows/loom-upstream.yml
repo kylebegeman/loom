@@ -83,6 +83,12 @@ jobs:
           cache: true
           run-install: false
 
+      # The Vault mail fixture the fork's tests run needs Python 3.13; ubuntu-24.04 ships 3.12.
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
       # loom.sh uses pnpm (the exact version package.json pins) and the Claude CLI.
       - name: Install pnpm and Claude
         run: npm install -g "$(node -p "require('./package.json').packageManager")" @anthropic-ai/claude-code
@@ -99,7 +105,8 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LOOM_RESOLVE_JOBS: "6"
-          LOOM_REPAIR_ROUNDS: "4"
+          # Each failing check takes a round; one large merge broke four checks in a row.
+          LOOM_REPAIR_ROUNDS: "8"
         run: |
           set +e
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"

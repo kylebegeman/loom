@@ -256,19 +256,14 @@ check_omarchy_pack() {
   node deploy/omarchy/check.mjs
 }
 
+# Cheapest first and the tests last: every repair round reruns the checks from the top, so a
+# round that fixes a type error should not wait out the whole test suite first.
 run_checks() {
   check_seams
   check_brand_copy
   say "Installing dependencies"
   pnpm install --frozen-lockfile
   check_fork_lint
-  say "Running the fork's tests"
-  local tests=()
-  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
-  # Test paths are substring filters, so exclude agent worktrees nested in the
-  # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
-  # desktop artifact tests assert is absent.
-  env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
   check_omarchy_pack
   say "Regenerating web routes and building the web client"
   (cd apps/web && pnpm exec vp build)
@@ -280,6 +275,13 @@ run_checks() {
   done
   say "Typechecking Loom benchmarks"
   pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
+  say "Running the fork's tests"
+  local tests=()
+  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
+  # Test paths are substring filters, so exclude agent worktrees nested in the
+  # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
+  # desktop artifact tests assert is absent.
+  env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
   restore_lockfile
 }
 
