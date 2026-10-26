@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
@@ -85,7 +85,7 @@ describe("libraryResourceFromInput", () => {
         {
           resourceId: "corbelo",
           path: "/work/aspectavy",
-          localProjectId: null,
+          localProjectId: ProjectId.make("corbelo"),
           branch: null,
           head: null,
         },
