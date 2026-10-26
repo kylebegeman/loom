@@ -118,7 +118,7 @@ import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectPlacement from "./project/ProjectPlacement.ts";
-import { ProjectLifecycleService } from "./fork/project-lifecycle/ProjectLifecycleService.ts"; // fork: project-lifecycle
+import * as LanesRoots from "./fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
@@ -403,17 +403,8 @@ const layerCheckpointStore = CheckpointStore.layer.pipe(
   Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
 );
 
-// fork: project-lifecycle -- clones must stay out of lanes folders.
-const layerLanesRoots = Layer.effect(
-  ProjectPlacement.LanesRoots,
-  Effect.map(ProjectLifecycleService, (lifecycle) => ({ roots: lifecycle.lanesRoots() })),
-).pipe(
-  Layer.provide(layerProjectLifecycle),
-  Layer.provide(Layer.mergeAll(layerCheckpointStore, layerGitManager, layerPullRequestService)),
-);
-
 const layerProjectPlacement = ProjectPlacement.layerWithProjectStore.pipe(
-  Layer.provide(layerLanesRoots),
+  Layer.provide(LanesRoots.layer), // fork: file-placement -- clones must stay out of lanes folders.
   Layer.provide(GitVcsDriver.layer),
 );
 

@@ -11,7 +11,6 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import {
-  DEFAULT_PROJECT_LIFECYCLE_CAPS,
   ProjectLifecycleError,
   type AdoptableLeaseKind,
   type LaneFreeScope,
@@ -22,7 +21,6 @@ import {
   type ProjectLifecycleStatus,
   type UnrecordedLane,
 } from "@t3tools/contracts/fork";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -42,6 +40,7 @@ import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { pruneLaneTmp } from "./tmpCleanup.ts";
+import { lanesRootOf, lifecycleDefaults, resolveLanesRoot } from "./lanesRoots.ts";
 import { forkParked } from "../../serverActivation.ts";
 import {
   DOCKER_LABEL,
@@ -218,14 +217,6 @@ const writeAtomically = (path: string, contents: string, mode = 0o644) =>
     await NodeFSP.rename(temporary, path);
   });
 
-/** An absolute lanes folder, or null for a relative path or a filesystem root. */
-const resolveLanesRoot = (setting: string, homeDir: string) => {
-  const expanded = expandHomePath(setting.trim(), homeDir);
-  if (!NodePath.isAbsolute(expanded)) return null;
-  const resolved = NodePath.resolve(expanded);
-  return NodePath.dirname(resolved) === resolved ? null : resolved;
-};
-
 /** Removes a project folder once its last lane is gone; Finder's .DS_Store does not keep it. */
 const removeEmptyProjectFolder = async (directory: string) => {
   const entries = await NodeFSP.readdir(directory).catch(() => null);
@@ -316,23 +307,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       ? `${options.homeDir}/.zshenv`
       : `${config.stateDir}/fork/project-lifecycle/zshenv`;
 
-  const defaults: ProjectLifecycleSettings = {
-    // A dev server keeps its own lanes and starts disabled, so it never touches real lanes.
-    enabled: config.devUrl === undefined,
-    lanesRoot:
-      config.devUrl === undefined
-        ? `${options.homeDir}/Developer/lanes`
-        : `${config.stateDir}/fork/project-lifecycle/lanes`,
-    ...DEFAULT_PROJECT_LIFECYCLE_CAPS,
-    projectCapsGb: {},
-    buildSlots: null,
-  };
+  const defaults = lifecycleDefaults(config, options.homeDir);
   const getSettings = store.getSettings(defaults).pipe(Effect.orDie);
-  // Settings saved before validation could hold a relative path; those fall back to the default.
   const rootOf = (settings: ProjectLifecycleSettings) =>
-    resolveLanesRoot(settings.lanesRoot, options.homeDir) ??
-    resolveLanesRoot(defaults.lanesRoot, options.homeDir) ??
-    defaults.lanesRoot;
+    lanesRootOf(settings, defaults, options.homeDir);
 
   const lanes = new Map<string, LaneRow>();
   for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
