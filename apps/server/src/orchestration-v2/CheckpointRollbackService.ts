@@ -45,6 +45,7 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 
 // fork: project-lifecycle
 const isCheckpointRestoreActionError = Schema.is(CheckpointRestoreActionError);
@@ -166,6 +167,7 @@ export const layer: Layer.Layer<
     const sessions = yield* ProviderSessionManagerV2;
     const runtimePolicy = yield* RuntimePolicyV2;
     const fileSystem = yield* FileSystem.FileSystem;
+    const markerServices = yield* Effect.context<SetupMarker.Services>();
     const projects = yield* ProjectStore.ProjectStoreV2;
     const path = yield* Path.Path;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
@@ -245,14 +247,11 @@ export const layer: Layer.Layer<
         if (Option.isSome(project)) {
           // fork: mini-native-retention -- a recreated checkout has no prepared dependencies;
           // the marker makes the next turn start run setup (see restoreWorktree).
-          const marker = `${path.resolve(worktreePath)}.t3-setup-pending`;
-          yield* fileSystem.makeDirectory(path.dirname(marker), { recursive: true });
-          if (!(yield* fileSystem.exists(marker)))
-            yield* fileSystem.writeFileString(
-              marker,
-              "Workspace setup must complete before starting the agent.\n",
-              { flag: "wx" },
-            );
+          yield* fileSystem.makeDirectory(path.dirname(path.resolve(worktreePath)), {
+            recursive: true,
+          });
+          if (!(yield* SetupMarker.exists(worktreePath).pipe(Effect.provide(markerServices))))
+            yield* SetupMarker.write(worktreePath).pipe(Effect.provide(markerServices));
           yield* gitWorkflow.pruneWorktrees({ cwd: project.value.workspaceRoot });
           yield* gitWorkflow.createWorktree({
             cwd: project.value.workspaceRoot,

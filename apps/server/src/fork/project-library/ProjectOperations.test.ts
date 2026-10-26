@@ -44,6 +44,8 @@ import { LibraryService } from "./LibraryService.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
 import * as ProjectOperations from "./ProjectOperations.ts";
+import * as ServerConfig from "../../config.ts";
+import * as SetupMarker from "../../workspace/setupMarker.ts";
 import { copyFor, resource } from "./Library.testkit.ts";
 
 const encodeRequest = Schema.encodeEffect(Schema.fromJsonString(LibraryOperationInput));
@@ -269,7 +271,17 @@ const run = <A, E, R>(
     return yield* Effect.flatMap(ProjectOperations.ProjectOperations, (service) =>
       use({ ...state, service }),
     ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-operations-" }),
+        ),
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
+    Effect.scoped,
+  );
 
 describe("Project operations", () => {
   it.effect(
@@ -682,7 +694,8 @@ describe("Project operations", () => {
         const workspace = { branch: made[0]!.newRefName, worktreePath: worktree };
         expect(yield* Ref.get(state.createdIn)).toEqual([workspace, workspace]);
         expect(yield* Ref.get(state.boundIn)).toEqual([worktree, worktree]);
-        expect(yield* fs.exists(`${worktree}.t3-setup-pending`)).toBe(true);
+        expect(yield* SetupMarker.exists(worktree)).toBe(true);
+        expect(yield* fs.exists(`${worktree}.t3-setup-pending`)).toBe(false);
       }),
     ),
   );

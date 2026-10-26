@@ -25,9 +25,10 @@ import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { restoreWorktree } from "./restoreWorktree.ts";
+import * as SetupMarker from "./setupMarker.ts";
 
 const layer = GitVcsDriver.layer.pipe(
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-restore-worktree-" })),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-restore-worktree-" })),
   Layer.provide(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -226,7 +227,7 @@ it.live("restores checkpoint files before preparing the lane and running worktre
       ),
     );
     expect(order).toEqual(["files-restored", "lane-ready", "setup"]);
-    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(false);
   }).pipe(Effect.provide(layer), Effect.scoped),
 );
 
@@ -240,7 +241,7 @@ it.live("restores a missing branch from its exact saved HEAD and working files",
     );
     expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("saved work\n");
     expect(yield* f.fs.readFileString(`${f.cwd}/note.txt`)).toBe("saved new file\n");
-    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(false);
     expect(yield* f.fs.readFileString(`${f.root}/proof.txt`)).toBe("committed\n");
     expect(yield* f.fs.readFileString(`${f.root}/root-only.txt`)).toBe(
       "keep the existing checkout\n",
@@ -272,7 +273,7 @@ it.live("retries saved file restoration before setup after checkout already succ
       .pipe(Effect.result);
     expect(failure._tag).toBe("Failure");
     expect(yield* f.fs.exists(f.cwd)).toBe(true);
-    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(true);
     expect(f.counts().setupCalls).toBe(0);
     yield* f.restore();
     expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("saved work\n");
@@ -316,11 +317,11 @@ it.live("preserves edits made after restored setup failed", () =>
     const f = yield* fixture;
     const failure = yield* f.restore({ failSetup: true }).pipe(Effect.result);
     expect(failure._tag).toBe("Failure");
-    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(true);
     yield* f.fs.writeFileString(`${f.cwd}/proof.txt`, "edited after setup failure\n");
     yield* f.restore();
     expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("edited after setup failure\n");
-    expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
+    expect(yield* SetupMarker.exists(f.cwd)).toBe(false);
     expect(f.counts()).toEqual({ contextReads: 1, setupCalls: 2 });
   }).pipe(Effect.provide(layer), Effect.scoped),
 );

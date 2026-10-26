@@ -414,6 +414,7 @@ export const make = Effect.gen(function* () {
     ).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
+      Effect.provideService(ServerConfig.ServerConfig, config),
       Effect.catch(() => Effect.logWarning("Completed clone could not register managed ownership")),
     );
     return {

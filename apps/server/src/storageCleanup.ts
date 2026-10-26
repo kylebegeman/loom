@@ -54,6 +54,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import { proveGitPublication } from "./workspace/gitPublication.ts";
+import * as SetupMarker from "./workspace/setupMarker.ts";
 import {
   archiveScratchCheckout,
   scratchArchiveMatches,
@@ -130,6 +131,51 @@ const regenerableIgnoredPath = (entry: string) => {
     pattern.startsWith("*") ? name.endsWith(pattern.slice(1)) : segments.includes(pattern),
   );
 };
+/**
+ * The "landed" rule for `git ls-files --others --ignored --exclude-standard --directory -z`
+ * output: the first ignored entry that holds local data, or null when every entry is
+ * regenerable output or an empty folder. `.env` files and local databases block removal.
+ * @public
+ */
+export const landedIgnoredFileBlocker = Effect.fn("StorageCleanup.landedIgnoredFileBlocker")(
+  function* (cwd: string, ignoredListing: string) {
+    const git = yield* GitVcsDriver.GitVcsDriver;
+    const listed = ignoredListing.split("\0").filter(Boolean);
+    // Git also lists the untracked folders that hold ignored entries; judge their contents.
+    const containers = new Set<string>();
+    for (const entry of listed) {
+      let end = entry.indexOf("/");
+      while (end !== -1 && end < entry.length - 1) {
+        containers.add(entry.slice(0, end + 1));
+        end = entry.indexOf("/", end + 1);
+      }
+    }
+    for (const entry of listed) {
+      if (containers.has(entry) || regenerableIgnoredPath(entry)) continue;
+      if (entry.endsWith("/")) {
+        // Git lists empty ignored folders too, and those hold nothing to lose.
+        const contents = yield* git.execute({
+          operation: "StorageCleanup.ignoredFolderFiles",
+          cwd,
+          args: [
+            "--literal-pathspecs",
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "-z",
+            "--",
+            entry,
+          ],
+          maxOutputBytes: 4 * 1024,
+        });
+        if (contents.stdout === "" && !contents.stdoutTruncated) continue;
+      }
+      return entry;
+    }
+    return null;
+  },
+);
 // fork: project-lifecycle -- "landed" protects ignored files except regenerable output.
 type LocalFileRules = {
   readonly worktreeKeepWhen: WorktreeCleanupRules["worktreeKeepWhen"] | "landed";
@@ -812,40 +858,10 @@ const make = Effect.gen(function* () {
     if (ignored.stdoutTruncated) return "ignored files exceed the inspection limit";
     // fork: project-lifecycle
     if (rules.worktreeKeepWhen === "landed") {
-      const listed = ignored.stdout.split("\0").filter(Boolean);
-      // Git also lists the untracked folders that hold ignored entries; judge their contents.
-      const containers = new Set<string>();
-      for (const entry of listed) {
-        let end = entry.indexOf("/");
-        while (end !== -1 && end < entry.length - 1) {
-          containers.add(entry.slice(0, end + 1));
-          end = entry.indexOf("/", end + 1);
-        }
-      }
-      for (const entry of listed) {
-        if (containers.has(entry) || regenerableIgnoredPath(entry)) continue;
-        if (entry.endsWith("/")) {
-          // Git lists empty ignored folders too, and those hold nothing to lose.
-          const contents = yield* git.execute({
-            operation: "StorageCleanup.ignoredFolderFiles",
-            cwd,
-            args: [
-              "--literal-pathspecs",
-              "ls-files",
-              "--others",
-              "--ignored",
-              "--exclude-standard",
-              "-z",
-              "--",
-              entry,
-            ],
-            maxOutputBytes: 4 * 1024,
-          });
-          if (contents.stdout === "" && !contents.stdoutTruncated) continue;
-        }
-        return `has ignored local files such as ${entry}`;
-      }
-      return null;
+      const entry = yield* landedIgnoredFileBlocker(cwd, ignored.stdout).pipe(
+        Effect.provideService(GitVcsDriver.GitVcsDriver, git),
+      );
+      return entry === null ? null : `has ignored local files such as ${entry}`;
     }
     const file = ignored.stdout
       .split("\0")
@@ -865,7 +881,7 @@ const make = Effect.gen(function* () {
       if (yield* containsProjectRoot(real, yield* projectStore.listShells()))
         return "Contains a project checkout";
       if ((yield* fs.stat(path.join(real, ".git"))).type !== "File") return "Not a linked worktree";
-      if (yield* fs.exists(`${real}.t3-setup-pending`)) return "Workspace preparation is pending";
+      if (yield* SetupMarker.exists(real)) return "Workspace preparation is pending";
       const references = yield* sql<{
         worktreePath: string;
       }>`SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath" FROM orchestration_v2_projection_threads WHERE json_extract(payload_json, '$.worktreePath') IS NOT NULL`;
@@ -1363,7 +1379,7 @@ const make = Effect.gen(function* () {
         if (members.length > 1 && !settled && !landing && worktreeOwner(members) === undefined)
           // fork: project-lifecycle -- landed shared worktrees are released once every holder is done.
           return keep(`shared by ${members.length} threads`);
-        if (yield* fs.exists(`${worktreePath}.t3-setup-pending`))
+        if (yield* SetupMarker.exists(worktreePath))
           return keep("workspace preparation is pending");
         if (project === undefined) return keep("project is unavailable");
         if (
@@ -1831,8 +1847,7 @@ const make = Effect.gen(function* () {
               )
             )
               return "project retention has not elapsed";
-            if (yield* fs.exists(`${cwd}.t3-setup-pending`))
-              return "workspace preparation is pending";
+            if (yield* SetupMarker.exists(cwd)) return "workspace preparation is pending";
             for (const thread of currentHolders) {
               const pending = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
               WHERE thread_id = ${thread.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
@@ -1885,7 +1900,7 @@ const make = Effect.gen(function* () {
           const bytes = yield* measureWorktree(cwd);
           const recovery = yield* archiveManagedProjectCheckout(receipt, project.id);
           const archiveBytes = yield* measureWorktree(
-            path.resolve(scratchArchivePaths(recovery.input).archive),
+            (yield* scratchArchivePaths(recovery.input)).archive,
           );
           const afterArchive = yield* blocked();
           if (afterArchive !== null) return keep(afterArchive);
@@ -2012,8 +2027,7 @@ const make = Effect.gen(function* () {
             return null;
           });
           if (holders.length > 1) return keep(`shared by ${holders.length} threads`);
-          if (yield* fs.exists(`${cwd}.t3-setup-pending`))
-            return keep("workspace preparation is pending");
+          if (yield* SetupMarker.exists(cwd)) return keep("workspace preparation is pending");
           const before = yield* blocked();
           if (before !== null) return keep(before);
           const names = yield* fs.readDirectory(cwd);
@@ -2033,7 +2047,7 @@ const make = Effect.gen(function* () {
             if (changes !== null) return keep(changes);
           }
           const bytes = yield* measureWorktree(cwd);
-          const archivePath = path.resolve(scratchArchivePaths(input).archive);
+          const archivePath = (yield* scratchArchivePaths(input)).archive;
           const previousArchiveBytes = (yield* fs.exists(archivePath))
             ? yield* measureWorktree(archivePath)
             : 0;
@@ -2382,6 +2396,7 @@ const make = Effect.gen(function* () {
     },
     Effect.provideService(FileSystem.FileSystem, fs),
     Effect.provideService(Path.Path, path),
+    Effect.provideService(ServerConfig.ServerConfig, config),
   );
   yield* start();
   return StorageCleanup.of({

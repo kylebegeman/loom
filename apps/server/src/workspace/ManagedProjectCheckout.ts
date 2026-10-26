@@ -18,6 +18,7 @@ import {
 } from "./ScratchCheckout.ts";
 import { ProjectCheckoutRetention } from "@t3tools/contracts/fork";
 import { withWorkspaceLease } from "./workspaceLease.ts";
+import * as SetupMarker from "./setupMarker.ts";
 
 class ManagedProjectCheckoutError extends Schema.TaggedError<ManagedProjectCheckoutError>()(
   "ManagedProjectCheckoutError",
@@ -51,7 +52,17 @@ const Codec = Schema.fromJsonString(Receipt);
 const decode = Schema.decodeEffect(Codec);
 const encode = Schema.encodeEffect(Codec);
 const fail = (message: string) => new ManagedProjectCheckoutError({ message });
-const receiptPath = (cwd: string) => `${cwd}.t3-project-owned.json`;
+/** Receipts live in T3 home, keyed by the canonical checkout path. */
+export const ownershipReceiptPath = Effect.fnUntraced(function* (cwd: string) {
+  const path = yield* Path.Path;
+  return path.join(
+    yield* SetupMarker.stateDirectory(),
+    "project-ownership",
+    `${SetupMarker.digestPath(yield* SetupMarker.canonicalPath(cwd))}.json`,
+  );
+});
+/** Older versions wrote the receipt beside the checkout; it migrates on first read. */
+const legacyReceiptPath = (cwd: string) => `${cwd}.t3-project-owned.json`;
 const isManagedError = Schema.is(ManagedProjectCheckoutError);
 const mapFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
@@ -65,16 +76,13 @@ const mapFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     ),
   );
 
-const canonicalPath = Effect.fnUntraced(function* (cwd: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const resolved = path.resolve(cwd);
-  return path.join(yield* fs.realPath(path.dirname(resolved)), path.basename(resolved));
-});
+const canonicalPath = SetupMarker.canonicalPath;
 
 const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckoutReceipt) {
   const fs = yield* FileSystem.FileSystem;
-  const target = receiptPath(receipt.workspaceRoot);
+  const path = yield* Path.Path;
+  const target = yield* ownershipReceiptPath(receipt.workspaceRoot);
+  yield* fs.makeDirectory(path.dirname(target), { recursive: true, mode: 0o700 });
   const stage = `${target}.pending-${yield* randomUuidV4}`;
   yield* Effect.gen(function* () {
     yield* fs.writeFileString(stage, yield* encode({ ...receipt, version: 2 }), {
@@ -83,9 +91,9 @@ const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckou
     });
     yield* Effect.scoped(fs.open(stage).pipe(Effect.flatMap((file) => file.sync)));
     yield* fs.rename(stage, target);
-    const path = yield* Path.Path;
     yield* Effect.scoped(fs.open(path.dirname(target)).pipe(Effect.flatMap((file) => file.sync)));
   }).pipe(Effect.ensuring(fs.remove(stage, { force: true }).pipe(Effect.ignore)));
+  yield* fs.remove(legacyReceiptPath(receipt.workspaceRoot), { force: true });
 });
 
 /** Clones and explicitly reviewed adoption create ownership proof. Opening a folder does not. */
@@ -102,7 +110,10 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   const path = yield* Path.Path;
   const cwd = yield* canonicalPath(workspaceRoot);
   if ((yield* fs.realPath(cwd)) !== cwd) return yield* fail("The clone is a symbolic link.");
-  if (yield* fs.exists(receiptPath(cwd)))
+  if (
+    (yield* fs.exists(yield* ownershipReceiptPath(cwd))) ||
+    (yield* fs.exists(legacyReceiptPath(cwd)))
+  )
     return yield* fail("A managed project receipt already exists for this folder.");
   const root = yield* fs.stat(cwd);
   const git = yield* fs.stat(path.join(cwd, ".git"));
@@ -145,10 +156,10 @@ export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read
   workspaceRoot: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  if (!(yield* fs.exists(receiptPath(path.resolve(workspaceRoot))))) return null;
   const cwd = yield* canonicalPath(workspaceRoot);
-  const target = receiptPath(cwd);
+  const current = yield* ownershipReceiptPath(cwd);
+  const legacy = !(yield* fs.exists(current));
+  const target = legacy ? legacyReceiptPath(cwd) : current;
   if (!(yield* fs.exists(target))) return null;
   if ((yield* fs.realPath(target)) !== target)
     return yield* fail("The project receipt is a symbolic link.");
@@ -164,11 +175,13 @@ export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read
   const receipt = yield* decode(yield* fs.readFileString(target));
   if (receipt.workspaceRoot !== cwd || receipt.uid !== uid)
     return yield* fail("The project receipt belongs to a different folder or host.");
-  return {
+  const read = {
     ...receipt,
     ownershipSource: receipt.version === 2 ? receipt.ownershipSource : "clone",
     retention: receipt.version === 2 ? receipt.retention : "inherit",
   } satisfies ManagedProjectCheckoutReceipt;
+  if (legacy) yield* writeReceipt(read);
+  return read;
 }, mapFailure);
 
 export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.assertOwned")(function* (

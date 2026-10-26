@@ -21,10 +21,15 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
 
+const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }).pipe(
+  Layer.provide(NodeServices.layer),
+);
+
 function layer(input: {
   readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
 }) {
   return GitWorkflowService.layer.pipe(
+    Layer.provide(layerConfig),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         detect: input.detect,
@@ -129,6 +134,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
     const status = vi.fn();
 
     const layerTest = GitWorkflowService.layer.pipe(
+      Layer.provide(layerConfig),
       Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
@@ -326,6 +332,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
       Effect.scoped,
       Effect.provide(
         GitWorkflowService.layer.pipe(
+          Layer.provide(layerConfig),
           Layer.provide(
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
               resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
@@ -406,6 +413,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
       Effect.scoped,
       Effect.provide(
         GitWorkflowService.layer.pipe(
+          Layer.provide(layerConfig),
           Layer.provide(
             Layer.mock(ProjectStore.ProjectStoreV2)({
               listShells: () =>

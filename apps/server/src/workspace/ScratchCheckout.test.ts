@@ -54,7 +54,7 @@ describe("Scratch checkout archives", () => {
       yield* f.command(["config", "local.private-setting", "keep locally"]);
       const archive = yield* archiveScratchCheckout(f.input);
       expect(archive.kind).toBe("git");
-      const paths = scratchArchivePaths(f.input);
+      const paths = yield* scratchArchivePaths(f.input);
       expect(yield* f.fs.exists(`${paths.archive}/repository.bundle`)).toBe(true);
       yield* f.fs.remove(f.cwd, { recursive: true });
       expect(yield* restoreScratchCheckout(f.input)).toBe(true);
@@ -133,7 +133,7 @@ describe("Scratch checkout archives", () => {
         "initial",
       ]);
       yield* archiveScratchCheckout(f.input);
-      const bundle = `${scratchArchivePaths(f.input).archive}/repository.bundle`;
+      const bundle = `${(yield* scratchArchivePaths(f.input)).archive}/repository.bundle`;
       yield* f.fs.writeFileString(bundle, "corrupt");
       yield* f.fs.remove(f.cwd, { recursive: true });
       const error = yield* restoreScratchCheckout(f.input).pipe(Effect.flip);
@@ -190,7 +190,7 @@ describe("Scratch checkout archives", () => {
       );
       expect(error.message).toContain("root ownership or filesystem changed");
       expect(yield* f.fs.exists(f.cwd)).toBe(true);
-      expect(yield* f.fs.exists(scratchArchivePaths(f.input).archive)).toBe(false);
+      expect(yield* f.fs.exists((yield* scratchArchivePaths(f.input)).archive)).toBe(false);
     }).pipe(Effect.provide(layer), Effect.scoped),
   );
   it.live("requires the process UID and retains foreign Git metadata", () =>
@@ -233,10 +233,44 @@ describe("Scratch checkout archives", () => {
       expect(yield* f.fs.exists(`${f.cwd}/.git/config`)).toBe(true);
     }).pipe(Effect.provide(layer), Effect.scoped),
   );
+  it.live("keeps archives in T3 home and still restores one left beside the checkouts", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const { stateDir } = yield* ServerConfig.ServerConfig;
+      yield* f.command(["init", "-b", "main"]);
+      yield* f.fs.writeFileString(`${f.cwd}/proof.txt`, "legacy archive\n");
+      yield* f.command(["add", "."]);
+      yield* f.command([
+        "-c",
+        "user.name=Archive test",
+        "-c",
+        "user.email=archive@example.test",
+        "commit",
+        "-m",
+        "initial",
+      ]);
+      yield* archiveScratchCheckout(f.input);
+      const paths = yield* scratchArchivePaths(f.input);
+      expect(paths.archive.startsWith(`${yield* f.fs.realPath(stateDir)}/scratch-archives/`)).toBe(
+        true,
+      );
+      expect(yield* f.fs.readDirectory(f.root)).toEqual(["test-thread"]);
+      // An older version wrote the archive beside Scratch.
+      yield* f.fs.makeDirectory(`${f.root}/../.t3-scratch-archives`);
+      yield* f.fs.rename(paths.archive, paths.legacyArchive);
+      yield* f.fs.remove(f.cwd, { recursive: true });
+      expect(yield* restoreScratchCheckout(f.input)).toBe(true);
+      expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("legacy archive\n");
+      // Archiving again supersedes the legacy copy.
+      yield* archiveScratchCheckout(f.input);
+      expect(yield* f.fs.exists(paths.legacyArchive)).toBe(false);
+      expect(yield* f.fs.exists(paths.archive)).toBe(true);
+    }).pipe(Effect.provide(layer), Effect.scoped),
+  );
   it.live("never replaces an unregistered directory at a recovery archive path", () =>
     Effect.gen(function* () {
       const f = yield* fixture;
-      const archive = scratchArchivePaths(f.input).archive;
+      const archive = (yield* scratchArchivePaths(f.input)).archive;
       yield* f.fs.makeDirectory(archive, { recursive: true });
       yield* f.fs.writeFileString(`${archive}/unrelated-data`, "keep");
       const error = yield* archiveScratchCheckout(f.input).pipe(Effect.flip);

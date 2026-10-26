@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { runCheckoutProcess } from "./checkoutProcess.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
+import * as SetupMarker from "./setupMarker.ts";
 
 export class ScratchCheckoutError extends Schema.TaggedError<ScratchCheckoutError>()(
   "ScratchCheckoutError",
@@ -45,14 +46,20 @@ export type ScratchCheckoutManifest = typeof Manifest.Type;
 const digest = (bytes: string | Uint8Array) =>
   NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 
-/** Archives sit beside Scratch on the same filesystem, never beneath a released checkout. */
-export function scratchArchivePaths(input: ScratchCheckoutInput) {
-  const root =
+/** Archives live in T3 home. Older versions kept them beside the checkouts; those stay restorable. */
+export const scratchArchivePaths = Effect.fnUntraced(function* (input: ScratchCheckoutInput) {
+  const path = yield* Path.Path;
+  const key = digest(input.threadId);
+  const root = path.join(
+    yield* SetupMarker.stateDirectory(),
+    input.recoveryKind === "project" ? "project-archives" : "scratch-archives",
+  );
+  const legacyRoot =
     input.recoveryKind === "project"
       ? `${input.scratchRoot}/.t3-project-archives`
       : `${input.scratchRoot}/../.t3-scratch-archives`;
-  return { root, archive: `${root}/${digest(input.threadId)}` };
-}
+  return { root, archive: path.join(root, key), legacyArchive: path.resolve(legacyRoot, key) };
+});
 
 const isScratchCheckoutError = Schema.is(ScratchCheckoutError);
 const ManifestCodec = Schema.fromJsonString(Manifest);
@@ -88,8 +95,8 @@ const canonicalRoot = Effect.fnUntraced(function* (input: ScratchCheckoutInput) 
   if (uid !== undefined && Option.getOrNull(rootInfo.uid) !== uid)
     return yield* fail("Scratch root is not owned by this process.");
   const parentInfo = yield* fs.stat(path.dirname(root));
-  // Scratch archives are siblings and need an owned parent. Project archives stay
-  // inside this verified root, whose ancestor may be root-owned (for example /tmp).
+  // Legacy Scratch archives are siblings and need an owned parent. A project root's
+  // ancestor may be root-owned (for example /tmp).
   if (
     rootInfo.dev !== parentInfo.dev ||
     !Option.isSome(rootInfo.uid) ||
@@ -302,20 +309,14 @@ export const archiveScratchCheckout = Effect.fn("ScratchCheckout.archive")(funct
     if ((worktrees.match(/^worktree /gm)?.length ?? 0) !== 1)
       return yield* fail("Scratch repository has linked worktrees.");
   }
-  const archiveRoot = path.resolve(scratchArchivePaths({ ...input, scratchRoot: root }).root);
+  const paths = yield* scratchArchivePaths({ ...input, scratchRoot: root });
+  const archiveRoot = paths.root;
   yield* fs.makeDirectory(archiveRoot, { recursive: true, mode: 0o700 });
-  if (
-    (yield* fs.realPath(archiveRoot)) !==
-    path.resolve(scratchArchivePaths({ ...input, scratchRoot: yield* fs.realPath(root) }).root)
-  )
+  if ((yield* fs.realPath(archiveRoot)) !== archiveRoot)
     return yield* fail("Scratch archive folder must be canonical.");
   const archiveInfo = yield* fs.stat(archiveRoot);
-  if (
-    archiveInfo.dev !== rootInfo.dev ||
-    !Option.isSome(archiveInfo.uid) ||
-    archiveInfo.uid.value !== Option.getOrNull(rootInfo.uid)
-  )
-    return yield* fail("Scratch archives must use the same owned filesystem.");
+  if (!Option.isSome(archiveInfo.uid) || archiveInfo.uid.value !== Option.getOrNull(rootInfo.uid))
+    return yield* fail("Scratch archives must be owned by this host.");
   yield* assertScratchUnmounted(archiveRoot);
   yield* fs.chmod(archiveRoot, 0o700);
   const stage = path.join(
@@ -415,6 +416,8 @@ export const archiveScratchCheckout = Effect.fn("ScratchCheckout.archive")(funct
       );
     yield* Effect.scoped(fs.open(archiveRoot).pipe(Effect.flatMap((file) => file.sync)));
     if (hadPrevious) yield* fs.remove(previous, { recursive: true });
+    // The new archive supersedes one an older version left beside the checkouts.
+    yield* fs.remove(paths.legacyArchive, { recursive: true, force: true }).pipe(Effect.ignore);
     return receipt;
   }).pipe(Effect.ensuring(fs.remove(stage, { recursive: true, force: true }).pipe(Effect.ignore)));
 }, mapFailure);
@@ -441,17 +444,18 @@ export const restoreScratchCheckout = Effect.fn("ScratchCheckout.restore")(funct
   const cwd = path.resolve(input.worktreePath);
   const restore = Effect.gen(function* () {
     if (yield* fs.exists(cwd)) return false;
-    const paths = scratchArchivePaths(input);
-    const archive = path.resolve(paths.archive);
+    const paths = yield* scratchArchivePaths(input);
+    const current = yield* fs.exists(path.join(paths.archive, "manifest.json"));
+    const archive = current ? paths.archive : paths.legacyArchive;
     const manifestPath = path.join(archive, "manifest.json");
     if (!(yield* fs.exists(manifestPath))) return false;
     const { root, cwd: canonicalCwd, rootInfo } = yield* canonicalRoot(input);
-    const canonicalArchive = path.resolve(
-      scratchArchivePaths({ ...input, scratchRoot: root }).archive,
-    );
+    const canonicalArchive = current
+      ? paths.archive
+      : (yield* scratchArchivePaths({ ...input, scratchRoot: root })).legacyArchive;
     if (
       (yield* fs.realPath(archive)) !== canonicalArchive ||
-      (yield* fs.stat(archive)).dev !== rootInfo.dev
+      (!current && (yield* fs.stat(archive)).dev !== rootInfo.dev)
     )
       return yield* fail("Scratch archive ownership or filesystem changed.");
     const manifest = yield* decodeManifest(yield* fs.readFileString(manifestPath));
@@ -493,13 +497,8 @@ export const restoreScratchCheckout = Effect.fn("ScratchCheckout.restore")(funct
           return yield* fail("Scratch recovery refs do not match.");
         yield* gitRead(stage, ["fsck", "--full", "--no-reflogs"]);
       }
-      const marker = `${cwd}.t3-setup-pending`;
-      if (!(yield* fs.exists(marker)))
-        yield* fs.writeFileString(
-          marker,
-          "Restored Scratch checkout must finish workspace setup.\n",
-          { flag: "wx", mode: 0o600 },
-        );
+      if (!(yield* SetupMarker.exists(cwd)))
+        yield* SetupMarker.write(cwd, "Restored Scratch checkout must finish workspace setup.\n");
       if (yield* fs.exists(cwd))
         return yield* fail("Scratch checkout appeared during restoration.");
       yield* fs.rename(stage, cwd);

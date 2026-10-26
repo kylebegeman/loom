@@ -13,6 +13,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
+import * as SetupMarker from "./setupMarker.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
 export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePreparationError>()(
@@ -44,12 +45,11 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
   const scripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cwd = path.resolve(input.worktreePath);
-  // A sibling survives failed creation, setup, and host restarts. It stays out
-  // of the repository so Git cannot publish it or confuse it with user work.
-  const marker = `${cwd}.t3-setup-pending`;
+  // The marker survives failed creation, setup, and host restarts. It lives in T3 home,
+  // outside the repository, so Git cannot publish it or confuse it with user work.
   const restore = Effect.gen(function* () {
     const exists = yield* fs.exists(cwd);
-    if (exists && !(yield* fs.exists(marker))) return;
+    if (exists && !(yield* SetupMarker.exists(cwd))) return;
     yield* tracker.begin({
       threadId: input.threadId,
       branch: input.branch,
@@ -69,20 +69,14 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
         project.value.workspaceRoot,
         path.resolve(project.value.workspaceRoot) === cwd,
       );
-      let recovery = (yield* fs.exists(marker))
-        ? yield* fs
-            .readFileString(marker)
-            .pipe(Effect.flatMap((text) => decodeRecoveryMarker(text).pipe(Effect.option)))
+      const saved = yield* SetupMarker.read(cwd);
+      let recovery = Option.isSome(saved)
+        ? yield* decodeRecoveryMarker(saved.value).pipe(Effect.option)
         : Option.none<typeof RecoveryMarker.Type>();
       if (!exists) {
         yield* tracker.stageStatus(input.threadId, "checkout", "running");
         yield* fs.makeDirectory(path.dirname(cwd), { recursive: true });
-        if (!(yield* fs.exists(marker)))
-          yield* fs.writeFileString(
-            marker,
-            "Workspace setup must complete before starting the agent.\n",
-            { flag: "wx" },
-          );
+        if (!(yield* SetupMarker.exists(cwd))) yield* SetupMarker.write(cwd);
         const root = project.value.workspaceRoot;
         const branchExists = yield* git.hasCommit({
           cwd: root,
@@ -119,7 +113,7 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           const recoveryMarker = { version: 1 as const, checkpointCommit: snapshot.commitSha };
           recovery = Option.some(recoveryMarker);
           // A retry must restore files before setup even if checkout creation already succeeded.
-          yield* fs.writeFileString(marker, yield* encodeRecoveryMarker(recoveryMarker));
+          yield* SetupMarker.write(cwd, yield* encodeRecoveryMarker(recoveryMarker));
         }
         yield* git.pruneWorktrees({ cwd: root });
         yield* git.createWorktree({
@@ -145,10 +139,7 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           ],
         });
         // Once files are restored, setup retries must keep any new work in the checkout.
-        yield* fs.writeFileString(
-          marker,
-          "Workspace setup must complete before starting the agent.\n",
-        );
+        yield* SetupMarker.write(cwd);
       }
       yield* tracker.stageStatus(input.threadId, "checkout", "done");
       yield* tracker.stageStatus(input.threadId, "setup-script", "running");
@@ -190,7 +181,7 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           );
         yield* tracker.stageStatus(input.threadId, "setup-script", "done");
       } else yield* tracker.stageStatus(input.threadId, "setup-script", "skipped");
-      yield* fs.remove(marker);
+      yield* SetupMarker.clear(cwd);
       yield* tracker.finish(input.threadId, "done");
     }).pipe(
       Effect.onError((cause) =>

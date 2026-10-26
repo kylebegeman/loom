@@ -39,6 +39,7 @@ import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { scratchArchivePaths } from "../../workspace/ScratchCheckout.ts";
+import * as SetupMarker from "../../workspace/setupMarker.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import { buildRepositoryIdentity } from "../../project/RepositoryIdentityResolver.ts";
 import {
@@ -777,7 +778,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
           yield* fs.makeDirectory(path.dirname(destinationRoot), { recursive: true });
           const protectedFile = path.join(parent, "existing-marker-target");
           yield* fs.writeFileString(protectedFile, "saved destination data");
-          const marker = `${destinationRoot}.t3-setup-pending`;
+          const marker = yield* SetupMarker.markerPath(destinationRoot).pipe(
+            Effect.provideService(ServerConfig.ServerConfig, destination.config),
+          );
+          yield* fs.makeDirectory(path.dirname(marker), { recursive: true });
           yield* fs.symlink(protectedFile, marker);
           expect((yield* destination.service.restoreCopy(input).pipe(Effect.flip)).reason).toBe(
             "blocked",
@@ -914,8 +918,14 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         for (const cwd of new Set([
           destinationRoot,
           ...restored.repositories.map((repository) => repository.path),
-        ]))
-          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
+        ])) {
+          expect(
+            yield* SetupMarker.exists(cwd).pipe(
+              Effect.provideService(ServerConfig.ServerConfig, destination.config),
+            ),
+          ).toBe(true);
+          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
+        }
         const binding = yield* destination.service.resolveBinding({
           binding: {
             projectId: project.id,
@@ -1179,7 +1189,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const receipt = (yield* readManagedProjectCheckout(rootPath))!;
       const archive = yield* archiveManagedProjectCheckout(receipt, projectId);
       yield* releaseManagedProjectCheckout(receipt, projectId, archive.archive);
-      yield* fs.remove(scratchArchivePaths(archive.input).archive, { recursive: true });
+      yield* fs.remove((yield* scratchArchivePaths(archive.input)).archive, { recursive: true });
       const service = yield* LibraryWorkspace.LibraryWorkspace;
       const error = yield* service
         .prepareCopy({
@@ -1613,8 +1623,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         for (const cwd of [
           copy.rootPath,
           ...copy.repositories.map((repository) => repository.path),
-        ])
-          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
+        ]) {
+          expect(yield* SetupMarker.exists(cwd)).toBe(true);
+          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
+        }
         expect(yield* fs.exists(path.join(copy.rootPath, "web", "README.md"))).toBe(true);
         expect(yield* fs.exists(path.join(copy.rootPath, "server", "README.md"))).toBe(true);
         const subset = yield* service.prepareCopy({
@@ -1626,16 +1638,16 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(subset.repositories.map((repository) => repository.resourceId)).toEqual(["server"]);
         expect(yield* fs.exists(path.join(subset.rootPath, "web"))).toBe(false);
-        yield* fs.remove(`${copy.rootPath}.t3-setup-pending`);
-        yield* fs.remove(`${copy.repositories[0]!.path}.t3-setup-pending`);
+        yield* SetupMarker.clear(copy.rootPath);
+        yield* SetupMarker.clear(copy.repositories[0]!.path);
         yield* service.prepareCopy({
           requestId: "clone-all",
           rootPath: copy.rootPath,
           project,
           strategy: "clone",
         });
-        expect(yield* fs.exists(`${copy.rootPath}.t3-setup-pending`)).toBe(false);
-        expect(yield* fs.exists(`${copy.repositories[0]!.path}.t3-setup-pending`)).toBe(false);
+        expect(yield* SetupMarker.exists(copy.rootPath)).toBe(false);
+        expect(yield* SetupMarker.exists(copy.repositories[0]!.path)).toBe(false);
       }),
   );
   it.effect("retries a partial clone without duplicating completed repositories", () =>

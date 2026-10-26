@@ -5,10 +5,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import * as ServerConfig from "../config.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 const layerTest = Layer.empty.pipe(
   Layer.provideMerge(WorkspacePaths.layer),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-workspace-paths-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 

@@ -42,6 +42,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
@@ -81,10 +82,13 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
-const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
+const layerWorktreeLocation = (worktreesDir = managedWorktreesDir, stateDir = "/t3-state") =>
   Layer.mergeAll(
     Path.layer,
-    Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as ServerConfig.ServerConfig["Service"]),
+    Layer.mock(ServerConfig.ServerConfig)({
+      worktreesDir,
+      stateDir,
+    } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
   );
 
@@ -474,6 +478,8 @@ function makeLocalCommandHarness(input: {
   // fork: mobile-surface-hint
   readonly creationSource?: OrchestrationV2ThreadProjection["messages"][number]["creationSource"];
   readonly promptCommandHandled?: boolean;
+  /** T3 home for setup markers and ownership receipts when the harness uses a real filesystem. */
+  readonly stateDir?: string;
   readonly restoredWorkspace?: {
     readonly cwd: string;
     readonly scratchRoot: string;
@@ -1006,7 +1012,7 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        layerWorktreeLocation(input.worktreesDir),
+        layerWorktreeLocation(input.worktreesDir, input.stateDir),
         input.restoredWorkspace
           ? Layer.succeed(FileSystem.FileSystem, input.restoredWorkspace.fs)
           : input.fileSystem === undefined
@@ -1382,6 +1388,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         text: "Continue",
         worktreePath,
         worktreesDir: workspaceRoot,
+        stateDir: path.join(workspaceRoot, "state"),
         fileSystem,
         failReadsAfterRunning: true,
       });
@@ -1743,6 +1750,8 @@ effectIt.effect(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const git = yield* GitVcsDriver.GitVcsDriver;
+      const markers = yield* Effect.context<SetupMarker.Services>();
+      const { stateDir } = yield* ServerConfig.ServerConfig;
       const managed = yield* fs
         .makeTempDirectoryScoped()
         .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
@@ -1782,11 +1791,12 @@ effectIt.effect(
           (yield* command(["rev-parse", "refs/t3/orchestration-v2/checkpoints/retained/ordinal/1"]))
             .stdout,
         ).toBe(head);
-        expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
-      }).pipe(Effect.orDie);
+        expect(yield* SetupMarker.exists(cwd)).toBe(false);
+      }).pipe(Effect.provide(markers), Effect.orDie);
       const harness = makeLocalCommandHarness({
         text: "Continue the prior work",
         previousNativeSession: true,
+        stateDir,
         restoredWorkspace: { cwd, scratchRoot, fs, git, beforeOpen },
       });
       yield* harness.start;
@@ -1820,6 +1830,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const git = yield* GitVcsDriver.GitVcsDriver;
+        const markers = yield* Effect.context<SetupMarker.Services>();
         const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
         const scratchRoot = `${parent}/projects`;
         const cwd = `${scratchRoot}/resumed`;
@@ -1840,7 +1851,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
         ]);
         const projectId = ProjectId.make("scratch-resume-project");
         if (fresh) {
-          yield* fs.writeFileString(`${cwd}.t3-setup-pending`, "Fresh Library setup is pending.\n");
+          yield* SetupMarker.write(cwd, "Fresh Library setup is pending.\n");
         } else if (primary) {
           yield* markManagedProjectCheckout(
             cwd,
@@ -1920,21 +1931,26 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
           order.push("lane-ready");
         }).pipe(Effect.orDie);
         const beforeOpen = Effect.gen(function* () {
-          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
+          expect(yield* SetupMarker.exists(cwd)).toBe(false);
           expect(setupCount).toBe(2);
           order.push("provider");
-        }).pipe(Effect.orDie);
+        }).pipe(Effect.provide(markers), Effect.orDie);
         const input = {
           text: "Continue retained work",
           prepareLane,
           previousNativeSession: !fresh,
+          stateDir: (yield* ServerConfig.ServerConfig).stateDir,
           restoredWorkspace: { cwd, scratchRoot, fs, git, primary, fresh, runSetup, beforeOpen },
         };
         const failed = makeLocalCommandHarness(input);
         yield* failed.start;
         expect(failed.open).not.toHaveBeenCalled();
         expect(failed.projection().runs.at(-1)?.status).toBe("failed");
-        expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
+        const { stateDir } = yield* ServerConfig.ServerConfig;
+        const marker = yield* SetupMarker.markerPath(cwd);
+        expect(marker.startsWith(`${yield* fs.realPath(stateDir)}/workspace-markers/`)).toBe(true);
+        expect(yield* fs.exists(marker)).toBe(true);
+        expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
         const retry = makeLocalCommandHarness(input);
         yield* retry.start;
         expect(retry.open).toHaveBeenCalledOnce();

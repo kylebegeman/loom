@@ -1,5 +1,5 @@
 import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
-import * as FileSystem from "effect/FileSystem";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -238,7 +238,6 @@ function failureDetail(error: unknown): string {
 const make = Effect.gen(function* () {
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
-  const fileSystem = yield* FileSystem.FileSystem;
   const projects = yield* ProjectService.ProjectService;
   const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -710,12 +709,12 @@ const make = Effect.gen(function* () {
       }
       yield* setupTracker.stageStatus(threadId, "setup-script", "running");
       const setupCwd = worktreePath ?? project.workspaceRoot;
-      const rootSetupMarker = `${project.workspaceRoot}.t3-setup-pending`;
       const rootSetupPending =
         setupCwd === project.workspaceRoot &&
-        (yield* fileSystem
-          .exists(rootSetupMarker)
-          .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId))));
+        (yield* SetupMarker.exists(project.workspaceRoot).pipe(
+          Effect.provide(restorationServices),
+          Effect.mapError(mapError(input, "run-setup-script", threadId)),
+        ));
       // Loom runs setup in the main checkout too (docs/user/project-settings.md). A restored
       // managed checkout's pending marker also makes the launch wait for it.
       const setup = yield* setupScripts // fork: project-lifecycle
@@ -788,9 +787,10 @@ const make = Effect.gen(function* () {
         yield* setupTracker.stageStatus(threadId, "setup-script", "skipped");
       }
       if (rootSetupPending)
-        yield* fileSystem
-          .remove(rootSetupMarker)
-          .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
+        yield* SetupMarker.clear(project.workspaceRoot).pipe(
+          Effect.provide(restorationServices),
+          Effect.mapError(mapError(input, "run-setup-script", threadId)),
+        );
       yield* setupTracker.markUncancellable(threadId);
       yield* setupTracker.stageStatus(threadId, "agent", "running");
       if (runId !== null) {

@@ -4,8 +4,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
+import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 
@@ -21,7 +23,11 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
-it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
+it.layer(
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3-repository-identity-state-" }).pipe(
+    Layer.provideMerge(NodeServices.layer),
+  ),
+)("RepositoryIdentityResolverLive", (it) => {
   it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -97,6 +97,7 @@ const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
+      Effect.provideService(ServerConfig.ServerConfig, config),
     );
   const readProject = Effect.fnUntraced(function* (projectId: ProjectId) {
     const row = yield* projects
