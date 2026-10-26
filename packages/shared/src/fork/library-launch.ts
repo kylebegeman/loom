@@ -18,6 +18,22 @@ const resourcePath = (rootPath: string, relativePath: string) =>
   relativePath === "." ? normalizePath(rootPath) : `${normalizePath(rootPath)}/${relativePath}`;
 
 /**
+ * Whether a copy's repository sits where the computer puts that resource. A copy holding one
+ * repository keeps it at the copy root whatever its relativePath, as the computer clones it.
+ */
+const repositoryInPlace = (
+  copy: LibraryWorkingCopy,
+  relativePath: string,
+  repositoryPath: string,
+) => {
+  const path = normalizePath(repositoryPath);
+  return (
+    path === resourcePath(copy.rootPath, relativePath) ||
+    (copy.repositories.length === 1 && path === normalizePath(copy.rootPath))
+  );
+};
+
+/**
  * Reuse only the chosen host and current resource scope, including explicit copy identity.
  * `resourceIds` lists the selected components, or is null for the whole project. A copy counts
  * only while each selected repository still sits where the project now places it.
@@ -52,7 +68,7 @@ export const libraryCopiesForScope = (
         copy.repositories.some(
           (repository) =>
             repository.resourceId === resource.id &&
-            normalizePath(repository.path) === resourcePath(copy.rootPath, resource.relativePath),
+            repositoryInPlace(copy, resource.relativePath, repository.path),
         ),
       ),
   );
