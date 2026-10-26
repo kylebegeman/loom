@@ -3,6 +3,9 @@ import {
   buildProjectPreparationPlan,
   createProjectCheckoutAtoms,
   getProjectPreparationDestination,
+  LIBRARY_FOLDER_CHOICE_TITLES,
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  libraryFolderChoice,
   projectPreparationSource,
   matchingProjectPreparationCopies,
   serverChoosesFolders,
@@ -10,14 +13,19 @@ import {
   type ProjectPreparationSource,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { getCloneDirectoryName } from "@t3tools/client-runtime/operations/projects";
+import {
+  buildProjectCreateCommand,
+  getCloneDirectoryName,
+} from "@t3tools/client-runtime/operations/projects";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
+  CommandId,
   EnvironmentId,
   ProjectId,
 } from "@t3tools/contracts";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
@@ -32,6 +40,7 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { LibraryFolderPicker } from "../library/LibraryFolderPicker";
+import { library } from "../library/libraryState";
 import { preparationReceiptKey } from "./projectPreparationReceipt";
 import { useProjectPreparationReceipt } from "./useProjectPreparationReceipt";
 import { uuidv4 } from "../../lib/uuid";
@@ -39,6 +48,7 @@ import { useProject, useProjects, useServerConfigs, waitForProject } from "../..
 import { useEnvironments } from "../../state/environments";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
+import { projectEnvironment } from "../../state/projects";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -89,14 +99,20 @@ function ProjectPreparationContent(props: {
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
   });
+  const inspectFolder = useAtomCommand(library.inspectFolder, { reportFailure: false });
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const [reviewedSource, setSource] = useState<ProjectPreparationSource>(() =>
     projectPreparationSource({}),
   );
   const [destinationId, setDestinationId] = useState<EnvironmentId | null>(
     props.initialDestinationEnvironmentId,
   );
-  // Null leaves the folder to the computer; a picked one is sent as the clone destination.
-  const [picked, setPicked] = useState<string | null>(null);
+  // Null leaves the folder to the computer. A picked folder is cloned into, or registered as the
+  // project when it already holds this repository.
+  const [picked, setPicked] = useState<{ readonly path: string; readonly reuse: boolean } | null>(
+    null,
+  );
+  const pickToken = useRef(0);
   const [pickingFolder, setPickingFolder] = useState(false);
   const receiptState = useProjectPreparationReceipt(
     destinationId
@@ -159,8 +175,8 @@ function ProjectPreparationContent(props: {
           createdAt: receipt?.createdAt ?? request.createdAt,
           ...(receipt && (receipt.destinationPath !== "" || !serverChosen)
             ? { destinationPath: receipt.destinationPath }
-            : (picked ?? proposal)
-              ? { destinationPath: picked ?? proposal }
+            : (picked?.path ?? proposal)
+              ? { destinationPath: picked?.path ?? proposal }
               : {}),
           projects: projects.map((project) => ({
             ...project,
@@ -253,6 +269,38 @@ function ProjectPreparationContent(props: {
       readEnvironmentScope(destination, AuthSourceControlWriteScope)
     );
   };
+  // Same rule as the Library start screen: the computer refuses a folder holding other files.
+  const chooseFolder = async (path: string) => {
+    if (!destinationId || !source.ready) return;
+    const token = ++pickToken.current;
+    setPickingFolder(false);
+    setError(null);
+    const result = await inspectFolder({ environmentId: destinationId, input: { rootPath: path } });
+    if (!mounted.current || token !== pickToken.current) return;
+    const found = AsyncResult.isSuccess(result) ? result.value : null;
+    const choice = found
+      ? libraryFolderChoice(found, [{ remoteUrl: source.remoteUrl, relativePath: "." }])
+      : "clone";
+    if (choice === "occupied") {
+      setPicked(null);
+      setError(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+      return;
+    }
+    const checkout =
+      choice === "reuse"
+        ? found?.repositories.find(
+            (repository) =>
+              repository.remoteUrl !== null &&
+              normalizeGitRemoteUrl(repository.remoteUrl) ===
+                normalizeGitRemoteUrl(source.remoteUrl),
+          )
+        : undefined;
+    setPicked(
+      checkout
+        ? { path: checkout.path, reuse: true }
+        : { path: found?.rootPath ?? path, reuse: false },
+    );
+  };
   // The computer answers with the folder it used and, for a reused checkout, that project.
   const startOnComputer = async () => {
     if (
@@ -278,28 +326,48 @@ function ProjectPreparationContent(props: {
     };
     const failure = (fallback: string) => (cause: unknown) =>
       cause instanceof Error ? cause.message : fallback;
+    const reusePath = !receipt && picked?.reuse ? picked.path : null;
     const problem = await (
-      receipt
+      receipt || reusePath !== null
         ? Promise.resolve(null)
         : receiptState
-            .save({ ...requested, destinationPath: picked ?? "" })
+            .save({ ...requested, destinationPath: picked?.path ?? "" })
             .then(
               () => null,
               failure("The preparation receipt could not be saved. No clone was started."),
             )
     ).then(async (saveProblem) => {
       if (saveProblem !== null) return saveProblem;
-      const result = await startProjectClone({ environmentId: destinationId, input: plan.input });
-      if (AsyncResult.isFailure(result))
-        return failure("The clone could not be started.")(squashAtomCommandFailure(result));
-      const started = result.value;
-      await receiptState
-        .settle({
-          ...requested,
-          projectId: started.projectId,
-          destinationPath: started.destinationPath ?? started.cwd,
-        })
-        .catch(() => undefined);
+      let started: { readonly projectId: ProjectId };
+      if (reusePath !== null) {
+        const result = await createProject({
+          environmentId: destinationId,
+          input: {
+            ...buildProjectCreateCommand({
+              commandId: CommandId.make(uuidv4()),
+              projectId: plan.input.projectId,
+              workspaceRoot: reusePath,
+            }),
+            title: plan.input.title,
+            createWorkspaceRootIfMissing: false,
+          },
+        });
+        if (AsyncResult.isFailure(result))
+          return failure("The project could not be added.")(squashAtomCommandFailure(result));
+        started = { projectId: plan.input.projectId };
+      } else {
+        const result = await startProjectClone({ environmentId: destinationId, input: plan.input });
+        if (AsyncResult.isFailure(result))
+          return failure("The clone could not be started.")(squashAtomCommandFailure(result));
+        started = result.value;
+        await receiptState
+          .settle({
+            ...requested,
+            projectId: result.value.projectId,
+            destinationPath: result.value.destinationPath ?? result.value.cwd,
+          })
+          .catch(() => undefined);
+      }
       const project = await waitForProject(
         { environmentId: destinationId, projectId: started.projectId },
         15_000,
@@ -448,6 +516,7 @@ function ProjectPreparationContent(props: {
                       }
                       onPress={() => {
                         setDestinationId(environment.environmentId);
+                        pickToken.current += 1;
                         setPicked(null);
                         setPickingFolder(false);
                       }}
@@ -505,7 +574,7 @@ function ProjectPreparationContent(props: {
                     {receipt?.destinationPath
                       ? `Files are in ${receipt.destinationPath}`
                       : picked
-                        ? `Loom puts the files in ${picked}`
+                        ? `${LIBRARY_FOLDER_CHOICE_TITLES[picked.reuse ? "reuse" : "clone"]}: ${picked.path}`
                         : "Loom puts the files in this computer's Projects folder, or uses a checkout it already has."}
                   </Text>
                 ) : proposal ? (
@@ -527,7 +596,10 @@ function ProjectPreparationContent(props: {
                         label="Let Loom choose the folder"
                         tone="text"
                         disabled={busy}
-                        onPress={() => setPicked(null)}
+                        onPress={() => {
+                          pickToken.current += 1;
+                          setPicked(null);
+                        }}
                       />
                     ) : null}
                     {pickingFolder ? (
@@ -535,10 +607,7 @@ function ProjectPreparationContent(props: {
                         environmentId={destinationId}
                         projectTitle={sourceProject.title}
                         disabled={busy}
-                        onChoose={(path) => {
-                          setPicked(path);
-                          setPickingFolder(false);
-                        }}
+                        onChoose={(path) => void chooseFolder(path)}
                       />
                     ) : null}
                   </View>
@@ -552,7 +621,9 @@ function ProjectPreparationContent(props: {
                     {plan?.kind === "blocked"
                       ? plan.reason
                       : serverChosen
-                        ? "Loom clones the repository on this computer and opens the project."
+                        ? picked?.reuse
+                          ? "Loom adds this checkout as the project and opens it."
+                          : "Loom clones the repository on this computer and opens the project."
                         : "Review and edit the destination folder in the next step before starting the clone."}
                   </Text>
                 )}
