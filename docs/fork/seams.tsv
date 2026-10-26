@@ -237,7 +237,7 @@ apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	1
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	2
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	38
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
-apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	respectful-notifications	23
+apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	22
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	4
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
@@ -718,7 +718,7 @@ apps/server/src/auth/ServerSecretStore.ts	server-weight	7
 apps/server/src/observability/EventLoopMonitor.test.ts	server-weight	1
 apps/server/src/observability/EventLoopMonitor.ts	server-weight	5
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	server-weight	6
-apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	server-weight	3
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	server-weight	2
 apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts	server-weight	4
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	server-weight	11
 apps/server/src/orchestration-v2/RestartContinuation.test.ts	server-weight	11
@@ -932,7 +932,7 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/web/src/components/ChatView.tsx	failed-run-retry	5
-apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	scheduled-task-alerts	1
+apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	scheduled-task-alerts	1
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	bots	5
 apps/web/src/components/CommandPaletteLookups.ts	bots	1
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	scheduled-task-alerts	1
