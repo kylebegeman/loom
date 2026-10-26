@@ -28,7 +28,7 @@ import { ProjectStorageRollout } from "~/fork/project-checkout/ProjectStorageRol
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import { buildSidebarProjectSnapshots } from "~/sidebarProjectGrouping";
 import { useClientSettings } from "~/hooks/useSettings";
-import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
+import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { BrowseProjectsButton } from "./BrowseProjectsButton";
 import { isElectron } from "~/env";
 import { buildProjectStorageInventory } from "./storageInventory";
