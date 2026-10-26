@@ -427,7 +427,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     tone="primary"
                     onPress={() =>
                       catalogState.hasReadyEnvironment
-                        ? navigation.dispatch(StackActions.push("AddProject"))
+                        ? navigation.navigate("LibraryCreate") // fork: library - Same choice as the header's Add project.
                         : navigation.navigate(
                             catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
                           )

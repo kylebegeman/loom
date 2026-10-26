@@ -274,7 +274,7 @@ apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
 apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
-apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	20
+apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	21
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	4
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	1
@@ -793,7 +793,7 @@ docs/user/project-settings.md	library-projects	3
 apps/server/src/auth/LibraryPublishingCredential.test.ts	project-library	3
 apps/server/src/auth/LibraryPublishingCredential.ts	project-library	7
 apps/server/src/cli/server.ts	reach	2
-apps/mobile/src/features/keyboard/CommandPalette.tsx	library	5
+apps/mobile/src/features/keyboard/CommandPalette.tsx	library	6
 apps/web/src/hooks/useHandleNewThread.test.ts	library-projects	5
 apps/web/src/hooks/useHandleNewThread.ts	library-projects	4
 apps/mobile/src/features/threads/SecretRequestCard.tsx	vault-core	6

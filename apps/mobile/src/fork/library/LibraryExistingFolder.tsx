@@ -46,6 +46,7 @@ const actionLabel = (action: LibraryFolderAction) =>
 
 export function LibraryExistingFolder(props: {
   initialRootPath?: string | undefined;
+  initiallyExpanded?: boolean;
   disabled: boolean;
   folder: ExistingLibraryFolder | null;
   /** A project the form offers to add the folder to, so it is not suggested twice. */
@@ -61,7 +62,7 @@ export function LibraryExistingFolder(props: {
   const authority = useLibraryAuthority();
   const { environments } = useEnvironments();
   const projects = useProjects();
-  const [expanded, setExpanded] = useState(!!props.initialRootPath),
+  const [expanded, setExpanded] = useState(!!props.initialRootPath || !!props.initiallyExpanded),
     [search, setSearch] = useState(props.initialRootPath ?? "");
   // The folder "Add to another project" picks a project for, shown in place of the folder list.
   const [choosing, setChoosing] = useState<{
