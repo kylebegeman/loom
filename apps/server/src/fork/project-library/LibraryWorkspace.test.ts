@@ -4820,27 +4820,32 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
-  it.effect("releases a published copy on the first review and leaves no setup marker", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const service = yield* LibraryWorkspace.LibraryWorkspace;
-      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
-      const copy = yield* unusedPublishedCopy("first-review-release");
-      const legacy = `${copy.rootPath}.t3-setup-pending`;
-      yield* fs.writeFileString(legacy, SetupMarker.PENDING_CONTENTS);
-      expect(yield* SetupMarker.exists(copy.rootPath)).toBe(true);
-      const review = yield* service.status({ workingCopyId: copy.id });
-      const released = yield* service.release({
-        requestId: "first-review-release",
-        workingCopyId: copy.id,
-        reviewToken: review.reviewToken!,
-      });
-      expect(released.state).toBe("released");
-      expect((yield* store.get(copy.id)).publishedRelease).toBe(true);
-      expect(yield* fs.exists(copy.rootPath)).toBe(false);
-      expect(yield* SetupMarker.exists(copy.rootPath)).toBe(false);
-      expect(yield* fs.exists(legacy)).toBe(false);
-    }),
+  it.effect(
+    "releases a published copy on the first review and clears only its own setup marker",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const copy = yield* unusedPublishedCopy("first-review-release");
+        yield* SetupMarker.write(copy.rootPath);
+        const marker = yield* SetupMarker.markerPath(copy.rootPath);
+        // This test home is not the default install, so the sibling marker an older install
+        // left beside the folder stays that install's to clear.
+        const legacy = `${copy.rootPath}.t3-setup-pending`;
+        yield* fs.writeFileString(legacy, SetupMarker.PENDING_CONTENTS);
+        const review = yield* service.status({ workingCopyId: copy.id });
+        const released = yield* service.release({
+          requestId: "first-review-release",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        });
+        expect(released.state).toBe("released");
+        expect((yield* store.get(copy.id)).publishedRelease).toBe(true);
+        expect(yield* fs.exists(copy.rootPath)).toBe(false);
+        expect(yield* fs.exists(marker)).toBe(false);
+        expect(yield* fs.exists(legacy)).toBe(true);
+      }),
   );
 
   /** A published copy whose release was recorded and set its folder aside, then stopped. */
