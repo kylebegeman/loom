@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   start: vi.fn(),
+  inspect: vi.fn(),
+  create: vi.fn(),
   review: vi.fn(),
   save: vi.fn(),
   navigate: vi.fn(),
@@ -117,7 +119,12 @@ vi.mock("../../state/session", () => ({
 vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: { startProjectClone: "startProjectClone" },
 }));
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => state.start }));
+vi.mock("../library/libraryState", () => ({ library: { inspectFolder: "inspectFolder" } }));
+vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
+vi.mock("../../state/use-atom-command", () => ({
+  useAtomCommand: (command: string) =>
+    command === "inspectFolder" ? state.inspect : command === "create" ? state.create : state.start,
+}));
 vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.review }));
 
 import { ProjectPreparationRouteScreen } from "./ProjectPreparationRouteScreen";
@@ -147,6 +154,10 @@ beforeEach(async () => {
   state.start.mockResolvedValue(
     AsyncResult.success({ projectId: "new-project", cwd: state.pickedFolder }),
   );
+  state.inspect.mockResolvedValue(
+    AsyncResult.success({ rootPath: state.pickedFolder, exists: false, repositories: [] }),
+  );
+  state.create.mockResolvedValue(AsyncResult.success({ sequence: 1 }));
   container = document.createElement("div");
   root = createRoot(container);
   await act(() =>
@@ -172,7 +183,7 @@ afterEach(async () => {
 it("sends a folder picked on a computer that chooses folders, and none after letting it choose", async () => {
   await click("Choose another folder");
   await click("Pick folder");
-  expect(container.textContent).toContain(`Loom puts the files in ${state.pickedFolder}`);
+  expect(container.textContent).toContain(`Download into this folder: ${state.pickedFolder}`);
   await click("Prepare this computer");
   expect(state.save).toHaveBeenCalledWith(
     expect.objectContaining({ destinationPath: state.pickedFolder }),
@@ -190,4 +201,60 @@ it("leaves the folder to the computer again after a picked one is cleared", asyn
   await click("Prepare this computer");
   expect(state.start).toHaveBeenCalledOnce();
   expect(state.start.mock.calls[0]![0].input.destinationPath ?? null).toBeNull();
+});
+
+const repository = (relativePath: string, remoteUrl: string | null) => ({
+  path: relativePath === "." ? state.pickedFolder : `${state.pickedFolder}/${relativePath}`,
+  relativePath,
+  remoteUrl,
+  head: null,
+  branch: null,
+});
+
+it("refuses a folder holding other files before anything is sent", async () => {
+  state.inspect.mockResolvedValue(
+    AsyncResult.success({
+      rootPath: state.pickedFolder,
+      exists: true,
+      repositories: [repository("other", "https://github.com/kyle/other")],
+    }),
+  );
+  await click("Choose another folder");
+  await click("Pick folder");
+  expect(container.textContent).toContain(
+    "This folder holds other files. Choose an empty folder, or one that already has this project.",
+  );
+  expect(container.textContent).not.toContain(state.pickedFolder);
+  await click("Prepare this computer");
+  expect(state.start.mock.calls[0]![0].input.destinationPath ?? null).toBeNull();
+});
+
+it("adds a picked folder that already holds this repository instead of cloning into it", async () => {
+  state.inspect.mockResolvedValue(
+    AsyncResult.success({
+      rootPath: state.pickedFolder,
+      exists: true,
+      repositories: [repository(".", "git@github.com:kyle/corbelo.git")],
+    }),
+  );
+  await click("Choose another folder");
+  await click("Pick folder");
+  expect(container.textContent).toContain(`Use files in this folder: ${state.pickedFolder}`);
+  await click("Prepare this computer");
+  expect(state.start).not.toHaveBeenCalled();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.create).toHaveBeenCalledWith({
+    environmentId: "mini",
+    input: expect.objectContaining({
+      type: "project.create",
+      projectId: "new-project",
+      title: "corbelo",
+      workspaceRoot: state.pickedFolder,
+      createWorkspaceRootIfMissing: false,
+    }),
+  });
+  expect(state.navigate).toHaveBeenCalledWith("ProjectHome", {
+    environmentId: "mini",
+    projectId: "new-project",
+  });
 });
