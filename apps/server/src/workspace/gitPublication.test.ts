@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ProcessRunner from "../processRunner.ts";
-import { proveGitPublication } from "./gitPublication.ts";
+import { proveGitPublication, proveRepositoryPublication } from "./gitPublication.ts";
 
 const layer = ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer));
 const fixture = Effect.gen(function* () {
@@ -27,7 +27,9 @@ const fixture = Effect.gen(function* () {
   yield* command(cwd, ["push", "origin", "main"]);
   const head = yield* command(cwd, ["rev-parse", "HEAD"]);
   const proof = proveGitPublication((args) => command(cwd, args));
-  return { cwd, remote, parent, command, head, proof };
+  const repositoryProof = (remoteUrls: ReadonlyArray<string> = [remote]) =>
+    proveRepositoryPublication((args) => command(cwd, [...args]), remoteUrls);
+  return { cwd, remote, parent, command, head, proof, repositoryProof };
 });
 
 it.layer(layer)("Git publication proof", (it) => {
@@ -153,6 +155,69 @@ it.layer(layer)("Git publication proof", (it) => {
       expect(yield* f.proof).toEqual({ published: false, reason: "no published revisions" });
       yield* f.command(f.cwd, ["remote", "remove", "origin"]);
       expect(yield* f.proof).toEqual({ published: false, reason: "no publication remote" });
+    }),
+  );
+});
+
+it.layer(layer)("Repository publication proof", (it) => {
+  it.effect.each(["stash", "reset-commit", "note", "other-ref"] as const)(
+    "rejects work only a %s keeps, though every branch is published",
+    (kind) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const fs = yield* FileSystem.FileSystem;
+        expect(yield* f.repositoryProof()).toEqual({ published: true, head: f.head });
+        if (kind === "stash") {
+          yield* fs.writeFileString(`${f.cwd}/notes.md`, "unsaved\n");
+          yield* f.command(f.cwd, ["stash", "--include-untracked"]);
+        } else if (kind === "reset-commit") {
+          yield* f.command(f.cwd, ["commit", "--allow-empty", "-m", "Dropped by a reset"]);
+          yield* f.command(f.cwd, ["reset", "--hard", f.head]);
+        } else if (kind === "note") yield* f.command(f.cwd, ["notes", "add", "-m", "Local note"]);
+        else {
+          yield* f.command(f.cwd, ["commit", "--allow-empty", "-m", "Kept under another ref"]);
+          yield* f.command(f.cwd, ["update-ref", "refs/backup/work", "HEAD"]);
+          yield* f.command(f.cwd, ["reset", "--hard", f.head]);
+          yield* f.command(f.cwd, ["reflog", "expire", "--expire=now", "--all"]);
+        }
+        expect(yield* f.command(f.cwd, ["status", "--porcelain"])).toBe("");
+        expect(yield* f.proof).toMatchObject({ published: true });
+        expect(yield* f.repositoryProof()).toMatchObject({ published: false });
+      }),
+  );
+
+  it.effect("counts only the given publication remotes, never a remote at the repository", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.command(f.cwd, ["commit", "--allow-empty", "-m", "Unpushed"]);
+      yield* f.command(f.cwd, ["remote", "add", "self", "."]);
+      expect(yield* f.proof).toMatchObject({ published: true });
+      expect(yield* f.repositoryProof()).toMatchObject({ published: false });
+      expect(yield* f.repositoryProof([])).toEqual({
+        published: false,
+        reason: "no publication remote",
+      });
+    }),
+  );
+
+  it.effect("leaves the repository's refs and objects untouched while the remote advances", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const other = `${f.parent}/other`;
+      yield* f.command(f.parent, ["clone", f.remote, other]);
+      yield* f.command(other, ["config", "user.name", "Publication test"]);
+      yield* f.command(other, ["config", "user.email", "publication@example.test"]);
+      yield* f.command(other, ["commit", "--allow-empty", "-m", "Someone else's work"]);
+      yield* f.command(other, ["push", "origin", "main"]);
+      const before = {
+        refs: yield* f.command(f.cwd, ["for-each-ref"]),
+        objects: yield* f.command(f.cwd, ["count-objects", "-v"]),
+      };
+      expect(yield* f.repositoryProof()).toEqual({ published: true, head: f.head });
+      expect({
+        refs: yield* f.command(f.cwd, ["for-each-ref"]),
+        objects: yield* f.command(f.cwd, ["count-objects", "-v"]),
+      }).toEqual(before);
     }),
   );
 });

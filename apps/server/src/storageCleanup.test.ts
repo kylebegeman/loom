@@ -3554,3 +3554,53 @@ describe("Library Git mirror cleanup", () => {
     ),
   );
 });
+
+// fork: file-placement
+describe("landed ignored-file rule", () => {
+  it.live.each(["worktree", "repository", "bare"] as const)(
+    "keeps a %s nested in ignored build output",
+    (kind) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const git = yield* GitVcsDriver.GitVcsDriver;
+          const cwd = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+          const command = (at: string, args: string[]) =>
+            git.execute({ operation: "landed-rule-test", cwd: at, args });
+          yield* command(cwd, ["init", "-b", "main"]);
+          yield* command(cwd, ["config", "user.email", "cleanup@example.test"]);
+          yield* command(cwd, ["config", "user.name", "Cleanup test"]);
+          yield* fs.writeFileString(`${cwd}/.gitignore`, "dist/\nnode_modules/\n");
+          yield* command(cwd, ["add", "."]);
+          yield* command(cwd, ["commit", "-m", "initial"]);
+          yield* fs.makeDirectory(`${cwd}/node_modules/pkg`, { recursive: true });
+          yield* fs.writeFileString(`${cwd}/node_modules/pkg/index.js`, "dependency");
+          const ignored = () =>
+            command(cwd, [
+              "ls-files",
+              "--others",
+              "--ignored",
+              "--exclude-standard",
+              "--directory",
+              "-z",
+            ]).pipe(
+              Effect.flatMap((listing) =>
+                StorageCleanup.landedIgnoredFileBlocker(cwd, listing.stdout),
+              ),
+            );
+          expect(yield* ignored()).toBeNull();
+          const nested = `${cwd}/dist/build/nested`;
+          if (kind === "worktree") yield* command(cwd, ["worktree", "add", "-b", "nested", nested]);
+          else
+            yield* command(cwd, [
+              "clone",
+              "--no-hardlinks",
+              ...(kind === "bare" ? ["--bare"] : []),
+              cwd,
+              nested,
+            ]);
+          expect(yield* ignored()).toBe("dist/build/nested/");
+        }),
+      ),
+  );
+});

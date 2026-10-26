@@ -145,8 +145,14 @@ const runnerLayer = Layer.effect(
     const runner = yield* ProcessRunner.make();
     return ProcessRunner.ProcessRunner.of({
       run: (input) => {
-        if (input.command === "git" && input.args.includes("--no-write-fetch-head"))
+        if (input.command === "git" && input.args.includes("--no-write-fetch-head")) {
           publicationFetchEnvs.push(input.env);
+          // A publication proof fetches the resource's URL, which stands for a local source here.
+          const remoteIndex = input.args.indexOf("--") + 1;
+          const source = cloneSources.get(input.args[remoteIndex] ?? "");
+          if (source !== undefined)
+            return runner.run({ ...input, args: input.args.with(remoteIndex, source) });
+        }
         if (input.command !== "git" || input.args[0] !== "clone") return runner.run(input);
         return Effect.gen(function* () {
           const remoteIndex = input.args.indexOf("--") + 1;
@@ -3659,7 +3665,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       };
       yield* store.bind(thread.id, resolved, project);
       if (scenario === "unreachable-remote")
-        yield* git(rootPath, ["remote", "set-url", "origin", path.join(parent, "missing.git")]);
+        cloneSources.set(remoteUrl, path.join(parent, "missing.git"));
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
@@ -4698,6 +4704,247 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
+  /** Runs Git in a copy as a person with an identity, for commits the fixture makes there. */
+  const gitAs = (cwd: string, args: ReadonlyArray<string>) =>
+    git(cwd, ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args]);
+
+  it.effect.each([
+    "stash",
+    "reset-commit",
+    "self-remote",
+    "skip-worktree",
+    "submodule-history",
+    "embedded-repository",
+  ] as const)("keeps an unused published copy whose %s holds local work", (kind) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* unusedPublishedCopy(`hidden-${kind}`);
+      const root = copy.rootPath;
+      if (kind === "stash") {
+        yield* fs.writeFileString(path.join(root, "notes.md"), "unsaved\n");
+        yield* gitAs(root, ["stash", "push", "--include-untracked"]);
+      } else if (kind === "reset-commit") {
+        yield* gitAs(root, ["commit", "--allow-empty", "-m", "Dropped by a reset"]);
+        yield* git(root, ["reset", "--hard", "HEAD~1"]);
+      } else if (kind === "self-remote") {
+        yield* git(root, ["remote", "add", "self", "."]);
+        yield* gitAs(root, ["commit", "--allow-empty", "-m", "Only here"]);
+      } else if (kind === "skip-worktree") {
+        yield* fs.writeFileString(path.join(root, "README.md"), "edited\n");
+        yield* git(root, ["update-index", "--skip-worktree", "README.md"]);
+      } else if (kind === "submodule-history") {
+        yield* fs.makeDirectory(path.join(root, ".git", "modules", "lib"), { recursive: true });
+        yield* fs.writeFileString(path.join(root, ".git", "modules", "lib", "config"), "\n");
+      } else {
+        yield* initRepo(path.join(root, "vendor", "lib"));
+        yield* git(root, ["add", "vendor/lib"]);
+        yield* gitAs(root, ["commit", "-m", "Pin an embedded repository"]);
+        yield* git(root, ["push", "origin", "HEAD:refs/heads/published"]);
+      }
+      expect(yield* git(root, ["status", "--porcelain"])).toBe("");
+      yield* service.cleanupTemporaryCopies(() => Effect.succeed(true));
+      expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+      expect(yield* fs.exists(root)).toBe(true);
+    }),
+  );
+
+  it.effect("keeps an unpublished copy when this computer's GIT_DIR names another repository", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* unusedPublishedCopy("host-git-dir");
+      const source = yield* git(copy.rootPath, ["remote", "get-url", "origin"]);
+      const other = path.join(yield* makeTemp, "other");
+      // Not `clone` first, which the runner fixture treats as a Library download.
+      yield* git(path.dirname(other), [
+        "-c",
+        "advice.detachedHead=false",
+        "clone",
+        "--quiet",
+        source,
+        other,
+      ]);
+      yield* gitAs(copy.rootPath, ["commit", "--allow-empty", "-m", "Only here"]);
+      const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(HostProcess.Environment, {
+          ...process.env,
+          GIT_DIR: path.join(other, ".git"),
+        }),
+      );
+      yield* cleaner.cleanupTemporaryCopies(() => Effect.succeed(true));
+      expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+      expect(yield* fs.exists(copy.rootPath)).toBe(true);
+    }),
+  );
+
+  it.effect("releases a published copy on the first review and leaves no setup marker", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* unusedPublishedCopy("first-review-release");
+      const legacy = `${copy.rootPath}.t3-setup-pending`;
+      yield* fs.writeFileString(legacy, SetupMarker.PENDING_CONTENTS);
+      expect(yield* SetupMarker.exists(copy.rootPath)).toBe(true);
+      const review = yield* service.status({ workingCopyId: copy.id });
+      const released = yield* service.release({
+        requestId: "first-review-release",
+        workingCopyId: copy.id,
+        reviewToken: review.reviewToken!,
+      });
+      expect(released.state).toBe("released");
+      expect((yield* store.get(copy.id)).publishedRelease).toBe(true);
+      expect(yield* fs.exists(copy.rootPath)).toBe(false);
+      expect(yield* SetupMarker.exists(copy.rootPath)).toBe(false);
+      expect(yield* fs.exists(legacy)).toBe(false);
+    }),
+  );
+
+  /** A published copy whose release was recorded and set its folder aside, then stopped. */
+  const interruptedRelease = Effect.fnUntraced(function* (id: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const service = yield* LibraryWorkspace.LibraryWorkspace;
+    const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+    const copy = yield* unusedPublishedCopy(id);
+    const reviewToken = (yield* service.status({ workingCopyId: copy.id })).reviewToken!;
+    const removalPath = `${copy.rootPath}.loom-released-interrupted`;
+    yield* store.put({
+      ...(yield* store.get(copy.id)),
+      publishedRelease: true,
+      releaseRequestId: id,
+      releaseReviewToken: reviewToken,
+      removalPath,
+    });
+    yield* fs.rename(copy.rootPath, removalPath);
+    return { copy, removalPath, request: { requestId: id, workingCopyId: copy.id, reviewToken } };
+  });
+
+  it.effect("keeps a set-aside folder that another copy now uses", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath, request } = yield* interruptedRelease("tombstone-in-use");
+      const squatter = yield* store.get(copy.id);
+      yield* store.put({
+        ...squatter,
+        requestId: "tombstone-squatter",
+        publishedRelease: undefined,
+        releaseRequestId: null,
+        releaseReviewToken: null,
+        removalPath: null,
+        copy: {
+          ...squatter.copy,
+          id: "copy:tombstone-squatter",
+          rootPath: path.join(removalPath, "app"),
+        },
+      });
+      const refused = yield* service.release(request).pipe(Effect.flip);
+      expect(refused).toMatchObject({ reason: "blocked" });
+      expect(refused.message).toContain(removalPath);
+      expect(yield* fs.exists(removalPath)).toBe(true);
+      expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+    }),
+  );
+
+  it.effect("keeps the record of a release whose disk is gone", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, request } = yield* interruptedRelease("release-unplugged");
+      const parent = path.dirname(copy.rootPath);
+      const unplugged = `${parent}-unplugged`;
+      yield* fs.rename(parent, unplugged);
+      const refused = yield* service
+        .release(request)
+        .pipe(Effect.flip, Effect.ensuring(fs.rename(unplugged, parent).pipe(Effect.orDie)));
+      expect(refused).toMatchObject({ reason: "blocked" });
+      expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+      expect((yield* service.release(request)).state).toBe("released");
+    }),
+  );
+
+  it.effect("forgets a published release that keeping the files stopped", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-kept");
+      yield* fs.rename(removalPath, copy.rootPath);
+      yield* service.setCopyRetention({ workingCopyId: copy.id, keepOnComputer: true });
+      const kept = yield* store.get(copy.id);
+      expect(kept).toMatchObject({ removalPath: null, releaseRequestId: null });
+      expect(kept.publishedRelease).toBeUndefined();
+    }),
+  );
+
+  it.effect("downloads into a new folder when the copy here has another remote", () =>
+    Effect.gen(function* () {
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const { project } = yield* singleRepositoryProject("moved-remote", "Moved remote");
+      const copy = yield* service.prepareCopy({
+        requestId: "moved-remote",
+        project,
+        strategy: "clone",
+      });
+      const moved = yield* singleRepositoryProject("moved-remote-next", "Moved remote");
+      const next = {
+        ...project,
+        revision: 2,
+        resources: project.resources.map((resource) => ({
+          ...resource,
+          remoteUrl: moved.remoteUrl,
+        })),
+      };
+      const placement = yield* service.placement({ project: next });
+      expect(placement).toMatchObject({ action: "clone" });
+      expect(placement.rootPath).not.toBe(copy.rootPath);
+    }),
+  );
+
+  it.effect("downloads into an empty folder the user chose", () =>
+    Effect.gen(function* () {
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const { project } = yield* singleRepositoryProject("chosen-empty", "Chosen empty");
+      const rootPath = yield* makeTemp;
+      const copy = yield* service.prepareCopy({
+        requestId: "chosen-empty",
+        project,
+        rootPath,
+        strategy: "clone",
+      });
+      expect(copy).toMatchObject({ rootPath, state: "ready", ownership: "managed" });
+    }),
+  );
+
+  it.effect("takes back the folder it claimed for a refused prepare", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const projectsRoot = yield* (yield* ProjectPlacement.ProjectPlacement).projectsRoot;
+      const { project } = yield* singleRepositoryProject("refused-claim", "Refused claim");
+      const remoteUrl = path.join(yield* makeTemp, "local.git");
+      const local = {
+        ...project,
+        resources: project.resources.map((resource) => ({ ...resource, remoteUrl })),
+      };
+      const refused = yield* service
+        .prepareCopy({ requestId: "refused-claim", project: local, strategy: "clone" })
+        .pipe(Effect.flip);
+      expect(refused.reason).toBe("invalid");
+      expect(yield* fs.exists(path.join(projectsRoot, "refused-claim"))).toBe(false);
+    }),
+  );
+
   it.effect("marks a copy whose folder was deleted as missing when the workspace starts", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -4751,73 +4998,87 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
-  it.effect("restores a one-repository copy in its flat layout on another computer", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const service = yield* LibraryWorkspace.LibraryWorkspace;
-      const config = yield* ServerConfig.ServerConfig;
-      const parent = yield* makeTemp;
-      const { project } = yield* singleRepositoryProject("flat-restore", "Flat restore");
-      const copy = yield* service.prepareCopy({
-        requestId: "flat-restore-source",
-        project,
-        rootPath: path.join(parent, "source"),
-        strategy: "clone",
-      });
-      expect(copy.repositories[0]?.path).toBe(copy.rootPath);
-      yield* fs.writeFileString(path.join(copy.rootPath, "local.txt"), "local work\n");
-      const review = yield* service.status({ workingCopyId: copy.id });
-      const saved = yield* service.snapshotCopy({
-        requestId: "flat-restore-snapshot",
-        workingCopyId: copy.id,
-        reviewToken: review.reviewToken!,
-      });
-      const archive = path.join(parent, "authority.tar.gz");
-      yield* fs.copyFile(
-        path.join(config.stateDir, "project-library", "recovery", saved.recovery!.sha256),
-        archive,
-      );
-      const destinationEnvironmentId = EnvironmentId.make("flat-restore-target");
-      const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
-      const destination = yield* LibraryWorkspace.LibraryWorkspace.pipe(
-        Effect.provide(
-          Layer.fresh(LibraryWorkspace.layer).pipe(
-            Layer.provideMerge(
-              Layer.mergeAll(
-                Layer.fresh(hostDependencies),
-                Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
-                  getEnvironmentId: Effect.succeed(destinationEnvironmentId),
-                }),
-                Layer.succeed(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
-                  ...publisher,
-                  retrievePortable: (input) =>
-                    fs
-                      .copyFile(archive, input.archivePath)
-                      .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
-                }),
+  it.effect.each(["chosen", "claimed"] as const)(
+    "restores a one-repository copy in its flat layout on another computer, in a %s folder",
+    (folder) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const config = yield* ServerConfig.ServerConfig;
+        const parent = yield* makeTemp;
+        const { project } = yield* singleRepositoryProject(
+          `flat-restore-${folder}`,
+          "Flat restore",
+        );
+        const copy = yield* service.prepareCopy({
+          requestId: `flat-restore-source-${folder}`,
+          project,
+          rootPath: path.join(parent, "source"),
+          strategy: "clone",
+        });
+        expect(copy.repositories[0]?.path).toBe(copy.rootPath);
+        yield* fs.writeFileString(path.join(copy.rootPath, "local.txt"), "local work\n");
+        const review = yield* service.status({ workingCopyId: copy.id });
+        const saved = yield* service.snapshotCopy({
+          requestId: `flat-restore-snapshot-${folder}`,
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        });
+        const archive = path.join(parent, "authority.tar.gz");
+        yield* fs.copyFile(
+          path.join(config.stateDir, "project-library", "recovery", saved.recovery!.sha256),
+          archive,
+        );
+        const destinationEnvironmentId = EnvironmentId.make(`flat-restore-target-${folder}`);
+        const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
+        const destination = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+          Effect.provide(
+            Layer.fresh(LibraryWorkspace.layer).pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(
+                  Layer.fresh(hostDependencies),
+                  Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+                    getEnvironmentId: Effect.succeed(destinationEnvironmentId),
+                  }),
+                  Layer.succeed(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
+                    ...publisher,
+                    retrievePortable: (input) =>
+                      fs
+                        .copyFile(archive, input.archivePath)
+                        .pipe(
+                          Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+                        ),
+                  }),
+                ),
               ),
             ),
           ),
-        ),
-      );
-      const destinationRoot = path.join(parent, "destination", "flat");
-      const restored = yield* destination.restoreCopy({
-        requestId: "flat-restore",
-        project,
-        rootPath: destinationRoot,
-        grant: {
-          sourceCopy: saved,
-          destinationEnvironmentId,
-          libraryEnvironmentId: EnvironmentId.make("flat-restore-authority"),
-          expiresAt: "2099-01-01T00:00:00Z",
-          accessToken: "test-grant",
-        },
-      });
-      expect(restored.repositories.map((repository) => repository.path)).toEqual([destinationRoot]);
-      expect(yield* fs.readFileString(path.join(destinationRoot, "local.txt"))).toBe(
-        "local work\n",
-      );
-    }),
+        );
+        const chosenRoot = path.join(parent, "destination", "flat");
+        // Without a location the server claims a new Projects folder, as it does for a prepare.
+        const restored = yield* destination.restoreCopy({
+          requestId: "flat-restore",
+          project,
+          ...(folder === "chosen" ? { rootPath: chosenRoot } : {}),
+          grant: {
+            sourceCopy: saved,
+            destinationEnvironmentId,
+            libraryEnvironmentId: EnvironmentId.make("flat-restore-authority"),
+            expiresAt: "2099-01-01T00:00:00Z",
+            accessToken: "test-grant",
+          },
+        });
+        const destinationRoot = restored.rootPath;
+        expect(
+          folder === "chosen" ? destinationRoot : destinationRoot.split(path.sep).slice(-2),
+        ).toEqual(folder === "chosen" ? chosenRoot : ["projects", "flat-restore"]);
+        expect(restored.repositories.map((repository) => repository.path)).toEqual([
+          destinationRoot,
+        ]);
+        expect(yield* fs.readFileString(path.join(destinationRoot, "local.txt"))).toBe(
+          "local work\n",
+        );
+      }),
   );
 });
