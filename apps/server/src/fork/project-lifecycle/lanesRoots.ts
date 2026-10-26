@@ -8,6 +8,7 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 import { ServerConfig } from "../../config.ts";
 import { LanesRoots } from "../../project/ProjectPlacement.ts";
 import { makeStore } from "./store.ts";
@@ -52,14 +53,20 @@ export const lanesRootOf = (
 const makeLanesRoots = Effect.gen(function* () {
   const homeDir = yield* HostProcess.HomeDirectory;
   const config = yield* ServerConfig;
+  const sql = yield* SqlClient.SqlClient;
   const store = yield* makeStore;
   const defaults = lifecycleDefaults(config, homeDir);
+  const hasLifecycleStore = sql<{
+    readonly name: string;
+  }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'fork_project_lifecycle_settings'`.pipe(
+    Effect.map((rows) => rows.length > 0),
+  );
   return LanesRoots.of({
-    roots: store.getSettings(defaults).pipe(
-      // No settings table yet means no settings were saved.
-      Effect.orElseSucceed(() => defaults),
-      Effect.map((settings) => [lanesRootOf(settings, defaults, homeDir)]),
-    ),
+    roots: Effect.gen(function* () {
+      // The server migrates before it serves, so only a host or test without lanes lacks it.
+      if (!(yield* hasLifecycleStore)) return [];
+      return [lanesRootOf(yield* store.getSettings(defaults), defaults, homeDir)];
+    }).pipe(Effect.orDie),
   });
 });
 
