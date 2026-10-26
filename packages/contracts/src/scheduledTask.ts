@@ -203,6 +203,22 @@ export const ScheduledTaskWebhookEndpoint = Schema.Struct({
 });
 export type ScheduledTaskWebhookEndpoint = typeof ScheduledTaskWebhookEndpoint.Type;
 
+// fork: webhook-delivery-issues
+export const ScheduledTaskDeliveryIssue = Schema.Struct({
+  outcome: Schema.String.annotate({
+    description:
+      "The latest refused or failed delivery: rejected_signature, expired, dispatch_failed.",
+  }),
+  reason: Schema.String,
+  firstAt: IsoDateTime,
+  lastAt: IsoDateTime,
+  count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+}).annotate({
+  description:
+    "Webhook deliveries refused or failed since the last accepted one. Absent once a delivery is accepted.",
+});
+export type ScheduledTaskDeliveryIssue = typeof ScheduledTaskDeliveryIssue.Type;
+
 export const ScheduledTask = Schema.Struct({
   id: ScheduledTaskId,
   title: TrimmedNonEmptyString,
@@ -225,6 +241,7 @@ export const ScheduledTask = Schema.Struct({
   lastRunError: Schema.NullOr(Schema.String),
   runCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   webhook: Schema.optional(ScheduledTaskWebhookEndpoint),
+  lastDeliveryIssue: Schema.optional(ScheduledTaskDeliveryIssue), // fork: webhook-delivery-issues
 });
 export type ScheduledTask = typeof ScheduledTask.Type;
 

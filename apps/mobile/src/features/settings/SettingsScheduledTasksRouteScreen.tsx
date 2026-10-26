@@ -1,4 +1,5 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
+import { scheduledTaskDeliveryIssueText } from "@t3tools/client-runtime/fork"; // fork: webhook-delivery-issues
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -1346,6 +1347,12 @@ function EnvironmentTasks({
               {task.lastRunError ? (
                 <Text className="text-sm text-danger-foreground" numberOfLines={2}>
                   Last run failed: {task.lastRunError}
+                </Text>
+              ) : null}
+              {/* fork: webhook-delivery-issues */}
+              {task.lastDeliveryIssue ? (
+                <Text className="text-sm text-danger-foreground" numberOfLines={3}>
+                  {scheduledTaskDeliveryIssueText(task.lastDeliveryIssue, now)}
                 </Text>
               ) : null}
             </Pressable>

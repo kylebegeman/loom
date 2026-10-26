@@ -316,6 +316,8 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
     ...(task.webhook === undefined
       ? {}
       : { webhookSignature: task.webhook.hasSecret ? "set" : "none" }),
+    // fork: webhook-delivery-issues
+    ...(task.lastDeliveryIssue === undefined ? {} : { lastDeliveryIssue: task.lastDeliveryIssue }),
   };
 }
 
