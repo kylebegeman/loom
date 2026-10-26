@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import * as Result from "effect/Result";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -25,12 +26,50 @@ const TAILSCALE_KILL_GRACE = Duration.millis(500);
 const TAILSCALE_SERVE_TIMEOUT = Duration.seconds(10);
 const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
 
-const tailscaleCommandForPlatform = (platform: NodeJS.Platform): "tailscale" | "tailscale.exe" =>
-  platform === "win32" ? "tailscale.exe" : "tailscale";
+/** Labels, not paths: the per-user bundle path would put the username in logs. */
+const TailscaleExecutable = Schema.Literals([
+  "tailscale",
+  "tailscale.exe",
+  "/Applications/Tailscale.app",
+  "~/Applications/Tailscale.app",
+]);
+type TailscaleExecutable = typeof TailscaleExecutable.Type;
+
+const TailscaleSubcommand = Schema.Literals(["status", "serve", "debug"]);
+type TailscaleSubcommand = typeof TailscaleSubcommand.Type;
+
+export interface TailscaleExecutableCandidate {
+  readonly label: TailscaleExecutable;
+  readonly path: string;
+}
+
+const MAC_APP_BUNDLE_CLI = "Applications/Tailscale.app/Contents/MacOS/Tailscale";
+
+/**
+ * A macOS GUI app inherits a PATH where the CLI symlink may be missing or in a
+ * directory it cannot search (`spawn tailscale EACCES`), so the app bundle's
+ * own CLI is the fallback there.
+ */
+const tailscaleExecutableCandidates = (
+  platform: NodeJS.Platform,
+  homeDirectory: string,
+): ReadonlyArray<TailscaleExecutableCandidate> => {
+  if (platform === "win32") return [{ label: "tailscale.exe", path: "tailscale.exe" }];
+  const onPath = { label: "tailscale", path: "tailscale" } as const;
+  if (platform !== "darwin") return [onPath];
+  return [
+    onPath,
+    { label: "/Applications/Tailscale.app", path: `/${MAC_APP_BUNDLE_CLI}` },
+    {
+      label: "~/Applications/Tailscale.app",
+      path: `${homeDirectory.replace(/\/+$/u, "")}/${MAC_APP_BUNDLE_CLI}`,
+    },
+  ];
+};
 
 const TailscaleCommandContext = {
-  executable: Schema.Literals(["tailscale", "tailscale.exe"]),
-  subcommand: Schema.Literals(["status", "serve", "debug"]),
+  executable: TailscaleExecutable,
+  subcommand: TailscaleSubcommand,
   argumentCount: Schema.Number,
 };
 
@@ -114,7 +153,24 @@ export class TailscaleCommandTimeoutError extends Schema.TaggedError<TailscaleCo
   }
 }
 
+const TailscaleLookupFailureCode = Schema.Literals(["ENOENT", "EACCES"]);
+
+export class TailscaleCliUnavailableError extends Schema.TaggedError<TailscaleCliUnavailableError>()(
+  "TailscaleCliUnavailableError",
+  {
+    subcommand: TailscaleSubcommand,
+    attempts: Schema.Array(
+      Schema.Struct({ executable: TailscaleExecutable, code: TailscaleLookupFailureCode }),
+    ),
+  },
+) {
+  override get message(): string {
+    return "Could not run the Tailscale CLI. Install Tailscale, or put `tailscale` on PATH.";
+  }
+}
+
 export type TailscaleCommandError =
+  | TailscaleCliUnavailableError
   | TailscaleCommandSpawnError
   | TailscaleCommandOutputError
   | TailscaleCommandExitError
@@ -136,6 +192,7 @@ const TailscaleStatusSelf = Schema.Struct({
 });
 
 const TailscaleStatusJson = Schema.Struct({
+  BackendState: Schema.optional(Schema.Unknown),
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
@@ -150,7 +207,11 @@ export interface TailscaleStatus {
    * CLI reports no capability map (older CLI), so callers still attempt serve.
    */
   readonly httpsServeEnabled: boolean | null;
+  /** `null` when the CLI reports no backend state. */
+  readonly loggedIn: boolean | null;
 }
+
+const LOGGED_OUT_BACKEND_STATES: ReadonlySet<string> = new Set(["NeedsLogin", "NeedsMachineAuth"]);
 
 const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
   stream.pipe(
@@ -217,35 +278,88 @@ export const parseTailscaleStatus = (
           typeof capMap === "object" && capMap !== null && !Array.isArray(capMap)
             ? Object.hasOwn(capMap, "https")
             : null,
+        loggedIn:
+          typeof parsed.BackendState === "string"
+            ? !LOGGED_OUT_BACKEND_STATES.has(parsed.BackendState)
+            : null,
       };
     }),
   );
 
-const readTailscaleOutput = Effect.fn("tailscale.readTailscaleOutput")(function* (
-  subcommand: "status" | "debug",
+const errnoCodeOf = (cause: unknown, depth = 0): string | undefined => {
+  if (depth > 3 || typeof cause !== "object" || cause === null) return undefined;
+  if ("code" in cause && typeof cause.code === "string") return cause.code;
+  return "cause" in cause ? errnoCodeOf(cause.cause, depth + 1) : undefined;
+};
+
+const lookupFailureCodeOf = (cause: unknown): "ENOENT" | "EACCES" | undefined => {
+  const code = errnoCodeOf(cause);
+  return code === "ENOENT" || code === "EACCES" ? code : undefined;
+};
+
+/** Keyed by spawner so each runtime resolves once and tests never share a result. */
+const resolvedExecutables = new WeakMap<object, TailscaleExecutableCandidate>();
+
+const spawnTailscale = Effect.fnUntraced(function* (
+  subcommand: TailscaleSubcommand,
   args: readonly string[],
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const hostPlatform = yield* HostProcess.Platform;
-  const executable = tailscaleCommandForPlatform(hostPlatform);
+  const candidates = tailscaleExecutableCandidates(
+    yield* HostProcess.Platform,
+    yield* HostProcess.HomeDirectory,
+  );
+  const resolved = resolvedExecutables.get(spawner);
+  const ordered = resolved
+    ? [resolved, ...candidates.filter((candidate) => candidate.path !== resolved.path)]
+    : candidates;
+  const attempts: Array<{ executable: TailscaleExecutable; code: "ENOENT" | "EACCES" }> = [];
+  for (const candidate of ordered) {
+    const commandContext = {
+      executable: candidate.label,
+      subcommand,
+      argumentCount: args.length,
+    };
+    const spawned = yield* spawner
+      .spawn(ChildProcess.make(candidate.path, [...args], { forceKillAfter: TAILSCALE_KILL_GRACE }))
+      .pipe(
+        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
+        // A non-directory entry on PATH makes node throw ENOTDIR synchronously,
+        // which arrives as a defect that `mapError` would never see.
+        Effect.catchDefect((cause) =>
+          Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),
+        ),
+        Effect.result,
+      );
+    if (Result.isSuccess(spawned)) {
+      resolvedExecutables.set(spawner, candidate);
+      return { child: spawned.success, commandContext };
+    }
+    const code = lookupFailureCodeOf(spawned.failure.cause);
+    if (code === undefined) {
+      return yield* spawned.failure;
+    }
+    attempts.push({ executable: candidate.label, code });
+  }
+  return yield* new TailscaleCliUnavailableError({ subcommand, attempts });
+});
+
+const runTailscale = Effect.fn("tailscale.runTailscale")(function* (
+  subcommand: TailscaleSubcommand,
+  args: readonly string[],
+  timeout: Duration.Duration,
+): Effect.fn.Return<string, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const platform = yield* HostProcess.Platform;
   const commandContext = {
-    executable,
+    executable: (
+      resolvedExecutables.get(spawner) ?? tailscaleExecutableCandidates(platform, "")[0]!
+    ).label,
     subcommand,
     argumentCount: args.length,
   };
-  const command = ChildProcess.make(executable, [...args], {
-    forceKillAfter: TAILSCALE_KILL_GRACE,
-  });
   return yield* Effect.gen(function* () {
-    const child = yield* spawner.spawn(command).pipe(
-      Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
-      // Spawning can also fail as a defect rather than a typed error - a
-      // non-directory entry on PATH makes node throw ENOTDIR synchronously.
-      // `mapError` never sees that, so it would escape as an uncaught error.
-      Effect.catchDefect((cause) =>
-        Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),
-      ),
-    );
+    const { child, commandContext } = yield* spawnTailscale(subcommand, args);
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
         collectStdout(child.stdout),
@@ -257,32 +371,34 @@ const readTailscaleOutput = Effect.fn("tailscale.readTailscaleOutput")(function*
       Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
     );
     if (exitCode !== 0) {
+      const stderrDiagnostic = stderrDiagnosticOf(stderr);
       return yield* new TailscaleCommandExitError({
         ...commandContext,
         exitCode,
         stdoutLength: stdout.length,
         stderrLength: stderr.length,
-        ...(stderrDiagnosticOf(stderr) !== undefined
-          ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
-          : {}),
+        ...(stderrDiagnostic !== undefined ? { stderrDiagnostic } : {}),
       });
     }
     return stdout;
   }).pipe(
     Effect.scoped,
-    Effect.timeout(TAILSCALE_STATUS_TIMEOUT),
+    Effect.timeout(timeout),
     Effect.catchTags({
       TimeoutError: (cause) =>
         Effect.fail(
           new TailscaleCommandTimeoutError({
             ...commandContext,
-            timeoutMs: Duration.toMillis(TAILSCALE_STATUS_TIMEOUT),
+            timeoutMs: Duration.toMillis(timeout),
             cause,
           }),
         ),
     }),
   );
 });
+
+const readTailscaleOutput = (subcommand: "status" | "debug", args: readonly string[]) =>
+  runTailscale(subcommand, args, TAILSCALE_STATUS_TIMEOUT);
 
 export const readTailscaleStatus = readTailscaleOutput("status", ["status", "--json"]).pipe(
   Effect.flatMap(parseTailscaleStatus),
@@ -375,57 +491,8 @@ export function buildTailscaleHttpsBaseUrl(input: {
   return url.toString();
 }
 
-const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function* (
-  args: readonly string[],
-  timeoutInput: Duration.Input,
-): Effect.fn.Return<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> {
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const hostPlatform = yield* HostProcess.Platform;
-  const executable = tailscaleCommandForPlatform(hostPlatform);
-  const commandContext = {
-    executable,
-    subcommand: "serve" as const,
-    argumentCount: args.length,
-  };
-  const timeout = Duration.fromInputUnsafe(timeoutInput);
-  return yield* Effect.gen(function* () {
-    const child = yield* spawner.spawn(ChildProcess.make(executable, args)).pipe(
-      Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
-      Effect.catchDefect((cause) =>
-        Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),
-      ),
-    );
-    const [stderr, exitCode] = yield* Effect.all(
-      [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
-      { concurrency: "unbounded" },
-    ).pipe(
-      Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
-    );
-    if (exitCode !== 0) {
-      return yield* new TailscaleCommandExitError({
-        ...commandContext,
-        exitCode,
-        stderrLength: stderr.length,
-        ...(stderrDiagnosticOf(stderr) !== undefined
-          ? { stderrDiagnostic: stderrDiagnosticOf(stderr) }
-          : {}),
-      });
-    }
-  }).pipe(
-    Effect.scoped,
-    Effect.timeout(timeout),
-    Effect.catchTags({
-      TimeoutError: (cause) =>
-        Effect.fail(
-          new TailscaleCommandTimeoutError({
-            ...commandContext,
-            timeoutMs: Duration.toMillis(timeout),
-            cause,
-          }),
-        ),
-    }),
-  );
-});
+const runTailscaleServeCommand = (args: readonly string[]) =>
+  runTailscale("serve", args, TAILSCALE_SERVE_TIMEOUT).pipe(Effect.asVoid);
 
 export const ensureTailscaleServe = (input: {
   readonly localPort: number;
@@ -434,35 +501,61 @@ export const ensureTailscaleServe = (input: {
 }): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> => {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
-  const args = ["serve", "--bg", `--https=${servePort}`, `http://${localHost}:${input.localPort}`];
-  return runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT);
+  return runTailscaleServeCommand([
+    "serve",
+    "--bg",
+    `--https=${servePort}`,
+    `http://${localHost}:${input.localPort}`,
+  ]);
 };
 
+/**
+ * Removes only the `/` mount. Without `--set-path` the CLI deletes every mount
+ * on the port, other apps' included, because its confirmation prompt defaults
+ * to yes when there is no terminal.
+ */
 export const disableTailscaleServe = Effect.fn("tailscale.disableTailscaleServe")(function* (
   input: {
     readonly servePort?: number;
   } = {},
 ): Effect.fn.Return<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
-  return yield* runTailscaleCommand(
-    ["serve", `--https=${servePort}`, "off"],
-    TAILSCALE_SERVE_TIMEOUT,
-  );
+  return yield* runTailscaleServeCommand(["serve", `--https=${servePort}`, "--set-path=/", "off"]);
 });
 
-export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
+export const readTailscaleServeStatusJson = runTailscale(
+  "serve",
+  ["serve", "status", "--json"],
+  TAILSCALE_STATUS_TIMEOUT,
+);
+
+const EnvironmentIdentityJson = Schema.Struct({ environmentId: Schema.String });
+
+/** The environment a T3 server at `baseUrl` reports, or none when nothing answers as one. */
+export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdentity")(
   function* (input: { readonly baseUrl: string; readonly timeout?: Duration.Input }) {
     const client = yield* HttpClient.HttpClient;
-    const response = yield* Effect.gen(function* () {
-      const url = new URL("/.well-known/t3/environment", input.baseUrl);
-      const request = HttpClientRequest.get(url.toString());
-      return yield* client.execute(request);
-    }).pipe(Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT));
-
-    return Option.match(response, {
-      onNone: () => false,
-      onSome: (httpResponse) => httpResponse.status >= 200 && httpResponse.status < 300,
-    });
+    const url = new URL("/.well-known/t3/environment", input.baseUrl);
+    const identity = yield* client
+      .execute(HttpClientRequest.get(url.toString()))
+      .pipe(
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(EnvironmentIdentityJson)),
+        Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT),
+      );
+    return Option.map(identity, (descriptor) => descriptor.environmentId);
   },
-  Effect.orElseSucceed(() => false),
+  Effect.orElseSucceed(() => Option.none<string>()),
+);
+
+/** Any HTTP server can answer 2xx; only a matching environment ID proves it is this one. */
+export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
+  function* (input: {
+    readonly baseUrl: string;
+    readonly environmentId: string;
+    readonly timeout?: Duration.Input;
+  }) {
+    const identity = yield* readEnvironmentIdentity(input);
+    return Option.contains(identity, input.environmentId);
+  },
 );

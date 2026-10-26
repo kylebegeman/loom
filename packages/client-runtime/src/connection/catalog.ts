@@ -31,6 +31,11 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
      * interface. A bare 100.64.0.0/10 address could belong to any VPN.
      */
     network: Schema.optionalKey(Schema.Literal("tailscale")),
+    /**
+     * "directory" on a learned route only a Library's directory listed. A fresh listing that
+     * drops it removes it; the live server reporting it clears the mark.
+     */
+    learnedFrom: Schema.optionalKey(Schema.Literal("directory")),
   },
 ) {}
 

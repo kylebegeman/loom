@@ -312,10 +312,8 @@ function setTailscaleServe(
   settings: DesktopSettings,
   input: { readonly enabled: boolean; readonly port: Option.Option<number> },
 ): DesktopSettings {
-  const port = Option.match(input.port, {
-    onNone: () => settings.tailscaleServePort,
-    onSome: normalizeTailscaleServePort,
-  });
+  // Callers validate the port; only a hand-edited settings file is normalized, on load.
+  const port = Option.getOrElse(input.port, () => settings.tailscaleServePort);
   return settings.tailscaleServeEnabled === input.enabled && settings.tailscaleServePort === port
     ? settings
     : {

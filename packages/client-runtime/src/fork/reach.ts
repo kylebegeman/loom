@@ -1,5 +1,6 @@
 import { EnvironmentAuthorizationError, type EnvironmentId } from "@t3tools/contracts";
 import {
+  REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS,
   REACH_WS_METHODS,
   ReachError,
   ReachLibraryError,
@@ -7,6 +8,7 @@ import {
   type ReachBlocked,
   type ReachFailureReason,
   type ReachIdentityFailure,
+  type ReachLeftoverZone,
   type ReachLibraryComputer,
   type ReachLibraryListing,
   type ReachLibrarySetup,
@@ -263,6 +265,8 @@ export function reachPreparedEnvironment(prepared: ReachPrepared): string {
     `LOOM_IDENTITY_NATIVE_CLIENT_ID=${prepared.nativeClientId}`,
     `LOOM_IDENTITY_AUDIENCE=${prepared.resource}`,
     `LOOM_IDENTITY_RESOURCE=${prepared.resource}`,
+    // Without a limit sign-ins never renew; this matches what "Use these values" saves.
+    `LOOM_IDENTITY_MAX_SESSION_AGE=${String(REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS / 86_400)}d`,
   ].join("\n");
 }
 
@@ -657,6 +661,23 @@ export interface ReachLibraryComputerView {
 const END_IDENTITY_KEY_MISSING_TEXT =
   "Ending Loom sign-in needs your Library's Pocket ID key file, which is not in place. You can retire now and end sign-in with another Retire once the key is back.";
 
+function leftoverZoneText(
+  computer: ReachLibraryComputer,
+  leftover: ReachLeftoverZone,
+): string | undefined {
+  const left = [
+    ...(leftover.hostname === null
+      ? []
+      : [
+          `DNS record ${leftover.hostname}${leftover.dnsRecordId === null ? "" : ` (${leftover.dnsRecordId})`}`,
+        ]),
+    ...(leftover.tunnelLeft ? [`tunnel loom-reach-${computer.environmentId}`] : []),
+  ];
+  if (left.length === 0) return undefined;
+  const them = left.length === 1 ? "it" : "them";
+  return `Your earlier reach zone ${leftover.zone} may still hold this computer's ${left.join(" and ")}. The Library's token could not remove ${them}, so delete ${them} in Cloudflare.`;
+}
+
 function computerView(
   computer: ReachLibraryComputer,
   canRetire: boolean,
@@ -672,6 +693,10 @@ function computerView(
     notes.push(
       `Cloudflare DNS record ${computer.leftoverDnsRecordId} no longer matched, so Loom left it alone. Check it in Cloudflare.`,
     );
+  for (const leftover of computer.leftoverZones ?? []) {
+    const text = leftoverZoneText(computer, leftover);
+    if (text !== undefined) notes.push(text);
+  }
   const failure = computer.lastError === null ? undefined : FAILURE_TEXT[computer.lastError];
   if (failure !== undefined) notes.push(failure);
   const removed = computer.state === "removed" || computer.state === "removed-with-leftover";

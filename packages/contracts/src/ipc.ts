@@ -490,12 +490,38 @@ export const DesktopServerExposureModeSchema = Schema.Literals([
   "network-accessible",
 ]);
 
+/** Whether Loom holds its Tailscale Serve port, or what stops it. */
+export const DesktopTailscaleServeStateSchema = Schema.Literals([
+  "configured",
+  "not-configured",
+  "port-held",
+  "tcp-forward",
+  "other-mounts",
+  "https-disabled",
+  "not-logged-in",
+  "cli-unavailable",
+  "failed",
+]);
+export type DesktopTailscaleServeState = typeof DesktopTailscaleServeStateSchema.Type;
+
+export const DesktopTailscaleServeStatusSchema = Schema.Struct({
+  state: DesktopTailscaleServeStateSchema,
+  magicDnsName: Schema.NullOr(Schema.String),
+  /** What holds the saved port when another app does. */
+  holder: Schema.NullOr(Schema.String),
+  /** Serve ports other apps hold, so a port picker can rule them out. */
+  heldPorts: Schema.Array(Schema.Struct({ port: Schema.Number, holder: Schema.String })),
+});
+export type DesktopTailscaleServeStatus = typeof DesktopTailscaleServeStatusSchema.Type;
+
 export interface DesktopServerExposureState {
   mode: DesktopServerExposureMode;
   endpointUrl: string | null;
   advertisedHost: string | null;
   tailscaleServeEnabled: boolean;
   tailscaleServePort: number;
+  /** Read from Tailscale only while Serve is on or when requested, never otherwise. */
+  tailscaleServe: DesktopTailscaleServeStatus | null;
 }
 
 export const DesktopServerExposureStateSchema = Schema.Struct({
@@ -504,7 +530,13 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   advertisedHost: Schema.NullOr(Schema.String),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: Schema.Number,
+  tailscaleServe: Schema.NullOr(DesktopTailscaleServeStatusSchema),
 });
+
+export const DesktopServerExposureStateRequestSchema = Schema.UndefinedOr(
+  Schema.Struct({ inspectTailscale: Schema.optionalKey(Schema.Boolean) }),
+);
+export type DesktopServerExposureStateRequest = typeof DesktopServerExposureStateRequestSchema.Type;
 
 export interface PickFolderOptions {
   initialPath?: string | null;
@@ -1079,7 +1111,9 @@ export interface DesktopBridge {
   ) => Promise<AuthWebSocketTicketResult>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
-  getServerExposureState: () => Promise<DesktopServerExposureState>;
+  getServerExposureState: (
+    request?: DesktopServerExposureStateRequest,
+  ) => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
   setTailscaleServeEnabled: (input: {
     readonly enabled: boolean;

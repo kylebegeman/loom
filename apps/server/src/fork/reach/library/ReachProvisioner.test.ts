@@ -12,6 +12,7 @@ import { RATE_LIMIT_PHASE, reachTunnelTarget } from "./ReachCloudflare.ts";
 import { ReachProvisioner } from "./ReachProvisioner.ts";
 import { ReachStore } from "./ReachStore.ts";
 import {
+  ACCOUNT_ID,
   CONNECTOR_TOKEN_PREFIX,
   ISSUER,
   LIBRARY,
@@ -26,6 +27,8 @@ import {
   reachKey,
   sessionRecord,
   signedRequest,
+  ZONE,
+  ZONE_ID,
 } from "./testing.ts";
 
 const STUDIO = EnvironmentId.make("environment-studio");
@@ -34,6 +37,8 @@ const HOSTNAME = "studio-loom.reach.example.test";
 const ORIGIN = "http://127.0.0.1:3773";
 const RESOURCE = `${LIBRARY}/computers/${STUDIO}`;
 const STARTED_AT = Date.parse("2026-10-24T12:00:00.000Z");
+const MOVED_ZONE = "moved.example.test";
+const MOVED_HOSTNAME = `studio-loom.${MOVED_ZONE}`;
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -703,6 +708,88 @@ describe("ReachProvisioner.remove", () => {
         expect(yield* remove(fixture, 1)).toEqual({ removed: true });
         expect(fixture.apis.calls).toEqual([]);
         expect(yield* recordOf(fixture.store)).toBeUndefined();
+      }),
+    ),
+  );
+});
+
+/** A Library process restarted with `LOOM_REACH_ZONE` naming a second zone in its account. */
+const moveZone = (fixture: Fixture) => {
+  fixture.apis.zones.push({ id: "zone-2", name: MOVED_ZONE, account: { id: ACCOUNT_ID } });
+  return fixture.rebuild({ env: { LOOM_REACH_ZONE: MOVED_ZONE } });
+};
+
+describe("ReachProvisioner zone changes", () => {
+  it.effect("gives a computer a hostname in the new zone and removes what the old one held", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        const [oldTunnel] = liveTunnels(fixture);
+        const [oldRecord] = fixture.apis.dns.values();
+        const moved = { ...fixture, ...(yield* moveZone(fixture)) };
+
+        expect((yield* ensure(moved, 2)).hostname).toBe(MOVED_HOSTNAME);
+        expect(oldTunnel!.deletedAt).not.toBeNull();
+        expect(fixture.apis.dns.has(oldRecord!.id)).toBe(false);
+        expect([...fixture.apis.dns.values()].map((record) => record.name)).toEqual([
+          MOVED_HOSTNAME,
+        ]);
+        expect(liveTunnels(fixture)).toHaveLength(1);
+        expect(yield* recordOf(moved.store)).toMatchObject({
+          state: "ready",
+          hostname: MOVED_HOSTNAME,
+          zone: { name: MOVED_ZONE, zoneId: "zone-2" },
+          leftoverZones: [],
+        });
+      }),
+    ),
+  );
+
+  it.effect("lists what an old zone out of the token's reach holds until a Retire removes it", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        const [oldRecord] = fixture.apis.dns.values();
+        const [oldZone] = fixture.apis.zones.splice(0, 1);
+        const moved = { ...fixture, ...(yield* moveZone(fixture)) };
+
+        yield* ensure(moved, 2);
+        expect(fixture.apis.dns.has(oldRecord!.id)).toBe(true);
+        const [listed] = (yield* moved.provisioner.list).computers;
+        expect(listed).toMatchObject({ hostname: MOVED_HOSTNAME, state: "ready" });
+        expect(listed?.leftoverZones).toEqual([
+          { zone: ZONE, hostname: HOSTNAME, dnsRecordId: oldRecord!.id, tunnelLeft: false },
+        ]);
+
+        fixture.apis.zones.push(oldZone!);
+        const retired = yield* moved.provisioner.retire({
+          environmentId: STUDIO,
+          endIdentity: false,
+        });
+        expect(fixture.apis.dns.size).toBe(0);
+        expect(retired).toMatchObject({ state: "removed" });
+        expect(retired.leftoverZones).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("removes a computer that has not moved yet from the zone that holds it", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* ensure(fixture, 1);
+        const moved = { ...fixture, ...(yield* moveZone(fixture)) };
+        fixture.apis.clearCalls();
+
+        yield* remove(moved, 2);
+        const deleted = fixture.apis.calls.find((call) => call.step === "dns.delete");
+        expect(deleted?.path).toContain(`/zones/${ZONE_ID}/`);
+        expect(fixture.apis.dns.size).toBe(0);
+        expect(liveTunnels(fixture)).toEqual([]);
+        expect(yield* recordOf(moved.store)).toMatchObject({
+          state: "removed",
+          leftoverDnsRecordId: null,
+          leftoverZones: [],
+        });
       }),
     ),
   );

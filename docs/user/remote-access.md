@@ -144,7 +144,13 @@ Mobile keeps its manual environment selection.
 ### Tailscale HTTPS
 
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
-HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
+HTTPS** in **Settings → Connections**. It works with **Network access** off, since
+Tailscale forwards to the app's local-only address. Turn it off there to remove
+only the app's route.
+
+The app never replaces another app's Tailscale Serve mapping. If the port you
+choose is taken, setup names what holds it; pick another port. When the route
+stops working, the setting says why. Fix that, then choose **Retry**.
 
 To start a command-line server with Tailscale HTTPS:
 
@@ -159,15 +165,16 @@ t3 pair --tailscale
 ```
 
 The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
-The mapping created by `pair --tailscale` persists across restarts. Remove its
-default-port mapping with:
+The mapping created by `pair --tailscale` persists across restarts. Remove only
+that mapping, leaving anything else on the port alone, with:
 
 ```bash
-tailscale serve --https=443 off
+tailscale serve --https=443 --set-path=/ off
 ```
 
-If that port is already in use, choose another with
-`--tailscale-serve-port`. See `t3 pair --help` for other pairing options.
+If another app already serves that port, pairing stops and names it instead of
+replacing it. Choose another port with `--tailscale-serve-port`. See
+`t3 pair --help` for other pairing options.
 
 ### Hosted web app
 

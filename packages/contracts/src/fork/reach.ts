@@ -95,9 +95,21 @@ export const ReachStatus = Schema.Struct({
 });
 export type ReachStatus = typeof ReachStatus.Type;
 
+/** The range `LOOM_IDENTITY_MAX_SESSION_AGE` accepts: one hour to 365 days. */
+export const ReachIdentityMaxSessionAge = Schema.Int.check(
+  Schema.isBetween({ minimum: 60 * 60, maximum: 365 * 24 * 60 * 60 }),
+);
+/**
+ * Seven days, the Library native client's refresh lifetime in Pocket ID
+ * (`refreshTokenDurationMinutes: 10080`), which ends a grant left unused that long.
+ */
+export const REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+/** `maxSessionAgeSeconds` keeps the saved value when omitted, else the default. */
 export const ReachApplyIdentityInput = Schema.Struct({
   requirePasskey: Schema.Boolean,
   allowedSubjects: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
+  maxSessionAgeSeconds: Schema.optionalKey(ReachIdentityMaxSessionAge),
 });
 export type ReachApplyIdentityInput = typeof ReachApplyIdentityInput.Type;
 
@@ -290,6 +302,20 @@ export const ReachLibraryRecordState = Schema.Literals([
 ]);
 export type ReachLibraryRecordState = typeof ReachLibraryRecordState.Type;
 
+const CloudflareId = Schema.String.check(Schema.isMaxLength(64));
+
+/**
+ * `hostname` is set while its DNS record there may remain, with the record's id when known.
+ * `tunnelLeft` is true while tunnel `loom-reach-<environment id>` may remain in its account.
+ */
+export const ReachLeftoverZone = Schema.Struct({
+  zone: HostnameText,
+  hostname: Schema.NullOr(HostnameText),
+  dnsRecordId: Schema.NullOr(CloudflareId),
+  tunnelLeft: Schema.Boolean,
+});
+export type ReachLeftoverZone = typeof ReachLeftoverZone.Type;
+
 export const ReachLibraryComputer = Schema.Struct({
   environmentId: EnvironmentId,
   /** The directory label the computer signed, or null once it was forgotten there. */
@@ -306,6 +332,11 @@ export const ReachLibraryComputer = Schema.Struct({
   connectors: Schema.NullOr(NonNegativeInt),
   /** The record left alone while `removed-with-leftover`, for the operator to inspect by hand. */
   leftoverDnsRecordId: Schema.NullOr(Schema.String.check(Schema.isMaxLength(64))),
+  /**
+   * What an earlier reach zone may still hold for this computer because the Library's token could
+   * not remove it there. Absent from Libraries older than it.
+   */
+  leftoverZones: Schema.optionalKey(Schema.Array(ReachLeftoverZone)),
   identity: Schema.NullOr(
     Schema.Struct({
       resource: UrlText,

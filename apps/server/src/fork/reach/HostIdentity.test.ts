@@ -10,6 +10,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as ServerConfig from "../../config.ts";
+import { parseMaxSessionAge } from "../../auth/identityPolicy.ts";
 import { applyHostIdentity, HostIdentityRestart, withHostIdentity } from "./HostIdentity.ts";
 
 const prepared = {
@@ -103,6 +104,50 @@ it.effect(
         }),
       );
     }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),
+);
+
+it.effect("renews sign-ins for the saved session age unless the server environment sets one", () =>
+  Effect.gen(function* () {
+    const apply = (input: { readonly maxSessionAgeSeconds?: number }) =>
+      applyHostIdentity(prepared, { allowedSubjects: "owner-id", requirePasskey: true, ...input });
+    const expectSessionAge = (seconds: number) =>
+      withHostIdentity(
+        Effect.gen(function* () {
+          const setting = yield* Config.String("LOOM_IDENTITY_MAX_SESSION_AGE");
+          expect(parseMaxSessionAge(setting)).toBe(seconds);
+        }),
+      );
+    yield* apply({ maxSessionAgeSeconds: 3 * 24 * 60 * 60 });
+    yield* apply({});
+    yield* expectSessionAge(3 * 24 * 60 * 60);
+    yield* expectSessionAge(12 * 60 * 60).pipe(
+      Effect.provideService(HostProcess.Environment, { LOOM_IDENTITY_MAX_SESSION_AGE: "12h" }),
+    );
+  }).pipe(
+    Effect.provide(layer),
+    Effect.provideService(HostIdentityRestart, { request: Effect.void }),
+    Effect.provideService(HostProcess.Environment, {}),
+  ),
+);
+
+it.effect("gives an Identity saved before session ages the seven-day refresh lifetime", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+    yield* fs.writeFileString(
+      `${config.secretsDir}/reach-identity.json`,
+      JSON.stringify({ version: 1, prepared, allowedSubjects: "owner-id", requirePasskey: true }),
+      { mode: 0o600 },
+    );
+    yield* withHostIdentity(
+      Effect.gen(function* () {
+        expect(yield* Config.String("LOOM_IDENTITY_MAX_SESSION_AGE")).toBe(
+          String(7 * 24 * 60 * 60),
+        );
+      }),
+    );
+  }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),
 );
 
 it.effect("finishes the previous backend before starting with the saved Identity values", () =>

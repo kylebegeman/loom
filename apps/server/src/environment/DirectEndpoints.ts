@@ -17,6 +17,7 @@ import * as NodeOS from "node:os";
 import { isTailnetHost } from "@t3tools/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
+import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
 import { ReachPublicRoute, reachPublicEndpoints } from "../fork/reach/publicRoute.ts"; // fork: reach
 import {
   formatHostForUrl,
@@ -112,6 +113,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
+  const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const reachRoute = yield* Effect.serviceOption(ReachPublicRoute); // fork: reach
   // Only the service default listens on every interface without being asked,
   // so only it checks once whether it runs in a cloud. The check starts now so
@@ -130,7 +132,7 @@ export const make = Effect.gen(function* () {
         onCloudVm: yield* onCloudVm,
       }),
     ];
-    // Serve setup can fail without stopping startup; advertise only after it answers as this server.
+    // Serve setup can fail, and another app can hold the port; advertise only what answers as this server.
     if (config.tailscaleServeEnabled) {
       const servedUrl = yield* readTailscaleStatus.pipe(
         Effect.map((status) => status.magicDnsName),
@@ -140,7 +142,7 @@ export const make = Effect.gen(function* () {
             magicDnsName,
             servePort: config.tailscaleServePort,
           });
-          return probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl }).pipe(
+          return probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl, environmentId }).pipe(
             Effect.map((reachable) => (reachable ? httpBaseUrl : null)),
           );
         }),

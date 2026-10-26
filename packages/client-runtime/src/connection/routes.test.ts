@@ -83,6 +83,25 @@ describe("connection routes", () => {
     expect(insertRoute([LAN, TAILNET], RELAY)).toEqual([LAN, TAILNET, RELAY]);
   });
 
+  it("puts HTTPS and DNS names ahead of a raw-IP plain HTTP route of the same kind", () => {
+    const tailnetIp = direct("tailnet-ip", "http://[fd7a:115c:a1e0::1]:3773/");
+    expect(insertRoute([tailnetIp, PUBLIC, RELAY], TAILNET)).toEqual([
+      TAILNET,
+      tailnetIp,
+      PUBLIC,
+      RELAY,
+    ]);
+    expect(insertRoute([TAILNET, PUBLIC, RELAY], tailnetIp)).toEqual([
+      TAILNET,
+      tailnetIp,
+      PUBLIC,
+      RELAY,
+    ]);
+    const lanName = direct("lan-name", "http://desk.local:3773/");
+    expect(insertRoute([LAN, TAILNET], lanName)).toEqual([lanName, LAN, TAILNET]);
+    expect(insertRoute([lanName, TAILNET], LAN)).toEqual([lanName, LAN, TAILNET]);
+  });
+
   it("keeps a user's order when a saved route is replaced", () => {
     const repaired = direct("lan", "http://192.168.1.11:3773/");
     expect(upsertRoute([RELAY, LAN], repaired)).toEqual([RELAY, repaired]);
@@ -278,8 +297,8 @@ describe("learned routes", () => {
       allowInsecure: true,
     });
     expect(ids(routes)).toEqual([
-      `learned:${ENVIRONMENT_ID}:http://100.101.102.103:3773@public`,
       `learned:${ENVIRONMENT_ID}:https://desk.tail1234.ts.net@public`,
+      `learned:${ENVIRONMENT_ID}:http://100.101.102.103:3773@public`,
       "public",
       "relay",
     ]);
@@ -425,6 +444,39 @@ describe("learned routes", () => {
       expect(profileOf(route)).toMatchObject({ authorization: "t3-connect" });
       expect(connectionRouteId(route.target)).not.toContain("@");
     }
+  });
+
+  it("marks directory routes, drops them when a listing does, and keeps the server's", () => {
+    const fromLan = entryWithRoutes(relayOnly, [LAN, RELAY]);
+    const directoryOnly = mergeLearnedRoutes({
+      entry: fromLan,
+      activeRoute: LAN,
+      reported: [{ kind: "public", httpBaseUrl: "https://desk-loom.example.com/" }],
+      allowInsecure: true,
+      fromDirectory: true,
+    })!;
+    const reach = `learned:${ENVIRONMENT_ID}:https://desk-loom.example.com@lan`;
+    expect(ids(directoryOnly)).toEqual(["lan", reach, "relay"]);
+    expect(profileOf(directoryOnly[1]!)).toMatchObject({ learnedFrom: "directory" });
+
+    // The live server reporting the route makes it the server's, which no listing removes.
+    const reported = mergeLearnedRoutes({
+      entry: entryWithRoutes(relayOnly, directoryOnly),
+      activeRoute: LAN,
+      reported: [{ kind: "public", httpBaseUrl: "https://desk-loom.example.com/" }],
+      allowInsecure: true,
+    })!;
+    expect(ids(reported)).toEqual(ids(directoryOnly));
+    expect(profileOf(reported[1]!)).not.toHaveProperty("learnedFrom");
+
+    const retired = mergeLearnedRoutes({
+      entry: entryWithRoutes(relayOnly, directoryOnly),
+      activeRoute: LAN,
+      reported: [],
+      allowInsecure: true,
+      fromDirectory: true,
+    });
+    expect(ids(retired)).toEqual(["lan", "relay"]);
   });
 
   it("saves a scheme change on the same host as a new address", () => {

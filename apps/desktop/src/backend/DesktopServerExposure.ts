@@ -4,16 +4,25 @@ import {
 } from "@t3tools/shared/advertisedEndpoint";
 import {
   DesktopServerExposureModeSchema,
+  DesktopTailscaleServeStateSchema,
   type AdvertisedEndpoint,
   type AdvertisedEndpointProvider,
   type DesktopServerExposureMode,
   type DesktopServerExposureState,
+  type DesktopTailscaleServeState,
+  type DesktopTailscaleServeStatus,
 } from "@t3tools/contracts";
-import { isTailscaleIpv4Address, readTailscaleStatus } from "@t3tools/tailscale";
+import {
+  inspectTailscaleServe,
+  isTailscaleIpv4Address,
+  readTailscaleStatus,
+  TAILSCALE_SERVE_CLAIMS_FILE,
+} from "@t3tools/tailscale";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -24,6 +33,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
 
@@ -244,16 +254,69 @@ export class DesktopTailscaleServePersistenceError extends Schema.TaggedError<De
   }
 }
 
+const DesktopTailscaleServeRefusalReason = Schema.Literals([
+  "backend-port",
+  ...DesktopTailscaleServeStateSchema.literals,
+]);
+
+/** Enabling Serve where the backend could never claim the port. */
+export class DesktopTailscaleServeRefusedError extends Schema.TaggedError<DesktopTailscaleServeRefusedError>()(
+  "DesktopTailscaleServeRefusedError",
+  {
+    port: Schema.Number,
+    reason: DesktopTailscaleServeRefusalReason,
+    holder: Schema.NullOr(Schema.String),
+  },
+) {
+  override get message(): string {
+    const port = String(this.port);
+    switch (this.reason) {
+      case "backend-port":
+        return `Port ${port} is the port Loom's backend listens on. Choose another port.`;
+      case "port-held":
+        return `HTTPS port ${port} on your tailnet already serves ${this.holder ?? "another app"}. Choose another port.`;
+      case "tcp-forward":
+        return `Port ${port} on your tailnet forwards to ${this.holder ?? "another app"}. Choose another port.`;
+      case "other-mounts":
+        return `HTTPS port ${port} on your tailnet already serves other paths. Choose another port.`;
+      case "https-disabled":
+        return "HTTPS certificates are off for your tailnet. Turn them on in the Tailscale admin console under DNS.";
+      case "not-logged-in":
+        return "Tailscale is not logged in on this computer.";
+      case "cli-unavailable":
+        return "Loom could not find the Tailscale app on this computer.";
+      default:
+        return `Tailscale Serve cannot use port ${port} right now.`;
+    }
+  }
+}
+
+const REFUSED_TAILSCALE_SERVE_STATES: ReadonlySet<DesktopTailscaleServeState> = new Set([
+  "port-held",
+  "tcp-forward",
+  "other-mounts",
+  "https-disabled",
+  "not-logged-in",
+  "cli-unavailable",
+]);
+
 export const DesktopServerExposureSetModeError = Schema.Union([
   DesktopServerExposureNoNetworkAddressError,
   DesktopServerExposureModePersistenceError,
 ]);
 export type DesktopServerExposureSetModeError = typeof DesktopServerExposureSetModeError.Type;
 
+export const DesktopTailscaleServeChangeError = Schema.Union([
+  DesktopTailscaleServePersistenceError,
+  DesktopTailscaleServeRefusedError,
+]);
+export type DesktopTailscaleServeChangeError = typeof DesktopTailscaleServeChangeError.Type;
+
 export const DesktopServerExposureError = Schema.Union([
   DesktopServerExposureNoNetworkAddressError,
   DesktopServerExposureModePersistenceError,
   DesktopTailscaleServePersistenceError,
+  DesktopTailscaleServeRefusedError,
 ]);
 export type DesktopServerExposureError = typeof DesktopServerExposureError.Type;
 
@@ -284,7 +347,7 @@ export class DesktopServerExposure extends Context.Service<
     readonly setTailscaleServeEnabled: (input: {
       readonly enabled: boolean;
       readonly port?: number;
-    }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServePersistenceError>;
+    }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServeChangeError>;
     readonly getAdvertisedEndpoints: Effect.Effect<readonly AdvertisedEndpoint[]>;
   }
 >()("@t3tools/desktop/backend/DesktopServerExposure") {}
@@ -320,12 +383,34 @@ const initialRuntimeState = (): RuntimeState =>
     port: 0,
   });
 
-const toContractState = (state: RuntimeState): DesktopServerExposureState => ({
+const toContractState = (
+  state: RuntimeState,
+  tailscaleServe: DesktopTailscaleServeStatus | null = null,
+): DesktopServerExposureState => ({
   mode: state.mode,
   endpointUrl: Option.getOrNull(state.endpointUrl),
   advertisedHost: Option.getOrNull(state.advertisedHost),
   tailscaleServeEnabled: state.tailscaleServeEnabled,
   tailscaleServePort: state.tailscaleServePort,
+  tailscaleServe,
+});
+
+/**
+ * Whether the backend on `port` holds `servePort`, read the way it claims the
+ * port on start. Spawning Tailscale can raise a macOS TCC prompt, so callers
+ * run this only while Serve is on or after the user asks.
+ */
+export const inspectDesktopTailscaleServe = Effect.fn(
+  "desktop.serverExposure.inspectTailscaleServe",
+)(function* (input: { readonly port: number; readonly servePort: number }) {
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const inspection = yield* inspectTailscaleServe({
+    claimsPath: environment.path.join(environment.stateDir, TAILSCALE_SERVE_CLAIMS_FILE),
+    servePort: input.servePort,
+    localPort: input.port,
+    localHost: DESKTOP_LOOPBACK_HOST,
+  });
+  return inspection satisfies DesktopTailscaleServeStatus;
 });
 
 const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfig => ({
@@ -436,6 +521,8 @@ const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): bo
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const fileSystem = yield* FileSystem.FileSystem;
   const networkInterfaces = yield* DesktopNetworkInterfaces.DesktopNetworkInterfaces;
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
@@ -458,7 +545,22 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
-  const getState = Ref.get(stateRef).pipe(Effect.map(toContractState));
+  const inspectServe = (input: { readonly port: number; readonly servePort: number }) =>
+    inspectDesktopTailscaleServe(input).pipe(
+      Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+    );
+
+  const getState = Effect.gen(function* () {
+    const state = yield* Ref.get(stateRef);
+    return toContractState(
+      state,
+      state.tailscaleServeEnabled
+        ? yield* inspectServe({ port: state.port, servePort: state.tailscaleServePort })
+        : null,
+    );
+  }).pipe(Effect.withSpan("desktop.serverExposure.getState"));
   const backendConfig = Ref.get(stateRef).pipe(Effect.map(toBackendConfig));
 
   const configureFromSettings = Effect.fn("desktop.serverExposure.configureFromSettings")(
@@ -524,6 +626,26 @@ export const make = Effect.gen(function* () {
         enabled: input.enabled,
         ...(input.port === undefined ? {} : { port: input.port }),
       });
+      const current = yield* Ref.get(stateRef);
+      const servePort = input.port ?? current.tailscaleServePort;
+      if (input.enabled && servePort === current.port) {
+        return yield* new DesktopTailscaleServeRefusedError({
+          port: servePort,
+          reason: "backend-port",
+          holder: null,
+        });
+      }
+      // Refuse before saving: the backend would only fail to claim the port on every launch.
+      const inspection = input.enabled
+        ? yield* inspectServe({ port: current.port, servePort })
+        : null;
+      if (inspection !== null && REFUSED_TAILSCALE_SERVE_STATES.has(inspection.state)) {
+        return yield* new DesktopTailscaleServeRefusedError({
+          port: servePort,
+          reason: inspection.state,
+          holder: inspection.holder,
+        });
+      }
       const result = yield* desktopSettings
         .setTailscaleServe({
           enabled: input.enabled,
@@ -546,9 +668,11 @@ export const make = Effect.gen(function* () {
         tailscaleServePort: result.settings.tailscaleServePort,
       }));
 
+      // Enabling again retries a claim that did not take, so it relaunches even when nothing changed.
       return {
-        state: toContractState(nextState),
-        requiresRelaunch: result.changed,
+        state: toContractState(nextState, inspection),
+        requiresRelaunch:
+          result.changed || (inspection !== null && inspection.state !== "configured"),
       };
     },
     changePermit.withPermit,
@@ -572,6 +696,8 @@ export const make = Effect.gen(function* () {
       port: state.port,
       serveEnabled: state.tailscaleServeEnabled,
       servePort: state.tailscaleServePort,
+      localHttpUrl: state.localHttpUrl,
+      ipEndpoints: state.mode === "network-accessible",
       networkInterfaces: currentNetworkInterfaces,
       readStatus: Cache.get(
         tailscaleStatusCache,

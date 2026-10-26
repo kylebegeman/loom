@@ -8,6 +8,7 @@ import * as NetService from "@t3tools/shared/Net";
 import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { TAILSCALE_SERVE_CLAIMS_FILE } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -751,8 +752,8 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   );
 
   // Before the share block: --dry-run only resolves and prints. Sharing would
-  // replace, then tear down, whatever mapping the port already had — a
-  // surprising side effect from a command documented as inert.
+  // map the port on the tailnet, then tear the mapping down — a surprising
+  // side effect from a command documented as inert.
   if (input.dryRun) {
     return;
   }
@@ -767,36 +768,41 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
         "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
       );
     } else {
+      const path = yield* Path.Path;
+      const shareTarget = {
+        webPort: sharedWebPort,
+        claimsPath: path.join(baseDir, TAILSCALE_SERVE_CLAIMS_FILE),
+        // The backend binds 127.0.0.1 unless --host changes it. A wildcard
+        // still answers there; `--host ::1` binds only the IPv6 loopback.
+        ...(input.built
+          ? {
+              localTarget: {
+                port: Number(env.T3CODE_PORT),
+                host: ["::1", "[::1]"].includes(input.host?.trim() ?? "") ? "[::1]" : "127.0.0.1",
+              },
+            }
+          : {}),
+      };
+      // The claim record lives in the home, which a first run has not created yet.
+      yield* (yield* FileSystem.FileSystem)
+        .makeDirectory(baseDir, { recursive: true })
+        .pipe(Effect.ignore);
       // acquireRelease, not share-then-addFinalizer: the mapping outlives this
       // process (and reboots), so the cleanup has to be registered atomically
       // with creating it. An interrupt landing in between would otherwise
       // leave a mapping pointing at a port nothing is listening on.
-      const shared = yield* Effect.acquireRelease(
-        shareDevServer({
-          webPort: sharedWebPort,
-          // The backend binds 127.0.0.1 unless --host changes it. A wildcard
-          // still answers there; `--host ::1` binds only the IPv6 loopback.
-          ...(input.built
-            ? {
-                localTarget: {
-                  port: Number(env.T3CODE_PORT),
-                  host: ["::1", "[::1]"].includes(input.host?.trim() ?? "") ? "[::1]" : "127.0.0.1",
-                },
-              }
-            : {}),
-        }),
-        () =>
-          unshareDevServer(sharedWebPort).pipe(
-            Effect.flatMap((result) =>
-              result.cleared
-                ? Effect.void
-                : Effect.logWarning(
-                    `[dev-runner] could not remove the tailnet mapping for port ${String(sharedWebPort)}${
-                      result.explanation ? `: ${result.explanation}` : ""
-                    }. Remove it with \`tailscale serve --https=${String(sharedWebPort)} off\`.`,
-                  ),
-            ),
+      const shared = yield* Effect.acquireRelease(shareDevServer(shareTarget), () =>
+        unshareDevServer(shareTarget).pipe(
+          Effect.flatMap((result) =>
+            result.cleared
+              ? Effect.void
+              : Effect.logWarning(
+                  `[dev-runner] could not remove the tailnet mapping for port ${String(sharedWebPort)}${
+                    result.explanation ? `: ${result.explanation}` : ""
+                  }. Remove it with \`tailscale serve --https=${String(sharedWebPort)} --set-path=/ off\`.`,
+                ),
           ),
+        ),
       ).pipe(
         Effect.tapError((error: DevShareError) =>
           Effect.logWarning(

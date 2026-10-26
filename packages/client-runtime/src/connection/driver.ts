@@ -15,6 +15,7 @@ import type {
 import { ConnectionTransientError } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import {
+  connectionRouteId,
   connectionRoutes,
   routeEntry,
   routeHttpBaseUrl,
@@ -36,6 +37,16 @@ export type ConnectionDriverProgress =
 export interface EnvironmentConnectionLease {
   readonly prepared: PreparedConnection;
   readonly session: RpcSession.RpcSession;
+  /**
+   * Completes if a route tried before this one missed the head start but then answered its
+   * reachability check, while the lease's scope is open. Absent when no such check is pending.
+   */
+  readonly betterRouteAnswered?: Effect.Effect<void>;
+}
+
+export interface ConnectOptions {
+  /** A route a better-route check just verified: it gets its whole check, not the head start. */
+  readonly preferredRouteId?: string;
 }
 
 export type RouteCheck = "answered" | "silent" | "unchecked";
@@ -43,7 +54,8 @@ export type RouteCheck = "answered" | "silent" | "unchecked";
 const ROUTE_CHECK_TIMEOUT_MS = 2_500;
 // Preferred direct routes share one head start, so a relay connection does not
 // wait the full probe timeout for a LAN the device has already left. A route
-// that misses it connects over relay, then upgrades with a second reconnect.
+// that misses it but answers later reports that on the lease, so the
+// supervisor can upgrade with a second reconnect.
 const ROUTE_CHECK_HEAD_START_MS = 500;
 
 export class ConnectionDriver extends Context.Service<
@@ -52,6 +64,7 @@ export class ConnectionDriver extends Context.Service<
     readonly connect: (
       entry: ConnectionCatalogEntry,
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
+      options?: ConnectOptions,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
     readonly checkRoute: (
       entry: ConnectionCatalogEntry,
@@ -70,14 +83,17 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
   connectRoute: (
     route: ConnectionRoute,
   ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, R | Scope.Scope>,
+  options?: ConnectOptions,
 ) {
   const routes = usableRoutes(entry);
+  const attemptScope = yield* Scope.Scope;
+  // Checks live in the attempt's scope: one that misses the head start may still answer after
+  // a lower route connected, and that answer outlives this call.
   const checks =
     routes.length === 1
       ? []
-      : yield* Effect.forEach(routes, (route) => Effect.forkChild(checkRoute(route)));
+      : yield* Effect.forEach(routes, (route) => Effect.forkIn(checkRoute(route), attemptScope));
   const headStart = yield* Effect.forkChild(Effect.sleep(ROUTE_CHECK_HEAD_START_MS));
-  const attemptScope = yield* Scope.Scope;
   let transient: ConnectionAttemptError | undefined;
   let blocked: ConnectionAttemptError | undefined;
   // Each route gets its own scope so a half-open session closes before the next try.
@@ -99,16 +115,29 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     const check =
       checks.length === 0
         ? "unchecked"
-        : yield* Effect.raceFirst(
-            Fiber.join(checks[index]!),
-            Fiber.join(headStart).pipe(Effect.as<RouteCheck>("silent")),
-          );
+        : options?.preferredRouteId === connectionRouteId(route.target)
+          ? yield* Fiber.join(checks[index]!)
+          : yield* Effect.raceFirst(
+              Fiber.join(checks[index]!),
+              Fiber.join(headStart).pipe(Effect.as<RouteCheck>("silent")),
+            );
     if (check === "silent") {
       silent.push({ route, index });
       continue;
     }
     const result = yield* attempt(route);
-    if (result._tag === "Success") return result.success;
+    if (result._tag === "Success") {
+      yield* Fiber.interruptAll(checks.slice(index + 1));
+      if (silent.length === 0) return result.success;
+      const betterRouteAnswered = Effect.raceAll(
+        silent.map(({ index: silentIndex }) =>
+          Fiber.join(checks[silentIndex]!).pipe(
+            Effect.flatMap((late) => (late === "answered" ? Effect.void : Effect.never)),
+          ),
+        ),
+      );
+      return { ...result.success, betterRouteAnswered } satisfies EnvironmentConnectionLease;
+    }
     // An incompatible server is the same server on every route.
     if (result.failure.reason === "unsupported") return yield* result.failure;
   }
@@ -165,6 +194,7 @@ export const make = Effect.gen(function* () {
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
+    options?: ConnectOptions,
   ) {
     const target = entry.target;
     yield* Effect.annotateCurrentSpan({
@@ -184,6 +214,7 @@ export const make = Effect.gen(function* () {
         yield* session.ready;
         return { prepared, session } satisfies EnvironmentConnectionLease;
       }),
+      options,
     );
   });
 

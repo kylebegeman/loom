@@ -57,7 +57,11 @@ import {
   type ReachStoredComputer,
   type ReachStoredEdge,
   type ReachStoredIdentity,
+  type ReachStoredLeftoverZone,
+  type ReachStoredZone,
   ReachStore,
+  isInZone,
+  isReachActive,
 } from "./ReachStore.ts";
 
 /** Per computer, so one looping computer cannot spend the Cloudflare budget of the others. */
@@ -180,7 +184,34 @@ const freshComputer = (updatedAt: string): ReachStoredComputer => ({
   updatedAt,
   lastEnsuredAt: null,
   identity: null,
+  zone: null,
+  leftoverZones: [],
 });
+
+/**
+ * What a record set up in an earlier zone may hold there. A removed record holds only a DNS
+ * record it left alone.
+ */
+const heldIn = (record: ReachStoredComputer, zone: ReachStoredZone): ReachStoredLeftoverZone =>
+  isReachActive(record)
+    ? {
+        zone,
+        hostname: record.hostname,
+        dnsRecordId: record.dnsRecordId,
+        tunnelId: record.tunnelId,
+        tunnelLeft: true,
+      }
+    : {
+        zone,
+        hostname: record.leftoverDnsRecordId === null ? null : record.hostname,
+        dnsRecordId: record.leftoverDnsRecordId,
+        tunnelId: null,
+        tunnelLeft: false,
+      };
+
+/** Cloudflare answers these for what this token cannot see or change. */
+const outOfReach = (error: ReachCloudflareError) =>
+  error.reason === "denied" || error.reason === "not-found";
 
 const failedEdge = (zoneId: string, checkedAt: string): ReachStoredEdge => ({
   zoneId,
@@ -431,7 +462,7 @@ const make = Effect.gen(function* () {
   const resolveHostname = Effect.fnUntraced(function* (
     environmentId: string,
     label: string | null,
-    zone: { readonly name: string; readonly zoneId: string },
+    zone: ReachStoredZone,
   ) {
     const state = yield* read;
     const own = state.computers[environmentId];
@@ -449,7 +480,7 @@ const make = Effect.gen(function* () {
       const records = yield* cloudflare.findDns(zone.zoneId, hostname);
       if (records.some((record) => !isOurRecord(record, environmentId, null))) continue;
       const updatedAt = yield* nowIso;
-      yield* putComputer(environmentId, (current) => ({ ...current, hostname, updatedAt }));
+      yield* putComputer(environmentId, (current) => ({ ...current, hostname, zone, updatedAt }));
       return { hostname, records };
     }
     return yield* provisionError("hostname-unavailable");
@@ -609,6 +640,7 @@ const make = Effect.gen(function* () {
     }));
     const zone = yield* resolveZone;
     const edge = yield* ensureEdge(zone);
+    yield* leaveZone(environmentId, zone);
     const { hostname, records } = yield* resolveHostname(environmentId, admitted.label, zone);
     const tunnel = yield* resolveTunnel(environmentId, zone.accountId);
     yield* ensureIngress({
@@ -682,7 +714,171 @@ const make = Effect.gen(function* () {
 
   /**
    * Rotation first, so neither a live nor an orphaned connector can reconnect between clearing
-   * and deleting. A CNAME whose content no longer names this tunnel is left for the operator.
+   * and deleting. Answers the tunnel it removed, if any.
+   */
+  const dropTunnel = Effect.fnUntraced(function* (
+    environmentId: string,
+    accountId: string,
+    tunnelId: string | null,
+  ) {
+    const name = reachTunnelName(environmentId);
+    const stored = tunnelId === null ? null : yield* cloudflare.getTunnel(accountId, tunnelId);
+    const tunnel: CloudflareTunnel | null =
+      stored !== null && stored.name === name && stored.deletedAt === null
+        ? stored
+        : yield* cloudflare.findTunnel(accountId, name);
+    if (tunnel === null) return null;
+    yield* ignoreMissing(cloudflare.rotateSecret(accountId, tunnel.id));
+    const clearAndDelete = ignoreMissing(cloudflare.clearConnections(accountId, tunnel.id)).pipe(
+      Effect.andThen(cloudflare.deleteTunnel(accountId, tunnel.id)),
+    );
+    // A connector can reattach in the moment between the two calls; one retry covers it.
+    yield* clearAndDelete.pipe(
+      Effect.catchIf(
+        (error) => error.reason === "busy",
+        () => clearAndDelete,
+      ),
+    );
+    return tunnel;
+  });
+
+  /**
+   * Deletes the computer's CNAME only while its name and tunnel target still match, and answers
+   * the id of one it left for the operator.
+   */
+  const dropCname = Effect.fnUntraced(function* (input: {
+    readonly environmentId: string;
+    readonly zoneId: string;
+    readonly hostname: string | null;
+    readonly dnsRecordId: string | null;
+    readonly earlierLeftover: string | null;
+    readonly tunnelIds: ReadonlyArray<string | null>;
+  }) {
+    const targets = new Set(
+      input.tunnelIds.flatMap((id) => (id === null ? [] : [reachTunnelTarget(id)])),
+    );
+    const matches = (found: CloudflareDnsRecord) =>
+      found.type === "CNAME" &&
+      found.name === input.hostname &&
+      found.content !== null &&
+      targets.has(found.content);
+    const storedRecord =
+      input.dnsRecordId === null ? null : yield* cloudflare.getDns(input.zoneId, input.dnsRecordId);
+    // Without a live stored id, the record this computer's comment tags is the one an ensure
+    // created but could not store.
+    const comment = reachDnsComment(input.environmentId);
+    const candidates =
+      storedRecord !== null
+        ? [storedRecord]
+        : input.hostname === null
+          ? []
+          : (yield* cloudflare.findDns(input.zoneId, input.hostname)).filter(
+              (found) => found.comment === comment,
+            );
+    let leftover: string | null = null;
+    for (const found of candidates) {
+      if (matches(found)) yield* cloudflare.deleteDns(input.zoneId, found.id);
+      else leftover = found.id;
+    }
+    // A record left at an earlier removal stays reported while it exists, so a later Retire
+    // does not hide it from the operator.
+    if (leftover === null && input.earlierLeftover !== null) {
+      const earlier = yield* cloudflare.getDns(input.zoneId, input.earlierLeftover);
+      if (earlier !== null) leftover = earlier.id;
+    }
+    return leftover;
+  });
+
+  /**
+   * Cleans up in a zone the Library moved away from, as far as its token reaches there. Answers
+   * what is left, or null. A zone the token does not see keeps its DNS record listed, since
+   * Cloudflare may answer a record there as missing.
+   */
+  const releaseZone = Effect.fnUntraced(function* (
+    environmentId: string,
+    held: ReachStoredLeftoverZone,
+  ) {
+    const { zone } = held;
+    const tunnel = !held.tunnelLeft
+      ? { left: false, removed: null }
+      : yield* dropTunnel(environmentId, zone.accountId, held.tunnelId).pipe(
+          Effect.map((removed) => ({ left: false, removed: removed?.id ?? null })),
+          Effect.catchIf(outOfReach, () => Effect.succeed({ left: true, removed: null })),
+        );
+    const kept = { hostname: held.hostname, dnsRecordId: held.dnsRecordId };
+    const visible =
+      held.hostname !== null &&
+      (yield* cloudflare.findZone(zone.name).pipe(
+        Effect.map((found) => found.zoneId === zone.zoneId),
+        Effect.catchIf(outOfReach, () => Effect.succeed(false)),
+      ));
+    const dns = !visible
+      ? kept
+      : yield* dropCname({
+          environmentId,
+          zoneId: zone.zoneId,
+          hostname: held.hostname,
+          dnsRecordId: held.dnsRecordId,
+          earlierLeftover: null,
+          tunnelIds: [held.tunnelId, tunnel.removed],
+        }).pipe(
+          Effect.map((leftover) =>
+            leftover === null
+              ? { hostname: null, dnsRecordId: null }
+              : { hostname: held.hostname, dnsRecordId: leftover },
+          ),
+          Effect.catchIf(outOfReach, () => Effect.succeed(kept)),
+        );
+    if (dns.hostname === null && !tunnel.left) return null;
+    yield* Effect.logWarning("Reach left resources in an earlier zone.", {
+      stage: "zone.release",
+      dns: dns.hostname !== null,
+      tunnel: tunnel.left,
+    });
+    return {
+      zone,
+      ...dns,
+      tunnelId: held.tunnelId ?? tunnel.removed,
+      tunnelLeft: tunnel.left,
+    } satisfies ReachStoredLeftoverZone;
+  });
+
+  /**
+   * A computer set up under an earlier `LOOM_REACH_ZONE` gets a hostname in the current one,
+   * after its old tunnel and DNS record go. What the token cannot reach stays listed.
+   */
+  const leaveZone = Effect.fnUntraced(function* (environmentId: string, zone: ReachStoredZone) {
+    const record = (yield* read).computers[environmentId];
+    if (record === undefined || record.hostname === null) return;
+    const earlier = record.zone;
+    if (earlier === null ? isInZone(record.hostname, zone.name) : earlier.name === zone.name)
+      return;
+    // A hostname from another zone with no zone on record predates per-record zones, so where
+    // its resources live is unknown and nothing there is cleaned up.
+    if (earlier === null) {
+      yield* Effect.logWarning("Reach replaced an address from an earlier zone it cannot name.", {
+        stage: "zone.release",
+      });
+    }
+    const left =
+      earlier === null ? null : yield* releaseZone(environmentId, heldIn(record, earlier));
+    const updatedAt = yield* nowIso;
+    yield* putComputer(environmentId, (current) => ({
+      ...current,
+      zone: null,
+      hostname: null,
+      tunnelId: null,
+      dnsRecordId: null,
+      origin: null,
+      leftoverDnsRecordId: null,
+      leftoverZones: left === null ? current.leftoverZones : [...current.leftoverZones, left],
+      updatedAt,
+    }));
+  });
+
+  /**
+   * Remove and Retire. A CNAME whose content no longer names this tunnel is left for the
+   * operator, and so is what earlier zones still hold beyond the token's reach.
    */
   const teardown = Effect.fnUntraced(function* (environmentId: string) {
     const startedAt = yield* nowIso;
@@ -695,70 +891,31 @@ const make = Effect.gen(function* () {
     const record = (yield* read).computers[environmentId];
     if (record === undefined) return;
     const zone = yield* resolveZone;
-    const name = reachTunnelName(environmentId);
-    const stored =
-      record.tunnelId === null
-        ? null
-        : yield* cloudflare.getTunnel(zone.accountId, record.tunnelId);
-    const tunnel: CloudflareTunnel | null =
-      stored !== null && stored.name === name && stored.deletedAt === null
-        ? stored
-        : yield* cloudflare.findTunnel(zone.accountId, name);
-    if (tunnel !== null) {
-      yield* ignoreMissing(cloudflare.rotateSecret(zone.accountId, tunnel.id));
-      const clearAndDelete = ignoreMissing(
-        cloudflare.clearConnections(zone.accountId, tunnel.id),
-      ).pipe(Effect.andThen(cloudflare.deleteTunnel(zone.accountId, tunnel.id)));
-      // A connector can reattach in the moment between the two calls; one retry covers it.
-      yield* clearAndDelete.pipe(
-        Effect.catchIf(
-          (error) => error.reason === "busy",
-          () => clearAndDelete,
-        ),
-      );
-    }
-    const targets = new Set(
-      [record.tunnelId, tunnel?.id ?? null].flatMap((id) =>
-        id === null ? [] : [reachTunnelTarget(id)],
-      ),
+    const earlier = yield* Effect.forEach(record.leftoverZones, (held) =>
+      releaseZone(environmentId, held),
     );
-    const matches = (found: CloudflareDnsRecord) =>
-      found.type === "CNAME" &&
-      found.name === record.hostname &&
-      found.content !== null &&
-      targets.has(found.content);
-    const storedRecord =
-      record.dnsRecordId === null
-        ? null
-        : yield* cloudflare.getDns(zone.zoneId, record.dnsRecordId);
-    // Without a live stored id, the record this computer's comment tags is the one an ensure
-    // created but could not store.
-    const comment = reachDnsComment(environmentId);
-    const candidates =
-      storedRecord !== null
-        ? [storedRecord]
-        : record.hostname === null
-          ? []
-          : (yield* cloudflare.findDns(zone.zoneId, record.hostname)).filter(
-              (found) => found.comment === comment,
-            );
     let leftover: string | null = null;
-    for (const found of candidates) {
-      if (matches(found)) yield* cloudflare.deleteDns(zone.zoneId, found.id);
-      else leftover = found.id;
-    }
-    // A record left at an earlier removal stays reported while it exists, so a later Retire
-    // does not hide it from the operator.
-    if (leftover === null && record.leftoverDnsRecordId !== null) {
-      const earlier = yield* cloudflare.getDns(zone.zoneId, record.leftoverDnsRecordId);
-      if (earlier !== null) leftover = earlier.id;
-    }
-    if (leftover !== null) {
-      yield* Effect.logWarning("Reach left a DNS record that no longer matched its tunnel.", {
-        stage: "dns.delete",
-        reason: "removed-with-leftover",
+    let left: ReachStoredLeftoverZone | null = null;
+    if (record.zone !== null && record.zone.name !== zone.name) {
+      left = yield* releaseZone(environmentId, heldIn(record, record.zone));
+    } else {
+      const tunnel = yield* dropTunnel(environmentId, zone.accountId, record.tunnelId);
+      leftover = yield* dropCname({
+        environmentId,
+        zoneId: zone.zoneId,
+        hostname: record.hostname,
+        dnsRecordId: record.dnsRecordId,
+        earlierLeftover: record.leftoverDnsRecordId,
+        tunnelIds: [record.tunnelId, tunnel?.id ?? null],
       });
+      if (leftover !== null) {
+        yield* Effect.logWarning("Reach left a DNS record that no longer matched its tunnel.", {
+          stage: "dns.delete",
+          reason: "removed-with-leftover",
+        });
+      }
     }
+    const leftoverZones = [...earlier, left].filter((held) => held !== null);
     const finishedAt = yield* nowIso;
     yield* putComputer(environmentId, (current) => ({
       ...current,
@@ -768,6 +925,7 @@ const make = Effect.gen(function* () {
       dnsRecordId: null,
       origin: null,
       leftoverDnsRecordId: leftover,
+      leftoverZones,
       updatedAt: finishedAt,
     }));
   });
@@ -881,6 +1039,16 @@ const make = Effect.gen(function* () {
       connection: tunnels === null ? "unknown" : connected ? "connected" : "down",
       connectors,
       leftoverDnsRecordId: record.leftoverDnsRecordId,
+      ...(record.leftoverZones.length === 0
+        ? {}
+        : {
+            leftoverZones: record.leftoverZones.map((held) => ({
+              zone: held.zone.name,
+              hostname: held.hostname,
+              dnsRecordId: held.dnsRecordId,
+              tunnelLeft: held.tunnelLeft,
+            })),
+          }),
       identity:
         record.identity === null
           ? null

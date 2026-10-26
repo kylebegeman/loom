@@ -10,8 +10,11 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 
+import { EnvironmentId } from "@t3tools/contracts";
+
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
+import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
 import { resolveBoundEndpoints } from "./DirectEndpoints.ts";
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
@@ -192,13 +195,20 @@ const layerTailscaleUp = Layer.succeed(
   ),
 );
 
-const layerServeProbe = (status: number) =>
+const ENVIRONMENT_ID = "env-direct-endpoints";
+
+const layerIdentity = Layer.succeed(ServerEnvironmentIdentity, {
+  getEnvironmentId: Effect.succeed(EnvironmentId.make(ENVIRONMENT_ID)),
+});
+
+const layerServeProbe = (answer: () => Response) =>
   Layer.succeed(
     HttpClient.HttpClient,
-    HttpClient.make((request) =>
-      Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status }))),
-    ),
+    HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, answer()))),
   );
+
+const describing = (environmentId: string) => () =>
+  Response.json({ environmentId, label: "Studio" }, { status: 200 });
 
 const layerServeConfig = Layer.effect(
   ServerConfig.ServerConfig,
@@ -213,29 +223,38 @@ const layerServeConfig = Layer.effect(
   Layer.provide(NodeServices.layer),
 );
 
-const resolveWithServe = (probeStatus: number) =>
+const resolveWithServe = (answer: () => Response) =>
   Effect.flatMap(DirectEndpoints.DirectEndpoints, (service) => service.resolve()).pipe(
     Effect.provide(
       DirectEndpoints.layer.pipe(
         Layer.provide(
-          Layer.mergeAll(layerServeConfig, layerTailscaleUp, layerServeProbe(probeStatus)),
+          Layer.mergeAll(
+            layerServeConfig,
+            layerTailscaleUp,
+            layerIdentity,
+            layerServeProbe(answer),
+          ),
         ),
       ),
     ),
   );
 
 describe("DirectEndpoints Tailscale Serve", () => {
-  effectIt.effect("lists the tailnet name once Serve answers for this server", () =>
+  effectIt.effect("lists the tailnet name once Serve answers as this server", () =>
     Effect.gen(function* () {
-      expect(yield* resolveWithServe(200)).toEqual([
+      expect(yield* resolveWithServe(describing(ENVIRONMENT_ID))).toEqual([
         { kind: "tailnet", httpBaseUrl: "https://bb-1.tail1234.ts.net/" },
       ]);
     }),
   );
 
-  effectIt.effect("leaves the tailnet name out when Serve is not forwarding", () =>
+  effectIt.effect("leaves the tailnet name out when the port answers for something else", () =>
     Effect.gen(function* () {
-      expect(yield* resolveWithServe(502)).toEqual([]);
+      expect(yield* resolveWithServe(describing("env-another-loom"))).toEqual([]);
+      expect(yield* resolveWithServe(() => new Response("<html></html>", { status: 200 }))).toEqual(
+        [],
+      );
+      expect(yield* resolveWithServe(() => new Response(null, { status: 502 }))).toEqual([]);
     }),
   );
 });

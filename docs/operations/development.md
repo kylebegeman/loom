@@ -114,7 +114,9 @@ different preference when needed.
 
 `vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
 for that origin. Give the tester the complete URL, including its token. The dev runner removes
-its mapping on exit.
+its mapping on exit. It never replaces another app's mapping on the port: sharing fails and names
+what holds it. A mapping left by a killed run is recorded in the T3 home's `tailscale-serve.json`,
+so the next run takes it back.
 
 Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset. Vite proxies the backend through the browser's
 origin so the same build works over localhost and remote connections.

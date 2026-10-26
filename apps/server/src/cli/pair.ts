@@ -11,9 +11,10 @@ import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import {
   buildTailscaleHttpsBaseUrl,
+  claimTailscaleServe,
   DEFAULT_TAILSCALE_SERVE_PORT,
-  ensureTailscaleServe,
   readTailscaleStatus,
+  TAILSCALE_SERVE_CLAIMS_FILE,
 } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -22,6 +23,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import { Command, Flag, GlobalFlag } from "effect/cli";
@@ -138,11 +140,10 @@ export class TailscaleServeFailedError extends Schema.TaggedError<TailscaleServe
 
 export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupiedError>()(
   "ServePortOccupiedError",
-  { servePort: Schema.Number },
+  { servePort: Schema.Number, reason: Schema.String },
 ) {
   override get message(): string {
-    // fork: brand
-    return `HTTPS port ${String(this.servePort)} on the tailnet already serves something that is not a Loom server. Pass --tailscale-serve-port to publish this one on another port.`;
+    return `${this.reason} Pass --tailscale-serve-port to publish this server on another port.`;
   }
 }
 
@@ -377,7 +378,7 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       servePort: input.servePort,
     });
 
-    // Only unreachable ports or this environment's mappings are safe to reconfigure.
+    // Answering as this environment already is enough to pair; nothing needs to change.
     const existing = yield* probeEnvironmentDescriptor(baseUrl);
     if (existing._tag === "descriptor") {
       if (existing.descriptor.environmentId !== input.target.descriptor.environmentId) {
@@ -388,26 +389,49 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
         return { baseUrl, notes };
       }
     }
-    if (existing._tag === "not-a-t3-server") {
-      return yield* new ServePortOccupiedError({ servePort: input.servePort });
-    }
 
     const localTarget = resolveTailscaleLocalTarget(input.target.state);
     if (isDevServerNotProxiableError(localTarget)) {
       return yield* localTarget;
     }
-    yield* ensureTailscaleServe({
-      localPort: localTarget.localPort,
+    const path = yield* Path.Path;
+    const { stateDir } = yield* ServerConfig.deriveServerPaths(
+      input.target.baseDir,
+      input.target.variant === "dev" ? DEV_VARIANT_PLACEHOLDER_URL : undefined,
+      {},
+    );
+    const occupied = (error: { readonly message: string }) =>
+      Effect.fail(
+        new ServePortOccupiedError({ servePort: input.servePort, reason: error.message }),
+      );
+    const failed = (cause: unknown) =>
+      Effect.fail(new TailscaleServeFailedError({ servePort: input.servePort, cause }));
+    // The same ownership check the server runs on start, against the same record.
+    const claim = yield* claimTailscaleServe({
+      claimsPath: path.join(stateDir, TAILSCALE_SERVE_CLAIMS_FILE),
       servePort: input.servePort,
-      ...(localTarget.localHost !== undefined ? { localHost: localTarget.localHost } : {}),
+      ...localTarget,
     }).pipe(
-      Effect.mapError(
-        (cause) => new TailscaleServeFailedError({ servePort: input.servePort, cause }),
-      ),
+      Effect.catchTags({
+        TailscaleServeHttpsDisabledError: () => Effect.fail(new TailscaleServeNotEnabledError()),
+        TailscaleServePortHeldError: occupied,
+        TailscaleServePortTcpForwardError: occupied,
+        TailscaleServeOtherMountsError: occupied,
+        TailscaleCliUnavailableError: (cause) =>
+          Effect.fail(new TailscaleUnavailableError({ cause })),
+        TailscaleCommandSpawnError: failed,
+        TailscaleCommandOutputError: failed,
+        TailscaleCommandExitError: failed,
+        TailscaleCommandTimeoutError: failed,
+        TailscaleStatusParseError: failed,
+        TailscaleServeClaimRecordError: failed,
+      }),
     );
-    notes.push(
-      `Tailscale Serve now maps ${baseUrl} to this server and persists across restarts. Remove it with \`tailscale serve --https=${String(input.servePort)} off\`.`,
-    );
+    if (claim.changed) {
+      notes.push(
+        `Tailscale Serve now maps ${baseUrl} to this server and persists across restarts. Remove only this mapping with \`tailscale serve --https=${String(input.servePort)} --set-path=/ off\`.`,
+      );
+    }
 
     const probed = yield* awaitEnvironmentDescriptor(baseUrl);
     if (probed._tag === "descriptor") {

@@ -29,6 +29,8 @@ const computer = (overrides: Partial<ReachStoredComputer> = {}): ReachStoredComp
   updatedAt: "2026-10-24T12:00:00.000Z",
   lastEnsuredAt: "2026-10-24T12:00:00.000Z",
   identity: null,
+  zone: null,
+  leftoverZones: [],
   ...overrides,
 });
 
@@ -84,6 +86,32 @@ describe("ReachStore", () => {
           JSON.stringify({ version: 1, zone: null, edge: null, computers: {} }),
         );
         expect((yield* store.read).computers).toEqual({});
+      }),
+    ),
+  );
+
+  it.effect("gives records from before per-record zones the zone their hostname is in", () =>
+    withDirectory((directory) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const file = `${directory}/library.json`;
+        const zone = { name: "reach.example.test", zoneId: "zone-1", accountId: "account-1" };
+        const { zone: _zone, leftoverZones: _leftovers, ...legacy } = computer();
+        yield* fs.writeFileString(
+          file,
+          JSON.stringify({
+            version: 1,
+            zone,
+            edge: null,
+            computers: {
+              "environment-studio": legacy,
+              "environment-laptop": { ...legacy, hostname: "laptop-loom.old.example.test" },
+            },
+          }),
+        );
+        const { computers } = yield* (yield* storeAt(file)).read;
+        expect(computers["environment-studio"]).toEqual(computer({ zone }));
+        expect(computers["environment-laptop"]).toMatchObject({ zone: null, leftoverZones: [] });
       }),
     ),
   );

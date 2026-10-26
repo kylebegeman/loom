@@ -132,7 +132,7 @@ describe("t3 pair", () => {
             Effect.gen(function* () {
               if (!ChildProcess.isStandardCommand(command))
                 return yield* Effect.die("Unexpected pipeline");
-              if (command.args[0] === "serve") {
+              if (command.args[0] === "serve" && command.args[1] !== "status") {
                 const target = command.args.at(-1)!;
                 const descriptor = yield* Effect.promise(async () =>
                   (await fetch(new URL("/.well-known/t3/environment", target))).json(),
@@ -412,6 +412,66 @@ describe("t3 pair", () => {
         assert.include(String(error), "Tailscale Serve is not enabled on your tailnet.");
         assert.include(String(error), "https://login.tailscale.com/admin/dns");
         assert.deepEqual(tailscaleCalls, [["status", "--json"]]);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refuses a Tailscale Serve port another app holds without changing it", () =>
+    withDescriptorServer((origin) =>
+      Effect.gen(function* () {
+        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-held-test-"));
+        yield* persistServerRuntimeState({
+          path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
+          state: yield* makePersistedServerRuntimeState({
+            config: { host: "127.0.0.1", devUrl: undefined },
+            port: Number(new URL(origin).port),
+          }),
+        });
+        const tailscaleCalls: Array<ReadonlyArray<string>> = [];
+        const spawner = ChildProcessSpawner.make((command) => {
+          const { args } = command as unknown as { readonly args: ReadonlyArray<string> };
+          tailscaleCalls.push(args);
+          const stdout =
+            args[0] === "status"
+              ? `{"BackendState":"Running","Self":{"DNSName":"pair-test.tail.ts.net.","CapMap":{"https":null}}}`
+              : `{"TCP":{"443":{"HTTPS":true}},"Web":{"pair-test.tail.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8397"}}}}}`;
+          return Effect.succeed(
+            ChildProcessSpawner.makeHandle({
+              pid: ChildProcessSpawner.ProcessId(1),
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              unref: Effect.succeed(Effect.void),
+              stdin: Sink.drain,
+              stdout: Stream.make(new TextEncoder().encode(stdout)),
+              stderr: Stream.empty,
+              all: Stream.empty,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+            }),
+          );
+        });
+
+        const fetch = yield* FetchHttpClient.Fetch;
+        const error = yield* provideCliTestLayers(
+          runCli(["pair", "--base-dir", baseDir, "--tailscale"]).pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provideService(FetchHttpClient.Fetch, async (request, init) =>
+              String(request).startsWith(origin)
+                ? fetch(request, init)
+                : new Response("<html></html>"),
+            ),
+            Effect.flip,
+          ),
+        );
+
+        assert.include(String(error), "already serves http://127.0.0.1:8397");
+        assert.include(String(error), "--tailscale-serve-port");
+        assert.deepEqual(tailscaleCalls, [
+          ["status", "--json"],
+          ["status", "--json"],
+          ["serve", "status", "--json"],
+        ]);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );

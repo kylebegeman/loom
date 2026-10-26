@@ -9,6 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -65,6 +66,45 @@ function layerMockSpawner(statusJson: string | (() => string) = "{}", onSpawn?: 
     ),
   );
 }
+
+const TAILSCALE_RUNNING_STATUS = JSON.stringify({
+  BackendState: "Running",
+  Self: { DNSName: "desktop.tail.ts.net.", CapMap: { https: null } },
+});
+
+/** Answers `tailscale status` and `tailscale serve status` the way the CLI does. */
+function layerTailscaleSpawner(serveStatus: () => string, spawned: Array<string>) {
+  return Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const args = ChildProcess.isStandardCommand(command) ? command.args : [];
+        spawned.push(args.join(" "));
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(
+            encoder.encode(args[0] === "serve" ? serveStatus() : TAILSCALE_RUNNING_STATUS),
+          ),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+      }),
+    ),
+  );
+}
+
+const serveStatusProxying = (port: number, proxy: string) =>
+  JSON.stringify({
+    TCP: { [String(port)]: { HTTPS: true } },
+    Web: { [`desktop.tail.ts.net:${port}`]: { Handlers: { "/": { Proxy: proxy } } } },
+  });
 
 function layerEnvironmentFor(baseDir: string, env: Record<string, string | undefined> = {}) {
   return DesktopEnvironment.layer({
@@ -209,6 +249,7 @@ describe("DesktopServerExposure", () => {
           advertisedHost: "192.168.1.20",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
+          tailscaleServe: null,
         });
 
         const backendConfig = yield* serverExposure.backendConfig;
@@ -238,36 +279,86 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
-  it.effect("persists tailscale serve preferences atomically and reports no-op updates", () =>
-    withHarness(
+  it.effect(
+    "saves Serve settings, and enabling again retries until the backend holds the port",
+    () => {
+      const spawned: Array<string> = [];
+      let serveStatus = "{}";
+      return withHarness(
+        emptyNetworkInterfaces,
+        Effect.gen(function* () {
+          const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+          const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+          yield* settings.load;
+          yield* serverExposure.configureFromSettings({ port: 4173 });
+          assert.equal((yield* serverExposure.getState).tailscaleServe, null);
+          assert.deepEqual(spawned, []);
+
+          const changed = yield* serverExposure.setTailscaleServeEnabled({
+            enabled: true,
+            port: 8443,
+          });
+          assert.equal(changed.requiresRelaunch, true);
+          assert.equal(changed.state.tailscaleServeEnabled, true);
+          assert.equal(changed.state.tailscaleServePort, 8443);
+          assert.equal(changed.state.tailscaleServe?.state, "not-configured");
+
+          const retried = yield* serverExposure.setTailscaleServeEnabled({
+            enabled: true,
+            port: 8443,
+          });
+          assert.equal(retried.requiresRelaunch, true);
+
+          serveStatus = serveStatusProxying(8443, "http://127.0.0.1:4173");
+          assert.equal((yield* serverExposure.getState).tailscaleServe?.state, "configured");
+          const settled = yield* serverExposure.setTailscaleServeEnabled({
+            enabled: true,
+            port: 8443,
+          });
+          assert.equal(settled.requiresRelaunch, false);
+
+          const persisted = yield* settings.get;
+          assert.equal(persisted.tailscaleServeEnabled, true);
+          assert.equal(persisted.tailscaleServePort, 8443);
+        }),
+        {},
+        layerTailscaleSpawner(() => serveStatus, spawned),
+      );
+    },
+  );
+
+  it.effect("refuses a Serve port another app or the backend holds, without saving it", () => {
+    const spawned: Array<string> = [];
+    return withHarness(
       emptyNetworkInterfaces,
       Effect.gen(function* () {
         const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
-
         yield* settings.load;
         yield* serverExposure.configureFromSettings({ port: 4173 });
 
-        const changed = yield* serverExposure.setTailscaleServeEnabled({
-          enabled: true,
-          port: 8443,
-        });
-        assert.equal(changed.requiresRelaunch, true);
-        assert.equal(changed.state.tailscaleServeEnabled, true);
-        assert.equal(changed.state.tailscaleServePort, 8443);
+        const held = yield* serverExposure
+          .setTailscaleServeEnabled({ enabled: true, port: 443 })
+          .pipe(Effect.flip);
+        assert.equal(held._tag, "DesktopTailscaleServeRefusedError");
+        assert.include(held.message, "http://127.0.0.1:8397");
 
-        const unchanged = yield* serverExposure.setTailscaleServeEnabled({
-          enabled: true,
-          port: 8443,
-        });
-        assert.equal(unchanged.requiresRelaunch, false);
+        spawned.length = 0;
+        const backendPort = yield* serverExposure
+          .setTailscaleServeEnabled({ enabled: true, port: 4173 })
+          .pipe(Effect.flip);
+        assert.include(backendPort.message, "backend listens on");
+        assert.deepEqual(spawned, []);
 
         const persisted = yield* settings.get;
-        assert.equal(persisted.tailscaleServeEnabled, true);
-        assert.equal(persisted.tailscaleServePort, 8443);
+        assert.equal(persisted.tailscaleServeEnabled, false);
+        assert.equal(persisted.tailscaleServePort, 443);
       }),
-    ),
-  );
+      {},
+      layerTailscaleSpawner(() => serveStatusProxying(443, "http://127.0.0.1:8397"), spawned),
+    );
+  });
 
   it.effect("keeps a Tailscale Serve change made while a mode change is saving", () =>
     Effect.gen(function* () {
@@ -311,7 +402,7 @@ describe("DesktopServerExposure", () => {
           assert.equal(state.tailscaleServePort, 8443);
         }),
         {},
-        undefined,
+        layerTailscaleSpawner(() => "{}", []),
         settingsLayer,
       );
     }),

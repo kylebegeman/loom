@@ -17,6 +17,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -197,7 +198,11 @@ import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
-import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
+import {
+  claimTailscaleServe,
+  releaseTailscaleServe,
+  TAILSCALE_SERVE_CLAIMS_FILE,
+} from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
@@ -722,7 +727,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
-  Layer.provideMerge(DirectEndpoints.layer),
+  Layer.provideMerge(DirectEndpoints.layer.pipe(Layer.provide(layerServerEnvironment))),
   Layer.provideMerge(ReachPublicRoute.layer), // fork: reach
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
@@ -827,6 +832,8 @@ const layerMakeServer = Layer.unwrap(
           );
       }),
     );
+    // Claimed on start and released on stop: the mapping proxies to a loopback port
+    // that exists only while this process runs. Both steps touch only Loom's `/` mount.
     const layerTailscaleServe = config.tailscaleServeEnabled
       ? Layer.effectDiscard(
           Effect.acquireRelease(
@@ -834,45 +841,52 @@ const layerMakeServer = Layer.unwrap(
               yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);
               yield* awaitActivation;
               const server = yield* HttpServer.HttpServer;
+              const path = yield* Path.Path;
               const address = server.address;
               if (typeof address === "string" || !("port" in address)) {
                 return null;
               }
 
-              const localPort = address.port;
-              return yield* ensureTailscaleServe({
-                localPort,
+              const target = {
+                claimsPath: path.join(config.stateDir, TAILSCALE_SERVE_CLAIMS_FILE),
                 servePort: config.tailscaleServePort,
+                localPort: address.port,
                 localHost: loopbackUrlHostForAddress(address),
-              }).pipe(
-                Effect.as({ localPort, servePort: config.tailscaleServePort }),
-                Effect.tap(() =>
+              };
+              return yield* claimTailscaleServe(target).pipe(
+                Effect.tap((claim) =>
                   Effect.logInfo("Tailscale Serve configured", {
-                    localPort,
-                    servePort: config.tailscaleServePort,
+                    localPort: target.localPort,
+                    servePort: target.servePort,
+                    changed: claim.changed,
                   }),
                 ),
+                Effect.as(target),
                 Effect.catch((cause) =>
-                  Effect.logWarning("Failed to configure Tailscale Serve", {
+                  Effect.logWarning("Tailscale Serve not configured", {
+                    reason: cause._tag,
                     cause,
-                    localPort,
-                    servePort: config.tailscaleServePort,
+                    localPort: target.localPort,
+                    servePort: target.servePort,
                   }).pipe(Effect.as(null)),
                 ),
               );
             }),
-            (configured) =>
-              configured
-                ? disableTailscaleServe({ servePort: configured.servePort }).pipe(
-                    Effect.tap(() =>
-                      Effect.logInfo("Tailscale Serve disabled", {
-                        servePort: configured.servePort,
-                      }),
+            (target) =>
+              target
+                ? releaseTailscaleServe(target).pipe(
+                    Effect.tap((released) =>
+                      Effect.logInfo(
+                        released
+                          ? "Tailscale Serve disabled"
+                          : "Tailscale Serve left alone; the port no longer proxies to this server",
+                        { servePort: target.servePort },
+                      ),
                     ),
                     Effect.catch((cause) =>
                       Effect.logWarning("Failed to disable Tailscale Serve", {
                         cause,
-                        servePort: configured.servePort,
+                        servePort: target.servePort,
                       }),
                     ),
                   )

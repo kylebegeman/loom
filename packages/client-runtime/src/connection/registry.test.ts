@@ -429,11 +429,14 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       return { prepared, session };
     });
   const driver = ConnectionDriver.ConnectionDriver.of({
-    connect: (entry, reportProgress) =>
+    connect: (entry, reportProgress, connectOptions) =>
       reportProgress({ stage: "preparing" }).pipe(
         Effect.andThen(
-          ConnectionDriver.connectOverRoutes(entry, checkRoute, (route) =>
-            connectRoute(entry, route),
+          ConnectionDriver.connectOverRoutes(
+            entry,
+            checkRoute,
+            (route) => connectRoute(entry, route),
+            connectOptions,
           ),
         ),
       ),
@@ -2243,6 +2246,80 @@ describe("EnvironmentRegistry routes", () => {
           ).toBe(before);
         }).pipe(Effect.provide(harness.layer), Effect.scoped);
       }),
+  );
+
+  it.effect("drops a route an earlier listing gave when a fresh listing no longer has it", () =>
+    Effect.gen(function* () {
+      const learnedId = (origin: string) =>
+        `learned:${BEARER_TARGET.environmentId}:${origin}@${BEARER_TARGET.connectionId}`;
+      const serverOrigin = "https://bearer.tail1234.ts.net";
+      const serverReported = new BearerConnectionTarget({
+        ...BEARER_TARGET,
+        connectionId: learnedId(serverOrigin),
+      });
+      const harness = yield* makeHarness(
+        [BEARER_TARGET, serverReported],
+        [
+          BEARER_PROFILE,
+          new BearerConnectionProfile({
+            connectionId: serverReported.connectionId,
+            environmentId: BEARER_TARGET.environmentId,
+            label: BEARER_TARGET.label,
+            httpBaseUrl: `${serverOrigin}/`,
+            wsBaseUrl: "wss://bearer.tail1234.ts.net/",
+            learned: true,
+            network: "tailscale",
+          }),
+        ],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+        {
+          prepareRoute: () =>
+            new ConnectionBlockedError({ reason: "configuration", detail: "No route here." }),
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const routeIds = () =>
+          Ref.get(harness.storedTargets).pipe(
+            Effect.map((targets) =>
+              routesOf(targets, BEARER_TARGET.environmentId).map(connectionRouteId),
+            ),
+          );
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "blocked",
+        );
+
+        yield* registry.learnDirectoryRoutes!(BEARER_TARGET.environmentId, [
+          { httpBaseUrl: "https://old.reach.example.test/", kind: "public" },
+        ]);
+        expect(yield* routeIds()).toEqual([
+          BEARER_TARGET.connectionId,
+          serverReported.connectionId,
+          learnedId("https://old.reach.example.test"),
+        ]);
+        expect(
+          (yield* Ref.get(harness.storedProfiles)).get(learnedId("https://old.reach.example.test")),
+        ).toMatchObject({ learned: true, learnedFrom: "directory" });
+
+        yield* registry.learnDirectoryRoutes!(BEARER_TARGET.environmentId, [
+          { httpBaseUrl: "https://new.reach.example.test/", kind: "public" },
+        ]);
+        expect(yield* routeIds()).toEqual([
+          BEARER_TARGET.connectionId,
+          serverReported.connectionId,
+          learnedId("https://new.reach.example.test"),
+        ]);
+
+        yield* registry.learnDirectoryRoutes!(BEARER_TARGET.environmentId, []);
+        expect(yield* routeIds()).toEqual([
+          BEARER_TARGET.connectionId,
+          serverReported.connectionId,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
   );
 
   it.effect("drops a learned route whose profile was not saved instead of duplicating it", () =>

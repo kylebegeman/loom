@@ -76,7 +76,7 @@ Everything ships off, so each default is reversible. D1 is settled; the others w
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | D1  | Settled: a dedicated Pocket ID admin API key with a one-year expiry, in an optional file read on every call, not `STATIC_API_KEY`.         |
 | D2  | `LOOM_REACH_ZONE` is required and has no default. A dedicated zone, ideally in its own Cloudflare account, is recommended over `begam.in`. |
-| D3  | `LOOM_IDENTITY_REQUIRE_PASSKEY=true` is opt-in and independent of the session age cap.                                                     |
+| D3  | Passkey required is opt-in, on by default in Use these values, and independent of the session age cap (7 days there unless changed).       |
 | D4  | Each computer's resource is `<Library origin>/computers/<environment id>`, derived by the Library.                                         |
 | D5  | One zone-wide rate-limit rule: 60 requests per 10 seconds per client and data center on four sign-in paths.                                |
 | D6  | Webhooks (`/api/hooks/*`) stay blocked on reach addresses.                                                                                 |
@@ -86,7 +86,7 @@ Everything ships off, so each default is reversible. D1 is settled; the others w
 | D10 | Agents can read reach and turn it off or remove it, never turn it on.                                                                      |
 | D11 | The Library creates a computer's Pocket ID resource only during a reach setup.                                                             |
 | D12 | Off is local. Remove keeps the Pocket ID resource and grant. Retire with "Also end Loom sign-in" deletes the resource.                     |
-| D13 | Edge rules stay after the last computer goes. Hostnames are sticky and never reassigned automatically.                                     |
+| D13 | Edge rules stay after the last computer goes. Hostnames are sticky within a zone and never reassigned automatically.                       |
 
 Follow-up decisions for Kyle: checking the native client's callback URLs for drift (F3), an MCP
 tool that turns reach on, and Cloudflare Access as a second step in front of the address.
@@ -109,13 +109,17 @@ tool that turns reach on, and Cloudflare Access as a second step in front of the
   `loom-reach:<environment id>` comment. A record whose name or tunnel target no longer matches
   is left alone and reported as `removed-with-leftover` until Cloudflare no longer has it.
   Releasing a hostname is a manual step after at least a day.
+- **Zone change.** A computer moves to a new address in the new zone at its next setup. What the
+  token cannot remove in the old zone is listed under the computer until a Retire removes it, and
+  the old zone's edge rules stay until deleted by hand.
 - **Unauthenticated surface (F6).** `/.well-known/t3/environment`, `GET /api/loom/identity`,
   `GET /api/auth/session`, the pairing-code exchange at `POST /oauth/token`, and signed asset and
   preview URLs, which work as bearer URLs.
 - **Forget needs Retire.** A Library refuses to forget a directory computer while any reach
   record is not removed, including one whose first setup failed.
-- **Saved computers.** A device that saved a computer before reach was on, is away and has no
-  tailnet must connect once from home or reconnect from the Library list.
+- **Saved computers.** Since `5452fca5ff`, a device that saved a computer before reach was on
+  and cannot reach it tries the routes the Library lists for it. That needs a live connection to
+  the Library; a device without one keeps trying only the routes it saved.
 - **Another computer's resource (F4).** No client stores a resource. Every Identity sign-in
   refuses metadata whose resource, or audience when it names none, is an https
   `/computers/<id>` URL (trailing slashes ignored, as Pocket ID ignores them) for an environment
@@ -134,9 +138,10 @@ All Cloudflare, cloudflared, Pocket ID and client behavior was checked with fake
 Library's Cloudflare token and Pocket ID key passed read-only checks only. Still open: that
 Cloudflare accepts the WAF expression, the rate-limit rule, DNS comments and per-rule PATCH on
 the free plan; the tunnel list filters, connection fields and per-tunnel connections endpoint;
-Pocket ID's API search and whether its native ID tokens carry `amr` as an array containing
-`phr`, first and after a refresh; and an end-to-end connection from desktop and iPhone over a
-real address.
+Pocket ID's API search; a live native ID token's `amr`, first and after a refresh (Pocket ID
+2.18.0's source shows `["phr"]` for a passkey sign-in; see the
+[rollout](../../operations/reach.md#roll-out)); and an end-to-end connection from desktop and
+iPhone over a real address.
 
 ## Packet seams
 

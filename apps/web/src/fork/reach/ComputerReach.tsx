@@ -15,6 +15,7 @@ import {
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
   REACH_IDENTITY_APPLY_FEATURE,
+  REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS,
 } from "@t3tools/contracts/fork";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
@@ -34,6 +35,20 @@ import { reach } from "./state";
 const TITLE = "Reach from anywhere";
 
 type PendingChange = "on" | "off" | "remove" | "forget" | "identity";
+
+const DAY_SECONDS = 24 * 60 * 60;
+const DEFAULT_SESSION_DAYS = REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS / DAY_SECONDS;
+const MAX_SESSION_DAYS = 30;
+
+/** Empty keeps what the computer saved; otherwise whole days from one to `MAX_SESSION_DAYS`. */
+function sessionAgeInput(days: string): { readonly maxSessionAgeSeconds?: number } | null {
+  const trimmed = days.trim();
+  if (trimmed === "") return {};
+  const value = Number(trimmed);
+  return /^\d+$/.test(trimmed) && value >= 1 && value <= MAX_SESSION_DAYS
+    ? { maxSessionAgeSeconds: value * DAY_SECONDS }
+    : null;
+}
 
 const REACH_TONE_CLASS: Readonly<Record<ReachTone, string>> = {
   neutral: "text-muted-foreground",
@@ -158,6 +173,8 @@ function ComputerReachBody({
   const applyIdentity = useAtomCommand(reach.applyIdentity, { reportFailure: false });
   const [allowedSubjects, setAllowedSubjects] = useState("");
   const [requirePasskey, setRequirePasskey] = useState(true);
+  const [sessionDays, setSessionDays] = useState("");
+  const sessionAge = sessionAgeInput(sessionDays);
   const identityApplySupported =
     serverConfig !== null &&
     supportsLoomFeature(serverConfig.environment.capabilities, REACH_IDENTITY_APPLY_FEATURE);
@@ -288,14 +305,35 @@ function ComputerReachBody({
                       placeholder="Account IDs, separated by commas"
                     />
                   </label>
+                  <label className="block space-y-1 text-xs">
+                    Days devices stay signed in, if not already set ({DEFAULT_SESSION_DAYS} by
+                    default, up to {MAX_SESSION_DAYS})
+                    <span className="block w-24">
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={MAX_SESSION_DAYS}
+                        step={1}
+                        value={sessionDays}
+                        onChange={(event) => setSessionDays(event.target.value)}
+                        placeholder={String(DEFAULT_SESSION_DAYS)}
+                        aria-invalid={sessionAge === null}
+                      />
+                    </span>
+                  </label>
                   <label className="flex items-center gap-2 text-xs">
                     <Switch checked={requirePasskey} onCheckedChange={setRequirePasskey} />
                     Require passkey
                   </label>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    While on, only a passkey sign-in works. Turn it off if you sign in to Loom with
+                    an email code.
+                  </p>
                   <Button
                     size="xs"
                     variant="outline"
-                    disabled={pending !== null}
+                    disabled={pending !== null || sessionAge === null}
                     onClick={async () => {
                       if (
                         (await requestConfirmDialog(
@@ -309,6 +347,7 @@ function ComputerReachBody({
                           environmentId,
                           input: {
                             requirePasskey,
+                            ...sessionAge,
                             ...(allowedSubjects.trim()
                               ? { allowedSubjects: allowedSubjects.trim() }
                               : {}),

@@ -8,6 +8,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
@@ -489,8 +490,13 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }),
           );
 
+          // Sharing records its claim in the home, so give each run a throwaway one.
+          const t3Home = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({
+            prefix: "t3-dev-share-",
+          });
           yield* runDevRunnerWithInput({
             ...devServerInput,
+            t3Home,
             mode: "dev",
             port: undefined,
             share: true,

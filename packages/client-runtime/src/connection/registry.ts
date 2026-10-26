@@ -56,6 +56,7 @@ import {
   findRouteToSameAddress,
   hasSavedBearerRoute,
   isLearned, // fork: directory-computers
+  learnedFromDirectory, // fork: directory-computers
   mergeLearnedRoutes,
   routeHttpBaseUrl, // fork: directory-computers
   routesAfterRemoving,
@@ -1138,8 +1139,8 @@ export const make = Effect.gen(function* () {
   /**
    * A connected computer reports its own routes. One this device cannot reach learns the routes
    * its Library lists instead, borrowing the credential of its first saved route; the directory
-   * verified each report with the computer's key, and connecting still checks its identity. Routes
-   * it learned earlier stay, since this computer reported nothing that could prune them.
+   * verified each report with the computer's key, and connecting still checks its identity. A
+   * fresh listing prunes only what an earlier listing added, never what the computer reported.
    */
   const learnDirectoryRoutes = Effect.fn("EnvironmentRegistry.learnDirectoryRoutes")(function* (
     environmentId: EnvironmentId,
@@ -1162,7 +1163,8 @@ export const make = Effect.gen(function* () {
         );
         if (activeRoute === undefined) return;
         const learned = saved.flatMap((route) => {
-          const httpBaseUrl = isLearned(route) ? routeHttpBaseUrl(route) : null;
+          const httpBaseUrl =
+            isLearned(route) && !learnedFromDirectory(route) ? routeHttpBaseUrl(route) : null;
           const profile = Option.getOrNull(route.profile);
           if (httpBaseUrl === null) return [];
           return profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale"
@@ -1174,6 +1176,7 @@ export const make = Effect.gen(function* () {
           activeRoute,
           reported: [...learned, ...reported],
           allowInsecure: allowInsecureRoutes,
+          fromDirectory: true,
         });
         if (routes === null) return;
         const previousProfiles = new Map(

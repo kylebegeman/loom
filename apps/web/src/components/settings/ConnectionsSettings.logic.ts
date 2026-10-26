@@ -17,6 +17,7 @@ import {
   type DesktopBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
+  type DesktopTailscaleServeStatus,
   type DesktopUpdateState,
   type DesktopWslState,
 } from "@t3tools/contracts";
@@ -57,14 +58,115 @@ export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
 }
 
-/** Desktop skips Tailscale probing until network/Serve is enabled to avoid macOS prompts; absence then
- * means unchecked. */
-export function missingTailscaleEndpointDescription(
-  state: Pick<DesktopServerExposureState, "mode" | "tailscaleServeEnabled"> | null,
-): string {
-  return state && state.mode !== "network-accessible" && !state.tailscaleServeEnabled
-    ? "Turn on Network access to detect Tailscale."
-    : "Start Tailscale to set up HTTPS access through MagicDNS.";
+const DEFAULT_HTTPS_PORT = 443;
+
+export function parseTailscaleServePort(input: string): number | null {
+  const trimmed = input.trim();
+  if (!/^\d+$/u.test(trimmed)) return null;
+  const port = Number(trimmed);
+  return port >= 1 && port <= 65_535 ? port : null;
+}
+
+export function tailscaleServeBaseUrl(magicDnsName: string, port: number): string {
+  return `https://${magicDnsName}${port === DEFAULT_HTTPS_PORT ? "" : `:${port}`}`;
+}
+
+/** The desktop backend's own port, read from the loopback endpoint every desktop advertises. */
+export function localBackendPort(endpoints: ReadonlyArray<AdvertisedEndpoint>): number | null {
+  const loopback = endpoints.find((endpoint) => endpoint.reachability === "loopback");
+  if (!loopback) return null;
+  try {
+    const port = Number(new URL(loopback.httpBaseUrl).port);
+    return Number.isInteger(port) && port > 0 ? port : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Why Tailscale Serve cannot be set up on any port, or null when only the port matters. */
+export function tailscaleServeSetupBlocker(
+  status: DesktopTailscaleServeStatus | null,
+): string | null {
+  switch (status?.state) {
+    case "https-disabled":
+      return "HTTPS certificates are off for your tailnet. Turn them on in the Tailscale admin console under DNS, then try again.";
+    case "not-logged-in":
+      return "Tailscale is not logged in on this computer. Log in to Tailscale, then try again.";
+    case "cli-unavailable":
+      return "Tailscale is not installed on this computer, or Loom cannot find it.";
+    default:
+      return null;
+  }
+}
+
+export function tailscaleServePortProblem(input: {
+  readonly portInput: string;
+  readonly backendPort: number | null;
+  readonly heldPorts: DesktopTailscaleServeStatus["heldPorts"];
+}): string | null {
+  const port = parseTailscaleServePort(input.portInput);
+  if (port === null) return "Enter a port from 1 to 65535.";
+  if (port === input.backendPort) {
+    return `Port ${port} is the port Loom's backend listens on. Choose another port.`;
+  }
+  const held = input.heldPorts.find((entry) => entry.port === port);
+  return held ? `Port ${port} already serves ${held.holder}. Choose another port.` : null;
+}
+
+export interface TailscaleServeRowStatus {
+  readonly text: string;
+  /** Serve is on but not working, so the row offers a retry. */
+  readonly needsAttention: boolean;
+}
+
+/** The line under the Tailscale HTTPS switch, which follows the saved setting. */
+export function describeTailscaleServeRow(input: {
+  readonly state: Pick<
+    DesktopServerExposureState,
+    "tailscaleServeEnabled" | "tailscaleServePort" | "tailscaleServe"
+  > | null;
+  readonly endpoint: AdvertisedEndpoint | null;
+}): TailscaleServeRowStatus {
+  const { state, endpoint } = input;
+  if (!state?.tailscaleServeEnabled) {
+    return {
+      text: "Reach this computer at a private HTTPS address on your tailnet with Tailscale Serve.",
+      needsAttention: false,
+    };
+  }
+  const status = state.tailscaleServe;
+  const port = state.tailscaleServePort;
+  const attention = (text: string) => ({ text, needsAttention: true });
+  switch (status?.state) {
+    case undefined:
+      return { text: "Checking Tailscale…", needsAttention: false };
+    case "configured":
+      if (endpoint?.status === "available") {
+        return { text: endpoint.httpBaseUrl, needsAttention: false };
+      }
+      return {
+        text: status.magicDnsName
+          ? `Set up at ${tailscaleServeBaseUrl(status.magicDnsName, port)}. Waiting for it to answer.`
+          : "Set up. Waiting for Tailscale to answer.",
+        needsAttention: false,
+      };
+    case "not-configured":
+      return attention("Tailscale Serve is on, but this computer is not serving yet.");
+    case "port-held":
+      return attention(
+        `Port ${port} already serves ${status.holder ?? "another app"}. Choose another port.`,
+      );
+    case "tcp-forward":
+      return attention(
+        `Port ${port} forwards to ${status.holder ?? "another app"}. Choose another port.`,
+      );
+    case "other-mounts":
+      return attention(`Port ${port} already serves other paths. Choose another port.`);
+    case "failed":
+      return attention("Could not read Tailscale Serve status.");
+    default:
+      return attention(tailscaleServeSetupBlocker(status) ?? "Tailscale Serve is not available.");
+  }
 }
 
 export function isWslSettingsRowVisible(input: {

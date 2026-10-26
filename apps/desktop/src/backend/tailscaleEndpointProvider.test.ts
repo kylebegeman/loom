@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpClient } from "effect/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
@@ -78,5 +78,46 @@ describe("tailscale endpoint provider", () => {
           ["http://100.74.126.34:3773/"],
         );
       }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
+  );
+
+  it.effect("marks Tailscale HTTPS available only when Serve answers as this backend", () =>
+    Effect.gen(function* () {
+      const resolveServedBy = (servedEnvironmentId: string) =>
+        resolveTailscaleAdvertisedEndpoints({
+          port: 3773,
+          serveEnabled: true,
+          localHttpUrl: "http://127.0.0.1:3773",
+          ipEndpoints: false,
+          networkInterfaces: protonAndTailscaleInterfaces,
+          statusJson: `{"Self":{"DNSName":"desktop.tail.ts.net.","TailscaleIPs":["100.74.126.34"]}}`,
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  Response.json({
+                    environmentId: request.url.startsWith("https://")
+                      ? servedEnvironmentId
+                      : "env-this-desktop",
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+
+      const ours = yield* resolveServedBy("env-this-desktop");
+      assert.deepEqual(
+        ours.map((endpoint) => [endpoint.httpBaseUrl, endpoint.status]),
+        [["https://desktop.tail.ts.net/", "available"]],
+      );
+      const another = yield* resolveServedBy("env-another-app");
+      assert.deepEqual(
+        another.map((endpoint) => endpoint.status),
+        ["unavailable"],
+      );
+    }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 });

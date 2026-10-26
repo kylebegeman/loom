@@ -5,6 +5,7 @@ import {
   isTailscaleIpv4Address,
   parseTailscaleStatus,
   probeTailscaleHttpsEndpoint,
+  readEnvironmentIdentity,
   readTailscaleStatus,
   type TailscaleStatus,
 } from "@t3tools/tailscale";
@@ -71,12 +72,24 @@ function resolveTailscaleIpAdvertisedEndpoints(input: {
   return endpoints;
 }
 
+// Another app can answer on the Serve port; only the backend's own environment ID proves it is this one.
+const probeServesLocalBackend = Effect.fn("probeServesLocalBackend")(function* (input: {
+  readonly baseUrl: string;
+  readonly localHttpUrl: string | undefined;
+}) {
+  if (input.localHttpUrl === undefined) return false;
+  const local = yield* readEnvironmentIdentity({ baseUrl: input.localHttpUrl });
+  if (Option.isNone(local)) return false;
+  return yield* probeTailscaleHttpsEndpoint({ baseUrl: input.baseUrl, environmentId: local.value });
+});
+
 const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   "resolveTailscaleMagicDnsAdvertisedEndpoint",
 )(function* (input: {
   readonly dnsName: string | null;
   readonly serveEnabled: boolean;
   readonly servePort?: number;
+  readonly localHttpUrl?: string;
   readonly probe?: (baseUrl: string) => Effect.Effect<boolean, never, HttpClient.HttpClient>;
 }): Effect.fn.Return<Option.Option<AdvertisedEndpoint>, never, HttpClient.HttpClient> {
   if (!input.dnsName) {
@@ -89,9 +102,7 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   });
   const probe =
     input.probe?.(httpBaseUrl) ??
-    probeTailscaleHttpsEndpoint({
-      baseUrl: httpBaseUrl,
-    });
+    probeServesLocalBackend({ baseUrl: httpBaseUrl, localHttpUrl: input.localHttpUrl });
   const isReachable = input.serveEnabled ? yield* probe : false;
 
   return Option.some(
@@ -116,6 +127,10 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     readonly port: number;
     readonly serveEnabled?: boolean;
     readonly servePort?: number;
+    /** The backend's own URL, whose environment the Serve URL must report. */
+    readonly localHttpUrl?: string;
+    /** Tailnet IPs reach the backend only while it listens beyond loopback. */
+    readonly ipEndpoints?: boolean;
     readonly networkInterfaces: NetworkInterfaces;
     readonly statusJson?: string | null;
     readonly readStatus?: Effect.Effect<
@@ -137,11 +152,15 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
         : input.statusJson
           ? yield* parseTailscaleStatus(input.statusJson).pipe(Effect.orElseSucceed(() => null))
           : null;
-    const ipEndpoints = resolveTailscaleIpAdvertisedEndpoints({ ...input, status });
+    const ipEndpoints =
+      input.ipEndpoints === false
+        ? []
+        : resolveTailscaleIpAdvertisedEndpoints({ ...input, status });
     const magicDnsEndpoint = yield* resolveTailscaleMagicDnsAdvertisedEndpoint({
       dnsName: status?.magicDnsName ?? null,
       serveEnabled: input.serveEnabled === true,
       ...(input.servePort === undefined ? {} : { servePort: input.servePort }),
+      ...(input.localHttpUrl === undefined ? {} : { localHttpUrl: input.localHttpUrl }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
     });
 

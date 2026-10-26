@@ -289,8 +289,9 @@ HTTPS route persists across restarts. If the HTTPS port is occupied, use
 manage Serve; initial setup may require local administrator authentication.
 
 Revoke a paired device in the host's **Settings → Connections**. To remove the
-HTTPS route, run `tailscale serve --https=443 off`, replacing `443` with the port
-you selected. This leaves local Loom and the background service running.
+HTTPS route, run `tailscale serve --https=443 --set-path=/ off`, replacing `443`
+with the port you selected. This removes only Loom's route and leaves local Loom,
+the background service and other apps on that port running.
 
 ## What works now
 

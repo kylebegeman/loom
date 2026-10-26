@@ -1,5 +1,11 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { ReachError, ReachPrepared, type ReachApplyIdentityInput } from "@t3tools/contracts/fork";
+import {
+  REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS,
+  ReachError,
+  ReachIdentityMaxSessionAge,
+  ReachPrepared,
+  type ReachApplyIdentityInput,
+} from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -15,6 +21,10 @@ const HostIdentityFile = Schema.Struct({
   prepared: ReachPrepared,
   allowedSubjects: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(4096)),
   requirePasskey: Schema.Boolean,
+  /** Files saved before the field get the default, so their computers renew sign-ins too. */
+  maxSessionAgeSeconds: ReachIdentityMaxSessionAge.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS)),
+  ),
 });
 const codec = Schema.fromJsonString(HostIdentityFile);
 const isReachError = Schema.is(ReachError);
@@ -70,6 +80,10 @@ export const applyHostIdentity = Effect.fn("HostIdentity.apply")(
       prepared,
       allowedSubjects,
       requirePasskey: input.requirePasskey,
+      maxSessionAgeSeconds:
+        input.maxSessionAgeSeconds ??
+        saved?.maxSessionAgeSeconds ??
+        REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS,
     });
     yield* Effect.scoped(
       Effect.gen(function* () {
@@ -113,6 +127,7 @@ export const withHostIdentity = Effect.fn("HostIdentity.withHostIdentity")(funct
             LOOM_IDENTITY_AUDIENCE: saved.prepared.resource,
             LOOM_IDENTITY_RESOURCE: saved.prepared.resource,
             LOOM_IDENTITY_ALLOWED_SUBJECTS: saved.allowedSubjects,
+            LOOM_IDENTITY_MAX_SESSION_AGE: String(saved.maxSessionAgeSeconds),
             ...(saved.requirePasskey ? { LOOM_IDENTITY_REQUIRE_PASSKEY: "true" } : {}),
           };
     const environment = { ...defaults, ...processEnvironment };

@@ -9,12 +9,15 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { EnvironmentId } from "@t3tools/contracts";
 import * as ServerConfig from "../../config.ts";
 import * as DirectEndpoints from "../../environment/DirectEndpoints.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ReachPublicRoute from "./publicRoute.ts";
 
 const REACH_URL = "https://studio-loom.example.com/";
 const TAILNET = { kind: "tailnet", httpBaseUrl: "https://studio.tail1234.ts.net/" } as const;
+const ENVIRONMENT_ID = "env-reach-test";
 
 // A loopback-bound server with Tailscale Serve answering: upstream lists exactly one route.
 const layerUpstream = Layer.mergeAll(
@@ -56,10 +59,15 @@ const layerUpstream = Layer.mergeAll(
       ),
     ),
   ),
+  Layer.succeed(ServerEnvironmentIdentity, {
+    getEnvironmentId: Effect.succeed(EnvironmentId.make(ENVIRONMENT_ID)),
+  }),
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
-      Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 200 }))),
+      Effect.succeed(
+        HttpClientResponse.fromWeb(request, Response.json({ environmentId: ENVIRONMENT_ID })),
+      ),
     ),
   ),
 );

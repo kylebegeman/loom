@@ -71,7 +71,9 @@ If a computer has no published address, choose **Pair instead** and enter a
 reachable address and pairing code. Loom checks that it is the computer you
 selected. On that computer, **Connection details** shows the addresses it last
 reported to your Library. If there are none, enable **Tailscale HTTPS** on desktop
-or **Reach from anywhere** below the connection settings.
+or **Reach from anywhere** below the connection settings. **Tailscale HTTPS**
+works with **Network access** off. If another app already serves its port, Loom
+names that app and asks for another port instead of replacing it.
 
 ## Keep a computer signed in to its Library
 
@@ -109,13 +111,21 @@ offline, removal still finishes and the device's access ends on its own within
 the hour. Revoking a device's session from the computer's Connections settings
 also ends its renewals, so that device must sign in again.
 
-To turn on renewal for a computer, set `LOOM_IDENTITY_MAX_SESSION_AGE` in its
-server environment and restart it. Use whole seconds or a number with `s`, `m`,
-`h` or `d`, such as `7d`, between one hour and 365 days. Update the desktop app
-and iPhone app on every device that signs in to that computer first, because
-older versions cannot sign in once the limit is set. Setting or changing the
-limit ends the computer's current Identity sign-ins when it restarts. Devices
-that were already renewing reconnect on their own, and others sign in again.
+**Use these values** in a computer's Reach section turns on renewal for that
+computer. Devices stay signed in for 7 days, or the number of days you enter
+there, up to 30. A device you don't use for a week signs in again either way.
+Update the desktop app and iPhone app on every device that signs in to that
+computer first, because older versions cannot sign in once the limit is set.
+Setting or changing the limit ends the computer's current Identity sign-ins when
+it restarts. Devices that were already renewing reconnect on their own, and
+others sign in again. A computer that saved its values before Loom offered this
+setting gets the 7-day limit when it updates.
+
+On a server you start yourself, `LOOM_IDENTITY_MAX_SESSION_AGE` in its
+environment sets the limit instead and wins over the saved value. Use whole
+seconds or a number with `s`, `m`, `h` or `d`, such as `7d`, between one hour
+and 365 days. The desktop app does not read it, so use **Use these values**
+there.
 
 ## Reach a computer from anywhere
 
@@ -129,7 +139,9 @@ Your Library needs a reach zone and a Cloudflare token before any computer can
 use reach. Set `LOOM_REACH_ZONE` and `LOOM_REACH_CLOUDFLARE_TOKEN_FILE` in the
 Library's server environment and restart it. Once both are set, a **Reach
 addresses** section appears in the Library's Connections settings and shows
-whether the token can be read.
+whether the token can be read. If you change the zone later, each computer gets
+a new address at its next start, and the list shows anything the token could
+not remove in the old zone.
 
 To turn reach on, open the computer's details in **Settings > Connections** and
 turn on **Reach from anywhere**. You can do this on the computer itself, or from
@@ -150,7 +162,9 @@ removing it deletes its drafts and unsent messages on that device.
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow
 settings changes. Enter the allowed Loom account IDs if they are not already
-configured, and choose whether to **Require passkey**. Loom saves these values
+configured, how many days devices stay signed in if not 7, and choose whether to
+**Require passkey**. Leave it on if you sign in to Loom with a passkey; while it
+is on, signing in with an email code is refused. Loom saves these values
 privately on that computer and restarts its backend. Active connections
 reconnect afterward; server environment variables take precedence over the
 saved values. Until sign-in is configured, devices that find the computer through

@@ -29,12 +29,26 @@ const ReachStoredIdentity = Schema.Struct({
 });
 export type ReachStoredIdentity = typeof ReachStoredIdentity.Type;
 
+const ReachStoredZone = Schema.Struct({ name: Schema.String, zoneId: Id, accountId: Id });
+export type ReachStoredZone = typeof ReachStoredZone.Type;
+
+/** See `ReachLeftoverZone`. The zone keeps its ids, so a later Retire can try again. */
+const ReachStoredLeftoverZone = Schema.Struct({
+  zone: ReachStoredZone,
+  hostname: Schema.NullOr(Schema.String),
+  dnsRecordId: Schema.NullOr(Id),
+  /** The computer's tunnel there, kept after its removal to tell the CNAME naming it is ours. */
+  tunnelId: Schema.NullOr(Id),
+  tunnelLeft: Schema.Boolean,
+});
+export type ReachStoredLeftoverZone = typeof ReachStoredLeftoverZone.Type;
+
 export const ReachStoredComputer = Schema.Struct({
   /** Only grows, and is never deleted, so a captured request cannot replay after a remove. */
   seq: NonNegativeInt,
   /** The key that first ensured; any other key is refused until an admin retires the record. */
   keyFingerprint: Schema.NullOr(Schema.String),
-  /** Sticky, and kept after a remove as a tombstone no other computer is given. */
+  /** Sticky within its zone, and kept after a remove as a tombstone no other computer is given. */
   hostname: Schema.NullOr(Schema.String),
   tunnelId: Schema.NullOr(Id),
   dnsRecordId: Schema.NullOr(Id),
@@ -47,10 +61,16 @@ export const ReachStoredComputer = Schema.Struct({
   updatedAt: Schema.String,
   lastEnsuredAt: Schema.NullOr(Schema.String),
   identity: Schema.NullOr(ReachStoredIdentity),
+  /**
+   * The zone its hostname, tunnel and DNS record belong to. Records written before the field
+   * carry none and are given the Library's `zone` on load when their hostname is in it.
+   */
+  zone: Schema.NullOr(ReachStoredZone).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+  leftoverZones: Schema.Array(ReachStoredLeftoverZone).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed([])),
+  ),
 });
 export type ReachStoredComputer = typeof ReachStoredComputer.Type;
-
-const ReachStoredZone = Schema.Struct({ name: Schema.String, zoneId: Id, accountId: Id });
 
 const ReachStoredEdge = Schema.Struct({
   zoneId: Id,
@@ -113,8 +133,30 @@ export class ReachStore extends Context.Service<
   }
 >()("t3/fork/reach/library/ReachStore") {}
 
+export const isInZone = (hostname: string, zone: string) => hostname.endsWith(`.${zone}`);
+
+/** A hostname from before per-record zones belongs to the zone the Library last resolved. */
+const withRecordZones = (state: ReachLibraryState): ReachLibraryState => {
+  const zone = state.zone;
+  if (zone === null) return state;
+  return {
+    ...state,
+    computers: Object.fromEntries(
+      Object.entries(state.computers).map(([id, computer]) => [
+        id,
+        computer.zone === null &&
+        computer.hostname !== null &&
+        isInZone(computer.hostname, zone.name)
+          ? { ...computer, zone }
+          : computer,
+      ]),
+    ),
+  };
+};
+
 const StateJson = Schema.fromJsonString(ReachLibraryState);
-const decodeState = Schema.decodeUnknownOption(StateJson);
+const decodeStateJson = Schema.decodeUnknownOption(StateJson);
+const decodeState = (text: string) => Option.map(decodeStateJson(text), withRecordZones);
 const encodeState = Schema.encodeEffect(StateJson);
 
 const makeAt = Effect.fn("ReachStore.make")(function* (filePath: string) {

@@ -18,9 +18,8 @@ export const learnDirectoryRoutes = Effect.fn("DirectoryRoutes.learn")(function*
   if (learn === undefined) return;
   const saved = yield* SubscriptionRef.get(registry.entries);
   yield* Effect.forEach(
-    directoryEnvironments(listing).filter(
-      (environment) => saved.has(environment.environmentId) && environment.routes.length > 0,
-    ),
+    // An empty list still counts: it drops a retired address this device learned from the directory.
+    directoryEnvironments(listing).filter((environment) => saved.has(environment.environmentId)),
     (environment) =>
       learn(
         environment.environmentId,

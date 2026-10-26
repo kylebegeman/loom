@@ -4,7 +4,7 @@ import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; 
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -16,6 +16,7 @@ import {
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
   type DesktopServerExposureState,
+  type DesktopTailscaleServeStatus,
   type DesktopWslState,
   type EnvironmentId,
   resolveEnvironmentMachineKind,
@@ -30,9 +31,14 @@ import * as Cause from "effect/Cause";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import {
   applyWslEnableSelection,
+  describeTailscaleServeRow,
   isWslSettingsRowVisible,
-  missingTailscaleEndpointDescription,
+  localBackendPort,
+  parseTailscaleServePort,
   resolveLocalVersionStatusLabel,
+  tailscaleServeBaseUrl,
+  tailscaleServePortProblem,
+  tailscaleServeSetupBlocker,
 } from "./ConnectionsSettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
@@ -222,8 +228,12 @@ export function ConnectionsSettings() {
     | { readonly kind: "wsl-only"; readonly nextValue: boolean };
   const [pendingWslChange, setPendingWslChange] = useState<PendingWslChange | null>(null);
   const isWslConfirmDialogOpen = pendingWslChange !== null;
-  const [pendingTailscaleServeEndpoint, setPendingTailscaleServeEndpoint] =
-    useState<AdvertisedEndpoint | null>(null);
+  // Null while the setup dialog is closed; `status` stays null until Tailscale answers.
+  const [tailscaleSetup, setTailscaleSetup] = useState<{
+    readonly checking: boolean;
+    readonly status: DesktopTailscaleServeStatus | null;
+  } | null>(null);
+  const tailscaleSetupRequest = useRef(0);
   const [disableTailscaleServeDialogOpen, setDisableTailscaleServeDialogOpen] = useState(false);
   const [tailscaleServePortInput, setTailscaleServePortInput] = useState(
     String(DEFAULT_TAILSCALE_SERVE_PORT),
@@ -296,28 +306,23 @@ export function ConnectionsSettings() {
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
-  const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
-  const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);
-  const isTailscaleServePortValid =
-    /^\d+$/u.test(trimmedTailscaleServePortInput) &&
-    Number.isInteger(parsedTailscaleServePort) &&
-    parsedTailscaleServePort >= 1 &&
-    parsedTailscaleServePort <= 65_535;
-
-  const pendingTailscaleServeBaseUrl = (() => {
-    if (!pendingTailscaleServeEndpoint) return null;
-    if (!isTailscaleServePortValid) return pendingTailscaleServeEndpoint.httpBaseUrl;
-    if (parsedTailscaleServePort === DEFAULT_TAILSCALE_SERVE_PORT) {
-      return pendingTailscaleServeEndpoint.httpBaseUrl;
-    }
-    try {
-      const url = new URL(pendingTailscaleServeEndpoint.httpBaseUrl);
-      url.port = String(parsedTailscaleServePort);
-      return url.toString().replace(/\/$/u, "");
-    } catch {
-      return pendingTailscaleServeEndpoint.httpBaseUrl;
-    }
-  })();
+  const tailscaleSetupPort = parseTailscaleServePort(tailscaleServePortInput);
+  const tailscaleSetupBlocker = tailscaleServeSetupBlocker(tailscaleSetup?.status ?? null);
+  const tailscaleSetupPortProblem = tailscaleServePortProblem({
+    portInput: tailscaleServePortInput,
+    backendPort: localBackendPort(desktopAdvertisedEndpoints),
+    heldPorts: tailscaleSetup?.status?.heldPorts ?? [],
+  });
+  const tailscaleSetupMagicDnsName = tailscaleSetup?.status?.magicDnsName ?? null;
+  const pendingTailscaleServeBaseUrl =
+    tailscaleSetupMagicDnsName !== null && tailscaleSetupPort !== null
+      ? tailscaleServeBaseUrl(tailscaleSetupMagicDnsName, tailscaleSetupPort)
+      : null;
+  const canConfirmTailscaleServeSetup =
+    tailscaleSetup !== null &&
+    !tailscaleSetup.checking &&
+    tailscaleSetupPortProblem === null &&
+    tailscaleSetupBlocker === null;
 
   const handleDesktopServerExposureChange = async (checked: boolean) => {
     if (
@@ -361,16 +366,16 @@ export function ConnectionsSettings() {
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
       return;
-    if (!isTailscaleServePortValid) return;
+    if (!canConfirmTailscaleServeSetup || tailscaleSetupPort === null) return;
     setIsUpdatingTailscaleServe(true);
     setDesktopServerExposureMutationError(null);
     const settled = await settlePromise(async () => {
       await desktopBridge.setTailscaleServeEnabled({
         enabled: true,
-        port: parsedTailscaleServePort,
+        port: tailscaleSetupPort,
       });
       refreshDesktopNetworkAccessState();
-      setPendingTailscaleServeEndpoint(null);
+      setTailscaleSetup(null);
     });
     if (settled._tag === "Failure") {
       const error = Cause.squash(settled.cause);
@@ -388,11 +393,22 @@ export function ConnectionsSettings() {
     setIsUpdatingTailscaleServe(false);
   };
 
-  const handleStartTailscaleServeSetup = (endpoint: AdvertisedEndpoint) => {
+  // Reading Tailscale can raise a macOS privacy prompt, so it waits for this click.
+  const handleStartTailscaleServeSetup = () => {
+    if (!desktopBridge) return;
     setTailscaleServePortInput(
       String(desktopServerExposureState?.tailscaleServePort ?? DEFAULT_TAILSCALE_SERVE_PORT),
     );
-    setPendingTailscaleServeEndpoint(endpoint);
+    const request = ++tailscaleSetupRequest.current;
+    const settle = (status: DesktopTailscaleServeStatus | null) => {
+      if (request !== tailscaleSetupRequest.current) return;
+      setTailscaleSetup((current) => (current ? { checking: false, status } : current));
+    };
+    setTailscaleSetup({ checking: true, status: null });
+    void desktopBridge.getServerExposureState({ inspectTailscale: true }).then(
+      (state) => settle(state.tailscaleServe),
+      () => settle(null),
+    );
   };
 
   const handleConfirmTailscaleServeDisable = async () => {
@@ -427,7 +443,7 @@ export function ConnectionsSettings() {
     setIsUpdatingTailscaleServe(false);
   };
 
-  const handleStartTailscaleServeDisable = (_endpoint: AdvertisedEndpoint) => {
+  const handleStartTailscaleServeDisable = () => {
     setDisableTailscaleServeDialogOpen(true);
   };
 
@@ -867,31 +883,39 @@ export function ConnectionsSettings() {
     );
   };
 
+  const tailscaleRowStatus = describeTailscaleServeRow({
+    state: desktopServerExposureState,
+    endpoint: tailscaleHttpsEndpoint,
+  });
   const renderTailscaleRow = () => (
     <SettingsRow
       title={searchableSetting("tailscale-https").title}
-      description={
-        tailscaleHttpsEndpoint
-          ? tailscaleHttpsEndpoint.status === "available"
-            ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : missingTailscaleEndpointDescription(desktopServerExposureState)
-      }
+      description={tailscaleRowStatus.text}
       control={
-        tailscaleHttpsEndpoint ? (
+        <div className="flex items-center gap-2">
+          {tailscaleRowStatus.needsAttention ? (
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={isUpdatingTailscaleServe}
+              onClick={handleStartTailscaleServeSetup}
+            >
+              Retry
+            </Button>
+          ) : null}
           <Switch
-            checked={tailscaleHttpsEndpoint.status === "available"}
-            disabled={isUpdatingTailscaleServe}
+            checked={desktopServerExposureState?.tailscaleServeEnabled === true}
+            disabled={!desktopServerExposureState || isUpdatingTailscaleServe}
             onCheckedChange={(checked) => {
               if (checked) {
-                handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
+                handleStartTailscaleServeSetup();
                 return;
               }
-              handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
+              handleStartTailscaleServeDisable();
             }}
             aria-label="Enable Tailscale HTTPS"
           />
-        ) : null
+        </div>
       }
     />
   );
@@ -1333,7 +1357,8 @@ export function ConnectionsSettings() {
                 <AlertDialogTitle>Disable Tailscale HTTPS?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {/* fork: brand */}
-                  Loom will restart the local backend without Tailscale Serve.
+                  Loom will restart the local backend and remove only its own Tailscale Serve
+                  mapping.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1361,10 +1386,10 @@ export function ConnectionsSettings() {
             </AlertDialogPopup>
           </AlertDialog>
           <Dialog
-            open={pendingTailscaleServeEndpoint !== null}
+            open={tailscaleSetup !== null}
             onOpenChange={(open) => {
               if (isUpdatingTailscaleServe) return;
-              if (!open) setPendingTailscaleServeEndpoint(null);
+              if (!open) setTailscaleSetup(null);
             }}
           >
             <DialogPopup className="max-w-md">
@@ -1373,7 +1398,7 @@ export function ConnectionsSettings() {
                 <DialogDescription>
                   {/* fork: brand */}
                   Loom will restart the local backend with Tailscale Serve enabled and ask Tailscale
-                  to proxy HTTPS traffic to this backend.
+                  to proxy HTTPS traffic to this backend. Loom never replaces another app's mapping.
                 </DialogDescription>
               </DialogHeader>
               <DialogPanel>
@@ -1391,8 +1416,13 @@ export function ConnectionsSettings() {
                     disabled={isUpdatingTailscaleServe}
                   />
                 </label>
-                {!isTailscaleServePortValid ? (
-                  <p className="mt-2 text-xs text-destructive">Enter a port from 1 to 65535.</p>
+                {tailscaleSetup?.checking ? (
+                  <p className="mt-2 text-xs text-muted-foreground">Checking Tailscale…</p>
+                ) : null}
+                {(tailscaleSetupBlocker ?? tailscaleSetupPortProblem) ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {tailscaleSetupBlocker ?? tailscaleSetupPortProblem}
+                  </p>
                 ) : null}
                 <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2">
                   <p className="text-xs font-medium text-muted-foreground">HTTPS endpoint</p>
@@ -1400,7 +1430,7 @@ export function ConnectionsSettings() {
                     <TooltipTrigger
                       render={
                         <p className="mt-1 truncate text-sm text-foreground">
-                          {pendingTailscaleServeBaseUrl ?? "Pending MagicDNS endpoint"}
+                          {pendingTailscaleServeBaseUrl ?? "Your tailnet's MagicDNS address"}
                         </p>
                       }
                     />
@@ -1419,7 +1449,7 @@ export function ConnectionsSettings() {
                 </DialogClose>
                 <Button
                   onClick={() => void handleConfirmTailscaleServeSetup()}
-                  disabled={isUpdatingTailscaleServe || !isTailscaleServePortValid}
+                  disabled={isUpdatingTailscaleServe || !canConfirmTailscaleServeSetup}
                 >
                   {isUpdatingTailscaleServe ? (
                     <>

@@ -112,14 +112,32 @@ const ROUTE_KIND_RANK: Record<ConnectionRouteKind, number> = {
   relay: 5,
 };
 
+// Within one kind, HTTPS goes before plain HTTP and a DNS name before a raw IP address.
+function sameKindPreference(route: ConnectionRoute): number {
+  const httpBaseUrl = routeHttpBaseUrl(route);
+  if (httpBaseUrl === null) return 0;
+  let url: URL;
+  try {
+    url = new URL(httpBaseUrl);
+  } catch {
+    return 0;
+  }
+  const ipAddress = url.hostname.startsWith("[") || /^[\d.]+$/.test(url.hostname);
+  return (url.protocol === "https:" ? 0 : 2) + (ipAddress ? 1 : 0);
+}
+
 export function insertRoute(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
 ): ReadonlyArray<ConnectionRoute> {
   const rank = ROUTE_KIND_RANK[connectionRouteKind(route)];
-  const index = routes.findIndex(
-    (existing) => ROUTE_KIND_RANK[connectionRouteKind(existing)] > rank,
-  );
+  const preference = sameKindPreference(route);
+  const index = routes.findIndex((existing) => {
+    const existingRank = ROUTE_KIND_RANK[connectionRouteKind(existing)];
+    return (
+      existingRank > rank || (existingRank === rank && sameKindPreference(existing) > preference)
+    );
+  });
   return index === -1
     ? [...routes, route]
     : [...routes.slice(0, index), route, ...routes.slice(index)];
@@ -204,6 +222,8 @@ export function mergeLearnedRoutes(input: {
   readonly reported: ReadonlyArray<ReportedEndpoint>;
   /** Plain HTTP routes are unusable from an HTTPS page (mixed content). */
   readonly allowInsecure: boolean;
+  /** `reported` is a Library directory listing, not the live server's own report. */
+  readonly fromDirectory?: boolean;
 }): ReadonlyArray<ConnectionRoute> | null {
   const { entry } = input;
   const active = input.activeRoute.target;
@@ -251,13 +271,19 @@ export function mergeLearnedRoutes(input: {
       return [
         url === null || !reported.has(normalized(url))
           ? route
-          : withNetwork(route, tailscaleOrigins.has(normalized(url))),
+          : withMarks(route, tailscaleOrigins.has(normalized(url))),
       ];
     }
     if (url === null || !reported.has(normalized(url)) || known.has(normalized(url))) return [];
     if (sendsTokenInClear(saved, route, tailscaleOrigins.has(normalized(url)))) return [];
     known.add(normalized(url));
-    return [withNetwork(route, tailscaleOrigins.has(normalized(url)))];
+    return [
+      withMarks(
+        route,
+        tailscaleOrigins.has(normalized(url)),
+        input.fromDirectory === true && learnedFromDirectory(route),
+      ),
+    ];
   });
   let next: ReadonlyArray<ConnectionRoute> = kept;
   for (const url of reported.values()) {
@@ -295,6 +321,7 @@ export function mergeLearnedRoutes(input: {
             ? { identity: activeProfile.identity }
             : {}),
           ...(tailscaleOrigins.has(url.origin) ? { network: "tailscale" as const } : {}),
+          ...(input.fromDirectory === true ? { learnedFrom: "directory" as const } : {}),
         }),
       ),
     });
@@ -303,7 +330,7 @@ export function mergeLearnedRoutes(input: {
     routes
       .map(
         (route) =>
-          `${connectionRouteId(route.target)} ${routeHttpBaseUrl(route) ?? ""} ${connectionRouteKind(route)}`,
+          `${connectionRouteId(route.target)} ${routeHttpBaseUrl(route) ?? ""} ${connectionRouteKind(route)} ${learnedFromDirectory(route)}`,
       )
       .join("\n");
   return signature(saved) === signature(next) ? null : next;
@@ -359,10 +386,15 @@ export interface ReportedEndpoint {
   readonly kind?: string;
 }
 
-function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRoute {
+function withMarks(route: ConnectionRoute, tailscale: boolean, directory = false): ConnectionRoute {
   const profile = Option.getOrNull(route.profile);
   if (profile?._tag !== "BearerConnectionProfile") return route;
-  if ((profile.network === "tailscale") === tailscale) return route;
+  if (
+    (profile.network === "tailscale") === tailscale &&
+    learnedFromDirectory(route) === directory
+  ) {
+    return route;
+  }
   return {
     target: route.target,
     profile: Option.some(
@@ -376,6 +408,7 @@ function withNetwork(route: ConnectionRoute, tailscale: boolean): ConnectionRout
         ...(profile.authorization === undefined ? {} : { authorization: profile.authorization }),
         ...(profile.identity === undefined ? {} : { identity: profile.identity }),
         ...(tailscale ? { network: "tailscale" as const } : {}),
+        ...(directory ? { learnedFrom: "directory" as const } : {}),
       }),
     ),
   };
@@ -401,6 +434,15 @@ export function credentialConnectionId(connectionId: string): string {
 export function isLearned(route: ConnectionRoute): boolean {
   const profile = Option.getOrNull(route.profile);
   return profile?._tag === "BearerConnectionProfile" && profile.learned === true;
+}
+
+export function learnedFromDirectory(route: ConnectionRoute): boolean {
+  const profile = Option.getOrNull(route.profile);
+  return (
+    profile?._tag === "BearerConnectionProfile" &&
+    profile.learned === true &&
+    profile.learnedFrom === "directory"
+  );
 }
 
 /**

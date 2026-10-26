@@ -44,6 +44,9 @@ describe("isPreviewPortDenied", () => {
     expect(isPreviewPortDenied(80, [])).toBe(true);
     expect(isPreviewPortDenied(5432, [])).toBe(true);
     expect(isPreviewPortDenied(3773, [])).toBe(true);
+    // Switchboard's dashboards trust localhost, which the gateway's rewritten Host would satisfy.
+    expect(isPreviewPortDenied(8318, [])).toBe(true);
+    expect(isPreviewPortDenied(8322, [])).toBe(true);
     expect(isPreviewPortDenied(4100, [4100])).toBe(true);
     expect(isPreviewPortDenied(5173, [null, undefined, 4100])).toBe(false);
   });

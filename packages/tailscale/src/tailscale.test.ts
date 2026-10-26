@@ -2,18 +2,21 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
+  disableTailscaleServe,
   ensureTailscaleServe,
   parseTailscaleExitNode,
   parseTailscaleSshEnabled,
   parseTailscaleStatus,
   readTailscaleSshEnabled,
   readTailscaleStatus,
+  TailscaleCliUnavailableError,
   TailscaleCommandExitError,
   TailscaleCommandSpawnError,
   TailscaleStatusParseError,
@@ -101,9 +104,97 @@ describe("tailscale", () => {
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.100.100.100"],
         httpsServeEnabled: null,
+        loggedIn: null,
       });
+      const loggedOut = yield* parseTailscaleStatus(`{"BackendState":"NeedsLogin"}`);
+      assert.isFalse(loggedOut.loggedIn);
+      const running = yield* parseTailscaleStatus(`{"BackendState":"Running"}`);
+      assert.isTrue(running.loggedIn);
     }),
   );
+
+  it.effect("falls back to the app bundle's CLI on macOS when PATH lookup fails", () => {
+    const spawned: Array<string> = [];
+    const lookupFailure = (code: "ENOENT" | "EACCES") =>
+      PlatformError.systemError({
+        _tag: code === "ENOENT" ? "NotFound" : "PermissionDenied",
+        module: "ChildProcess",
+        method: "spawn",
+        cause: Object.assign(new Error(`spawn tailscale ${code}`), { code }),
+      });
+    const spawner = ChildProcessSpawner.make((command) => {
+      const { command: executable } = command as unknown as { readonly command: string };
+      spawned.push(executable);
+      return executable === "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+        ? Effect.succeed(mockHandle({ stdout: tailscaleStatusJson }))
+        : Effect.fail(lookupFailure(executable === "tailscale" ? "EACCES" : "ENOENT"));
+    });
+    const layer = Layer.mergeAll(
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Layer.succeed(HostProcess.Platform, "darwin"),
+      Layer.succeed(HostProcess.HomeDirectory, "/Users/kyle"),
+    );
+
+    return Effect.gen(function* () {
+      const status = yield* readTailscaleStatus;
+      assert.equal(status.magicDnsName, "desktop.tail.ts.net");
+      assert.deepEqual(spawned, [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+        "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+      ]);
+      yield* readTailscaleStatus;
+      assert.equal(spawned.length, 4, "the resolved CLI is reused");
+      assert.equal(
+        spawned.at(-1),
+        "/Users/kyle/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+      );
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("reports a missing CLI distinctly, without the home directory", () => {
+    const layer = Layer.mergeAll(
+      Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "NotFound",
+              module: "ChildProcess",
+              method: "spawn",
+              cause: Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }),
+            }),
+          ),
+        ),
+      ),
+      Layer.succeed(HostProcess.Platform, "darwin"),
+      Layer.succeed(HostProcess.HomeDirectory, "/Users/kyle"),
+    );
+
+    return Effect.gen(function* () {
+      const error = yield* readTailscaleStatus.pipe(Effect.flip, Effect.provide(layer));
+      assert.instanceOf(error, TailscaleCliUnavailableError);
+      assert.deepEqual(
+        error._tag === "TailscaleCliUnavailableError"
+          ? error.attempts.map((a) => a.executable)
+          : [],
+        ["tailscale", "/Applications/Tailscale.app", "~/Applications/Tailscale.app"],
+      );
+      assertCarriesNoSecret(error, "/Users/kyle");
+    });
+  });
+
+  it.effect("removes only the root mount when disabling serve", () => {
+    const calls: Array<ReadonlyArray<string>> = [];
+    const layer = layerMockSpawner((_command, args) => {
+      calls.push(args);
+      return {};
+    });
+    return disableTailscaleServe({ servePort: 443 }).pipe(
+      Effect.provide(layer),
+      Effect.map(() => assert.deepEqual(calls, [["serve", "--https=443", "--set-path=/", "off"]])),
+    );
+  });
 
   it.effect("names the exit node in use", () =>
     Effect.gen(function* () {

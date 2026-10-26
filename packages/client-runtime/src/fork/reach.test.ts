@@ -230,6 +230,7 @@ describe("reachView", () => {
     expect(here?.copyText).toBe(reachPreparedEnvironment(PREPARED));
     expect(here?.copyText).toContain(`LOOM_IDENTITY_RESOURCE=${PREPARED.resource}`);
     expect(here?.copyText).toContain(`LOOM_IDENTITY_AUDIENCE=${PREPARED.resource}`);
+    expect(here?.copyText).toContain("LOOM_IDENTITY_MAX_SESSION_AGE=7d");
   });
 
   it("points elsewhere for a sign-in that differs, and says nothing extra when it matches", () => {
@@ -522,6 +523,29 @@ describe("reachLibraryView", () => {
       "Another rate-limit rule holds the zone's only slot, so reach addresses have no rate limit.",
     );
     expect(allText(view)).not.toContain("—");
+  });
+
+  it("names what an earlier reach zone may still hold", () => {
+    const view = library(
+      AsyncResult.success(
+        listingOf([
+          computer({
+            leftoverZones: [
+              {
+                zone: "old.example",
+                hostname: "studio-loom.old.example",
+                dnsRecordId: "dns-9",
+                tunnelLeft: true,
+              },
+              { zone: "older.example", hostname: null, dnsRecordId: null, tunnelLeft: false },
+            ],
+          }),
+        ]),
+      ),
+    );
+    expect(view.computers[0]?.notes).toEqual([
+      "Your earlier reach zone old.example may still hold this computer's DNS record studio-loom.old.example (dns-9) and tunnel loom-reach-studio. The Library's token could not remove them, so delete them in Cloudflare.",
+    ]);
   });
 
   it("says a failed end of Loom sign-in may have left it working, not that it was never prepared", () => {

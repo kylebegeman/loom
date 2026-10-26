@@ -283,13 +283,19 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const latest = yield* Ref.get(currentEntry);
     const routes = connectionRoutes(latest);
     const preferred = yield* Ref.getAndSet(preferredRouteId, Option.none());
-    if (Option.isNone(preferred)) return latest;
+    if (Option.isNone(preferred)) return { entry: latest };
     const route = routes.find(
       (candidate) => connectionRouteId(candidate.target) === preferred.value,
     );
     return route === undefined
-      ? latest
-      : entryWithRoutes(latest, [route, ...routes.filter((candidate) => candidate !== route)]);
+      ? { entry: latest }
+      : {
+          entry: entryWithRoutes(latest, [
+            route,
+            ...routes.filter((candidate) => candidate !== route),
+          ]),
+          options: { preferredRouteId: preferred.value },
+        };
   });
 
   const learnRoutesFrom = Effect.fnUntraced(function* (
@@ -405,11 +411,15 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     synchronizedRoutes: Ref.Ref<number>,
   ) {
-    return yield* driver.connect(yield* attemptEntry, (progress) =>
-      (progress.stage === "synchronizing"
-        ? Ref.update(synchronizedRoutes, (count) => count + 1)
-        : Effect.void
-      ).pipe(Effect.andThen(reportProgress(attempt, generation, lastFailure, progress))),
+    const { entry: latest, options: connectOptions } = yield* attemptEntry;
+    return yield* driver.connect(
+      latest,
+      (progress) =>
+        (progress.stage === "synchronizing"
+          ? Ref.update(synchronizedRoutes, (count) => count + 1)
+          : Effect.void
+        ).pipe(Effect.andThen(reportProgress(attempt, generation, lastFailure, progress))),
+      connectOptions,
     );
   });
 
@@ -612,6 +622,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       Stream.runForEach(() => requestBetterRouteCheck(lease)),
       Effect.forkScoped,
     );
+    if (lease.betterRouteAnswered !== undefined) {
+      yield* lease.betterRouteAnswered.pipe(
+        Effect.andThen(requestBetterRouteCheck(lease)),
+        Effect.forkScoped,
+      );
+    }
     for (;;) {
       const next = yield* takeSignal;
       const end = yield* connectedLeaseEnd(next, lease);

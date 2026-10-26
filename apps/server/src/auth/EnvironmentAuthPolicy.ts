@@ -18,7 +18,8 @@ export class EnvironmentAuthPolicy extends Context.Service<
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
-  const isRemoteReachable = isRemoteReachableHost(config.host);
+  // Tailscale Serve proxies the tailnet to a loopback bind, so the host alone hides that ingress.
+  const isRemoteReachable = isRemoteReachableHost(config.host) || config.tailscaleServeEnabled;
 
   const policy =
     config.mode === "desktop"

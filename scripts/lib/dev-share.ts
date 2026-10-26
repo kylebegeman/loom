@@ -1,16 +1,17 @@
 /** Vite proxies the backend, so only the web port needs a share mapping. */
 
 import {
-  buildTailscaleHttpsBaseUrl,
-  disableTailscaleServe,
-  ensureTailscaleServe,
+  claimTailscaleServe,
   readTailscaleStatus,
+  releaseTailscaleServe,
   type TailscaleCommandError,
+  type TailscaleServeClaimError,
+  type TailscaleServeTarget,
+  type TailscaleStatusParseError,
   type TailscaleStderrDiagnostic,
 } from "@t3tools/tailscale";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { ChildProcessSpawner } from "effect/process";
 
 /** Log fixed diagnostics; tailscale stderr can contain auth keys and node names. */
 const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefined> = {
@@ -20,7 +21,9 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   unknown: undefined,
 };
 
-const explainCommandFailure = (error: TailscaleCommandError): string | undefined =>
+const explainCommandFailure = (
+  error: TailscaleCommandError | TailscaleStatusParseError,
+): string | undefined =>
   error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
     ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
     : undefined;
@@ -54,7 +57,7 @@ export class TailnetNameMissingError extends Schema.TaggedError<TailnetNameMissi
 export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>()(
   "DevServeFailedError",
   {
-    stage: Schema.Literals(["clear-existing", "serve"]),
+    stage: Schema.Literals(["claim", "serve"]),
     webPort: Schema.Number,
     explanation: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
@@ -63,9 +66,9 @@ export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>
   override get message(): string {
     const port = String(this.webPort);
     const base =
-      this.stage === "clear-existing"
-        ? `could not clear the existing mapping for port ${port}. Run \`tailscale serve --https=${port} off\` and retry`
-        : `could not serve port ${port} on the tailnet (it is no longer served; any previous mapping for it was cleared before this attempt)`;
+      this.stage === "claim"
+        ? `did not share port ${port} on the tailnet`
+        : `could not serve port ${port} on the tailnet`;
     return this.explanation ? `${base}: ${this.explanation}` : base;
   }
 
@@ -79,34 +82,71 @@ export type DevShareError =
   | TailnetNameMissingError
   | DevServeFailedError;
 
-/** Finalizer cleanup must be uninterruptible or cancellation can leave stale mappings. */
-export const unshareDevServer = (
-  webPort: number,
-): Effect.Effect<
-  {
-    readonly cleared: boolean;
-    readonly explanation?: string | undefined;
-    readonly cause?: TailscaleCommandError | undefined;
-  },
-  never,
-  ChildProcessSpawner.ChildProcessSpawner
-> =>
-  disableTailscaleServe({ servePort: webPort }).pipe(
-    Effect.as({ cleared: true } as const),
-    Effect.catch((error: TailscaleCommandError) =>
-      Effect.succeed(
-        error._tag === "TailscaleCommandExitError" &&
-          error.stderrDiagnostic === "no-existing-handler"
-          ? ({ cleared: true } as const)
-          : ({
-              cleared: false,
-              ...(explainCommandFailure(error) !== undefined
-                ? { explanation: explainCommandFailure(error) }
-                : {}),
-              cause: error,
-            } as const),
-      ),
-    ),
+export interface DevShareTarget {
+  readonly webPort: number;
+  /** Records the mapping this checkout owns, so the next run recognizes one a crash left behind. */
+  readonly claimsPath: string;
+  readonly localTarget?: { readonly port: number; readonly host: string };
+}
+
+const serveTarget = (input: DevShareTarget): TailscaleServeTarget => ({
+  claimsPath: input.claimsPath,
+  servePort: input.webPort,
+  localPort: input.localTarget?.port ?? input.webPort,
+  // Vite's localhost can bind only ::1; a 127.0.0.1 proxy target would return 502.
+  localHost: input.localTarget?.host ?? "localhost",
+});
+
+const toServeFailure = (webPort: number, error: TailscaleServeClaimError): DevServeFailedError => {
+  switch (error._tag) {
+    case "TailscaleServeNotLoggedInError":
+    case "TailscaleServeHttpsDisabledError":
+    case "TailscaleServePortHeldError":
+    case "TailscaleServePortTcpForwardError":
+    case "TailscaleServeOtherMountsError":
+    case "TailscaleServeClaimRecordError":
+      return new DevServeFailedError({
+        stage: "claim",
+        webPort,
+        explanation: error.message,
+        cause: error,
+      });
+    default: {
+      const explanation = explainCommandFailure(error);
+      return new DevServeFailedError({
+        stage: "serve",
+        webPort,
+        ...(explanation !== undefined ? { explanation } : {}),
+        cause: error,
+      });
+    }
+  }
+};
+
+export interface DevUnshareResult {
+  readonly cleared: boolean;
+  readonly explanation?: string | undefined;
+  readonly cause?: unknown;
+}
+
+/**
+ * Removes the `/` mapping only while it still proxies to this dev server.
+ * Finalizer cleanup must be uninterruptible or cancellation can leave stale mappings.
+ */
+export const unshareDevServer = (input: DevShareTarget) =>
+  releaseTailscaleServe(serveTarget(input)).pipe(
+    Effect.map((): DevUnshareResult => ({ cleared: true })),
+    Effect.catch((error) => {
+      const explanation =
+        error._tag === "TailscaleServeClaimRecordError"
+          ? error.message
+          : explainCommandFailure(error);
+      return Effect.succeed<DevUnshareResult>({
+        cleared: false,
+        ...(explanation !== undefined ? { explanation } : {}),
+        cause: error,
+      });
+    }),
     Effect.uninterruptible,
   );
 
@@ -118,12 +158,12 @@ export interface DevShareResult {
 /**
  * Publishes `webPort` on the tailnet. The tailnet port always matches the web
  * port so the URL is stable; `localTarget` points it at the backend instead
- * when the backend serves a built client (`--built`).
+ * when the backend serves a built client (`--built`). Another app's mapping on
+ * the port is never replaced.
  */
-export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (input: {
-  readonly webPort: number;
-  readonly localTarget?: { readonly port: number; readonly host: string };
-}) {
+export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (
+  input: DevShareTarget,
+) {
   const status = yield* readTailscaleStatus.pipe(
     Effect.mapError((error) => new TailscaleUnavailableError({ cause: error })),
   );
@@ -131,39 +171,9 @@ export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (in
     return yield* new TailnetNameMissingError();
   }
 
-  const cleared = yield* unshareDevServer(input.webPort);
-  if (!cleared.cleared) {
-    // Refuse stale routes: the page could load while /ws and /api still point at a dead backend.
-    return yield* new DevServeFailedError({
-      stage: "clear-existing",
-      webPort: input.webPort,
-      ...(cleared.explanation !== undefined ? { explanation: cleared.explanation } : {}),
-      ...(cleared.cause !== undefined ? { cause: cleared.cause } : {}),
-    });
-  }
-
-  // Vite's localhost can bind only ::1; a 127.0.0.1 proxy target would return 502.
-  yield* ensureTailscaleServe({
-    localPort: input.localTarget?.port ?? input.webPort,
-    servePort: input.webPort,
-    localHost: input.localTarget?.host ?? "localhost",
-  }).pipe(
-    Effect.mapError((error) => {
-      const explanation = explainCommandFailure(error);
-      return new DevServeFailedError({
-        stage: "serve",
-        webPort: input.webPort,
-        ...(explanation !== undefined ? { explanation } : {}),
-        cause: error,
-      });
-    }),
+  const claim = yield* claimTailscaleServe(serveTarget(input)).pipe(
+    Effect.mapError((error) => toServeFailure(input.webPort, error)),
   );
 
-  return {
-    url: buildTailscaleHttpsBaseUrl({
-      magicDnsName: status.magicDnsName,
-      servePort: input.webPort,
-    }),
-    host: status.magicDnsName,
-  } satisfies DevShareResult;
+  return { url: claim.baseUrl, host: status.magicDnsName } satisfies DevShareResult;
 });

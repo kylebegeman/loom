@@ -4,6 +4,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -223,10 +224,14 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   const connect = Effect.fn("TestConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriver.ConnectionDriverProgress) => Effect.Effect<void>,
+    connectOptions?: ConnectionDriver.ConnectOptions,
   ) {
     yield* reportProgress({ stage: "preparing" });
-    return yield* ConnectionDriver.connectOverRoutes(entry, checkRoute, (route) =>
-      connectRoute(route.target, reportProgress),
+    return yield* ConnectionDriver.connectOverRoutes(
+      entry,
+      checkRoute,
+      (route) => connectRoute(route.target, reportProgress),
+      connectOptions,
     );
   });
 
@@ -1229,6 +1234,99 @@ describe("EnvironmentSupervisor routes", () => {
           Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target,
         ),
       ).toBe("bearer:tailnet");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("upgrades at once to a route that answers just after the head start", () =>
+    Effect.gen(function* () {
+      const lanChecks = yield* Queue.unbounded<void>();
+      const harness = yield* makeHarness({
+        // Slower than the head start every time, like an HTTPS route over cellular.
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Queue.offer(lanChecks, undefined).pipe(
+                Effect.andThen(Effect.sleep("1 second")),
+                Effect.as("answered" as const),
+              )
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("500 millis");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
+        "RelayConnectionTarget",
+      );
+
+      // The first check answers late, which starts the better-route check at once.
+      yield* TestClock.adjust("500 millis");
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("1 second");
+      // The switch waits for the whole check of the route it just verified.
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+      expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
+        "BearerConnectionTarget",
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("does not switch again to a late route that failed to connect", () =>
+    Effect.gen(function* () {
+      const lanChecks = yield* Queue.unbounded<void>();
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Queue.offer(lanChecks, undefined).pipe(
+                Effect.andThen(Effect.sleep("1 second")),
+                Effect.as("answered" as const),
+              )
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) =>
+          target._tag === "BearerConnectionTarget"
+            ? Effect.fail(transient("LAN socket refused."))
+            : Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("500 millis");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      yield* TestClock.adjust("500 millis");
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("1 second");
+      yield* Queue.take(lanChecks);
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+      expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
+        "RelayConnectionTarget",
+      );
+
+      // Periodic checks skip the route while it cools down.
+      yield* TestClock.adjust("60 seconds");
+      yield* TestClock.adjust("60 seconds");
+      expect(yield* Queue.size(lanChecks)).toBe(0);
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
