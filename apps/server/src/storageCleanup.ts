@@ -18,6 +18,7 @@ import type {
   WorktreeCleanupRules,
   StorageCleanupReport,
   StorageCleanupReportEntry,
+  StorageCleanupGitMirror, // fork: library-launch-files
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -39,6 +40,8 @@ import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
 import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryGitFetch from "./fork/project-library/LibraryGitFetch.ts"; // fork: library-launch-files
+import { ServerEnvironmentIdentity } from "./environment/ServerEnvironment.ts"; // fork: library-launch-files
 import { makeLibraryCheckoutOwners } from "./project/libraryCheckoutOwnership.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -93,6 +96,8 @@ const DAY_MS = 86_400_000;
 const SETTLE_SCRIPT_GRACE_MS = 60_000;
 // Worktree creation can precede its thread row, including review-guide checkouts.
 const ORPHAN_WORKTREE_GRACE_MS = 60 * 60 * 1_000;
+// fork: library-launch-files: a mirror only speeds up new copies of its remote.
+const GIT_MIRROR_UNUSED_DAYS = 30;
 
 // fork: project-lifecycle -- dependency, build and tool output that installs and builds recreate,
 // so the landing rule deletes it with the worktree. Any other ignored path (.env files, local
@@ -135,6 +140,9 @@ type LocalFileRules = {
   readonly worktreeKeepWhen: WorktreeCleanupRules["worktreeKeepWhen"] | "landed";
 };
 
+// fork: library-launch-files
+const removedMirrorBytes = (mirrors: ReadonlyArray<StorageCleanupGitMirror> | undefined) =>
+  (mirrors ?? []).reduce((sum, row) => sum + (row.outcome === "removed" ? row.bytes : 0), 0);
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
 const isGitCommandError = Schema.is(GitCommandError);
@@ -321,6 +329,8 @@ const make = Effect.gen(function* () {
   const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
   const config = yield* ServerConfig.ServerConfig;
   const libraryWorkspaces = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+  const gitMirrorCache = yield* Effect.serviceOption(LibraryGitFetch.LibraryGitFetch); // fork: library-launch-files
+  const environmentIdentity = yield* Effect.serviceOption(ServerEnvironmentIdentity); // fork: library-launch-files
   const settingsService = yield* Settings.ServerSettingsService;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const engine = yield* Orchestrator.OrchestratorV2;
@@ -442,11 +452,9 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => null),
   );
 
-  // The snapshot takes seconds on large databases, so it runs on the reader
-  // worker instead of the event loop.
-  // fork: mini-native-retention. Project and Scratch retention rely on archived
-  // threads being included here: an archived thread settles its project and
-  // keeps its Scratch folder eligible for archiving.
+  // The snapshot takes seconds on large databases, so it runs on the reader worker.
+  // fork: mini-native-retention. Project and Scratch retention rely on archived threads here:
+  // an archived thread settles its project and keeps its Scratch folder eligible for archiving.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);
     const projects = yield* projectStore.listShells();
@@ -2112,6 +2120,76 @@ const make = Effect.gen(function* () {
     return removed;
   });
 
+  // fork: library-launch-files
+  const cleanGitMirrors = Effect.fn("StorageCleanup.cleanGitMirrors")(function* (
+    cache: LibraryGitFetch.LibraryGitFetch["Service"],
+    now: number,
+  ) {
+    const mirrors = yield* cache.mirrors;
+    const environmentId = Option.isSome(environmentIdentity)
+      ? yield* environmentIdentity.value.getEnvironmentId
+      : null;
+    const usedKeys = yield* libraryWorkspaces.receipts.pipe(
+      Effect.flatMap((receipts) =>
+        Effect.forEach(
+          receipts
+            .filter(
+              ({ copy }) =>
+                copy.state !== "released" &&
+                (environmentId === null || copy.environmentId === environmentId),
+            )
+            .flatMap(({ project }) =>
+              project.resources.flatMap(({ remoteUrl }) => remoteUrl ?? []),
+            ),
+          (remoteUrl) => cache.mirrorKey(remoteUrl),
+        ),
+      ),
+      Effect.map((keys) => new Set(keys)),
+      Effect.tapError((error) => Effect.logWarning("Library copies could not be read", { error })),
+      Effect.orElseSucceed(() => null),
+    );
+    const unusedSince = now - GIT_MIRROR_UNUSED_DAYS * DAY_MS;
+    return yield* Effect.forEach(mirrors, (mirror) => {
+      const row = {
+        path: mirror.path,
+        remoteUrl: mirror.remoteUrl,
+        bytes: mirror.bytes,
+        lastUsedAt: mirror.lastUsedAt,
+      };
+      const keep = (reason: string) =>
+        Effect.succeed<StorageCleanupGitMirror>({ ...row, outcome: "kept", reason });
+      if (usedKeys === null) return keep("Library copies on this computer could not be checked");
+      if (usedKeys.has(mirror.key)) return keep("A Library copy on this computer uses it");
+      // removeMirror rechecks the use time itself, including an unknown one.
+      if (mirror.lastUsedAt !== null && Date.parse(mirror.lastUsedAt) >= unusedSince)
+        return keep(`Used in the last ${GIT_MIRROR_UNUSED_DAYS} days`);
+      return cache
+        .removeMirror({
+          key: mirror.key,
+          unusedSince: DateTime.formatIso(DateTime.makeUnsafe(unusedSince)),
+        })
+        .pipe(
+          Effect.map((freed): StorageCleanupGitMirror =>
+            freed === null
+              ? { ...row, outcome: "kept", reason: "Used again during cleanup" }
+              : {
+                  ...row,
+                  bytes: freed,
+                  outcome: "removed",
+                  reason: `Unused for ${GIT_MIRROR_UNUSED_DAYS} days and no Library copy on this computer uses it`,
+                },
+          ),
+          Effect.catch((error) =>
+            Effect.succeed<StorageCleanupGitMirror>({
+              ...row,
+              outcome: "failed",
+              reason: cleanupFailureReason(error),
+            }),
+          ),
+        );
+    });
+  });
+
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
   const sweep = Effect.fn("StorageCleanup.sweep")(function* (
     trigger: StorageCleanupReport["trigger"],
@@ -2192,8 +2270,16 @@ const make = Effect.gen(function* () {
         ),
       );
     }
+    // fork: library-launch-files
+    const gitMirrors = Option.isNone(gitMirrorCache)
+      ? undefined
+      : yield* cleanGitMirrors(gitMirrorCache.value, now).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Git mirror cleanup failed", { error }).pipe(Effect.as(undefined)),
+          ),
+        );
     const counts = { removed: 0, kept: 0, failed: 0 };
-    let bytesFreed = 0;
+    let bytesFreed = removedMirrorBytes(gitMirrors); // fork: library-launch-files
     for (const entry of entries) {
       counts[entry.outcome]++;
       if (entry.outcome !== "kept") bytesFreed += entry.bytes ?? 0;
@@ -2214,6 +2300,7 @@ const make = Effect.gen(function* () {
       counts,
       bytesFreed,
       omittedCount: Math.max(0, entries.length - REPORT_ENTRY_LIMIT),
+      ...(gitMirrors === undefined ? {} : { gitMirrors }), // fork: library-launch-files
     };
     yield* SubscriptionRef.set(reportRef, latestReport);
     return latestReport;
@@ -2374,8 +2461,10 @@ const make = Effect.gen(function* () {
         omittedCount: previous?.omittedCount ?? 0,
         bytesFreed: updated.reduce(
           (sum, row) => sum + (row.outcome === "removed" ? (row.bytes ?? 0) : 0),
-          0,
+          removedMirrorBytes(previous?.gitMirrors), // fork: library-launch-files
         ),
+        // fork: library-launch-files
+        ...(previous?.gitMirrors === undefined ? {} : { gitMirrors: previous.gitMirrors }),
       };
       yield* SubscriptionRef.set(reportRef, report);
       return report;

@@ -23,6 +23,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -48,6 +49,8 @@ import {
   releaseManagedProjectCheckout,
 } from "../../workspace/ManagedProjectCheckout.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
+import * as LibraryGitFetch from "./LibraryGitFetch.ts";
+import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { archiveFor } from "./Library.testkit.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
@@ -168,6 +171,47 @@ const runnerLayer = Layer.effect(
     });
   }),
 );
+/** Clones signal their start, report progress, then hold at their remote's gate until it opens. */
+const cloneStarts = new Map<string, Deferred.Deferred<void>>();
+const cloneGates = new Map<string, Deferred.Deferred<void>>();
+const cloneProgress = new Map<string, ReadonlyArray<LibraryGitFetch.LibraryCloneProgress>>();
+const cloneCalls: string[] = [];
+const gitFetchLayer = Layer.effect(
+  LibraryGitFetch.LibraryGitFetch,
+  Effect.gen(function* () {
+    const runner = yield* ProcessRunner.ProcessRunner;
+    return LibraryGitFetch.LibraryGitFetch.of({
+      cloneRepository: (input) =>
+        Effect.gen(function* () {
+          cloneCalls.push(input.remoteUrl);
+          const started = cloneStarts.get(input.remoteUrl);
+          if (started !== undefined) yield* Deferred.succeed(started, undefined);
+          for (const update of cloneProgress.get(input.remoteUrl) ?? [])
+            yield* input.onProgress?.(update) ?? Effect.void;
+          const gate = cloneGates.get(input.remoteUrl);
+          if (gate !== undefined) yield* Deferred.await(gate);
+          return yield* runner
+            .run({
+              command: "git",
+              args: [
+                "clone",
+                ...(input.branch === null ? [] : ["--branch", input.branch]),
+                "--",
+                input.remoteUrl,
+                input.path,
+              ],
+              env: { GIT_TERMINAL_PROMPT: "0" },
+              timeoutBehavior: "timedOutResult",
+            })
+            .pipe(Effect.orDie);
+        }),
+      warmMirror: () => Effect.void,
+      mirrorKey: (remoteUrl) => Effect.succeed(remoteUrl),
+      mirrors: Effect.succeed([]),
+      removeMirror: () => Effect.succeed(null),
+    });
+  }),
+);
 const vcsCalls: string[] = [];
 const vcsStatus = {
   isRepo: true,
@@ -243,6 +287,7 @@ const hostDependencies = Layer.mergeAll(
   VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer)),
 ).pipe(Layer.provideMerge(config), Layer.provideMerge(NodeServices.layer));
 const layerTest = Layer.mergeAll(LibraryWorkspace.layer, CheckpointStore.layer).pipe(
+  Layer.provideMerge(Layer.mergeAll(gitFetchLayer, WorktreeSetupTracker.layer)),
   Layer.provideMerge(hostDependencies),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -325,6 +370,51 @@ const takenFolder = Effect.fnUntraced(function* (slug: string) {
 });
 const reconnectDetail =
   "Loom could not check which project owns this folder. Reconnect your Library and try again.";
+/** A two-repository project whose remotes clone from local fixtures under `parent`. */
+const remoteProject = Effect.fnUntraced(function* (parent: string, slug: string) {
+  const path = yield* Path.Path;
+  for (const id of ["web", "server"]) {
+    const source = path.join(parent, `${id}-source`);
+    yield* initRepo(source);
+    cloneSources.set(`https://example.test/${slug}/${id}.git`, source);
+  }
+  return makeProject(
+    projectFor().resources.map((resource) => ({
+      ...resource,
+      remoteUrl: `https://example.test/${slug}/${resource.id}.git`,
+    })),
+  );
+});
+interface FakeThread {
+  readonly projectId: ProjectId;
+  readonly worktreePath: string;
+  readonly deletedAt?: string;
+}
+/** A workspace of its own whose conversations are `threads`, open until the test ends. */
+const workspaceWithThreads = Effect.fnUntraced(function* (threads: Map<ThreadId, FakeThread>) {
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const services = yield* Layer.build(
+    Layer.fresh(LibraryWorkspace.layer).pipe(
+      Layer.provide(
+        Layer.succeed(ProjectionStore.ProjectionStoreV2, {
+          ...projections,
+          getThread: (threadId) =>
+            Effect.succeed({ id: threadId, ...threads.get(threadId)! } as never),
+          getThreadShell: (threadId) => {
+            const thread = threads.get(threadId);
+            return Effect.succeed(
+              thread === undefined
+                ? null
+                : ({ latestRunId: null, deletedAt: thread.deletedAt ?? null } as never),
+            );
+          },
+          getMessageCount: () => Effect.succeed(0),
+        }),
+      ),
+    ),
+  );
+  return Context.get(services, LibraryWorkspace.LibraryWorkspace);
+});
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
   it.effect("reports clone authentication with a computer-specific setup repair", () =>
@@ -1674,6 +1764,192 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(copy.state).toBe("ready");
       expect(copy.repositories).toHaveLength(2);
       expect(yield* git(path.join(request.rootPath, "web"), ["rev-parse", "HEAD"])).toBe(webHead);
+    }),
+  );
+  it.effect("reserves a copy's folders and projects before downloading, and binds to them", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const project = yield* remoteProject(parent, "reserve");
+      const threads = new Map<ThreadId, FakeThread>();
+      const service = yield* workspaceWithThreads(threads);
+      const request = {
+        requestId: "reserve-first",
+        rootPath: path.join(parent, "copy"),
+        project,
+        strategy: "clone" as const,
+      };
+      const copy = yield* service.reserveCopy(request);
+      const id = Hex.encode(
+        yield* (yield* Crypto.Crypto).digest(
+          "SHA-256",
+          new TextEncoder().encode(`${environmentId}\0${request.requestId}`),
+        ),
+      );
+      expect(copy).toMatchObject({ id: `copy:${id.slice(0, 40)}`, state: "preparing" });
+      expect((yield* service.reserveCopy(request)).id).toBe(copy.id);
+      const binding = (resourceIds: ReadonlyArray<string>): LibraryThreadBinding => ({
+        projectId: project.id,
+        projectRevision: project.revision,
+        workingCopyId: copy.id,
+        environmentId,
+        resourceIds,
+      });
+      const root = yield* service.resolveBinding({ binding: binding([]) });
+      const web = yield* service.resolveBinding({ binding: binding(["web"]) });
+      expect(root.cwd).toBe(request.rootPath);
+      expect(web.cwd).toBe(path.join(request.rootPath, "web"));
+      const threadId = ThreadId.make("reserved-conversation");
+      threads.set(threadId, { projectId: web.localProjectId, worktreePath: web.cwd });
+      expect(yield* service.bindThread({ threadId, binding: binding(["web"]), project })).toEqual(
+        web,
+      );
+      expect(cloneCalls.filter((url) => url.includes("/reserve/"))).toEqual([]);
+      const ready = yield* service.fillCopy({ workingCopyId: copy.id });
+      expect(ready.state).toBe("ready");
+      expect(ready.rootLocalProjectId).toBe(root.localProjectId);
+      expect(yield* service.resolveBinding({ binding: binding(["web"]) })).toEqual(web);
+    }),
+  );
+  it.effect("downloads a reserved copy once however many conversations wait on it", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const project = yield* remoteProject(parent, "single-flight");
+      const webUrl = "https://example.test/single-flight/web.git";
+      const started = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      cloneStarts.set(webUrl, started);
+      cloneGates.set(webUrl, gate);
+      cloneProgress.set(webUrl, [
+        { stage: "fetch", percent: 30, detail: "Receiving objects" },
+        { stage: "fetch", percent: 80, detail: "Receiving objects" },
+      ]);
+      const threads = new Map<ThreadId, FakeThread>();
+      const service = yield* workspaceWithThreads(threads);
+      const copy = yield* service.reserveCopy({
+        requestId: "single-flight",
+        rootPath: path.join(parent, "copy"),
+        project,
+        strategy: "clone",
+      });
+      const binding: LibraryThreadBinding = {
+        projectId: project.id,
+        projectRevision: project.revision,
+        workingCopyId: copy.id,
+        environmentId,
+        resourceIds: [],
+      };
+      const resolved = yield* service.resolveBinding({ binding });
+      const bound = ThreadId.make("waiting-conversation");
+      threads.set(bound, { projectId: resolved.localProjectId, worktreePath: resolved.cwd });
+      yield* service.bindThread({ threadId: bound, binding, project });
+      // Sending a message starts the download without waiting for it.
+      yield* service.prepareThreadFiles({ threadId: bound, waitForFiles: false });
+      yield* Deferred.await(started);
+      const waiting = yield* Effect.all(
+        [
+          service.prepareThreadFiles({ threadId: bound }),
+          service.fillCopy({ workingCopyId: copy.id }),
+        ],
+        { concurrency: "unbounded" },
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      // Conversations outside the copy, and the cleanup each replication pass runs, never wait.
+      yield* service.prepareThreadFiles({ threadId: ThreadId.make("unbound-conversation") });
+      yield* service.cleanupTemporaryCopies(() => Effect.succeed(true));
+      const card = yield* tracker.get(bound);
+      expect(card).toMatchObject({ kind: "project-files", phase: "running" });
+      expect(card?.stages.find((stage) => stage.id === "fetch")).toMatchObject({
+        status: "running",
+        percent: 40,
+        detail: "Web: Receiving objects",
+      });
+      yield* Deferred.succeed(gate, undefined);
+      const [, filled] = yield* Fiber.join(waiting);
+      expect(filled.state).toBe("ready");
+      expect(cloneCalls.filter((url) => url === webUrl)).toEqual([webUrl]);
+      expect((yield* tracker.get(bound))?.phase).toBe("done");
+      expect(yield* fs.exists(path.join(copy.rootPath, "web", "README.md"))).toBe(true);
+    }),
+  );
+  it.effect("cancels a download from its setup card and downloads again on the next request", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const project = yield* remoteProject(parent, "cancel");
+      const webUrl = "https://example.test/cancel/web.git";
+      const started = yield* Deferred.make<void>();
+      cloneStarts.set(webUrl, started);
+      cloneGates.set(webUrl, yield* Deferred.make<void>());
+      const threads = new Map<ThreadId, FakeThread>();
+      const service = yield* workspaceWithThreads(threads);
+      const copy = yield* service.reserveCopy({
+        requestId: "cancel",
+        rootPath: path.join(parent, "copy"),
+        project,
+        strategy: "clone",
+      });
+      const binding: LibraryThreadBinding = {
+        projectId: project.id,
+        projectRevision: project.revision,
+        workingCopyId: copy.id,
+        environmentId,
+        resourceIds: [],
+      };
+      const resolved = yield* service.resolveBinding({ binding });
+      const threadId = ThreadId.make("cancelled-download");
+      threads.set(threadId, { projectId: resolved.localProjectId, worktreePath: resolved.cwd });
+      yield* service.bindThread({ threadId, binding, project });
+      const waiting = yield* service
+        .prepareThreadFiles({ threadId })
+        .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(started);
+      expect(yield* tracker.cancel(threadId)).toBe(true);
+      expect(yield* Fiber.join(waiting)).toMatchObject({ reason: "blocked" });
+      expect((yield* tracker.get(threadId))?.phase).toBe("cancelled");
+      cloneGates.delete(webUrl);
+      yield* service.prepareThreadFiles({ threadId });
+      expect((yield* service.status({ workingCopyId: copy.id })).copy.state).toBe("ready");
+    }),
+  );
+  it.effect("discards reserved files once every conversation bound to them is deleted", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const project = yield* remoteProject(parent, "abandoned");
+      const threads = new Map<ThreadId, FakeThread>();
+      const service = yield* workspaceWithThreads(threads);
+      const copy = yield* service.reserveCopy({
+        requestId: "abandoned",
+        rootPath: path.join(parent, "copy"),
+        project,
+        strategy: "clone",
+      });
+      const binding: LibraryThreadBinding = {
+        projectId: project.id,
+        projectRevision: project.revision,
+        workingCopyId: copy.id,
+        environmentId,
+        resourceIds: [],
+      };
+      const resolved = yield* service.resolveBinding({ binding });
+      const threadId = ThreadId.make("abandoned-reservation");
+      const thread = { projectId: resolved.localProjectId, worktreePath: resolved.cwd };
+      threads.set(threadId, thread);
+      yield* service.bindThread({ threadId, binding, project });
+      const acknowledged = () => Effect.succeed(true);
+      yield* service.cleanupTemporaryCopies(acknowledged);
+      expect((yield* service.preparation({ requestId: "abandoned" }))?.state).toBe("preparing");
+      expect(yield* fs.exists(copy.rootPath)).toBe(true);
+      threads.set(threadId, { ...thread, deletedAt: "2026-10-26T00:00:00Z" });
+      yield* service.cleanupTemporaryCopies(acknowledged);
+      expect((yield* service.preparation({ requestId: "abandoned" }))?.state).toBe("released");
+      expect(yield* fs.exists(copy.rootPath)).toBe(false);
+      expect(cloneCalls.filter((url) => url.includes("/abandoned/"))).toEqual([]);
     }),
   );
   it.effect("resumes a release after the durable archive and folder rename were committed", () =>

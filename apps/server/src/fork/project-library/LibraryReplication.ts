@@ -854,9 +854,10 @@ const make = Effect.gen(function* () {
     }
     // Keep capturing committed milestones during an outage once this journal is established.
     if (initialized) yield* ensureAuthority(yield* publisher.info);
+    // Copies go first, so a large history backlog never delays a new copy reaching the Library.
+    yield* publishCopyChanges();
     const published = yield* publish;
     if (published) yield* pruneBaselines(captured.bound, false);
-    yield* publishCopyChanges();
     if (Option.isSome(workspace)) {
       yield* workspace.value.cleanupTemporaryCopies(isHistoryAcknowledged);
       yield* publishCopyChanges();

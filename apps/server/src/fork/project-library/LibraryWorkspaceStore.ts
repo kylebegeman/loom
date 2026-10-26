@@ -54,8 +54,29 @@ export const WorkspaceReceipt = Schema.Struct({
   removalPath: Schema.NullOr(Schema.String),
   archivePath: Schema.NullOr(Schema.String),
   archiveDigest: Schema.NullOr(Schema.String),
+  /**
+   * A new copy whose conversation starts before its files download. Its folders and local
+   * projects exist from the start; `resourceIds` is the request the download completes.
+   */
+  reservation: Schema.optional(
+    Schema.Struct({
+      resourceIds: Schema.Array(Schema.String),
+      rootLocalProjectId: ProjectId,
+      repositories: Schema.Array(
+        Schema.Struct({
+          resourceId: Schema.String,
+          path: Schema.String,
+          localProjectId: ProjectId,
+        }),
+      ),
+    }),
+  ),
 });
 export type WorkspaceReceipt = typeof WorkspaceReceipt.Type;
+/** A reserved copy's files are still on their way, so its conversations wait for them. */
+export const awaitingFiles = (receipt: WorkspaceReceipt) =>
+  receipt.reservation !== undefined &&
+  (receipt.copy.state === "preparing" || receipt.copy.state === "failed");
 export const ImportedHistoryWatermark = Schema.Struct({
   authorityId: Schema.String,
   authorityEpoch: Schema.Number,
@@ -607,7 +628,7 @@ const make = Effect.gen(function* () {
             return resolved.cwd;
           }
           if (
-            receipt.copy.state !== "ready" ||
+            (receipt.copy.state !== "ready" && !awaitingFiles(receipt)) ||
             input.localProjectId !== resolved.localProjectId ||
             !(yield* fs.exists(input.cwd)) ||
             (yield* fs.realPath(input.cwd)) !== resolved.cwd

@@ -992,6 +992,42 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
+  it.effect("registers a copy whose files just arrived even while history cannot upload", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const filled = { ...receipt, copy: { ...copy, id: "filled-copy" } };
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            receipts: Effect.succeed([receipt, filled]),
+            get: (id) => Effect.succeed(id === filled.copy.id ? filled : receipt),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Effect.void,
+              historyFolders: Effect.succeed([]),
+            }),
+          ),
+        );
+        yield* Ref.set(f.failAck, true);
+        yield* f.event(1, "thread.created", "{}");
+        expect((yield* Effect.flip(service.drain)).reason).toBe("io");
+        expect((yield* Ref.get(f.registered)).map((input) => input.copy.id)).toEqual([
+          copy.id,
+          filled.copy.id,
+        ]);
+        expect(yield* Ref.get(f.order)).toEqual(["copy", "copy", "assets", "history"]);
+      }),
+    ),
+  );
   // A launch uploads nothing itself: it creates the conversation, binds it and sets the copy's
   // retention, and a pass can scan the creation before the binding exists.
   it.effect("publishes a launched conversation and its file retention on the journal fence", () =>
