@@ -80,7 +80,9 @@ when it will start in one. Press Enter, or
 tap it on iPhone, to start with them, or open its options first (Right Arrow on a keyboard)
 to change them. A project that needs a choice opens its options instead. Loom chooses an
 available computer and prepares its files automatically, and you can choose another computer
-or work on one repository. If a start gets stuck, **Start over** drops that attempt and keeps
+or work on one repository. On an up-to-date computer the conversation opens right away and shows
+its files downloading there; you can send your first message before they finish, and it starts
+once they arrive. If a start gets stuck, **Start over** drops that attempt and keeps
 its model, permissions and folder; a conversation it already created stays in your list.
 A title you type is kept after the first message; without one, the first message names the
 conversation. If you leave a conversation you just started without sending anything, Loom
