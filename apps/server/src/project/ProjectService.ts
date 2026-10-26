@@ -33,6 +33,7 @@ import {
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
+import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as ServerSettings from "../serverSettings.ts";
 import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
@@ -174,6 +175,7 @@ export const make = Effect.gen(function* () {
   const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const serverConfig = yield* ServerConfig.ServerConfig; // fork: file-placement
 
   const toProject = (
     row: ProjectStore.ProjectRow,
@@ -397,6 +399,7 @@ export const make = Effect.gen(function* () {
       Effect.mapError(() => refuse("Could not check whether Loom manages this folder.")),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
+      Effect.provideService(ServerConfig.ServerConfig, serverConfig), // fork: file-placement
     );
     if (managed !== null)
       return yield* refuse(

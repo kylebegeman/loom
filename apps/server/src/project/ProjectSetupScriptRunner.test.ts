@@ -181,6 +181,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
       const events: string[] = [];
       const entered = yield* Deferred.make<void>();
       const ready = yield* Deferred.make<void>();
+      const written = yield* Deferred.make<void>();
       const laneFailure = new ProjectLifecycleError({
         reason: "command-failed",
         message: "Lane unavailable",
@@ -211,10 +212,11 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
                   events.push("open");
                   return {} as never;
                 }),
+              subscribe: () => Effect.succeed(() => undefined),
               write: () =>
                 Effect.sync(() => {
                   events.push("setup");
-                }),
+                }).pipe(Effect.andThen(Deferred.succeed(written, undefined))),
             }),
             ServerSettings.layerTest(),
             NodeCrypto.layer,
@@ -266,6 +268,10 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         yield* Deferred.succeed(ready, undefined);
       }
       const result = yield* Fiber.join(running);
+      if (mode !== "failure" && mode !== "no-script") {
+        yield* TestClock.adjust("3 seconds");
+        yield* Deferred.await(written);
+      }
       if (mode === "failure") {
         assert.equal(result._tag, "Failure");
         if (result._tag === "Failure") {
