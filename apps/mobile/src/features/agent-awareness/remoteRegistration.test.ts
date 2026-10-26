@@ -130,6 +130,8 @@ vi.mock("expo-crypto", () => ({
     SHA512: "SHA-512",
   },
   getRandomBytes: (byteCount: number) => new Uint8Array(NodeCrypto.randomBytes(byteCount)),
+  // fork: secure-native-random -- dpop.ts draws proof-key bytes through getRandomValues.
+  getRandomValues: (values: Uint8Array) => NodeCrypto.getRandomValues(values),
   getRandomBytesAsync: (byteCount: number) =>
     Promise.resolve(new Uint8Array(NodeCrypto.randomBytes(byteCount))),
   digest: (algorithm: string, data: unknown) => {

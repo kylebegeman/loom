@@ -1087,7 +1087,8 @@ See [Connections help](docs/fork/user/connections.md).
 
 ### Secure native randomness
 
-| File                                          | Marker                 | Why                                                                                                                                |
-| --------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/mobile/src/features/cloud/dpop.ts`      | `secure-native-random` | Fail closed when native secure randomness is unavailable; Expo's convenience byte API can fall back to Math.random in development. |
-| `apps/mobile/src/features/cloud/dpop.test.ts` | `secure-native-random` | Cover unavailable secure randomness without using the available insecure fallback.                                                 |
+| File                                                                  | Marker                 | Why                                                                                                                                |
+| --------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/mobile/src/features/cloud/dpop.ts`                              | `secure-native-random` | Fail closed when native secure randomness is unavailable; Expo's convenience byte API can fall back to Math.random in development. |
+| `apps/mobile/src/features/cloud/dpop.test.ts`                         | `secure-native-random` | Cover unavailable secure randomness without using the available insecure fallback.                                                 |
+| `apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts` | `secure-native-random` | Mock the secure byte API that registration proofs now use.                                                                         |

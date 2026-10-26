@@ -430,6 +430,7 @@ apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	5
 apps/web/src/components/CommandPalette.logic.ts	bots	1
 apps/mobile/src/features/cloud/dpop.ts	secure-native-random	1
 apps/mobile/src/features/cloud/dpop.test.ts	secure-native-random	2
+apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts	secure-native-random	1
 apps/server/package.json	-	"@env-spec/parser": "0.6.0"
 apps/web/src/composer-logic.ts	ext-composer-menu	3
 apps/mobile/src/Stack.tsx	bots	2
