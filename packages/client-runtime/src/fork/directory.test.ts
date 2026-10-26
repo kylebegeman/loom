@@ -5,6 +5,7 @@ import {
   directoryAgeText,
   directoryCatalogRows,
   directoryConnectPlan,
+  backgroundCheckFailureText,
   directoryProofAge,
   directoryReportingText,
   directoryRoutes,
@@ -451,5 +452,37 @@ describe("directoryReportingText", () => {
     expect(signInLine()).toBe(
       "Library sign-in expires 2026-11-24T12:00:00.000Z. Renews automatically.",
     );
+  });
+});
+
+// fork: background-check-health
+describe("backgroundCheckFailureText", () => {
+  it("says since when a check has failed and why, and nothing once it passes", () => {
+    const report = { state: "reporting", lastReportedAt: null } as const;
+    expect(
+      backgroundCheckFailureText({
+        ...report,
+        failingChecks: [
+          {
+            check: "tailscale-cli",
+            message: "Loom is not allowed to run the Tailscale CLI (tailscale).",
+            firstSeenAt: "2026-09-23T06:21:00.000Z",
+            lastSeenAt: "2026-10-26T09:15:00.000Z",
+            count: 95_000,
+          },
+          {
+            check: "preview-registration",
+            message: "Could not reach the Library to register this computer's previews.",
+            firstSeenAt: "2026-10-26T09:00:00.000Z",
+            lastSeenAt: "2026-10-26T09:00:00.000Z",
+            count: 1,
+          },
+        ],
+      }),
+    ).toEqual([
+      "Tailscale CLI has failed 95000 times since 2026-09-23T06:21:00.000Z, most recently at 2026-10-26T09:15:00.000Z: Loom is not allowed to run the Tailscale CLI (tailscale).",
+      "Preview registration failed at 2026-10-26T09:00:00.000Z: Could not reach the Library to register this computer's previews.",
+    ]);
+    expect(backgroundCheckFailureText(report)).toEqual([]);
   });
 });

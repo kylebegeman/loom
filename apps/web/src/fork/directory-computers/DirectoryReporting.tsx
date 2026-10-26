@@ -1,5 +1,9 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { directoryReportingText, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  backgroundCheckFailureText,
+  directoryReportingText,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { DIRECTORY_REPORTING_FEATURE } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
@@ -29,11 +33,19 @@ export function DirectoryReporting({
     <section aria-label="Library sign-in and directory" className="space-y-2 px-3 py-3 sm:px-4">
       <h3 className="text-xs font-medium">Library sign-in and directory</h3>
       {report ? (
-        directoryReportingText(report).map((text) => (
-          <p key={text} className="text-xs text-muted-foreground">
-            {text}
-          </p>
-        ))
+        <>
+          {directoryReportingText(report).map((text) => (
+            <p key={text} className="text-xs text-muted-foreground">
+              {text}
+            </p>
+          ))}
+          {/* fork: background-check-health */}
+          {backgroundCheckFailureText(report).map((text) => (
+            <p key={text} className="text-xs text-destructive">
+              {text}
+            </p>
+          ))}
+        </>
       ) : (
         <p role="status" className="text-xs text-muted-foreground">
           {environment.connection.phase !== "connected"

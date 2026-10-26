@@ -124,6 +124,7 @@ import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as ReachPublicRoute from "./fork/reach/publicRoute.ts"; // fork: reach
+import * as BackgroundChecks from "./fork/background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as PocketId from "./auth/PocketId.ts";
@@ -729,6 +730,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer.pipe(Layer.provide(layerServerEnvironment))),
   Layer.provideMerge(ReachPublicRoute.layer), // fork: reach
+  Layer.provideMerge(BackgroundChecks.layer), // fork: background-check-health
   Layer.provideMerge(ServerLifecycleEvents.layer),
   Layer.provide(NetService.layer),
 );
@@ -853,6 +855,7 @@ const layerMakeServer = Layer.unwrap(
                 localPort: address.port,
                 localHost: loopbackUrlHostForAddress(address),
               };
+              const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
               return yield* claimTailscaleServe(target).pipe(
                 Effect.tap((claim) =>
                   Effect.logInfo("Tailscale Serve configured", {
@@ -861,6 +864,7 @@ const layerMakeServer = Layer.unwrap(
                     changed: claim.changed,
                   }),
                 ),
+                Effect.tap(() => checks.clear("tailscale-serve")), // fork: background-check-health
                 Effect.as(target),
                 Effect.catch((cause) =>
                   Effect.logWarning("Tailscale Serve not configured", {
@@ -868,7 +872,13 @@ const layerMakeServer = Layer.unwrap(
                     cause,
                     localPort: target.localPort,
                     servePort: target.servePort,
-                  }).pipe(Effect.as(null)),
+                  }).pipe(
+                    // fork: background-check-health
+                    Effect.andThen(
+                      checks.fail("tailscale-serve", BackgroundChecks.tailscaleFailure(cause)),
+                    ),
+                    Effect.as(null),
+                  ),
                 ),
               );
             }),
@@ -893,7 +903,12 @@ const layerMakeServer = Layer.unwrap(
                 : Effect.void,
           ),
         )
-      : Layer.empty;
+      : // fork: background-check-health - no longer checked, so earlier failures no longer apply
+        Layer.effectDiscard(
+          Effect.flatMap(BackgroundChecks.recorder, (checks) =>
+            Effect.andThen(checks.clear("tailscale-serve"), checks.clear("tailscale-cli")),
+          ),
+        );
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;

@@ -19,6 +19,7 @@ import { isTailnetHost } from "@t3tools/shared/hostClassification";
 import * as ServerConfig from "../config.ts";
 import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
 import { ReachPublicRoute, reachPublicEndpoints } from "../fork/reach/publicRoute.ts"; // fork: reach
+import * as BackgroundChecks from "../fork/background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import {
   formatHostForUrl,
   isLoopbackHost,
@@ -115,6 +116,7 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const reachRoute = yield* Effect.serviceOption(ReachPublicRoute); // fork: reach
+  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
   // Only the service default listens on every interface without being asked,
   // so only it checks once whether it runs in a cloud. The check starts now so
   // the first client does not wait for its timeout.
@@ -135,6 +137,11 @@ export const make = Effect.gen(function* () {
     // Serve setup can fail, and another app can hold the port; advertise only what answers as this server.
     if (config.tailscaleServeEnabled) {
       const servedUrl = yield* readTailscaleStatus.pipe(
+        // fork: background-check-health
+        Effect.tapError((error) =>
+          checks.fail("tailscale-cli", BackgroundChecks.tailscaleFailure(error)),
+        ),
+        Effect.tap(() => checks.clear("tailscale-cli")),
         Effect.map((status) => status.magicDnsName),
         Effect.flatMap((magicDnsName) => {
           if (magicDnsName === null) return Effect.succeed(null);

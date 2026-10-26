@@ -1,6 +1,7 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   reachChangeErrorText,
+  backgroundCheckFailureText,
   directoryReportingText,
   reachView,
   supportsLoomFeature,
@@ -172,6 +173,12 @@ export function ComputerReachSection({
                 ]
             ).map((text) => (
               <Text key={text} className="text-sm text-foreground-muted">
+                {text}
+              </Text>
+            ))}
+            {/* fork: background-check-health */}
+            {(report ? backgroundCheckFailureText(report) : []).map((text) => (
+              <Text key={text} selectable className={cn("text-sm", REACH_INK.danger)}>
                 {text}
               </Text>
             ))}

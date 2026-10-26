@@ -55,6 +55,26 @@ export function directoryReportingText(report: DirectoryReporting): readonly str
   return lines;
 }
 
+// fork: background-check-health
+const BACKGROUND_CHECK_NAMES: Readonly<Record<string, string>> = {
+  "tailscale-cli": "Tailscale CLI",
+  "tailscale-serve": "Tailscale Serve",
+  "directory-reporting": "Directory reporting",
+  "library-renewal": "Library sign-in renewal",
+  "preview-registration": "Preview registration",
+  "push-readiness": "Library push",
+};
+
+/** One line per recurring check that has failed since it last passed, kept across restarts. */
+export function backgroundCheckFailureText(report: DirectoryReporting): readonly string[] {
+  return (report.failingChecks ?? []).map((failure) => {
+    const name = BACKGROUND_CHECK_NAMES[failure.check] ?? failure.check;
+    return failure.count === 1
+      ? `${name} failed at ${failure.lastSeenAt}: ${failure.message}`
+      : `${name} has failed ${failure.count} times since ${failure.firstSeenAt}, most recently at ${failure.lastSeenAt}: ${failure.message}`;
+  });
+}
+
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   type DirectoryEnvironment,

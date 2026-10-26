@@ -92,6 +92,7 @@ import {
   verifyPreviewTicket,
 } from "./ticket.ts";
 import { runPreviewTunnel } from "./tunnel.ts";
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import type {
   PreviewGatewayHandle,
   PreviewGatewayView,
@@ -954,6 +955,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   });
 
   const libraryLock = yield* Semaphore.make(1);
+  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
   /** Whether the Library may still hold this computer's hosts from a registration this run. */
   let libraryRegistered = false;
   /**
@@ -962,20 +964,30 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
    */
   const refreshLibraryAccess = libraryLock.withPermit(
     Effect.suspend(() => {
-      if (!publisher.enabled) return Effect.void;
+      if (!publisher.enabled) return checks.clear("preview-registration");
       const suffix = isPreviewReady(settings) ? settings.suffix : null;
       if (suffix === null) {
         libraryIssuer = null;
-        if (!libraryRegistered) return Effect.void;
+        if (!libraryRegistered) return checks.clear("preview-registration");
+        const unregistered = Effect.sync(() => void (libraryRegistered = false)).pipe(
+          Effect.andThen(checks.clear("preview-registration")),
+        );
         return publisher.registerPreviews(null).pipe(
           Effect.matchEffect({
-            onSuccess: () => Effect.sync(() => void (libraryRegistered = false)),
+            onSuccess: () => unregistered,
             onFailure: (error) =>
               error.reason === "not-found"
-                ? Effect.sync(() => void (libraryRegistered = false))
+                ? unregistered
                 : Effect.logWarning("Could not tell the Library that previews are off", {
                     reason: error.reason,
-                  }),
+                  }).pipe(
+                    Effect.andThen(
+                      checks.fail(
+                        "preview-registration",
+                        "Could not tell the Library that this computer's previews are off.",
+                      ),
+                    ),
+                  ),
           }),
         );
       }
@@ -987,19 +999,37 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
             return libraryIssuer === null
               ? Effect.logWarning("Ignoring the Library's preview sign-in, which is not usable", {
                   origin: access.origin,
-                })
-              : Effect.void;
+                }).pipe(
+                  Effect.andThen(
+                    checks.fail(
+                      "preview-registration",
+                      "The Library answered with a preview sign-in Loom cannot use.",
+                    ),
+                  ),
+                )
+              : checks.clear("preview-registration");
           },
           onFailure: (error) => {
             // An older Library has no preview sign-in, so browsers keep entering from Loom.
             if (error.reason === "not-found") {
               libraryIssuer = null;
               libraryRegistered = false;
-              return Effect.void;
+              return checks.clear("preview-registration");
             }
             return Effect.logWarning("Could not refresh preview sign-in with the Library", {
               reason: error.reason,
-            });
+            }).pipe(
+              Effect.andThen(
+                checks.fail(
+                  "preview-registration",
+                  error.reason === "blocked"
+                    ? "Could not register previews: this computer's Library sign-in is missing or refused."
+                    : error.reason === "io"
+                      ? "Could not reach the Library to register this computer's previews."
+                      : `The Library refused this computer's preview registration (${error.reason}).`,
+                ),
+              ),
+            );
           },
         }),
       );

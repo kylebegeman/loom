@@ -243,6 +243,22 @@ export const LibrarySignInStatus = Schema.Struct({
 });
 export type LibrarySignInStatus = typeof LibrarySignInStatus.Type;
 
+// fork: background-check-health
+export const BackgroundCheckFailure = Schema.Struct({
+  check: Schema.String.annotate({
+    description:
+      "tailscale-cli, tailscale-serve, directory-reporting, library-renewal, preview-registration or push-readiness.",
+  }),
+  message: Schema.String,
+  firstSeenAt: IsoDateTime,
+  lastSeenAt: IsoDateTime,
+  count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+}).annotate({
+  description:
+    "A recurring background check that has failed since it last passed. Kept across restarts.",
+});
+export type BackgroundCheckFailure = typeof BackgroundCheckFailure.Type;
+
 /**
  * How this computer's reports to its Library's directory are going. `off` has no Library to
  * report to or is the directory itself, `unsupported` has a Library without the directory,
@@ -265,6 +281,7 @@ export const DirectoryReporting = Schema.Struct({
   reason: Schema.optional(
     Schema.Literals(["io", "invalid", "unverified", "wrong-environment", "stale-sequence"]),
   ),
+  failingChecks: Schema.optional(Schema.Array(BackgroundCheckFailure)), // fork: background-check-health
 });
 export type DirectoryReporting = typeof DirectoryReporting.Type;
 
