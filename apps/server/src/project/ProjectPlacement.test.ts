@@ -255,8 +255,40 @@ describe("ProjectPlacement", () => {
               yield* placement.assertPlacementAllowed("~/Developer/active/loom"),
               `${home}/Developer/active/loom`,
             );
+            // `within` refuses only a folder inside a project; `ignore` leaves projects to the caller.
+            assert.equal(
+              yield* placement.assertPlacementAllowed(elsewhere, { projects: "within" }),
+              elsewhere,
+            );
+            assert.equal(
+              (yield* placement
+                .assertPlacementAllowed(`${project}/nested`, { projects: "within" })
+                .pipe(Effect.flip))._tag,
+              "ProjectPlacementRefusedError",
+            );
+            assert.equal(
+              yield* placement.assertPlacementAllowed(`${project}/nested`, { projects: "ignore" }),
+              `${project}/nested`,
+            );
           }),
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("previews the folder a claim would take without creating it", () =>
+    withPlacement(
+      () => ({}),
+      (placement, { baseDir }) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = path.join(baseDir, "projects");
+          assert.equal(yield* placement.previewFolder("My App"), path.join(root, "my-app"));
+          assert.isFalse(yield* fileSystem.exists(root));
+          assert.equal(yield* placement.claimFolder("My App"), path.join(root, "my-app"));
+          assert.equal(yield* placement.previewFolder("My App"), path.join(root, "my-app-2"));
+          assert.isFalse(yield* fileSystem.exists(path.join(root, "my-app-2")));
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

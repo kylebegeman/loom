@@ -54,6 +54,8 @@ export const WorkspaceReceipt = Schema.Struct({
   removalPath: Schema.NullOr(Schema.String),
   archivePath: Schema.NullOr(Schema.String),
   archiveDigest: Schema.NullOr(Schema.String),
+  /** Released without an archive because every file was in a clean repository already pushed. */
+  publishedRelease: Schema.optional(Schema.Boolean),
   /**
    * A new copy whose conversation starts before its files download. Its folders and local
    * projects exist from the start; `resourceIds` is the request the download completes.

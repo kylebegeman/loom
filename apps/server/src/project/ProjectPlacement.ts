@@ -45,6 +45,15 @@ export interface RepositoryCheckout {
   readonly projectId: ProjectId | null;
 }
 
+export interface PlacementGuardOptions {
+  readonly allowReuseOf?: string;
+  /**
+   * `within` lets registered projects sit inside the target, as when an existing folder is adopted
+   * with its own projects; `ignore` leaves registered projects to a caller that checks them itself.
+   */
+  readonly projects?: "refuse" | "within" | "ignore";
+}
+
 /** Lanes folders to keep checkouts out of; hosts without lanes leave it unprovided. */
 export class LanesRoots extends Context.Service<
   LanesRoots,
@@ -65,10 +74,12 @@ export class ProjectPlacement extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<RepositoryCheckout>>;
     /** Atomically creates `<Projects folder>/<slug>`, adding -2…-100 when the name is taken. */
     readonly claimFolder: (title: string) => Effect.Effect<string, ProjectPlacementFolderError>;
+    /** The folder `claimFolder` would take now, without creating it. */
+    readonly previewFolder: (title: string) => Effect.Effect<string>;
     /** Resolves a requested destination, refusing places a checkout must never go. */
     readonly assertPlacementAllowed: (
       target: string,
-      options?: { readonly allowReuseOf?: string },
+      options?: PlacementGuardOptions,
     ) => Effect.Effect<string, ProjectPlacementRefusedError>;
   }
 >()("t3/project/ProjectPlacement") {}
@@ -194,6 +205,19 @@ const make = Effect.gen(function* () {
       );
   });
 
+  const folderName = (root: string, name: string, attempt: number) =>
+    path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
+
+  const previewFolder = Effect.fn("ProjectPlacement.previewFolder")(function* (title: string) {
+    const root = yield* projectsRoot;
+    const name = newProjectFolderName(title);
+    for (let attempt = 1; attempt < MAX_FOLDER_ATTEMPTS; attempt++) {
+      const folder = folderName(root, name, attempt);
+      if (!(yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true)))) return folder;
+    }
+    return folderName(root, name, MAX_FOLDER_ATTEMPTS);
+  });
+
   const claimFolder = Effect.fn("ProjectPlacement.claimFolder")(function* (title: string) {
     const root = yield* projectsRoot;
     yield* fileSystem
@@ -202,7 +226,7 @@ const make = Effect.gen(function* () {
     const name = newProjectFolderName(title);
     // Non-recursive mkdir claims a name atomically; racers move on after AlreadyExists.
     for (let attempt = 1; attempt <= MAX_FOLDER_ATTEMPTS; attempt++) {
-      const folder = path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
+      const folder = folderName(root, name, attempt);
       const claimed = yield* fileSystem.makeDirectory(folder).pipe(
         Effect.as(true),
         Effect.catchIf(
@@ -244,7 +268,7 @@ const make = Effect.gen(function* () {
 
   const assertPlacementAllowed = Effect.fn("ProjectPlacement.assertPlacementAllowed")(function* (
     target: string,
-    options?: { readonly allowReuseOf?: string },
+    options?: PlacementGuardOptions,
   ) {
     const refuse = (reason: string) => new ProjectPlacementRefusedError({ path: target, reason });
     const expanded = expandHomePath(target.trim(), home);
@@ -268,10 +292,12 @@ const make = Effect.gen(function* () {
         return yield* refuse(`A project cannot go inside or around ${label} (${root}).`);
     }
     const reuse = options?.allowReuseOf === undefined ? null : path.resolve(options.allowReuseOf);
-    for (const project of yield* activeProjects) {
+    const projectRule = options?.projects ?? "refuse";
+    for (const project of projectRule === "ignore" ? [] : yield* activeProjects) {
       const root = path.resolve(project.workspaceRoot);
       if (reuse !== null && key(root) === key(reuse) && key(resolved) === key(reuse)) continue;
-      if (overlaps(yield* canonical(root), real))
+      const projectRoot = yield* canonical(root);
+      if (projectRule === "within" ? contains(projectRoot, real) : overlaps(projectRoot, real))
         return yield* refuse(
           `This folder is inside or around the project "${project.title}" (${root}).`,
         );
@@ -285,6 +311,7 @@ const make = Effect.gen(function* () {
     folders,
     findRepositoryCheckouts,
     claimFolder,
+    previewFolder,
     assertPlacementAllowed,
   });
 });

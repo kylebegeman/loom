@@ -1825,6 +1825,7 @@ export const layerWsRpc = (
             onSome: (root) => ({ scratchWorkspaceRoot: root }),
           }),
           newProjectsRoot: folders.projects,
+          serverChosenFolders: true as const, // fork: file-placement
           folders: Option.match(scratchWorkspaceRoot, {
             onNone: () => folders,
             onSome: (scratch) => ({ ...folders, scratch }),

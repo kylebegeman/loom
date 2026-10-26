@@ -269,9 +269,16 @@ export const ProjectLibraryToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_placement", {
+    description:
+      "Show where loom_library_copy_prepare would put a project's files on this computer when rootPath is omitted: use files already here, reopen removed ones, reuse an existing checkout of the repository, or clone into a new folder in the Projects folder. Omit resourceIds for the whole project. Changes nothing.",
+    parameters: Library.LibraryPlacementRequest,
+    success: Library.LibraryPlacement,
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_copy_prepare", {
     description:
-      "Reuse an existing folder or clone all selected project repositories beneath one parent on this computer. Prefer reuse. A folder registered only to archived projects, or to ones the Library no longer has, moves to this project; their old conversations keep their history. A folder that any current project holds, or that holds files Loom created, is refused with the reason, naming the current project when there is one, as is one whose owners the Library cannot confirm. Retry with the same requestId after a failure.",
+      "Get a project's files ready on this computer. Omit rootPath to let this computer choose the folder, as loom_library_copy_placement shows; pass one only for a folder the user named. Prefer reuse. A folder registered only to archived projects, or to ones the Library no longer has, moves to this project; their old conversations keep their history. A folder that any current project holds, or that holds files Loom created, is refused with the reason, naming the current project when there is one, as is one whose owners the Library cannot confirm. Retry with the same requestId after a failure.",
     parameters: Library.LibraryPrepareCopyRequest,
     success: Library.LibraryWorkingCopy,
     failure,
@@ -584,6 +591,19 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
               isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
             ),
           ),
+      ),
+      loom_library_copy_placement: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.gen(function* () {
+            const project = yield* (yield* Catalog.LibraryService).project({
+              projectId: input.projectId,
+            });
+            return yield* (yield* Workspace.LibraryWorkspace).placement({
+              project,
+              resourceIds: input.resourceIds,
+            });
+          }),
+        ),
       ),
       loom_library_copy_retention: McpToolAccess.writesEnvironment((input) =>
         onHost(

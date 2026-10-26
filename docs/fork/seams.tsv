@@ -229,6 +229,7 @@ apps/server/src/ws.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
 apps/server/src/project/ProjectService.ts	file-placement	3
 apps/server/src/project/ProjectService.test.ts	file-placement	2
+apps/server/src/ws.ts	file-placement	1
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
 apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1

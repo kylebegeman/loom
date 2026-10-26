@@ -2,6 +2,8 @@ import {
   LibraryError,
   type LibraryLaunchCandidates as LibraryLaunchCandidatesResult,
   type LibraryLaunchCandidatesRequest,
+  type LibraryPlacement,
+  type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
   rankLibraryProjectLaunch,
@@ -82,6 +84,21 @@ const make = Effect.gen(function* () {
           workingThreads: 0,
         });
     }
+    const placementOf = (copy: LibraryWorkingCopy | undefined) =>
+      copy === undefined
+        ? {}
+        : {
+            placement: {
+              action: "use",
+              rootPath: copy.rootPath,
+              ownership: copy.ownership,
+              copyId: copy.id,
+              ...(copy.rootLocalProjectId == null
+                ? {}
+                : { localProjectId: copy.rootLocalProjectId }),
+              reason: "This computer already has these files.",
+            } satisfies LibraryPlacement,
+          };
     const ranking = rankLibraryProjectLaunch({
       project,
       copies,
@@ -101,7 +118,11 @@ const make = Effect.gen(function* () {
                 label: candidate.label,
                 online: candidate.online,
                 ...(candidate.kind === "copy"
-                  ? { copyId: candidate.copyId, freshness: candidate.freshness }
+                  ? {
+                      copyId: candidate.copyId,
+                      freshness: candidate.freshness,
+                      ...placementOf(copies.find((copy) => copy.id === candidate.copyId)),
+                    }
                   : {}),
                 lastUsedAt: candidate.lastUsedAt,
                 reasons: candidate.reasons,
