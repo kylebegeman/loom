@@ -1010,3 +1010,4 @@ apps/desktop/src/preload.ts	open-at-login	1
 apps/web/src/components/settings/SettingsPanels.tsx	open-at-login	2
 apps/web/src/components/settings/settingsSearch.ts	open-at-login	1
 packages/contracts/src/ipc.ts	open-at-login	2
+packages/contracts/src/worktreeSetup.ts	library-launch-files	2

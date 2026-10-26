@@ -58,6 +58,9 @@ export const WorktreeSetupSnapshot = Schema.Struct({
   stages: Schema.Array(WorktreeSetupStage),
   error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(WORKTREE_SETUP_ERROR_MAX_LENGTH))),
   sequence: NonNegativeInt,
+  // fork: library-launch-files: project files fill in after the conversation opens, never blocking Send
+  kind: Schema.optional(Schema.Literals(["worktree", "project-files"])),
+  operationId: Schema.optional(TrimmedNonEmptyString), // fork: library-launch-files: retry or cancel it
 });
 export type WorktreeSetupSnapshot = typeof WorktreeSetupSnapshot.Type;
 

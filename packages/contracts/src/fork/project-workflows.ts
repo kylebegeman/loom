@@ -127,6 +127,11 @@ export const LibraryLaunchOperation = Schema.Struct({
   keepOnComputer: Schema.optional(Schema.Boolean),
   /** Absent means the copy folder, which is all a computer without worktree starts offers. */
   workspace: Schema.optional(LibraryLaunchWorkspace),
+  /**
+   * Files this launch reserves, then fills after the conversation exists. Only computers with
+   * `library-launch-files` accept it, and `binding.workingCopyId` must equal its `requestId`.
+   */
+  files: Schema.optional(LibraryPrepareCopyRequest),
 });
 export const LibraryOperationInput = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),

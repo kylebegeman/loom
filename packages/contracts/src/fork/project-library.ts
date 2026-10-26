@@ -22,6 +22,8 @@ export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
 /** A computer that can start a Library conversation in its own new worktree. */
 export const LIBRARY_WORKTREE_STARTS_FEATURE = "library-worktree-starts";
+/** A computer whose launch operation opens the conversation first and fills its files after. */
+export const LIBRARY_LAUNCH_FILES_FEATURE = "library-launch-files";
 /**
  * Where a new Library conversation works: the copy's own folder, or a new worktree made from it
  * on a branch of its own, so conversations running at once do not change each other's files.
