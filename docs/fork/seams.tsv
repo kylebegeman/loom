@@ -1038,4 +1038,4 @@ apps/web/src/components/settings/settingsSearch.ts	library-sign-in	1
 packages/contracts/src/orchestratorMcp.ts	webhook-delivery-issues	1
 packages/contracts/src/scheduledTask.ts	webhook-delivery-issues	2
 scripts/effect-budget.json	-	"apps/web/src/components/ChatView.tsx": 26,
-apps/server/src/project/RepositoryIdentityResolver.test.ts	hermetic-git-tests	2
+apps/server/src/testUtils/gitConfig.setup.ts	hermetic-git-tests	2
