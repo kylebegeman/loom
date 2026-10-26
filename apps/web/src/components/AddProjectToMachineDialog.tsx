@@ -177,7 +177,8 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     setError(null);
     const projectId = newProjectId();
     try {
-      await addProjectToMachine({
+      // fork: file-placement -- a reused checkout keeps its own project id.
+      const opened = await addProjectToMachine({
         source: { environmentId: project.environmentId, cwd: project.workspaceRoot },
         subdirectory: projectSubdirectory(
           project.repositoryIdentity?.rootPath,
@@ -191,7 +192,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
         files: files.filter((file) => selectedFiles.has(file.path)).map((file) => file.path),
       });
       close();
-      openClonedProject(scopeProjectRef(target.environmentId, projectId));
+      openClonedProject(scopeProjectRef(target.environmentId, opened)); // fork: file-placement
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start the clone.");
       setSubmitting(false);
