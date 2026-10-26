@@ -4114,6 +4114,8 @@ const make = Effect.gen(function* () {
           "prepare",
           mapIo(
             Effect.gen(function* () {
+              if (input.rootPath === undefined)
+                return yield* new LibraryError({ reason: "invalid" });
               const rootPath = yield* canonicalRoot(input.rootPath);
               return yield* withWorkspaceLease(rootPath, restoreCopy(input, rootPath));
             }),

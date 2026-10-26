@@ -161,7 +161,8 @@ export type LibraryRecoveryGrant = typeof LibraryRecoveryGrant.Type;
 export const LibraryRestoreCopyRequest = Schema.Struct({
   requestId: LibraryRequestId,
   project: LibraryProject,
-  rootPath: Schema.String,
+  /** Absent asks the computer for a new folder; send it to computers without `serverChosenFolders`. */
+  rootPath: Schema.optional(Schema.String),
   grant: LibraryRecoveryGrant,
   resourceIds: Schema.optional(Schema.Array(LibraryId)),
 });
