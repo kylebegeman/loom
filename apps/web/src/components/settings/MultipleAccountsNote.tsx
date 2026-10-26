@@ -34,7 +34,8 @@ export function MultipleAccountsNote({
       <InfoIcon aria-hidden />
       <AlertDescription>
         <p>
-          We do not recommend managing multiple {providerName} accounts in T3 Code.{" "}
+          {/* fork: brand */}
+          We do not recommend managing multiple {providerName} accounts in Loom.{" "}
           <a
             href={MULTIPLE_ACCOUNTS_FAQ_URL}
             target="_blank"

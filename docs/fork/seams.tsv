@@ -557,6 +557,7 @@ apps/web/src/components/settings/ConnectionsSettings.tsx	brand	9
 apps/web/src/components/settings/DiagnosticsSettings.tsx	brand	2
 apps/web/src/components/settings/IntegrationsSettings.tsx	brand	4
 apps/web/src/components/settings/KeybindingsSettings.tsx	brand	1
+apps/web/src/components/settings/MultipleAccountsNote.tsx	brand	1
 apps/web/src/components/settings/NotificationSettings.tsx	brand	1
 apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx	brand	3
 apps/web/src/components/settings/SettingsPanels.logic.ts	brand	1
