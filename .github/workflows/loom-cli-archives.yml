@@ -68,8 +68,6 @@ jobs:
             arch: x64
             key: linux-x64
     runs-on: ${{ matrix.runner }}
-    env:
-      VP_NODE_VERSION: "26.8.2"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -79,9 +77,10 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
+      # build-exe embeds the runner's own Node and refuses any version but engines.node.
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: "26.8.2"
+          node-version-file: package.json
           cache: true
           run-install: |
             args:
