@@ -74,6 +74,38 @@ export function libraryAddResource(
 }
 
 /**
+ * What adding a repository does to copies that hold the root repository it moves, or null when
+ * no copy is affected. Those copies keep it at their folder root and no longer match the project.
+ */
+export function libraryRootMoveWarning(
+  existing: readonly LibraryResource[],
+  resource: Pick<LibraryResource, "kind">,
+  copies: readonly LibraryWorkingCopy[],
+  hostLabel: (id: EnvironmentId) => string,
+) {
+  if (!isRepository(resource)) return null;
+  const root = existing.find((entry) => isRepository(entry) && entry.relativePath === ROOT_FOLDER);
+  if (!root) return null;
+  const computers = [
+    ...new Set(
+      libraryActiveCopies(copies)
+        .filter((copy) => copy.repositories.some((held) => held.resourceId === root.id))
+        .map((copy) => hostLabel(copy.environmentId)),
+    ),
+  ];
+  if (!computers.length) return null;
+  const folder = folderFor(
+    root.title,
+    existing.filter((other) => other !== root),
+  );
+  const places =
+    computers.length === 1
+      ? `The copy on ${computers[0]} keeps it at its folder root`
+      : `The copies on ${computers.slice(0, -1).join(", ")} and ${computers.at(-1)} keep it at their folder root`;
+  return `This moves ${root.title} into ${folder}/. ${places}, so Loom prepares a new copy for work on this project there.`;
+}
+
+/**
  * Turn whatever someone pasted into a project resource. Repository hosting URLs and git
  * remotes become clonable repositories; any other web address becomes a reference link.
  */

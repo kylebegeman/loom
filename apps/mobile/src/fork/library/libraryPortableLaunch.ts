@@ -23,6 +23,7 @@ export async function preparePortableLibraryLaunchCopy(
     readonly project: LibraryProject;
     readonly destinationEnvironmentId: EnvironmentId;
     readonly authorityEnvironmentId: EnvironmentId;
+    /** Empty lets a computer with `serverChosenFolders` pick a new folder for the restore. */
     readonly rootPath: string;
     readonly resourceIds: readonly string[];
     readonly requestId: string;
@@ -47,7 +48,7 @@ export async function preparePortableLibraryLaunchCopy(
       input: {
         requestId: string;
         project: LibraryProject;
-        rootPath: string;
+        rootPath?: string;
         grant: LibraryRecoveryGrant;
         resourceIds: readonly string[];
       };
@@ -140,7 +141,7 @@ export async function preparePortableLibraryLaunchCopy(
     input: {
       requestId: `${input.requestId}:restore`,
       project: input.project,
-      rootPath: input.rootPath,
+      ...(input.rootPath ? { rootPath: input.rootPath } : {}),
       grant,
       resourceIds: input.resourceIds,
     },
@@ -150,7 +151,7 @@ export async function preparePortableLibraryLaunchCopy(
     restored.projectId !== input.project.id ||
     restored.projectRevision !== input.project.revision ||
     restored.environmentId !== input.destinationEnvironmentId ||
-    restored.rootPath !== input.rootPath ||
+    (input.rootPath !== "" && restored.rootPath !== input.rootPath) ||
     restored.ownership !== "managed" ||
     restored.state !== "ready" ||
     restored.registered === false ||

@@ -6,6 +6,7 @@ import {
   libraryAddResource,
   libraryResourceFromInput,
   libraryResourceLocation,
+  libraryRootMoveWarning,
   isRepositoryResource,
   resourceLink,
 } from "@t3tools/client-runtime/fork";
@@ -108,6 +109,9 @@ export function ProjectResources({
             resources={resources}
             busy={busy}
             autoFocus={adding}
+            moveWarning={(resource) =>
+              libraryRootMoveWarning(resources, resource, copies, hostLabel)
+            }
             onAdd={(resource) => onChange(libraryAddResource(resources, resource))}
           />
         </div>
@@ -294,12 +298,14 @@ export function ResourceAdder({
   busy,
   autoFocus = false,
   draft,
+  moveWarning,
   onAdd,
 }: {
   readonly resources: readonly LibraryResource[];
   readonly busy: boolean;
   readonly autoFocus?: boolean;
   readonly draft?: { readonly value: string; readonly onChange: (value: string) => void };
+  readonly moveWarning?: (resource: Pick<LibraryResource, "kind">) => string | null;
   readonly onAdd: (resource: LibraryResource) => Promise<boolean>;
 }) {
   const [localValue, setLocalValue] = useState("");
@@ -307,6 +313,9 @@ export function ResourceAdder({
   const setValue = draft?.onChange ?? setLocalValue;
   const [problem, setProblem] = useState<string | null>(null);
   const parsed = libraryResourceFromInput(value, resources);
+  const warning = parsed ? (moveWarning?.(parsed) ?? null) : null;
+  // The warning is shown once before adding, so moving a held repository is a deliberate choice.
+  const [warned, setWarned] = useState(false);
   const submit = async () => {
     if (!value.trim() || busy) return;
     if (!parsed) {
@@ -318,6 +327,10 @@ export function ResourceAdder({
       resources.some((entry) => (entry.kind === "link" ? entry.url : entry.remoteUrl) === target)
     ) {
       setProblem("That's already in this project.");
+      return;
+    }
+    if (warning && !warned) {
+      setWarned(true);
       return;
     }
     if (await onAdd({ id: randomUUID(), ...parsed })) setValue("");
@@ -334,6 +347,7 @@ export function ResourceAdder({
           onChange={(event) => {
             setValue(event.target.value);
             setProblem(null);
+            setWarned(false);
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter") return;
@@ -348,12 +362,16 @@ export function ResourceAdder({
           disabled={busy || !value.trim()}
           onClick={() => void submit()}
         >
-          Add
+          {warning && warned ? "Add anyway" : "Add"}
         </Button>
       </div>
       {problem ? (
         <p role="alert" className="text-xs text-destructive">
           {problem}
+        </p>
+      ) : warning && warned ? (
+        <p role="alert" className="text-xs text-warning-foreground">
+          {warning}
         </p>
       ) : parsed ? (
         <p className="text-xs text-muted-foreground">

@@ -1,4 +1,8 @@
-import { libraryLaunchRanking } from "@t3tools/client-runtime/fork";
+import {
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  LIBRARY_RESTORE_FOLDER_LINE,
+  libraryLaunchRanking,
+} from "@t3tools/client-runtime/fork";
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -54,6 +58,8 @@ const state = vi.hoisted(() => ({
   healthQuery: {},
   operationsQuery: {},
   threadIds: [] as string[],
+  placementTargets: [] as unknown[],
+  placementQuery: {},
   configsAtom: {},
   providersAtom: {},
   nextId: 0,
@@ -65,6 +71,12 @@ vi.mock("./state", () => ({
     history: () => state.historyQuery,
     copyHealth: () => state.healthQuery,
     operations: () => state.operationsQuery,
+    placement: {
+      resultAtom: (target: unknown) => {
+        state.placementTargets.push(target);
+        return state.placementQuery;
+      },
+    },
   },
   useLibraryAuthority: state.authority,
   useLibraryPermission: state.permission,
@@ -312,6 +324,7 @@ beforeEach(() => {
   state.permission.mockReset().mockReturnValue(true);
   state.nextId = 0;
   state.threadIds = [];
+  state.placementTargets = [];
   const serverConfig = {
     settings: {
       ...DEFAULT_SERVER_SETTINGS,
@@ -984,6 +997,25 @@ describe("portable project launch", () => {
     await click("Retry conversation");
     expect(commands.snapshotCopy.run.mock.calls[1]).toEqual(snapshot);
     expect(commands.readCopyStatus.run).toHaveBeenCalledOnce();
+    expectOpened();
+  });
+
+  it("lets a computer that chooses folders pick the restore folder instead of the start preview", async () => {
+    setup();
+    const previous = state.authority();
+    const [host] = previous.environments;
+    state.authority.mockReturnValue({
+      ...previous,
+      environments: [
+        { ...host, serverConfig: { ...host.serverConfig, serverChosenFolders: true } },
+      ],
+    });
+    await mount();
+    expect(launch.filesLine).toBe(LIBRARY_RESTORE_FOLDER_LINE);
+    await click("Start conversation");
+    expect(state.placementTargets).toEqual([]);
+    expect(commands.inspectFolder.run).not.toHaveBeenCalled();
+    expect(commands.restoreCopy.run.mock.calls[0]![0].input).not.toHaveProperty("rootPath");
     expectOpened();
   });
 
@@ -1934,6 +1966,84 @@ describe("starts that open the conversation before its files", () => {
     expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId },
+    });
+  });
+
+  it("keeps a placed copy's Keep choice when the preview reuses files Loom manages", async () => {
+    launchFilesHost([]);
+    const previous = state.authority();
+    const [host] = previous.environments;
+    state.authority.mockReturnValue({
+      ...previous,
+      environments: [
+        { ...host, serverConfig: { ...host.serverConfig, serverChosenFolders: true } },
+      ],
+    });
+    state.query.mockImplementation((query: unknown) => ({
+      data:
+        query === state.placementQuery
+          ? { action: "use", rootPath: "/work/project", ownership: "managed", reason: "Copy" }
+          : query === state.retainedQuery
+            ? []
+            : undefined,
+      isPending: false,
+      isSuccess: true,
+      error: null,
+      refresh: vi.fn(),
+    }));
+    commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
+    await mount();
+    await click("Start conversation");
+    const input = launchInput(0).request.input;
+    expect(input.files).toMatchObject({ strategy: "reuse" });
+    expect(input.files).not.toHaveProperty("rootPath");
+    expect(input).toMatchObject({ keepOnComputer: false });
+  });
+
+  it("downloads into a chosen empty folder and refuses one holding another repository", async () => {
+    launchFilesHost([]);
+    const repositoryProject: LibraryProject = {
+      ...project,
+      resources: [
+        {
+          id: "app",
+          title: "App",
+          remoteUrl: "https://github.com/owner/app",
+          relativePath: ".",
+          defaultBranch: null,
+        },
+      ],
+    };
+    commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
+    commands.inspectFolder.run.mockResolvedValue(
+      AsyncResult.success({
+        rootPath: "/work/other",
+        exists: true,
+        repositories: [
+          {
+            path: "/work/other",
+            relativePath: ".",
+            remoteUrl: "https://github.com/owner/other",
+            head: null,
+            branch: null,
+          },
+        ],
+      }),
+    );
+    await mount([], { project: repositoryProject });
+    await act(() => launch.selectFolder("/work/other"));
+    await click("Start conversation");
+    expect(launch.error).toBe(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
+
+    commands.inspectFolder.run.mockResolvedValue(
+      AsyncResult.success({ rootPath: "/work/empty", exists: true, repositories: [] }),
+    );
+    await act(() => launch.selectFolder("/work/empty"));
+    await click("Start conversation");
+    expect(launchInput(0).request.input.files).toMatchObject({
+      rootPath: "/work/empty",
+      strategy: "clone",
     });
   });
 

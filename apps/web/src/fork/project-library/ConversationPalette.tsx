@@ -18,7 +18,7 @@ import {
   BotIcon,
   RotateCcwIcon,
 } from "lucide-react";
-import { isRepositoryResource } from "@t3tools/client-runtime/fork";
+import { isRepositoryResource, LIBRARY_FOLDER_CHOICE_TITLES } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ModelSelection, RuntimeMode } from "@t3tools/contracts";
 import {
   getProviderOptionDescriptors,
@@ -33,7 +33,7 @@ import { LibraryModelPalette } from "./LibraryModelPalette";
 import { LibraryTextPalette } from "./LibraryTextPalette";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
 import { ProfileReadiness } from "./ProfileReadiness";
-import { LibraryFolderPalette } from "./LibraryFolderPalette";
+import { LibraryFolderPalette, libraryFolderActions } from "./LibraryFolderPalette";
 import type { useLibraryConversationSetup } from "./NewConversationDialog";
 
 type Setup = ReturnType<typeof useLibraryConversationSetup>;
@@ -247,10 +247,14 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         initialPath={s.browseStart}
         onBack={back}
         onClose={close}
-        onSelect={(path) => {
-          s.selectFolder(path);
-          go("start");
-        }}
+        actions={(folder) =>
+          folder
+            ? libraryFolderActions(folder, s.project.title, (path) => {
+                s.selectFolder(path);
+                go("start");
+              })
+            : []
+        }
       />
     );
   let items: LibraryPaletteItem[];
@@ -487,8 +491,10 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
         ? [
             {
               id: "existing-files",
-              title: "Use files in this folder",
-              description: s.existingFolder,
+              title: LIBRARY_FOLDER_CHOICE_TITLES.reuse,
+              description: s.existingFolderSkipsRestore
+                ? `${s.existingFolder}. Changes saved on the other computer are not applied.`
+                : s.existingFolder,
               select: () => s.selectFolder(s.existingFolder!),
             },
             {

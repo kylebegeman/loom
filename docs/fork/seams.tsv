@@ -1053,6 +1053,7 @@ apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	file-
 apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
+apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	8
 docs/user/project-settings.md	file-placement	1
 packages/shared/src/projectSettings.ts	file-placement	4
 packages/shared/src/projectSettings.test.ts	file-placement	2

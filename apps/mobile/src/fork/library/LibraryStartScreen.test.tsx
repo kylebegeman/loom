@@ -8,7 +8,13 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { libraryLaunchRanking, takeEmptyLibraryConversation } from "@t3tools/client-runtime/fork";
+import {
+  LIBRARY_FOLDER_CHOICE_TITLES,
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  LIBRARY_RESTORE_FOLDER_LINE,
+  libraryLaunchRanking,
+  takeEmptyLibraryConversation,
+} from "@t3tools/client-runtime/fork";
 import {
   LibraryError,
   type LibraryProject,
@@ -48,6 +54,7 @@ const state = vi.hoisted(() => ({
   executeOperation: Object.assign(vi.fn(), { permissionAtom: () => true }),
   inspectFolder: Object.assign(vi.fn(), { permissionAtom: () => true }),
   placement: null as { action: string; rootPath: string; ownership: string; reason: string } | null,
+  pickedFolder: "/Users/kyle/Projects/chosen",
   create: vi.fn(),
   pull: Object.assign(vi.fn(), { permissionAtom: () => true }),
   resolve: vi.fn(),
@@ -402,7 +409,11 @@ vi.mock("./LibraryProfileReadiness", () => ({
   LibraryProfileReadiness: () => <span>Setup checks</span>,
 }));
 vi.mock("./LibraryFolderPicker", () => ({
-  LibraryFolderPicker: () => <span>Folder browser</span>,
+  LibraryFolderPicker: (props: { onChoose: (path: string) => void }) => (
+    <button aria-label="Pick folder" onClick={() => props.onChoose(state.pickedFolder)}>
+      Folder browser
+    </button>
+  ),
 }));
 vi.mock("./LibraryFolderStorage", () => ({
   LibraryFolderStorage: () => <button>Review folder storage</button>,
@@ -1302,6 +1313,33 @@ describe("portable project files on mobile", () => {
     expect(JSON.stringify(state.savePreferences.mock.calls)).not.toContain("temporary-grant");
   });
 
+  it("lets a computer that chooses folders pick the restore folder instead of the start preview", async () => {
+    const released = { ...savedCopy, registered: false };
+    state.copies = [released];
+    state.computers[0] = makeComputer(computerA, "MacBook", false);
+    const target = state.computers[1]!;
+    state.computers[1] = {
+      ...target,
+      serverConfig: { ...target.serverConfig, serverChosenFolders: true },
+    };
+    state.placement = {
+      action: "reuse-existing",
+      rootPath: "/Users/kyle/Developer/active/loom",
+      ownership: "borrowed",
+      reason: "Existing checkout",
+    };
+    params = { ...params, reuseEnvironmentId: computerB };
+    restoreToB(released);
+    await render();
+    await click("Files");
+    expect(container.textContent).toContain(LIBRARY_RESTORE_FOLDER_LINE);
+    expect(container.textContent).not.toContain("/Users/kyle/Developer/active/loom");
+    await click("Start work");
+    expect(state.restore).toHaveBeenCalledOnce();
+    expect(state.restore.mock.calls[0]![0].input).not.toHaveProperty("rootPath");
+    expect(state.create.mock.calls[0]![0].environmentId).toBe(computerB);
+  });
+
   it("starts on another computer from idle kept source files without changing Keep", async () => {
     const kept = { ...copy, keepOnComputer: true };
     state.copies = [kept];
@@ -1507,6 +1545,83 @@ describe("Library starts on computers that choose folders", () => {
     expect(files).not.toHaveProperty("rootPath");
     expect(state.inspectFolder).not.toHaveBeenCalled();
     expect(state.prepare).not.toHaveBeenCalled();
+  });
+
+  it("sends Keep for files the preview says Loom manages, even when it reuses them", async () => {
+    state.copies = [];
+    const capable = makeComputer(computerA, "MacBook", true, ["library-launch-files"]);
+    state.computers[0] = {
+      ...capable,
+      serverConfig: { ...capable.serverConfig, serverChosenFolders: true },
+    };
+    state.placement = {
+      action: "use",
+      rootPath: "/Users/kyle/Projects/loom",
+      ownership: "managed",
+      reason: "Library copy",
+    };
+    state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+    params = { ...params, reuseEnvironmentId: computerA };
+    await render();
+    await click("Start work");
+    const input = state.executeOperation.mock.calls[0]![0].input.request.input;
+    expect(input.files).toMatchObject({ strategy: "reuse" });
+    expect(input).toMatchObject({ keepOnComputer: false });
+  });
+
+  it("downloads into a chosen empty folder and refuses one holding another repository", async () => {
+    state.project = {
+      ...project,
+      resources: [
+        {
+          id: "app",
+          title: "App",
+          relativePath: ".",
+          remoteUrl: "https://github.com/team/app",
+          defaultBranch: null,
+        },
+      ],
+    };
+    state.copies = [];
+    const capable = makeComputer(computerA, "MacBook", true, ["library-launch-files"]);
+    state.computers[0] = {
+      ...capable,
+      serverConfig: { ...capable.serverConfig, serverChosenFolders: true },
+    };
+    state.executeOperation.mockResolvedValue(AsyncResult.success({}));
+    params = { ...params, reuseEnvironmentId: computerA };
+    state.inspectFolder.mockResolvedValueOnce(
+      AsyncResult.success({
+        rootPath: state.pickedFolder,
+        exists: true,
+        repositories: [
+          {
+            path: state.pickedFolder,
+            relativePath: ".",
+            remoteUrl: "https://github.com/team/other",
+            head: null,
+            branch: null,
+          },
+        ],
+      }),
+    );
+    await render();
+    await click("Files");
+    await click("Choose another folder");
+    await click("Pick folder");
+    expect(container.textContent).toContain(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+
+    state.inspectFolder.mockResolvedValueOnce(
+      AsyncResult.success({ rootPath: state.pickedFolder, exists: true, repositories: [] }),
+    );
+    await click("Choose another folder");
+    await click("Pick folder");
+    expect(container.textContent).toContain(LIBRARY_FOLDER_CHOICE_TITLES.clone);
+    await click("Start work");
+    expect(state.executeOperation.mock.calls[0]![0].input.request.input.files).toMatchObject({
+      rootPath: state.pickedFolder,
+      strategy: "clone",
+    });
   });
 });
 

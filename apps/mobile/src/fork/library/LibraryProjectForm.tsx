@@ -49,6 +49,7 @@ import { LibraryNewProjectChoices, type LibraryCreateStart } from "./LibraryNewP
 import {
   libraryActiveCopies,
   libraryAddResource,
+  libraryRootMoveWarning,
   libraryStartIntent,
   libraryProfileChange,
   libraryProfileProblem,
@@ -168,7 +169,7 @@ function LibraryProjectForm({
     blueprintText === null ? null : Schema.decodeUnknownOption(blueprintCodec)(blueprintText);
   const blueprint = decodedBlueprint?._tag === "Some" ? decodedBlueprint.value : null;
   const copies = useEnvironmentQuery(
-    editsProfile && initial && authority.environmentId
+    initial && authority.environmentId
       ? library.copies({
           environmentId: authority.environmentId,
           input: { projectId: initial.id, includeReleased: true },
@@ -222,7 +223,8 @@ function LibraryProjectForm({
   const typedTitle = title.trim() && title !== existingFolder?.title ? title.trim() : null;
   const folderDraftIds = useRef<ReadonlySet<string>>(new Set());
   const [pasted, setPasted] = useState(""),
-    [pasteProblem, setPasteProblem] = useState<string | null>(null);
+    [pasteProblem, setPasteProblem] = useState<string | null>(null),
+    [moveWarning, setMoveWarning] = useState<string | null>(null);
   // Pasting a URL is the whole add flow; the drafts below stay editable for names and folders.
   const addPasted = () => {
     const existing: LibraryResource[] = resources.map((draft) => ({
@@ -244,6 +246,13 @@ function LibraryProjectForm({
       setPasteProblem("That's already in this project.");
       return;
     }
+    // The warning is shown once before adding, so moving a held repository is a deliberate choice.
+    const warning = libraryRootMoveWarning(existing, parsed, copies.data ?? [], hostLabel);
+    if (warning && warning !== moveWarning) {
+      setMoveWarning(warning);
+      return;
+    }
+    setMoveWarning(null);
     const id = uuidv4();
     // A repository at the project root moves into its own folder once a second one joins it.
     const folders = new Map(
@@ -495,6 +504,7 @@ function LibraryProjectForm({
               onChangeText={(value) => {
                 setPasted(value);
                 setPasteProblem(null);
+                setMoveWarning(null);
               }}
               onSubmitEditing={addPasted}
               returnKeyType="done"
@@ -507,9 +517,11 @@ function LibraryProjectForm({
             />
             {pasteProblem ? (
               <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
+            ) : moveWarning ? (
+              <Text className="text-sm text-warning-foreground">{moveWarning}</Text>
             ) : null}
             <Button
-              label="Add"
+              label={moveWarning ? "Add anyway" : "Add"}
               disabled={pending || awaitingResult || !pasted.trim()}
               onPress={addPasted}
             />

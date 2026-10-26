@@ -149,6 +149,21 @@ describe("Library working-copy selection", () => {
     });
     expect(libraryCopiesForScope(rootProject, [rootCopy], host, null)).toEqual([rootCopy]);
   });
+  it("matches a one-repository copy the computer cloned at its root", () => {
+    const appOnly = { ...project, resources: [project.resources[0]!] };
+    const flat = copy({
+      repositories: [{ ...copy().repositories[0]!, path: "/workspace/loom" }],
+    });
+    expect(libraryCopiesForScope(appOnly, [flat], host, null)).toEqual([flat]);
+    expect(libraryCopiesForScope(project, [flat], host, ["app"])).toEqual([flat]);
+    const twoAtRoot = copy({
+      repositories: copy().repositories.map((repository) => ({
+        ...repository,
+        path: "/workspace/loom",
+      })),
+    });
+    expect(libraryCopiesForScope(project, [twoAtRoot], host, ["app"])).toEqual([]);
+  });
   it("offers no copies for an archived project", () => {
     expect(libraryCopiesForScope({ ...project, archived: true }, [copy()], host, null)).toEqual([]);
   });
