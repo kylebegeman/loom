@@ -52,6 +52,8 @@ apps/server/src/cli/triagePrompt.ts	export const TRIAGE_PLAYBOOK = `# T3 Code tr
 apps/server/src/cli/triagePrompt.ts	export const buildTriageContext = (input: TriageContextInput) => `# T3 Code triage context
 apps/server/src/cli/triagePrompt.ts	export const buildTriageSeedPrompt = (contextFilePath: string) => `A T3 Code user is \
 apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	Get T3 Code
+apps/web/src/lib/bootError.ts	: "Download and reinstall T3 Code",
+apps/web/src/lib/bootError.ts	issue.searchParams.set("title", "T3 Code failed to start");
 
 # Text inside generated scripts that only ssh reads.
 packages/ssh/src/auth.ts	# Invoked by ssh via SSH_ASKPASS when T3 Code re-runs ssh with a cached password
