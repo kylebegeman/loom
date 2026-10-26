@@ -35,7 +35,14 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as ServerSettings from "../serverSettings.ts";
-import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+// fork: file-placement
+import {
+  readManagedProjectCheckout,
+  relocateManagedProjectCheckout,
+} from "../workspace/ManagedProjectCheckout.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
+import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
+import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -176,6 +183,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig; // fork: file-placement
+  const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
 
   const toProject = (
     row: ProjectStore.ProjectRow,
@@ -358,8 +366,22 @@ export const make = Effect.gen(function* () {
     return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
   });
 
+  // fork: file-placement: the orchestrator reports a held root as a conflict, and projects may nest.
+  const assertPlacementAllowed = (projectId: ProjectId, workspaceRoot: string) =>
+    placement
+      .assertPlacementAllowed(workspaceRoot, { projects: "ignore" })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new ProjectLocationManagedError({ projectId, workspaceRoot, reason: error.reason }),
+        ),
+      );
+
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input, options) {
+      // fork: file-placement: creating the folder is a placement.
+      if (input.createWorkspaceRootIfMissing === true)
+        yield* assertPlacementAllowed(input.projectId, input.workspaceRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
@@ -401,7 +423,9 @@ export const make = Effect.gen(function* () {
       Effect.provideService(Path.Path, path),
       Effect.provideService(ServerConfig.ServerConfig, serverConfig), // fork: file-placement
     );
-    if (managed !== null)
+    // fork: file-placement: a vanished folder with an unreleased receipt was moved by hand and may follow.
+    const present = fileSystem.exists(workspaceRoot).pipe(Effect.orElseSucceed(() => true));
+    if (managed !== null && (managed.released || (yield* present)))
       return yield* refuse(
         "Loom manages this folder's location and recovery. Its location cannot be changed.",
       );
@@ -421,8 +445,10 @@ export const make = Effect.gen(function* () {
               projectId: input.projectId,
               workspaceRoot: input.workspaceRoot,
             });
-      if (workspaceRoot !== previousRoot)
+      if (workspaceRoot !== previousRoot) {
         yield* assertLocationMovable(input.projectId, previousRoot);
+        yield* assertPlacementAllowed(input.projectId, workspaceRoot); // fork: file-placement
+      }
       yield* commit({
         type: "project.meta.update",
         commandId: input.commandId,
@@ -442,6 +468,15 @@ export const make = Effect.gen(function* () {
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
+        // fork: file-placement: the project already moved; a receipt left behind only keeps its old name taken.
+        yield* relocateManagedProjectCheckout(previousRoot, workspaceRoot).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(ServerConfig.ServerConfig, serverConfig),
+          Effect.catch((cause) =>
+            Effect.logWarning("Moved project's checkout receipt could not follow it", { cause }),
+          ),
+        );
       }
       return yield* readCommitted(input.projectId);
     },
@@ -636,4 +671,10 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ProjectService, make).pipe(
   Layer.provide(ThreadCommandExecutor.layer),
+  // fork: file-placement: lanes depend on this service, so its guard runs without a LanesRoots provider.
+  Layer.provide(
+    ProjectPlacement.layer.pipe(
+      Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
+    ),
+  ),
 );

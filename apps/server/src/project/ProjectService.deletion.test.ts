@@ -33,6 +33,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 
@@ -46,6 +47,7 @@ const layerServices = Layer.mergeAll(
   IdAllocator.layer,
   ThreadCommandExecutor.layer,
   Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({ receipts: Effect.succeed([]) }),
+  Layer.mock(ProjectPlacement.ProjectPlacement)({}), // fork: file-placement
   Layer.succeed(WorkspacePaths.WorkspacePaths, {
     normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
     resolveRelativePathWithinRoot: ({ workspaceRoot, relativePath }) =>

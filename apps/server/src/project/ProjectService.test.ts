@@ -28,10 +28,14 @@ import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import {
+  markManagedProjectCheckout,
+  readManagedProjectCheckout, // fork: file-placement
+} from "../workspace/ManagedProjectCheckout.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
+import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
@@ -86,6 +90,7 @@ const layerProjectServiceDependencies = Layer.mergeAll(
   IdAllocator.layer,
   ThreadCommandExecutor.layer,
   Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({ receipts: Effect.succeed([]) }),
+  Layer.mock(ProjectPlacement.ProjectPlacement)({}), // fork: file-placement
 ).pipe(
   Layer.provideMerge(LegacyV1ThreadImporter.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink))),
   Layer.provideMerge(ProjectEnrichmentService.layer),
@@ -802,5 +807,84 @@ it.effect("refuses to repoint a project in a folder Loom cloned and manages", ()
       })
       .pipe(Effect.flip);
     assert.equal(refused._tag, "ProjectLocationManagedError");
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: file-placement
+it.effect("lets a managed project follow a folder moved by hand, taking its receipt along", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "project-service-moved-" }),
+    );
+    const workspaceRoot = `${root}/app`;
+    const movedRoot = `${root}/renamed`;
+    yield* fs.makeDirectory(`${workspaceRoot}/.git`, { recursive: true });
+    yield* markManagedProjectCheckout(
+      workspaceRoot,
+      buildRepositoryIdentity({
+        rootPath: workspaceRoot,
+        remoteName: "origin",
+        remoteUrl: "https://github.com/example/app.git",
+        originUrl: "https://github.com/example/app.git",
+      }),
+    );
+    const service = yield* ProjectService.ProjectService;
+    const projectId = ProjectId.make("project:moved-root");
+    yield* service.create({
+      commandId: CommandId.make("command:moved-root:create"),
+      projectId,
+      title: "Moved",
+      workspaceRoot,
+    });
+    yield* fs.rename(workspaceRoot, movedRoot);
+    const moved = yield* service.update({
+      commandId: CommandId.make("command:moved-root:move"),
+      projectId,
+      workspaceRoot: movedRoot,
+    });
+    assert.equal(moved.workspaceRoot, movedRoot);
+    assert.equal((yield* readManagedProjectCheckout(movedRoot))?.workspaceRoot, movedRoot);
+    assert.isNull(yield* readManagedProjectCheckout(workspaceRoot));
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: file-placement
+it.effect("refuses to create or move a project into T3 home", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const stateDir = yield* fs.realPath((yield* ServerConfig.ServerConfig).stateDir);
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "project-service-guarded-" }),
+    );
+    const service = yield* ProjectService.ProjectService;
+    const created = yield* service
+      .create({
+        commandId: CommandId.make("command:guarded:create-inside"),
+        projectId: ProjectId.make("project:guarded-inside"),
+        title: "Inside",
+        workspaceRoot: `${stateDir}/inside`,
+        createWorkspaceRootIfMissing: true,
+      })
+      .pipe(Effect.flip);
+    assert.equal(created._tag, "ProjectLocationManagedError");
+    assert.isFalse(yield* fs.exists(`${stateDir}/inside`));
+
+    const projectId = ProjectId.make("project:guarded");
+    yield* service.create({
+      commandId: CommandId.make("command:guarded:create"),
+      projectId,
+      title: "Guarded",
+      workspaceRoot: root,
+    });
+    const moved = yield* service
+      .update({
+        commandId: CommandId.make("command:guarded:move"),
+        projectId,
+        workspaceRoot: `${stateDir}/worktrees`,
+      })
+      .pipe(Effect.flip);
+    assert.equal(moved._tag, "ProjectLocationManagedError");
+    assert.equal(Option.getOrThrow(yield* service.getById(projectId)).workspaceRoot, root);
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
