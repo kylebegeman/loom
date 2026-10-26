@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { ProjectId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import { receiptFor } from "../fork/project-library/Library.testkit.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -115,47 +116,6 @@ const initRepository = (directory: string, origin: string) =>
       ),
     ),
   );
-
-const libraryReceipt = (
-  id: string,
-  rootPath: string,
-  state: LibraryWorkspaceStore.WorkspaceReceipt["copy"]["state"],
-): LibraryWorkspaceStore.WorkspaceReceipt => ({
-  requestId: id,
-  fingerprint: id,
-  project: {
-    id: `project-${id}`,
-    revision: 1,
-    title: id,
-    brief: "",
-    resources: [],
-    archived: false,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  },
-  copy: {
-    id,
-    projectId: `project-${id}`,
-    projectRevision: 1,
-    environmentId: EnvironmentId.make("placement-computer"),
-    rootPath,
-    repositories: [],
-    ownership: "managed",
-    state,
-    keepOnComputer: false,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  },
-  rootLocalProjectId: null,
-  rootCheckpointRepository: false,
-  legacyThreadIds: [],
-  rootIdentity: null,
-  releaseRequestId: null,
-  releaseReviewToken: null,
-  removalPath: null,
-  archivePath: null,
-  archiveDigest: null,
-});
 
 describe("ProjectPlacement", () => {
   it.effect("an empty setting puts projects in <managedRoot>/projects", () =>
@@ -430,13 +390,13 @@ describe("ProjectPlacement", () => {
           const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
             Effect.provide(LibraryWorkspaceStore.layer),
           );
-          yield* store.put(libraryReceipt("missing", path.join(root, "app"), "missing"));
+          yield* store.put(receiptFor("missing", path.join(root, "app"), "missing"));
           yield* store.put({
-            ...libraryReceipt("releasing", path.join(root, "site"), "ready"),
+            ...receiptFor("releasing", path.join(root, "site"), "ready"),
             releaseRequestId: "release",
             removalPath: path.join(root, "site.loom-released-0123456789abcdef"),
           });
-          yield* store.put(libraryReceipt("released", path.join(root, "old"), "released"));
+          yield* store.put(receiptFor("released", path.join(root, "old"), "released"));
           assert.equal(yield* placement.previewFolder("App"), path.join(root, "app-2"));
           assert.equal(yield* placement.claimFolder("App"), path.join(root, "app-2"));
           assert.equal(yield* placement.claimFolder("Site"), path.join(root, "site-2"));

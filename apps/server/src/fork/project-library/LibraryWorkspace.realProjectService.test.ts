@@ -34,6 +34,7 @@ import * as Workspace from "./LibraryWorkspace.ts";
 import * as LibraryGitFetch from "./LibraryGitFetch.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import * as Store from "./LibraryWorkspaceStore.ts";
+import * as LanesRoots from "../project-lifecycle/lanesRoots.ts";
 
 const config = ServerConfig.layerTest(process.cwd(), { prefix: "library-real-project-service-" });
 const realProjects = RuntimeLayer.layerProjectService.pipe(
@@ -62,6 +63,7 @@ const dependencies = Layer.mergeAll(
   realProjects,
   Store.layer,
   ProjectPlacement.layerWithProjectStore.pipe(
+    Layer.provide(LanesRoots.layer),
     Layer.provideMerge(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
     Layer.provideMerge(ServerSettings.layerTest()),
   ),

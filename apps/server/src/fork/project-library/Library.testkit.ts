@@ -13,6 +13,7 @@ import type {
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import type { WorkspaceReceipt } from "./LibraryWorkspaceStore.ts";
 
 export const source = EnvironmentId.make("source-computer");
 export const localProjectId = ProjectId.make("old-folder-project");
@@ -43,6 +44,47 @@ export const copyFor = (project: LibraryProject): LibraryWorkingCopy => ({
   state: "ready",
   createdAt: project.createdAt,
   updatedAt: project.updatedAt,
+});
+/** A managed copy's receipt with no repositories, holding `rootPath` until it is released. */
+export const receiptFor = (
+  id: string,
+  rootPath: string,
+  state: WorkspaceReceipt["copy"]["state"],
+): WorkspaceReceipt => ({
+  requestId: id,
+  fingerprint: id,
+  project: {
+    id: `project-${id}`,
+    revision: 1,
+    title: id,
+    brief: "",
+    resources: [],
+    archived: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  copy: {
+    id,
+    projectId: `project-${id}`,
+    projectRevision: 1,
+    environmentId: source,
+    rootPath,
+    repositories: [],
+    ownership: "managed",
+    state,
+    keepOnComputer: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  rootLocalProjectId: null,
+  rootCheckpointRepository: false,
+  legacyThreadIds: [],
+  rootIdentity: null,
+  releaseRequestId: null,
+  releaseReviewToken: null,
+  removalPath: null,
+  archivePath: null,
+  archiveDigest: null,
 });
 export const archiveFor = Effect.fnUntraced(function* (project: LibraryProject, sequence = 1) {
   const timestamp = yield* DateTime.now;

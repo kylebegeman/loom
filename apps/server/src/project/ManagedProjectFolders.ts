@@ -21,6 +21,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import * as NamedProjects from "../fork/file-placement/NamedProjects.ts"; // fork: file-placement
+import * as LanesRoots from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectPlacement from "./ProjectPlacement.ts";
@@ -446,5 +447,6 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ManagedProjectFolders, make).pipe(
   Layer.provide(ProjectPlacement.layerWithProjectStore),
+  Layer.provide(LanesRoots.layer), // fork: file-placement
   Layer.provideMerge(NamedProjects.layer), // fork: file-placement
 );

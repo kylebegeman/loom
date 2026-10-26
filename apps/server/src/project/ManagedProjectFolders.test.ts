@@ -14,6 +14,12 @@ import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "../config.ts";
 import * as NamedProjects from "../fork/file-placement/NamedProjects.ts";
+import { runForkMigrationSet } from "../fork/persistence/migrations.ts"; // fork: file-placement
+import { receiptFor } from "../fork/project-library/Library.testkit.ts"; // fork: file-placement
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: file-placement
+import { lifecycleDefaults } from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
+import { ProjectLifecycleMigrations } from "../fork/project-lifecycle/migrations.ts"; // fork: file-placement
+import { makeStore as makeLifecycleStore } from "../fork/project-lifecycle/store.ts"; // fork: file-placement
 import * as GitManager from "../git/GitManager.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -695,4 +701,51 @@ it.effect("records a named project before it exists, so its first shell update i
       },
     );
   }),
+);
+
+// fork: file-placement: a Projects folder saved inside the lanes folder never gets a named project.
+it.effect("refuses to start a named project in a lanes folder", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-managed-folders-" });
+    // Apart from the data folder, which placement refuses for its own reason.
+    const lanesRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-lanes-" });
+    yield* Effect.gen(function* () {
+      yield* runForkMigrationSet(ProjectLifecycleMigrations);
+      yield* (yield* makeLifecycleStore).updateSettings({
+        ...lifecycleDefaults(yield* ServerConfig.ServerConfig, baseDir),
+        lanesRoot,
+      });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.updateSettings({ projectsDirectory: path.join(lanesRoot, "projects") });
+      const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+
+      const failure = yield* Effect.flip(folders.createNamedProject({ name: "Lane Project" }));
+
+      assert.equal(failure._tag, "NamedProjectFolderError");
+      assert.isFalse(yield* fileSystem.exists(path.join(lanesRoot, "projects")));
+    }).pipe(Effect.provide(layer(baseDir)));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+// fork: file-placement: a Library copy whose folder is missing still holds its name.
+it.effect("skips a name a Library copy still holds", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-managed-folders-" });
+    const held = path.resolve(baseDir, "projects", "pinball-stats");
+    yield* Effect.gen(function* () {
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
+        Effect.provide(LibraryWorkspaceStore.layer),
+      );
+      yield* store.put(receiptFor("missing", held, "missing"));
+      const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+
+      const created = yield* folders.createNamedProject({ name: "Pinball Stats" });
+
+      assert.equal(created.workspaceRoot, `${held}-2`);
+    }).pipe(Effect.provide(layer(baseDir)));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

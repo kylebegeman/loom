@@ -690,6 +690,7 @@ export const layer = Layer.effect(ProjectService, make).pipe(
     ProjectPlacement.layer.pipe(
       Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
       Layer.provide(LanesRoots.layer), // fork: file-placement
+      Layer.provide(ProjectPlacement.layerLibraryCopyRoots), // fork: file-placement
     ),
   ),
 );

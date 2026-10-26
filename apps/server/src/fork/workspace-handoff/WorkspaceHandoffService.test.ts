@@ -64,6 +64,10 @@ const realClones = (workspaceRoot: string) =>
           }),
         ),
         Layer.provide(Settings.layerTest()),
+        Layer.provide(Layer.succeed(ProjectPlacement.LanesRoots, { roots: Effect.succeed([]) })),
+        Layer.provide(
+          Layer.succeed(ProjectPlacement.LibraryCopyRoots, { roots: Effect.succeed([]) }),
+        ),
       ),
     ),
     Layer.provide(

@@ -15,7 +15,7 @@ import * as FileSystem from "effect/FileSystem";
 
 import * as ServerConfig from "../config.ts";
 // fork: file-placement
-import { lifecycleDefaults } from "../fork/project-lifecycle/lanesRoots.ts";
+import { lifecycleDefaults } from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import { ProjectLifecycleMigrations } from "../fork/project-lifecycle/migrations.ts"; // fork: file-placement
 import { makeStore as makeLifecycleStore } from "../fork/project-lifecycle/store.ts"; // fork: file-placement
 import { runForkMigrationSet } from "../fork/persistence/migrations.ts"; // fork: file-placement

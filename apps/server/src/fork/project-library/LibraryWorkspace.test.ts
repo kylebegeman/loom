@@ -257,6 +257,7 @@ const placementLayer = ProjectPlacement.layer.pipe(
     Layer.mergeAll(
       Layer.mock(ProjectStore.ProjectStoreV2)({ list: () => Effect.succeed(placementProjects) }),
       Layer.succeed(ProjectPlacement.LanesRoots, { roots: Effect.sync(() => [...lanesRoots]) }),
+      ProjectPlacement.layerLibraryCopyRoots,
     ),
   ),
   Layer.provideMerge(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),

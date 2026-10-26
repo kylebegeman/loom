@@ -58,7 +58,7 @@ export interface PlacementGuardOptions {
   readonly projects?: "refuse" | "within" | "ignore";
 }
 
-/** Lanes folders to keep checkouts out of; hosts without lanes leave it unprovided. */
+/** Lanes folders to keep checkouts out of; empty on a host without lanes. */
 export class LanesRoots extends Context.Service<
   LanesRoots,
   { readonly roots: Effect.Effect<ReadonlyArray<string>> }
@@ -120,8 +120,8 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectStore.ProjectStoreV2;
-  const lanes = yield* Effect.serviceOption(LanesRoots);
-  const library = yield* Effect.serviceOption(LibraryCopyRoots);
+  const { roots: lanesRoots } = yield* LanesRoots;
+  const { roots: libraryCopyRoots } = yield* LibraryCopyRoots;
   const home = yield* HostProcess.HomeDirectory;
   const key = SetupMarker.pathKey(yield* HostProcess.Platform);
   const defaultProjectsRoot = path.resolve(
@@ -160,11 +160,6 @@ const make = Effect.gen(function* () {
       ),
     ),
   );
-
-  const lanesRoots = Option.match(lanes, {
-    onNone: () => Effect.succeed<ReadonlyArray<string>>([]),
-    onSome: (service) => service.roots,
-  });
 
   const folders = Effect.gen(function* () {
     const current = yield* settings;
@@ -251,11 +246,6 @@ const make = Effect.gen(function* () {
 
   const folderName = (root: string, name: string, attempt: number) =>
     path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
-
-  const libraryCopyRoots = Option.match(library, {
-    onNone: () => Effect.succeed<ReadonlyArray<string>>([]),
-    onSome: (service) => service.roots,
-  });
 
   // A receipt, a Library copy or a registered project keeps a name taken after its folder is gone.
   const nameTaken = Effect.fn("ProjectPlacement.nameTaken")(function* (folder: string) {
