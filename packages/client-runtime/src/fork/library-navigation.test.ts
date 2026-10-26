@@ -6,8 +6,14 @@ import {
   libraryThreadMatchesScope,
   libraryHoldsLocalRefs,
   libraryProjectForLocalRefs,
+  libraryProjectFilterItems,
+  libraryOutsideArchivedProjects,
 } from "./library-navigation.ts";
-import type { LibraryThreadSummary, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 const row = (
   projectId: string,
   localProjectId: string,
@@ -112,5 +118,68 @@ describe("one project filter for durable and existing work", () => {
         [{ ...copy, registered: false }],
       ),
     ).toBeNull();
+  });
+});
+
+describe("archived projects stay out of the project filter", () => {
+  const folder = (id: string) => ({
+    id,
+    title: id,
+    remoteUrl: null,
+    relativePath: id,
+    defaultBranch: null,
+  });
+  const project = (id: string, archived: boolean, folders: string[]): LibraryProject => ({
+    id,
+    title: id,
+    brief: "",
+    revision: 1,
+    archived,
+    createdAt: "2026-10-15T12:00:00.000Z",
+    updatedAt: "2026-10-15T12:00:00.000Z",
+    resources: [
+      ...folders.map(folder),
+      { ...folder("docs"), kind: "link" as const, url: "https://example.com" },
+    ],
+  });
+  const catalog = [
+    project("loom", false, ["loom"]),
+    project("aspectavy", false, ["ios", "web"]),
+    project("old", true, ["old"]),
+  ];
+
+  it("lists live projects once and their folders only when there are several", () => {
+    expect(libraryProjectFilterItems(catalog)).toEqual([
+      { value: libraryProjectScopeKey("loom"), label: "loom" },
+      { value: libraryProjectScopeKey("aspectavy"), label: "aspectavy" },
+      { value: libraryProjectScopeKey("aspectavy", "ios"), label: "aspectavy / ios" },
+      { value: libraryProjectScopeKey("aspectavy", "web"), label: "aspectavy / web" },
+    ]);
+  });
+
+  it("keeps a selected scope listed so it can be cleared", () => {
+    const archived = libraryProjectScopeKey("old", "old");
+    expect(libraryProjectFilterItems(catalog, archived)).toContainEqual({
+      value: archived,
+      label: "old / old (archived)",
+    });
+    expect(libraryProjectFilterItems(catalog, archived)).toHaveLength(5);
+    const single = libraryProjectScopeKey("loom", "loom");
+    expect(libraryProjectFilterItems(catalog, single)).toContainEqual({
+      value: single,
+      label: "loom / loom",
+    });
+  });
+
+  it("drops conversations and copies of archived projects", () => {
+    const threads = [row("loom", "a"), row("old", "b")];
+    expect(libraryOutsideArchivedProjects(threads, catalog)).toEqual([threads[0]]);
+  });
+
+  it("does not hold a folder for a deleted conversation", () => {
+    const ref = { environmentId: "host", projectId: "web" };
+    expect(libraryHoldsLocalRefs([{ ...row("AspectAvy", "web"), deleted: true }], [ref])).toBe(
+      false,
+    );
   });
 });

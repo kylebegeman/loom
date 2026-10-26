@@ -50,6 +50,7 @@ export {
   parseLibraryProjectScope,
   libraryThreadMatchesScope,
   libraryProjectFilterItems,
+  libraryOutsideArchivedProjects,
   libraryHoldsLocalRefs,
   libraryProjectForLocalRefs,
 } from "./library-navigation.ts";

@@ -21,9 +21,9 @@ const INSTALLED_MARKER = "installed";
 const DATABASE_FILES = ["state.sqlite", "statev2.sqlite"].flatMap((name) => [name, `${name}-wal`]);
 const SETTINGS_FILES = ["settings.json", "client-settings.json"];
 /** The data the previous build last ran with, and the outgoing data a rollback replaced. */
-export const KEEP_STATE_SNAPSHOTS = 2;
+const KEEP_STATE_SNAPSHOTS = 2;
 /** Head-room left beside a snapshot that has fully diverged from the live data. */
-export const SNAPSHOT_FREE_MARGIN_BYTES = 2 * 1024 ** 3;
+const SNAPSHOT_FREE_MARGIN_BYTES = 2 * 1024 ** 3;
 /** Clones are instant; a disk without them copies, which must not hold up the update for long. */
 const SNAPSHOT_TIMEOUT = Duration.seconds(30);
 
@@ -138,7 +138,7 @@ const clone = Effect.fn("desktop.rollbackSnapshot.clone")(function* (from: strin
 });
 
 /** Keeps the newest snapshots among published records; `before-loom` is left alone. */
-export const pruneSnapshots = Effect.fn("desktop.rollbackSnapshot.prune")(function* (
+const pruneSnapshots = Effect.fn("desktop.rollbackSnapshot.prune")(function* (
   buildsDirectory: string,
 ) {
   const fs = yield* FileSystem.FileSystem;

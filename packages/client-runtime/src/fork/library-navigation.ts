@@ -31,19 +31,40 @@ export function libraryThreadMatchesScope(
         (thread.resourceIds.length === 1 && thread.resourceIds[0] === scope.resourceId)))
   );
 }
-export function libraryProjectFilterItems(projects: readonly LibraryProject[]) {
-  return projects.flatMap((project) => [
-    {
-      value: libraryProjectScopeKey(project.id),
-      label: `${project.title}${project.archived ? " (archived)" : ""}`,
-    },
-    ...project.resources
-      .filter((r) => r.kind !== "link")
-      .map((r) => ({
+/**
+ * Archived projects stay out until restored, except the selected scope, which stays listed so it
+ * can be seen and cleared. A project with one folder already scopes to that folder.
+ */
+export function libraryProjectFilterItems(
+  projects: readonly LibraryProject[],
+  selected: string | null = null,
+) {
+  return projects.flatMap((project) => {
+    const folders = project.resources.filter((r) => r.kind !== "link");
+    const suffix = project.archived ? " (archived)" : "";
+    return [
+      {
+        value: libraryProjectScopeKey(project.id),
+        label: `${project.title}${suffix}`,
+        listed: true,
+      },
+      ...folders.map((r) => ({
         value: libraryProjectScopeKey(project.id, r.id),
-        label: `${project.title} / ${r.title}`,
+        label: `${project.title} / ${r.title}${suffix}`,
+        listed: folders.length > 1,
       })),
-  ]);
+    ].flatMap(({ listed, ...item }) =>
+      (listed && !project.archived) || item.value === selected ? [item] : [],
+    );
+  });
+}
+/** Drops threads or copies of archived projects. `projects` must include archived ones. */
+export function libraryOutsideArchivedProjects<T extends { readonly projectId: string }>(
+  items: readonly T[],
+  projects: readonly LibraryProject[],
+) {
+  const archived = new Set(projects.filter((p) => p.archived).map((p) => p.id));
+  return items.filter((item) => !archived.has(item.projectId));
 }
 /** The Library projects each local folder belongs to, by its copies and registered threads. */
 function libraryProjectIdsForLocalRefs(
@@ -66,7 +87,10 @@ function libraryProjectIdsForLocalRefs(
           .map((copy) => copy.projectId),
         ...threads
           .filter(
-            (t) => t.environmentId === ref.environmentId && t.localProjectId === ref.projectId,
+            (t) =>
+              !t.deleted &&
+              t.environmentId === ref.environmentId &&
+              t.localProjectId === ref.projectId,
           )
           .map((t) => t.projectId),
       ]),

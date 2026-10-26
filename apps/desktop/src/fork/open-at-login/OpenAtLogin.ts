@@ -40,7 +40,7 @@ export class LoginItems extends Context.Service<
 >()("@t3tools/desktop/fork/open-at-login/OpenAtLogin/LoginItems") {}
 
 // macOS registers the running bundle through SMAppService (mainAppService).
-export const layerElectronLoginItems = Layer.succeed(
+const layerElectronLoginItems = Layer.succeed(
   LoginItems,
   LoginItems.of({
     read: Effect.sync(() => Electron.app.getLoginItemSettings()),
@@ -81,7 +81,7 @@ export function describeLoginItem(
 }
 
 /** Development builds and apps run from outside Applications never register. */
-export function isInstalledApp(environment: DesktopEnvironment.DesktopEnvironment["Service"]) {
+function isInstalledApp(environment: DesktopEnvironment.DesktopEnvironment["Service"]) {
   if (!environment.isPackaged || environment.isDevelopment) return false;
   if (environment.platform !== "darwin") return true;
   const path = environment.path;

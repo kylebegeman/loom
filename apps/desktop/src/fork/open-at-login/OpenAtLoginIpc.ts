@@ -6,7 +6,7 @@ import * as DesktopIpc from "../../ipc/DesktopIpc.ts";
 import * as IpcChannels from "../../ipc/channels.ts";
 import * as OpenAtLogin from "./OpenAtLogin.ts";
 
-export const getOpenAtLoginState = DesktopIpc.makeIpcMethod({
+const getOpenAtLoginState = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.OPEN_AT_LOGIN_GET_STATE_CHANNEL,
   payload: Schema.Void,
   result: DesktopOpenAtLoginState,
@@ -15,7 +15,7 @@ export const getOpenAtLoginState = DesktopIpc.makeIpcMethod({
   }),
 });
 
-export const setOpenAtLoginEnabled = DesktopIpc.makeIpcMethod({
+const setOpenAtLoginEnabled = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.OPEN_AT_LOGIN_SET_ENABLED_CHANNEL,
   payload: Schema.Boolean,
   result: DesktopOpenAtLoginState,
@@ -24,7 +24,7 @@ export const setOpenAtLoginEnabled = DesktopIpc.makeIpcMethod({
   }),
 });
 
-export const openLoginItemSettings = DesktopIpc.makeIpcMethod({
+const openLoginItemSettings = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.OPEN_AT_LOGIN_OPEN_SETTINGS_CHANNEL,
   payload: Schema.Void,
   result: Schema.Boolean,
