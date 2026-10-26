@@ -1,8 +1,5 @@
 // fork: attention-status
 import { useEnvironmentConnectionState } from "../../state/environments";
-// fork: attention-status
-import { useAtomCommand } from "../../state/use-atom-command";
-import { threadEnvironment } from "../../state/threads";
 // fork: bots
 import { buildThreadBotsMenuItems } from "../../fork/bots/threadMenu";
 // fork: project-home - Thread rows offer "Move work" on hosts that support workspace handoff.

@@ -6,15 +6,34 @@ import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 import * as Redacted from "effect/Redacted";
-const state = vi.hoisted(() => ({
-  allowed: true,
-  supported: true,
-  save: vi.fn(),
-  answer: vi.fn(),
-}));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.allowed }));
+// Access changes reach the form through store subscriptions, as in the app. The React
+// Compiler memoizes the card's children, so re-rendering the root would not re-run them.
+const state = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  return {
+    allowed: true,
+    supported: true,
+    configs: new Map(),
+    save: vi.fn(),
+    answer: vi.fn(),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    notify: () => listeners.forEach((listener) => listener()),
+  };
+});
+vi.mock("@effect/atom-react", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return { useAtomValue: () => useSyncExternalStore(state.subscribe, () => state.allowed) };
+});
 vi.mock("@t3tools/client-runtime/fork", () => ({ supportsLoomFeature: () => state.supported }));
-vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
+vi.mock("~/state/entities", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return { useServerConfigs: () => useSyncExternalStore(state.subscribe, () => state.configs) };
+});
 vi.mock("~/fork/vault/state", () => ({ vault: { save: { permissionAtom: () => null } } }));
 vi.mock("~/state/server", () => ({ serverEnvironment: { answerSecretRequest: "answer" } }));
 vi.mock("~/state/use-atom-command", () => ({
@@ -74,6 +93,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   state.allowed = true;
   state.supported = true;
+  state.configs = new Map();
   state.save.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   state.answer.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -150,13 +170,13 @@ it.each(["permission", "capability"])(
   async (unavailable) => {
     fillSecret();
     act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
-    state.allowed = unavailable !== "permission";
-    state.supported = unavailable !== "capability";
-    act(() =>
-      root.render(
-        <SecretRequestCard environmentId={environmentId} item={item} visibility="local" />,
-      ),
-    );
+    act(() => {
+      state.allowed = unavailable !== "permission";
+      state.supported = unavailable !== "capability";
+      // A capability change arrives as a new server config snapshot.
+      state.configs = new Map();
+      state.notify();
+    });
     await submit();
     expect(state.save).not.toHaveBeenCalled();
     expect(state.answer).not.toHaveBeenCalled();

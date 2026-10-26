@@ -186,6 +186,8 @@ function ProviderOnlyReader(props: { readonly children: ReactNode }) {
   return props.children;
 }
 
+type Placement = "left" | "right" | "bottom";
+
 function LoadingToolbar(props: { readonly placement: Placement }) {
   return (
     <ProviderOnlyContext value={providedValue}>

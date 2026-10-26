@@ -514,6 +514,7 @@ function ThreadRouteContent(
           cwd: selectedThreadCwd,
           runtimeMode: selectedThreadWithDraftSettings.runtimeMode,
           serverConfig: routeEnvironmentRuntime?.serverConfig ?? null,
+          draftKey: composer.composerDraftKey, // fork: library -- Ultrathink edits the composer draft
           canSwitchProvider: composer.canSwitchThreadProvider,
           canOperate: canOperateThread,
           onUpdateModelSelection: composer.onUpdateModelSelection,

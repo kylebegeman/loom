@@ -1232,6 +1232,8 @@ export function NewTaskDraftScreen(props: {
         onRemoveDraftImage={flow.removeAttachment}
         onStopThread={() => {}}
         onResumeQueue={null}
+        continuableRun={null} // fork: failed-run-retry -- a draft has no stopped run to continue
+        onRetryLimitedRun={null} // fork: failed-run-retry
         onSendMessage={handleStart}
         onReconnectEnvironment={() => onReconnectEnvironment(selectedProject.environmentId)}
         canSwitchThreadProvider

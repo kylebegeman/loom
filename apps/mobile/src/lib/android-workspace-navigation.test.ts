@@ -94,7 +94,7 @@ describe("Android workspace navigation", () => {
     const detail = apply(library, StackActions.push(thread.name, thread.params));
     const list = androidWorkspaceNavigationState(detail);
     expect(list.routes.map((route) => route.name)).toEqual(["Library"]);
-    expect(list.routes[0]?.key).toBe(library.routes[0]?.key);
+    expect(list.routes[0]).toHaveProperty("key", library.routes[0]?.key);
   });
 
   it("returns to a distinct previous thread, otherwise to the workspace list", () => {

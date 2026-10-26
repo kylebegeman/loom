@@ -61,6 +61,10 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Pin the clock to checkedAt: a report already past expiresAt arms a 0 ms expiry
+  // timer that races the assertions on a fresh report.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(success.value.checkedAt));
   harness.check.mockReset();
   harness.check.mockResolvedValue(success);
   container = document.createElement("div");
@@ -68,6 +72,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

@@ -6,8 +6,12 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { PcbInspection } from "@t3tools/contracts/fork";
 import { PinMapDialog } from "./PinMapDialog";
 const mocks = vi.hoisted(() => ({ run: vi.fn(), allowed: true }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
-vi.mock("./state", () => ({ pcb: { pinMap: { permissionAtom: () => mocks.allowed } } }));
+// The React Compiler caches atom-family calls by argument, so a mocked atom is a reader that
+// useAtomValue calls on every render, the way the real hook reads the atom's current value.
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) => (typeof atom === "function" ? atom() : atom),
+}));
+vi.mock("./state", () => ({ pcb: { pinMap: { permissionAtom: () => () => mocks.allowed } } }));
 vi.mock("../model-preview-3d/state", () => ({ runModelCommand: mocks.run }));
 vi.mock("~/hooks/useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: vi.fn() }),

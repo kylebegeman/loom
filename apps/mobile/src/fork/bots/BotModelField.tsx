@@ -58,6 +58,9 @@ export function BotModelField({
               projectId={projectId}
               providerGroups={groups}
               selectedModel={value}
+              // A bot's model sits apart from its instructions, so no prompt carries Ultrathink here.
+              prompt=""
+              onPromptChange={() => {}}
               onSelectModel={(option) => onChange(option.selection)}
               optionDescriptors={descriptors}
               onUpdateOptionSelections={(selections) => {

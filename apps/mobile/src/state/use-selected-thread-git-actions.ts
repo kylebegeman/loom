@@ -67,7 +67,9 @@ export function useSelectedThreadGitActions() {
   // fork: library-projects
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, { reportFailure: false });
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
-  const { selectedThread, selectedThreadProject } = useThreadSelection();
+  // fork: source-control-cockpit -- the runtime's project overrides carry the default-branch skip
+  const { selectedThread, selectedThreadProject, selectedEnvironmentRuntime } =
+    useThreadSelection();
   const canWriteSourceControl = useEnvironmentScope(
     selectedThread?.environmentId ?? null,
     AuthSourceControlWriteScope,

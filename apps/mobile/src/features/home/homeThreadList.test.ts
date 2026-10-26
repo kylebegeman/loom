@@ -6,7 +6,12 @@ import type {
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { buildHomeProjectScopes, findHomeProjectScope } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  findHomeProjectScope,
+  // fork: project-navigation -- the performance cases sort scopes the way the project library does
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 import { makeThreadShellFixture } from "../../test-fixtures";
 import { buildThreadListV2Items } from "../threads/threadListV2";
 

@@ -4,33 +4,50 @@ import { createRoot, type Root } from "react-dom/client";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-const state = vi.hoisted(() => ({
-  listError: false,
-  run: vi.fn(),
-  refresh: vi.fn(),
-  change: { permissionAtom: () => "change-permission" },
-  item: {
-    id: "a".repeat(32),
-    label: "Development credential",
-    kind: "secret",
-    state: "active",
-    version: 3,
-    createdAt: "2026-10-20T00:00:00Z",
-    updatedAt: "2026-10-20T00:00:00Z",
-  },
-}));
-vi.mock("@effect/atom-react", () => ({
-  useAtomValue: (atom: string) =>
-    atom === "add-target"
-      ? null
-      : atom === "status"
-        ? AsyncResult.success({ state: "ready" })
-        : atom === "items"
-          ? state.listError
-            ? AsyncResult.fail(new Error("Backend unavailable"))
-            : AsyncResult.success({ items: [state.item], nextCursor: null })
-          : true,
-}));
+// Query results reach the section through a store subscription, as in the app. The React
+// Compiler memoizes the item list, so re-rendering the root would not re-read the query.
+const state = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  return {
+    listError: false,
+    run: vi.fn(),
+    refresh: vi.fn(),
+    change: { permissionAtom: () => "change-permission" },
+    item: {
+      id: "a".repeat(32),
+      label: "Development credential",
+      kind: "secret",
+      state: "active",
+      version: 3,
+      createdAt: "2026-10-20T00:00:00Z",
+      updatedAt: "2026-10-20T00:00:00Z",
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    notify: () => listeners.forEach((listener) => listener()),
+  };
+});
+vi.mock("@effect/atom-react", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useAtomValue: (atom: string) => {
+      const listError = useSyncExternalStore(state.subscribe, () => state.listError);
+      return atom === "add-target"
+        ? null
+        : atom === "status"
+          ? AsyncResult.success({ state: "ready" })
+          : atom === "items"
+            ? listError
+              ? AsyncResult.fail(new Error("Backend unavailable"))
+              : AsyncResult.success({ items: [state.item], nextCursor: null })
+            : true;
+    },
+  };
+});
 vi.mock("@t3tools/client-runtime/fork", () => ({
   loomFeaturesOf: () => ["vault-core"],
   vaultStatusMessage: () => "Vault is connected.",
@@ -93,8 +110,10 @@ it("recovers a failed record query without leaving a loading message", () => {
   expect(container.textContent).not.toContain("Loading Vault items");
   act(() => button("Retry").click());
   expect(state.refresh).toHaveBeenCalledWith("items");
-  state.listError = false;
-  act(() => root.render(<VaultSettingsSection />));
+  act(() => {
+    state.listError = false;
+    state.notify();
+  });
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain(state.item.label);
 });

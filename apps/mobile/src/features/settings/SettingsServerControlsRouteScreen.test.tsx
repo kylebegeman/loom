@@ -191,6 +191,15 @@ function environment(environmentId: string, label: string) {
   };
 }
 
+// fork: provider-auth-retry -- the account-status retry case finds its controls by label
+function button(label: string) {
+  const result = Array.from(container.querySelectorAll("button")).find(
+    (element) => element.textContent === label || element.getAttribute("aria-label") === label,
+  );
+  if (!result) throw new Error(`Missing button: ${label}`);
+  return result;
+}
+
 let root: Root;
 let container: HTMLDivElement;
 

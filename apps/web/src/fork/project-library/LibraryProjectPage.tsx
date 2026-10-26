@@ -191,7 +191,9 @@ function ProjectView({
     return onLibraryBriefEdit(open);
   }, [project.id]);
   // A project made from a Git URL continues here into cloning it, as Prepare on a computer does.
-  useEffect(() => {
+  // The page's root element owns the subscription, so it lives exactly as long as this view.
+  const takeCloneRequests = (node: HTMLDivElement | null) => {
+    if (!node) return;
     const open = () => {
       const request = takeLibraryClone(project.id);
       if (request)
@@ -202,7 +204,7 @@ function ProjectView({
     };
     open();
     return onLibraryClone(open);
-  }, [project.id]);
+  };
   const [addingResource, setAddingResource] = useState(false);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);
   const update = useProjectUpdate({
@@ -304,7 +306,11 @@ function ProjectView({
   const settingUp =
     !project.archived && !library.threads.isPending && !library.threads.error && !threads.length;
   return (
-    <div style={projectColorStyle(libraryProjectColor(project))} className="contents">
+    <div
+      ref={takeCloneRequests}
+      style={projectColorStyle(libraryProjectColor(project))}
+      className="contents"
+    >
       <ProjectHero
         project={project}
         localIcon={libraryLocalProjectIcon(activeCopies, localProjectsByRef(localProjects))}

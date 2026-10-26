@@ -1,7 +1,6 @@
 // fork: source-control-cockpit
 import { useCheckoutThreads } from "../../../fork/source-control-cockpit/useCheckoutThreads";
 import { AuthSettingsWriteScope, EnvironmentId } from "@t3tools/contracts";
-import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { serverEnvironment } from "../../../state/server";
 import { useEnvironmentScope } from "../../../state/session";
@@ -43,14 +42,14 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
-  const { selectedThreadProject } = useThreadSelection();
+  // fork: source-control-cockpit -- the remember toggle merges into the runtime's project overrides
+  const { selectedThreadProject, selectedEnvironmentRuntime } = useThreadSelection();
   const terminology = sourceControlClients.get(
     selectedThreadProject?.repositoryIdentity?.provider,
   ).changeRequest;
 
   const params = props.route.params;
   // fork: source-control-cockpit
-  const { selectedThreadProject, selectedEnvironmentRuntime } = useThreadSelection();
   const [remember, setRemember] = useState(false);
   const { otherCount } = useCheckoutThreads();
   const canRemember = useEnvironmentScope(

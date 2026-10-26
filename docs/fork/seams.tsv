@@ -227,6 +227,7 @@ apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
 apps/web/src/hooks/useHandleNewThread.ts	project-home	2
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	1
+apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	2
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
@@ -270,7 +271,7 @@ apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	21
-apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	4
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	5
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	1
 apps/mobile/src/features/threads/new-task-project-selection.ts	fleet-connections	1
@@ -762,7 +763,7 @@ apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	6
 apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	4
 apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	6
 apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	12
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	11
 apps/mobile/src/features/threads/threadListV2.test.ts	attention-status	1
 apps/mobile/src/features/threads/threadListV2.ts	attention-status	3
 apps/mobile/src/features/threads/threadRecoveryPresentation.ts	attention-status	1
@@ -823,10 +824,10 @@ apps/mobile/src/features/threads/GitActionProgressOverlay.tsx	source-control-coc
 apps/mobile/src/features/threads/ThreadGitControls.tsx	source-control-cockpit	7
 apps/mobile/src/features/threads/ThreadHeader.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	source-control-cockpit	3
-apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	10
+apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	11
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/useThreadHeaderOptions.test.tsx	source-control-cockpit	5
-apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	4
+apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	5
 apps/mobile/src/state/use-vcs-action-state.ts	source-control-cockpit	4
 apps/server/src/git/GitManager.test.ts	source-control-cockpit	2
 apps/server/src/git/GitManager.ts	source-control-cockpit	8
@@ -997,3 +998,5 @@ apps/mobile/src/lib/android-workspace-navigation.test.ts	library	1
 apps/server/src/orchestration-v2/Orchestrator.ts	library-projects	4
 packages/shared/src/keybindings.ts	library-palette	2
 scripts/effect-budget.json	-	/src/fork/
+apps/mobile/src/features/home/homeThreadList.test.ts	project-navigation	1
+apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	1

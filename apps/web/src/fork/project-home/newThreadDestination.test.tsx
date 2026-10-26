@@ -26,6 +26,10 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => state.router, useParams: () => null }));
 vi.mock("~/hooks/useSettings", () => ({ useClientSettings: () => ({}) }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
+vi.mock("~/state/presentation", () => ({
+  environmentPresentations: { presentationAtom: () => ({}) },
+  environmentSummaries: { connectedEnvironmentIdsAtom: {} },
+}));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => state.configs } }));
 vi.mock("~/state/entities", () => {
   const projects = [
@@ -42,6 +46,7 @@ vi.mock("~/state/entities", () => {
     readThreadShells: () => [],
   };
 });
+vi.mock("~/state/olderSettledShelf", () => ({ readUnloadedThreadCount: () => 0 }));
 vi.mock("~/logicalProject", () => ({
   deriveLogicalProjectKeyFromSettings: () => "shared-project",
   selectProjectGroupingSettings: () => ({}),
