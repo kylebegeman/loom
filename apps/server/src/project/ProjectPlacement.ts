@@ -15,6 +15,8 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { hasManagedProjectReceipt } from "../workspace/ManagedProjectCheckout.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import {
   isFilesystemRoot,
   managedWorktreesDirectories,
@@ -86,6 +88,16 @@ export class ProjectPlacement extends Context.Service<
 
 const MAX_FOLDER_ATTEMPTS = 100;
 const ORIGIN_READ_CONCURRENCY = 8;
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+/**
+ * Release tombstones and restore stages Loom makes beside a checkout: LibraryWorkspace release,
+ * restore and reopen, ManagedProjectCheckout release and ScratchCheckout restore. A retried
+ * release deletes its tombstone, so none of them may be reused as a checkout.
+ */
+const LOOM_WORK_FOLDER = new RegExp(
+  `(\\.loom-released-[0-9a-f]{16}|\\.t3-released-${UUID}|\\.t3-restore-${UUID})$|^\\.loom-(restore|reopen)-`,
+  "i",
+);
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -96,7 +108,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const lanes = yield* Effect.serviceOption(LanesRoots);
   const home = yield* HostProcess.HomeDirectory;
-  const windows = yield* HostProcess.isWindows;
+  const key = SetupMarker.pathKey(yield* HostProcess.Platform);
   const defaultProjectsRoot = path.resolve(
     config.managedProjectsRoot ?? config.baseDir,
     "projects",
@@ -185,6 +197,8 @@ const make = Effect.gen(function* () {
         if (!candidates.has(child)) candidates.set(child, null);
       }
     }
+    for (const candidate of candidates.keys())
+      if (LOOM_WORK_FOLDER.test(path.basename(candidate))) candidates.delete(candidate);
     const matches = yield* Effect.forEach(
       candidates,
       ([candidate, projectId]) =>
@@ -205,21 +219,56 @@ const make = Effect.gen(function* () {
       );
   });
 
+  const contains = (root: string, target: string) => {
+    const relative = path.relative(key(root), key(target));
+    return (
+      relative === "" ||
+      (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    );
+  };
+  // Symlinks and case or Unicode variants must not disguise a protected folder.
+  const canonical = (target: string) =>
+    SetupMarker.canonicalPath(target).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+  const overlaps = (left: string, right: string) => contains(left, right) || contains(right, left);
+
   const folderName = (root: string, name: string, attempt: number) =>
     path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
+
+  // A receipt or a registered project keeps a name taken after its folder is gone.
+  const nameTaken = Effect.fn("ProjectPlacement.nameTaken")(function* (folder: string) {
+    if (yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true))) return true;
+    const receipt = yield* hasManagedProjectReceipt(folder).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.provideService(ServerConfig.ServerConfig, config),
+      Effect.orElseSucceed(() => true),
+    );
+    if (receipt) return true;
+    const real = yield* canonical(folder);
+    for (const project of yield* activeProjects)
+      if (overlaps(yield* canonical(path.resolve(project.workspaceRoot)), real)) return true;
+    return false;
+  });
 
   const previewFolder = Effect.fn("ProjectPlacement.previewFolder")(function* (title: string) {
     const root = yield* projectsRoot;
     const name = newProjectFolderName(title);
     for (let attempt = 1; attempt < MAX_FOLDER_ATTEMPTS; attempt++) {
       const folder = folderName(root, name, attempt);
-      if (!(yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true)))) return folder;
+      if (!(yield* nameTaken(folder))) return folder;
     }
     return folderName(root, name, MAX_FOLDER_ATTEMPTS);
   });
 
   const claimFolder = Effect.fn("ProjectPlacement.claimFolder")(function* (title: string) {
     const root = yield* projectsRoot;
+    // The setting accepts any absolute folder, so every claim checks where it points.
+    yield* assertPlacementAllowed(root, { projects: "within" }).pipe(
+      Effect.mapError((cause) => new ProjectPlacementFolderError({ folder: root, cause })),
+    );
     yield* fileSystem
       .makeDirectory(root, { recursive: true })
       .pipe(Effect.mapError((cause) => new ProjectPlacementFolderError({ folder: root, cause })));
@@ -227,6 +276,7 @@ const make = Effect.gen(function* () {
     // Non-recursive mkdir claims a name atomically; racers move on after AlreadyExists.
     for (let attempt = 1; attempt <= MAX_FOLDER_ATTEMPTS; attempt++) {
       const folder = folderName(root, name, attempt);
+      if (yield* nameTaken(folder)) continue;
       const claimed = yield* fileSystem.makeDirectory(folder).pipe(
         Effect.as(true),
         Effect.catchIf(
@@ -242,29 +292,6 @@ const make = Effect.gen(function* () {
       cause: `Every folder name for "${name}" is taken.`,
     });
   });
-
-  const key = (target: string) => (windows ? target.toLowerCase() : target);
-  const contains = (root: string, target: string) => {
-    const relative = path.relative(key(root), key(target));
-    return (
-      relative === "" ||
-      (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
-    );
-  };
-  // Symlinks must not disguise a protected folder, so compare through the nearest real ancestor.
-  const canonical = (target: string): Effect.Effect<string> => {
-    const parent = path.dirname(target);
-    return fileSystem
-      .realPath(target)
-      .pipe(
-        Effect.catch(() =>
-          parent === target
-            ? Effect.succeed(target)
-            : Effect.map(canonical(parent), (real) => path.join(real, path.basename(target))),
-        ),
-      );
-  };
-  const overlaps = (left: string, right: string) => contains(left, right) || contains(right, left);
 
   const assertPlacementAllowed = Effect.fn("ProjectPlacement.assertPlacementAllowed")(function* (
     target: string,

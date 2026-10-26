@@ -24,8 +24,10 @@ import {
   markManagedProjectCheckout,
   ownershipReceiptPath,
   readManagedProjectCheckout,
+  relocateManagedProjectCheckout,
   releaseManagedProjectCheckout,
   restoreManagedProjectCheckout,
+  setManagedProjectRetention,
 } from "./ManagedProjectCheckout.ts";
 import * as SetupMarker from "./setupMarker.ts";
 
@@ -79,6 +81,18 @@ const run = <A, E>(
       ),
     ),
     Effect.scoped,
+  );
+/** Runs as the default install, whose T3 home sits at `<home>/.t3` and owns legacy sidecars. */
+const runAsInstall = <A, E>(effect: Parameters<typeof run<A, E>>[0]) =>
+  run(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const home = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+      return yield* effect.pipe(
+        Effect.provide(ServerConfig.layerTest(process.cwd(), `${home}/.t3`)),
+        Effect.provideService(HostProcess.HomeDirectory, home),
+      );
+    }),
   );
 
 describe("Managed primary project checkouts", () => {
@@ -364,7 +378,7 @@ describe("Managed primary project checkouts", () => {
     ),
   );
   it.live("migrates a receipt written beside the checkout and still verifies its identity", () =>
-    run(
+    runAsInstall(
       Effect.gen(function* () {
         const f = yield* fixture;
         const { stateDir } = yield* ServerConfig.ServerConfig;
@@ -393,6 +407,72 @@ describe("Managed primary project checkouts", () => {
         ).pipe(Effect.flip);
         expect(refused.message).toContain("replaced");
         expect(yield* f.fs.readFileString(`${f.cwd}/new-user-data`)).toBe("keep");
+      }),
+    ),
+  );
+  it.live(
+    "a dev or test home reads the live install's sidecar receipt but never takes it over",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const f = yield* fixture;
+          yield* f.mark;
+          const current = yield* ownershipReceiptPath(f.cwd);
+          const legacy = `${f.cwd}.t3-project-owned.json`;
+          yield* f.fs.rename(current, legacy);
+          expect((yield* readManagedProjectCheckout(f.cwd))?.workspaceRoot).toBe(f.cwd);
+          expect(yield* f.fs.exists(legacy)).toBe(true);
+          expect(yield* f.fs.exists(current)).toBe(false);
+          const refused = yield* setManagedProjectRetention(f.cwd, "keep", projectId).pipe(
+            Effect.flip,
+          );
+          expect(refused.message).toContain("Another Loom install");
+          expect(yield* f.fs.exists(legacy)).toBe(true);
+        }),
+      ),
+  );
+  it.live("release clears the folder's setup marker", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        yield* SetupMarker.write(f.cwd);
+        yield* f.release;
+        expect(yield* SetupMarker.exists(f.cwd)).toBe(false);
+      }),
+    ),
+  );
+  it.live("a receipt follows its folder only after the folder has moved", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const moved = `${f.parent}/moved`;
+        const early = yield* relocateManagedProjectCheckout(f.cwd, moved).pipe(Effect.flip);
+        expect(early.message).toContain("cannot be changed");
+        yield* f.fs.rename(f.cwd, moved);
+        yield* relocateManagedProjectCheckout(f.cwd, moved);
+        expect(yield* readManagedProjectCheckout(f.cwd)).toBeNull();
+        const receipt = (yield* readManagedProjectCheckout(moved))!;
+        expect([receipt.workspaceRoot, receipt.repositoryIdentity.rootPath]).toEqual([
+          moved,
+          moved,
+        ]);
+        yield* assertManagedProjectOwned(receipt);
+      }),
+    ),
+  );
+  it.live("a vanished folder's receipt retires when the project points at another folder", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const other = `${f.parent}/other`;
+        yield* f.fs.makeDirectory(other);
+        yield* f.fs.remove(f.cwd, { recursive: true });
+        yield* relocateManagedProjectCheckout(f.cwd, other);
+        expect(yield* readManagedProjectCheckout(f.cwd)).toBeNull();
+        expect(yield* readManagedProjectCheckout(other)).toBeNull();
       }),
     ),
   );

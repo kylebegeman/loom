@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option"; // fork: file-placement
 import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -40,6 +41,7 @@ import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.t
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
+const isPlacementRefused = Schema.is(ProjectPlacement.ProjectPlacementRefusedError); // fork: file-placement
 const isGitCommandError = Schema.is(GitCommandError);
 
 export class SourceControlRepositoryService extends Context.Service<
@@ -79,8 +81,9 @@ export interface SourceControlPreparedClone {
 export interface SourceControlPrepareOptions {
   /** Names a server-claimed folder; the repository name is used otherwise. */
   readonly title?: string;
-  /** The caller prepared and guarded this destination already, and may have registered a project in it. */
-  readonly destinationPrepared?: boolean;
+  // fork: file-placement
+  /** A registered project's own root the clone fills; that project's row does not block it. */
+  readonly allowReuseOf?: string;
 }
 
 export interface SourceControlCloneOptions extends SourceControlPrepareOptions {
@@ -277,10 +280,16 @@ export const make = Effect.gen(function* () {
   );
 
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
-    function* (destinationPath: string, options?: { readonly guarded?: boolean }) {
+    // fork: file-placement
+    function* (destinationPath: string, allowReuseOf?: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
-      if (options?.guarded !== true) {
-        yield* placement.assertPlacementAllowed(normalizedDestination).pipe(
+      // fork: file-placement
+      yield* placement
+        .assertPlacementAllowed(
+          normalizedDestination,
+          allowReuseOf === undefined ? undefined : { allowReuseOf },
+        )
+        .pipe(
           Effect.mapError(
             (error) =>
               new SourceControlRepositoryError({
@@ -290,7 +299,6 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
-      }
       if (yield* fileSystem.exists(normalizedDestination)) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
@@ -362,9 +370,11 @@ export const make = Effect.gen(function* () {
     options?: SourceControlPrepareOptions,
   ) {
     if (input.destinationPath !== undefined && input.destinationPath.trim().length > 0) {
-      const preparedDestination = yield* prepareDestination(input.destinationPath, {
-        guarded: options?.destinationPrepared === true,
-      });
+      // fork: file-placement
+      const preparedDestination = yield* prepareDestination(
+        input.destinationPath,
+        options?.allowReuseOf,
+      );
       const { repository, remoteUrl } = yield* resolveRemote(input, preparedDestination.parentPath);
       return {
         destinationPath: preparedDestination.destinationPath,
@@ -376,7 +386,17 @@ export const make = Effect.gen(function* () {
 
     const { repository, remoteUrl } = yield* resolveRemote(input, config.cwd);
     const redacted = redactRemoteUrl(remoteUrl);
-    const [existing] = yield* placement.findRepositoryCheckouts(redacted);
+    // fork: file-placement: registering an unregistered folder is a placement, so it passes the guard first.
+    const existing = yield* Effect.findFirst(
+      yield* placement.findRepositoryCheckouts(redacted),
+      (checkout) =>
+        checkout.projectId !== null
+          ? Effect.succeed(true)
+          : placement.assertPlacementAllowed(checkout.path, { allowReuseOf: checkout.path }).pipe(
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            ),
+    ).pipe(Effect.map(Option.getOrUndefined));
     if (existing !== undefined) {
       return {
         destinationPath: existing.path,
@@ -394,7 +414,10 @@ export const make = Effect.gen(function* () {
             new SourceControlRepositoryError({
               operation: "cloneRepository",
               provider: input.provider ?? SourceControlProviderKind.make("unknown"),
-              detail: "Could not create a folder for the clone in the Projects folder.",
+              // fork: file-placement
+              detail: isPlacementRefused(cause.cause)
+                ? cause.cause.reason
+                : "Could not create a folder for the clone in the Projects folder.",
               cause,
             }),
         ),

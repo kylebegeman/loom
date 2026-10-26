@@ -12,7 +12,9 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import * as ProjectPlacement from "./ProjectPlacement.ts";
+import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
 
 const projectRow = (projectId: string, workspaceRoot: string): ProjectStore.ProjectRow => ({
   projectId: ProjectId.make(projectId),
@@ -288,6 +290,89 @@ describe("ProjectPlacement", () => {
           assert.equal(yield* placement.claimFolder("My App"), path.join(root, "my-app"));
           assert.equal(yield* placement.previewFolder("My App"), path.join(root, "my-app-2"));
           assert.isFalse(yield* fileSystem.exists(path.join(root, "my-app-2")));
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("does not offer a released folder or a restore stage as a checkout", () =>
+    withPlacement(
+      () => ({}),
+      (placement, { baseDir }) =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const root = path.join(baseDir, "projects");
+          const origin = "https://github.com/kyle/loom.git";
+          for (const name of [
+            "loom",
+            "loom.loom-released-0123456789abcdef",
+            "loom.t3-released-0f8fad5b-d9cb-469f-a165-70867728950e",
+            "loom.t3-restore-0f8fad5b-d9cb-469f-a165-70867728950e",
+            ".loom-restore-a1b2c3",
+            ".loom-reopen-a1b2c3",
+          ])
+            yield* initRepository(path.join(root, name), origin);
+          assert.deepEqual(yield* placement.findRepositoryCheckouts(origin), [
+            { path: path.join(root, "loom"), projectId: null },
+          ]);
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refuses Loom's data folder named in another letter case", () =>
+    withPlacement(
+      () => ({}),
+      (placement) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { stateDir } = yield* ServerConfig.ServerConfig;
+          const variant = path.join(path.dirname(stateDir), path.basename(stateDir).toUpperCase());
+          // A case-sensitive volume holds a different, unprotected folder at that name.
+          if (!(yield* fileSystem.exists(variant))) return;
+          const refused = yield* placement
+            .assertPlacementAllowed(path.join(variant, "x"))
+            .pipe(Effect.flip);
+          assert.equal(refused._tag, "ProjectPlacementRefusedError");
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("claims skip a name a receipt or a registered project still holds", () =>
+    withPlacement(
+      ({ baseDir }) => ({ projects: [projectRow("registered", `${baseDir}/projects/registered`)] }),
+      (placement, { baseDir }) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = path.join(baseDir, "projects");
+          const released = path.join(root, "app");
+          yield* fileSystem.makeDirectory(path.join(released, ".git"), { recursive: true });
+          yield* markManagedProjectCheckout(
+            released,
+            buildRepositoryIdentity({
+              rootPath: released,
+              remoteName: "origin",
+              remoteUrl: "https://github.com/kyle/app.git",
+              originUrl: "https://github.com/kyle/app.git",
+            }),
+          );
+          yield* fileSystem.remove(released, { recursive: true });
+          assert.equal(yield* placement.previewFolder("App"), path.join(root, "app-2"));
+          assert.equal(yield* placement.claimFolder("App"), path.join(root, "app-2"));
+          assert.equal(yield* placement.claimFolder("Registered"), path.join(root, "registered-2"));
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("refuses to claim a folder when the Projects setting points into Loom's data", () =>
+    withPlacement(
+      ({ baseDir }) => ({ settings: { projectsDirectory: `${baseDir}/userdata/projects` } }),
+      (placement, { baseDir }) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const refused = yield* placement.claimFolder("App").pipe(Effect.flip);
+          assert.equal(refused._tag, "ProjectPlacementFolderError");
+          assert.isFalse(yield* fileSystem.exists(`${baseDir}/userdata/projects/app`));
         }),
     ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

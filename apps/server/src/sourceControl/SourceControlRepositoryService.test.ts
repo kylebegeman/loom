@@ -242,6 +242,69 @@ it.effect("an omitted destination reuses a checkout of the same origin without r
   );
 });
 
+// fork: file-placement
+it.effect("reuse passes over an unregistered checkout the placement guard refuses", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.cloneRepository({
+      remoteUrl: "https://github.com/octocat/t3code.git",
+    });
+    assert.strictEqual(result.destinationPath, "/projects/t3code");
+  }).pipe(
+    Effect.provide(
+      layer({
+        placement: {
+          findRepositoryCheckouts: () =>
+            Effect.succeed([
+              { path: "/state/worktrees/t3code", projectId: null },
+              { path: "/projects/t3code", projectId: null },
+            ]),
+          assertPlacementAllowed: (target) =>
+            target.startsWith("/state/")
+              ? Effect.fail(
+                  new ProjectPlacement.ProjectPlacementRefusedError({
+                    path: target,
+                    reason: "A project cannot go inside or around Loom's worktree folder.",
+                  }),
+                )
+              : Effect.succeed(target),
+          claimFolder: () => Effect.die("a reused checkout claims no folder"),
+        },
+      }),
+    ),
+  ),
+);
+
+// fork: file-placement
+it.effect("a project's own root still passes the placement guard before its clone", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clone-own-root-" });
+    const destinationPath = `${root}/t3code`;
+    const guarded: Array<{ target: string; allowReuseOf: string | undefined }> = [];
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      yield* service.cloneRepository(
+        { remoteUrl: "https://github.com/octocat/t3code.git", destinationPath },
+        { allowReuseOf: destinationPath },
+      );
+      assert.deepStrictEqual(guarded, [{ target: destinationPath, allowReuseOf: destinationPath }]);
+    }).pipe(
+      Effect.provide(
+        layer({
+          placement: {
+            assertPlacementAllowed: (target, options) =>
+              Effect.sync(() => {
+                guarded.push({ target, allowReuseOf: options?.allowReuseOf });
+                return target;
+              }),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("an omitted destination clones into the folder the server claims", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
