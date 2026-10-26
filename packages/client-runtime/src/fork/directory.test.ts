@@ -6,6 +6,7 @@ import {
   directoryCatalogRows,
   directoryConnectPlan,
   directoryProofAge,
+  directoryReportingText,
   directoryRoutes,
   directoryUnattachedMachines,
   identityDirectoryAddresses,
@@ -417,5 +418,38 @@ describe("identityDirectoryAddresses", () => {
       library: { ...library, addresses: ["https://library.example.com/"] },
       computers: [],
     });
+  });
+});
+
+// fork: library-renewal-status
+describe("directoryReportingText", () => {
+  const signIn = {
+    state: "ready",
+    expiresAt: "2026-11-24T12:00:00.000Z",
+    renewsAt: "2026-11-05T12:00:00.000Z",
+    renewal: "automatic",
+    repair: null,
+  } as const;
+  const signInLine = (renewedAt?: string | null) =>
+    directoryReportingText({
+      state: "reporting",
+      lastReportedAt: null,
+      routes: [],
+      signIn: renewedAt === undefined ? signIn : { ...signIn, renewedAt },
+    }).find((line) => line.startsWith("Library sign-in"));
+
+  it("names the first renewal until one succeeds, then the last one", () => {
+    expect(signInLine(null)).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. First renewal scheduled for 2026-11-05T12:00:00.000Z.",
+    );
+    expect(signInLine("2026-10-26T09:00:00.000Z")).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. Last renewed 2026-10-26T09:00:00.000Z. Next renewal 2026-11-05T12:00:00.000Z.",
+    );
+  });
+
+  it("keeps the older wording for a server that does not report renewals", () => {
+    expect(signInLine()).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. Renews automatically.",
+    );
   });
 });

@@ -31,10 +31,22 @@ export function directoryReportingText(report: DirectoryReporting): readonly str
       "Turn on Tailscale HTTPS or Reach from anywhere on this computer so other devices can find it. You can also pair a device using a reachable address.",
     );
   const signIn = report.signIn;
-  if (signIn?.expiresAt)
+  if (signIn?.expiresAt) {
+    // fork: library-renewal-status - older servers omit renewedAt
+    const renewal =
+      signIn.renewal !== "automatic" || signIn.state === "expired"
+        ? ""
+        : signIn.renewedAt === undefined
+          ? " Renews automatically."
+          : signIn.renewedAt === null
+            ? signIn.renewsAt
+              ? ` First renewal scheduled for ${signIn.renewsAt}.`
+              : ""
+            : ` Last renewed ${signIn.renewedAt}.${signIn.renewsAt ? ` Next renewal ${signIn.renewsAt}.` : ""}`;
     lines.push(
-      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${signIn.renewal === "automatic" && signIn.state !== "expired" ? " Renews automatically." : ""}`,
+      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${renewal}`,
     );
+  }
   if (signIn?.repair) lines.push(signIn.repair);
   else if (report.state === "signed-out")
     lines.push(

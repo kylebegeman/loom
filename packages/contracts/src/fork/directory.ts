@@ -232,8 +232,14 @@ export const LibrarySignInStatus = Schema.Struct({
   state: Schema.Literals(["none", "authority", "ready", "expiring", "expired", "unavailable"]),
   expiresAt: Schema.NullOr(IsoDateTime),
   renewsAt: Schema.NullOr(IsoDateTime),
-  renewal: Schema.Literals(["automatic", "unsupported", "retrying", "unavailable"]),
+  renewal: Schema.Literals(["automatic", "unsupported", "retrying", "unavailable"]).annotate({
+    description: "automatic: no renewal has failed. renewedAt says whether one has run.",
+  }),
   repair: Schema.NullOr(Schema.String),
+  renewedAt: Schema.optional(Schema.NullOr(IsoDateTime)).annotate({
+    description:
+      "When this computer last renewed its sign-in. Null until the first renewal, due at renewsAt, succeeds.",
+  }),
 });
 export type LibrarySignInStatus = typeof LibrarySignInStatus.Type;
 

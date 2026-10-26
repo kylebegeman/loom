@@ -34,6 +34,7 @@ const LibraryHostCredential = Schema.Struct({
   accessToken: Schema.RedactedFromValue(Schema.String),
   expiresAt: IsoDateTime,
   issuedAt: Schema.optional(IsoDateTime),
+  renewedAt: Schema.optional(IsoDateTime),
 });
 export type LibraryHostCredential = typeof LibraryHostCredential.Type;
 const decodeCredential = Schema.decodeEffect(Schema.fromJsonString(LibraryHostCredential));
@@ -319,6 +320,7 @@ const make = Effect.gen(function* () {
       const contents = yield* encodeJson({
         ...credential,
         ...next.value,
+        renewedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
       }).pipe(Effect.option);
       if (Option.isNone(contents)) {
         renewal = "retrying";
@@ -383,6 +385,7 @@ const make = Effect.gen(function* () {
       expiresAt: credential.expiresAt,
       renewsAt: DateTime.formatIso(DateTime.makeUnsafe(due)),
       renewal,
+      renewedAt: credential.renewedAt ?? null,
       repair:
         state === "expired"
           ? LIBRARY_SIGN_IN_MISSING
