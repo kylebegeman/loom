@@ -5,6 +5,7 @@ import { ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -21,10 +22,12 @@ import {
   archiveManagedProjectCheckout,
   assertManagedProjectOwned,
   markManagedProjectCheckout,
+  ownershipReceiptPath,
   readManagedProjectCheckout,
   releaseManagedProjectCheckout,
   restoreManagedProjectCheckout,
 } from "./ManagedProjectCheckout.ts";
+import * as SetupMarker from "./setupMarker.ts";
 
 const projectId = ProjectId.make("managed-project-test");
 const fixture = Effect.gen(function* () {
@@ -66,8 +69,17 @@ const run = <A, E>(
     | import("effect/Path").Path
     | import("effect/Scope").Scope
     | import("effect/process/ChildProcessSpawner").ChildProcessSpawner
+    | ServerConfig.ServerConfig
   >,
-) => effect.pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+) =>
+  effect.pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-managed-project-" }).pipe(
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
+    Effect.scoped,
+  );
 
 describe("Managed primary project checkouts", () => {
   it.live("leaves user-opened repositories unowned and does not create missing folders", () =>
@@ -100,7 +112,8 @@ describe("Managed primary project checkouts", () => {
           expect((yield* f.command(["rev-parse", "refs/t3/checkpoints/test"])).stdout.trim()).toBe(
             head,
           );
-          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
+          expect(yield* SetupMarker.exists(f.cwd)).toBe(true);
+          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
           const restoredReceipt = (yield* readManagedProjectCheckout(f.cwd))!;
           expect(restoredReceipt.released).toBe(false);
           yield* assertManagedProjectOwned(restoredReceipt);
@@ -346,6 +359,39 @@ describe("Managed primary project checkouts", () => {
         expect((yield* assertManagedProjectOwned(receipt).pipe(Effect.result))._tag).toBe(
           "Failure",
         );
+        expect(yield* f.fs.readFileString(`${f.cwd}/new-user-data`)).toBe("keep");
+      }),
+    ),
+  );
+  it.live("migrates a receipt written beside the checkout and still verifies its identity", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const { stateDir } = yield* ServerConfig.ServerConfig;
+        yield* f.mark;
+        const current = yield* ownershipReceiptPath(f.cwd);
+        expect(current.startsWith(`${yield* f.fs.realPath(stateDir)}/project-ownership/`)).toBe(
+          true,
+        );
+        expect(yield* f.fs.readDirectory(f.parent)).toEqual(["clone"]);
+        // An older version kept the receipt beside the checkout.
+        const legacy = `${f.cwd}.t3-project-owned.json`;
+        yield* f.fs.rename(current, legacy);
+        const receipt = (yield* readManagedProjectCheckout(f.cwd))!;
+        expect(receipt.workspaceRoot).toBe(f.cwd);
+        expect(yield* f.fs.exists(legacy)).toBe(false);
+        expect(yield* f.fs.exists(current)).toBe(true);
+        const migrated = (yield* readManagedProjectCheckout(f.cwd))!;
+        const recovery = yield* archiveManagedProjectCheckout(migrated, projectId);
+        yield* f.fs.rename(f.cwd, `${f.cwd}-original`);
+        yield* f.fs.makeDirectory(`${f.cwd}/.git`, { recursive: true });
+        yield* f.fs.writeFileString(`${f.cwd}/new-user-data`, "keep");
+        const refused = yield* releaseManagedProjectCheckout(
+          migrated,
+          projectId,
+          recovery.archive,
+        ).pipe(Effect.flip);
+        expect(refused.message).toContain("replaced");
         expect(yield* f.fs.readFileString(`${f.cwd}/new-user-data`)).toBe("keep");
       }),
     ),

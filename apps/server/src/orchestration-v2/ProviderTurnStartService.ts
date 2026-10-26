@@ -34,6 +34,7 @@ import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
 import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
@@ -554,11 +555,11 @@ export const layer: Layer.Layer<
               project.value.workspaceRoot,
               holdsWorkspaceLease(project.value.workspaceRoot),
             );
-            const marker = `${project.value.workspaceRoot}.t3-setup-pending`;
+            const root = project.value.workspaceRoot;
             const prepareRoot = withWorkspaceLease(
-              marker,
+              yield* SetupMarker.markerPath(root),
               Effect.gen(function* () {
-                if (!(yield* fileSystem.exists(marker))) return;
+                if (!(yield* SetupMarker.exists(root))) return;
                 const setup = yield* setupScripts.runForThread({
                   threadId: projection.thread.id,
                   projectId: projection.thread.projectId,
@@ -574,7 +575,7 @@ export const layer: Layer.Layer<
                         "Project setup did not finish successfully. Fix its setup script and retry.",
                     });
                 }
-                yield* fileSystem.remove(marker);
+                yield* SetupMarker.clear(root);
               }),
             );
             // Root setup can serve a thread in another checkout, so its lane has no holder.
@@ -614,8 +615,7 @@ export const layer: Layer.Layer<
                 worktreePath,
                 workspaceLeaseHeld: true,
               });
-              const marker = `${worktreePath}.t3-setup-pending`;
-              if (restored || (yield* fileSystem.exists(marker))) {
+              if (restored || (yield* SetupMarker.exists(worktreePath))) {
                 const setup = yield* setupScripts.runForThread({
                   threadId: projection.thread.id,
                   projectId: projection.thread.projectId,
@@ -636,7 +636,7 @@ export const layer: Layer.Layer<
                         "Scratch setup did not finish successfully. Fix its setup script and retry.",
                     });
                 }
-                yield* fileSystem.remove(marker);
+                yield* SetupMarker.clear(worktreePath);
               }
             }
           }

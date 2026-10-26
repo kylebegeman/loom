@@ -161,7 +161,10 @@ const setup = Effect.gen(function* () {
       }).pipe(Effect.orDie),
   });
   const context = yield* Layer.build(Config.layerTest(root, state));
-  const paths = yield* WorkspacePaths.WorkspacePaths.pipe(Effect.provide(WorkspacePaths.layer));
+  const paths = yield* WorkspacePaths.WorkspacePaths.pipe(
+    Effect.provide(WorkspacePaths.layer),
+    Effect.provide(context),
+  );
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   let checkpointScopes: readonly OrchestrationV2CheckpointScope[] = [];
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({

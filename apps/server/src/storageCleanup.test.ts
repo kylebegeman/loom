@@ -4,6 +4,7 @@ import * as ProjectService from "./project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { restoreWorktree } from "./workspace/restoreWorktree.ts";
+import * as SetupMarker from "./workspace/setupMarker.ts";
 import { restoreScratchCheckout } from "./workspace/ScratchCheckout.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -36,6 +37,7 @@ import * as Settings from "./serverSettings.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import {
   markManagedProjectCheckout,
+  ownershipReceiptPath,
   restoreManagedProjectCheckout,
   readManagedProjectCheckout,
   setManagedProjectRetention,
@@ -1661,7 +1663,7 @@ describe("storage cleanup reports and local file policies", () => {
             branch: "feature",
           });
           yield* restore.pipe(Effect.provide(restorationLayer), Effect.flip);
-          expect(yield* fixture.fs.exists(`${fixture.worktree}.t3-setup-pending`)).toBe(true);
+          expect(yield* SetupMarker.exists(fixture.worktree)).toBe(true);
           expect((yield* fixture.service.runNow).entries[0]?.reason).toBe(
             "Workspace preparation is pending",
           );
@@ -1671,7 +1673,7 @@ describe("storage cleanup reports and local file policies", () => {
           expect(yield* fixture.fs.readFileString(`${fixture.worktree}/node_modules/ready`)).toBe(
             "prepared",
           );
-          expect(yield* fixture.fs.exists(`${fixture.worktree}.t3-setup-pending`)).toBe(false);
+          expect(yield* SetupMarker.exists(fixture.worktree)).toBe(false);
           yield* restore.pipe(Effect.provide(restorationLayer));
           expect(setupCalls).toBe(2);
           expect(creationCalls).toBe(1);
@@ -3193,8 +3195,9 @@ describe("primary project storage cleanup", () => {
           );
           expect(yield* f.fs.exists(f.cwd)).toBe(true);
           // Restoration retains this marker until setup completes successfully.
-          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
-          yield* f.fs.remove(`${f.cwd}.t3-setup-pending`);
+          expect(yield* SetupMarker.exists(f.cwd)).toBe(true);
+          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
+          yield* SetupMarker.clear(f.cwd);
           yield* openTerminal();
           yield* closeTerminal();
           yield* f.service.drain;
@@ -3271,9 +3274,9 @@ describe("primary project storage cleanup", () => {
             "release-on-settle",
             ProjectId.make("project-1"),
           );
+          const receiptPath = yield* ownershipReceiptPath(f.cwd);
           f.onPublicationFetch(
             Effect.gen(function* () {
-              const receiptPath = `${f.cwd}.t3-project-owned.json`;
               const receipt = JSON.parse(yield* f.fs.readFileString(receiptPath));
               yield* f.fs.writeFileString(
                 receiptPath,

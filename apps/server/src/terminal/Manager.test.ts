@@ -274,7 +274,11 @@ const createManager = (
 ): Effect.Effect<
   ManagerFixture,
   PlatformError.PlatformError,
-  FileSystem.FileSystem | Path.Path | Scope.Scope | ProcessRunner.ProcessRunner
+  | FileSystem.FileSystem
+  | Path.Path
+  | Scope.Scope
+  | ProcessRunner.ProcessRunner
+  | ServerConfig.ServerConfig
 > =>
   Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
     Effect.gen(function* () {
@@ -422,7 +426,13 @@ it("bounds long partial lines and joins surrogate pairs across chunk boundaries"
 });
 
 it.layer(
-  Layer.merge(NodeServices.layer, ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer))),
+  Layer.mergeAll(
+    NodeServices.layer,
+    ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer)),
+    ServerConfig.layerTest(process.cwd(), { prefix: "t3code-terminal-state-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
+  ),
   { excludeTestServices: true },
 )("TerminalManager", (it) => {
   it.effect("spawns lazily and reuses running terminal per thread", () =>

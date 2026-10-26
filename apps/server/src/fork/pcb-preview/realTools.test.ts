@@ -43,6 +43,7 @@ realTest(
         const context = yield* Layer.build(Config.layerTest(root, state));
         const paths = yield* WorkspacePaths.WorkspacePaths.pipe(
           Effect.provide(WorkspacePaths.layer),
+          Effect.provide(context),
         );
         const runner = yield* ProcessRunner.ProcessRunner.pipe(Effect.provide(ProcessRunner.layer));
         const threadId = ThreadId.make("pcb-real-thread"),

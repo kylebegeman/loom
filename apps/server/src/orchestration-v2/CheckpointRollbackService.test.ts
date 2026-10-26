@@ -33,6 +33,7 @@ import * as Layer from "effect/Layer";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -195,6 +196,10 @@ it.effect.each([
       yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-rollback-" }),
     );
     const worktreesDir = path.join(workspaceRoot, "worktrees");
+    const config = {
+      worktreesDir,
+      stateDir: path.join(workspaceRoot, "state"),
+    } as ServerConfig.ServerConfig["Service"];
     const worktreePath = unmanaged
       ? path.join(workspaceRoot, "elsewhere", "feature")
       : path.join(worktreesDir, "repo", "feature");
@@ -239,7 +244,7 @@ it.effect.each([
           NodeServices.layer,
           // fork: project-lifecycle
           Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
-          Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
+          Layer.succeed(ServerConfig.ServerConfig, config),
           ServerSettings.layerTest(),
           Layer.mock(ProjectStore.ProjectStoreV2)({
             get: (id) => {
@@ -359,9 +364,12 @@ it.effect.each([
       );
       // fork: mini-native-retention -- a recreated checkout must run setup on the next turn.
       assert.equal(
-        yield* fileSystem.exists(`${worktreePath}.t3-setup-pending`),
+        yield* SetupMarker.exists(worktreePath).pipe(
+          Effect.provideService(ServerConfig.ServerConfig, config),
+        ),
         order === "cleanup-first",
       );
+      assert.equal(yield* fileSystem.exists(`${worktreePath}.t3-setup-pending`), false);
     }).pipe(Effect.provide(testLayer));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

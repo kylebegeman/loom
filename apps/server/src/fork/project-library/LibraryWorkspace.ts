@@ -62,6 +62,7 @@ import { makeProfileReadinessReader } from "./LibraryProfileReadiness.ts";
 import { makeProfileSettings } from "./LibraryProfileSettings.ts";
 import { validLibraryResources } from "./policy.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
+import * as SetupMarker from "../../workspace/setupMarker.ts";
 import { proveGitPublication } from "../../workspace/gitPublication.ts";
 import {
   managedProjectProcessReason,
@@ -1259,10 +1260,7 @@ const make = Effect.gen(function* () {
           )
             return yield* new LibraryError({ reason: "invalid" });
           if (input.strategy === "clone")
-            yield* fs.writeFileString(
-              `${repositoryPath}.t3-setup-pending`,
-              "Workspace setup must complete before starting the agent.\n",
-            );
+            yield* SetupMarker.write(repositoryPath).pipe(Effect.provide(restorationServices));
           repositories.push({
             resourceId: resource.id,
             path: repositoryPath,
@@ -1282,10 +1280,7 @@ const make = Effect.gen(function* () {
         if (selected.length === 0) receipt = yield* ensureCheckpointRoot(receipt);
         const rootCheckpointRepository = receipt.rootCheckpointRepository;
         if (input.strategy === "clone")
-          yield* fs.writeFileString(
-            `${rootPath}.t3-setup-pending`,
-            "Workspace setup must complete before starting the agent.\n",
-          );
+          yield* SetupMarker.write(rootPath).pipe(Effect.provide(restorationServices));
         const rootLocalProjectId = yield* registerProject(
           input.requestId,
           receipt.copy.id,
@@ -2396,8 +2391,9 @@ const make = Effect.gen(function* () {
 
   const ensureRestoreSetupPending = Effect.fn("LibraryWorkspace.ensureRestoreSetupPending")(
     function* (cwd: string, create = true) {
-      const marker = `${cwd}.t3-setup-pending`;
-      const contents = "Workspace setup must complete before starting the agent.\n";
+      const marker = yield* SetupMarker.markerPath(cwd).pipe(Effect.provide(restorationServices));
+      const contents = SetupMarker.PENDING_CONTENTS;
+      yield* fs.makeDirectory(path.dirname(marker), { recursive: true, mode: 0o700 });
       const unexpected = () =>
         new LibraryError({
           reason: "blocked",

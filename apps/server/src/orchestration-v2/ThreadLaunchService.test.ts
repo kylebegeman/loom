@@ -13,6 +13,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as ServerConfig from "../config.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
 import { assert, it, vi } from "@effect/vitest";
@@ -133,6 +134,7 @@ const claudeAdapter = {
 
 interface HarnessOptions {
   readonly workspaceRoot?: string;
+  readonly serverConfig?: ServerConfig.ServerConfig["Service"];
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -247,6 +249,11 @@ function makeHarness(options: HarnessOptions = {}) {
       }),
   );
   const layerLaunch = ThreadLaunch.layer.pipe(
+    Layer.provide(
+      options.serverConfig === undefined
+        ? ServerConfig.layerTest(process.cwd(), { prefix: "t3-launch-state-" })
+        : Layer.succeed(ServerConfig.ServerConfig, options.serverConfig),
+    ),
     Layer.provide(NodeServices.layer),
     Layer.provide(
       Layer.mergeAll(
@@ -3021,6 +3028,7 @@ it.effect(
       const finishSetup = yield* Deferred.make<void>();
       const harness = makeHarness({
         workspaceRoot: cwd,
+        serverConfig: yield* ServerConfig.ServerConfig,
         runSetup: () =>
           Effect.gen(function* () {
             assert.equal(yield* fs.readFileString(`${cwd}/proof.txt`), "restored launch");
@@ -3052,7 +3060,11 @@ it.effect(
           }),
         );
         yield* Deferred.await(setupStarted);
-        assert.equal(yield* fs.exists(`${cwd}.t3-setup-pending`), true);
+        const { stateDir } = yield* ServerConfig.ServerConfig;
+        const marker = yield* SetupMarker.markerPath(cwd);
+        assert.isTrue(marker.startsWith(`${yield* fs.realPath(stateDir)}/workspace-markers/`));
+        assert.equal(yield* fs.exists(marker), true);
+        assert.equal(yield* fs.exists(`${cwd}.t3-setup-pending`), false);
         assert.notEqual(
           (yield* threads.getThreadProjection(result.threadId)).runs[0]?.status,
           "starting",
@@ -3065,9 +3077,16 @@ it.effect(
           ),
           Stream.runHead,
         );
-        assert.equal(yield* fs.exists(`${cwd}.t3-setup-pending`), false);
+        assert.equal(yield* SetupMarker.exists(cwd), false);
       }).pipe(Effect.provide(harness.layer));
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-launch-restore-" }).pipe(
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+      Effect.scoped,
+    ),
 );
 
 // fork: library-projects

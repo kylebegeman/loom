@@ -46,6 +46,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { LibraryService } from "./LibraryService.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
+import * as SetupMarker from "../../workspace/setupMarker.ts";
 
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
@@ -161,6 +162,7 @@ const make = Effect.gen(function* () {
   const sessions = yield* SessionStore;
   const git = yield* GitWorkflowService;
   const fs = yield* FileSystem.FileSystem;
+  const markerServices = yield* Effect.context<SetupMarker.Services>();
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const scope = yield* Effect.scope;
@@ -276,10 +278,7 @@ const make = Effect.gen(function* () {
           branch: created.worktree.refName,
         };
         // The first turn runs the project's setup script here before the agent starts.
-        yield* fs.writeFileString(
-          `${worktree.path}.t3-setup-pending`,
-          "Workspace setup must complete before starting the agent.\n",
-        );
+        yield* SetupMarker.write(worktree.path).pipe(Effect.provide(markerServices));
         const payload = yield* Schema.encodeEffect(worktreeCodec)(worktree);
         yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${receiptId},${"worktree"},${payload})`;
         return worktree;

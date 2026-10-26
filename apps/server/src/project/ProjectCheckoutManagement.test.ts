@@ -16,10 +16,12 @@ import * as StorageCleanup from "../storageCleanup.ts";
 import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
 import {
   archiveManagedProjectCheckout,
+  ownershipReceiptPath,
   readManagedProjectCheckout,
   releaseManagedProjectCheckout,
   resolveManagedProjectRetention,
 } from "../workspace/ManagedProjectCheckout.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 import * as ProjectCheckoutManagement from "./ProjectCheckoutManagement.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
@@ -27,7 +29,8 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const projectId = ProjectId.make("existing-project");
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+  const configuration = yield* ServerConfig.ServerConfig;
+  const parent = configuration.cwd;
   const cwd = `${parent}/project`;
   yield* fs.makeDirectory(cwd);
   const command = (args: string[]) =>
@@ -58,9 +61,6 @@ const fixture = Effect.gen(function* () {
   };
   let current = row;
   let sweeps = 0;
-  const configuration = yield* ServerConfig.ServerConfig.pipe(
-    Effect.provide(ServerConfig.layerTest(parent, `${parent}/environment`)),
-  );
   const realRunner = yield* ProcessRunner.ProcessRunner.pipe(Effect.provide(ProcessRunner.layer));
   let intercept:
     | ((
@@ -129,7 +129,13 @@ const fixture = Effect.gen(function* () {
   };
 });
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+    return yield* effect.pipe(
+      Effect.provide(ServerConfig.layerTest(parent, `${parent}/environment`)),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceipt => ({
   requestId: "library-copy",
@@ -436,7 +442,7 @@ describe("reviewed project checkout management", () => {
           expect(retained.state).toBe("managed");
           expect(retained.retention).toBe("keep");
           expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("initial content\n");
-          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
+          expect(yield* SetupMarker.exists(f.cwd)).toBe(true);
           expect((yield* readManagedProjectCheckout(f.cwd))?.ownershipSource).toBe("adopted");
         }),
       ),
@@ -497,10 +503,13 @@ describe("reviewed project checkout management", () => {
         yield* f.adopt();
         const receipt = (yield* readManagedProjectCheckout(f.cwd))!;
         const legacy = { ...receipt, version: 1, ownershipSource: undefined, retention: undefined };
+        // Older versions kept version 1 receipts beside the checkout.
+        yield* f.fs.remove(yield* ownershipReceiptPath(f.cwd));
         yield* f.fs.writeFileString(`${f.cwd}.t3-project-owned.json`, yield* encodeJson(legacy));
         const restored = (yield* readManagedProjectCheckout(f.cwd))!;
         expect(restored.ownershipSource).toBe("clone");
         expect(restored.retention).toBe("inherit");
+        expect(yield* f.fs.exists(`${f.cwd}.t3-project-owned.json`)).toBe(false);
       }),
     ),
   );
@@ -535,6 +544,7 @@ describe("reviewed project checkout management", () => {
           stateDir: `${f.parent}/home-link/userdata`,
         });
         expect((yield* f.preview()).state).toBe("blocked");
+        expect(yield* f.fs.exists(yield* ownershipReceiptPath(target))).toBe(false);
         expect(yield* f.fs.exists(`${target}.t3-project-owned.json`)).toBe(false);
       }),
     ),
@@ -557,7 +567,7 @@ describe("reviewed project checkout management", () => {
             "https://github.com/example/my-fork.git",
           );
           yield* f.adopt();
-          const receipt = yield* f.fs.readFileString(`${f.cwd}.t3-project-owned.json`);
+          const receipt = yield* f.fs.readFileString(yield* ownershipReceiptPath(f.cwd));
           expect(receipt).not.toContain("private-token");
           expect(receipt).not.toContain("access_token");
           expect(receipt).not.toContain("secret");
@@ -657,7 +667,7 @@ describe("reviewed project checkout management", () => {
       Effect.gen(function* () {
         const f = yield* fixture;
         yield* f.adopt("keep");
-        const json = yield* f.fs.readFileString(`${f.cwd}.t3-project-owned.json`);
+        const json = yield* f.fs.readFileString(yield* ownershipReceiptPath(f.cwd));
         const legacyReader = Schema.decodeEffect(
           Schema.fromJsonString(Schema.Struct({ version: Schema.Literal(1) })),
         );
@@ -676,7 +686,7 @@ describe("reviewed project checkout management", () => {
           yield* f.adopt("keep");
           const receipt = (yield* readManagedProjectCheckout(f.cwd))!;
           yield* f.fs.writeFileString(
-            `${f.cwd}.t3-project-owned.json`,
+            yield* ownershipReceiptPath(f.cwd),
             yield* encodeJson({ ...receipt, [field]: undefined }),
           );
           expect((yield* readManagedProjectCheckout(f.cwd).pipe(Effect.result))._tag).toBe(
