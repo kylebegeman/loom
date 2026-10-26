@@ -23,7 +23,7 @@ import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/h
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { libraryComputerDirectory } from "./enrollment.ts";
-import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts";
 
 const LibraryHostCredential = Schema.Struct({
   computer: Schema.optional(LibraryComputerRegistration),
@@ -238,7 +238,7 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const lock = yield* Semaphore.make(1);
-  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
+  const checks = yield* BackgroundChecks.recorder;
   let retryAt = 0;
   let lastSession: string | null = null;
   let renewal: LibrarySignInStatus["renewal"] = "automatic";
@@ -331,13 +331,13 @@ const make = Effect.gen(function* () {
         const written = yield* save().pipe(Effect.result);
         if (written._tag === "Failure") {
           renewal = "retrying";
-          yield* checks.fail("library-renewal", UNSAVED_REPAIR); // fork: background-check-health
+          yield* checks.fail("library-renewal", UNSAVED_REPAIR);
           return UNAVAILABLE;
         }
       }
       const connection = yield* read;
       if (connection.kind !== "remote" || connection.credential === null) {
-        yield* checks.clear("library-renewal"); // fork: background-check-health
+        yield* checks.clear("library-renewal");
         return connection;
       }
       const credential = connection.credential;
@@ -346,13 +346,13 @@ const make = Effect.gen(function* () {
         lastSession = credential.sessionId;
         retryAt = 0;
         renewal = "automatic";
-        yield* checks.clear("library-renewal"); // fork: background-check-health
+        yield* checks.clear("library-renewal");
       }
       if (Date.parse(credential.expiresAt) <= now) return connection;
       if (now < renewalTime(credential) || now < retryAt || connection.credentialFile === undefined)
         return connection;
       retryAt = now + RETRY_MS;
-      // fork: background-check-health - an attempt leaves its outcome in `renewal`
+      // An attempt leaves its outcome in `renewal`
       return yield* attempt(connection, credential, connection.credentialFile, now).pipe(
         Effect.tap(() =>
           renewal === "automatic"

@@ -1,4 +1,3 @@
-// fork: webhook-delivery-issues
 import { scheduledTaskDeliveryIssueText } from "@t3tools/client-runtime/fork";
 import type { ScheduledTaskDeliveryIssue } from "@t3tools/contracts";
 

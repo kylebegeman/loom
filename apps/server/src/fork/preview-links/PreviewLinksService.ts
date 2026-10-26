@@ -92,7 +92,7 @@ import {
   verifyPreviewTicket,
 } from "./ticket.ts";
 import { runPreviewTunnel } from "./tunnel.ts";
-import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts";
 import type {
   PreviewGatewayHandle,
   PreviewGatewayView,
@@ -971,7 +971,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   });
 
   const libraryLock = yield* Semaphore.make(1);
-  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
+  const checks = yield* BackgroundChecks.recorder;
   /** Whether the Library may still hold this computer's hosts from a registration this run. */
   let libraryRegistered = false;
   /**

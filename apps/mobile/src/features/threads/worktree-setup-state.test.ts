@@ -1,7 +1,7 @@
 import { ThreadId, type WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { resolveVisibleWorktreeSetup } from "@t3tools/client-runtime/worktree-setup";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveWorktreeSetupSnapshot, worktreeSetupBlocksSend } from "./worktree-setup-state";
+import { resolveWorktreeSetupSnapshot } from "./worktree-setup-state";
 
 const threadId = ThreadId.make("setup-thread");
 const running: WorktreeSetupSnapshot = {
@@ -73,13 +73,5 @@ describe("mobile worktree setup handoff", () => {
     expect(resolveWorktreeSetupSnapshot(otherId, running, running)).toBeNull();
     const other = { ...running, threadId: otherId };
     expect(resolveWorktreeSetupSnapshot(otherId, other, running)).toBe(other);
-  });
-
-  it("lets the first message through while Library project files are still arriving", () => {
-    expect(worktreeSetupBlocksSend(running)).toBe(true);
-    expect(worktreeSetupBlocksSend({ ...running, kind: "worktree" })).toBe(true);
-    expect(
-      worktreeSetupBlocksSend({ ...running, kind: "project-files", operationId: "launch-1" }),
-    ).toBe(false);
   });
 });

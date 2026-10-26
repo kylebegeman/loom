@@ -30,7 +30,8 @@ interface WorktreeSetupCardProps {
   onCancel: (() => void) | null;
   onWorkLocally: (() => void) | null;
   onOpenTerminal: (() => void) | null;
-  /** fork: library-launch-files: the computer filling a Library conversation's project files. */
+  // fork: library-launch-files
+  /** The computer filling a Library conversation's project files. */
   computerLabel?: string | null;
   onRetry?: (() => void) | null;
 }

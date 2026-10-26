@@ -1,4 +1,3 @@
-// fork: background-check-health
 import { BackgroundCheckFailure } from "@t3tools/contracts/fork";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import type { TailscaleServeClaimError } from "@t3tools/tailscale";

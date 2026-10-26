@@ -243,7 +243,6 @@ export const LibrarySignInStatus = Schema.Struct({
 });
 export type LibrarySignInStatus = typeof LibrarySignInStatus.Type;
 
-// fork: background-check-health
 export const BackgroundCheckFailure = Schema.Struct({
   check: Schema.String.annotate({
     description:
@@ -281,7 +280,7 @@ export const DirectoryReporting = Schema.Struct({
   reason: Schema.optional(
     Schema.Literals(["io", "invalid", "unverified", "wrong-environment", "stale-sequence"]),
   ),
-  failingChecks: Schema.optional(Schema.Array(BackgroundCheckFailure)), // fork: background-check-health
+  failingChecks: Schema.optional(Schema.Array(BackgroundCheckFailure)),
 });
 export type DirectoryReporting = typeof DirectoryReporting.Type;
 

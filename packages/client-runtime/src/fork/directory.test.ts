@@ -422,7 +422,6 @@ describe("identityDirectoryAddresses", () => {
   });
 });
 
-// fork: library-renewal-status
 describe("directoryReportingText", () => {
   const signIn = {
     state: "ready",
@@ -455,7 +454,6 @@ describe("directoryReportingText", () => {
   });
 });
 
-// fork: background-check-health
 describe("backgroundCheckFailureText", () => {
   it("says since when a check has failed and why, and nothing once it passes", () => {
     const report = { state: "reporting", lastReportedAt: null } as const;

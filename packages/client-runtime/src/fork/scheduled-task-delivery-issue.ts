@@ -1,4 +1,3 @@
-// fork: webhook-delivery-issues
 import type { ScheduledTaskDeliveryIssue } from "@t3tools/contracts";
 import { directoryAgeText } from "./directory.ts";
 

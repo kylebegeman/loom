@@ -1,4 +1,3 @@
-// fork: webhook-delivery-issues
 import {
   ScheduledTaskError,
   type ScheduledTask,

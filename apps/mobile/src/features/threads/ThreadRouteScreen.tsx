@@ -8,7 +8,7 @@ import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
-import { worktreeSetupBlocksSend } from "./worktree-setup-state";
+import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup"; // fork: library-launch-files
 import { AppBar } from "../../components/ui/AppBar";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";

@@ -176,7 +176,6 @@ export function ComputerReachSection({
                 {text}
               </Text>
             ))}
-            {/* fork: background-check-health */}
             {(report ? backgroundCheckFailureText(report) : []).map((text) => (
               <Text key={text} selectable className={cn("text-sm", REACH_INK.danger)}>
                 {text}

@@ -32,7 +32,7 @@ export function directoryReportingText(report: DirectoryReporting): readonly str
     );
   const signIn = report.signIn;
   if (signIn?.expiresAt) {
-    // fork: library-renewal-status - older servers omit renewedAt
+    // Older servers omit renewedAt
     const renewal =
       signIn.renewal !== "automatic" || signIn.state === "expired"
         ? ""
@@ -55,7 +55,6 @@ export function directoryReportingText(report: DirectoryReporting): readonly str
   return lines;
 }
 
-// fork: background-check-health
 const BACKGROUND_CHECK_NAMES: Readonly<Record<string, string>> = {
   "tailscale-cli": "Tailscale CLI",
   "tailscale-serve": "Tailscale Serve",

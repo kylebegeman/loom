@@ -255,7 +255,7 @@ const withReporter = <A, E>(
             Layer.mock(MiniOffloadService)({ identities: Ref.get(workers) }),
             Layer.succeed(HttpClient.HttpClient, http),
             ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
-            BackgroundChecks.layer, // fork: background-check-health
+            BackgroundChecks.layer,
           ),
         ),
       ),
@@ -455,7 +455,6 @@ describe("DirectoryReporter", () => {
         yield* TestClock.adjust("30 seconds");
         expect((yield* h.nextPost).status).toBe(503);
         expect(yield* h.nextSleep).toBe(60_000);
-        // fork: background-check-health
         expect((yield* h.reporter.status).failingChecks).toMatchObject([
           {
             check: "directory-reporting",

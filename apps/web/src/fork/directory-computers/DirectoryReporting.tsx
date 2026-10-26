@@ -39,7 +39,6 @@ export function DirectoryReporting({
               {text}
             </p>
           ))}
-          {/* fork: background-check-health */}
           {backgroundCheckFailureText(report).map((text) => (
             <p key={text} className="text-xs text-destructive">
               {text}
