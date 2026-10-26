@@ -81,6 +81,8 @@ export const LibraryLaunchAttempt = Schema.Struct({
     rootPath: Schema.String,
     /** Set when the computer chooses the folder itself; `rootPath` is then empty and not sent. */
     placementStrategy: Schema.optional(Schema.Literals(["reuse", "clone"])),
+    /** Who owns the files the preview named, so Keep reaches only files Loom manages. */
+    placementOwnership: Schema.optional(LibraryWorkingCopy.fields.ownership),
     copy: Schema.NullOr(LibraryWorkingCopy),
     recoverySource: Schema.optional(LibraryWorkingCopy),
     carryContext: Schema.String,

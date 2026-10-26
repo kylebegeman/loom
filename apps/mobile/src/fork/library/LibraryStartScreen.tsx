@@ -17,7 +17,12 @@ import {
   libraryLaunchDefaults,
   libraryLaunchWarning,
   libraryLaunchWorkspace,
+  LIBRARY_FOLDER_CHOICE_TITLES,
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  LIBRARY_RESTORE_FOLDER_LINE,
+  libraryFolderChoice,
   libraryPlacementLine,
+  libraryPlacementManaged,
   libraryPlacementReuses,
   libraryPlacementStrategy,
   libraryPortableRecoveryPlan,
@@ -412,6 +417,7 @@ function LibraryStartContent(props: {
     mode: "reuse" | "folder" | "clone";
     rootPath: string;
     placementStrategy?: "reuse" | "clone";
+    placementOwnership?: "managed" | "borrowed";
     copy: LibraryWorkingCopy | null;
     recoverySource?: LibraryWorkingCopy;
     carryContext: string;
@@ -668,16 +674,20 @@ function LibraryStartContent(props: {
       ? true
       : (keepFiles ?? (mode === "reuse" ? selectedCopy?.keepOnComputer !== false : false));
   // A capable computer resolves and guards its own folder, so a new copy sends none unless one was
-  // picked. Restoring saved files still names the folder it restores into.
+  // picked. A restore gets a new folder of its own there, never the start's preview.
   const choosesFolders = serverChoosesFolders(config);
   const serverPlaces = reviewState
     ? reviewState.placementStrategy !== undefined
     : choosesFolders && mode === "clone" && typedPath === null && !recoverySource;
+  const serverRestores = reviewState
+    ? reviewState.recoverySource !== undefined && reviewState.rootPath === ""
+    : choosesFolders && mode === "clone" && typedPath === null && recoverySource !== null;
   const placementQuery = useEnvironmentQuery(
     execution &&
       choosesFolders &&
       mode === "clone" &&
       typedPath === null &&
+      !recoverySource &&
       progress.intent === null
       ? library.placement.resultAtom({
           environmentId: execution,
@@ -688,7 +698,7 @@ function LibraryStartContent(props: {
   const placement = placementQuery.error === null ? placementQuery.data : null;
   const rootPath =
     typedPath ??
-    (mode === "clone"
+    (mode === "clone" && !serverRestores
       ? (placement?.rootPath ??
         (config?.newProjectsRoot
           ? getNewProjectPathPreview(config.newProjectsRoot, launchProject.title)
@@ -697,15 +707,17 @@ function LibraryStartContent(props: {
   const placementReuses = reviewState
     ? reviewState.placementStrategy === "reuse"
     : serverPlaces && placement !== null && libraryPlacementReuses(placement);
-  const placementText = placement
-    ? libraryPlacementLine(placement)
-    : placementQuery.isPending && !reviewState
-      ? "Checking where Loom will put the files…"
-      : "Loom chooses a folder on this computer when you start.";
+  const placementText = serverRestores
+    ? LIBRARY_RESTORE_FOLDER_LINE
+    : placement
+      ? libraryPlacementLine(placement)
+      : placementQuery.isPending && !reviewState
+        ? "Checking where Loom will put the files…"
+        : "Loom chooses a folder on this computer when you start.";
   const [pickingFolder, setPickingFolder] = useState(false);
   const canInspect = useAtomValue(library.inspectFolder.permissionAtom(execution));
   const inspectFolder = useAtomCommand(library.inspectFolder, { reportFailure: false });
-  // A picked folder with repositories is used as it is; an empty or missing one gets new files.
+  // A folder holding this project's files is used as it is; an empty or missing one gets new files.
   async function chooseFolder(path: string) {
     if (!execution || folderBusy.current) return;
     pin();
@@ -719,8 +731,18 @@ function LibraryStartContent(props: {
     const result = await inspectFolder({ environmentId: execution, input: { rootPath: path } });
     onFolderPending(false);
     const found = AsyncResult.isSuccess(result) ? result.value : null;
-    const existing = found !== null && found.exists && found.repositories.length > 0;
-    setMode(existing ? "folder" : "clone");
+    const choice = found
+      ? libraryFolderChoice(
+          found,
+          repositories.filter((resource) => resourceIds.includes(resource.id)),
+        )
+      : "clone";
+    if (choice === "occupied") {
+      setError(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+      return;
+    }
+    setError(null);
+    setMode(choice === "reuse" ? "folder" : "clone");
     setRootPath(found?.rootPath ?? path);
   }
   const overlappingRoot =
@@ -814,7 +836,7 @@ function LibraryStartContent(props: {
     (progress.copy !== null || (!recoveryAmbiguous && recoveryUnavailable === null)) &&
     (progress.copy !== null || mode === "reuse"
       ? progress.copy !== null || selectedCopy !== null
-      : (serverPlaces || rootPath.trim().length > 0) &&
+      : (serverPlaces || serverRestores || rootPath.trim().length > 0) &&
         (recoverySource
           ? canRestoreCopy && canAuthorizeRecovery
           : canPrepare && (mode !== "clone" || (execution !== null && writable.has(execution))))) &&
@@ -879,8 +901,9 @@ function LibraryStartContent(props: {
         ...(interactionMode ? { interactionMode } : {}),
         title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
         mode,
-        rootPath: serverPlaces ? "" : rootPath.trim(),
+        rootPath: serverPlaces || serverRestores ? "" : rootPath.trim(),
         ...(serverPlaces ? { placementStrategy: libraryPlacementStrategy(placement) } : {}),
+        ...(serverPlaces && placement ? { placementOwnership: placement.ownership } : {}),
         copy: selectedCopy,
         ...(recoverySource ? { recoverySource } : {}),
         carryContext,
@@ -979,14 +1002,17 @@ function LibraryStartContent(props: {
             requestId.current,
             instantFiles,
             {
-              // Only a clone makes files Loom manages; a chosen folder stays the user's.
+              // Only files Loom manages take Keep; a found checkout or chosen folder stays the user's.
               execute: (operationId, input) =>
                 executeLaunch(
                   operationId,
                   input,
                   null,
                   instantFiles.kind === "files"
-                    ? instantFiles.request.strategy === "clone"
+                    ? libraryPlacementManaged(
+                        review.placementOwnership ? { ownership: review.placementOwnership } : null,
+                        instantFiles.request.strategy,
+                      )
                     : instantFiles.copy.ownership === "managed",
                 ),
               progress: reportProgress,
@@ -1353,14 +1379,18 @@ function LibraryStartContent(props: {
           ? "Restore saved files when starting"
           : "Use files already on this computer"
         : mode === "folder"
-          ? "Use an existing folder"
+          ? typedPath
+            ? LIBRARY_FOLDER_CHOICE_TITLES.reuse
+            : "Use an existing folder"
           : recoverySource || recoveryAmbiguous
             ? "Restore source files when starting"
             : placementReuses
-              ? "Use files in this folder"
-              : serverPlaces || rootPath.trim()
-                ? "Prepare project files when starting"
-                : "Choose a folder before starting";
+              ? LIBRARY_FOLDER_CHOICE_TITLES.reuse
+              : typedPath
+                ? LIBRARY_FOLDER_CHOICE_TITLES.clone
+                : serverPlaces || rootPath.trim()
+                  ? "Prepare project files when starting"
+                  : "Choose a folder before starting";
   const retentionStatus = keepOnComputer
     ? "Files stay kept."
     : "Temporary files, saved work stays.";
@@ -1601,7 +1631,7 @@ function LibraryStartContent(props: {
                 <Text selectable className="text-sm text-foreground">
                   {mode === "reuse"
                     ? displayedCopy?.rootPath
-                    : serverPlaces
+                    : serverPlaces || serverRestores
                       ? placementText
                       : rootPath || "Choose a folder"}
                 </Text>
@@ -1691,6 +1721,7 @@ function LibraryStartContent(props: {
                       {pickingFolder ? (
                         <LibraryFolderPicker
                           environmentId={execution}
+                          projectTitle={launchProject.title}
                           disabled={locked}
                           onChoose={(path) => void chooseFolder(path)}
                         />
