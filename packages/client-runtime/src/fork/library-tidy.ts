@@ -167,10 +167,9 @@ const failureMessage = (cause: unknown, fallback: string) =>
 
 /**
  * Releases the chosen copies one at a time, then archives the project if asked. Each copy's status
- * is read again right before it is released, and a copy that is no longer clean and pushed, that
- * this client may no longer remove, or that the server would block, is kept. `remove` releases a managed copy or unregisters a borrowed
- * one using the fresh review token, and `register` records the result in the Library. A failure
- * on one copy is reported and the rest continue.
+ * is read again just before release, and a copy no longer clean and pushed, removable by this
+ * client, or allowed by the server is kept. A failure on one copy is reported and the rest
+ * continue.
  */
 export async function runLibraryTidy(input: {
   readonly copies: readonly LibraryWorkingCopy[];

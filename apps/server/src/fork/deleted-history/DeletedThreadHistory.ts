@@ -211,11 +211,10 @@ const make = Effect.gen(function* () {
         (yield* read(sql<{ readonly sequence: number | null }>`
           SELECT MAX(sequence) AS sequence FROM orchestration_events
           WHERE application_event_version = 2 AND aggregate_kind = 'thread'`))[0]?.sequence ?? 0;
-      // Read before the bindings: activation binds an export's conversations before it removes
-      // their record, so one missing here is in `bound`. A thread this pass may purge was deleted
-      // over a day before it started, so an export recorded after this read, from a snapshot under
-      // a day old, saw it deleted. A record it cannot read fails the pass after the release, which
-      // needs neither.
+      // Read before the bindings: activation binds an export's conversations before removing its
+      // record, so a missing one is in `bound`. An export recorded after this read saw every thread
+      // this pass may purge as deleted. An unreadable record fails the pass after the release,
+      // which needs neither.
       const pendingImports = yield* Effect.result(
         pendingImportThreadIds(config.stateDir).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
@@ -268,11 +267,9 @@ const make = Effect.gen(function* () {
         return result;
       });
 
-      // Release: the hold keeps files of replicated or bound threads. They go once the Library
-      // holds the deletion, or without waiting on a computer with no Library connection. Like
-      // deletion's own cleanup, this removes files a linked live thread may still show. Only
-      // threads with message or turn item rows can still have files, which leaves out every
-      // finished purge.
+      // Release: held files of replicated or bound threads go once the Library holds the deletion,
+      // or at once without a Library connection, even if a linked live thread still shows them.
+      // Only threads with message or turn item rows can have files, which skips finished purges.
       const releaseRows = yield* read(sql<{
         readonly thread_id: string;
         readonly replicated: number;
@@ -435,11 +432,10 @@ const make = Effect.gen(function* () {
         verdict: Extract<Verdict, { readonly kind: "eligible" }>,
       ) {
         const { deletion, lastSequence } = verdict;
-        // Every write re-checks, in the same statement, that the Library still holds the deletion
-        // and that no event arrived since this thread was evaluated: none on its own stream, and
-        // none on another stream after `highWater`, which the link graph may not have, that names
-        // it, such as a fork of it or a context transfer from it. A mention that is not a link
-        // only postpones the purge.
+        // Every write re-checks in the same statement that the Library still holds the deletion and
+        // no event arrived since evaluation: none on this stream, and none after `highWater` on
+        // another stream naming it, such as a fork or context transfer. A mention that is not a
+        // link only postpones the purge.
         const guard = sql`
           EXISTS (
             SELECT 1 FROM fork_library_source_threads

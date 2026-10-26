@@ -7,11 +7,10 @@ import * as LibraryWorkspaceStore from "../project-library/LibraryWorkspaceStore
 import { deletionSequence } from "./deletedHistory.ts";
 
 /**
- * Keeps a deleted Library thread's attachment files while the Library still needs them for the
- * deletion's snapshot: a replicated thread until the Library acknowledges the deletion, and a
- * bound thread the Library has not received yet. Other threads are cleaned up immediately. The
- * next DeletedThreadHistory pass releases held files once the Library acknowledges the deletion,
- * or on a computer without a Library connection, and each restart checks them again.
+ * Keeps a deleted thread's attachments while the Library still needs them for the deletion's
+ * snapshot: replicated threads until it acknowledges the deletion, and bound ones it has not
+ * received. Other threads clean up at once. DeletedThreadHistory releases held files after the
+ * acknowledgement or without a Library connection, and each restart checks again.
  */
 export const layerHold = <E, R>(
   executor: Layer.Layer<EffectWorker.OrchestrationEffectExecutorV2, E, R>,

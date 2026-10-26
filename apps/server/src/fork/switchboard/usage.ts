@@ -19,11 +19,9 @@ import { isCurrentEvaluation, switchboardDriver } from "./limits.ts";
 import type { SwitchboardUsageSource } from "./switchboard.ts";
 
 /**
- * Switchboard's controller owns usage collection for its hub, so a Limits read of
- * that hub uses the controller's cached `GET /api/v1/usage` instead of polling
- * every subscription again. Readings keep their original observation time, and a
- * reading Switchboard marks stale, reused or failed is reported as unavailable.
- * Loom never falls back to provider polling when the controller is down.
+ * A Limits read of a Switchboard hub uses the controller's cached `GET /api/v1/usage` instead of
+ * polling every subscription again. Readings keep their observation time, and ones Switchboard
+ * marks stale, reused or failed report as unavailable. There is no fallback to provider polling.
  */
 const Window = Schema.NullOr(
   Schema.Struct({ usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) }),

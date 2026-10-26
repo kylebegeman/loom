@@ -163,11 +163,10 @@ const NONE: LibraryPushStep = { kind: "none" };
 const FORGET: LibraryPushStep = { kind: "clearLocal", keepOptIn: false };
 
 /**
- * Step one decides everything that needs no push token, so iOS is asked for one only when the
- * phone is opted in, allowed, connected and the Library advertises push. Every step either
- * changes the record or waits for a new snapshot, so a failure never loops. The status reads
- * behind `checkServed` and `needsToken` happen at most once per sync run, so a status that
- * contradicts a register's answer cannot loop either.
+ * Step one decides everything that needs no push token, so iOS is asked for one only when the phone
+ * is opted in, allowed, connected and the Library advertises push. Every step changes the record or
+ * waits for a new snapshot, and status reads happen at most once per run, so neither a failure nor
+ * a contradicting status can loop.
  */
 export function planLibraryPush(input: LibraryPushPlanInput): LibraryPushStep {
   const { record } = input;

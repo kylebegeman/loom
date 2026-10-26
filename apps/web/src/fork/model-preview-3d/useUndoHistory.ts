@@ -45,12 +45,10 @@ export function clearUndoHistories() {
 }
 
 /**
- * Keeps an undo history per file revision (`scope`) over the panel state in `slice`, in memory
- * only. Entering a scope adopts the state as it then is and drops steps on fields that moved
- * while it was away. Edits are recorded where they are committed: workspace operations once
- * saved, section and orientation values when set, and customizer changes as they are observed.
- * Undo and redo hand the fields to restore to `apply`, which returns false when everything they
- * touch changed elsewhere since; that step is then dropped instead of overwriting the change.
+ * Keeps an in-memory undo history per file revision (`scope`) over the panel state in `slice`.
+ * Entering a scope adopts its current state and drops steps on fields that moved meanwhile. Edits
+ * are recorded where they commit. `apply` returns false when everything a step touches changed
+ * elsewhere, and that step is dropped instead of overwriting the change.
  */
 export function useUndoHistory({
   scope,

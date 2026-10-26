@@ -214,11 +214,10 @@ interface SyncRun {
 }
 
 /**
- * Reads the Library's status and applies it to the record: a build it does not serve is never
- * sent a register, a fixed served list lifts a held refusal, and a row it dropped (an operator's
- * Remove, or Apple refusing the token) registers again on this connect, not at the daily refresh.
- * Runs start on connection and record changes, never on a timer. Reading once per run keeps a
- * status that contradicts a register's answer from clearing and setting a refusal forever.
+ * Applies the Library's status to the record: an unserved build is never sent a register, a fixed
+ * served list lifts a held refusal, and a dropped row registers again on this connect. Runs start
+ * on connection and record changes, never a timer, and read status once, so a status contradicting
+ * a register's answer cannot clear and set a refusal forever.
  */
 async function readLibraryPushStatusOnce(
   registry: AtomRegistry.AtomRegistry,
@@ -496,11 +495,10 @@ function removalUnregisterStep(
 }
 
 /**
- * Removing a connection revokes its session, after which this phone can no longer unregister.
- * So removing the Library first asks it to forget this iPhone, briefly and best effort. A
- * register still in flight would land after the unregister and leave the row behind, so the
- * unregister waits for the current sync run, inside the same budget. A Library that does not
- * answer in time keeps the row until it expires.
+ * Removing a connection revokes its session, so removing the Library first asks it to forget this
+ * iPhone, briefly and best effort. The unregister waits for the current sync run within the same
+ * budget, so an in-flight register cannot land after it. A Library that does not answer in time
+ * keeps the row until it expires.
  */
 function forgetLibraryPushBeforeRemoval(environmentId: EnvironmentId): Promise<void> {
   const forget = syncRunEnded.then(() => {

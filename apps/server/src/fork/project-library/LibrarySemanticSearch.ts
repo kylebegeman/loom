@@ -7,15 +7,10 @@ import type { Fragment } from "effect/sql/Statement";
 import { LIBRARY_EMBEDDING_MAX_CHARS, type LibraryEmbedderShape } from "./LibraryEmbedder.ts";
 
 /**
- * Semantic search over the history search index.
- *
- * `fork_library_search_vectors` holds one embedding per `fork_library_search_items` row, keyed by
- * the same id, as int8 values with a per-vector scale (384 bytes for the pinned model). A row
- * without a vector is pending; a background loop embeds pending rows newest first, so the backfill
- * resumes wherever it stopped and new history is embedded shortly after it is saved. Triggers drop
- * a vector when its item is removed or its text changes. Queries scan the vectors in process: at
- * 60,000 items that stays well under the time a full-text query over common words takes, and no
- * native SQLite extension is needed.
+ * Semantic search: `fork_library_search_vectors` holds one int8 embedding with a scale per search
+ * item. A row without a vector is pending; a background loop embeds pending rows newest first, and
+ * triggers drop a vector when its item is removed or changed. Queries scan vectors in process,
+ * which at 60,000 items beats a common-word full-text query and needs no extension.
  */
 
 // Created with IF NOT EXISTS because parallel packets renumber this migration at merge.

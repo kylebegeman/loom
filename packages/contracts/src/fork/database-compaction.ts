@@ -4,11 +4,10 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 /**
- * A desktop shell compacts its local database while no backend has it open:
- * at the first launch of a new version, or at any launch after Settings asked
- * for it. Both files live beside the database. The server, which clients
- * reach, writes the request; the desktop, which owns the restart, writes the
- * result before it starts the backend.
+ * A desktop shell compacts its local database while no backend has it open: at the first launch of
+ * a new version, or any launch after Settings asked. Both files live beside the database. The
+ * server, which clients reach, writes the request; the desktop writes the result before it starts
+ * the backend.
  */
 export const DATABASE_COMPACTION_REQUEST_FILE = "compact-at-restart";
 export const DATABASE_COMPACTION_RESULT_FILE = "restart-compaction.json";

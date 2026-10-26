@@ -64,6 +64,7 @@ const TAG_BYTES = 16;
 const MAX_MANIFEST_BYTES = 4096;
 const decodeManifest = Schema.decodeUnknownSync(Manifest);
 const failure = () => new RecoveryArchiveError({});
+const isRecoveryArchiveError = Schema.is(RecoveryArchiveError);
 const requireEnvironment = (id: string) => {
   if (
     !id.trim() ||
@@ -199,8 +200,7 @@ const run = Effect.fnUntraced(function* <A>(work: (signal: AbortSignal) => Promi
       .then(() => work(signal))
       .then(
         (value) => resume(Effect.succeed(value)),
-        (error: unknown) =>
-          resume(Effect.fail(Schema.is(RecoveryArchiveError)(error) ? error : failure())),
+        (error: unknown) => resume(Effect.fail(isRecoveryArchiveError(error) ? error : failure())),
       );
     // Abort alone returns before async finally blocks. Runtime shutdown must await their cleanup.
     return Effect.promise(() => settled);

@@ -34,7 +34,7 @@ import { ModelPreviewMigrations } from "./migrations.ts";
 // Opt in with a locally installed executable. Unit tests do not download tools or
 // pretend that a fake process proves compatibility with the OpenSCAD CLI.
 const executable = process.env.LOOM_TEST_OPENSCAD;
-const realTest = executable ? it.live : it.live.skip;
+const realTest = it.live.runIf(executable);
 const fixtures = NodeURL.fileURLToPath(new URL("./__fixtures__/", import.meta.url));
 const meshes = NodePath.resolve(
   fixtures,

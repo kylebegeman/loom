@@ -11,6 +11,55 @@ const DOM_TEST_ENVIRONMENT_ALLOWLIST: Array<string> = [
   "apps/mobile/src/fork/**/*.test.{ts,tsx}",
 ];
 
+// fork: ext-lint -- Burn-down list: fork tests from before upstream's test-timing and render
+// rules. Remove a file once it complies; do not add files.
+const FORK_TEST_RULE_BURN_DOWN: Record<string, Array<string>> = {
+  "t3code/no-wall-clock-in-tests": [
+    "apps/mobile/src/fork/bots/runLogic.test.ts",
+    "apps/mobile/src/fork/library-push/libraryPushSync.test.ts",
+    "apps/server/src/fork/project-library/LibrarySemanticSearch.test.ts",
+    "apps/server/src/fork/switchboard/SwitchboardCredential.test.ts",
+    "apps/web/src/fork/file-outline/outline.test.ts",
+    "apps/web/src/fork/project-library/NewConversationDialog.launch.test.tsx",
+    "apps/web/src/fork/respectful-notifications/pullRequestGuideNotification.test.tsx",
+    "deploy/omarchy/ai.test.mjs",
+    "deploy/omarchy/health.test.mjs",
+    "deploy/omarchy/hub.test.mjs",
+    "deploy/omarchy/status.test.mjs",
+  ],
+  "t3code/no-test-timeout-or-unreasoned-skip": [
+    "apps/server/src/fork/model-preview-3d/pythonCad/runner.test.ts",
+    "apps/server/src/fork/project-library/LibraryEmbedder.test.ts",
+    "apps/server/src/fork/project-library/LibrarySearch.test.ts",
+    "apps/server/src/fork/project-library/LibrarySemanticSearch.test.ts",
+    "apps/server/src/fork/project-lifecycle/shell.test.ts",
+    "apps/server/src/fork/project-lifecycle/space.test.ts",
+    "apps/server/src/fork/switchboard/SwitchboardCredential.test.ts",
+    "apps/server/src/fork/switchboard/claudeDriverRouting.test.ts",
+    "apps/server/src/fork/vault/SshAgentTerminal.integration.test.ts",
+    "apps/server/src/fork/vault/VaultSsh.integration.test.ts",
+    "benchmarks/loom/benchmarks.test.ts",
+  ],
+  "t3code/no-real-time-wait-in-tests": [
+    "apps/mobile/src/fork/identity-renewal/grantStore.test.ts",
+    "apps/server/src/fork/device-qa/DeviceQaService.test.ts",
+    "apps/server/src/fork/vault/VaultSsh.integration.test.ts",
+    "apps/web/src/fork/model-preview-3d/PointMenu.focus.test.tsx",
+  ],
+  "t3code/no-polling-loop-in-tests": ["apps/server/src/fork/device-qa/DeviceQaService.test.ts"],
+  "t3code/no-frame-waits-in-browser-tests": [
+    "apps/web/src/fork/project-library/LibraryPalette.browser.test.tsx",
+  ],
+  "t3code/require-disposable-render": [
+    "apps/web/src/fork/attention/ArchiveRecovery.browser.test.tsx",
+    "apps/web/src/fork/project-library/LibraryPalette.browser.test.tsx",
+    "apps/web/src/fork/project-library/ReleaseCopyDialog.browser.test.tsx",
+    "apps/web/src/fork/scheduled-task-alerts/ScheduledTaskFailureAlerts.browser.test.tsx",
+    "apps/web/src/fork/settings/parts.browser.test.tsx",
+    "apps/web/src/fork/utilities/UtilitiesView.focus.browser.test.tsx",
+  ],
+};
+
 const TEST_EXCLUDE = [
   "**/.repos/**",
   "**/.t3/**",
@@ -596,6 +645,17 @@ export default defineConfig({
         files: ["apps/web/src/fork/**/*.{ts,tsx}", "apps/web/src/routes/settings.loom*.tsx"],
         rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },
+      {
+        // fork: ext-lint -- The render helper needs browser mode; fork DOM tests run in jsdom.
+        files: DOM_TEST_ENVIRONMENT_ALLOWLIST,
+        excludeFiles: ["**/*.browser.test.{ts,tsx}"],
+        rules: { "t3code/require-disposable-render": "off" },
+      },
+      // fork: ext-lint
+      ...Object.entries(FORK_TEST_RULE_BURN_DOWN).map(([rule, files]) => ({
+        files,
+        rules: { [rule]: "off" as const },
+      })),
       {
         files: ["apps/web/src/**", "apps/mobile/src/**", "packages/*/src/**"],
         rules: { "t3code/react-effect-budget": "error" },

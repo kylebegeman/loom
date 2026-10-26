@@ -12,12 +12,9 @@ export type LibraryTab<V extends string> = {
 };
 
 /**
- * A Library page's views as one pill of tabs. One indicator slides to the chosen tab rather than
- * each tab lighting up on its own, so the switch reads as movement. Arrow keys move focus and
- * Enter opens a view, since each one is a navigation that should not fire on every key press.
- *
- * Controls for the open view sit at the far end of the same row, so a view never stacks a second
- * bar of controls under the tabs.
+ * A Library page's views as one pill of tabs, with one indicator sliding to the chosen tab. Arrow
+ * keys move focus and Enter opens a view, since each is a navigation. Controls for the open view
+ * sit at the end of the same row, so a view never stacks a second bar under the tabs.
  */
 export function LibraryTabs<V extends string>({
   label,

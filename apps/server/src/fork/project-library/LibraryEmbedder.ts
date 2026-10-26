@@ -11,21 +11,10 @@ import * as Schema from "effect/Schema";
 import { isLibraryAuthorityEnv } from "./authority.ts";
 
 /**
- * Local sentence embeddings for semantic history search.
- *
- * The model is all-MiniLM-L6-v2 (Apache-2.0), as quantized to ONNX by Xenova, pinned by
- * revision and sha256. Weights are never downloaded by the server: the Library image places
- * them in the directory named by `LOOM_LIBRARY_EMBEDDINGS_DIR`. Without that directory, or with
- * files that fail their hash, semantic search stays off and full-text search is unchanged.
- *
- * Inference runs on onnxruntime-web's WebAssembly build rather than onnxruntime-node. The WASM
- * build is one platform-independent 14 MB binary with no native addon, so it loads from the
- * standalone runtime archive on any glibc or musl Linux without a prebuild matrix, and it adds
- * nothing to the desktop app. onnxruntime-node ships 300 MB of per-platform native libraries.
- * It runs single-threaded in a worker thread, so an inference (5 ms for a query, 80 ms for a full
- * 128 tokens) never blocks the event loop that serves the Library. Once loaded it holds about
- * 250 MB for the life of the process; restarting the worker to give it back fragments the heap
- * and grows the process instead.
+ * Local all-MiniLM-L6-v2 embeddings (Apache-2.0, Xenova's ONNX), pinned by revision and sha256 and
+ * never downloaded: the Library image places them in `LOOM_LIBRARY_EMBEDDINGS_DIR`, and without
+ * valid files semantic search stays off. onnxruntime-web's WASM build needs no native addon. It
+ * runs single-threaded in a worker and holds about 250 MB; restarting it fragments the heap.
  */
 
 export const LIBRARY_EMBEDDINGS_DIR_ENV = "LOOM_LIBRARY_EMBEDDINGS_DIR";

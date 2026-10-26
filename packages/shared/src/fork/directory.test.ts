@@ -31,15 +31,10 @@ const NOW = 1_792_281_600;
 const DIRECTORY_URL = "https://library.example.com";
 
 /**
- * A LoomOS signed identity made the LoomOS way, with no private key kept:
- *
- *   openssl genpkey -algorithm ed25519 -out key.pem
- *   openssl pkey -in key.pem -pubout -outform DER | base64             # public_key
- *   python3: json.dumps(identity, sort_keys=True) + "\n" > payload.json
- *   openssl pkeyutl -sign -rawin -inkey key.pem -in payload.json -out payload.sig
- *   base64 < payload.sig                                                # signature
- *
- * OpenSSL 4.0.3. The fingerprint is SHA-256 of the DER key, as `public_fingerprint` computes it.
+ * A LoomOS signed identity with no private key kept (OpenSSL 4.0.3): `genpkey -algorithm ed25519`,
+ * public_key is base64 of `pkey -pubout -outform DER`, signature is base64 of `pkeyutl -sign
+ * -rawin` over `json.dumps(identity, sort_keys=True) + "\n"`. The fingerprint is SHA-256 of the DER
+ * key, as `public_fingerprint` computes it.
  */
 const LOOM_OS_FIXTURE: LoomOsSignedIdentity = {
   payload:

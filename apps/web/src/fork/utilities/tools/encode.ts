@@ -175,6 +175,7 @@ const NAMED_ENTITIES = new Map([
   ["reg", "®"],
   ["trade", "™"],
   ["hellip", "…"],
+  // oxlint-disable-next-line t3code/no-em-dash-copy -- An entity table, not copy: `&mdash;` must decode to the character.
   ["mdash", "\u{2014}"],
   ["ndash", "\u{2013}"],
   ["lsquo", "\u{2018}"],

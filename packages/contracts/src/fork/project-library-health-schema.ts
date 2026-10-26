@@ -19,12 +19,10 @@ export const LibraryRepositoryHealthError = Schema.Literals([
 export type LibraryRepositoryHealthError = typeof LibraryRepositoryHealthError.Type;
 
 /**
- * One repository in a copy, as its computer sees it. `branch` is absent on a detached head,
- * `upstream`, `ahead` and `behind` are absent without an upstream, `upstreamGone` marks an upstream
- * branch deleted on its remote (no counts), and `fetchedAt` is the last time the remotes were
- * actually fetched. `fetchFailed` marks a requested remote check that could not fetch, so the
- * counts are from the last fetch. `commitsSince` counts the commits from the head this computer
- * last reported to this one, present only when this head builds on that one.
+ * One repository in a copy, as its computer sees it. `branch` is absent on a detached head;
+ * `upstream`, `ahead` and `behind` without an upstream; `upstreamGone` marks a deleted upstream.
+ * `fetchedAt` is the last real fetch, and `fetchFailed` means the counts predate a failed one.
+ * `commitsSince` counts commits since the head last reported here, when this head builds on it.
  */
 export const LibraryRepositoryHealth = Schema.Struct({
   resourceId: HealthId,

@@ -177,11 +177,9 @@ function entropy(text: string) {
 // and not followed by more than base64 padding.
 const OPAQUE_TOKEN = /(?<![A-Za-z0-9_+/.$-])[A-Za-z0-9_+-]{32,}={0,2}(?![A-Za-z0-9_+=/.-])/g;
 const WORD = /[A-Z]?[a-z]{4,}|[A-Z]{4,}/g;
-// Random 32 to 64 character base62 and base64url tokens measure 4.07 bits or more in 99.9% of
-// samples, while repeated placeholders sit far below. Entropy alone cannot tell a token from a
-// long identifier with digits, which reaches 4.5, so identifiers are also recognised by their
-// words: random tokens keep under 40% of their characters in four-letter runs 92-99% of the time,
-// and real identifiers keep well over half.
+// Random 32 to 64 character base62 and base64url tokens measure 4.07 bits or more 99.9% of the
+// time; placeholders sit far below. Identifiers with digits reach 4.5, so words also count: random
+// tokens keep under 40% of characters in four-letter runs, real identifiers over half.
 const OPAQUE_TOKEN_MIN_ENTROPY = 4;
 const OPAQUE_TOKEN_MAX_WORD_SHARE = 0.4;
 

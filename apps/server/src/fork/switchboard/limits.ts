@@ -20,11 +20,9 @@ export function isCurrentEvaluation(evaluatedAt: string, now: number): boolean {
 }
 
 /**
- * `GET /api/v1/availability` from the controller's cached operations API. States
- * and providers are read as strings: Switchboard asks clients to treat values they
- * do not know conservatively, and here that means as unknown, never as blocked.
- * `health` describes the controller's own collection, since `evaluatedAt` is
- * always the time of the read.
+ * `GET /api/v1/availability` from the controller's cached operations API. States and providers are
+ * read as strings, and unknown values count as unknown, never as blocked. `health` describes the
+ * controller's own collection, since `evaluatedAt` is always the time of the read.
  */
 export const SwitchboardAvailability = Schema.Struct({
   version: Schema.Literal(1),
@@ -60,12 +58,10 @@ const STATES: ReadonlySet<string> = new Set(["available", "restricted", "unavail
 const STALE: SwitchboardLimits = { limits: [], availability: "stale" };
 
 /**
- * Turns Switchboard's per-model states into what the picker blocks. Only a
- * confirmed `unavailable` blocks its model. A provider gets a provider-wide limit
- * only when every model Switchboard lists for it is confirmed unavailable or
- * credit-only; that limit also covers models missing from its catalog. A reading
- * the controller itself calls stale or failed, an empty catalog, or one where no
- * state is known reports availability as unknown and blocks nothing.
+ * Turns Switchboard's per-model states into what the picker blocks. Only a confirmed `unavailable`
+ * blocks its model; a provider is blocked only when every listed model is unavailable or
+ * credit-only, which also covers models missing from its catalog. A stale or failed reading, an
+ * empty catalog or no known state blocks nothing.
  */
 export function switchboardLimits(
   snapshot: SwitchboardAvailability,

@@ -177,11 +177,9 @@ const median = (values: number[]) => {
 };
 
 /**
- * Attributes the base part's regions to one parameter from renders with that
- * parameter nudged up and down. Each region is sampled at a few triangle
- * centers; a sample's move is the signed distance along its normal to the
- * nearest same-facing surface of the nudged part. A region moved when those
- * moves are above noise, and its rate is the median move per unit of change.
+ * Attributes the base part's regions to one parameter from renders nudged up and down. Samples at a
+ * few triangle centers move by the signed distance along their normal to the nearest same-facing
+ * surface; a region moved when those exceed noise, at the median move per unit of change.
  */
 export function linkParameter(
   base: Topology,

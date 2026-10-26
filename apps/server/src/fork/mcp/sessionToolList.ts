@@ -10,11 +10,9 @@ import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools
 import { DeviceQaToolkit } from "../device-qa/mcp.ts";
 
 /**
- * Tools that refuse every call unless a thread credential holds the capability. Effect's McpServer
- * lists every registered tool to every session, so the auth middleware drops these from the
- * tools/list response instead. That is exact for the credential's lifetime: its capabilities are
- * fixed when it is issued, and the server issues a new one when a thread's browser or device
- * access changes.
+ * Tools that refuse every call without a thread credential holding the capability. McpServer lists
+ * every tool to every session, so the auth middleware drops these from tools/list instead. That is
+ * exact because a credential's capabilities are fixed, and a new one is issued when access changes.
  */
 const CAPABILITY_TOOLS: ReadonlyArray<readonly [McpCapability, ReadonlyArray<string>]> = [
   ["preview", [...Object.keys(PreviewToolkit.tools), ...Object.keys(PreviewControlsToolkit.tools)]],

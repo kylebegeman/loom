@@ -147,11 +147,10 @@ const pairing = (
 });
 
 /**
- * How to connect a discovered computer: read its sign-in settings from its routes in order,
- * skipping a route that does not answer or reaches another computer, then offer Loom Identity at
- * the first route that answered when the computer uses the Library's issuer. A browser tries
- * tailnet first and pairs when only a public reach address answers, since reach hosts serve no
- * browser sign-in. Null for a saved connection or a computer with no usable route.
+ * How to connect a discovered computer: read sign-in settings from its routes in order, skipping
+ * one that does not answer or reaches another computer, then offer Loom Identity at the first that
+ * answered when it uses the Library's issuer. A browser tries tailnet first and pairs when only a
+ * public reach address answers. Null for a saved connection or no usable route.
  */
 export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConnect")(
   function* (input: {

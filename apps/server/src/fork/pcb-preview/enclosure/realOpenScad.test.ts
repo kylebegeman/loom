@@ -17,7 +17,7 @@ import { writeScad } from "./scad.ts";
 const decodeParams = Schema.decodeUnknownEffect(EnclosureStarterParams);
 const decodeRequirements = Schema.decodeUnknownEffect(EnclosureRequirements);
 const executable = process.env.LOOM_TEST_OPENSCAD;
-const realTest = executable ? it.live : it.live.skip;
+const realTest = it.live.runIf(executable);
 const features: BoardFeatures = {
   revision: "fixture",
   kind: "kicad",

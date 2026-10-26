@@ -20,7 +20,7 @@ import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 
 const fixtureRoot = NodeProcess.env.LOOM_TEST_PCB_FIXTURES;
-const realTest = fixtureRoot ? it.live : it.live.skip;
+const realTest = it.live.runIf(fixtureRoot);
 const partial = <A extends object>(methods: Partial<A>): A =>
   new Proxy(methods as A, {
     get(target, key) {

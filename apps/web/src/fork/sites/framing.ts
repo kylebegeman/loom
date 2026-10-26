@@ -1,10 +1,7 @@
 /**
- * How the Sites page frames a live site. A framed site runs its own scripts, so it may only ever
- * load from another origin than the app: there, `allow-same-origin` keeps the site's own storage
- * working without giving it the app's.
- *
- * Never add `allow-top-navigation`, `allow-modals` or `allow-downloads`: a framed site must not
- * navigate the app away, block it with a dialog, or save files.
+ * How the Sites page frames a live site. A framed site runs its own scripts, so it must load from
+ * another origin than the app, where `allow-same-origin` keeps only the site's own storage. Never
+ * add `allow-top-navigation`, `allow-modals` or `allow-downloads`.
  */
 
 /** A card thumbnail: rendered, never interactive. */

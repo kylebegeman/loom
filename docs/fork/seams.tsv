@@ -396,7 +396,7 @@ apps/mobile/src/features/threads/McpAppWebView.tsx	preview-links	2
 apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	2
 apps/mobile/src/features/settings/components/settings-page-targets.ts	preview-links	1
 apps/mobile/src/reactCompilerCoverage.test.ts	react-compiler	2
-vite.config.ts	ext-lint	2
+vite.config.ts	ext-lint	5
 
 # Loom Vault native terminal session connection
 packages/provider-core/src/server/mcpSession.ts	ext-vault-terminal	3
@@ -993,3 +993,4 @@ apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	library	1
 apps/mobile/src/lib/android-workspace-navigation.test.ts	library	1
 apps/server/src/orchestration-v2/Orchestrator.ts	library-projects	4
 packages/shared/src/keybindings.ts	library-palette	2
+scripts/effect-budget.json	-	/src/fork/

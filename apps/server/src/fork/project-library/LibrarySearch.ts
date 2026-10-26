@@ -16,12 +16,10 @@ import { LibraryEmbedder } from "./LibraryEmbedder.ts";
 import { fuseRankings, makeLibrarySemanticSearch } from "./LibrarySemanticSearch.ts";
 
 /**
- * Full-text search over saved conversation history.
- *
- * `fork_library_search_items` holds one row per searchable history item: user and assistant
- * messages and proposed plans. Tool output and reasoning are left out. The FTS5 table
- * `fork_library_search` indexes those rows as external content, kept in step by triggers. Rows are
- * derived from `fork_library_history_items`, which ingest rewrites in the same transaction.
+ * Full-text search over saved conversation history. `fork_library_search_items` holds one row per
+ * user or assistant message and proposed plan, derived from `fork_library_history_items` in the
+ * same ingest transaction. The FTS5 table `fork_library_search` indexes them as external content,
+ * kept in step by triggers.
  */
 
 // The longest item text that is indexed. Longer pastes stay readable in history.
@@ -31,16 +29,10 @@ const MAX_TERMS = 16;
 // Paging is by offset into the ranked matches; this bounds how deep a cursor can reach.
 const MAX_OFFSET = 1000;
 /**
- * A cursor is `<offset>.<bound>`: the matches earlier pages returned, and the highest
- * `fork_library_search_items.id` when the first page was read. Every page skips rows above the
- * bound, so history indexed while a client pages cannot push earlier matches onto a later page.
- *
- * The bound holds because reindexing keeps the id of every item that is still saved (see `index`);
- * only items that are new to the index get new, higher ids. SQLite reuses an id only after the
- * rows above it are removed. Items edited or removed while a client pages can still shift the
- * offset by one. bm25 still sees new rows in its corpus statistics, which
- * scales every match of a term alike and so rarely reorders the snapshot; a keyset cursor on rank
- * would break under that scaling, which is why paging stays by offset.
+ * A cursor is `<offset>.<bound>`: matches earlier pages returned, and the highest search item id
+ * when the first page was read. Pages skip rows above the bound, and reindexing keeps surviving
+ * ids, so history indexed mid-paging cannot push matches later. Paging stays by offset because bm25
+ * statistics shift with new rows, breaking a keyset cursor on rank.
  */
 const CURSOR = /^([1-9]\d{0,3})\.([1-9]\d{0,15})$/;
 const MIN_PREFIX_CHARS = 3;

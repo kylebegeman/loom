@@ -40,12 +40,10 @@ const IDLE_LIBRARY_LIST = Atom.make(AsyncResult.initial<ReachLibraryListing, nev
 );
 
 /**
- * Reach for web, desktop and mobile. `status` streams one computer's reach while mounted; pass
- * null while no computer is chosen or it lacks `reach`. Send `forget` only to a computer that
- * advertises `reach-forget`, as `reachView` offers it. `libraryList` reads the Library's records
- * when it mounts (if older than a few seconds) and after a retire, never on a timer; pass null
- * unless the Library advertises `reach-library`. Feed results to `reachView` and
- * `reachLibraryView`.
+ * Reach for every client. `status` streams one computer's reach while mounted; pass null without a
+ * computer or `reach`. Send `forget` only where `reachView` offers it. `libraryList` reads Library
+ * records on mount (if older than a few seconds) and after a retire, never on a timer; pass null
+ * without `reach-library`. Feed results to `reachView` and `reachLibraryView`.
  */
 export function createReachAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   const status = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
@@ -481,11 +479,10 @@ const isUnreachable = (error: unknown) => {
 };
 
 /**
- * One short line for a failed turn on, turn off, remove or forget, or null when there is nothing to
- * report. Reach errors carry only a reason, so their contract message is safe; anything else gets
- * a line of its own. Pass `view.throughAddress` as `dropsRoute` for any change but turning on: the
- * computer answers before it stops the tunnel, but the reply can still be lost with the route,
- * so only a refusal the computer actually sent counts as a failure then.
+ * One short line for a failed reach change, or null. Reach errors carry only a reason, so their
+ * message is safe; others get their own line. Pass `view.throughAddress` as `dropsRoute` for any
+ * change but turning on: the reply can be lost with the route, so only a refusal the computer sent
+ * counts as a failure then.
  */
 export function reachChangeErrorText(
   cause: Cause.Cause<unknown>,

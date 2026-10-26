@@ -684,11 +684,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   );
 
   /**
-   * Stops processes and their children; never this server or anything above it, and never a
-   * spared process, a container runtime or their children. A root above the server would take
-   * the server's own children with it, so such roots are dropped before descendants are
-   * gathered. Runtimes are checked here as well because a ledger entry can name one, and
-   * Docker closes its forwarder's lane port once the container is gone.
+   * Stops processes and their children; never this server or its ancestors, a spared process, a
+   * container runtime or their children. Roots above the server are dropped before descendants are
+   * gathered. Runtimes are checked here too: a ledger entry can name one, and Docker closes its
+   * forwarder's lane port once the container is gone.
    */
   const stopProcesses = Effect.fn("ProjectLifecycle.stopProcesses")(function* (
     roots: ReadonlyArray<number>,

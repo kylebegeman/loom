@@ -397,13 +397,10 @@ const daysInMonth = (year: number, month: number) =>
   new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 /**
- * Turns one local day's matching wall times into instants after `now`. Offsets are read
- * just before and just after the day; when they agree the conversion is arithmetic. On a
- * transition day each time is checked against both offsets: a time in the spring-forward
- * gap matches neither and is skipped, and a time the fall-back repeats matches both and
- * runs once, at the earlier instant. Vixie cron and cronie instead run a skipped job right
- * after the jump and repeat wildcard jobs in the repeated hour, so a real daemon can differ
- * from this list on a transition day.
+ * Turns one local day's matching wall times into instants after `now`. On a transition day a time
+ * in the spring-forward gap is skipped and one the fall-back repeats runs once, at the earlier
+ * instant. Vixie cron and cronie run skipped jobs after the jump and repeat wildcard jobs, so a
+ * real daemon can differ on those days.
  */
 function collectRuns(
   schedule: Schedule,

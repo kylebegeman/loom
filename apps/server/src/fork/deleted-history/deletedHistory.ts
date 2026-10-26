@@ -5,23 +5,10 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 
 /**
- * Deleted-thread history purge rules shared by the purge, the Library history gate and the
- * attachment hold. A purge keeps a thread's `thread.created` and `thread.deleted` events and its
- * thread row, so verify and rebuild still produce the deleted thread, and removes everything
- * else. Invariants:
- *
- * - A thread is purged only after it has been deleted for {@link DELETED_HISTORY_RETENTION_MS}
- *   and, once it has a Library replication row, only after the Library acknowledged its first
- *   deletion with nothing left in the outbox. An unbound thread without a row gets a row that
- *   records the deletion as acknowledged before its first delete, so every purge, finished or
- *   interrupted, is visible to {@link withheldCondition} from the start. No code removes those
- *   rows; {@link purgedShape} still recognizes a finished purge if they are wiped. An unbound
- *   thread that a Library migration export has not been activated for yet waits like a bound one,
- *   because the Library may hold it live; see `recordPendingImport`.
- * - Events go newest first: a slimmed subagent prompt only points at an older event of its own
- *   stream, so every row left behind still finds its prompt.
- * - Linked threads (subagent parents and children, forks, context transfers, shared provider
- *   sessions) are purged only together, because their projections read each other's rows.
+ * Purge rules: a purge keeps `thread.created`, `thread.deleted` and the thread row, and runs only
+ * after retention and the Library's acknowledgement (unbound threads get an acknowledged row;
+ * pending imports wait like bound threads). Events go newest first so kept rows find their prompts,
+ * and linked threads purge together since their projections read each other's rows.
  */
 export const DELETED_HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
 
@@ -57,11 +44,9 @@ export const deletionSequence = (sql: SqlClient.SqlClient, threadId: ThreadRef) 
 )`;
 
 /**
- * True once a purge emptied the stream: only the kept events are left and stream versions are
- * missing between them. Versions are assigned without gaps, so a conversation that never had
- * more than its creation and deletion keeps adjacent ones and still sends its deletion.
- * Compaction keeps the newest whole-thread event and both ends of every message and node, so it
- * never removes everything between the two.
+ * True once a purge emptied the stream: only the kept events remain, with stream versions missing
+ * between them. Versions otherwise have no gaps, so a conversation that only had creation and
+ * deletion still sends its deletion, and compaction always leaves something between the two.
  */
 export const purgedShape = (sql: SqlClient.SqlClient, threadId: ThreadRef) => sql`(
   CASE WHEN NOT EXISTS (
@@ -106,11 +91,10 @@ export const isWithheld = (sql: SqlClient.SqlClient, threadId: string) =>
   );
 
 /**
- * Fails when a command would copy history from, or write into, a deleted thread. A fork or
- * merge-back reads the source's runs, which a purge may already be emptying, and anything
- * written into a deleted thread is never shown and only postpones its purge. A command's source
- * is checked before the dispatch mode limit, so a deleted one is never refused as needing a higher
- * mode that a caller could then approve for nothing.
+ * Fails when a command would copy history from, or write into, a deleted thread: a purge may be
+ * emptying the source, and writes into a deleted thread only postpone its purge. The source is
+ * checked before the dispatch mode limit, so a deleted one is never refused as needing a mode a
+ * caller could approve for nothing.
  */
 export const refuseDeleted = (thread: Pick<OrchestrationV2AppThread, "id" | "deletedAt">) =>
   thread.deletedAt === null ? Effect.void : Effect.fail(`Thread ${thread.id} is deleted.`);

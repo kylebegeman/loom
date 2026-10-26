@@ -2,11 +2,10 @@
 import * as NodeFSP from "node:fs/promises";
 
 /**
- * Every Loom server on a computer (the installed app, dev servers, other homes) keeps its own
- * lanes but hands out ports from the same range, and a lane's release stops whatever listens
- * on its block. One file per claimed block, created exclusively, keeps two servers from giving
- * out the same ports. A claim lasts as long as its lane, across restarts, and is dropped once
- * the owning server's state folder is gone.
+ * Every Loom server on a computer hands out lane ports from the same range, and releasing a lane
+ * stops whatever listens on its block. One exclusively created file per claimed block keeps two
+ * servers from sharing ports. A claim lasts as long as its lane, across restarts, and is dropped
+ * once the owning server's state folder is gone.
  */
 export const portClaimsDir = (homeDir: string) => `${homeDir}/.loom/lane-ports`;
 

@@ -1,10 +1,7 @@
 /**
- * Inspector primitives shared by the card, the panel and the packet sections registered in
- * FORK_INSPECTOR_SECTIONS, so every section reads the same on both surfaces.
- *
- * Tones map to theme tokens only, so app themes recolor the inspector with everything else.
- * Static dots; the elapsed time is a 1 Hz DOM write that stops while the document is hidden;
- * a progress bar moves only when its value changes.
+ * Inspector primitives shared by the card, the panel and FORK_INSPECTOR_SECTIONS, so every section
+ * reads the same on both surfaces. Tones map to theme tokens only. Dots are static, elapsed time is
+ * a 1 Hz DOM write that stops while the document is hidden, and progress bars move only on change.
  */
 import {
   CheckIcon,
