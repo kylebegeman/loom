@@ -20,6 +20,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as NamedProjects from "../fork/file-placement/NamedProjects.ts"; // fork: file-placement
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectPlacement from "./ProjectPlacement.ts";
@@ -207,6 +208,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const crypto = yield* Crypto.Crypto;
   const placement = yield* ProjectPlacement.ProjectPlacement;
+  const namedProjects = yield* NamedProjects.NamedProjects; // fork: file-placement
   const managedRoot = config.managedProjectsRoot ?? config.baseDir; // fork: mini-managed-projects
 
   // Non-recursive mkdir atomically claims a name; racers move on after AlreadyExists.
@@ -406,6 +408,7 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause }))),
     ]).pipe(Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : removeFolder)));
     const [commitError, id] = prepared;
+    yield* namedProjects.record({ id: ProjectId.make(id), workspaceRoot }); // fork: file-placement
     const project = yield* projects
       .create({
         commandId: CommandId.make(`named-project:${id}`),
@@ -443,4 +446,5 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ManagedProjectFolders, make).pipe(
   Layer.provide(ProjectPlacement.layerWithProjectStore),
+  Layer.provideMerge(NamedProjects.layer), // fork: file-placement
 );

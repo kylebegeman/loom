@@ -520,11 +520,13 @@ export function NewTaskFlowProvider(
           thread.environmentId === selectedProject.environmentId &&
           thread.projectId === selectedProject.id,
       ));
+  const namedProject = selectedProject?.namedProject; // fork: file-placement
   const defaultWorkspaceMode: WorkspaceMode = canChooseWorkspace
     ? resolveNewThreadEnvMode({
         projectSettings,
         workspaceRoot: selectedProject?.workspaceRoot ?? null,
         newProjectsRoot: selectedEnvironmentServerConfig?.newProjectsRoot,
+        ...(namedProject === undefined ? {} : { namedProject }), // fork: file-placement
         projectHasThreads: selectedProjectHasThreads,
       })
     : "local";
