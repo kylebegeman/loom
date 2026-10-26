@@ -31,6 +31,7 @@ import { AppBar } from "../../components/ui/AppBar";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { LibraryFolderPicker } from "../library/LibraryFolderPicker";
 import { preparationReceiptKey } from "./projectPreparationReceipt";
 import { useProjectPreparationReceipt } from "./useProjectPreparationReceipt";
 import { uuidv4 } from "../../lib/uuid";
@@ -94,6 +95,9 @@ function ProjectPreparationContent(props: {
   const [destinationId, setDestinationId] = useState<EnvironmentId | null>(
     props.initialDestinationEnvironmentId,
   );
+  // Null leaves the folder to the computer; a picked one is sent as the clone destination.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [pickingFolder, setPickingFolder] = useState(false);
   const receiptState = useProjectPreparationReceipt(
     destinationId
       ? preparationReceiptKey(props.sourceEnvironmentId, props.sourceProjectId, destinationId)
@@ -155,8 +159,8 @@ function ProjectPreparationContent(props: {
           createdAt: receipt?.createdAt ?? request.createdAt,
           ...(receipt && (receipt.destinationPath !== "" || !serverChosen)
             ? { destinationPath: receipt.destinationPath }
-            : proposal
-              ? { destinationPath: proposal }
+            : (picked ?? proposal)
+              ? { destinationPath: picked ?? proposal }
               : {}),
           projects: projects.map((project) => ({
             ...project,
@@ -278,7 +282,7 @@ function ProjectPreparationContent(props: {
       receipt
         ? Promise.resolve(null)
         : receiptState
-            .save({ ...requested, destinationPath: "" })
+            .save({ ...requested, destinationPath: picked ?? "" })
             .then(
               () => null,
               failure("The preparation receipt could not be saved. No clone was started."),
@@ -442,7 +446,11 @@ function ProjectPreparationContent(props: {
                             ? "Read-only, cloning and project creation access required"
                             : "Connected with cloning and project access"
                       }
-                      onPress={() => setDestinationId(environment.environmentId)}
+                      onPress={() => {
+                        setDestinationId(environment.environmentId);
+                        setPicked(null);
+                        setPickingFolder(false);
+                      }}
                     />
                   );
                 })}
@@ -496,13 +504,44 @@ function ProjectPreparationContent(props: {
                   <Text selectable className="text-sm text-foreground-muted">
                     {receipt?.destinationPath
                       ? `Files are in ${receipt.destinationPath}`
-                      : "Loom puts the files in this computer's Projects folder, or uses a checkout it already has."}
+                      : picked
+                        ? `Loom puts the files in ${picked}`
+                        : "Loom puts the files in this computer's Projects folder, or uses a checkout it already has."}
                   </Text>
                 ) : proposal ? (
                   <Text selectable className="text-sm text-foreground-muted">
                     {receipt ? "Submitted folder" : "Suggested folder"}:{" "}
                     {receipt?.destinationPath ?? proposal}
                   </Text>
+                ) : null}
+                {serverChosen && !receipt && plan?.kind === "create" ? (
+                  <View className="gap-2">
+                    <Button
+                      label="Choose another folder"
+                      tone="text"
+                      disabled={busy}
+                      onPress={() => setPickingFolder((open) => !open)}
+                    />
+                    {picked ? (
+                      <Button
+                        label="Let Loom choose the folder"
+                        tone="text"
+                        disabled={busy}
+                        onPress={() => setPicked(null)}
+                      />
+                    ) : null}
+                    {pickingFolder ? (
+                      <LibraryFolderPicker
+                        environmentId={destinationId}
+                        projectTitle={sourceProject.title}
+                        disabled={busy}
+                        onChoose={(path) => {
+                          setPicked(path);
+                          setPickingFolder(false);
+                        }}
+                      />
+                    ) : null}
+                  </View>
                 ) : null}
                 {plan?.kind === "existing" ? (
                   <Text className="text-sm text-foreground-muted">

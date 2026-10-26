@@ -60,6 +60,11 @@ import {
 } from "~/logicalProject";
 import { useClientSettings } from "~/hooks/useSettings";
 import { newProjectId } from "~/lib/utils";
+import {
+  LibraryFolderPalette,
+  libraryFolderActions,
+} from "../project-library/LibraryFolderPalette";
+import { LibraryPaletteDialog } from "../project-library/LibraryPalette";
 import { readCurrentPreparationAttempt, useProjectPreparationAttempt } from "./preparationState";
 
 const EMPTY_PREVIEW = Atom.make(AsyncResult.initial<ProjectCheckoutPreview>());
@@ -294,6 +299,7 @@ function PreparationOnComputer({
   const path = editedPath ?? defaultPath ?? "";
   const projectsFolder =
     environment?.serverConfig?.folders?.projects ?? environment?.serverConfig?.newProjectsRoot;
+  const [browsing, setBrowsing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -440,7 +446,9 @@ function PreparationOnComputer({
         <p className="wrap-anywhere text-sm">
           {attempt?.destinationPath
             ? `Loom put the files in ${attempt.destinationPath}`
-            : `Loom will put the files in ${projectsFolder ?? "this computer's Projects folder"}, or use a checkout of this repository already there.`}
+            : editedPath !== null
+              ? `Loom will put the files in ${editedPath}`
+              : `Loom will put the files in ${projectsFolder ?? "this computer's Projects folder"}, or use a checkout of this repository already there.`}
         </p>
       ) : (
         <label className="space-y-1.5">
@@ -458,6 +466,43 @@ function PreparationOnComputer({
           />
         </label>
       )}
+      {!attempt ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || !connected}
+            onClick={() => setBrowsing(true)}
+          >
+            Choose another folder
+          </Button>
+          {serverPlaces && editedPath !== null ? (
+            <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPath(null)}>
+              Let Loom choose the folder
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {browsing ? (
+        <LibraryPaletteDialog title="Choose a folder" onClose={() => setBrowsing(false)}>
+          <LibraryFolderPalette
+            environmentId={environmentId}
+            computerName={environment?.label ?? "this computer"}
+            initialPath={editedPath ?? projectsFolder ?? "~/"}
+            onBack={() => setBrowsing(false)}
+            onClose={() => setBrowsing(false)}
+            // A clone needs an empty or new folder, never one inside another working tree.
+            actions={(folder) =>
+              folder
+                ? libraryFolderActions(folder, sourceProject.title, (chosen) => {
+                    setPath(chosen);
+                    setBrowsing(false);
+                  }).filter((action) => action.id !== "use-folder")
+                : []
+            }
+          />
+        </LibraryPaletteDialog>
+      ) : null}
       <p className="text-xs text-muted-foreground">
         Existing files are preserved. Repository credentials and private Git access come from the
         selected computer. Setup runs when you start an agent.

@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { serverChoosesFolders } from "@t3tools/client-runtime/fork"; // fork: file-placement
 import {
   getAddProjectInitialQuery,
   getCloneDestinationPath,
@@ -100,7 +101,10 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
     getCloneDirectoryName(sourceUrl),
   );
   const [pathOverride, setPathOverride] = useState<string | null>(null);
-  const destinationPath = pathOverride ?? defaultPath;
+  // fork: file-placement - Left empty, a computer that chooses folders picks or reuses one.
+  const serverPlaces = serverChoosesFolders(targetEnvironment?.serverConfig); // fork: file-placement
+  const destinationPath = pathOverride ?? (serverPlaces ? "" : defaultPath); // fork: file-placement
+  const placedPath = destinationPath || "Projects folder"; // fork: file-placement
 
   const canListFiles = source?.serverConfig?.environment.capabilities.ignoredFileListing === true;
   const ignoredFiles = useEnvironmentQuery(
@@ -165,7 +169,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
 
   const submit = async () => {
     if (!project || !target || submitting) return;
-    if (destinationPath.trim().length === 0) {
+    if (destinationPath.trim().length === 0 && !serverPlaces /* fork: file-placement */) {
       setError("Choose a folder on the other machine.");
       return;
     }
@@ -277,7 +281,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
                   </span>
                 )}
                 <span className="flex min-w-0 font-mono text-muted-foreground text-xs">
-                  <MiddleTruncate value={destinationPath} />
+                  <MiddleTruncate value={placedPath /* fork: file-placement */} />
                 </span>
               </div>
             </div>
@@ -305,6 +309,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
               <Input
                 id={`${id}-path`}
                 value={destinationPath}
+                placeholder={serverPlaces ? "Projects folder" : undefined} // fork: file-placement
                 onChange={(event) => setPathOverride(event.target.value)}
                 spellCheck={false}
                 autoComplete="off"

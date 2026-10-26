@@ -1048,6 +1048,7 @@ apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	file-
 apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
+apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	8
 docs/user/project-settings.md	file-placement	1
 apps/server/src/storageCleanup.ts	library-launch-files	13
 apps/server/src/storageCleanup.test.ts	library-launch-files	3
