@@ -500,7 +500,8 @@ export async function updateManifest(zipPath: string, release: Release) {
 }
 
 // Only prune this publisher's completed records. Preserve the installed build,
-// including when Squirrel installed it without updating the legacy marker.
+// including when Squirrel installed it without updating the legacy marker, and
+// records holding rollback data, whose count the installers bound.
 export async function prunePublishedBuilds(directory: string, installed: string) {
   const records: { name: string; built: string }[] = [];
   for (const entry of await NodeFSP.readdir(directory, { withFileTypes: true })) {
@@ -512,8 +513,9 @@ export async function prunePublishedBuilds(directory: string, installed: string)
   }
   records.sort((a, b) => b.built.localeCompare(a.built));
   for (const record of records.slice(3)) {
-    if (record.name !== installed)
-      await NodeFSP.rm(NodePath.join(directory, record.name), { recursive: true });
+    const path = NodePath.join(directory, record.name);
+    if (record.name !== installed && !(await exists(NodePath.join(path, "state"))))
+      await NodeFSP.rm(path, { recursive: true });
   }
 }
 

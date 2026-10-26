@@ -5,6 +5,7 @@ import type {
   LoomDesktopRenewRequest,
   LoomDesktopRenewResult,
 } from "./fork/identity.ts";
+import type { DesktopOpenAtLoginBridge } from "./fork/open-at-login.ts"; // fork: open-at-login
 import * as Schema from "effect/Schema";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
@@ -1155,6 +1156,7 @@ export interface DesktopBridge {
   // fork: machine-updates: older desktop shells cannot wait for idle agents.
   setInstallWhenIdle?: (armed: boolean) => Promise<DesktopUpdateState>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  openAtLogin?: DesktopOpenAtLoginBridge; // fork: open-at-login
   cliCommand?: {
     getState: () => Promise<DesktopCliCommandState>;
     install: () => Promise<DesktopCliCommandState>;

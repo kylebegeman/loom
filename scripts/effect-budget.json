@@ -511,6 +511,7 @@
   "apps/web/src/fork/model-preview-3d/useSlicing.ts": 2,
   "apps/web/src/fork/model-preview-3d/useUndoHistory.ts": 2,
   "apps/web/src/fork/model-preview-3d/viewer/ViewerCanvas.tsx": 31,
+  "apps/web/src/fork/open-at-login/OpenAtLoginSettingsRow.tsx": 1,
   "apps/web/src/fork/panel-picker/PanelPicker.tsx": 2,
   "apps/web/src/fork/panel-picker/PanelPickerCommandHost.tsx": 1,
   "apps/web/src/fork/panels/presentation.ts": 1,

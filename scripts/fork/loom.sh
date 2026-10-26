@@ -26,9 +26,11 @@
 # Only the publisher (scripts/fork/updates.ts) makes installable builds. land and
 # integrate run it, so this Mac, the update feed, the iOS build and remote
 # computers' runtimes all get one Loom version; build only verifies a checkout.
-# check runs the fork's checks on the current checkout. Every install first
-# snapshots the T3 database so rollback can restore the build and the data it
-# ran with. signing-setup creates a local code-signing certificate once, so
+# check runs the fork's checks on the current checkout. Every install, including
+# the app's own updates, first snapshots the T3 database into the outgoing
+# build's record, so rollback restores that build and the data it last ran
+# with. The app's copy lives in apps/desktop/src/fork/rollback-snapshot and
+# follows the same rules. signing-setup creates a local code-signing certificate once, so
 # every build is the same app to macOS and keeps its permissions and Keychain
 # access across updates.
 set -euo pipefail
@@ -40,6 +42,9 @@ APP_PATH="/Applications/Loom.app"
 BUILDS_DIR="$HOME/Library/Application Support/Loom Builds"
 T3_USERDATA="$HOME/.t3/userdata"
 KEEP_BUILDS=3
+KEEP_STATE_SNAPSHOTS=2
+# Head-room left beside a snapshot that has fully diverged from the live data.
+SNAPSHOT_FREE_MARGIN_BYTES=$((2 * 1024 * 1024 * 1024))
 STATE_DATABASES=(state.sqlite statev2.sqlite)
 SIGNING_IDENTITY="${LOOM_SIGNING_IDENTITY:-Loom Local Code Signing}"
 LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -344,12 +349,13 @@ installed_record() {
   return 0
 }
 
-# Keep the newest builds, and always the installed one.
+# Keep the newest builds, the installed one, and any holding saved data, which
+# prune_snapshots bounds, so a run of unopened updates cannot drop the rollback.
 prune_builds() {
   local installed old
   installed=$(installed_record)
   records | tail -n +$((KEEP_BUILDS + 1)) | while read -r old; do
-    [ "$old" = "$installed" ] || rm -rf "$old"
+    [ "$old" = "$installed" ] || [ -d "$old/state" ] || rm -rf "$old"
   done
 }
 
@@ -398,23 +404,83 @@ quit_app() {
   die "the app did not quit; quit it yourself and rerun"
 }
 
-# Snapshot the T3 database and settings into the record of the build that is
-# installed now, so rolling back to it restores the data it last ran with.
-snapshot_state() {
-  local into=$1
-  mkdir -p "$into/state"
+free_bytes() { echo $(($(df -Pk "$1" | awk 'NR == 2 { print $4 }') * 1024)); }
+
+# Each database with its WAL, which holds committed data a closed app may not
+# have checkpointed. SQLite rebuilds the -shm index on open.
+state_database_files() {
   local database
   for database in "${STATE_DATABASES[@]}"; do
-    rm -f "$into/state/$database"
-    if [ -f "$T3_USERDATA/$database" ]; then
-      sqlite3 -readonly "$T3_USERDATA/$database" "VACUUM INTO '$into/state/$database'"
-    fi
+    printf '%s\n' "$database" "$database-wal"
   done
+}
+
+state_fingerprint() {
   local f
-  for f in settings.json client-settings.json; do
-    [ -f "$T3_USERDATA/$f" ] && cp "$T3_USERDATA/$f" "$into/state/"
+  for f in $(state_database_files); do
+    [ ! -f "$T3_USERDATA/$f" ] || stat -f "$f %z %Fm" "$T3_USERDATA/$f"
   done
+}
+
+# Snapshot the T3 database and settings into the record of the build that is
+# installed now, so rolling back to it restores the data it last ran with.
+# The copies are APFS clones: instant and free until the live data diverges,
+# so the disk must have room for a full copy before one is taken.
+snapshot_state() {
+  local into=$1 f size=0 before stage
+  for f in $(state_database_files); do
+    [ ! -f "$T3_USERDATA/$f" ] || size=$((size + $(stat -f %z "$T3_USERDATA/$f")))
+  done
+  if [ "$(free_bytes "$T3_USERDATA")" -lt $((size + SNAPSHOT_FREE_MARGIN_BYTES)) ]; then
+    echo "Not enough free disk space to keep a copy of the T3 data in $into/state" >&2
+    return 1
+  fi
+  mkdir -p "$into"
+  stage=$(mktemp -d "$into/.state.XXXXXX") || return 1
+  before=$(state_fingerprint)
+  for f in $(state_database_files) settings.json client-settings.json; do
+    [ ! -f "$T3_USERDATA/$f" ] || cp -c "$T3_USERDATA/$f" "$stage/$f" || { rm -rf "$stage"; return 1; }
+  done
+  if [ "$(state_fingerprint)" != "$before" ]; then
+    rm -rf "$stage"
+    echo "The T3 database changed while it was being saved; something besides Loom has it open" >&2
+    return 1
+  fi
+  rm -rf "$into/state.old"
+  if [ -d "$into/state" ]; then
+    mv "$into/state" "$into/state.old" || { rm -rf "$stage"; return 1; }
+  fi
+  if ! mv "$stage" "$into/state"; then
+    rm -rf "$stage"
+    [ ! -d "$into/state.old" ] || mv "$into/state.old" "$into/state"
+    return 1
+  fi
+  rm -rf "$into/state.old"
   echo "Saved the current T3 data to $into/state"
+}
+
+# Keep the newest snapshots: the data the previous build last ran with, and the
+# outgoing data a rollback replaced. Run once userdata no longer needs the others.
+prune_snapshots() {
+  local record
+  records | while read -r record; do
+    [ ! -d "$record/state" ] || printf '%s\t%s\n' "$(stat -f %Fm "$record/state")" "$record"
+  done | sort -rn | tail -n +$((KEEP_STATE_SNAPSHOTS + 1)) | cut -f2- | while read -r record; do
+    rm -rf "$record/state"
+  done
+}
+
+# The build this Mac ran before the installed one: every install saves the data
+# of the build it replaces, so it is the earlier build whose data was saved last.
+# A newer build the publisher made but this Mac never ran is not a rollback.
+rollback_target() {
+  local current=$1 built record
+  built=$(sed -n 's/^built=//p' "$current/build.env" | sed -n 1p)
+  records | while read -r record; do
+    [ -d "$record/state" ] && [ "$record" != "$current" ] || continue
+    [[ "$(sed -n 's/^built=//p' "$record/build.env" | sed -n 1p)" < "$built" ]] || continue
+    printf '%s\t%s\n' "$(stat -f %Fm "$record/state")" "$record"
+  done | sort -rn | sed -n 1p | cut -f2-
 }
 
 verify_install_signing() {
@@ -474,11 +540,8 @@ install_record() (
   if [ "$loom_install_mode" != rollback ]; then
     quit_app install
     current=$(installed_record)
-    if [ -n "$current" ]; then
-      snapshot_state "$current"
-    else
-      snapshot_state "$BUILDS_DIR/before-loom"
-    fi
+    snapshot_state "${current:-$BUILDS_DIR/before-loom}" \
+      || echo "Warning: the T3 data was not saved, so rollback cannot return to the data the outgoing build ran with." >&2
   fi
   if [ -d "$VANILLA_APP_PATH" ]; then
     echo "Warning: $VANILLA_APP_PATH is still installed. It shares Loom's app id and data;"
@@ -490,6 +553,7 @@ install_record() (
   fi
   mv "$loom_install_stage/Loom.app" "$APP_PATH" || die "could not replace the app; restoring the previous app"
   basename "$record" > "$BUILDS_DIR/installed"
+  prune_snapshots
   [ "$loom_install_mode" = rollback ] || rm -rf "$loom_install_stage/previous.app"
   xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
   open "$APP_PATH"
@@ -566,8 +630,9 @@ cmd_rollback() (
   done
   current=$(installed_record)
   [ -n "$current" ] || die "the installed app has no build record, so there is nothing to roll back to"
-  previous=$(records | grep -v -x -F "$current" | sed -n 1p)
-  [ -n "$previous" ] || die "no earlier build is kept"
+  previous=$(rollback_target "$current")
+  [ -n "$previous" ] \
+    || die "no earlier build has saved data to restore. Each update or install saves the data of the build it replaces"
   [ -f "$previous/state/state.sqlite" ] || [ -f "$previous/state/statev2.sqlite" ] \
     || die "$(basename "$previous") has no saved data to restore"
   loom_rollback_stage=$(prepare_install "$previous")
@@ -605,13 +670,13 @@ cmd_rollback() (
   trap 'exit 130' INT
   trap 'exit 143' TERM
   quit_app rollback
-  snapshot_state "$current"
+  snapshot_state "$current" || die "the outgoing data could not be saved, so nothing was rolled back"
   loom_rollback_state_stage=$(mktemp -d "$T3_USERDATA/.loom-rollback.XXXXXX")
   mkdir "$loom_rollback_state_stage/outgoing" "$loom_rollback_state_stage/restored" "$loom_rollback_state_stage/absent"
   # Prepare every incoming file before changing userdata. Original files, including WALs
   # and absent settings, remain recoverable independently of the durable build snapshot.
-  for f in "${STATE_DATABASES[@]}" settings.json client-settings.json; do
-    [ ! -f "$previous/state/$f" ] || cp "$previous/state/$f" "$loom_rollback_state_stage/restored/$f"
+  for f in $(state_database_files) settings.json client-settings.json; do
+    [ ! -f "$previous/state/$f" ] || cp -c "$previous/state/$f" "$loom_rollback_state_stage/restored/$f"
   done
   for f in "${loom_rollback_state_files[@]}"; do
     if [ ! -e "$T3_USERDATA/$f" ] && [ ! -L "$T3_USERDATA/$f" ]; then
