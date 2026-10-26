@@ -7,7 +7,7 @@ import type {
 } from "@t3tools/contracts";
 import type { ProjectCheckoutPreview, WorkspaceHandoffOffer } from "@t3tools/contracts/fork";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "../sourceControlClients.ts";
 import { getCloneDestinationPath, getCloneDirectoryName } from "../operations/projects.ts";
 
 export interface ProjectPreparationProject {
@@ -31,7 +31,8 @@ export type ProjectPreparationSource =
     }
   | { readonly ready: false; readonly reason: string };
 
-const repositoryKey = (remote: string) => canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
+const repositoryKey = (remote: string) =>
+  sourceControlClients.canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
 const unsafeCharacters = /[\s\p{Cc}\p{Cf}]/u;
 
 /** Normalize numeric host spellings even for SSH, without resolving DNS or contacting the host. */

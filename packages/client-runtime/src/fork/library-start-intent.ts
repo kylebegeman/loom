@@ -7,7 +7,7 @@ import type {
 } from "@t3tools/contracts/fork";
 import type { LibraryLaunchComputer } from "@t3tools/shared/fork/library-launch";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "../sourceControlClients.ts";
 import { libraryLaunchChoice, libraryLaunchRanking } from "./library-launch-choice.ts";
 import { libraryPortableRecoveryPlan } from "./library-portable-recovery.ts";
 import { libraryResourceFromInput } from "./library-project.ts";
@@ -65,7 +65,7 @@ export function libraryStartRepositoryProjects(
   projects: readonly LibraryProject[],
   remote: string,
 ) {
-  const key = canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
+  const key = sourceControlClients.canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
   return projects.filter(
     (project) =>
       !project.archived &&
@@ -73,7 +73,8 @@ export function libraryStartRepositoryProjects(
         (resource) =>
           resource.kind !== "link" &&
           resource.remoteUrl &&
-          canonicalRepositoryKey(normalizeGitRemoteUrl(resource.remoteUrl)) === key,
+          sourceControlClients.canonicalRepositoryKey(normalizeGitRemoteUrl(resource.remoteUrl)) ===
+            key,
       ),
   );
 }
@@ -135,9 +136,8 @@ const folderHolder = (
 export type LibraryFolderHolder = ReturnType<typeof folderHolder>;
 
 /**
- * The projects holding a folder, as its computer recorded them, judged against the Library now.
- * A current holder keeps the folder and files Loom created hold it for their own project, so the
- * owner is the first current holder, then the first managed one. Archived or missing borrowed
+ * The projects holding a folder, as its computer recorded them, judged against the Library now. The
+ * owner is the first current holder, then the first managed one; archived or missing borrowed
  * holders give the folder up when it is added elsewhere. `projects` must include archived ones;
  * null means they have not loaded.
  */
@@ -251,11 +251,9 @@ export function sameLibraryFolderAction(left: LibraryFolderAction, right: Librar
 }
 
 /**
- * Where a new conversation in this project can start without a settings step: the preselected
- * computer when its one copy of the whole project is ready and not known to be behind or broken.
- * Uncommitted files do not stop it, since a copy in use nearly always has some. Projects with
- * required tools wait for each computer's check, so they always show the settings first. Null
- * means the settings decide.
+ * Where a new conversation can start without a settings step: the preselected computer when its one
+ * copy of the whole project is ready and not known to be behind or broken. Uncommitted files do not
+ * stop it; projects with required tools always show settings first. Null means the settings decide.
  */
 export function libraryQuickLaunch(input: {
   readonly project: LibraryProject;

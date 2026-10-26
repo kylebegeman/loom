@@ -1,6 +1,6 @@
 import type { LibraryProject } from "@t3tools/contracts/fork";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { sourceControlDefinitions } from "../../sourceControl/sourceControlDefinitions.ts";
 
 /** Validate composition without scanning or creating any working files. */
 export function validLibraryResources(
@@ -90,7 +90,7 @@ export function validLibraryResources(
     } catch {
       return false;
     }
-    const key = canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
+    const key = sourceControlDefinitions.canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
     if (repositories.has(key)) return false;
     repositories.add(key);
   }
