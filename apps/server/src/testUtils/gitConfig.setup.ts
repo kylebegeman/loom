@@ -1,5 +1,3 @@
-import * as NodePath from "node:path"; // fork: hermetic-git-tests
-
 // Override inherited autocrlf, signing and init-branch settings through env so every git child gets stable fixtures.
 const entries: ReadonlyArray<readonly [key: string, value: string]> = [
   ["core.autocrlf", "false"],
@@ -18,5 +16,5 @@ entries.forEach(([key, value], index) => {
 });
 
 // fork: hermetic-git-tests -- no developer url.*.insteadOf rewrites; the fixture names only an author.
-process.env.GIT_CONFIG_GLOBAL = NodePath.join(import.meta.dirname, "global.gitconfig");
+process.env.GIT_CONFIG_GLOBAL = `${import.meta.dirname}/global.gitconfig`; // fork: hermetic-git-tests
 process.env.GIT_CONFIG_NOSYSTEM = "1";
