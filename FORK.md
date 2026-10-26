@@ -311,8 +311,9 @@ Web Locks so several windows on one origin show one notification. Each environme
 thread state outlives a reconnect and is seeded from the cached snapshot at launch, so the next
 live snapshot announces approvals, questions, failures and limits from the gap, and completions
 only within 10 minutes. Snoozed and settled threads keep completions quiet through
-`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also mounts
-`apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3), which alerts when
+`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also lends its
+pending set to `apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3),
+which `ForkRoot` mounts and which alerts when
 a scheduled task could not start; `ScheduledTasksSettings.tsx` (1) labels a launched run
 "started" and `packages/contracts/src/scheduledTask.ts` (1) says so in the run status
 description. Its two upstream tests mark the mock changes and the added cases.notifications stay and their clicks still

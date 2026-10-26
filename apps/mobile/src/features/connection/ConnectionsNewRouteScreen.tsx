@@ -34,7 +34,6 @@ import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { splitEnvironmentSections } from "./environmentSections";
 // fork: directory-computers
 import { pairingFormChecks } from "../../fork/directory-computers/directoryComputers";
-import { openSettings } from "../settings/settings-navigation";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../workspace/workspace-selection-store";
 
@@ -81,6 +80,7 @@ export function ConnectionsNewRouteScreen({
 
   useEffect(() => {
     const { host, code } = parsePairingUrl(connectionPairingUrl);
+    // oxlint-disable-next-line react/set-state-in-effect -- A new pairing URL reseeds the editable host and code fields.
     setHostInput(host);
     setCodeInput(code);
   }, [connectionPairingUrl]);
@@ -91,12 +91,14 @@ export function ConnectionsNewRouteScreen({
     }
 
     const { host, code } = parsePairingUrl(routePairingUrl);
+    // oxlint-disable-next-line react/set-state-in-effect -- A pairing URL from the route reseeds the editable host and code fields.
     setHostInput(host);
     setCodeInput(code);
   }, [routePairingUrl]);
 
   useEffect(() => {
     if (pairingConnectionError) {
+      // oxlint-disable-next-line react/set-state-in-effect -- A pairing failure reported by the connection runtime ends the submit.
       setIsSubmitting(false);
     }
   }, [pairingConnectionError]);

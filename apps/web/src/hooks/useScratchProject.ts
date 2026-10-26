@@ -1,18 +1,26 @@
+import { RegistryContext } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { noProjectTargetEnvironmentId, noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork"; // fork: no-project-first
+import {
+  computerDisplayLabel,
+  noProjectTargetEnvironmentId,
+  noProjectWorkspaceRoot,
+} from "@t3tools/client-runtime/fork"; // fork: no-project-first
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
+  runAtomCommand,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
+import type { AtomRegistry } from "effect/reactivity";
+import { useContext } from "react";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments"; // fork: no-project-first
+import { type EnvironmentPresentation, useEnvironments } from "~/state/environments";
+import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment"; // fork: no-project-first
 import { projectEnvironment } from "~/state/projects";
-import { useAtomCommand } from "~/state/use-atom-command";
-import { useNewThreadHandler } from "./useHandleNewThread";
+import { type NewThreadHandler, useNewThreadHandler } from "./useHandleNewThread";
 
 function reportScratchFailure(title: string, error: unknown) {
   toastManager.add(
@@ -24,14 +32,21 @@ function reportScratchFailure(title: string, error: unknown) {
   );
 }
 
-export function useScratchProject() {
-  const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId(); // fork: no-project-first
-  const openScratch = useAtomCommand(projectEnvironment.openScratch, { reportFailure: false });
-  const handleNewThread = useNewThreadHandler();
+type ScratchEnvironment = Pick<EnvironmentPresentation, "connection" | "serverConfig"> & {
+  readonly environmentId: EnvironmentId;
+  readonly entry: EnvironmentPresentation["entry"]; // fork: no-project-first
+};
 
+export function createScratchProjectActions(input: {
+  readonly environments: () => Iterable<ScratchEnvironment>;
+  readonly registry: AtomRegistry.AtomRegistry;
+  readonly handleNewThread: NewThreadHandler;
+}) {
   const scratchWorkspaceRootFor = (environmentId: EnvironmentId | null): string | null => {
-    const environment = environments.find((entry) => entry.environmentId === environmentId);
+    let environment: ScratchEnvironment | undefined;
+    for (const entry of input.environments()) {
+      if (entry.environmentId === environmentId) environment = entry;
+    }
     return availableScratchWorkspaceRoot(environment?.connection.phase, environment?.serverConfig);
   };
 
@@ -39,17 +54,25 @@ export function useScratchProject() {
   // The Library advertises a scratch folder too, so it is never a target.
   const scratchEnvironmentId = (current: EnvironmentId | null): EnvironmentId | null =>
     noProjectTargetEnvironmentId({
-      environments: environments.toSorted((a, b) => a.label.localeCompare(b.label)),
+      environments: [...input.environments()].toSorted((a, b) =>
+        computerDisplayLabel(a).localeCompare(computerDisplayLabel(b)),
+      ),
       canRun: (entry) =>
         noProjectWorkspaceRoot(entry.connection.phase, entry.serverConfig) !== null,
-      preferred: [current, primaryEnvironmentId],
+      preferred: [current, input.registry.get(primaryEnvironmentIdAtom)],
     });
 
   const openScratchProject = async (
     environmentId: EnvironmentId,
     failureTitle = "Could not start without a project",
   ): Promise<EnvironmentProject | null> => {
-    const result = await openScratch({ environmentId, input: {} });
+    const command = projectEnvironment.openScratch;
+    const result = await runAtomCommand(
+      input.registry,
+      command,
+      { environmentId, input: {} },
+      { label: command.label, reportFailure: false, reportDefect: true },
+    );
     if (result._tag === "Success") return result.value;
     if (!isAtomCommandInterrupted(result)) {
       reportScratchFailure(failureTitle, squashAtomCommandFailure(result));
@@ -60,11 +83,24 @@ export function useScratchProject() {
   const startScratchThread = async (environmentId: EnvironmentId) => {
     const project = await openScratchProject(environmentId);
     if (project) {
-      await handleNewThread(scopeProjectRef(project.environmentId, project.id)).catch(
-        (error: unknown) => reportScratchFailure("Could not start without a project", error),
-      );
+      await input
+        .handleNewThread(scopeProjectRef(project.environmentId, project.id))
+        .catch((error: unknown) =>
+          reportScratchFailure("Could not start without a project", error),
+        );
     }
   };
 
   return { scratchWorkspaceRootFor, scratchEnvironmentId, openScratchProject, startScratchThread };
+}
+
+export function useScratchProject() {
+  const { environments } = useEnvironments();
+  const registry = useContext(RegistryContext);
+  const handleNewThread = useNewThreadHandler();
+  return createScratchProjectActions({
+    environments: () => environments,
+    registry,
+    handleNewThread,
+  });
 }

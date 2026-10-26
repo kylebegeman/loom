@@ -308,6 +308,8 @@ apps/web/src/components/chat/useRightPanelActions.ts	checkpoint-capable	4
 apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
 apps/web/src/components/Sidebar.tsx	library-projects	22
+apps/web/src/routes/_chat.tsx	library-projects	2
+apps/web/src/shortcuts/chatRouteCommands.ts	library-projects	4
 apps/web/src/components/Sidebar.tsx	workspace-handoff	4
 apps/web/src/components/ThreadRouteView.tsx	library-archive	5
 apps/web/src/components/auth/PairingRouteSurface.tsx	library-sign-in	6
@@ -571,7 +573,7 @@ apps/web/src/components/sidebar/updateEverythingRun.tsx	brand	1
 apps/web/src/connection/clientMetadata.ts	brand	2
 apps/web/src/desktopAppActivation.ts	brand	3
 apps/web/src/lib/bootError.ts	brand	2
-apps/web/src/routes/_chat.tsx	brand	1
+apps/web/src/shortcuts/chatRouteCommands.ts	brand	1
 apps/web/src/versionSkew.test.ts	brand	1
 apps/web/src/versionSkew.ts	brand	1
 packages/client-runtime/src/connection/compatibility.ts	brand	1

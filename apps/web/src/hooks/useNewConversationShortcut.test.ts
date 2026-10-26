@@ -46,7 +46,7 @@ describe("new conversation shortcuts", () => {
       state.library.mockResolvedValue(true);
       const context = createContext();
 
-      await useNewConversationShortcut(context)(command);
+      await useNewConversationShortcut()(command, context);
 
       expect(state.library).toHaveBeenCalledExactlyOnceWith();
       expect(state.palette).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe("new conversation shortcuts", () => {
     state.library.mockResolvedValue(true);
     const context = createContext({ activeThread: undefined, defaultProjectRef: null });
 
-    await useNewConversationShortcut(context)("chat.newLocal");
+    await useNewConversationShortcut()("chat.newLocal", context);
 
     expect(state.library).toHaveBeenCalledOnce();
     expect(context.handleNewThread).not.toHaveBeenCalled();
@@ -67,7 +67,7 @@ describe("new conversation shortcuts", () => {
   it("keeps the ordinary multi-project picker when Library declines", async () => {
     const context = createContext();
 
-    await useNewConversationShortcut(context)("chat.new");
+    await useNewConversationShortcut()("chat.new", context);
 
     expect(state.library).toHaveBeenCalledOnce();
     expect(state.palette).toHaveBeenCalledExactlyOnceWith({ open: "new-thread-in" });
@@ -79,7 +79,7 @@ describe("new conversation shortcuts", () => {
     async (command) => {
       const context = { ...createContext(), showProjectPicker: false };
 
-      await useNewConversationShortcut(context)(command);
+      await useNewConversationShortcut()(command, context);
 
       expect(context.handleNewThread).toHaveBeenCalledExactlyOnceWith(
         scopeProjectRef(environmentId, projectId),
@@ -99,7 +99,7 @@ describe("new conversation shortcuts", () => {
     async ({ activeDraftThread, expected }) => {
       const context = createContext({ activeThread: undefined, activeDraftThread });
 
-      await useNewConversationShortcut(context)("chat.newLocal");
+      await useNewConversationShortcut()("chat.newLocal", context);
 
       expect(context.handleNewThread).toHaveBeenCalledExactlyOnceWith(expected);
       expect(state.palette).not.toHaveBeenCalled();
@@ -115,7 +115,7 @@ describe("new conversation shortcuts", () => {
     );
     const context = createContext();
 
-    const starting = useNewConversationShortcut(context)("chat.newLocal");
+    const starting = useNewConversationShortcut()("chat.newLocal", context);
 
     expect(context.handleNewThread).not.toHaveBeenCalled();
     complete(false);
@@ -135,7 +135,7 @@ describe("new conversation shortcuts", () => {
         showProjectPicker: false,
       };
 
-      await useNewConversationShortcut(context)(command);
+      await useNewConversationShortcut()(command, context);
 
       expect(start).toHaveBeenCalledOnce();
       expect(context.handleNewThread).not.toHaveBeenCalled();
@@ -147,7 +147,7 @@ describe("new conversation shortcuts", () => {
     state.noProject = { label: "Mac", start };
     const context = { ...createContext(), showProjectPicker: false };
 
-    await useNewConversationShortcut(context)("chat.new");
+    await useNewConversationShortcut()("chat.new", context);
 
     expect(context.handleNewThread).toHaveBeenCalledOnce();
     expect(start).not.toHaveBeenCalled();
