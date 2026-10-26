@@ -1,6 +1,7 @@
 // fork: project-lifecycle
 import { ProjectId, RepositoryIdentity, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import { fileIdentity } from "../fork/fileIdentity.ts";
@@ -61,7 +62,7 @@ export const ownershipReceiptPath = Effect.fnUntraced(function* (cwd: string) {
     `${SetupMarker.digestPath(yield* SetupMarker.canonicalPath(cwd))}.json`,
   );
 });
-/** Older versions wrote the receipt beside the checkout; it migrates on first read. */
+/** Older versions wrote the receipt beside the checkout; the install that wrote it migrates it on first read. */
 const legacyReceiptPath = (cwd: string) => `${cwd}.t3-project-owned.json`;
 const isManagedError = Schema.is(ManagedProjectCheckoutError);
 const mapFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -82,6 +83,10 @@ const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckou
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const target = yield* ownershipReceiptPath(receipt.workspaceRoot);
+  const legacy = legacyReceiptPath(receipt.workspaceRoot);
+  const ownsLegacy = yield* SetupMarker.ownsLegacyMetadata();
+  if (!ownsLegacy && !(yield* fs.exists(target)) && (yield* fs.exists(legacy)))
+    return yield* fail("Another Loom install manages this checkout.");
   yield* fs.makeDirectory(path.dirname(target), { recursive: true, mode: 0o700 });
   const stage = `${target}.pending-${yield* randomUuidV4}`;
   yield* Effect.gen(function* () {
@@ -93,7 +98,19 @@ const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckou
     yield* fs.rename(stage, target);
     yield* Effect.scoped(fs.open(path.dirname(target)).pipe(Effect.flatMap((file) => file.sync)));
   }).pipe(Effect.ensuring(fs.remove(stage, { force: true }).pipe(Effect.ignore)));
-  yield* fs.remove(legacyReceiptPath(receipt.workspaceRoot), { force: true });
+  if (ownsLegacy) yield* fs.remove(legacy, { force: true });
+});
+
+/** Any receipt, released or not, keeps its folder name from being claimed for new work. */
+export const hasManagedProjectReceipt = Effect.fn("ManagedProjectCheckout.hasReceipt")(function* (
+  workspaceRoot: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const cwd = yield* canonicalPath(workspaceRoot);
+  return (
+    (yield* fs.exists(yield* ownershipReceiptPath(cwd))) ||
+    (yield* fs.exists(legacyReceiptPath(cwd)))
+  );
 });
 
 /** Clones and explicitly reviewed adoption create ownership proof. Opening a folder does not. */
@@ -180,7 +197,7 @@ export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read
     ownershipSource: receipt.version === 2 ? receipt.ownershipSource : "clone",
     retention: receipt.version === 2 ? receipt.retention : "inherit",
   } satisfies ManagedProjectCheckoutReceipt;
-  if (legacy) yield* writeReceipt(read);
+  if (legacy && (yield* SetupMarker.ownsLegacyMetadata())) yield* writeReceipt(read);
   return read;
 }, mapFailure);
 
@@ -382,7 +399,47 @@ export const releaseManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
     return yield* fail("Local files changed during release; the recovery folder is retained.");
   yield* fs.remove(removalPath, { recursive: true });
   yield* writeReceipt({ ...released, removalPath: null });
+  yield* SetupMarker.clear(receipt.workspaceRoot);
 }, mapFailure);
+
+/**
+ * An unreleased receipt whose folder is gone means the folder was moved by hand. The receipt
+ * follows it when the new folder is the same checkout, and is retired otherwise, so the new
+ * location starts external and can be adopted after review.
+ */
+export const relocateManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.relocate")(
+  function* (previousRoot: string, nextRoot: string) {
+    const path = yield* Path.Path;
+    const relocate = Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const receipt = yield* readManagedProjectCheckout(previousRoot);
+      if (receipt === null) return;
+      if (receipt.released || (yield* fs.exists(receipt.workspaceRoot)))
+        return yield* fail(
+          "Loom manages this folder's location and recovery. Its location cannot be changed.",
+        );
+      const current = yield* ownershipReceiptPath(receipt.workspaceRoot);
+      // Another install's legacy sidecar stays as it is; this install never took it over.
+      if (!(yield* fs.exists(current))) return;
+      const next = yield* canonicalPath(nextRoot);
+      const sameCheckout =
+        (yield* fs.exists(next)) &&
+        Exit.isSuccess(yield* Effect.exit(assertManagedProjectOwned(receipt, next)));
+      if (sameCheckout) {
+        if (yield* hasManagedProjectReceipt(next))
+          return yield* fail("A managed project receipt already exists for the new folder.");
+        yield* writeReceipt({
+          ...receipt,
+          workspaceRoot: next,
+          repositoryIdentity: { ...receipt.repositoryIdentity, rootPath: next },
+        });
+      }
+      yield* fs.remove(current, { force: true });
+    });
+    return yield* withWorkspaceLease(path.resolve(previousRoot), relocate);
+  },
+  mapFailure,
+);
 
 /** Restore files on explicit use. Setup remains a separate retryable provider/launch stage. */
 export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.restore")(function* (
