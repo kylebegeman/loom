@@ -1115,7 +1115,7 @@ cmd_notify() {
     echo "LOOM_ALERT_WEBHOOK_URL is not set, so Loom was not alerted" >&2
     return 1
   fi
-  printf '{"source":"loom-upstream","status":"%s"}' "$status" |
+  printf '{"source":"loom-upstream","status":"%s","run":"%s"}' "$status" "${GITHUB_RUN_ID:-}" |
     curl -fsS --retry 3 -X POST -H 'content-type: application/json' --data-binary @- \
       "$LOOM_ALERT_WEBHOOK_URL" >/dev/null || die "the Loom alert webhook did not accept the request"
 }

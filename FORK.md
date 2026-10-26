@@ -898,7 +898,7 @@ waited more than 30 hours for a nightly (`loom.sh upstream-status --check`), wha
 cause: a failed run, a run that never started, or a pull request left waiting. On Mondays
 it also sends a heartbeat, so a week without one means the alert path itself is broken.
 Alerts go to the `Loom upstream alert` scheduled task on Kyle's Mac through its webhook
-(`LOOM_ALERT_WEBHOOK_URL`). The request carries only a status; the task's agent reads the
+(`LOOM_ALERT_WEBHOOK_URL`). The request carries only a status and the run id; the task's agent reads the
 facts from GitHub and git itself, so a forged request can only make it look. It opens a
 thread, gets `main` caught up the same day if it can, and otherwise asks Kyle the one
 question it needs answered.
