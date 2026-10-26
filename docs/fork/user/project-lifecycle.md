@@ -26,13 +26,15 @@ stops at the cap instead of filling the disk. Elsewhere a lane is a plain folder
 soft cap. Lanes default to 40 GB, and 100 GB for Xcode projects.
 
 When every thread using a checkout is settled or archived, its lane is deleted. The
-checkout itself is never touched. Subagents that a provider starts on its own, such as
+checkout itself is never touched. If the checkout is deleted, its lane is deleted an hour
+later even when threads still name it, unless an agent is running there; Settings shows when
+it will go. A thread that resumes after its checkout is restored gets a fresh lane. Subagents that a provider starts on its own, such as
 Claude's Agent tool, keep a lane only while they run. If a lane's folder is deleted outside
 Loom, the lane starts again empty the next time a thread needs it.
 
 ## Keeping work going unattended
 
-Agents can see their lane and clean it themselves with the `loom_project_lifecycle_status`,
+Agents can see their existing lane and clean it themselves with the `loom_project_lifecycle_status`,
 `loom_project_lifecycle_free` and `loom_project_lifecycle_grow` tools. Loom also watches
 each lane:
 
@@ -61,7 +63,7 @@ deleted:
 
 Agents learn this from the lane tools and can hand other simulators or processes to their
 lane. When a thread is settled or archived, its device panels close, and simulators no other
-active thread is using are shut down. The Storage section lists each lane's leases with a
+active thread is using are shut down. The Lanes section lists each lane's leases with a
 **Release** button.
 
 ## Build slots
@@ -69,12 +71,12 @@ active thread is using are shut down. The Storage section lists each lane's leas
 Heavy Xcode builds (build, test, archive) take one of the machine's build slots and wait when
 all are busy, so parallel agents do not slow the Mac to a crawl. Other builds can use
 `lane-slot` the same way. The default is one slot per three CPU threads; change it in the
-Storage settings.
+Lanes settings.
 
 ## Terminal integration
 
 Agents and terminals only use a lane when told where it is. **Install** terminal
-integration in the Storage settings to add a short block to `~/.zshenv`. Inside a lane's
+integration in the Lanes settings to add a short block to `~/.zshenv`. Inside a lane's
 checkout, new zsh shells then point `TMPDIR` at the lane, `xcodebuild` writes DerivedData
 and packages to the lane's `build` folder, and `lane-run`, `lane-slot` and the lane
 variables are available. **Remove** takes the block out
@@ -82,7 +84,7 @@ again. Other shells and processes started outside zsh keep their usual locations
 
 ## Managing storage
 
-Open **Settings, Loom, Storage**, or choose **Storage and lanes** in the command palette.
+Open **Settings, Loom, Lanes**, or choose **Storage and lanes** in the command palette.
 You can turn lanes on or off, change the lanes folder and caps, and set how much free space
 to keep on the disk. Each lane shows its usage and lets you free its `tmp` or `build`
 folder, grow it, mount it again after a restart, or discard it.
@@ -94,5 +96,9 @@ something still holds the lane, the lane names those processes and what they hav
 Loom waits longer between attempts, up to an hour. A lane cannot grow while files in it are
 open; it names the processes holding them instead.
 
-The lanes folder can only be moved while no lanes exist. Storage settings apply to the
+Folders in the lanes folder that Loom has no record of, for example ones left by an older
+install, appear under **Unrecorded lanes**. Loom never deletes them on its own; **Discard**
+removes one after you confirm.
+
+The lanes folder must be an absolute path and can only be moved while no lanes exist. Lanes settings apply to the
 selected environment and are available in the web and desktop clients.

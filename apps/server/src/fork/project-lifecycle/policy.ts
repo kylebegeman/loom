@@ -85,6 +85,27 @@ export const holdsLane = (thread: OrchestrationV2ThreadShell) =>
 
 export const threadRunning = (thread: OrchestrationV2ThreadShell) => thread.activeRunId !== null;
 
+/** How long a lane outlives its deleted checkout while unsettled threads still name it. */
+export const MISSING_CHECKOUT_GRACE_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a lane can be removed. Unsettled threads hold it, unless its checkout has been gone
+ * for the grace period and none of them is running: a restored checkout gets a fresh lane.
+ */
+export const laneReclaimable = (
+  holders: ReadonlyArray<OrchestrationV2ThreadShell>,
+  checkout: {
+    readonly checkoutExists: boolean;
+    readonly missingSince: number | null;
+    readonly now: number;
+  },
+) =>
+  holders.length === 0 ||
+  (!checkout.checkoutExists &&
+    !holders.some(threadRunning) &&
+    checkout.missingSince !== null &&
+    checkout.now - checkout.missingSince >= MISSING_CHECKOUT_GRACE_MS);
+
 export type LaneAction =
   | { readonly type: "steer" }
   | { readonly type: "clear-tmp" }

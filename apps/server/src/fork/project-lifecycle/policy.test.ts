@@ -14,7 +14,9 @@ import {
   laneActions,
   laneBaseName,
   laneCapBytes,
+  laneReclaimable,
   laneSlug,
+  MISSING_CHECKOUT_GRACE_MS,
   machinePressure,
   projectFolder,
   shouldGrow,
@@ -107,6 +109,19 @@ describe("holders", () => {
     expect(
       holdsLane(shell({ ...native, creationSource: "mcp" } as Partial<OrchestrationV2ThreadShell>)),
     ).toBe(true);
+  });
+
+  it("frees a lane an hour after its checkout goes, unless a holder is running", () => {
+    const idle = [shell({})];
+    const missing = { checkoutExists: false, missingSince: 0 };
+    expect(laneReclaimable([], { checkoutExists: true, missingSince: null, now: 0 })).toBe(true);
+    expect(laneReclaimable(idle, { checkoutExists: true, missingSince: null, now: 0 })).toBe(false);
+    expect(laneReclaimable(idle, { ...missing, now: MISSING_CHECKOUT_GRACE_MS - 1 })).toBe(false);
+    expect(laneReclaimable(idle, { ...missing, now: MISSING_CHECKOUT_GRACE_MS })).toBe(true);
+    const running = [shell({ activeRunId: "run-1" } as Partial<OrchestrationV2ThreadShell>)];
+    expect(laneReclaimable(running, { ...missing, now: 10 * MISSING_CHECKOUT_GRACE_MS })).toBe(
+      false,
+    );
   });
 });
 

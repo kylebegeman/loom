@@ -140,6 +140,7 @@ const laneStatus = (id: string, portBase = LANE_PORT_BASES[id]): ProjectLifecycl
   ports: portBase === undefined ? null : { first: portBase, last: portBase + 19 },
   leases: [],
   helpers: { run: "lane-run", slot: "lane-slot" },
+  checkoutMissing: null,
 });
 
 const lifecycleStatus = (
@@ -155,6 +156,7 @@ const lifecycleStatus = (
   belowReserve: false,
   shell: { installed: false, profilePath: "/profile" },
   lanes: lanes.map((lane) => (typeof lane === "string" ? laneStatus(lane) : lane)),
+  unrecordedLanes: [],
   buildSlots: { count: 1, holders: [] },
 });
 

@@ -1383,4 +1383,123 @@ describe("ProjectLifecycleService", () => {
       expect(alive(backend)).toBe(true);
     }).pipe(Effect.scoped),
   );
+
+  it.effect("frees a lane an hour after its checkout is removed", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("lane-worker", { worktreePath: t.worktree }));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("lane-worker"));
+      NodeFS.rmSync(t.worktree, { recursive: true });
+
+      const missing = laneOf(yield* t.service.tick(), t.worktree);
+      expect(missing?.checkoutMissing).toEqual({
+        since: "1970-01-01T00:00:00.000Z",
+        freesAt: "1970-01-01T01:00:00.000Z",
+      });
+      yield* TestClock.adjust("59 minutes");
+      expect(laneOf(yield* t.service.tick(), t.worktree)).toBeDefined();
+      yield* TestClock.adjust("1 minute");
+      expect(laneOf(yield* t.service.tick(), t.worktree)).toBeUndefined();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a lane whose checkout is gone while a holder runs", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(
+        thread("lane-runner", { worktreePath: t.worktree, activeRunId: RunId.make("run") }),
+      );
+      const lane = yield* t.service.ensureForThread(ThreadId.make("lane-runner"));
+      NodeFS.rmSync(t.worktree, { recursive: true });
+      yield* t.service.tick();
+      yield* TestClock.adjust("2 hours");
+      const held = laneOf(yield* t.service.tick(), t.worktree);
+      expect(held?.checkoutMissing?.freesAt).toBeNull();
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(true);
+
+      t.threads[0] = thread("lane-runner", { worktreePath: t.worktree });
+      expect(laneOf(yield* t.service.tick(), t.worktree)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "restarts the wait when the checkout returns and gives a resumed thread a new lane",
+    () =>
+      Effect.gen(function* () {
+        const t = yield* setup;
+        t.threads.push(thread("lane-resume", { worktreePath: t.worktree }));
+        const first = yield* t.service.ensureForThread(ThreadId.make("lane-resume"));
+        NodeFS.rmSync(t.worktree, { recursive: true });
+        yield* t.service.tick();
+        yield* TestClock.adjust("50 minutes");
+        NodeFS.mkdirSync(t.worktree);
+        expect(laneOf(yield* t.service.tick(), t.worktree)?.checkoutMissing).toBeNull();
+
+        NodeFS.rmSync(t.worktree, { recursive: true });
+        yield* t.service.tick();
+        yield* TestClock.adjust("20 minutes");
+        expect(laneOf(yield* t.service.tick(), t.worktree)).toBeDefined();
+        yield* TestClock.adjust("40 minutes");
+        expect(laneOf(yield* t.service.tick(), t.worktree)).toBeUndefined();
+
+        NodeFS.mkdirSync(t.worktree);
+        const fresh = yield* t.service.ensureForThread(ThreadId.make("lane-resume"));
+        expect(fresh.id).not.toBe(first.id);
+        expect(NodeFS.existsSync(`${fresh.laneDir}/space/tmp`)).toBe(true);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("lists unrecorded lane folders, never reclaims them, and discards one on request", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const root = (yield* t.service.getSettings).lanesRoot;
+      t.threads.push(thread("recorded", { worktreePath: t.worktree }));
+      const recorded = yield* t.service.ensureForThread(ThreadId.make("recorded"));
+      const ghost = `${root}/ghost/old`;
+      NodeFS.mkdirSync(`${ghost}/space/tmp`, { recursive: true });
+      NodeFS.writeFileSync(`${root}/ghost/.DS_Store`, "");
+      yield* t.service.reconcile();
+
+      t.threads[0] = thread("recorded", { worktreePath: t.worktree, settledOverride: "settled" });
+      NodeFS.writeFileSync(`${root}/app/.DS_Store`, "");
+      const status = yield* t.service.tick();
+      expect(status.lanes).toEqual([]);
+      expect(status.unrecordedLanes).toEqual([{ path: ghost, project: "ghost", name: "old" }]);
+      expect(NodeFS.existsSync(ghost)).toBe(true);
+      expect(NodeFS.existsSync(NodePath.dirname(recorded.laneDir))).toBe(false);
+
+      const outside = yield* t.service.discardUnrecorded(t.checkout).pipe(Effect.flip);
+      expect(outside.reason).toBe("not-found");
+      expect(NodeFS.existsSync(t.checkout)).toBe(true);
+      yield* t.service.discardUnrecorded(ghost);
+      expect(NodeFS.existsSync(`${root}/ghost`)).toBe(false);
+      expect((yield* t.service.tick()).unrecordedLanes).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses a relative lanes folder", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const settings = yield* t.service.getSettings;
+      const refused = yield* t.service
+        .updateSettings({ ...settings, lanesRoot: "Developer/lanes" })
+        .pipe(Effect.flip);
+      expect(refused.reason).toBe("unsupported");
+      expect((yield* t.service.getSettings).lanesRoot).toBe(settings.lanesRoot);
+      expect(yield* t.service.lanesRoots()).toEqual([settings.lanesRoot]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("reads a thread's lane without creating one", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("reader", { worktreePath: t.worktree }));
+      const missing = yield* t.service.currentLaneView(ThreadId.make("reader")).pipe(Effect.flip);
+      expect(missing.reason).toBe("not-found");
+      expect(yield* t.store.listLanes()).toEqual([]);
+      const lane = yield* t.service.ensureForThread(ThreadId.make("reader"));
+      expect((yield* t.service.currentLaneView(ThreadId.make("reader"))).id).toBe(lane.id);
+    }).pipe(Effect.scoped),
+  );
 });

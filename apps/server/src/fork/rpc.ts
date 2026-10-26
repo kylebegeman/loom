@@ -94,6 +94,8 @@ import {
   LIBRARY_PUSH_WS_METHODS,
   PcbPreviewRpcGroup,
   PCB_PREVIEW_WS_METHODS,
+  ProjectLifecycleRpcGroup,
+  PROJECT_LIFECYCLE_WS_METHODS,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
@@ -129,6 +131,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(REACH_WS_METHODS),
   ...Object.values(LIBRARY_PUSH_WS_METHODS),
   ...Object.values(PCB_PREVIEW_WS_METHODS),
+  ...Object.values(PROJECT_LIFECYCLE_WS_METHODS),
   // Served by makeDatabaseCompactionRpcLayer, which needs DatabaseStorage.
   ...Object.values(DATABASE_COMPACTION_WS_METHODS),
 );
@@ -162,6 +165,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ReachRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof LibraryPushRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof PcbPreviewRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectLifecycleRpcGroup>>
 > =>
   Layer.mergeAll(
     ProjectWorkflowsRpcGroup.toLayer(
@@ -246,6 +250,9 @@ export const makeForkRpcLayer = (
     PcbPreviewRpcGroup.toLayer(
       withForkRuntime(makePcbPreviewRpcHandlers(makeForkRpcAuth(session))),
     ),
+    ProjectLifecycleRpcGroup.toLayer(
+      withForkRuntime(makeProjectLifecycleRpcHandlers(makeForkRpcAuth(session))),
+    ),
     otherForkRpcGroup.toLayer(
       Effect.gen(function* () {
         const auth = makeForkRpcAuth(session);
@@ -279,7 +286,6 @@ export const makeForkRpcLayer = (
           ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),
-          ...(yield* withForkRuntime(makeProjectLifecycleRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeWorkspaceHandoffRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeAppleBuildToolingRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeDeviceQaRpcHandlers(auth))),

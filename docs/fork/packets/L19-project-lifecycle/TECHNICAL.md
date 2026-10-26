@@ -34,15 +34,16 @@ integrate with existing server services; [SEAMS.md](./SEAMS.md) records the merg
   `reserveGb`, `projectCapsGb` (project id to GB), `buildSlots` (null for automatic).
 - `ProjectLifecycleLane`: id, project id and name, lane name, checkout, lane and space paths,
   backend (`image` or `folder`), state (`ready`, `unmounted`, `error`), cap, used and image
-  bytes, thread ids, whether a thread is running, a message, its ports, leases and helper
-  paths.
+  bytes, thread ids, whether a thread is running, a message, its ports, leases, helper
+  paths and `checkoutMissing` (when the checkout went missing and when the lane frees).
 - `ProjectLifecycleStatus`: settings summary, backend available on this machine, host free
-  and total bytes, reserve, `belowReserve`, shell integration state, lanes, build slot count
-  and holders.
+  and total bytes, reserve, `belowReserve`, shell integration state, lanes, unrecorded lane
+  folders, build slot count and holders.
 - `ProjectLifecycleError` with reasons `disabled`, `not-found`, `busy`, `no-room`,
   `unsupported`, `command-failed`.
 - RPC tags `loom.project-lifecycle.<verb>`: `getSettings`, `updateSettings`, `watch` (stream
-  of status snapshots), `free`, `grow`, `mount`, `discard`, `installShell`, `removeShell`, `releaseLease`.
+  of status snapshots), `free`, `grow`, `mount`, `discard`, `discardUnrecorded`, `installShell`,
+  `removeShell`, `releaseLease`.
   Reads need `orchestration:read`; everything else `orchestration:operate`.
 
 ## Server
@@ -78,7 +79,15 @@ integrate with existing server services; [SEAMS.md](./SEAMS.md) records the merg
   holder is a thread whose checkout is the lane's and which is neither archived nor settled
   (`settledOverride === "settled"`, or `settledAt` set without an `active` override). The
   lane service never removes the checkout itself; storage cleanup applies its separate
-  publication and recovery policy.
+  publication and recovery policy. A lane whose checkout has been missing for an hour is
+  reclaimed even with unsettled holders, unless one is running: delegated threads often never
+  settle after their worktree is deleted. The missing-since time lives in memory, so a restart
+  restarts the wait, and a restored checkout resets it. A thread that resumes in a restored
+  checkout gets a fresh lane through Ensure.
+- **Unrecorded lanes**: the startup reconcile lists folders two levels under the lanes root
+  that have no lane row. Loom never removes them on its own; `discardUnrecorded` (Settings or
+  `loom_project_lifecycle_discard_unrecorded`) detaches a listed folder's image and deletes it
+  after the same registered-checkout check as lane removal.
 - **Reconcile at startup**: attach every image lane that is not mounted (images detach on
   reboot), reclaim lanes without holders, rewrite the shell files. Lanes stay mounted when the
   server stops so running processes keep their files across server restarts.
@@ -176,14 +185,14 @@ reserve 40 GB.
 
 - `packages/client-runtime/src/fork/project-lifecycle.ts`: settings query atom, status
   subscription atom, action helpers.
-- Web: `apps/web/src/fork/project-lifecycle/` with the Storage settings section, a palette
+- Web: `apps/web/src/fork/project-lifecycle/` with the Lanes settings section, a palette
   source and a root component that shows one notice per below-reserve episode.
 
 ## Agent-facing tools
 
-`loom_project_lifecycle_status`, `loom_project_lifecycle_free` (`scope`: `tmp`, `build` or
-`all`) and `loom_project_lifecycle_grow` act on the calling thread's lane, creating it if
-needed. Status returns the lane paths, ports, leases and helpers and tells the agent how to
+`loom_project_lifecycle_free` (`scope`: `tmp`, `build` or `all`) and
+`loom_project_lifecycle_grow` act on the calling thread's lane, creating it if needed.
+`loom_project_lifecycle_status` only reads an existing lane and never creates one. Status returns the lane paths, ports, leases and helpers and tells the agent how to
 use them. `loom_project_lifecycle_adopt` hands a simulator or process to the lane and
 `loom_project_lifecycle_release` releases one lease now. Free deletes the scope's contents and returns the space to the
 host by remounting only when no thread in the lane is running. Grow refuses with `busy` when
@@ -263,7 +272,7 @@ release behavior on 2026-10-08 (see PRODUCT).
   `flock -n -E 75`) around the command; the lock is released when the command exits, and
   background children do not hold it, so Xcode's build service cannot keep a slot. A marker
   file tells a slot that was busy from a command that exited 75. The holder file records pid,
-  start time, space and command for the Storage section. The `xcodebuild` shim runs `build`,
+  start time, space and command for the Lanes section. The `xcodebuild` shim runs `build`,
   `test`, `build-for-testing`, `archive`, `analyze`, `docbuild` and `install` in a slot;
   `test-without-building` (device runners), `clean` and queries never wait. The default count
   is one slot per three CPU threads, at least two.
