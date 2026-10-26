@@ -244,7 +244,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
       <LibraryFolderPalette
         environmentId={s.hostId}
         computerName={s.hostLabel ?? "Computer"}
-        initialPath={s.rootPath || "~/"}
+        initialPath={s.browseStart}
         onBack={back}
         onClose={close}
         onSelect={(path) => {
@@ -302,11 +302,14 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
       })),
       edit(
         "browse",
-        "Browse computer folders",
-        "Choose an existing folder on the selected computer",
+        s.serverPlaces ? "Choose another folder" : "Browse computer folders",
+        s.filesLine ?? "Choose an existing folder on the selected computer",
         <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
-      edit("path", "Set files location", s.rootPath || "Choose where to prepare new files"),
+      // A computer that chooses folders needs no typed path; the browser still accepts one.
+      ...(s.serverPlaces
+        ? []
+        : [edit("path", "Set files location", s.rootPath || "Choose where to prepare new files")]),
       ...(s.canKeep
         ? [
             {
@@ -463,7 +466,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
                 : "Retry untitled conversation"
               : "Start conversation",
         // The first try is the one running now, so only a held retry says when it began.
-        description: `${s.held?.savedAt && !(s.busy || waiting) ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}${s.workspace === "worktree" ? " in a new worktree" : ""}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
+        description: `${s.held?.savedAt && !(s.busy || waiting) ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.placementReuses ? "Use files in this folder" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}${s.workspace === "worktree" ? " in a new worktree" : ""}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
         icon: <PlayIcon className="size-4 text-(--project-green)" />,
         disabled: !s.canCreate || waiting,
         select: () => void s.submit(),
@@ -530,7 +533,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
       edit(
         "files",
         "Files",
-        s.rootPath || "Choose project files",
+        s.filesLine ?? (s.rootPath || "Choose project files"),
         <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
       ...(s.workspace

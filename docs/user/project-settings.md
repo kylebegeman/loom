@@ -445,6 +445,11 @@ such as another drive, set **Settings → Storage → Worktree location** to an 
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
 
+<!-- fork: file-placement -->
+
+New projects and prepared Library files go in **Settings → Storage → Projects folder** on the
+chosen computer, which reuses a checkout of the same repository it already has there.
+
 ## Storage cleanup
 
 <!-- fork: retention-defaults -->

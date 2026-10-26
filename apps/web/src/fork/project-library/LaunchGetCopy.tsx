@@ -85,7 +85,10 @@ const containsRoot = (parent: string, child: string) => {
 export const libraryLaunchPathOverlaps = (left: string, right: string) =>
   containsRoot(left, right) || containsRoot(right, left);
 
-/** Scope changes get a separate versioned folder, preserving every previous workspace. */
+/**
+ * The folder suggestion for computers without `serverChosenFolders`, which need a path sent.
+ * Scope changes get a separate versioned folder, preserving every previous workspace.
+ */
 export function libraryLaunchRootPath(
   input: LaunchFilesInput & {
     readonly newProjectsRoot: string | undefined;

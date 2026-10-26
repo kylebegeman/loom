@@ -9,6 +9,7 @@ import {
   getProjectPreparationDestination,
   getProjectPreparationRecovery,
   projectPreparationSource,
+  serverChoosesFolders,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import {
@@ -109,7 +110,9 @@ export function ProjectPreparationDialog({
       (attempt ? { remoteUrl: attempt.remoteUrl, repositoryKey: attempt.repositoryKey } : null),
     checkout: result._tag === "Success" && !result.waiting ? result.value : null,
   });
-  const { environments } = useEnvironments();
+  const environments = useEnvironments().environments.filter(
+    (environment) => environment.serverConfig?.environment.capabilities.supportsExecution !== false,
+  );
   const [hostId, setHostId] = useState<EnvironmentId | null>(
     attempt?.environmentId ?? initialEnvironmentId ?? null,
   );
@@ -280,12 +283,17 @@ function PreparationOnComputer({
     projectId: newProjectId(),
     createdAt: new Date().toISOString(),
   }));
-  const defaultPath = getProjectPreparationDestination({
-    newProjectsRoot: environment?.serverConfig?.newProjectsRoot,
-    remoteUrl: source.remoteUrl,
-  });
+  const serverPlaces = serverChoosesFolders(environment?.serverConfig);
+  const defaultPath = serverPlaces
+    ? null
+    : getProjectPreparationDestination({
+        newProjectsRoot: environment?.serverConfig?.newProjectsRoot,
+        remoteUrl: source.remoteUrl,
+      });
   const [editedPath, setPath] = useState<string | null>(attempt?.destinationPath ?? null);
   const path = editedPath ?? defaultPath ?? "";
+  const projectsFolder =
+    environment?.serverConfig?.folders?.projects ?? environment?.serverConfig?.newProjectsRoot;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -298,11 +306,12 @@ function PreparationOnComputer({
       connected,
       canClone: canClone && canStart && supported,
       newProjectsRoot: environment?.serverConfig?.newProjectsRoot,
+      serverChosenFolders: serverPlaces,
     },
     projectId: attempt?.projectId ?? proposal.projectId,
     title: attempt?.title ?? sourceProject.title,
     createdAt: attempt?.createdAt ?? proposal.createdAt,
-    destinationPath: path,
+    destinationPath: serverPlaces && editedPath === null ? null : path,
     projects,
     clones,
   });
@@ -312,7 +321,7 @@ function PreparationOnComputer({
         environmentId: attempt.environmentId,
         projectId: attempt.projectId,
         repositoryKey: attempt.repositoryKey,
-        expectedDestinationPath: attempt.destinationPath,
+        ...(attempt.destinationPath ? { expectedDestinationPath: attempt.destinationPath } : {}),
         projects,
         clones,
       })
@@ -372,16 +381,26 @@ function PreparationOnComputer({
     const updatePreparation = async () => {
       let command;
       if (action === "start" && plan.kind === "create") {
-        saveAttempt({
+        const saved = {
           environmentId,
           projectId: plan.input.projectId,
           repositoryKey: source.repositoryKey,
           remoteUrl: source.remoteUrl,
-          destinationPath: plan.input.destinationPath,
+          ...(plan.input.destinationPath ? { destinationPath: plan.input.destinationPath } : {}),
           title: plan.input.title,
           createdAt: plan.input.createdAt,
-        });
+        };
+        saveAttempt(saved);
         command = await start({ environmentId, input: plan.input });
+        // A computer that chose the folder may have reused an existing checkout's project.
+        if (command._tag === "Success")
+          saveAttempt({
+            ...saved,
+            projectId: command.value.projectId,
+            ...(command.value.destinationPath
+              ? { destinationPath: command.value.destinationPath }
+              : {}),
+          });
       } else if (attempt) {
         command = await (action === "cancel" ? cancel : retry)({
           environmentId,
@@ -417,20 +436,28 @@ function PreparationOnComputer({
           Update Loom on this computer to track project preparation safely.
         </p>
       ) : null}
-      <label className="space-y-1.5">
-        <span className="block text-sm font-medium">
-          Destination folder on {environment?.label ?? "this computer"}
-        </span>
-        <Input
-          nativeInput
-          size="sm"
-          font="mono"
-          aria-label="Preparation destination folder"
-          value={path}
-          disabled={attempt !== null || pending}
-          onChange={(event) => setPath(event.currentTarget.value)}
-        />
-      </label>
+      {serverPlaces ? (
+        <p className="wrap-anywhere text-sm">
+          {attempt?.destinationPath
+            ? `Loom put the files in ${attempt.destinationPath}`
+            : `Loom will put the files in ${projectsFolder ?? "this computer's Projects folder"}, or use a checkout of this repository already there.`}
+        </p>
+      ) : (
+        <label className="space-y-1.5">
+          <span className="block text-sm font-medium">
+            Destination folder on {environment?.label ?? "this computer"}
+          </span>
+          <Input
+            nativeInput
+            size="sm"
+            font="mono"
+            aria-label="Preparation destination folder"
+            value={path}
+            disabled={attempt !== null || pending}
+            onChange={(event) => setPath(event.currentTarget.value)}
+          />
+        </label>
+      )}
       <p className="text-xs text-muted-foreground">
         Existing files are preserved. Repository credentials and private Git access come from the
         selected computer. Setup runs when you start an agent.

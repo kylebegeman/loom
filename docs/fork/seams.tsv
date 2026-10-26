@@ -1041,3 +1041,7 @@ scripts/effect-budget.json	-	"apps/web/src/components/ChatView.tsx": 26,
 apps/server/src/project/RepositoryIdentityResolver.test.ts	hermetic-git-tests	2
 apps/mobile/src/features/projects/AddProjectScreen.tsx	file-placement	5
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	file-placement	2
+apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
+apps/web/src/components/settings/settingsSearch.ts	file-placement	1
+apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
+docs/user/project-settings.md	file-placement	1

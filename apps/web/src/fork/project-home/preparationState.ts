@@ -8,7 +8,8 @@ const PreparationAttempt = Schema.Struct({
   projectId: ProjectId,
   repositoryKey: Schema.String,
   remoteUrl: Schema.String,
-  destinationPath: Schema.String,
+  /** Absent until a computer that chooses its own folder reports the one it used. */
+  destinationPath: Schema.optional(Schema.String),
   title: Schema.String,
   createdAt: Schema.String,
 });

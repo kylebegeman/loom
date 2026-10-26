@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
+  libraryAddResource,
   libraryResourceFromInput,
   libraryResourceLocation,
   isRepositoryResource,
@@ -107,7 +108,7 @@ export function ProjectResources({
             resources={resources}
             busy={busy}
             autoFocus={adding}
-            onAdd={(resource) => onChange([...resources, resource])}
+            onAdd={(resource) => onChange(libraryAddResource(resources, resource))}
           />
         </div>
       ) : null}
@@ -358,7 +359,9 @@ export function ResourceAdder({
         <p className="text-xs text-muted-foreground">
           {parsed.kind === "link"
             ? `Adds a link to ${parsed.title}.`
-            : `Adds the ${parsed.title} repository. Loom prepares it in ${parsed.relativePath}/.`}
+            : parsed.relativePath === "."
+              ? `Adds the ${parsed.title} repository as the project's folder.`
+              : `Adds the ${parsed.title} repository. Loom prepares it in ${parsed.relativePath}/.`}
         </p>
       ) : null}
     </div>
