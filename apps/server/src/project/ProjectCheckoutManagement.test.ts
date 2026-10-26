@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { ProjectCheckoutManagementError } from "@t3tools/contracts/fork";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -134,6 +135,16 @@ const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
     return yield* effect.pipe(
       Effect.provide(ServerConfig.layerTest(parent, `${parent}/environment`)),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+/** Runs as the default install, whose T3 home sits at `<home>/.t3` and owns legacy sidecars. */
+const runAsInstall = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const home = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+    return yield* effect.pipe(
+      Effect.provide(ServerConfig.layerTest(home, `${home}/.t3`)),
+      Effect.provideService(HostProcess.HomeDirectory, home),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
@@ -497,7 +508,7 @@ describe("reviewed project checkout management", () => {
     ),
   );
   it.live("reads legacy clone receipts with inherited retention defaults", () =>
-    run(
+    runAsInstall(
       Effect.gen(function* () {
         const f = yield* fixture;
         yield* f.adopt();
