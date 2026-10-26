@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, type Project, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: file-placement
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -653,6 +654,31 @@ it.effect("serializes two projects claiming the same workspace root", () =>
     yield* Deferred.succeed(releaseFirst, undefined);
     assert.equal((yield* Fiber.join(first)).id, "project:race:first");
     assert.equal((yield* Fiber.join(second))._tag, "ProjectConflictError");
+  }).pipe(Effect.provide(layerProjectServiceDependencies)),
+);
+
+// fork: file-placement
+it.effect("rejects a macOS workspace another project names in another case or Unicode form", () =>
+  Effect.gen(function* () {
+    const service = yield* ProjectService.make.pipe(
+      Effect.provideService(HostProcess.Platform, "darwin"),
+    );
+    const holder = yield* service.create({
+      commandId: CommandId.make("command:spelled:holder"),
+      projectId: ProjectId.make("project:spelled:holder"),
+      title: "Holder",
+      workspaceRoot: "/Users/k/Projects/Café",
+    });
+    const claim = yield* service
+      .create({
+        commandId: CommandId.make("command:spelled:claim"),
+        projectId: ProjectId.make("project:spelled:claim"),
+        title: "Claim",
+        workspaceRoot: "/Users/k/projects/café",
+      })
+      .pipe(Effect.flip);
+    assert.instanceOf(claim, ProjectService.ProjectConflictError);
+    assert.equal(claim.conflictingProjectId, holder.id);
   }).pipe(Effect.provide(layerProjectServiceDependencies)),
 );
 
