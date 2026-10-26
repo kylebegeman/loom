@@ -38,7 +38,8 @@ import { Button } from "../../components/ui/Button";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildHomeProjectScopes, findHomeProjectScope } from "../../features/home/homeThreadList";
-import { useHomeThreadSelection } from "../../features/home/home-thread-navigation";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { uuidv4 } from "../../lib/uuid";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { relativeTime } from "../../lib/time";
 import { useProjects, useNavigationThreadShells, useServerConfigs } from "../../state/entities";
@@ -228,19 +229,18 @@ function ProjectHomeContent(props: {
     selectedChoice?.triggerLabel ??
     (selectedProject ? environmentLabel(selectedProject.environmentId) : null);
   const computerCount = new Set(scope?.projects.map((project) => project.environmentId) ?? []).size;
-  const selectThread = useHomeThreadSelection();
+  const selectDetail = useSelectWorkspaceDetail();
+  const selectThread = (thread: { readonly environmentId: string; readonly id: string }) =>
+    selectDetail({
+      name: "Thread",
+      params: { environmentId: thread.environmentId, threadId: thread.id },
+    });
   const { settleThread, unsettleThread, unsnoozeThread } = useThreadListActions();
   const openSettings = () => {
     if (!onlineProject) return;
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: {
-        screen: "SettingsProjectOverview",
-        params: {
-          initialEnvironmentId: onlineProject.environmentId,
-          initialProjectId: onlineProject.id,
-        },
-      },
+    navigation.navigate("SettingsProjectOverview", {
+      initialEnvironmentId: onlineProject.environmentId,
+      initialProjectId: onlineProject.id,
     });
   };
   const prepareComputer = () => {
@@ -260,12 +260,15 @@ function ProjectHomeContent(props: {
       environmentPresentations.presentationAtom(taskProject.environmentId),
     );
     if (current?.entry.enabled !== true || current.connection.phase !== "connected") return;
-    navigation.navigate("NewTaskSheet", {
-      screen: "NewTaskDraft",
+    selectDetail({
+      name: "Thread",
       params: {
-        environmentId: taskProject.environmentId,
-        projectId: taskProject.id,
-        title: scope?.title,
+        draft: {
+          requestId: uuidv4(),
+          environmentId: taskProject.environmentId,
+          projectId: taskProject.id,
+          ...(scope ? { title: scope.title } : {}),
+        },
       },
     });
   };

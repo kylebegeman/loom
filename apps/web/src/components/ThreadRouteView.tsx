@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { useThreadArchiveFallback } from "~/fork/project-library/ThreadArchiveFallback"; // fork: library-archive
 import ChatView from "./ChatView";
+import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
 import { SidebarInset } from "./ui/sidebar";
@@ -26,11 +27,16 @@ import {
 } from "../threadRoutes";
 
 /**
- * Plain server threads are unkeyed, so navigating between them reuses one instance as ChatView
- * expects. Rendered by the `_chat` layout rather than by the two leaf routes, since an element
- * only survives a route swap when the same parent renders it.
+ * Render in the shared layout to retain ChatView across route swaps; plain server threads remain unkeyed.
+ * `background` keeps the thread mounted, inert and in place under Settings or Usage.
  */
-export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
+export function ThreadRouteView({
+  target,
+  background = false,
+}: {
+  target: ThreadRouteTarget;
+  background?: boolean;
+}) {
   const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
@@ -70,9 +76,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   const promotedDraftId = useComposerDraftStore((store) =>
     target.kind === "server" ? store.getDraftIdByRef(target.threadRef) : null,
   );
-  // The draft record is removed once the promoted thread has started, which
-  // is after the route swap. Latch the key so the element that carried the
-  // draft keeps its identity for as long as this thread stays on screen.
+  // Latch the key through promotion because the draft record disappears after the route swap.
   const [chatViewKey, setChatViewKey] = useState<{ threadKey: string; key: string } | null>(null);
   const serverThreadKey = target.kind === "server" ? scopedThreadKey(target.threadRef) : null;
   const nextChatViewKey =
@@ -124,7 +128,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalThreadRef || background) {
       return;
     }
     let cancelled = false;
@@ -141,14 +145,14 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [background, canonicalThreadRef, navigate]);
 
   useEffect(() => {
-    if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
+    if (background || target.kind !== "draft" || draftSession || canonicalThreadRef) {
       return;
     }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate, target.kind]);
+  }, [background, canonicalThreadRef, draftSession, navigate, target.kind]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -158,12 +162,20 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       // fork: library-archive
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads) {
+      if (environmentHasAnyThreads && !background) {
         void navigate({ to: "/", replace: true });
       }
     }
     // fork: library-archive
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target, canUseArchive]);
+  }, [
+    background,
+    bootstrapComplete,
+    environmentHasAnyThreads,
+    navigate,
+    renderState,
+    target,
+    canUseArchive,
+  ]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -198,8 +210,13 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {view ?? archiveFallback /* fork: library-archive */}
+    <SidebarInset
+      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      inert={background}
+    >
+      <BackgroundThreadContext value={background}>
+        {view ?? archiveFallback /* fork: library-archive */}
+      </BackgroundThreadContext>
     </SidebarInset>
   );
 }

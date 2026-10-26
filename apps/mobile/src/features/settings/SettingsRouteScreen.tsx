@@ -1,30 +1,67 @@
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
-import { Toolbar } from "../../components/ui/Toolbar";
-import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+import {
+  navigationCustomizationAvailable,
+  overflowNavigationTabs,
+} from "../workspace/navigation-tab-order";
+import {
+  NAVIGATION_TAB_ICONS,
+  WORKSPACE_TAB_LABELS,
+  useNavigationTabOrder,
+  useHiddenNavigationTabs,
+} from "../workspace/navigation-tabs";
+import { currentWorkspaceSelections } from "../workspace/workspace-selection-store";
+import { rememberedSettingsPage } from "../workspace/workspace-tab-navigation";
+import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
+import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import {
+  ScreenScrollView as ScrollView,
+  ScreenScrollViewBottomInset,
+} from "../../components/ui/ScreenScrollView";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useNavigationState } from "@react-navigation/native";
+import { use, useMemo, type ComponentProps, type ReactNode } from "react";
 import { Platform, View } from "react-native";
+import { useWorkspaceSurface } from "../workspace/useWorkspaceSurface";
+import { useDeviceType } from "../../native/native-layout-metrics";
+import { useCompactWorkspaceTabs } from "../workspace/useSystemWorkspaceTabBar";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
 import { SettingsRow } from "./components/SettingsRow";
-import { SettingsSection } from "./components/SettingsSection";
+import { SettingsSection, SettingsSidebarContext } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
+import type { SettingsPageTarget } from "./components/settings-page-targets";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import { filterSettingsSections } from "./settings-search";
+import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 
 export function SettingsRouteScreen() {
-  const navigation = useNavigation();
+  const surface = useWorkspaceSurface();
+  const deviceType = useDeviceType();
+  const compactTabs = useCompactWorkspaceTabs();
+  const workspace = useWorkspaceTabs();
   const { layout } = useAdaptiveWorkspaceLayout();
+  const inSidebar = use(NativePrimaryColumnContext) !== null && layout.usesSplitView;
+  // The page open beside the list: the route right above the Settings tab's route. While
+  // another tab is open this list stays mounted, hidden, and must keep showing the page Settings
+  // reopens on; otherwise returning shows it unselected for a frame before the page arrives.
+  const selected = useNavigationState((state) => {
+    const list = state.routes.findIndex((route) => route.name === "Settings");
+    return list < 0
+      ? rememberedSettingsPage(currentWorkspaceSelections())
+      : (state.routes[list + 1]?.name ?? null);
+  });
+  const sidebar = useMemo(() => (inSidebar ? { selected } : null), [inSidebar, selected]);
   const content = hasCloudPublicConfig() ? (
     <ConfiguredSettingsRouteScreen />
   ) : (
@@ -32,35 +69,47 @@ export function SettingsRouteScreen() {
   );
 
   return (
-    <>
-      {Platform.OS === "ios" ? (
-        <NativeStackScreenOptions options={{ headerBackVisible: !layout.usesSplitView }} />
-      ) : null}
-      {Platform.OS === "ios" && layout.usesSplitView ? (
-        <>
-          <Toolbar placement="left">
-            <Toolbar.Button
-              accessibilityLabel="Go back"
-              icon="chevron.left"
-              onPress={() => navigation.goBack()}
-            />
-          </Toolbar>
-        </>
-      ) : null}
-      <SettingsEnvironmentFilterHeader closeSettings />
-      {Platform.OS === "android" ? (
-        <SettingsScreen title="Settings" trailing={<AndroidSettingsEnvironmentFilter />}>
-          {content}
-        </SettingsScreen>
-      ) : (
-        content
-      )}
-    </>
+    <SettingsSidebarContext value={sidebar}>
+      <View className={`flex-1 ${inSidebar ? surface.className : "bg-screen"}`}>
+        <SettingsEnvironmentFilterHeader />
+        <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+          {Platform.OS === "android" ? (
+            <SettingsScreen
+              title="Settings"
+              trailing={<AndroidSettingsEnvironmentFilter />}
+              search={
+                workspace
+                  ? {
+                      value: workspace.state.tabs.settings.query,
+                      onChangeText: (query) =>
+                        workspace.dispatch({ type: "query", tab: "settings", query }),
+                      placeholder: "Search settings",
+                    }
+                  : undefined
+              }
+            >
+              {content}
+            </SettingsScreen>
+          ) : (
+            content
+          )}
+        </ScreenScrollViewBottomInset>
+      </View>
+    </SettingsSidebarContext>
   );
 }
 
+type SettingsListRow = ComponentProps<typeof SettingsRow> & { readonly id: string };
+
+interface SettingsListSection {
+  readonly title?: string;
+  readonly rows: readonly SettingsListRow[];
+  // fork: fleet-connections - Computer settings explain an empty computer selection.
+  readonly footer?: string;
+  readonly notice?: ReactNode;
+}
+
 function ConfiguredSettingsRouteScreen() {
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
@@ -72,73 +121,108 @@ function ConfiguredSettingsRouteScreen() {
       : (user?.primaryEmailAddress?.emailAddress ?? "Signed in");
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}
-        className="flex-1"
-        contentContainerClassName="gap-4 px-5 pt-4"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-      >
-        <SettingsSection title="Connections">
-          <SettingsRow
-            icon="person.crop.circle"
-            label="Loom account"
-            value={accountLabel}
-            disabled={!isLoaded}
-            onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
-          />
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Computers" // fork: fleet-connections - The settings inventory contains work hosts.
-            value={`${Object.keys(savedConnectionsById).length}`}
-            valuePosition="trailing"
-            target="SettingsEnvironments"
-          />
-          <SettingsRow icon="bell.badge" label="Notifications" target="SettingsNotifications" />
-        </SettingsSection>
-
-        <SettingsIndexSections />
-      </ScrollView>
-    </View>
+    <SettingsList
+      connections={[
+        {
+          id: "account",
+          icon: "person.crop.circle",
+          label: "Loom account",
+          value: accountLabel,
+          disabled: !isLoaded,
+          onPress: () => navigation.navigate("SettingsAuth"),
+        },
+        environmentsRow(Object.keys(savedConnectionsById).length),
+        {
+          id: "SettingsNotifications",
+          icon: "bell.badge",
+          label: "Notifications",
+          target: "SettingsNotifications",
+        },
+      ]}
+    />
   );
 }
 
 function LocalSettingsRouteScreen() {
-  const insets = useSafeAreaInsets();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const environmentCount = Object.keys(savedConnectionsById).length;
+  return (
+    <SettingsList
+      connections={[
+        environmentsRow(Object.keys(savedConnectionsById).length),
+        ...LibraryPush.rows(), // fork: library-push
+      ]}
+    />
+  );
+}
+
+function environmentsRow(count: number): SettingsListRow {
+  return {
+    id: "SettingsEnvironments",
+    icon: "desktopcomputer",
+    label: "Computers", // fork: fleet-connections - The settings inventory contains work hosts.
+    value: `${count}`,
+    valuePosition: "trailing",
+    target: "SettingsEnvironments",
+  };
+}
+
+function SettingsList(props: { readonly connections: readonly SettingsListRow[] }) {
+  // UIKit's scroll-edge material takes the scroll view's own color; like the chat list, match
+  // the sidebar's surface so the bar doesn't darken over content at rest.
+  // Grouped cards only lift off the screen surface; the drawer is as dark as they are.
+  const listSurface = use(SettingsSidebarContext) ? "bg-drawer" : "bg-screen";
+  const insets = useSafeAreaInsets();
+  const workspace = useWorkspaceTabs();
+  const query = workspace?.state.tabs.settings.query ?? "";
+  const overflowRows = useOverflowRows();
+  const indexSections = useSettingsIndexSections();
+  const sections = filterSettingsSections(
+    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
+    query,
+  );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className="flex-1">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        className="flex-1"
+        className={`flex-1 ${listSurface}`}
         contentContainerClassName="gap-4 px-5 pt-4"
         contentContainerStyle={{
-          paddingBottom: Math.max(insets.bottom, 18) + 18,
+          // The workspace's clearance keeps the last row above its search field and keyboard.
+          paddingBottom: Math.max(
+            Math.max(insets.bottom, 18) + 18,
+            workspace?.bottomClearance ?? 0,
+          ),
         }}
       >
-        <SettingsSection title="Connections">
-          <SettingsRow
-            icon="desktopcomputer"
-            label="Computers" // fork: fleet-connections - The settings inventory contains work hosts.
-            value={`${environmentCount}`}
-            valuePosition="trailing"
-            target="SettingsEnvironments"
+        {sections.length ? (
+          sections.map((section) => (
+            <SettingsSection
+              key={section.title ?? "tabs"}
+              title={section.title}
+              footer={section.footer}
+            >
+              {section.notice}
+              {section.rows.map(({ id, ...row }) => (
+                <SettingsRow key={id} {...row} />
+              ))}
+            </SettingsSection>
+          ))
+        ) : (
+          <EmptyState
+            variant="plain"
+            title="No results"
+            detail={`No settings match “${query.trim()}”.`}
           />
-          {/* fork: library-push */}
-          <LibraryPush.Row />
-        </SettingsSection>
-
-        <SettingsIndexSections />
+        )}
       </ScrollView>
     </View>
   );
 }
 
-function SettingsIndexSections() {
+function useSettingsIndexSections(): SettingsListSection[] {
   const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
@@ -156,102 +240,97 @@ function SettingsIndexSections() {
           members: scopedProjectMembers,
         })
       : (selectedProject?.label ?? "Unavailable project");
-  return (
-    <>
-      <SettingsSection title="App preferences">
-        <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />
-        {Platform.OS === "ios" ? (
-          <>
-            <SettingsRow icon="keyboard" label="Keyboard" target="SettingsKeyboard" />
-            <SettingsRow icon="mic" label="Microphone" target="SettingsMicrophone" />
-          </>
-        ) : null}
-      </SettingsSection>
+  const page = (
+    target: SettingsPageTarget,
+    icon: SettingsListRow["icon"],
+    label: string,
+    extra?: Pick<SettingsListRow, "disabled" | "value">,
+  ): SettingsListRow => ({ id: target, icon, label, target, ...extra });
+  const serverPage = (target: SettingsPageTarget, icon: SettingsListRow["icon"], label: string) =>
+    page(target, icon, label, { disabled: noServerTargets });
+  const route = (
+    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory",
+    icon: SettingsListRow["icon"],
+    label: string,
+  ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
+  return [
+    {
+      title: "App preferences",
+      rows: [
+        page("SettingsAppearance", "paintbrush", "Appearance"),
+        ...(navigationCustomizationAvailable()
+          ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
+          : []),
+        ...(Platform.OS === "ios"
+          ? [
+              page("SettingsKeyboard", "keyboard", "Keyboard"),
+              page("SettingsMicrophone", "mic", "Microphone"),
+            ]
+          : []),
+      ],
+    },
+    {
+      title: "Automations",
+      rows: [
+        route("Bots", "bolt.circle", "Bots"), // fork: bots
+        page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
+      ],
+    },
+    {
+      title: "Projects & conversations",
+      rows: [
+        route("Library", "folder", "Projects"),
+        route("LibrarySettings", "server.rack", "Library connection"),
+        ...(selectedProjectKey !== null
+          ? [
+              page("SettingsProjectOverview", "folder", "Computer folders", {
+                value: projectLabel,
+              }),
+            ]
+          : []),
+        // fork: project-home - Storage review is reachable without a project filter.
+        route("ProjectStorageInventory", "internaldrive", "Files on computers"),
+        page("SettingsOrganization", "folder", "Organization"),
+        page("SettingsThreads", "text.bubble", "Conversation behavior"),
+        page("SettingsFollowUp", "arrow.turn.left.up", "Follow-ups"),
+        page("SettingsArchive", "archivebox", "Archived conversations"),
+      ],
+    },
+    {
+      title: "Computer settings",
+      ...(noServerTargets
+        ? { notice: <SettingsComputerNotice /> }
+        : {
+            footer:
+              "Applies to the selected computers. Use the filter above to choose computers or a project.",
+          }),
+      rows: [
+        serverPage("SettingsProviderAccounts", "person.crop.circle", "Agent accounts"),
+        serverPage("SettingsEnvironmentNewThreads", "text.bubble", "New conversations"),
+        serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
+        serverPage("SettingsEnvironmentAgentBehavior", "text.alignleft", "Agent behavior"),
+        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
+        page("SettingsPreviewLinks", "globe", "Previews"), // fork: preview-links
+      ],
+    },
+    {
+      title: "App",
+      rows: [page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`)],
+    },
+  ];
+}
 
-      <SettingsSection title="Automations">
-        {/* fork: bots */}
-        <SettingsRow icon="bolt.circle" label="Bots" onPress={() => navigation.navigate("Bots")} />
-        <SettingsRow icon="clock" label="Scheduled tasks" target="SettingsScheduledTasks" />
-      </SettingsSection>
-
-      <SettingsSection title="Projects & conversations">
-        <SettingsRow
-          icon="folder"
-          label="Projects"
-          onPress={() => navigation.navigate("Library")}
-        />
-        <SettingsRow
-          icon="server.rack"
-          label="Library connection"
-          onPress={() => navigation.navigate("LibrarySettings")}
-        />
-        {selectedProjectKey !== null ? (
-          <SettingsRow
-            icon="folder"
-            label="Computer folders"
-            value={projectLabel}
-            target="SettingsProjectOverview"
-          />
-        ) : null}
-        {/* fork: project-home - Storage review is reachable without a project filter. */}
-        <SettingsRow
-          icon="internaldrive"
-          label="Files on computers"
-          onPress={() => navigation.navigate("ProjectStorageInventory")}
-        />
-        <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />
-        <SettingsRow icon="text.bubble" label="Conversation behavior" target="SettingsThreads" />
-        <SettingsRow icon="arrow.turn.left.up" label="Follow-ups" target="SettingsFollowUp" />
-        <SettingsRow icon="archivebox" label="Archived conversations" target="SettingsArchive" />
-      </SettingsSection>
-
-      <SettingsSection
-        title="Computer settings"
-        footer={
-          noServerTargets
-            ? undefined
-            : "Applies to the selected computers. Use the filter above to choose computers or a project."
-        }
-      >
-        {noServerTargets ? <SettingsComputerNotice /> : null}
-        <SettingsRow
-          icon="person.crop.circle"
-          label="Agent accounts"
-          target="SettingsProviderAccounts"
-          disabled={noServerTargets}
-        />
-        <SettingsRow
-          icon="text.bubble"
-          label="New conversations"
-          target="SettingsEnvironmentNewThreads"
-          disabled={noServerTargets}
-        />
-        <SettingsRow
-          icon="arrow.triangle.branch"
-          label="Source control"
-          target="SettingsEnvironmentSourceControl"
-          disabled={noServerTargets}
-        />
-        <SettingsRow
-          icon="text.alignleft"
-          label="Agent behavior"
-          target="SettingsEnvironmentAgentBehavior"
-          disabled={noServerTargets}
-        />
-        <SettingsRow
-          icon="arrow.clockwise"
-          label="Maintenance"
-          target="SettingsEnvironmentMaintenance"
-          disabled={noServerTargets}
-        />
-        {/* fork: preview-links */}
-        <SettingsRow icon="globe" label="Previews" target="PreviewLinks" />
-      </SettingsSection>
-
-      <SettingsSection title="App">
-        <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
-        <SettingsRow icon="info.circle" label={`About ${BRAND_NAME}`} target="SettingsAbout" />
-      </SettingsSection>
-    </>
-  );
+function useOverflowRows(): SettingsListRow[] {
+  const order = useNavigationTabOrder();
+  const hidden = useHiddenNavigationTabs();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  const tabs =
+    Platform.OS === "android" && layout.usesSplitView ? [] : overflowNavigationTabs(order, hidden);
+  const selectTab = useSelectWorkspaceTab();
+  return tabs.map((tab) => ({
+    id: tab,
+    icon: NAVIGATION_TAB_ICONS[tab],
+    label: WORKSPACE_TAB_LABELS[tab],
+    onPress: () => selectTab(tab),
+  }));
 }

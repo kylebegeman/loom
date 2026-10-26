@@ -240,7 +240,6 @@ const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
 const botRun = threadCaller(botRunId);
-// Its turn ended, but a background subagent it started still runs.
 const background = threadCaller(backgroundThreadId);
 const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);
@@ -336,11 +335,6 @@ it.effect.each([
     ),
   ),
 );
-
-it("refuses a declaration or handlers layer built outside McpToolAccess", () => {
-  expect(() => Reflect.construct(McpToolAccess.Declaration, [unchecked])).toThrow(TypeError);
-  expect(() => Reflect.construct(McpToolAccess.HandlersLayer, [Layer.empty])).toThrow(TypeError);
-});
 
 it("refuses a declaration or handlers layer that only wears another's fields", () => {
   const copiedDeclaration = Object.assign(

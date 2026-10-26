@@ -4,6 +4,7 @@ import { FormSheet, ScreenStack } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
 
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
+import { formSheetDetents } from "../../native/sheet-surface";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -26,8 +27,10 @@ export function Sheet(props: SheetProps) {
     <FormSheet
       isOpen={isOpen}
       preventNativeDismiss={!dismissible}
-      detents={[0.5, 0.9]}
+      detents={formSheetDetents(0.5, 0.9)}
       prefersGrabberVisible
+      // The header holds the close button, so the Duo needs no rail inside this sheet.
+      prefersHorizontalBars
       nativeContainerStyle={containerStyle}
       onDismiss={props.onClose}
       onNativeDismiss={props.onClose}

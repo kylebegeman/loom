@@ -278,7 +278,7 @@ export function useNewTaskFromSource() {
           host.connection.phase === "connected" &&
           supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library");
         if (!authority.connected && !hostReady) {
-          navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+          navigation.navigate("NewTaskProject");
           return;
         }
         const catalogEnvironment = authority.connected

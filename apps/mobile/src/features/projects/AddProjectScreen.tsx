@@ -28,6 +28,7 @@ import {
   getNewProjectPublishTarget,
   getNewProjectPublishTargets,
   getNewProjectRepository,
+  defaultHostCloneUrl,
   normalizePastedCloneUrl,
   parseAddProjectRemoteSource,
   resolveAddProjectPath,
@@ -61,7 +62,13 @@ import {
   resolveEnvironmentMachineKind,
   SourceControlProviderKind,
 } from "@t3tools/contracts";
-import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
+import {
+  CommonActions,
+  StackActions,
+  useNavigation,
+  type NavigationState,
+  type ParamListBase,
+} from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -160,11 +167,7 @@ function AddProjectShell(props: { readonly children: ReactNode; readonly title: 
   const insets = useSafeAreaInsets();
 
   return (
-    // collapsable={false} is load-bearing: if this wrapper is flattened, the
-    // ScrollView lands directly under RNSSafeAreaView and RNS's formSheet
-    // scroll-view frame correction mistakes this full-height wrapper for a
-    // "header" sibling, coercing the ScrollView to zero height (blank sheet
-    // as soon as the sheet re-lays-out, e.g. when the keyboard opens).
+    // A collapsible wrapper lets formSheet resizing mistake the full-height view for a header and collapse the ScrollView.
     <SettingsScreen title={props.title}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -547,7 +550,7 @@ function SourceControlRow(props: {
       />
     ) : (
       <SourceControlIcon
-        kind={sourceControlClients.get(props.source).icon}
+        icon={sourceControlClients.get(props.source).icon}
         size={Platform.OS === "android" ? 24 : 18}
         colorClassName="accent-icon"
       />
@@ -739,7 +742,10 @@ export function AddProjectSourceScreen(
 }
 
 function openNewTaskDraft(
-  navigation: { dispatch: (action: ReturnType<typeof CommonActions.reset>) => void },
+  navigation: {
+    dispatch: (action: ReturnType<typeof CommonActions.reset>) => void;
+    getState: () => NavigationState<ParamListBase> | undefined;
+  },
   params: {
     environmentId: EnvironmentId;
     projectId: ProjectId;
@@ -748,9 +754,14 @@ function openNewTaskDraft(
     draftId?: string;
   },
 ) {
-  navigation.dispatch(
-    CommonActions.reset({ index: 0, routes: [{ name: "NewTaskDraft", params }] }),
-  );
+  const state = navigation.getState();
+  if (!state) return;
+  const threadIndex = state.routes.findLastIndex((route) => route.name === "Thread");
+  const routes = [
+    ...state.routes.slice(0, threadIndex < 0 ? state.index : threadIndex),
+    { key: uuidv4(), name: "Thread", params: { draft: params } },
+  ];
+  navigation.dispatch(CommonActions.reset({ ...state, index: routes.length - 1, routes }));
 }
 
 async function draftWithPrompt(
@@ -792,21 +803,11 @@ function useCreateProject(
     });
     if (existing) {
       Dialog.alert("Project already exists", existing.title);
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [
-            {
-              name: "NewTaskDraft",
-              params: {
-                environmentId: existing.environmentId,
-                projectId: existing.id,
-                title: existing.title,
-              },
-            },
-          ],
-        }),
-      );
+      openNewTaskDraft(navigation, {
+        environmentId: existing.environmentId,
+        projectId: existing.id,
+        title: existing.title,
+      });
       return;
     }
 
@@ -826,21 +827,11 @@ function useCreateProject(
     if (AsyncResult.isFailure(result)) {
       return result;
     }
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [
-          {
-            name: "NewTaskDraft",
-            params: {
-              environmentId: environment.environmentId,
-              projectId,
-              title: inferProjectTitleFromPath(workspaceRoot),
-            },
-          },
-        ],
-      }),
-    );
+    openNewTaskDraft(navigation, {
+      environmentId: environment.environmentId,
+      projectId,
+      title: inferProjectTitleFromPath(workspaceRoot),
+    });
     return result;
   };
 }
@@ -925,7 +916,7 @@ export function AddProjectRepositoryScreen(props: {
             autoCorrect={false}
             placeholder={
               source === "url"
-                ? "https://github.com/org/repo.git"
+                ? (defaultHostCloneUrl("org/repo") ?? "https://example.com/org/repo.git")
                 : addProjectRemoteSourcePathHint(source)
             }
             returnKeyType="next"
@@ -1264,7 +1255,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                 disabled={isSubmitting || (!canPublishRepository && !publishes)}
                 icon={
                   <SourceControlIcon
-                    kind={publishTarget.definition.icon}
+                    icon={publishTarget.definition.icon}
                     size={Platform.OS === "android" ? 24 : 18}
                     colorClassName="accent-icon"
                   />
@@ -1289,7 +1280,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                         title={target.definition.label}
                         icon={
                           <SourceControlIcon
-                            kind={target.definition.icon}
+                            icon={target.definition.icon}
                             size={Platform.OS === "android" ? 24 : 17}
                             colorClassName="accent-icon"
                           />
@@ -1701,9 +1692,7 @@ export function AddProjectDestinationScreen(props: {
       if (AsyncResult.isFailure(startResult)) {
         setError(errorMessage(Cause.squash(startResult.cause)));
       } else {
-        // The draft screen resolves its project from the client store, so it
-        // must not open before the create event has arrived (it would fall back
-        // to the project picker and lose the clone controls).
+        // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
         const project = await waitForProject(
           { environmentId: environment.environmentId, projectId },
           15_000,

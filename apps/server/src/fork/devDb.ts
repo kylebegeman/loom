@@ -94,7 +94,9 @@ export const createDevDbFullTextTables = Effect.fn("createDevDbFullTextTables")(
   return {
     created: new Set(created.map((row) => row.name)),
     rebuild: Effect.forEach(
-      fullText,
+      // A contentless index keeps no text to rebuild from; its owner refills it, as
+      // rebuildMessageSearch does for message search.
+      fullText.filter((table) => !/\bcontent\s*=\s*''/i.test(table.sql)),
       ({ name }) =>
         sql.unsafe(`INSERT INTO main."${name}"("${name}") VALUES ('rebuild')`).unprepared,
       { discard: true },

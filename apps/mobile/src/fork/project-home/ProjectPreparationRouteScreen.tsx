@@ -251,20 +251,17 @@ function ProjectPreparationContent(props: {
       return;
     }
     const preparationDestinationPath = receipt?.destinationPath ?? proposal;
-    navigation.navigate("NewTaskSheet", {
-      screen: "AddProjectDestination",
-      params: {
-        environmentId: destinationId,
-        remoteUrl: source.remoteUrl,
-        repositoryTitle: sourceProject.title,
-        repositoryName: getCloneDirectoryName(source.remoteUrl),
-        preparationSourceEnvironmentId: props.sourceEnvironmentId,
-        preparationSourceProjectId: props.sourceProjectId,
-        preparationProjectId: receipt?.projectId ?? request.projectId,
-        preparationCreatedAt: receipt?.createdAt ?? request.createdAt,
-        preparationRepositoryKey: source.repositoryKey,
-        ...(preparationDestinationPath ? { preparationDestinationPath } : {}),
-      },
+    navigation.navigate("AddProjectDestination", {
+      environmentId: destinationId,
+      remoteUrl: source.remoteUrl,
+      repositoryTitle: sourceProject.title,
+      repositoryName: getCloneDirectoryName(source.remoteUrl),
+      preparationSourceEnvironmentId: props.sourceEnvironmentId,
+      preparationSourceProjectId: props.sourceProjectId,
+      preparationProjectId: receipt?.projectId ?? request.projectId,
+      preparationCreatedAt: receipt?.createdAt ?? request.createdAt,
+      preparationRepositoryKey: source.repositoryKey,
+      ...(preparationDestinationPath ? { preparationDestinationPath } : {}),
     });
   };
   return (

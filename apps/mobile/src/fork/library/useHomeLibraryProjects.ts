@@ -64,16 +64,13 @@ export function useHomeLibraryProjects(selectLiveThread: (thread: EnvironmentThr
 
   /**
    * Opens New task, led by the project a Library scope key selects. The filter only suggests it, as
-   * on web, so the other projects and No project stay offered beside it.
+   * on web, so the other projects and No project stay offered beside it. Without a Library scope,
+   * the workspace's own New task flow runs.
    */
-  const startConversation = (projectKey: string | null) => {
+  const startConversation = (projectKey: string | null, startNewTask: () => void) => {
     const scope = parseLibraryProjectScope(projectKey);
-    navigation.navigate(
-      "NewTaskSheet",
-      scope
-        ? { screen: "NewTask", params: { libraryProjectId: scope.projectId } }
-        : { screen: "NewTask" },
-    );
+    if (scope) navigation.navigate("NewTaskProject", { libraryProjectId: scope.projectId });
+    else startNewTask();
   };
 
   return { filterOptions, selectThread, startConversation };

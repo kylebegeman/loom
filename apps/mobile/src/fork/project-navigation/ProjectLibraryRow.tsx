@@ -16,6 +16,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Menu } from "../../components/ui/Menu";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { openSettings } from "../../features/settings/settings-navigation";
 import { cn } from "../../lib/cn";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import type { HomeProjectScope } from "../../features/home/homeThreadList";
@@ -168,15 +169,9 @@ export function ProjectLibraryRow(props: {
             )
               props.onNewThreadInProject(taskProject);
             if (nativeEvent.event === "settings" && onlineProject)
-              navigation.navigate("SettingsSheet", {
-                screen: "SettingsContent",
-                params: {
-                  screen: "SettingsProjectOverview",
-                  params: {
-                    initialEnvironmentId: onlineProject.environmentId,
-                    initialProjectId: onlineProject.id,
-                  },
-                },
+              openSettings(navigation, "SettingsProjectOverview", {
+                initialEnvironmentId: onlineProject.environmentId,
+                initialProjectId: onlineProject.id,
               });
           }}
         >

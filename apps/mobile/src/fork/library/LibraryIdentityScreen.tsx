@@ -9,6 +9,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { Button } from "../../components/ui/Button";
 import { environmentCatalog } from "../../connection/catalog";
 import { connectionAtomRuntime } from "../../connection/runtime";
+import { openSettings } from "../../features/settings/settings-navigation";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
@@ -148,14 +149,7 @@ function IdentityContent({
       if (purpose === "library") {
         await authority.select(savedId);
         navigation.navigate("Library");
-      } else
-        navigation.navigate("SettingsSheet", {
-          screen: "SettingsContent",
-          params: {
-            screen: "SettingsEnvironmentDetail",
-            params: { environmentId: savedId },
-          },
-        });
+      } else openSettings(navigation, "SettingsEnvironmentDetail", { environmentId: savedId });
     })()
       .catch((cause: unknown) =>
         setError(

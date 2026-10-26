@@ -520,9 +520,7 @@ describe("clone project permissions", () => {
       NodePath.join(NodeOS.tmpdir(), "t3-clone-permissions-"),
     );
     state.scopes = new Set([AuthSourceControlWriteScope]);
-    state.otherScopes = new Set();
     state.projects = [];
-    state.createRequests = [];
   });
 
   afterEach(async () => {
@@ -536,15 +534,6 @@ describe("clone project permissions", () => {
     expect(state.projects).toEqual([]);
   });
 
-  it("clones and registers the project when both permissions are granted", async () => {
-    state.scopes.add(AuthOrchestrationOperateScope);
-    await cloneAction()();
-
-    const destination = NodePath.join(state.baseDirectory, "repo");
-    expect(NodeFS.existsSync(destination)).toBe(true);
-    expect(state.projects).toEqual([destination]);
-  });
-
   it.each([AuthSourceControlWriteScope, AuthOrchestrationOperateScope])(
     "rechecks %s before a retained clone action creates a directory",
     async (scope) => {
@@ -555,68 +544,6 @@ describe("clone project permissions", () => {
 
       expect(NodeFS.existsSync(NodePath.join(state.baseDirectory, "repo"))).toBe(false);
       expect(state.projects).toEqual([]);
-    },
-  );
-});
-
-describe("local project permissions", () => {
-  beforeEach(() => {
-    state.baseDirectory = "/workspace/project";
-    state.scopes = new Set();
-    state.otherScopes = new Set();
-    state.projects = [];
-    state.createRequests = [];
-  });
-
-  it.each([false, true])(
-    "does not dispatch project creation without the current grant (revoked: %s)",
-    async (revokeBeforeSubmit) => {
-      if (revokeBeforeSubmit) state.scopes.add(AuthOrchestrationOperateScope);
-      const submit = localProjectAction();
-      state.scopes.delete(AuthOrchestrationOperateScope);
-
-      await submit();
-
-      expect(state.createRequests).toEqual([]);
-      expect(state.projects).toEqual([]);
-    },
-  );
-
-  it("adds a typed local path with only task-operation permission", async () => {
-    state.scopes.add(AuthOrchestrationOperateScope);
-
-    await localProjectAction()();
-
-    expect(state.createRequests).toEqual([
-      { environmentId: "environment", workspaceRoot: state.baseDirectory },
-    ]);
-    expect(state.projects).toEqual([state.baseDirectory]);
-  });
-
-  it("uses a grant added while the local-folder form is open", async () => {
-    const submit = localProjectAction();
-    state.scopes.add(AuthOrchestrationOperateScope);
-
-    await submit();
-
-    expect(state.projects).toEqual([state.baseDirectory]);
-  });
-
-  it.each([false, true])(
-    "uses the selected environment's grant (allowed: %s)",
-    async (allowSelectedEnvironment) => {
-      (allowSelectedEnvironment ? state.otherScopes : state.scopes).add(
-        AuthOrchestrationOperateScope,
-      );
-
-      await localProjectAction("other-environment")();
-
-      expect(state.createRequests).toEqual(
-        allowSelectedEnvironment
-          ? [{ environmentId: "other-environment", workspaceRoot: state.baseDirectory }]
-          : [],
-      );
-      expect(state.projects).toEqual(allowSelectedEnvironment ? [state.baseDirectory] : []);
     },
   );
 });

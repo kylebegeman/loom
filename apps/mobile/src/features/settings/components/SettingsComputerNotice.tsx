@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../../components/ui/AppText";
 import { Button } from "../../../components/ui/Button";
+import { openSettings } from "../settings-navigation";
 import { useSettingsEnvironmentFilter } from "../settings-environment-filter";
 
 export function SettingsComputerNotice() {
@@ -36,10 +37,7 @@ export function SettingsComputerNotice() {
             selectAll();
             selectProject(null);
           } else {
-            navigation.navigate("SettingsSheet", {
-              screen: "SettingsContent",
-              params: { screen: "SettingsEnvironments" },
-            });
+            openSettings(navigation, "SettingsEnvironments");
           }
         }}
       />

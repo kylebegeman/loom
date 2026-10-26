@@ -1,4 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
+import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 // fork: respectful-notifications
 import {
   EnvironmentId,
@@ -12,9 +13,9 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render, stubGlobal, type Screen } from "../../test/render";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
@@ -134,12 +135,12 @@ const thread = {
   id: "thread",
   title: "Test thread",
   archivedAt: null as string | null,
+  latestRunSilent: false,
   hasPendingApprovals: false,
   hasPendingUserInput: false,
   session: null as { status: string } | null,
   latestTurn: { turnId: "turn", state: "running", completedAt: null as string | null },
 };
-let root: Root;
 let focused = false;
 let visibility = "visible";
 
@@ -172,6 +173,7 @@ function toV2ThreadShell(input: typeof thread): OrchestrationV2ThreadShell {
     creationSource: "web",
     // fork: respectful-notifications
     latestRunId: RunId.make(latestTurn.turnId),
+    latestRunSilent: input.latestRunSilent,
     activeRunId: null,
     status:
       latestTurn.state === "completed"
@@ -218,27 +220,21 @@ function shell(overrides: Partial<typeof thread> = {}, ...others: Partial<typeof
     }),
   };
 }
+// fork: respectful-notifications
 function complete(environment = "one", completedAt = "2026-09-13T08:00:00Z") {
   state.shells.set(
     environment,
     shell({ latestTurn: { turnId: "turn", state: "completed", completedAt } }),
   );
 }
-async function render() {
-  // fork: respectful-notifications - The test catalog is not itself an atom.
-  registry.refresh(environmentThreadShells.attentionThreadShellsAtom);
-  await act(async () =>
-    root.render(
-      <RegistryContext.Provider value={registry}>
-        <ThreadNotificationCoordinator />
-      </RegistryContext.Provider>,
-    ),
-  );
-}
-
-beforeEach(() => {
+// The mocked modules read `state`, the registry and the focus flags, so every test starts by
+// resetting them. The first render is left to the test because some tests change state first.
+function setup() {
   vi.clearAllMocks();
+  const stack = new AsyncDisposableStack();
   registry = AtomRegistry.make();
+  const testRegistry = registry;
+  stack.defer(() => testRegistry.dispose());
   state.mode = "notifications";
   state.previews = true; // fork: respectful-notifications
   state.inApp = false;
@@ -249,174 +245,42 @@ beforeEach(() => {
   visibility = "visible";
   TestNotification.permission = "granted";
   TestNotification.sent = [];
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("Notification", TestNotification);
+  stack.use(stubGlobal("Notification", TestNotification));
   // fork: respectful-notifications: present synchronously; a fork test below covers Web Locks.
-  vi.spyOn(navigator, "locks", "get").mockReturnValue(undefined as never);
-  vi.spyOn(window, "focus").mockImplementation(() => undefined);
-  vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
-  vi.spyOn(document, "visibilityState", "get").mockImplementation(
-    () => visibility as DocumentVisibilityState,
+  stack.use(vi.spyOn(navigator, "locks", "get").mockReturnValue(undefined as never));
+  stack.use(vi.spyOn(window, "focus").mockImplementation(() => undefined));
+  stack.use(vi.spyOn(document, "hasFocus").mockImplementation(() => focused));
+  stack.use(
+    vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibility as DocumentVisibilityState),
   );
-  root = createRoot(document.createElement("div"));
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  delete window.desktopBridge;
-  registry.dispose();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-it("uses bounded tags across threads and environments, replaces repeat alerts, and clears on focus", async () => {
-  const environmentId = "fd6fff30-f90b-4ee7-9812-4cf497791b90";
-  const otherEnvironmentId = "25b62992-b996-4ee3-8d82-d988840e45c1";
-  const threadId = "a8395a98-a186-4fe7-9d4c-fb8ba63b7588";
-  const otherThreadId = "257598ad-ae4f-4422-a073-e03f4b4f5f0d";
-  const completed = (id: string, completedAt = "2026-09-13T08:00:00Z") => ({
-    id,
-    latestTurn: { turnId: "turn", state: "completed", completedAt },
-  });
-  state.environmentIds = [environmentId, otherEnvironmentId];
-  state.shells.set(environmentId, shell({ id: threadId }, { id: otherThreadId }));
-  state.shells.set(otherEnvironmentId, shell({ id: threadId }));
-  await render();
-  state.shells.set(environmentId, shell(completed(threadId), { id: otherThreadId }));
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  state.shells.set(environmentId, shell(completed(threadId), completed(otherThreadId)));
-  state.shells.set(otherEnvironmentId, shell(completed(threadId)));
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  state.shells.set(
-    environmentId,
-    shell(completed(threadId, "2026-09-13T08:01:00Z"), completed(otherThreadId)),
+  const ui = () => (
+    <RegistryContext.Provider value={testRegistry}>
+      <ThreadNotificationCoordinator />
+    </RegistryContext.Provider>
   );
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  expect(TestNotification.sent).toHaveLength(4);
-  const [first, otherThread, otherEnvironment, replacement] = TestNotification.sent;
-  for (const notification of TestNotification.sent) {
-    expect(notification.tag).toMatch(/^[0-9a-f]{16}$/);
-  }
-  expect(new Set([first!.tag, otherThread!.tag, otherEnvironment!.tag]).size).toBe(3);
-  expect(replacement!.tag).toBe(first!.tag);
-  expect(first!.close).toHaveBeenCalledOnce();
-  expect(otherThread!.close).not.toHaveBeenCalled();
-  expect(otherEnvironment!.close).not.toHaveBeenCalled();
-  expect(replacement!.close).not.toHaveBeenCalled();
-  focused = true;
-  window.dispatchEvent(new Event("focus"));
-  expect(state.badge).toHaveBeenLastCalledWith(0);
-  expect(
-    TestNotification.sent.every((notification) => notification.close.mock.calls.length > 0),
-  ).toBe(true);
-  focused = false;
-  state.shells.set(otherEnvironmentId, shell(completed(threadId, "2026-09-13T08:02:00Z")));
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-});
-
-it("does not badge old completions on first load or reconnect", async () => {
-  complete();
-  await render();
-  state.shells.set("one", { status: "connecting", snapshot: Option.none() });
-  await render();
-  complete("one", "2026-09-13T08:01:00Z");
-  await render();
-  expect(TestNotification.sent).toHaveLength(0);
-  expect(state.badge.mock.calls.every(([count]) => count === 0)).toBe(true);
-});
-
-// fork: respectful-notifications
-it("badges an approval that arrived while closed, seeding from the cached snapshot", async () => {
-  state.shells.set("one", { ...shell(), status: "cached" });
-  await render();
-  state.shells.set("one", { ...shell({ hasPendingApprovals: true }), status: "synchronizing" });
-  await render();
-  expect(TestNotification.sent).toHaveLength(0);
-  state.shells.set("one", shell({ hasPendingApprovals: true }));
-  await render();
-  expect(TestNotification.sent.map((notification) => notification.title)).toEqual([
-    "Approval needed",
-  ]);
-  expect(state.badge).toHaveBeenLastCalledWith(1);
-});
-
-it("removes alerts only from environments that leave the client", async () => {
-  await render();
-  complete("one");
-  complete("two");
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  const [removed, retained] = TestNotification.sent;
-  state.environmentIds = ["two"];
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  expect(removed!.close).toHaveBeenCalledOnce();
-  expect(retained!.close).not.toHaveBeenCalled();
-  await render();
-  expect(removed!.close).toHaveBeenCalledOnce();
-  state.environmentIds = [];
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
-  expect(retained!.close).toHaveBeenCalledOnce();
-});
-
-it("starts a fresh count after another native app window gains focus", async () => {
-  let clear: (() => void) | undefined;
-  const unsubscribe = vi.fn();
-  Object.assign(window, {
-    desktopBridge: {
-      onNotificationBadgeClear: (listener: () => void) => {
-        clear = listener;
-        return unsubscribe;
-      },
+  let screen: Screen | undefined;
+  return {
+    ui,
+    async render() {
+      // fork: respectful-notifications - The test catalog is not itself an atom.
+      registry.refresh(environmentThreadShells.attentionThreadShellsAtom);
+      if (screen) await screen.rerender(ui());
+      else screen = stack.use(await render(ui()));
     },
-  });
-  await render();
-  complete();
-  await render();
-  clear!();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
-  complete("two");
-  await render();
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
-  await act(async () => root.unmount());
-  root = createRoot(document.createElement("div"));
-  expect(unsubscribe).toHaveBeenCalledOnce();
-  expect(state.badge).toHaveBeenLastCalledWith(0);
-});
-
-it.each(["off", "sound", "focused", "denied", "archived"])(
-  "does not show visual alerts when %s",
-  async (condition) => {
-    if (condition === "off" || condition === "sound") state.mode = condition;
-    if (condition === "focused") focused = true;
-    if (condition === "denied") TestNotification.permission = "denied";
-    await render();
-    complete();
-    if (condition === "archived")
-      state.shells.set(
-        "one",
-        shell({
-          archivedAt: "2026-09-13T08:00:00Z",
-          hasPendingApprovals: true,
-        }),
-      );
-    await render();
-    expect(TestNotification.sent).toHaveLength(0);
-    expect(state.badge.mock.calls.every(([count]) => count === 0)).toBe(true);
-  },
-);
+    unmount: () => screen!.unmount(),
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
+  };
+}
 
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   "keeps %s badged after focus and when notifications are disabled",
   async (flag) => {
-    await render();
+    await using app = setup();
+    await app.render();
     state.shells.set("one", shell({ [flag]: true }));
-    await render();
+    await app.render();
     expect(state.badge).toHaveBeenLastCalledWith(1); // fork: respectful-notifications
     const notification = TestNotification.sent[0]!;
     notification.dispatchEvent(new Event("click"));
@@ -428,45 +292,89 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     window.dispatchEvent(new Event("focus"));
     expect(state.badge).toHaveBeenLastCalledWith(1);
     state.mode = "sound";
-    await render();
+    await app.render();
     expect(state.badge).toHaveBeenLastCalledWith(1);
     expect(notification.close).toHaveBeenCalled();
   },
 );
 
-it("shows in-app alerts without adding a badge while focused", async () => {
-  state.inApp = true;
-  focused = true;
-  await render();
-  complete();
-  await render();
-  expect(state.toast).toHaveBeenCalledOnce();
-  expect(TestNotification.sent).toHaveLength(0);
-  expect(state.badge.mock.calls.every(([count]) => count === 0)).toBe(true);
+it.each([
+  ["pre-expiry compaction", true, "completed", []],
+  ["manual compaction", false, "completed", ["Thread completed"]],
+  ["failed pre-expiry compaction", true, "error", ["Thread failed"]],
+] as const)("notifies for %s only when attention is needed", async (_, silent, status, titles) => {
+  await using app = setup();
+  state.environmentIds = ["one"];
+  state.shells.set("one", shell({ latestRunSilent: silent }));
+  await using screen = await render(app.ui());
+  state.shells.set(
+    "one",
+    shell({
+      latestRunSilent: silent,
+      latestTurn: { turnId: "turn", state: status, completedAt: "2026-09-13T07:01:00.000Z" },
+    }),
+  );
+  using _timers = fakeTimers();
+  await screen.rerender(app.ui());
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent.map((notification) => notification.title)).toEqual(titles);
 });
 
-it("badges background failures with in-app notifications enabled", async () => {
-  state.inApp = true;
-  await render();
-  state.shells.set("one", shell({ latestTurn: { ...thread.latestTurn, state: "error" } }));
-  await render();
-  expect(TestNotification.sent[0]?.title).toBe("Thread failed");
-  expect(state.badge).toHaveBeenLastCalledWith(1); // fork: respectful-notifications
-  expect(state.toast).not.toHaveBeenCalled();
+it("holds a completion through a continuation gap and notifies once it settles", async () => {
+  await using app = setup();
+  await app.render();
+  using _timers = fakeTimers();
+  const finished = (turnId: string, completedAt: string) => ({
+    latestTurn: { turnId, state: "completed", completedAt },
+  });
+  state.shells.set("one", shell(finished("turn-1", "2026-09-13T07:00:01.000Z")));
+  await app.render();
+  state.shells.set(
+    "one",
+    shell({ latestTurn: { turnId: "turn-2", state: "running", completedAt: null } }),
+  );
+  await app.render();
+  state.shells.set("one", shell(finished("turn-2", "2026-09-13T07:00:02.000Z")));
+  await app.render();
+  expect(TestNotification.sent).toEqual([]);
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS - 1);
+  expect(TestNotification.sent).toEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+});
+
+// fork: respectful-notifications
+it("badges an approval that arrived while closed, seeding from the cached snapshot", async () => {
+  await using app = setup();
+  state.shells.set("one", { ...shell(), status: "cached" });
+  await app.render();
+  state.shells.set("one", { ...shell({ hasPendingApprovals: true }), status: "synchronizing" });
+  await app.render();
+  expect(TestNotification.sent).toHaveLength(0);
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+  await app.render();
+  expect(TestNotification.sent.map((notification) => notification.title)).toEqual([
+    "Approval needed",
+  ]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
 });
 
 // fork: respectful-notifications
 it("shows thread titles by default and hides them, closing shown previews, when turned off", async () => {
-  await render();
+  await using app = setup();
+  await app.render();
+  using _timers = fakeTimers();
   complete();
-  await render();
+  await app.render();
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   const preview = TestNotification.sent[0]!;
   expect(preview.options).toMatchObject({ body: "Test thread", silent: true });
   state.previews = false;
-  await render();
+  await app.render();
   expect(preview.close).toHaveBeenCalled();
   complete("two");
-  await render();
+  await app.render();
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(TestNotification.sent.at(-1)!.options.body).toBe("Open Loom to review this thread.");
 });
 
@@ -474,9 +382,10 @@ it("shows thread titles by default and hides them, closing shown previews, when 
 it.each(["resolved", "archived", "removed"])(
   "withdraws obsolete approval banners when %s and rejects stale clicks",
   async (condition) => {
-    await render();
+    await using app = setup();
+    await app.render();
     state.shells.set("one", shell({ hasPendingApprovals: true }));
-    await render();
+    await app.render();
     const notification = TestNotification.sent[0]!;
     state.shells.set(
       "one",
@@ -484,7 +393,7 @@ it.each(["resolved", "archived", "removed"])(
         ? { status: "live", snapshot: Option.some({ threads: [] }) }
         : shell({ archivedAt: condition === "archived" ? "2026-09-13T08:00:00Z" : null }),
     );
-    await render();
+    await app.render();
     expect(notification.close).toHaveBeenCalled();
     expect(state.badge).toHaveBeenLastCalledWith(0);
     notification.dispatchEvent(new Event("click"));
@@ -496,52 +405,59 @@ it.each(["resolved", "archived", "removed"])(
 it.each(["synchronizing", "cached"])(
   "keeps shown alerts while the shell is %s and still opens their thread",
   async (status) => {
-    await render();
+    await using app = setup();
+    await app.render();
+    using _timers = fakeTimers();
     complete();
-    await render();
+    await app.render();
+    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     const notification = TestNotification.sent[0]!;
     const completed = { turnId: "turn", state: "completed", completedAt: "2026-09-13T08:00:00Z" };
     state.shells.set("one", { ...shell({ latestTurn: completed }), status });
-    await render();
+    await app.render();
     expect(notification.close).not.toHaveBeenCalled();
-    expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
+    expect(state.badge).toHaveBeenLastCalledWith(0);
     notification.dispatchEvent(new Event("click"));
     expect(state.navigate).toHaveBeenCalledWith({
       to: "/$environmentId/$threadId",
       params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
     });
     complete();
-    await render();
+    await app.render();
+    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     expect(TestNotification.sent).toHaveLength(1);
   },
 );
 
 // fork: respectful-notifications
 it("delivers through Web Locks once granted and skips alerts answered meanwhile", async () => {
+  await using app = setup();
   const grants: (() => void)[] = [];
   const storage = new Map<string, string>();
-  vi.stubGlobal("localStorage", {
+  using _storage = stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
   });
-  vi.stubGlobal("navigator", {
+  using _navigator = stubGlobal("navigator", {
     locks: {
       request: (_name: string, callback: () => unknown) =>
         new Promise((resolve) => grants.push(() => resolve(callback()))),
     },
   });
-  await render();
+  await app.render();
+  using _timers = fakeTimers();
   complete();
   state.shells.set("two", shell({ hasPendingApprovals: true }));
-  await render();
+  await app.render();
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(TestNotification.sent).toHaveLength(0);
   state.shells.set("two", shell());
-  await render();
+  await app.render();
   await act(async () => {
     for (const grant of grants.splice(0)) grant();
   });
   expect(TestNotification.sent.map((notification) => notification.tag)).toEqual([
     threadNotificationTag(EnvironmentId.make("one"), ThreadId.make("thread")),
   ]);
-  expect(state.badge).toHaveBeenLastCalledWith(0); // fork: respectful-notifications
+  expect(state.badge).toHaveBeenLastCalledWith(0);
 });

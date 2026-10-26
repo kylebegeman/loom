@@ -1,7 +1,4 @@
-/**
- * Electron allows one debugger client per webContents, so the relay shares the
- * attach the preview manager already holds.
- */
+// Electron allows one debugger per webContents; share the manager's attachment.
 
 export interface CdpRelayTarget {
   readonly send: (
@@ -14,10 +11,7 @@ export interface CdpRelayTarget {
   readonly url: () => string;
   readonly title: () => string;
   readonly userAgent: () => string;
-  /**
-   * The desktop app and the server it launched share a disk, so the server's
-   * Playwright reads the file where it asked for it.
-   */
+  /** The desktop and its server share a disk; download paths need no translation. */
   readonly setDownloadDirectory: (directory: string | null) => void;
 }
 
@@ -147,10 +141,7 @@ export function createCdpRelayConnection(
 
   const pageCommand = async (command: CdpCommand): Promise<unknown> => {
     const child = sessions.get(command.sessionId!) === "page" ? undefined : command.sessionId;
-    // The page itself is already running, but its child frames are not:
-    // Playwright auto-attaches with waitForDebuggerOnStart, so Chromium pauses
-    // every new cross-site iframe and worker until this reaches it. Swallowing
-    // it left sign-in checks and captchas, which run in such frames, frozen.
+    // Child frames/workers pause on auto-attach until resumed; only the main page can skip this command.
     if (command.method === "Runtime.runIfWaitingForDebugger" && child === undefined) {
       return Promise.resolve({});
     }
@@ -175,8 +166,7 @@ export function createCdpRelayConnection(
           ? browserCommand(command)
           : pageCommand(command);
       const route = command.sessionId === undefined ? {} : { sessionId: command.sessionId };
-      // Replies leave as commands finish, as Chromium's do, so a slow command
-      // such as a screenshot never holds up the ones behind it.
+      // Reply as commands finish so slow commands cannot block later replies.
       void result.then(
         (value) => {
           const announce =

@@ -67,7 +67,7 @@ vi.mock(import("../../components/ProjectFavicon"), async (original) => ({
   ...(await original()),
   ProjectFavicon: () => null,
 }));
-import { ArchivedThreadsPanel } from "../../components/settings/SettingsPanels";
+import { ArchivedThreadsPanel } from "../../components/settings/ArchivedThreadsPanel";
 
 let root: Root;
 let container: HTMLDivElement;
