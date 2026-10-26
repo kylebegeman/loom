@@ -3,6 +3,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
+  libraryAddResource,
   libraryProjectTimeline,
   libraryResourceFromInput,
   libraryResourceLocation,
@@ -32,7 +33,6 @@ describe("libraryResourceFromInput", () => {
       kind: "repository",
       title: "aspectavy-web",
       remoteUrl: "https://github.com/kyle/aspectavy-web",
-      relativePath: "aspectavy-web",
     });
     expect(libraryResourceFromInput("github.com/kyle/ios")).toMatchObject({
       kind: "repository",
@@ -62,6 +62,17 @@ describe("libraryResourceFromInput", () => {
       kind: "link",
       title: "figma.com",
     });
+  });
+
+  it("puts a project's only repository at its root and gives two repositories their own folders", () => {
+    const corbelo = libraryResourceFromInput("https://github.com/kyle/corbelo")!;
+    expect(corbelo.relativePath).toBe(".");
+    const first = { id: "corbelo", ...corbelo };
+    const web = libraryResourceFromInput("github.com/kyle/web", [first])!;
+    expect(web.relativePath).toBe("web");
+    expect(
+      libraryAddResource([first], { id: "web", ...web }).map((entry) => entry.relativePath),
+    ).toEqual(["corbelo", "web"]);
   });
 
   it("gives each repository its own folder", () => {

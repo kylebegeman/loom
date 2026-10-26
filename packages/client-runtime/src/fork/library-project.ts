@@ -29,6 +29,10 @@ function folderFor(name: string, existing: readonly LibraryResource[]) {
   return candidate;
 }
 
+// A project of one repository is that repository, so its copy holds no nested folder.
+const ROOT_FOLDER = ".";
+const isRepository = (resource: Pick<LibraryResource, "kind">) => resource.kind !== "link";
+
 function repository(
   name: string,
   remoteUrl: string,
@@ -39,9 +43,34 @@ function repository(
     title: name,
     url: null,
     remoteUrl,
-    relativePath: folderFor(name, existing),
+    relativePath: existing.some(isRepository) ? folderFor(name, existing) : ROOT_FOLDER,
     defaultBranch: null,
   };
+}
+
+/** Adds a resource; a repository at the project root moves into its own folder beside it. */
+export function libraryAddResource(
+  existing: readonly LibraryResource[],
+  resource: LibraryResource,
+): LibraryResource[] {
+  if (!isRepository(resource)) return [...existing, resource];
+  const moved = existing.map((entry) =>
+    isRepository(entry) && entry.relativePath === ROOT_FOLDER
+      ? {
+          ...entry,
+          relativePath: folderFor(
+            entry.title,
+            existing.filter((other) => other !== entry),
+          ),
+        }
+      : entry,
+  );
+  return [
+    ...moved,
+    resource.relativePath === ROOT_FOLDER
+      ? { ...resource, relativePath: folderFor(resource.title, moved) }
+      : resource,
+  ];
 }
 
 /**

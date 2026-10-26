@@ -76,6 +76,7 @@ export * from "./library-launch-choice.ts";
 export * from "./library-launch-defaults.ts";
 export * from "./library-empty-conversation.ts";
 export * from "./library-launch-inputs.ts";
+export * from "./library-placement.ts";
 export * from "./directory.ts";
 export * from "./scheduled-task-delivery-issue.ts";
 export * from "./directory-cache.ts";

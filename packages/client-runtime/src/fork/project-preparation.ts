@@ -21,6 +21,8 @@ export interface ProjectPreparationHost {
   readonly connected: boolean;
   readonly canClone: boolean;
   readonly newProjectsRoot: string | null | undefined;
+  /** The computer picks the folder, or reuses a checkout it has, when none is sent. */
+  readonly serverChosenFolders?: boolean | undefined;
 }
 export type ProjectPreparationSource =
   | {
@@ -181,7 +183,7 @@ export type ProjectPreparationPlan =
   | {
       readonly kind: "create";
       readonly environmentId: EnvironmentId;
-      readonly input: ProjectCloneStartInput & { readonly destinationPath: string };
+      readonly input: ProjectCloneStartInput;
     };
 
 /** One explicit computer choice and one stable project ID, passed to the existing clone command. */
@@ -230,11 +232,13 @@ export function buildProjectPreparationPlan(input: {
     };
   const path =
     input.destinationPath ??
-    getProjectPreparationDestination({
-      newProjectsRoot: input.host.newProjectsRoot,
-      remoteUrl: input.source.remoteUrl,
-    });
-  if (!path || !absoluteFolder(path))
+    (input.host.serverChosenFolders
+      ? null
+      : getProjectPreparationDestination({
+          newProjectsRoot: input.host.newProjectsRoot,
+          remoteUrl: input.source.remoteUrl,
+        }));
+  if (path === null ? !input.host.serverChosenFolders : !absoluteFolder(path))
     return {
       kind: "blocked",
       reason: "Choose an absolute destination folder on the selected computer.",
@@ -245,7 +249,7 @@ export function buildProjectPreparationPlan(input: {
       reason:
         "This preparation already created a project record. Inspect its folder and progress before retrying.",
     };
-  if (projects.some((project) => pathKey(project.workspaceRoot) === pathKey(path)))
+  if (path !== null && projects.some((project) => pathKey(project.workspaceRoot) === pathKey(path)))
     return {
       kind: "blocked",
       reason: "Another project already uses this destination. Choose a different folder.",
@@ -253,7 +257,8 @@ export function buildProjectPreparationPlan(input: {
   if (
     input.clones?.some(
       (clone) =>
-        clone.projectId === input.projectId || pathKey(clone.destinationPath) === pathKey(path),
+        clone.projectId === input.projectId ||
+        (path !== null && pathKey(clone.destinationPath) === pathKey(path)),
     )
   )
     return {
@@ -278,7 +283,7 @@ export function buildProjectPreparationPlan(input: {
       title: input.title.trim(),
       createdAt: input.createdAt,
       remoteUrl: input.source.remoteUrl,
-      destinationPath: path,
+      ...(path === null ? {} : { destinationPath: path }),
     },
   };
 }
