@@ -16,6 +16,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import * as BriefSuggestions from "./LibraryBriefSuggestions.ts";
+import * as PlacementPreview from "./LibraryPlacementPreview.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
@@ -593,17 +594,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
           ),
       ),
       loom_library_copy_placement: McpToolAccess.reads((input) =>
-        onHost(
-          Effect.gen(function* () {
-            const project = yield* (yield* Catalog.LibraryService).project({
-              projectId: input.projectId,
-            });
-            return yield* (yield* Workspace.LibraryWorkspace).placement({
-              project,
-              resourceIds: input.resourceIds,
-            });
-          }),
-        ),
+        onHost(Effect.flatMap(PlacementPreview.make, (preview) => preview(input))),
       ),
       loom_library_copy_retention: McpToolAccess.writesEnvironment((input) =>
         onHost(
