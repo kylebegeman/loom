@@ -239,6 +239,7 @@ import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/Rpc
 import { ForkRpcGroup } from "@t3tools/contracts/fork"; // fork: ext-core
 import { makeForkRpcLayer } from "./fork/rpc.ts"; // fork: ext-core
 import { makeDatabaseCompactionRpcLayer } from "./fork/database-compaction/rpc.ts"; // fork: restart-compaction
+import * as NamedProjects from "./fork/file-placement/NamedProjects.ts"; // fork: file-placement
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -791,6 +792,7 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
         })),
       ),
     ),
+  Effect.flatMap(NamedProjects.markNamedProjectsIn), // fork: file-placement
 );
 
 export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subscribeThread")(
@@ -1065,7 +1067,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
           projectId: stored.aggregateId,
         };
       }
-      const project = yield* projectService.getShell(stored.aggregateId);
+      const project = yield* projectService
+        .getShell(stored.aggregateId)
+        .pipe(Effect.flatMap(NamedProjects.markNamedProject)); // fork: file-placement
       return Option.match(project, {
         onNone: () => ({
           kind: "project.removed" as const,

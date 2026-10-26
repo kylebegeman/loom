@@ -208,6 +208,7 @@ export function useNewThreadHandler() {
         ),
         workspaceRoot: project?.workspaceRoot ?? null,
         newProjectsRoot: environmentServerConfigs.get(projectRef.environmentId)?.newProjectsRoot,
+        ...(project?.namedProject === undefined ? {} : { namedProject: project.namedProject }), // fork: file-placement
         projectHasThreads:
           readThreadShells().some(
             (thread) =>

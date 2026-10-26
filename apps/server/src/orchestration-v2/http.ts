@@ -38,6 +38,7 @@ import {
 } from "./ShellStream.ts";
 import { boundedSnapshotResponseFields } from "./ThreadStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
+import * as NamedProjects from "../fork/file-placement/NamedProjects.ts"; // fork: file-placement
 
 const isThreadTranscriptTooLargeError = Schema.is(
   ThreadManagementService.ThreadTranscriptTooLargeError,
@@ -76,6 +77,7 @@ export const layer = HttpApiBuilder.group(
             ),
           { concurrency: 16 },
         ),
+      Effect.flatMap(NamedProjects.markNamedProjects), // fork: file-placement
     );
 
     const loadShellSnapshot = Effect.fn("http.orchestration.loadShellSnapshot")(

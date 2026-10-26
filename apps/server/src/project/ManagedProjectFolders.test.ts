@@ -13,6 +13,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "../config.ts";
+import * as NamedProjects from "../fork/file-placement/NamedProjects.ts";
 import * as GitManager from "../git/GitManager.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -622,4 +623,76 @@ it.effect(
         { managedProjectsRoot: root },
       );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("marks projects Loom made from a name, across a restart, until the folder changes", () =>
+  withScratch(({ baseDir }) =>
+    withGitEnv(
+      TEST_IDENTITY,
+      Effect.gen(function* () {
+        const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+        const projects = yield* ProjectService.ProjectService;
+        const path = yield* Path.Path;
+        const named = yield* folders.createNamedProject({ name: "Pinball Stats" });
+        const own = {
+          id: ProjectId.make("project:own-checkout"),
+          workspaceRoot: path.resolve(baseDir, "projects", "own-checkout"),
+        };
+        yield* projects.create({
+          commandId: CommandId.make("command:own-checkout"),
+          projectId: own.id,
+          title: "Own checkout",
+          workspaceRoot: own.workspaceRoot,
+          createWorkspaceRootIfMissing: true,
+        });
+        const namedShell = { id: named.projectId, workspaceRoot: named.workspaceRoot };
+        const moved = { ...namedShell, workspaceRoot: path.resolve(baseDir, "elsewhere") };
+
+        const marks = (shells: ReadonlyArray<typeof namedShell>) =>
+          NamedProjects.markNamedProjects(shells).pipe(
+            Effect.map((marked) => marked.map((shell) => shell.namedProject)),
+          );
+        assert.deepEqual(yield* marks([namedShell, own, moved]), [true, false, false]);
+
+        const restarted = NamedProjects.layer.pipe(
+          Layer.provide(ServerConfig.layerTest(baseDir, baseDir)),
+        );
+        assert.deepEqual(yield* marks([namedShell, own, moved]).pipe(Effect.provide(restarted)), [
+          true,
+          false,
+          false,
+        ]);
+      }),
+    ),
+  ),
+);
+
+it.effect("records a named project before it exists, so its first shell update is marked", () =>
+  Effect.gen(function* () {
+    const seen = yield* Deferred.make<boolean | undefined>();
+    yield* withScratch(
+      () =>
+        withGitEnv(
+          TEST_IDENTITY,
+          Effect.gen(function* () {
+            const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+            yield* folders.createNamedProject({ name: "First Shell" });
+            assert.isTrue(yield* Deferred.await(seen));
+          }),
+        ),
+      {
+        projects: (real) =>
+          ProjectService.ProjectService.of({
+            ...real,
+            create: (input) =>
+              NamedProjects.markNamedProjects([
+                { id: input.projectId, workspaceRoot: input.workspaceRoot },
+              ]).pipe(
+                Effect.flatMap(([shell]) => Deferred.succeed(seen, shell?.namedProject)),
+                Effect.andThen(real.create(input)),
+              ),
+          }),
+      },
+    );
+  }),
 );

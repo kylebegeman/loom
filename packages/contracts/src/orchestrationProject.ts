@@ -16,6 +16,8 @@ export const OrchestrationProjectShell = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
+  // fork: file-placement -- Loom made this folder from a name. Older servers omit it.
+  namedProject: Schema.optional(Schema.Boolean), // fork: file-placement
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
