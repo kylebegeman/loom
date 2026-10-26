@@ -15,7 +15,12 @@ import {
   libraryLaunchWarning,
   libraryLaunchWorkspace,
   markLibraryConversationStarted,
+  isRepositoryResource,
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  LIBRARY_RESTORE_FOLDER_LINE,
+  libraryFolderChoice,
   libraryPlacementLine,
+  libraryPlacementManaged,
   libraryPlacementReuses,
   libraryPlacementStrategy,
   serverChoosesFolders,
@@ -49,6 +54,7 @@ import {
   LibraryPrepareCopyRequest,
   LibraryReopenCopyRequest,
   LibraryWorkingCopy,
+  type LibraryFolderInspection,
   LibraryError,
   type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
@@ -521,8 +527,10 @@ export function useLibraryConversationSetup({
   // resolves and claims one itself. A failed preview still starts and lets the computer choose.
   const serverPlaces =
     serverChoosesFolders(host?.serverConfig) && !locked && typedPath === null && copy === null;
+  // A restore needs a folder of its own, so the computer picks one rather than the start's preview.
+  const serverRestores = serverPlaces && plannedSource !== null;
   const placement = useEnvironmentQuery(
-    hostId && host?.connection.phase === "connected" && serverPlaces
+    hostId && host?.connection.phase === "connected" && serverPlaces && !serverRestores
       ? projectLibrary.placement.resultAtom({
           environmentId: hostId,
           input: {
@@ -551,12 +559,15 @@ export function useLibraryConversationSetup({
     copyId: attempt?.binding.workingCopyId ?? copyId,
     allowReopen: supportsReopen,
   })?.rootPath;
-  const suggestedPath =
-    serverPlaces && placement.data ? (retainedRoot ?? placement.data.rootPath) : legacyPath;
+  const suggestedPath = serverRestores
+    ? (retainedRoot ?? "")
+    : serverPlaces && placement.data
+      ? (retainedRoot ?? placement.data.rootPath)
+      : legacyPath;
   // The one place a start picks its files folder; every launch path reads it from here.
   const rootPath =
     attempt?.files?.rootPath ??
-    restoring?.rootPath ??
+    (restoring ? (restoring.rootPath ?? restoring.copy?.rootPath ?? "") : undefined) ??
     preparation?.input.rootPath ??
     reopening?.rootPath ??
     (attempt ? copy?.rootPath : undefined) ??
@@ -625,6 +636,8 @@ export function useLibraryConversationSetup({
           !plannedSource &&
           (!sourceWorkingCopyId || sourceWorkingCopyId === retainedCopy.id))));
   const needsPortable = restoring !== null || (portableSource !== null && !needsReopen);
+  const restoreChoosesFolder =
+    needsPortable && rootPath.trim() === "" && (restoring !== null || serverRestores);
   const snapshotSource = restoring?.sourceCopy ?? portableSource;
   const sourceHost = authority.environments.find(
     (entry) => entry.environmentId === snapshotSource?.environmentId,
@@ -741,6 +754,18 @@ export function useLibraryConversationSetup({
     continuation === undefined &&
     (copy.ownership === "borrowed" || (copy.keepOnComputer !== false) === keepOnComputer);
 
+  const launchRepositories = launchProject.resources.filter(
+    (resource) =>
+      isRepositoryResource(resource) &&
+      (launchResourceIds.length === 0 || launchResourceIds.includes(resource.id)),
+  );
+  /** A folder holding these repositories is used as it is; an empty or missing one gets new files. */
+  const folderChoice = (inspection: LibraryFolderInspection) => {
+    const choice = libraryFolderChoice(inspection, launchRepositories);
+    if (choice === "occupied") throw new Error(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+    return choice;
+  };
+
   // `busy` is a render-time copy, so two calls before the next render, such as an automatic start
   // and an Enter on the same row, would both pass it and each create a conversation.
   const submitting = useRef(false);
@@ -804,7 +829,7 @@ export function useLibraryConversationSetup({
             ? {
                 environmentId: hostId,
                 project: launchProject,
-                rootPath: rootPath.trim(),
+                ...(restoreChoosesFolder ? {} : { rootPath: rootPath.trim() }),
                 resourceIds: launchResourceIds,
                 sourceCopy: portableSource,
                 requestId: randomUUID(),
@@ -836,11 +861,12 @@ export function useLibraryConversationSetup({
           throw new Error(
             "The selected saved files are unavailable. Reload the project and retry.",
           );
-        if (!restoring) {
+        if (!restoring && files.rootPath !== undefined) {
+          const restoreRoot = files.rootPath;
           const occupied = allCopies.some(
             (entry) =>
               entry.environmentId === hostId &&
-              libraryLaunchPathOverlaps(entry.rootPath, files.rootPath),
+              libraryLaunchPathOverlaps(entry.rootPath, restoreRoot),
           );
           if (occupied)
             throw new Error(
@@ -848,11 +874,11 @@ export function useLibraryConversationSetup({
             );
           const inspected = await inspect({
             environmentId: hostId,
-            input: { rootPath: files.rootPath },
+            input: { rootPath: restoreRoot },
           });
           if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
-          if (inspected.value.exists) {
-            setExistingFolder(files.rootPath);
+          if (folderChoice(inspected.value) === "reuse") {
+            setExistingFolder(restoreRoot);
             return;
           }
         }
@@ -983,7 +1009,7 @@ export function useLibraryConversationSetup({
             requestId: randomUUID(),
             project: launchProject,
             rootPath: filesRootPath,
-            strategy: inspected.value.exists ? ("reuse" as const) : ("clone" as const),
+            strategy: folderChoice(inspected.value),
             ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
           };
         }
@@ -1028,9 +1054,13 @@ export function useLibraryConversationSetup({
         saveAttempt(next);
         saveReopening(null);
         saveRestoring(null);
-        // Cloned files are the conversation's own; a reused folder stays where it was found.
+        // Cloned files are the conversation's own; a reused folder stays where it was found. Files
+        // the computer places follow its preview, which knows when they are a found checkout.
         const managed = next.files
-          ? next.files.strategy === "clone"
+          ? libraryPlacementManaged(
+              next.files.rootPath === undefined && !attempt ? placement.data : null,
+              next.files.strategy,
+            )
           : readyCopy?.ownership === "managed";
         const launched = await executeOperation({
           environmentId: next.environmentId,
@@ -1087,7 +1117,7 @@ export function useLibraryConversationSetup({
               input: { rootPath: rootPath.trim() },
             });
             if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
-            strategy = inspected.value.exists ? "reuse" : "clone";
+            strategy = folderChoice(inspected.value);
           }
           files = {
             environmentId: hostId,
@@ -1412,8 +1442,7 @@ export function useLibraryConversationSetup({
           canRestoreCopy &&
           canAuthorizeRecovery &&
           canRegisterCopy &&
-          canInspect &&
-          rootPath.trim().length > 0 &&
+          (restoreChoosesFolder || (canInspect && rootPath.trim().length > 0)) &&
           sourceCanSnapshot &&
           (snapshotSource?.state !== "ready" ||
             restoring?.sourceSnapshot !== undefined ||
@@ -1584,15 +1613,19 @@ export function useLibraryConversationSetup({
     rootPath,
     setRootPath,
     serverPlaces,
-    filesLine: serverPlaces
-      ? placement.data
-        ? libraryPlacementLine(placement.data)
-        : placement.error
-          ? "Loom will choose a folder on this computer"
-          : "Finding a folder on this computer..."
-      : null,
+    filesLine: restoreChoosesFolder
+      ? LIBRARY_RESTORE_FOLDER_LINE
+      : serverPlaces
+        ? placement.data
+          ? libraryPlacementLine(placement.data)
+          : placement.error
+            ? "Loom will choose a folder on this computer"
+            : "Finding a folder on this computer..."
+        : null,
     placementReuses:
-      serverPlaces && placement.data ? libraryPlacementReuses(placement.data) : false,
+      serverPlaces && !serverRestores && placement.data
+        ? libraryPlacementReuses(placement.data)
+        : false,
     browseStart:
       rootPath ||
       host?.serverConfig?.folders?.projects ||
@@ -1620,6 +1653,8 @@ export function useLibraryConversationSetup({
       setRootPath("");
     },
     existingFolder,
+    // Using a found folder instead of restoring leaves the source computer's changes behind.
+    existingFolderSkipsRestore: needsPortable,
     keepOnComputer,
     setKeepChoice,
     workspace,

@@ -21,7 +21,8 @@ export const PortableLaunchAttempt = Schema.NullOr(
   Schema.Struct({
     environmentId: EnvironmentId,
     project: LibraryProject,
-    rootPath: Schema.String,
+    /** Absent lets a computer with `serverChosenFolders` pick a new folder for the restore. */
+    rootPath: Schema.optional(Schema.String),
     resourceIds: Schema.Array(Schema.String),
     sourceCopy: LibraryWorkingCopy,
     requestId: Schema.String,
@@ -160,17 +161,19 @@ export async function restoreLibraryLaunchCopy(
       input: {
         requestId: attempt.requestId,
         project: attempt.project,
-        rootPath: attempt.rootPath,
+        ...(attempt.rootPath === undefined ? {} : { rootPath: attempt.rootPath }),
         grant,
         ...(attempt.resourceIds.length ? { resourceIds: attempt.resourceIds } : {}),
       },
     });
   }
+  // Without a requested folder, the one the computer chose must hold through registration.
+  const rootPath = attempt.rootPath ?? copy.rootPath;
   const matches = (candidate: LibraryWorkingCopy) =>
     candidate.id !== attempt.sourceCopy.id &&
     candidate.environmentId === attempt.environmentId &&
     candidate.projectId === attempt.project.id &&
-    candidate.rootPath === attempt.rootPath &&
+    candidate.rootPath === rootPath &&
     candidate.ownership === "managed" &&
     candidate.state === "ready" &&
     candidate.keepOnComputer !== false;

@@ -104,6 +104,16 @@ describe("portable launch receipts", () => {
     });
   });
 
+  it("leaves the folder to a computer that chooses one, then holds the folder it chose", async () => {
+    const c = commands();
+    const { rootPath: _rootPath, ...unplaced } = initial;
+    expect(await restoreLibraryLaunchCopy(unplaced, c)).toEqual(destination);
+    expect(c.restore.mock.calls[0]![0].input).not.toHaveProperty("rootPath");
+    c.register.mockResolvedValueOnce({ ...destination, rootPath: "/elsewhere" });
+    await expect(restoreLibraryLaunchCopy({ ...unplaced, copy: destination }, c)).rejects.toThrow(
+      "The restored files were not registered for this conversation.",
+    );
+  });
   it("obtains fresh access after a lost restore response and replays the same destination request", async () => {
     const c = commands();
     c.restore.mockRejectedValueOnce(new Error("Disconnected"));

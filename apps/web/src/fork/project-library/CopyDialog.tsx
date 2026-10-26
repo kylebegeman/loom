@@ -12,6 +12,9 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   supportsLoomFeature,
   isRepositoryResource,
+  LIBRARY_FOLDER_CHOICE_TITLES,
+  LIBRARY_FOLDER_OCCUPIED_MESSAGE,
+  libraryFolderChoice,
   libraryPlacementLine,
   libraryPlacementStrategy,
   serverChoosesFolders,
@@ -36,7 +39,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { readLocalApi } from "~/localApi";
 import { desktopLocalBackendId } from "~/connection/desktopLocal";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
-import { LibraryFolderPalette } from "./LibraryFolderPalette";
+import { LibraryFolderPalette, libraryFolderActions } from "./LibraryFolderPalette";
 import { LibraryPaletteDialog } from "./LibraryPalette";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -290,18 +293,27 @@ export function CopyDialog({
       .catch(() => null);
     if (picked) void chooseFolder(picked);
   };
-  // A folder that already holds files is used as it is; an empty or missing one gets new files.
-  const chooseFolder = async (path: string, repository?: boolean) => {
+  // A folder holding this project's files is used as it is; an empty or missing one gets new files.
+  const chooseFolder = async (path: string, empty?: boolean) => {
     setBrowsing(false);
-    if (strategy === "reuse" || repository !== undefined || !hostId) {
-      setChosen({ path, strategy: strategy === "reuse" || repository ? "reuse" : "clone" });
+    setError(null);
+    if (strategy === "reuse" || !hostId) {
+      setChosen({ path, strategy });
+      return;
+    }
+    if (!canInspect) {
+      setChosen({ path, strategy: empty === false ? "reuse" : "clone" });
       return;
     }
     const result = await inspect({ environmentId: hostId, input: { rootPath: path } });
-    setChosen({
-      path,
-      strategy: result._tag === "Success" && result.value.exists ? "reuse" : "clone",
-    });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setError(cause instanceof Error ? cause.message : "Could not check this folder.");
+      return;
+    }
+    const choice = libraryFolderChoice(result.value, selectedResources, empty);
+    if (choice === "occupied") setError(LIBRARY_FOLDER_OCCUPIED_MESSAGE);
+    else setChosen({ path, strategy: choice });
   };
   if (browsing && hostId && host)
     return (
@@ -313,23 +325,22 @@ export function CopyDialog({
           onBack={() => setBrowsing(false)}
           onClose={() => setBrowsing(false)}
           actions={(folder) =>
-            folder
-              ? [
-                  folder.repository || strategy === "reuse"
-                    ? {
-                        id: "use-folder",
-                        title: "Use files in this folder",
-                        description: folder.path,
-                        select: () => void chooseFolder(folder.path, true),
-                      }
-                    : {
-                        id: "download-folder",
-                        title: "Download into this folder",
-                        description: folder.path,
-                        select: () => void chooseFolder(folder.path, false),
-                      },
-                ]
-              : []
+            !folder
+              ? []
+              : strategy === "reuse"
+                ? [
+                    {
+                      id: "use-folder",
+                      title: LIBRARY_FOLDER_CHOICE_TITLES.reuse,
+                      description: folder.path,
+                      select: () => void chooseFolder(folder.path),
+                    },
+                  ]
+                : libraryFolderActions(
+                    folder,
+                    project.title,
+                    (path, empty) => void chooseFolder(path, empty),
+                  )
           }
         />
       </LibraryPaletteDialog>

@@ -5,6 +5,7 @@ import {
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
 import { FolderIcon, CornerLeftUpIcon, CheckIcon, HouseIcon } from "lucide-react";
+import { LIBRARY_FOLDER_CHOICE_TITLES, libraryNewFolderPath } from "@t3tools/client-runtime/fork";
 import { filesystemEnvironment, useFilesystemReadAccess } from "~/state/filesystem";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
@@ -14,6 +15,41 @@ export interface LibraryBrowsedFolder {
   readonly path: string;
   /** The folder is a Git repository root. */
   readonly repository: boolean;
+  /** Names inside the folder, hidden ones included. Given to `actions` only. */
+  readonly entries?: readonly string[];
+}
+
+/**
+ * The choices for a browsed folder: use its files, download into it when empty, or download into
+ * a new folder inside it. The caller checks what the folder holds before it uses it.
+ */
+export function libraryFolderActions(
+  folder: LibraryBrowsedFolder,
+  title: string,
+  select: (path: string, empty?: boolean) => void,
+): LibraryPaletteItem[] {
+  const empty = folder.entries?.length === 0;
+  const fresh = libraryNewFolderPath(folder.path, title, folder.entries);
+  return [
+    {
+      id: empty ? "download-folder" : "use-folder",
+      title: LIBRARY_FOLDER_CHOICE_TITLES[empty ? "clone" : "reuse"],
+      description: folder.path,
+      icon: <CheckIcon className="size-4" />,
+      select: () => select(folder.path, folder.entries ? empty : undefined),
+    },
+    ...(folder.repository || empty
+      ? []
+      : [
+          {
+            id: "new-folder",
+            title: "Download into a new folder here",
+            description: fresh,
+            icon: <FolderIcon className="size-4" />,
+            select: () => select(fresh),
+          },
+        ]),
+  ];
 }
 
 export function LibraryFolderPalette({
@@ -73,7 +109,10 @@ export function LibraryFolderPalette({
   const listed = ready ? (listing.data?.entries ?? []) : [];
   const folderPath = ready && currentPath ? currentPath : null;
   const repository = folderPath !== null && listed.some((entry) => entry.name === ".git");
-  const folder = folderPath === null ? null : { path: folderPath, repository };
+  const folder =
+    folderPath === null
+      ? null
+      : { path: folderPath, repository, entries: listed.map((entry) => entry.name) };
   const reportFolder = useEffectEvent((path: string | null, repository: boolean) =>
     onFolderChange?.(path === null ? null : { path, repository }),
   );
