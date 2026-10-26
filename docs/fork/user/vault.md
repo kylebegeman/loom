@@ -8,6 +8,9 @@ On mobile, open that computer's settings and find **Vault**. The computer owns t
 your phone or browser does not need OpenBao credentials. Servers without Vault support hide or
 disable the controls.
 
+The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
+has less than three days left, the Vault status says so; renew or reissue it before it lapses.
+
 ## Choose personal or restricted access
 
 For a computer you own and control, open **Vault**, confirm **This is my personal environment**
@@ -246,15 +249,18 @@ the identity output on the intended host before approving. Then run `loom vault 
 that host, or `loom vault broker check` for one check. Restart reuses the same identity.
 For a source checkout, use `node apps/server/src/bin.ts` in place of `loom`.
 
-For background operation, run these commands on the execution host using the absolute path to
-its installed Loom launcher:
+For background operation, run these commands on the execution host:
 
 ```sh
-loom vault broker service plan --executable /absolute/path/to/loom
-loom vault broker service install --executable /absolute/path/to/loom
+loom vault broker service plan
+loom vault broker service install
 loom vault broker service start
 loom vault broker service status
 ```
+
+The service runs this install's Loom launcher, which the desktop app keeps pointed at its current
+version, so the broker restarts on the new release after an update. Where Loom has no launcher,
+such as a source checkout, pass `--executable /absolute/path/to/loom` to `plan` and `install`.
 
 Use the same `--state-dir /absolute/private/directory` on every command if enrollment used a
 custom directory. Inspect the plan before installing. Installation enables startup in the user's

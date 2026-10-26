@@ -36,6 +36,8 @@ export const VaultCoreStatus = Schema.Struct({
     "misconfigured",
   ]),
   origin: Schema.NullOr(Schema.String),
+  /** Seconds the service token has left without renewal. Absent if unknown or non-expiring. */
+  tokenTtlSeconds: Schema.optionalKey(NonNegativeInt),
 });
 export type VaultCoreStatus = typeof VaultCoreStatus.Type;
 const messages = {
@@ -65,10 +67,7 @@ const deniedDetails = {
     "This SSH destination has no trusted host key. The environment owner must verify and pin it in Loom Settings > Vault (/settings/loom?section=vault).",
 } as const;
 const VaultDeniedDetail = Schema.Literals(
-  Object.keys(deniedDetails) as [
-    keyof typeof deniedDetails,
-    ...Array<keyof typeof deniedDetails>,
-  ],
+  Object.keys(deniedDetails) as [keyof typeof deniedDetails, ...Array<keyof typeof deniedDetails>],
 );
 export type VaultDeniedDetail = typeof VaultDeniedDetail.Type;
 export const vaultDeniedMessage = (detail: VaultDeniedDetail) => deniedDetails[detail];

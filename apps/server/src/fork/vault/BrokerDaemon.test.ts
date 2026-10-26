@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { VaultBrokerError, VaultError } from "@t3tools/contracts/fork";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Deferred from "effect/Deferred";
@@ -71,6 +72,7 @@ const fixture = Effect.fnUntraced(function* () {
   return {
     fs,
     path,
+    root,
     state,
     identity,
     key,
@@ -174,7 +176,39 @@ it.effect(
       yield* f.fs.symlink(f.path.join(f.state, "identity.json"), report);
       expect((yield* f.daemon.inspect(f.state)).report).toBeNull();
       const missing = f.path.join(f.state, "missing");
-      expect((yield* f.daemon.run(missing).pipe(Effect.flip)).reason).toBe("local-state");
+      expect(yield* f.daemon.run(missing).pipe(Effect.flip)).toMatchObject({
+        _tag: "VaultBrokerError",
+        reason: "local-state",
+      });
       expect(yield* f.fs.exists(missing)).toBe(false);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+it.effect("exits non-zero once its executable is replaced or removed, without another check", () =>
+  Effect.gen(function* () {
+    for (const change of ["replace", "remove"] as const) {
+      const f = yield* fixture();
+      const executable = f.path.join(f.root, "loom");
+      yield* f.fs.writeFileString(executable, "old release", { mode: 0o700 });
+      const fiber = yield* f.daemon
+        .run(f.state)
+        .pipe(
+          Effect.provideService(Console.Console, f.recording),
+          Effect.provideService(HostProcess.ExecutablePath, executable),
+          Effect.forkChild,
+        );
+      yield* Deferred.await(f.signals[0]!);
+      if (change === "replace") {
+        yield* f.fs.writeFileString(`${executable}.next`, "new release", { mode: 0o700 });
+        yield* f.fs.rename(`${executable}.next`, executable);
+      } else {
+        yield* f.fs.remove(executable);
+      }
+      yield* TestClock.adjust(60_000);
+      const error = yield* Fiber.join(fiber).pipe(Effect.flip);
+      expect(error._tag).toBe("BrokerExecutableReplaced");
+      const stopped = (yield* f.daemon.inspect(f.state)).report;
+      expect([stopped?.state, stopped?.source]).toEqual(["stopped", "process"]);
+      expect(f.checks()).toBe(1);
+    }
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

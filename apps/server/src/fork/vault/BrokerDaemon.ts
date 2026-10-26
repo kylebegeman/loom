@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerRunner from "./BrokerRunner.ts";
@@ -28,12 +29,25 @@ const Report = Schema.Struct({
   retryAfterMs: Schema.NullOr(Schema.Int),
 });
 type Report = typeof Report.Type;
+/** A non-zero exit, so the service manager relaunches the broker from the updated install. */
+export class BrokerExecutableReplaced extends Schema.TaggedError<BrokerExecutableReplaced>()(
+  "BrokerExecutableReplaced",
+  {},
+) {
+  override readonly [Runtime.errorExitCode] = 75;
+
+  override get message() {
+    return "The Loom executable running this broker was replaced or removed. Exiting so the service restarts it from the current install.";
+  }
+}
 const decodeReport = Schema.decodeEffect(Schema.fromJsonString(Report));
 const encodeReport = Schema.encodeEffect(Schema.fromJsonString(Report));
 export class BrokerDaemon extends Context.Service<
   BrokerDaemon,
   {
-    readonly run: (directory: string) => Effect.Effect<void, VaultBrokerError>;
+    readonly run: (
+      directory: string,
+    ) => Effect.Effect<void, VaultBrokerError | BrokerExecutableReplaced>;
     readonly inspect: (directory: string) => Effect.Effect<
       {
         readonly custody: "owner-only-file";
@@ -55,7 +69,17 @@ const make = Effect.gen(function* () {
   const run = Effect.fn("BrokerDaemon.run")(function* (directory: string) {
     // Service startup never creates or replaces an enrollment identity.
     const key = yield* identity.read(directory, false),
-      connection = yield* identity.connection(directory);
+      connection = yield* identity.connection(directory),
+      executable = yield* HostProcess.ExecutablePath;
+    // An app update swaps the bundle under a running process, which would otherwise keep
+    // serving the old release from deleted files until the next login.
+    const executableIdentity = fs.stat(executable).pipe(
+      Effect.map((info) =>
+        [info.dev, Option.getOrNull(info.ino), Option.getOrNull(info.mtime)?.getTime()].join(":"),
+      ),
+      Effect.option,
+    );
+    const started = yield* executableIdentity;
     const persist = Effect.fnUntraced(function* (report: Report) {
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -96,6 +120,13 @@ const make = Effect.gen(function* () {
       );
     yield* Effect.gen(function* () {
       while (true) {
+        if (
+          Option.isSome(started) &&
+          Option.getOrNull(yield* executableIdentity) !== started.value
+        ) {
+          yield* report("stopped", "process", null, false);
+          return yield* new BrokerExecutableReplaced();
+        }
         const outcome = yield* runner.check(key.directory).pipe(Effect.result);
         if (outcome._tag === "Success") {
           yield* report("online", "heartbeat", outcome.success.leaseUntil, true);

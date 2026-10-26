@@ -14,6 +14,7 @@ import * as OpenBaoStore from "./OpenBaoStore.ts";
 
 const privateToken = "synthetic-service-token";
 const privateValue = "synthetic-account-password";
+const tokenTtlSeconds = 7 * 24 * 60 * 60;
 const withStore = <A, E>(
   use: (fixture: {
     store: OpenBaoStore.OpenBaoStore["Service"];
@@ -58,7 +59,9 @@ const withStore = <A, E>(
         200,
         request.url.endsWith("/health")
           ? { initialized: true, sealed: false }
-          : { data: { cas_required: true } },
+          : request.url.endsWith("/lookup-self")
+            ? { data: { ttl: tokenTtlSeconds } }
+            : { data: { cas_required: true } },
       ];
       return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status })));
     });
@@ -126,16 +129,50 @@ it.effect("requires a private token file and accepts loopback HTTP for isolated 
 it.effect("checks engine seal state and the KV v2 mount", () =>
   withStore(({ store, requests }) =>
     Effect.gen(function* () {
-      expect((yield* store.status).state).toBe("ready");
+      expect(yield* store.status).toEqual({
+        backend: "openbao",
+        state: "ready",
+        origin: "https://vault.example.test",
+        tokenTtlSeconds,
+      });
       expect(requests.map((r) => r.url)).toEqual([
         "https://vault.example.test/v1/sys/health",
         "https://vault.example.test/v1/loom/config",
+        "https://vault.example.test/v1/auth/token/lookup-self",
       ]);
       expect(requests.every((r) => r.headers.authorization === `Bearer ${privateToken}`)).toBe(
         true,
       );
       expect(JSON.stringify(requests)).not.toContain(privateToken);
     }),
+  ),
+);
+
+it.effect.each([
+  { name: "a denied lookup", reply: [403, { errors: [] }] },
+  { name: "a non-expiring token", reply: [200, { data: { ttl: 0 } }] },
+  { name: "a malformed lookup", reply: [200, { data: { ttl: "soon" } }] },
+] as const)("stays ready with no token expiry after $name", ({ reply }) =>
+  withStore(
+    ({ store }) =>
+      Effect.gen(function* () {
+        expect(yield* store.status).toEqual({
+          backend: "openbao",
+          state: "ready",
+          origin: "https://vault.example.test",
+        });
+      }),
+    {
+      reply: (request) =>
+        request.url.endsWith("/lookup-self")
+          ? reply
+          : [
+              200,
+              request.url.endsWith("/health")
+                ? { initialized: true, sealed: false }
+                : { data: { cas_required: true } },
+            ],
+    },
   ),
 );
 
@@ -147,10 +184,12 @@ it.effect("reads its own settings file when the environment names no OpenBao set
           backend: "openbao",
           state: "ready",
           origin: "https://file.example.test",
+          tokenTtlSeconds,
         });
         expect(requests.map((r) => r.url)).toEqual([
           "https://file.example.test/v1/sys/health",
           "https://file.example.test/v1/kv/config",
+          "https://file.example.test/v1/auth/token/lookup-self",
         ]);
         expect(requests.every((r) => r.headers.authorization === `Bearer ${privateToken}`)).toBe(
           true,
@@ -168,6 +207,7 @@ it.effect("lets the environment replace the settings file", () =>
         expect(requests.map((r) => r.url)).toEqual([
           "https://vault.example.test/v1/sys/health",
           "https://vault.example.test/v1/loom/config",
+          "https://vault.example.test/v1/auth/token/lookup-self",
         ]);
       }),
     { settingsFile: {} },
