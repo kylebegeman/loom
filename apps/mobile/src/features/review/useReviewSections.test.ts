@@ -7,6 +7,7 @@ import {
   ThreadId,
   RunId,
   type AuthSessionState,
+  type ReviewDiffPreviewSource,
 } from "@t3tools/contracts";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -17,17 +18,23 @@ const state = vi.hoisted(() => ({
   gitStatusAtom: {},
   gitStatus: { isRepo: true, checkpointCapable: true },
   gitStatusPending: false,
-  effects: [] as Array<() => void>,
+  gitSectionsAtom: {},
+  lastGitSections: [] as ReadonlyArray<unknown>,
+  turnDiffsAtom: {},
+  lastTurnDiffs: {} as Readonly<Record<number, string>>,
   checkpoints: [] as ReadonlyArray<ThreadCheckpointSummary>,
 }));
 
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) =>
+    atom === state.gitSectionsAtom
+      ? state.lastGitSections
+      : atom === state.turnDiffsAtom
+        ? state.lastTurnDiffs
+        : undefined,
+}));
 vi.mock("@t3tools/client-runtime/state/thread-checkpoints", () => ({
   deriveThreadCheckpointSummaries: () => state.checkpoints,
-}));
-vi.mock("react", () => ({
-  useCallback: <A>(callback: A) => callback,
-  useEffect: (effect: () => void) => state.effects.push(effect),
-  useMemo: <A>(factory: () => A) => factory(),
 }));
 vi.mock("../../state/session", () => ({
   environmentSession: { sessionStateAtom: () => state.sessionAtom },
@@ -65,29 +72,46 @@ vi.mock("../../state/queries", () => ({
 }));
 vi.mock("../../state/review", () => ({
   reviewEnvironment: { diffPreview: vi.fn() },
+  lastReviewGitSectionsAtom: () => state.gitSectionsAtom,
+}));
+vi.mock("../../state/reviewTurnDiffs", () => ({
+  lastReviewTurnDiffsAtom: () => state.turnDiffsAtom,
 }));
 vi.mock("../../state/vcs", () => ({
   vcsEnvironment: { status: () => state.gitStatusAtom },
 }));
 vi.mock("./reviewState", () => ({
-  setReviewAsyncError: vi.fn(),
-  setReviewGitSections: vi.fn(),
   setReviewSelectedSectionId: vi.fn(),
-  setReviewTurnDiff: vi.fn(),
-  setReviewTurnDiffLoading: vi.fn(),
 }));
 
-import { setReviewSelectedSectionId, type ReviewCacheForThread } from "./reviewState";
+import type { ReviewCacheForThread } from "./reviewState";
 import { useReviewSections } from "./useReviewSections";
 import { reviewEnvironment } from "../../state/review";
 
+const checkpointDiff = "diff --git a/checkpoint.ts b/checkpoint.ts";
+const localDiff = "diff --git a/local.ts b/local.ts";
+
+function localSection(kind: "working-tree" | "branch-range"): ReviewDiffPreviewSource {
+  return {
+    id: kind,
+    kind,
+    title: "Dirty worktree",
+    baseRef: "HEAD",
+    headRef: null,
+    diff: localDiff,
+    diffHash: "cached-local",
+    truncated: false,
+  } as ReviewDiffPreviewSource;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  state.effects = [];
   state.session = { authenticated: true, scopes: [AuthFilesystemReadScope] };
   state.sessionError = null;
   state.gitStatus = { isRepo: true, checkpointCapable: true };
   state.gitStatusPending = false;
+  state.lastGitSections = [localSection("working-tree")];
+  state.lastTurnDiffs = { 1: checkpointDiff };
   state.checkpoints = [
     {
       runId: RunId.make("turn-1"),
@@ -101,28 +125,13 @@ beforeEach(() => {
   ];
 });
 
-const checkpointDiff = "diff --git a/checkpoint.ts b/checkpoint.ts";
-const localDiff = "diff --git a/local.ts b/local.ts";
 function makeReviewCache(
   kind: "working-tree" | "branch-range" = "working-tree",
 ): ReviewCacheForThread {
+  state.lastGitSections = [localSection(kind)];
   return {
     threadKey: "environment:thread",
-    gitSections: [
-      {
-        id: kind,
-        kind,
-        title: "Dirty worktree",
-        baseRef: "HEAD",
-        headRef: null,
-        diff: localDiff,
-        diffHash: "cached-local",
-        truncated: false,
-      },
-    ],
-    turnDiffById: { "turn:1": checkpointDiff },
     selectedSectionId: `git:${kind}`,
-    asyncState: { loadingTurnIds: {}, error: null },
     expandedFileIdsBySection: {},
     revealedLargeFileIdsBySection: {},
     viewedFileIdsBySection: {},
@@ -137,70 +146,56 @@ function makeInput(reviewCache = makeReviewCache()) {
   };
 }
 
-function renderSections(input: ReturnType<typeof makeInput>) {
-  const result = useReviewSections(input);
-  const effects = state.effects.splice(0);
-  effects.forEach((effect) => effect());
-  return result;
-}
-
 it("hides cached local diffs after file access is lost while retaining checkpoint diffs", () => {
   const input = makeInput();
-  expect(renderSections(input).selectedSection?.diff).toBe(localDiff);
+  expect(useReviewSections(input).selectedSection?.diff).toBe(localDiff);
 
   state.session = { authenticated: true, scopes: [] };
-  const denied = renderSections(input);
+  const denied = useReviewSections(input);
   expect(denied.reviewSections.map((section) => section.id)).toEqual(["turn:1"]);
   expect(denied.selectedSection?.diff).toBe(checkpointDiff);
-
-  expect(setReviewSelectedSectionId).toHaveBeenCalledWith("environment:thread", "turn:1");
 });
 
 it.each(["working-tree", "branch-range"] as const)(
   "preserves a cached %s selection while an expired grant reloads",
   (kind) => {
     const input = makeInput(makeReviewCache(kind));
-    expect(renderSections(input).selectedSection?.diff).toBe(localDiff);
+    expect(useReviewSections(input).selectedSection?.diff).toBe(localDiff);
 
     state.session = null;
-    const pending = renderSections(input);
+    const pending = useReviewSections(input);
     expect(pending.selectedSection).toEqual(
       expect.objectContaining({ id: `git:${kind}`, diff: null, isLoading: true }),
     );
-    expect(pending.loadingGitDiffs).toBe(true);
     expect(pending.reviewSections.find((section) => section.id === "turn:1")?.diff).toBe(
       checkpointDiff,
     );
-    expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
 
     state.session = { authenticated: true, scopes: [AuthFilesystemReadScope] };
-    expect(renderSections(input).selectedSection).toEqual(
+    expect(useReviewSections(input).selectedSection).toEqual(
       expect.objectContaining({ id: `git:${kind}`, diff: localDiff, isLoading: false }),
     );
-    expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
   },
 );
 
 it("falls back to a checkpoint when a pending grant resolves without file access", () => {
   const input = makeInput();
   state.session = null;
-  renderSections(input);
-  expect(setReviewSelectedSectionId).not.toHaveBeenCalled();
+  expect(useReviewSections(input).selectedSection?.id).toBe("git:working-tree");
 
   state.session = { authenticated: true, scopes: [] };
-  const denied = renderSections(input);
+  const denied = useReviewSections(input);
   expect(denied.reviewSections.map((section) => section.id)).toEqual(["turn:1"]);
   expect(denied.selectedSection?.diff).toBe(checkpointDiff);
-  expect(setReviewSelectedSectionId).toHaveBeenCalledWith("environment:thread", "turn:1");
 });
 
 it("reports a failed access check when no checkpoint can replace the local review", () => {
   state.checkpoints = [];
   const input = makeInput();
-  expect(renderSections(input).selectedSection?.diff).toBe(localDiff);
+  expect(useReviewSections(input).selectedSection?.diff).toBe(localDiff);
 
   state.sessionError = "The session request timed out.";
-  const unavailable = renderSections(input);
+  const unavailable = useReviewSections(input);
   expect(unavailable.selectedSection).toBeNull();
   expect(unavailable.reviewSections).toEqual([]);
   expect(unavailable.error).toBe(state.sessionError);
@@ -209,26 +204,25 @@ it("reports a failed access check when no checkpoint can replace the local revie
 it("reports denied file access when no checkpoint can replace the local review", () => {
   state.checkpoints = [];
   const input = makeInput();
-  expect(renderSections(input).selectedSection?.diff).toBe(localDiff);
+  expect(useReviewSections(input).selectedSection?.diff).toBe(localDiff);
 
   state.session = { authenticated: true, scopes: [] };
-  const denied = renderSections(input);
+  const denied = useReviewSections(input);
   expect(denied.selectedSection).toBeNull();
   expect(denied.reviewSections).toEqual([]);
-  expect(denied.loadingGitDiffs).toBe(false);
   expect(denied.error).toBe("This connection cannot read local diffs.");
 });
 
 it("keeps a cached checkpoint available when the filesystem access check fails", () => {
   state.sessionError = "The session request timed out.";
-  const checkpoint = renderSections(makeInput());
+  const checkpoint = useReviewSections(makeInput());
   expect(checkpoint.selectedSection?.diff).toBe(checkpointDiff);
   expect(checkpoint.error).toBeNull();
 });
 
 it("shows checkpoint changes for a multi-repository parent without asking Git to diff the parent folder", () => {
   state.gitStatus = { isRepo: false, checkpointCapable: true };
-  const result = renderSections(makeInput());
+  const result = useReviewSections(makeInput());
   expect(reviewEnvironment.diffPreview).not.toHaveBeenCalled();
   expect(result.reviewSections.map((section) => section.id)).toEqual(["turn:1"]);
   expect(result.selectedSection?.diff).toBe(checkpointDiff);

@@ -305,18 +305,20 @@ The `respectful-notifications` seams come from LoomOS packet 07
 `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
 setting, on by default, chooses between the thread or pull request title and a generic body
 in system notifications, for thread alerts and review guide alerts
-(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch renders under `ThreadNotificationCoordinator.tsx` (38 marker lines) withdraws a notification once its
-thread is answered, archived or removed, ignores clicks on stale ones, and delivers through
-Web Locks so several windows on one origin show one notification. Each environment's last known
+(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Upstream's notification service
+`startThreadNotifications` in `ThreadNotificationCoordinator.tsx` (35 marker lines) withdraws a
+notification once its thread is answered, archived or removed, ignores clicks on stale ones, and
+delivers through Web Locks so several windows on one origin show one notification. The dock badge
+counts threads waiting on the user (`fork/attention/attentionBadge.ts`), not open notifications. Each environment's last known
 thread state outlives a reconnect and is seeded from the cached snapshot at launch, so the next
 live snapshot announces approvals, questions, failures and limits from the gap, and completions
 only within 10 minutes. Snoozed and settled threads keep completions quiet through
-`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also mounts
-`apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3), which alerts when
-a scheduled task could not start; `ScheduledTasksSettings.tsx` (1) labels a launched run
-"started" and `packages/contracts/src/scheduledTask.ts` (1) says so in the run status
-description. Its two upstream tests mark the mock changes and the added cases.notifications stay and their clicks still
-open the thread. Its two upstream tests mark the mock changes and the added cases.
+`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). `ForkRoot` mounts
+`apps/web/src/fork/scheduled-task-alerts`, which alerts when a scheduled task could not start;
+the service shares its open-notification set with it (`fork: scheduled-task-alerts`, 3), so
+focus closes those too. `ScheduledTasksSettings.tsx` (1) labels a launched run "started" and
+`packages/contracts/src/scheduledTask.ts` (1) says so in the run status description. Its two
+upstream tests mark the mock changes and the added cases.
 
 `apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 9 marker lines) skips the Loom
 tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database, along

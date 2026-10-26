@@ -4,7 +4,6 @@ import * as Layer from "effect/Layer";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
-import * as Option from "effect/Option";
 
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -27,6 +26,6 @@ export const layer = Layer.mergeAll(
     createWorktree: () => Effect.succeed({} as never),
   }),
   Layer.mock(ProjectService.ProjectService)({
-    getById: () => Effect.succeed(Option.none()),
+    getById: () => Effect.succeedNone,
   }),
 );

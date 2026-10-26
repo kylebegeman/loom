@@ -18,6 +18,7 @@ import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
 import { EmptyConversationOffer } from "./project-library/EmptyConversationOffer";
 import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 import { LocalUpdateInstallHost } from "./connections/LocalUpdateInstallHost";
+import { ScheduledTaskAlertsHost } from "./scheduled-task-alerts/ScheduledTaskAlertsHost";
 
 /** Components mounted once in the authenticated app shell. One line per packet. */
 const FORK_ROOT_COMPONENTS: ReadonlyArray<{
@@ -42,6 +43,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   { id: "local-update-install", Component: LocalUpdateInstallHost },
   { id: "library-empty-conversations", Component: EmptyConversationOffer },
+  { id: "scheduled-task-alerts", Component: ScheduledTaskAlertsHost },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];
 

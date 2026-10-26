@@ -236,9 +236,9 @@ apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	1
 apps/web/src/components/settings/settingsSearch.ts	project-home	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	1
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	2
-apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	38
+apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	35
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
-apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	respectful-notifications	23
+apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	15
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	4
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
@@ -570,7 +570,7 @@ apps/web/src/components/settings/scopedSettings.ts	brand	1
 apps/web/src/components/sidebar/updateEverythingRun.tsx	brand	1
 apps/web/src/connection/clientMetadata.ts	brand	2
 apps/web/src/desktopAppActivation.ts	brand	3
-apps/web/src/lib/bootError.ts	brand	2
+apps/web/src/lib/bootError.ts	brand	4
 apps/web/src/routes/_chat.tsx	brand	1
 apps/web/src/versionSkew.test.ts	brand	1
 apps/web/src/versionSkew.ts	brand	1
@@ -719,7 +719,7 @@ apps/server/src/auth/ServerSecretStore.ts	server-weight	7
 apps/server/src/observability/EventLoopMonitor.test.ts	server-weight	1
 apps/server/src/observability/EventLoopMonitor.ts	server-weight	5
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	server-weight	6
-apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	server-weight	3
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	server-weight	2
 apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts	server-weight	4
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	server-weight	11
 apps/server/src/orchestration-v2/RestartContinuation.test.ts	server-weight	11
@@ -815,8 +815,6 @@ packages/client-runtime/src/state/server.ts	project-lifecycle	1
 packages/contracts/src/clientRpcPermissions.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	project-lifecycle	1
 packages/contracts/src/rpc.ts	project-lifecycle	5
-patches/vitest@5.0.1.patch	project-lifecycle	1
-pnpm-workspace.yaml	project-lifecycle	2
 docs/user/composer.md	project-lifecycle	1
 docs/internals/effect-services.md	source-control-cockpit	1
 docs/internals/connection-runtime.md	fleet-connections	1
@@ -933,10 +931,8 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/web/src/components/ChatView.tsx	failed-run-retry	5
-apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	scheduled-task-alerts	1
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	bots	5
 apps/web/src/components/CommandPaletteLookups.ts	bots	1
-apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	scheduled-task-alerts	1
 apps/web/src/components/ThreadNotificationCoordinator.tsx	scheduled-task-alerts	3
 apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx	failed-run-retry	1
 apps/web/src/components/chat/MessagesTimeline.tsx	failed-run-retry	4

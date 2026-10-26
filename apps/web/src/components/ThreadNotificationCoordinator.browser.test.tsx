@@ -1,9 +1,9 @@
 import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as DateTime from "effect/DateTime";
+import type { AnyRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ const state = vi.hoisted(() => ({
   turnError: false,
   limited: false,
   subagent: false,
-  background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
+  background: [] as Array<{ taskId: string; kind: "command" | "monitor"; awaited?: boolean }>,
   delegatedChild: null as "running" | "approval" | null,
   // fork: respectful-notifications
   settled: false,
@@ -37,6 +37,7 @@ const state = vi.hoisted(() => ({
   notification: vi.fn(function (_title: string, options: NotificationOptions) {
     return Object.assign(new EventTarget(), { tag: options.tag, close: vi.fn() });
   }),
+  settingsListeners: new Set<() => void>(),
 }));
 
 const SHELL_NOW = DateTime.makeUnsafe("2026-09-13T09:00:00.000Z");
@@ -117,43 +118,41 @@ function mockThreads() {
   return [stableParent, child];
 }
 
-vi.mock(import("@effect/atom-react"), async (original) => ({
-  ...(await original()),
-  useAtomValue: (() => ({
-    status: state.live ? "live" : "disconnected",
-    snapshot: Option.some({ threads: mockThreads() }),
-  })) as never,
-}));
-vi.mock(import("@tanstack/react-router"), async (original) => ({
-  ...(await original()),
-  useNavigate: (() => state.navigate) as never,
-  useParams: (() => state.active) as never,
-}));
+vi.mock(import("../state/shell"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentShell: {
+      ...actual.environmentShell,
+      stateValueAtom: (() => shellAtom) as never,
+    },
+  };
+});
+vi.mock(import("../state/presentation"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    environmentSummaries: {
+      ...actual.environmentSummaries,
+      // Read lazily: the factory runs before this module's own bindings exist.
+      get environmentIdsAtom() {
+        return environmentIdsAtom as never;
+      },
+    },
+  };
+});
 vi.mock(import("../hooks/useSettings"), async (original) => ({
   ...(await original()),
-  // fork: respectful-notifications
-  useClientSettings: ((
-    select: (
-      settings: Pick<
-        ClientSettings,
-        "notificationMode" | "inAppNotificationsEnabled" | "notificationPreviewsEnabled"
-      >,
-    ) => unknown,
-  ) =>
-    select({
-      notificationMode: state.mode,
-      inAppNotificationsEnabled: state.inApp,
-      notificationPreviewsEnabled: true,
-    })) as never,
+  subscribeClientSettings: ((listener: () => void) => {
+    state.settingsListeners.add(listener);
+    return () => state.settingsListeners.delete(listener);
+  }) as never,
   // fork: respectful-notifications
   getClientSettings: (() => ({
     notificationMode: state.mode,
+    inAppNotificationsEnabled: state.inApp,
     notificationPreviewsEnabled: true,
   })) as never,
-}));
-vi.mock(import("../state/environments"), async (original) => ({
-  ...(await original()),
-  useEnvironmentIds: (() => ["env-1"]) as never,
 }));
 vi.mock(import("../threadNotifications"), async (original) => ({
   ...(await original()),
@@ -168,19 +167,33 @@ vi.mock(import("./ui/toast"), async (original) => {
   };
 });
 
-// fork: scheduled-task-alerts: covered by its own tests; it would subscribe to tasks here.
-vi.mock(import("../fork/scheduled-task-alerts/ScheduledTaskFailureAlerts"), () => ({
-  ScheduledTaskFailureAlerts: () => null,
-}));
+import { startThreadNotifications } from "./ThreadNotificationCoordinator";
 
-import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
+const shellAtom = Atom.make<unknown>(null);
+const environmentIdsAtom = Atom.make<ReadonlyArray<string>>(["env-1"]);
+const router = {
+  get state() {
+    return { matches: [{ params: state.active }] };
+  },
+  navigate: (options: unknown) => state.navigate(options),
+} as unknown as AnyRouter;
+let registry: AtomRegistry.AtomRegistry;
+let stop: (() => void) | undefined;
 
-let root: Root;
+function start() {
+  stop = startThreadNotifications(registry, router);
+}
 
+// Publishes the current shell and settings the way the app's atoms and settings store would.
 async function render() {
-  await act(() => root.render(<ThreadNotificationCoordinator />));
+  registry.set(shellAtom, {
+    status: state.live ? "live" : "disconnected",
+    snapshot: Option.some({ threads: mockThreads() }),
+  });
+  if (stop === undefined) start();
+  for (const listener of state.settingsListeners) listener();
   // fork: respectful-notifications - a completion waits out the Working shelf's exit grace.
-  await act(() => vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS));
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
 }
 
 async function complete() {
@@ -213,7 +226,7 @@ beforeEach(() => {
     botRun: false, // fork: bots
   });
   stableParent = null;
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.settingsListeners.clear();
   // fork: respectful-notifications: present synchronously; the fork delivery test covers Web Locks.
   vi.spyOn(navigator, "locks", "get").mockReturnValue(undefined as never);
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
@@ -223,11 +236,13 @@ beforeEach(() => {
   vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" }));
   // fork: respectful-notifications - only timers, so tests can still pin Date.now.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  root = createRoot(document.createElement("div"));
+  registry = AtomRegistry.make();
+  stop = undefined;
 });
 
-afterEach(async () => {
-  await act(() => root.unmount());
+afterEach(() => {
+  stop?.();
+  registry.dispose();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -320,12 +335,13 @@ describe("thread notifications", () => {
       body: "Fix the login form",
       tag: expect.any(String),
       silent: true,
+      requireInteraction: false,
     });
   });
 
   it("alerts when only a dev server is left running, not while a monitor can wake the agent", async () => {
     await render();
-    state.background = [{ taskId: "watch", kind: "monitor" }];
+    state.background = [{ taskId: "watch", kind: "monitor", awaited: true }];
     await complete();
     expect(state.add).not.toHaveBeenCalled();
     state.background = [{ taskId: "dev", kind: "command" }];
@@ -401,8 +417,8 @@ describe("thread notifications", () => {
     expect(state.add).toHaveBeenCalledTimes(1);
     expect(state.add).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Input needed" }));
 
-    await act(() => root.unmount());
-    root = createRoot(document.createElement("div"));
+    stop?.();
+    stop = undefined;
     state.live = false;
     await render();
     state.live = true;
@@ -481,6 +497,7 @@ describe("thread notifications", () => {
       body: "Fix the login form",
       tag: expect.any(String),
       silent: true,
+      requireInteraction: false,
     });
   });
 
