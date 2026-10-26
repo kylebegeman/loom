@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const state = vi.hoisted(() => ({
   dispatch: vi.fn(),
   create: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  update: Object.assign(vi.fn(), { permissionAtom: () => true }),
+  queries: {} as Record<string, unknown>,
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (atom: unknown) => atom }));
 vi.mock("@react-navigation/native", () => ({
@@ -25,7 +27,7 @@ vi.mock("./libraryState", () => ({
   refreshLibraryProject: vi.fn(),
   library: {
     createProject: state.create,
-    updateProject: Object.assign(vi.fn(), { permissionAtom: () => true }),
+    updateProject: state.update,
     inspectFolder: Object.assign(vi.fn(), { permissionAtom: () => true }),
     project: () => "project",
     projects: () => "projects",
@@ -33,8 +35,8 @@ vi.mock("./libraryState", () => ({
   },
 }));
 vi.mock("../../state/query", () => ({
-  useEnvironmentQuery: () => ({
-    data: null,
+  useEnvironmentQuery: (atom: string | null) => ({
+    data: (atom && state.queries[atom]) ?? null,
     error: null,
     isPending: false,
     isSuccess: false,
@@ -108,7 +110,7 @@ vi.mock("../../features/settings/components/SettingsSection", () => ({
   ),
 }));
 
-import { LibraryCreateRouteScreen } from "./LibraryProjectForm";
+import { LibraryCreateRouteScreen, LibraryEditRouteScreen } from "./LibraryProjectForm";
 
 type Params = Parameters<typeof LibraryCreateRouteScreen>[0]["route"]["params"];
 let root: Root, container: HTMLDivElement;
@@ -134,6 +136,7 @@ const fieldLabels = () =>
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  state.queries = {};
   state.create.mockResolvedValue(AsyncResult.success({ id: "created" }));
   container = document.createElement("div");
   root = createRoot(container);
@@ -192,5 +195,69 @@ describe("New project", () => {
     await render({ start: "folder" });
     expect(button("Hide folders")).not.toBeNull();
     expect(fieldLabels().slice(0, 2)).toEqual(["Find an existing folder", "Project name"]);
+  });
+});
+
+describe("Edit project", () => {
+  it("asks again before a second repository moves the root repository a computer holds", async () => {
+    state.update.mockResolvedValue(AsyncResult.success({ id: "project" }));
+    state.queries = {
+      project: {
+        id: "project",
+        title: "corbelo",
+        brief: "",
+        revision: 1,
+        archived: false,
+        resources: [
+          {
+            id: "corbelo",
+            kind: "repository",
+            title: "corbelo",
+            url: null,
+            remoteUrl: "https://github.com/kyle/corbelo",
+            relativePath: ".",
+            defaultBranch: null,
+          },
+        ],
+        createdAt: "2026-10-10T00:00:00.000Z",
+        updatedAt: "2026-10-10T00:00:00.000Z",
+      },
+      copies: [
+        {
+          id: "copy",
+          projectId: "project",
+          projectRevision: 1,
+          environmentId: "dorothy",
+          rootPath: "/work/corbelo",
+          repositories: [
+            {
+              resourceId: "corbelo",
+              path: "/work/corbelo",
+              localProjectId: null,
+              branch: null,
+              head: null,
+            },
+          ],
+          ownership: "managed",
+          state: "ready",
+          createdAt: "2026-10-10T00:00:00.000Z",
+          updatedAt: "2026-10-10T00:00:00.000Z",
+        },
+      ],
+    };
+    await act(() =>
+      root.render(<LibraryEditRouteScreen route={{ params: { projectId: "project" } }} />),
+    );
+    await input("Repository or link URL", "github.com/kyle/web");
+    await click("Add");
+    expect(container.textContent).toContain(
+      "This moves corbelo into corbelo/. The copy on Saved computer keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
+    );
+    expect(button("Add anyway")).not.toBeNull();
+    expect(field("Repository or link URL")!.value).toBe("github.com/kyle/web");
+
+    await click("Add anyway");
+    expect(field("Repository or link URL")!.value).toBe("");
+    expect(button("Add anyway")).toBeNull();
   });
 });

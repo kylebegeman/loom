@@ -7,6 +7,7 @@ import {
   libraryProjectTimeline,
   libraryResourceFromInput,
   libraryResourceLocation,
+  libraryRootMoveWarning,
   libraryPathParts,
   libraryProjectColor,
   libraryProjectInitials,
@@ -73,6 +74,40 @@ describe("libraryResourceFromInput", () => {
     expect(
       libraryAddResource([first], { id: "web", ...web }).map((entry) => entry.relativePath),
     ).toEqual(["corbelo", "web"]);
+  });
+
+  it("warns before a second repository moves the root repository a computer holds", () => {
+    const first = { id: "corbelo", ...libraryResourceFromInput("github.com/kyle/corbelo")! };
+    const link = libraryResourceFromInput("figma.com/file/abc")!;
+    const web = libraryResourceFromInput("github.com/kyle/web", [first])!;
+    const held = copy({
+      repositories: [
+        {
+          resourceId: "corbelo",
+          path: "/work/aspectavy",
+          localProjectId: null,
+          branch: null,
+          head: null,
+        },
+      ],
+    });
+    const label = (id: EnvironmentId) => (id === dorothy ? "Dorothy" : "Mini");
+    expect(libraryRootMoveWarning([first], web, [held], label)).toBe(
+      "This moves corbelo into corbelo/. The copy on Dorothy keeps it at its folder root, so Loom prepares a new copy for work on this project there.",
+    );
+    expect(
+      libraryRootMoveWarning(
+        [first],
+        web,
+        [held, { ...held, id: "mini", environmentId: EnvironmentId.make("mini") }],
+        label,
+      ),
+    ).toContain("The copies on Dorothy and Mini keep it at their folder root");
+    expect(libraryRootMoveWarning([first], link, [held], label)).toBeNull();
+    expect(
+      libraryRootMoveWarning([first], web, [{ ...held, state: "released" }], label),
+    ).toBeNull();
+    expect(libraryRootMoveWarning([first], web, [copy({})], label)).toBeNull();
   });
 
   it("gives each repository its own folder", () => {
