@@ -1,4 +1,5 @@
 import type { ProjectId, ServerFolders } from "@t3tools/contracts";
+import type { LibraryError } from "@t3tools/contracts/fork";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -66,7 +67,7 @@ export class LanesRoots extends Context.Service<
 /** Roots Library copies still record, so a claim never mixes with a missing or releasing copy. */
 export class LibraryCopyRoots extends Context.Service<
   LibraryCopyRoots,
-  { readonly roots: Effect.Effect<ReadonlyArray<string>, unknown> }
+  { readonly roots: Effect.Effect<ReadonlyArray<string>, LibraryError> }
 >()("t3/project/ProjectPlacement/LibraryCopyRoots") {}
 
 export class ProjectPlacement extends Context.Service<
