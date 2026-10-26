@@ -63,6 +63,9 @@ const HealthResponse = Schema.Struct({ initialized: Schema.Boolean, sealed: Sche
 const ConfigResponse = Schema.Struct({
   data: Schema.Struct({ cas_required: Schema.Literal(true) }),
 });
+const TokenLookupResponse = Schema.Struct({
+  data: Schema.Struct({ ttl: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
+});
 const ErrorResponse = Schema.Struct({ errors: Schema.Array(Schema.String) });
 const decodeMissing = Schema.decodeUnknownOption(
   Schema.Struct({ errors: Schema.optionalKey(Schema.Array(Schema.Never)) }),
@@ -73,6 +76,7 @@ const decodeWrite = Schema.decodeUnknownOption(WriteResponse);
 const decodeKeys = Schema.decodeUnknownOption(ListResponse);
 const decodeHealth = Schema.decodeUnknownOption(HealthResponse);
 const decodeConfig = Schema.decodeUnknownOption(ConfigResponse);
+const decodeTokenLookup = Schema.decodeUnknownOption(TokenLookupResponse);
 const decodeError = Schema.decodeUnknownOption(ErrorResponse);
 const encodeWrite = Schema.encodeEffect(
   Schema.fromJsonString(
@@ -172,7 +176,20 @@ const make = Effect.gen(function* () {
       if (configuration.status === 404) return state("misconfigured");
       yield* check(configuration);
       if (Option.isNone(decodeConfig(yield* json(configuration)))) return state("misconfigured");
-      return state("ready");
+      // Renewal runs outside Loom, so an approaching expiry is the only sign it has stopped.
+      // A root token reports ttl 0; a failed lookup leaves the expiry unknown.
+      const tokenTtlSeconds = yield* Effect.gen(function* () {
+        const lookup = yield* execute(HttpClientRequest.get(`${origin}/v1/auth/token/lookup-self`));
+        yield* check(lookup);
+        return decodeTokenLookup(yield* json(lookup)).pipe(
+          Option.map(({ data }) => data.ttl),
+          Option.filter((seconds) => seconds > 0),
+          Option.getOrUndefined,
+        );
+      }).pipe(Effect.orElseSucceed(() => undefined));
+      return tokenTtlSeconds === undefined
+        ? state("ready")
+        : { ...state("ready"), tokenTtlSeconds };
     }).pipe(
       Effect.catch((error) =>
         Effect.succeed({

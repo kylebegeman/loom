@@ -22,7 +22,7 @@ const failure = Schema.Union([VaultError, SecretRequestError, OrchestratorMcpFai
 export const VaultCoreToolkit = Toolkit.make(
   Tool.make("loom_vault_status", {
     description:
-      "Read this environment's Loom Vault connection status. Does not return credentials or attempt to unlock OpenBao.",
+      "Read this environment's Loom Vault connection status. tokenTtlSeconds, when present, is how long the service token has left unless renewed; under 72 hours left means its renewal job has stopped. Does not return credentials or attempt to unlock OpenBao.",
     success: VaultCoreStatus,
     failure,
   }).annotate(Tool.Readonly, true),

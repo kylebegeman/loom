@@ -50,7 +50,10 @@ separate inventory. The operator creates the mount and service credential; Loom 
 or stores a root token. Root tokens are used only inside the disposable test fixture.
 
 Status checks health and KV v2 configuration, not all path privileges. A ready connection can
-still receive a denied item operation if its policy is incomplete. A sealed backend reports
+still receive a denied item operation if its policy is incomplete. A ready status also carries
+`tokenTtlSeconds` from the token's `lookup-self` TTL. Clients warn when under 72 hours remain,
+since renewal runs outside Loom and a lapsed token has to be reissued. A failed lookup or a
+non-expiring token leaves the field out. A sealed backend reports
 locked. Loom neither auto-unseals it nor asks an SSH key manager to unlock it.
 
 ### Move settings out of the login environment
@@ -78,6 +81,10 @@ reads the settings file is installed and running. Adjust `dir` for a non-default
      launchctl unsetenv "$name"
    done
    ```
+
+   Loom Platform's Vault desktop helper set them through the `com.loom.vault-desktop`
+   LaunchAgent before its schema 2. Installing the current helper over it, or uninstalling it,
+   boots out that agent and unsets only the variables it set that still match.
 
 3. Quit Loom completely and reopen it. The running server keeps the environment it started
    with, so the file takes effect only after this restart.
@@ -274,13 +281,19 @@ routing remain pending.
 
 ### Manage background brokers
 
-Run `loom vault broker service plan --executable /absolute/path/to/loom` on the execution host,
-then `service install` with that executable and `service start`. Each command accepts the same
-`--state-dir` used during enrollment. Use an installed, stable absolute Loom launcher; passing
-the Node binary alone does not launch Loom. For source-based development, an executable wrapper
-must invoke both Node and the CLI entrypoint by absolute paths and forward its arguments.
-The service uses a stable directory outside projects and does not hydrate an interactive shell.
-Keep the launcher available across upgrades; a changed executable requires uninstall/reinstall.
+Run `loom vault broker service plan` on the execution host, then `service install` and
+`service start`. Each command accepts the same `--state-dir` used during enrollment. Without
+`--executable`, the service runs the install's launcher: the desktop app's `T3CODE_CLI_PATH`
+shim (`<T3 home>/bin/loom`), which the app rewrites to its current bundle, or a standalone
+binary. A hand-written launcher that names a bundle path goes stale when the app is renamed or
+moved. Passing the Node binary alone does not launch Loom. For source-based development, pass an
+executable wrapper that invokes both Node and the CLI entrypoint by absolute paths and forwards
+its arguments. The service uses a stable directory outside projects and does not hydrate an
+interactive shell. A changed launcher path requires uninstall/reinstall.
+
+An app update replaces the bundle under the running broker. Within a minute the daemon sees that
+its executable changed or disappeared, records `stopped` from `process`, and exits with code 75.
+The manager's restart-on-failure then relaunches it through the launcher on the new release.
 
 The broker owns `~/Library/LaunchAgents/com.loom.vault-broker.plist` on macOS or
 `~/.config/systemd/user/loom-vault-broker.service` on Linux. Installation enables startup but

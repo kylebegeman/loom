@@ -7,11 +7,13 @@ import { Argument, Command, Flag } from "effect/cli";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as BrokerRunner from "./BrokerRunner.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerCrypto from "./BrokerCrypto.ts";
+import { resolveInstallLauncher } from "../../cli/invocation.ts";
 const runtime = Layer.mergeAll(BrokerRunner.layer, WorkloadRunner.layer).pipe(
   Layer.provideMerge(
     Layer.mergeAll(
@@ -26,6 +28,17 @@ const serviceRuntime = BrokerService.layer.pipe(
   Layer.provide(Layer.mergeAll(daemonRuntime, ProcessRunner.layer)),
 );
 const stateDir = Flag.String("state-dir").pipe(Flag.withDefault(""));
+const executable = Flag.String("executable").pipe(
+  Flag.withDescription(
+    "Absolute Loom launcher for the service. Default: this install's launcher, which follows app updates.",
+  ),
+  Flag.optional,
+);
+// The desktop app keeps its launcher pointed at the current bundle; a hand-written one can go stale.
+const launcher = (flag: Option.Option<string>) =>
+  Option.isSome(flag)
+    ? Effect.succeed(flag.value)
+    : resolveInstallLauncher.pipe(Effect.map(Option.getOrElse(() => "")));
 const encodeEffectJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const print = (value: unknown) =>
   encodeEffectJson(value).pipe(Effect.flatMap((encoded) => Console.log(encoded)));
@@ -39,17 +52,19 @@ export const brokerCommand = Command.make("broker").pipe(
         "Manage the broker on this host. Installation does not start it; macOS requires login and Linux boot continuity requires systemd linger.",
       ),
       Command.withSubcommands([
-        Command.make("plan", { stateDir, executable: Flag.String("executable") }).pipe(
+        Command.make("plan", { stateDir, executable }).pipe(
           Command.withHandler(({ stateDir, executable }) =>
-            Effect.flatMap(BrokerService.BrokerService, (service) =>
-              service.plan(stateDir, executable),
+            Effect.flatMap(
+              Effect.all([BrokerService.BrokerService, launcher(executable)]),
+              ([service, path]) => service.plan(stateDir, path),
             ).pipe(Effect.flatMap(print), Effect.provide(serviceRuntime)),
           ),
         ),
-        Command.make("install", { stateDir, executable: Flag.String("executable") }).pipe(
+        Command.make("install", { stateDir, executable }).pipe(
           Command.withHandler(({ stateDir, executable }) =>
-            Effect.flatMap(BrokerService.BrokerService, (service) =>
-              service.manage(stateDir, "install", executable),
+            Effect.flatMap(
+              Effect.all([BrokerService.BrokerService, launcher(executable)]),
+              ([service, path]) => service.manage(stateDir, "install", path),
             ).pipe(Effect.flatMap(print), Effect.provide(serviceRuntime)),
           ),
         ),
