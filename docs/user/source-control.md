@@ -151,7 +151,8 @@ Choose **New project** in the command palette (`Cmd/Ctrl+K`) or on the Projects 
 - **Git repository** clones a repository. Paste its Git URL, such as `github.com/owner/repo` or
   `git@github.com:owner/repo.git`, confirm the project name, then choose the computer and folder
   to clone it into. Closing that last step keeps the project without files. Files are prepared
-  when you start a conversation, or from **Add files** on the project page.
+  when you start a conversation, or from **Add files** on the project page. The mobile app skips
+  the clone step and clones when you start work.
 - **From a blueprint** creates a project from a pasted blueprint, when your Library supports
   blueprints.
 
