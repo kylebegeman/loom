@@ -114,10 +114,12 @@ case "$1 $2" in
   "volume ls") printf 'db-data\\t%s\\n' "$lane" ;;
 esac`,
   );
-  // Reports each `pid [port [command]]` line of <home>/listening as a lane port listener.
+  // Reports each `pid [port [command]]` line of <home>/listening as a lane port listener, and
+  // <home>/holding, already in lsof's field format, as the files open on a lane's mount.
   stub(
     "lsof",
-    `[ -s '${home}/listening' ] || exit 1
+    `case " $* " in *" +f "*) [ -s '${home}/holding' ] || exit 1; cat '${home}/holding'; exit 0 ;; esac
+[ -s '${home}/listening' ] || exit 1
 awk '{ print "p" $1; if ($3 != "") print "c" $3; print "f3"; if ($2 != "") print "n127.0.0.1:" $2 }' '${home}/listening'`,
   );
   return { stubs, log };
@@ -1056,11 +1058,12 @@ describe("ProjectLifecycleService", () => {
       expect(alive(original)).toBe(false);
 
       // Another server took the port while the unmount stayed busy; a recorded process did not.
+      // The watchdog now waits before retrying, so the retry is a discard.
       const newcomer = listen();
       const recorded = sleeper();
       started.push(recorded);
       yield* t.service.adoptLease(lane.id, "process", String(recorded), "worker");
-      expect(laneOf(yield* t.service.tick(), t.checkout)?.id).toBe(lane.id);
+      expect((yield* Effect.flip(t.service.discard(lane.id))).reason).toBe("busy");
       expect(alive(newcomer)).toBe(true);
       expect(alive(recorded)).toBe(false);
 
@@ -1071,6 +1074,87 @@ describe("ProjectLifecycleService", () => {
       busy = false;
       expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
       expect(alive(newcomer)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("stops a process holding files in a released lane, then removes the lane", () =>
+    Effect.gen(function* () {
+      // Detached, so it has no controlling terminal however the tests run, like a daemon.
+      const holder = NodeChildProcess.spawn("/bin/sleep", ["60"], {
+        stdio: "ignore",
+        detached: true,
+      }).pid!;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (alive(holder)) process.kill(holder, "SIGKILL");
+        }),
+      );
+      const t = yield* setupWith({
+        wrapSpaces: (spaces) => ({
+          ...spaces,
+          folder: {
+            ...spaces.folder,
+            detach: (paths, device) =>
+              alive(holder)
+                ? Effect.fail(
+                    new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
+                  )
+                : spaces.folder.detach(paths, device),
+          },
+        }),
+      });
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      NodeFS.writeFileSync(
+        `${t.home}/holding`,
+        `p${holder}\ncop\nfcwd\nn${lane.laneDir}/space/tmp/com.agilebits.op.501\n`,
+      );
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      expect(alive(holder)).toBe(false);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("names what keeps a released lane mounted and waits before trying again", () =>
+    Effect.gen(function* () {
+      let detaches = 0;
+      const t = yield* setupWith({
+        wrapSpaces: (spaces) => ({
+          ...spaces,
+          folder: {
+            ...spaces.folder,
+            detach: () => {
+              detaches++;
+              return Effect.fail(
+                new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
+              );
+            },
+          },
+        }),
+      });
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      const tmp = `${lane.laneDir}/space/tmp`;
+      // This test process stands in for the server, which a release never stops.
+      NodeFS.writeFileSync(
+        `${t.home}/holding`,
+        `p${process.pid}\ncnode\nfcwd\nn${tmp}\nf12\nn${tmp}/a.log\nf13\nn${tmp}/b.log\n`,
+      );
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      const message = laneOf(yield* t.service.tick(), t.checkout)?.message;
+      expect(message).toContain(`node (pid ${process.pid}`);
+      expect(message).toContain(
+        "working directory space/tmp, has space/tmp/a.log and 1 more files open",
+      );
+      expect(detaches).toBe(1);
+
+      yield* t.service.tick();
+      expect(detaches).toBe(1);
+      const refused = yield* Effect.flip(t.service.discard(lane.id));
+      expect(refused.reason).toBe("busy");
+      expect(refused.message).toContain(`node (pid ${process.pid}`);
+      expect(detaches).toBe(2);
     }).pipe(Effect.scoped),
   );
 

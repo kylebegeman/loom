@@ -143,6 +143,10 @@ through the user's shell. Installing integration appends this block to `~/.zshen
 resolved). If that lane's `space/tmp` is writable it exports `TMPDIR`, `LOOM_LANE_CHECKOUT`,
 `LOOM_LANE_SPACE`, `LOOM_LANE_TMP`, `LOOM_LANE_BUILD` and `LOOM_LANE_DATA`, and puts the shims
 first on `PATH`; otherwise it restores what it changed. Interactive shells re-run it on `cd`.
+It also defines `op` (unless a function by that name exists) to run 1Password's CLI with the
+`TMPDIR` the shell started with. `op` starts a daemon that never exits and works in `$TMPDIR`,
+and Claude Code's login snapshot shell runs `.zshrc`, so an `op completion zsh` there left one
+daemon pinning each lane (31 of them on 2026-10-26).
 
 The `xcodebuild` shim adds `-derivedDataPath $LOOM_LANE_BUILD/DerivedData` and
 `-clonedSourcePackagesDirPath $LOOM_LANE_BUILD/SourcePackages` to build actions that do not
@@ -158,9 +162,9 @@ Fork tables, own migration set `fork_migrations_project_lifecycle`, no foreign k
 
 - `fork_project_lifecycle_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)`
 - `fork_project_lifecycle_lanes (id TEXT PRIMARY KEY, checkout_path TEXT NOT NULL UNIQUE,
-project_id TEXT NOT NULL, project_name TEXT NOT NULL, name TEXT NOT NULL,
-lane_dir TEXT NOT NULL, backend TEXT NOT NULL, cap_bytes INTEGER NOT NULL, device TEXT,
-created_at TEXT NOT NULL, port_base INTEGER)` (`port_base` added by migration 2)
+  project_id TEXT NOT NULL, project_name TEXT NOT NULL, name TEXT NOT NULL,
+  lane_dir TEXT NOT NULL, backend TEXT NOT NULL, cap_bytes INTEGER NOT NULL, device TEXT,
+  created_at TEXT NOT NULL, port_base INTEGER)` (`port_base` added by migration 2)
 
 Defaults are computed when no settings row exists: enabled, lanes root
 `~/Developer/lanes` (a dev server uses `<stateDir>/fork/project-lifecycle/lanes` and starts
@@ -182,7 +186,7 @@ needed. Status returns the lane paths, ports, leases and helpers and tells the a
 use them. `loom_project_lifecycle_adopt` hands a simulator or process to the lane and
 `loom_project_lifecycle_release` releases one lease now. Free deletes the scope's contents and returns the space to the
 host by remounting only when no thread in the lane is running. Grow refuses with `busy` when
-files are open.
+files are open and names the processes holding them.
 
 ## Performance
 
@@ -228,11 +232,18 @@ release behavior on 2026-10-08 (see PRODUCT).
   a stopped server's open files no longer block the unmount. Within a release, the published
   ports are read, then the lane's containers and volumes are removed, and only then are port
   listeners and recorded processes stopped. If a release fails the lane is
-  still removed and the failure is logged; if the unmount is still busy, the next tick tries
-  both again. Only the first attempt stops port listeners. They are matched by port alone, so
-  a retry would stop whatever took the port after the lane was let go, every 30 seconds while
-  the lane stays stuck (seen 2026-10-19: a VM process and a 1Password agent whose working
-  folder was the lane's `tmp` kept two lanes busy). Retries still stop recorded processes. A
+  still removed and the failure is logged. If the unmount is busy, `lsof +f -- <space>` lists
+  the processes with files on the lane's volume. Those without a controlling terminal are
+  stopped, never this server, its ancestors or a container runtime, and the detach runs once
+  more. Open files are the evidence here, never a process name, and a holder's children are
+  left since they hold nothing there. A lane still busy names each holder's pid, command and
+  what it holds in its message, and the watchdog waits a minute before trying again, doubling
+  up to an hour (seen 2026-10-26: one orphaned 1Password daemon kept a released lane busy and
+  was retried every 30 seconds for hours). A discard tries at once; a thread holding the lane
+  again or a successful detach clears the wait. Remounts and automatic growth back off the
+  same way but stop nothing, because a held lane's processes belong to its agents. Only the
+  first attempt stops port listeners: they are matched by port alone, so a retry would stop
+  whatever took the port after the lane was let go. Retries still stop recorded processes. A
   lane a thread holds again sweeps its ports on its next release.
 - **Devices.** On `thread.settled`, `archived` and `deleted`, the released thread's device
   panels close (L09's `DeviceService`). A device another active thread shows stays on; any

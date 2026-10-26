@@ -7,6 +7,7 @@ import {
   PORT_RANGE,
   allocatePortBase,
   autoBuildSlots,
+  detachRetryDelayMs,
   growTarget,
   holdsLane,
   isAppleCheckout,
@@ -152,6 +153,14 @@ describe("lane pressure", () => {
     expect(
       growTarget({ capBytes: 100 * GB, hostFreeBytes: 40.5 * GB, reserveBytes: 40 * GB }),
     ).toBeNull();
+  });
+});
+
+describe("busy detaches", () => {
+  it("wait a minute, then twice as long each time, up to an hour", () => {
+    expect([1, 2, 3, 6, 7, 20].map(detachRetryDelayMs)).toEqual(
+      [1, 2, 4, 32, 60, 60].map((minutes) => minutes * 60 * 1000),
+    );
   });
 });
 

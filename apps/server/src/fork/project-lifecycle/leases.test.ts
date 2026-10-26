@@ -11,13 +11,16 @@ import {
   dockerCandidates,
   liveProcess,
   makeDockerLocator,
+  mountHoldersText,
   parseDocker,
   parseLedger,
+  parseLsofFiles,
   parseLsofListeners,
   parseProcessTable,
   parsePublishedPorts,
   parseRuntimeProcesses,
   parseSlotHolder,
+  parseTerminals,
   partitionListeners,
   signallable,
   withDescendants,
@@ -89,6 +92,42 @@ describe("tool output", () => {
       command: "xcodebuild build",
     });
     expect(parseSlotHolder(1, "")).toBeNull();
+  });
+
+  it("names what holds a lane open, working directory first", () => {
+    const space = "/lanes/app/main/space";
+    const files = parseLsofFiles(
+      [
+        "p3711",
+        "cop",
+        "fcwd",
+        `n${space}/tmp/com.agilebits.op.501`,
+        "p42",
+        "cnode",
+        "f12",
+        `n${space}/tmp/a.log`,
+        "f13",
+        `n${space}/tmp/a.log`,
+        "f14",
+        `n${space}/build/b.o`,
+        "pjunk",
+        "n/ignored",
+      ].join("\n"),
+    );
+    const terminals = parseTerminals("3711 ??     \n   42 ttys003\n  7 ?\n");
+    expect([...terminals]).toEqual([
+      [3711, false],
+      [42, true],
+      [7, false],
+    ]);
+    const holders = [...files].map(([pid, held]) => ({
+      pid,
+      ...held,
+      terminal: terminals.get(pid) ?? true,
+    }));
+    expect(mountHoldersText(holders, space)).toBe(
+      "Files in this lane are open, so it stays mounted. Holding it: op (pid 3711: working directory space/tmp/com.agilebits.op.501); node (pid 42, in a terminal: has space/tmp/a.log and 1 more files open). Stop them, then try again.",
+    );
   });
 });
 
