@@ -488,11 +488,9 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => null),
   );
 
-  // The snapshot takes seconds on large databases, so it runs on the reader
-  // worker instead of the event loop.
-  // fork: mini-native-retention. Project and Scratch retention rely on archived
-  // threads being included here: an archived thread settles its project and
-  // keeps its Scratch folder eligible for archiving.
+  // The snapshot takes seconds on large databases, so it runs on the reader worker.
+  // fork: mini-native-retention -- archived threads must stay included: they settle
+  // their project and keep their Scratch folder eligible for archiving.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
     const snapshot = yield* projections.getShellSnapshot().pipe(NodeSqliteClient.readOnly);
     const projects = yield* projectStore.listShells();

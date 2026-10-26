@@ -312,20 +312,16 @@ function makeHarness(options: HarnessOptions = {}) {
   };
 }
 
-function waitUntil<E, R>(predicate: () => Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R> {
-  return Effect.gen(function* () {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (yield* predicate()) return;
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            setImmediate(resolve);
-          }),
-      );
-    }
-    assert.fail("Condition was not reached before timeout.");
-  });
-}
+// Projections commit with their events, so launch state can only change at a stored thread event.
+const waitForThread = Effect.fnUntraced(function* <E, R>(
+  threadId: ThreadId,
+  reached: () => Effect.Effect<boolean, E, R>,
+) {
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  yield* threads
+    .streamStoredEventsFrom({ threadId })
+    .pipe(Stream.filterEffect(reached), Stream.runHead);
+});
 
 function launchInput(input: {
   readonly command: string;
@@ -1375,12 +1371,14 @@ it.effect("names the worktree itself when the client provides no branch", () =>
           workspace: { type: "worktree", baseRef: "main" },
         }),
       );
-      yield* waitUntil(() => Effect.sync(() => harness.createWorktree.mock.calls.length === 1));
+      yield* waitForThread(launched.threadId, () =>
+        Effect.sync(() => harness.createWorktree.mock.calls.length === 1),
+      );
       assert.match(
         harness.createWorktree.mock.calls[0]?.[0]?.newRefName ?? "",
         /^t3\/[0-9a-f]{8}$/u,
       );
-      yield* waitUntil(() =>
+      yield* waitForThread(launched.threadId, () =>
         threads
           .getThreadProjection(launched.threadId)
           .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
@@ -1445,7 +1443,7 @@ it.effect.each(
       );
       const renameFiber = yield* Deferred.await(branchNameStarted);
       assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
-      yield* waitUntil(() =>
+      yield* waitForThread(launched.threadId, () =>
         threads
           .getThreadProjection(launched.threadId)
           .pipe(Effect.map((projection) => projection.runs[0]?.status === "starting")),
@@ -1592,7 +1590,7 @@ it.effect("provisions under t3-<hash> when a plain t3 branch blocks t3/*", () =>
           workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
-      yield* waitUntil(() =>
+      yield* waitForThread(launched.threadId, () =>
         threads
           .getThreadProjection(launched.threadId)
           .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
@@ -1608,7 +1606,7 @@ it.effect("keeps an explicit branch name instead of generating one", () =>
     const harness = makeHarness();
     yield* Effect.gen(function* () {
       const launches = yield* ThreadLaunch.ThreadLaunchService;
-      yield* launches.launch(
+      const launched = yield* launches.launch(
         launchInput({
           command: "command:launch:explicit-branch",
           thread: "thread:launch:explicit-branch",
@@ -1616,7 +1614,9 @@ it.effect("keeps an explicit branch name instead of generating one", () =>
           workspace: { type: "worktree", baseRef: "main", branch: "my-feature" },
         }),
       );
-      yield* waitUntil(() => Effect.sync(() => harness.createWorktree.mock.calls.length === 1));
+      yield* waitForThread(launched.threadId, () =>
+        Effect.sync(() => harness.createWorktree.mock.calls.length === 1),
+      );
       assert.equal(harness.generateBranchName.mock.calls.length, 0);
       assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "my-feature");
     }).pipe(Effect.provide(harness.layer));
@@ -1643,9 +1643,11 @@ it.effect("keeps the temporary branch when branch generation fails", () =>
           workspace: { type: "worktree", baseRef: "main", branch: "t3/abcd1234" },
         }),
       );
-      yield* waitUntil(() => Effect.sync(() => harness.generateBranchName.mock.calls.length === 1));
+      yield* waitForThread(launched.threadId, () =>
+        Effect.sync(() => harness.generateBranchName.mock.calls.length === 1),
+      );
       assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "t3/abcd1234");
-      yield* waitUntil(() =>
+      yield* waitForThread(launched.threadId, () =>
         threads
           .getThreadProjection(launched.threadId)
           .pipe(Effect.map((projection) => projection.runs[0]?.status === "starting")),
@@ -1677,7 +1679,7 @@ it.effect("renames a temporary branch on an existing worktree to a generated nam
           },
         }),
       );
-      yield* waitUntil(() =>
+      yield* waitForThread(launched.threadId, () =>
         threads
           .getThreadProjection(launched.threadId)
           .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
