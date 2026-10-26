@@ -33,6 +33,7 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import { makeSaveBeforeUpdate } from "../fork/rollback-snapshot/RollbackSnapshot.ts"; // fork: rollback-snapshot
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -356,6 +357,7 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const saveRollbackSnapshot = yield* makeSaveBeforeUpdate; // fork: rollback-snapshot
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
@@ -770,6 +772,7 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: DesktopBackendPool.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
             { concurrency: "unbounded" },
           );
+          yield* saveRollbackSnapshot; // fork: rollback-snapshot
           yield* electronUpdater.quitAndInstall({
             isSilent: true,
             isForceRunAfter: true,

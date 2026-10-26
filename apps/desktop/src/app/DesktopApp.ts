@@ -35,6 +35,8 @@ import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { compactBeforeBackendStart } from "../fork/database-compaction/RestartCompaction.ts"; // fork: restart-compaction
+import { recordInstalledBuildAtStartup } from "../fork/rollback-snapshot/RollbackSnapshot.ts"; // fork: rollback-snapshot
+import * as OpenAtLogin from "../fork/open-at-login/OpenAtLogin.ts"; // fork: open-at-login
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
@@ -180,6 +182,8 @@ const bootstrap = Effect.gen(function* () {
   });
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
+  yield* recordInstalledBuildAtStartup; // fork: rollback-snapshot
+  yield* (yield* OpenAtLogin.OpenAtLogin).reconcile; // fork: open-at-login
   // Before any window: the preload merges these items before the app reads storage.
   yield* (yield* DesktopLegacyLocalStorage.DesktopLegacyLocalStorage).load(
     yield* (yield* DesktopAppIdentity.DesktopAppIdentity).resolveUserDataPath,

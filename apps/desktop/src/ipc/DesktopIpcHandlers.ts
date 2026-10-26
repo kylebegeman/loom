@@ -1,5 +1,6 @@
 import { signInToLoom, cancelLoomSignIn } from "./methods/loomIdentity.ts";
 import { renewLoomIdentity, forgetLoomIdentity } from "./methods/loomIdentity.ts"; // fork: identity-renewal
+import { installOpenAtLoginIpc } from "../fork/open-at-login/OpenAtLoginIpc.ts"; // fork: open-at-login
 import * as Effect from "effect/Effect";
 
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
@@ -171,6 +172,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getCliCommandState);
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
+  yield* installOpenAtLoginIpc(); // fork: open-at-login
   for (const previewMethod of PreviewIpc.methods) {
     // Explicit types preserve the error/service union of these heterogeneous preview methods.
     yield* ipc.handle<

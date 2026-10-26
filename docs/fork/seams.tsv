@@ -1000,3 +1000,13 @@ packages/shared/src/keybindings.ts	library-palette	2
 scripts/effect-budget.json	-	/src/fork/
 apps/mobile/src/features/home/homeThreadList.test.ts	project-navigation	1
 apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	1
+apps/desktop/src/app/DesktopApp.ts	rollback-snapshot	2
+apps/desktop/src/updates/DesktopUpdates.ts	rollback-snapshot	3
+apps/desktop/src/app/DesktopApp.ts	open-at-login	2
+apps/desktop/src/ipc/DesktopIpcHandlers.ts	open-at-login	2
+apps/desktop/src/ipc/channels.ts	open-at-login	3
+apps/desktop/src/main.ts	open-at-login	2
+apps/desktop/src/preload.ts	open-at-login	1
+apps/web/src/components/settings/SettingsPanels.tsx	open-at-login	2
+apps/web/src/components/settings/settingsSearch.ts	open-at-login	1
+packages/contracts/src/ipc.ts	open-at-login	2

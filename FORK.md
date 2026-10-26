@@ -656,6 +656,29 @@ carry the rest: `DatabaseStorage.test.ts` (6), and one each in
 `DesktopBackendConfiguration.test.ts`, `DesktopLifecycle.test.ts`, `DesktopBackendPool.test.ts`
 and `DesktopApplicationMenu.test.ts`.
 
+The `rollback-snapshot` seams let the in-app updater save the data `loom.sh rollback` restores,
+as the scripted installs do. The code lives in `apps/desktop/src/fork/rollback-snapshot/` and
+mirrors `snapshot_state` in `scripts/fork/loom.sh`; keep the two in step. `DesktopUpdates.ts`
+(3 marker lines) resolves the snapshot once and runs it in `installDownloadedUpdate` after the
+backends stop, so nothing has the database open, and before `quitAndInstall`. It acts only
+for the installed `/Applications/Loom.app` with the default `~/.t3/userdata`, never fails the
+update, and gives up after 30 seconds. `DesktopApp.ts` (2) rewrites the legacy `installed`
+marker at startup, so it names the running build whichever path installed it.
+
+The `open-at-login` seams register the installed desktop app as a login item, so a Mac that
+restarts brings Loom and its computer back once someone logs in. The service lives in
+`apps/desktop/src/fork/open-at-login/` and keeps its preference in `open-at-login.json` beside
+the desktop state; it is on unless the user turns it off. At startup it registers again when
+the system's login item disagrees with the preference, so removing Loom in System Settings
+lasts only until the next launch; the Loom setting is the way to turn it off. A login item
+that macOS reports as needing approval is left to the user. Development builds, unpackaged
+runs and apps outside an Applications folder never register, and Linux reports it as
+unsupported. `DesktopApp.ts` (2) runs that startup check, `main.ts` (2) provides the layer,
+`channels.ts` (3), `DesktopIpcHandlers.ts` (2), `preload.ts` (1) and
+`packages/contracts/src/ipc.ts` (2) expose it to the renderer, and `SettingsPanels.tsx` (2)
+with `settingsSearch.ts` (1) show the switch in General settings, from
+`apps/web/src/fork/open-at-login/`.
+
 The `mobile-muted-text` seams fix secondary text that rendered unstyled on iPhone and Android.
 Upstream wrote the web token `text-muted-foreground`, which the mobile theme does not define;
 mobile names it `foreground-muted`. Mobile's `DatabaseStorageNotice.tsx` (1 marker line) fixes
@@ -943,9 +966,11 @@ Older Loom builds have no feed. After the first `publish`, run
 releases appear in the app's normal update controls; downloading and restarting remain
 manual. GitHub releases are for this Mac, not notarized public macOS distribution.
 
-The publisher retains three completed builds plus the installed build. Scripted installs
-make the database snapshots used by `loom.sh rollback`; the standard in-app updater does
-not make those legacy snapshots. Do not assume every in-app update has a rollback snapshot.
+The publisher retains three completed builds plus the installed build, and every record
+that holds rollback data. The in-app updater and the scripted installs both save the data
+`loom.sh rollback` restores (see the Builds paragraph below). A build installed before the
+`rollback-snapshot` seam, or whose save was skipped for lack of disk space, has nothing to
+roll back to.
 
 ### Versions and updates
 
@@ -1002,14 +1027,28 @@ The repository variable `LOOM_AUTO_MERGE` is `true`, which lets the workflow mer
 integration pull request that passed without repairs. Set it to anything else and every
 pull request waits for `land`.
 
-Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
-installed one). Each scripted install first saves the V1 `state.sqlite`, the V2 `statev2.sqlite`
-(when present), and the settings files from `~/.t3/userdata` into the record of the build
-being replaced. Rollback restores the saved databases and removes a V2 database when
-returning to a V1-only snapshot. Nightly builds share stable's data
-folder and may upgrade the database in ways an older build cannot read, which is why a
-rollback restores the data along with the app. Threads created on the newer build are
-lost by a rollback.
+Builds live in `~/Library/Application Support/Loom Builds` (the newest three, the
+installed one, and any record holding saved data). Every install, whether the app's own
+update or `loom.sh install`, `land` or `integrate`, first saves the V1 `state.sqlite`, the V2
+`statev2.sqlite` (when present), their WAL files, and the settings files from
+`~/.t3/userdata` into the `state/` folder of the build being replaced. The copies are APFS
+clones, instant and free until the live database changes; restart compaction after an update
+rewrites the database, so a saved copy can come to cost its full size. A save is skipped
+when the disk lacks the database's size plus 2 GiB, and is discarded when the database
+changes while it is copied. Only the two newest saves are kept. Rollback returns to the
+build that ran before the installed one, the earlier build whose data was saved most
+recently, never a newer build this Mac has not run. It saves the outgoing data first, then
+replaces the database files, WALs and settings with the saved set, so a V1-only save leaves
+no V2 database. Nightly builds share stable's data folder and may upgrade the database in
+ways an older build cannot read, which is why a rollback restores the data along with the
+app. Threads created on the newer build are lost by a rollback.
+
+After a restart, Loom opens once someone logs in to the Mac: it registers itself as a login
+item unless General settings has Open at login turned off. Its local server, agents and
+remote access come back with it. A FileVault Mac stops at the login window until someone
+unlocks it in person; `sudo fdesetup authrestart` restarts past it once. Docker Desktop and
+other apps start only if they are set to open at login themselves. Open at login reports a
+blocked login item in Settings, with a button to the system's Login Items settings.
 
 Builds are signed with a local certificate, "Loom Local Code Signing", that
 `scripts/fork/loom.sh signing-setup` creates once in the login keychain. It gives every

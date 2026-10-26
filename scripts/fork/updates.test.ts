@@ -618,10 +618,10 @@ describe("Loom update publishing", () => {
       await NodeFSP.rm(directory, { recursive: true, force: true });
     }
   });
-  it("retains three published builds, the installed build and unrelated records", async () => {
+  it("retains three published builds, the installed build, rollback data and unrelated records", async () => {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-build-prune-"));
     try {
-      for (let day = 1; day <= 5; day++) {
+      for (let day = 1; day <= 7; day++) {
         const record = NodePath.join(directory, `build-${day}`);
         await NodeFSP.mkdir(NodePath.join(record, "updates"), { recursive: true });
         await NodeFSP.writeFile(NodePath.join(record, "updates/ready"), COMMIT);
@@ -630,14 +630,16 @@ describe("Loom update publishing", () => {
           `built=2026-09-0${day}T00:00:00Z\n`,
         );
       }
+      await NodeFSP.mkdir(NodePath.join(directory, "build-2/state"));
       await NodeFSP.mkdir(NodePath.join(directory, "before-loom"));
-      await prunePublishedBuilds(directory, "build-1");
+      await prunePublishedBuilds(directory, "build-3");
       expect((await NodeFSP.readdir(directory)).sort()).toEqual([
         "before-loom",
-        "build-1",
+        "build-2",
         "build-3",
-        "build-4",
         "build-5",
+        "build-6",
+        "build-7",
       ]);
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });

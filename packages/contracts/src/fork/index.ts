@@ -94,3 +94,4 @@ export * from "./project-workflows.ts";
 export * from "./library-agent-reads.ts";
 export * from "./thread-attention.ts";
 export * from "./database-compaction.ts";
+export * from "./open-at-login.ts";

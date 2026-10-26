@@ -610,6 +610,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["cli terminal shell path install command line"],
     desktopOnly: true,
   },
+  // fork: open-at-login
+  {
+    id: "open-at-login",
+    title: "Open at login",
+    to: "/settings/general",
+    searchTerms: ["startup launch login item restart reboot background autostart"],
+    desktopOnly: true,
+  },
   {
     id: "mobile-app",
     title: "Mobile app",

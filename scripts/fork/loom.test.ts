@@ -3,12 +3,14 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import * as NodeVM from "node:vm";
 
 import { afterEach, expect, it } from "@effect/vitest";
 
 const roots: string[] = [];
 const script = NodePath.join(import.meta.dirname, "loom.sh");
+const BUILT_EARLIER = "2026-10-01T00:00:00Z";
 
 function fixture() {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-database-backup-"));
@@ -19,7 +21,11 @@ function fixture() {
   NodeFS.mkdirSync(userdata);
   NodeFS.mkdirSync(NodePath.join(previous, "state"), { recursive: true });
   NodeFS.mkdirSync(current);
-  NodeFS.writeFileSync(NodePath.join(previous, "build.env"), "upstream=test\n");
+  NodeFS.writeFileSync(
+    NodePath.join(previous, "build.env"),
+    `upstream=test\nbuilt=${BUILT_EARLIER}\n`,
+  );
+  NodeFS.writeFileSync(NodePath.join(current, "build.env"), "built=2026-10-02T00:00:00Z\n");
   return { userdata, previous, current };
 }
 
@@ -109,6 +115,132 @@ it("removes the newer database when rolling back to a V1-only snapshot", () => {
   expect(history(NodePath.join(f.userdata, "state.sqlite"))).toBe("v1");
   expect(NodeFS.existsSync(NodePath.join(f.userdata, "statev2.sqlite"))).toBe(false);
   expect(history(NodePath.join(f.current, "state/statev2.sqlite"))).toBe("v2");
+});
+
+it("saves committed data that only the WAL holds", () => {
+  const f = fixture();
+  const live = new NodeSqlite.DatabaseSync(NodePath.join(f.userdata, "statev2.sqlite"));
+  try {
+    live.exec("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0");
+    live.exec("CREATE TABLE history(value TEXT); INSERT INTO history VALUES ('uncheckpointed')");
+    run(f, 'snapshot_state "$LOOM_TEST_PREVIOUS"');
+  } finally {
+    live.close();
+  }
+  expect(NodeFS.existsSync(NodePath.join(f.previous, "state/statev2.sqlite-wal"))).toBe(true);
+  expect(history(NodePath.join(f.previous, "state/statev2.sqlite"))).toBe("uncheckpointed");
+});
+
+it("keeps the existing snapshot when the disk could not hold another copy", () => {
+  const f = fixture();
+  database(NodePath.join(f.userdata, "statev2.sqlite"), "current");
+  database(NodePath.join(f.previous, "state/statev2.sqlite"), "saved");
+  expect(() => run(f, 'free_bytes() { echo 0; }; snapshot_state "$LOOM_TEST_PREVIOUS"')).toThrow(
+    /Not enough free disk space/,
+  );
+  expect(history(NodePath.join(f.previous, "state/statev2.sqlite"))).toBe("saved");
+  expect(NodeFS.readdirSync(f.previous).sort()).toEqual(["build.env", "state"]);
+});
+
+it("does not roll back when the outgoing data cannot be saved", () => {
+  const f = fixture();
+  database(NodePath.join(f.userdata, "statev2.sqlite"), "current");
+  database(NodePath.join(f.previous, "state/statev2.sqlite"), "previous");
+  expect(() => run(f, "free_bytes() { echo 0; }; cmd_rollback")).toThrow(/nothing was rolled back/);
+  expect(history(NodePath.join(f.userdata, "statev2.sqlite"))).toBe("current");
+});
+
+it("installs without a snapshot when none can be saved, and says so", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-install-unsaved-"));
+  roots.push(root);
+  const app = NodePath.join(root, "Loom.app");
+  const record = NodePath.join(root, "record");
+  NodeFS.mkdirSync(app);
+  NodeFS.mkdirSync(NodePath.join(record, "Loom.app"), { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(record, "Loom.app/candidate"), "new bytes");
+  const result = NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `source "$LOOM_TEST_SCRIPT"
+      APP_PATH=$LOOM_TEST_APP
+      BUILDS_DIR=$LOOM_TEST_ROOT
+      verify_install_signing() { :; }
+      quit_app() { :; }
+      installed_record() { :; }
+      snapshot_state() { return 1; }
+      ditto() { cp -R "$1" "$2"; }
+      open() { :; }
+      installed_version() { echo test; }
+      install_record "$LOOM_TEST_RECORD"`,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOOM_TEST_SCRIPT: script,
+        LOOM_TEST_APP: app,
+        LOOM_TEST_ROOT: root,
+        LOOM_TEST_RECORD: record,
+      },
+    },
+  );
+  expect(result.status).toBe(0);
+  expect(NodeFS.readFileSync(NodePath.join(app, "candidate"), "utf8")).toBe("new bytes");
+  expect(result.stderr).toContain("the T3 data was not saved");
+});
+
+function buildsFixture(names: ReadonlyArray<string>) {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-retention-"));
+  roots.push(root);
+  const records = names.map((name, index) => {
+    const dir = NodePath.join(root, name);
+    NodeFS.mkdirSync(NodePath.join(dir, "updates"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dir, "updates/ready"), "");
+    NodeFS.writeFileSync(
+      NodePath.join(dir, "build.env"),
+      `built=2026-10-0${index + 1}T00:00:00Z\n`,
+    );
+    return dir;
+  });
+  const saveState = (dir: string, savedAt: number) => {
+    NodeFS.mkdirSync(NodePath.join(dir, "state"));
+    NodeFS.utimesSync(NodePath.join(dir, "state"), savedAt, savedAt);
+  };
+  const runIn = (command: string, installed: string) =>
+    runMetadata(
+      root,
+      `BUILDS_DIR=$LOOM_TEST_ROOT; installed_record() { echo "$LOOM_TEST_INSTALLED"; }; ${command}`,
+      { LOOM_TEST_INSTALLED: installed },
+    );
+  return { root, records, saveState, runIn };
+}
+
+it("rolls back to the build this Mac ran before, not a newer build it never opened", () => {
+  const b = buildsFixture(["a", "b", "current", "unopened", "left-by-rollback"]);
+  const [a, previous, current, , leftByRollback] = b.records as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  b.saveState(a, 1_000);
+  b.saveState(previous, 2_000);
+  b.saveState(leftByRollback, 3_000);
+  expect(b.runIn(`rollback_target "${current}"`, current)).toBe(previous);
+});
+
+it("keeps two snapshots, and every build holding one", () => {
+  const b = buildsFixture(["1", "2", "3", "4", "5", "6", "7"]);
+  const [first, second, third, installed] = b.records as [string, string, string, string];
+  b.saveState(first, 1_000);
+  b.saveState(second, 2_000);
+  b.saveState(third, 3_000);
+  b.runIn("prune_snapshots; prune_builds", installed);
+  expect(NodeFS.readdirSync(b.root).sort()).toEqual(["2", "3", "4", "5", "6", "7"]);
+  expect(NodeFS.existsSync(NodePath.join(second, "state"))).toBe(true);
+  expect(NodeFS.existsSync(NodePath.join(third, "state"))).toBe(true);
 });
 
 function lintFixture(paths: string[] = []) {
@@ -444,7 +576,7 @@ it("suggests the exact saved commit after rollback instead of inventing a Loom t
   const commit = "0123456789abcdef0123456789abcdef01234567";
   NodeFS.writeFileSync(
     NodePath.join(f.previous, "build.env"),
-    `version=0.0.48-nightly.20261013.3044\nupstream=v0.0.46-nightly.20261013.3044\ncommit=${commit}\n`,
+    `version=0.0.48-nightly.20261013.3044\nupstream=v0.0.46-nightly.20261013.3044\ncommit=${commit}\nbuilt=${BUILT_EARLIER}\n`,
   );
   database(NodePath.join(f.userdata, "statev2.sqlite"), "current");
   database(NodePath.join(f.previous, "state/statev2.sqlite"), "previous");
@@ -730,7 +862,7 @@ it.each(["state-copy", "state-swap", "replacement", "interrupted"])(
         quit_app() { :; }
         ditto() { command cp -R "$1" "$2"; }
         cp() {
-          if [ "$LOOM_TEST_FAILURE" = state-copy ] && [ "$1" = "$LOOM_TEST_PREVIOUS/state/statev2.sqlite" ]; then return 1; fi
+          if [ "$LOOM_TEST_FAILURE" = state-copy ] && [ "$2" = "$LOOM_TEST_PREVIOUS/state/statev2.sqlite" ]; then return 1; fi
           command cp "$@"
         }
         mv() {

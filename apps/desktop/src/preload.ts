@@ -281,6 +281,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   // fork: machine-updates
   setInstallWhenIdle: (armed) =>
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_INSTALL_WHEN_IDLE_CHANNEL, armed),
+  // fork: open-at-login
+  openAtLogin: {
+    getState: () => ipcRenderer.invoke(IpcChannels.OPEN_AT_LOGIN_GET_STATE_CHANNEL),
+    setEnabled: (enabled) =>
+      ipcRenderer.invoke(IpcChannels.OPEN_AT_LOGIN_SET_ENABLED_CHANNEL, enabled),
+    openSystemSettings: () => ipcRenderer.invoke(IpcChannels.OPEN_AT_LOGIN_OPEN_SETTINGS_CHANNEL),
+  },
   cliCommand: {
     getState: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_GET_STATE_CHANNEL),
     install: () => ipcRenderer.invoke(IpcChannels.CLI_COMMAND_INSTALL_CHANNEL),

@@ -28,6 +28,8 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+// fork: open-at-login
+import { OpenAtLoginSettingsRow } from "~/fork/open-at-login/OpenAtLoginSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
@@ -355,6 +357,8 @@ function AboutVersionSection() {
         />
       ) : null}
       {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
+      {/* fork: open-at-login */}
+      {hasDesktopBridge ? <OpenAtLoginSettingsRow /> : null}
     </>
   );
 }
