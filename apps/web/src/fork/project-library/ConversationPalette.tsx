@@ -462,7 +462,8 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
                 ? `Retry “${s.held.title}”`
                 : "Retry untitled conversation"
               : "Start conversation",
-        description: `${s.held?.savedAt ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}${s.workspace === "worktree" ? " in a new worktree" : ""}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
+        // The first try is the one running now, so only a held retry says when it began.
+        description: `${s.held?.savedAt && !(s.busy || waiting) ? `First tried ${formatRelativeTimeLabel(s.held.savedAt)}. ` : ""}${s.project.title} on ${s.hostLabel ?? "a computer"}. ${s.copy ? "Use existing files" : s.filesPlan.kind === "clone" ? "Clone repository files" : "Use the selected folder"}${s.workspace === "worktree" ? " in a new worktree" : ""}. ${modelName ?? "Choose a model"}. ${s.interactionMode === "plan" ? "Plan first" : "Ready to work"}.`,
         icon: <PlayIcon className="size-4 text-(--project-green)" />,
         disabled: !s.canCreate || waiting,
         select: () => void s.submit(),

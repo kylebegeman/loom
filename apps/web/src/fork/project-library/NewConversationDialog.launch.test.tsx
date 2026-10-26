@@ -1860,3 +1860,94 @@ describe("Library offline starts", () => {
     }
   });
 });
+
+describe("starts that open the conversation before its files", () => {
+  function launchFilesHost(retained: readonly LibraryWorkingCopy[]) {
+    const previous = state.authority();
+    const host = previous.environments[0];
+    state.authority.mockReturnValue({
+      ...previous,
+      environments: [
+        {
+          ...host,
+          serverConfig: {
+            ...host.serverConfig,
+            environment: {
+              capabilities: {
+                supportsExecution: true,
+                loomFeatures: [
+                  "project-library",
+                  "library-file-lifecycle",
+                  "project-workflows",
+                  "library-launch-files",
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+    state.query.mockImplementation((query: unknown) => ({
+      data: query === state.retainedQuery ? retained : undefined,
+      isPending: false,
+      isSuccess: true,
+      error: null,
+      refresh: vi.fn(),
+    }));
+  }
+  const launchInput = (call: number) =>
+    commands.executeOperation.run.mock.calls[call]![0].input as {
+      operationId: string;
+      request: { input: Record<string, unknown> & { binding: typeof binding } };
+    };
+
+  it("sends one launch that carries the files to clone, and a retry replays the same files", async () => {
+    launchFilesHost([]);
+    commands.inspectFolder.run.mockResolvedValue(AsyncResult.success({ exists: false }));
+    commands.executeOperation.run
+      .mockResolvedValueOnce(failure("Disconnected"))
+      .mockResolvedValueOnce(AsyncResult.success({ result: { threadId } }));
+    await mount();
+    await click("Start conversation");
+    expect(launch.error).toBe("Disconnected");
+    expect(savedAttempt()).toMatchObject({ threadId, files: { strategy: "clone" } });
+
+    await click("Retry conversation");
+    const [first, retried] = [launchInput(0), launchInput(1)];
+    const files = first.request.input.files as { requestId: string; rootPath: string };
+    expect(files).toMatchObject({ project, strategy: "clone", rootPath: launch.rootPath });
+    expect(first.request.input.binding.workingCopyId).toBe(files.requestId);
+    expect(first.request.input).toMatchObject({ threadId, keepOnComputer: false });
+    expect(retried).toEqual(first);
+    expect(commands.inspectFolder.run).toHaveBeenCalledOnce();
+    for (const skipped of [
+      commands.prepareCopy,
+      commands.registerCopy,
+      commands.resolveBinding,
+      commands.create,
+      commands.bindThread,
+    ])
+      expect(skipped.run).not.toHaveBeenCalled();
+    expect(state.waitForProject).not.toHaveBeenCalled();
+    expect(savedAttempt()).toBeNull();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId },
+    });
+  });
+
+  it("launches on ready files by their binding without preparing or resolving them", async () => {
+    launchFilesHost([restoredCopy]);
+    commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
+    await mount([restoredCopy]);
+    await click("Start conversation");
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
+    const input = launchInput(0).request.input;
+    expect(input.binding).toEqual(binding);
+    expect(input).not.toHaveProperty("files");
+    expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+    expect(commands.resolveBinding.run).not.toHaveBeenCalled();
+    expect(state.navigate).toHaveBeenCalledOnce();
+  });
+});

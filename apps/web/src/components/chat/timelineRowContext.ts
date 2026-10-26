@@ -91,6 +91,8 @@ export interface TimelineRowSharedState {
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
   onCancelWorktreeSetup: (() => void) | null;
+  onRetryWorktreeSetup: (() => void) | null; // fork: library-launch-files
+  worktreeSetupComputerLabel: string | null; // fork: library-launch-files
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;
   failedRunRetry: FailedRunRetry | null; // fork: failed-run-retry

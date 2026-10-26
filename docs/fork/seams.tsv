@@ -9,7 +9,11 @@ apps/web/index.html	brand	2
 apps/web/src/branding.logic.ts	brand	2
 apps/web/src/branding.test.ts	brand	2
 apps/web/src/branding.ts	brand	2
+apps/web/src/components/chat/WorktreeSetupCard.tsx	library-launch-files	1
+apps/web/src/components/chat/useWorktreeSetup.ts	library-launch-files	1
 apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
+apps/web/src/rpc/requestLatencyState.ts	library-launch-files	2
+packages/client-runtime/src/worktreeSetup.ts	library-launch-files	1
 scripts/build-desktop-artifact.test.ts	brand	6
 scripts/build-desktop-artifact.ts	brand	7
 packages/shared/package.json	-	"./brand"
@@ -535,6 +539,7 @@ apps/web/src/components/RightPanelTabs.tsx	brand	1
 apps/web/src/components/ServerUpdateAction.tsx	brand	2
 apps/web/src/components/chat/McpAppFrame.tsx	brand	1
 apps/web/src/components/chat/MessagesTimeline.logic.ts	brand	1
+apps/web/src/components/chat/MessagesTimeline.logic.ts	library-launch-files	1
 apps/web/src/components/chat/RightPanelSurfaceContent.tsx	brand	1
 apps/web/src/components/desktop/DesktopAppActivationCoordinator.tsx	brand	1
 apps/web/src/components/desktop/SshPasswordPromptDialog.tsx	brand	1
@@ -805,6 +810,7 @@ apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts	project-lifecy
 apps/server/src/ws.ts	project-lifecycle	3
 apps/web/src/components/ChatView.logic.test.ts	project-lifecycle	1
 apps/web/src/components/ChatView.logic.ts	project-lifecycle	3
+apps/web/src/components/ChatView.logic.ts	library-launch-files	1
 apps/web/src/components/ChatView.tsx	project-lifecycle	2
 apps/web/src/components/chat/ChatOverlayHosts.browser.test.tsx	project-lifecycle	4
 apps/web/src/components/chat/ChatOverlayHosts.tsx	project-lifecycle	3
@@ -933,6 +939,7 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/web/src/components/ChatView.tsx	failed-run-retry	5
+apps/web/src/components/ChatView.tsx	library-launch-files	3
 apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx	scheduled-task-alerts	1
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	bots	5
 apps/web/src/components/CommandPaletteLookups.ts	bots	1
@@ -940,8 +947,10 @@ apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	scheduled
 apps/web/src/components/ThreadNotificationCoordinator.tsx	scheduled-task-alerts	3
 apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx	failed-run-retry	1
 apps/web/src/components/chat/MessagesTimeline.tsx	failed-run-retry	4
+apps/web/src/components/chat/MessagesTimeline.tsx	library-launch-files	3
 apps/web/src/components/chat/TimelineWorkEntryRow.tsx	failed-run-retry	2
 apps/web/src/components/chat/timelineRowContext.ts	failed-run-retry	2
+apps/web/src/components/chat/timelineRowContext.ts	library-launch-files	2
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	scheduled-task-alerts	1
 packages/contracts/src/scheduledTask.ts	scheduled-task-alerts	1
 apps/mobile/src/features/threads/ThreadComposer.tsx	attention-status	1

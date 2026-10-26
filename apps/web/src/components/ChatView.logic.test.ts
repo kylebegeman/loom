@@ -744,6 +744,26 @@ describe("worktree setup visibility", () => {
     expect(resolve(other, other)).toEqual({ snapshot: null, isPreparingWorktree: false });
   });
 
+  it("shows project files downloading without treating the conversation as preparing", () => {
+    const resolve = (
+      latest: WorktreeSetupSnapshot,
+      runStatus: NonNullable<Thread["latestRun"]>["status"] | undefined,
+    ) =>
+      resolveWorktreeSetupProgress({
+        threadId,
+        localPreparing: false,
+        runStatus,
+        latest,
+        held: null,
+      });
+    const files = { ...base, kind: "project-files" as const, operationId: "launch-1" };
+    expect(resolve(files, undefined)).toEqual({ snapshot: files, isPreparingWorktree: false });
+    // The first message waits on the computer as a preparing run, which later sends queue behind.
+    expect(resolve(files, "preparing").isPreparingWorktree).toBe(true);
+    const worktree = { ...base, kind: "worktree" as const };
+    expect(resolve(worktree, undefined)).toEqual({ snapshot: worktree, isPreparingWorktree: true });
+  });
+
   it("reads the settled snapshot back from the thread's activities", () => {
     const activities = [
       { kind: "setup-script.started", payload: {} },

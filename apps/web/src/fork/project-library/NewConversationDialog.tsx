@@ -36,6 +36,7 @@ import {
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_DEFAULT_CONVERSATION_TITLE,
   LIBRARY_FILE_LIFECYCLE_FEATURE,
+  LIBRARY_LAUNCH_FILES_FEATURE,
   LIBRARY_WORKTREE_STARTS_FEATURE,
   isDefaultThreadTitle,
   LibraryLaunchWorkspace,
@@ -107,6 +108,8 @@ const ConversationAttempt = Schema.NullOr(
     keepOnComputer: Schema.optional(Schema.Boolean),
     retentionCopy: Schema.optional(LibraryWorkingCopy),
     workspace: Schema.optional(LibraryLaunchWorkspace),
+    /** Files the launch reserves and fills after the conversation opens; a retry replays them. */
+    files: Schema.optional(LibraryPrepareCopyRequest),
   }),
 );
 
@@ -520,7 +523,9 @@ export function useLibraryConversationSetup({
     newProjectsRoot: host?.serverConfig?.newProjectsRoot,
     copies: retained.data ?? knownCopies,
   });
+  // The one place a start picks its files folder; every launch path reads it from here.
   const rootPath =
+    attempt?.files?.rootPath ??
     restoring?.rootPath ??
     preparation?.input.rootPath ??
     reopening?.rootPath ??
@@ -725,6 +730,22 @@ export function useLibraryConversationSetup({
     setBusy(true);
     setError(null);
     let submittedPreparation = preparation;
+    const openConversation = async (next: NonNullable<typeof attempt>) => {
+      if (next.context.trim())
+        useComposerDraftStore
+          .getState()
+          .setPrompt(scopeThreadRef(next.environmentId, next.threadId), next.context);
+      saveAttempt(null);
+      markLibraryConversationStarted(
+        scopedThreadKey(scopeThreadRef(next.environmentId, next.threadId)),
+      );
+      onChanged();
+      onClose();
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: next.environmentId, threadId: next.threadId },
+      });
+    };
     const launch = async () => {
       let launchCopy = copy ?? (retainedCopy?.state === "ready" ? retainedCopy : null);
       let pendingPreparation = preparation;
@@ -887,6 +908,119 @@ export function useLibraryConversationSetup({
         submittedPreparation = null;
         savePreparation(null);
         onChanged();
+      }
+      // The computer opens the conversation first and fills its files after, so one request
+      // replaces preparing, registering and resolving files here. A saved preparation from an
+      // earlier start finishes on the chain that began it.
+      if (
+        pendingPreparation === null &&
+        supportsOperations &&
+        supportsLoomFeature(
+          host?.serverConfig?.environment.capabilities,
+          LIBRARY_LAUNCH_FILES_FEATURE,
+        )
+      ) {
+        const readyCopy = launchCopy?.state === "ready" ? launchCopy : null;
+        let files = attempt?.files;
+        if (!attempt && !readyCopy) {
+          const filesRootPath = rootPath.trim();
+          if (
+            (retained.data ?? knownCopies).some(
+              (entry) =>
+                entry.environmentId === hostId &&
+                entry.ownership === "managed" &&
+                libraryLaunchPathOverlaps(entry.rootPath, filesRootPath),
+            )
+          )
+            throw new LibraryError({
+              reason: "invalid",
+              cause:
+                "Choose a separate folder for this project layout. Existing project files must be reopened from their saved version.",
+            });
+          const inspected = await inspect({
+            environmentId: hostId,
+            input: { rootPath: filesRootPath },
+          });
+          if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
+          files = {
+            requestId: randomUUID(),
+            project: launchProject,
+            rootPath: filesRootPath,
+            strategy: inspected.value.exists ? ("reuse" as const) : ("clone" as const),
+            ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
+          };
+        }
+        const workingCopyId = files?.requestId ?? readyCopy?.id;
+        if (!workingCopyId)
+          throw new Error("Reopen this conversation's original project files before retrying.");
+        const next = attempt ?? {
+          environmentId: hostId,
+          project: launchProject,
+          threadId: newThreadId(),
+          binding: {
+            projectId: launchProject.id,
+            projectRevision: launchProject.revision,
+            workingCopyId,
+            environmentId: hostId,
+            resourceIds: launchResourceIds,
+            ...(continuation || restoring?.launch?.continuationOf
+              ? {
+                  continuationOf: restoring?.launch?.continuationOf ?? {
+                    environmentId: continuation!.environmentId,
+                    threadId: continuation!.threadId,
+                    sequence: continuation!.sequence,
+                  },
+                }
+              : {}),
+          },
+          title: title.trim() || LIBRARY_DEFAULT_CONVERSATION_TITLE,
+          context,
+          modelSelection,
+          defaultsResolved: true,
+          keepOnComputer: restoring?.keepOnComputer ?? reopening?.keepOnComputer ?? keepOnComputer,
+          ...(modelChoice ? { requestedModelSelection: modelChoice } : {}),
+          ...(runtimeChoice ? { requestedRuntimeMode: runtimeChoice } : {}),
+          ...(workspace ? { workspace } : {}),
+          ...(files ? { files } : {}),
+          runtimeMode,
+          interactionMode,
+          createdAt: new Date().toISOString(),
+          created: false,
+          registerRequestId: randomUUID(),
+        };
+        saveAttempt(next);
+        saveReopening(null);
+        saveRestoring(null);
+        // Cloned files are the conversation's own; a reused folder stays where it was found.
+        const managed = next.files
+          ? next.files.strategy === "clone"
+          : readyCopy?.ownership === "managed";
+        const launched = await executeOperation({
+          environmentId: next.environmentId,
+          input: {
+            operationId: `${next.registerRequestId}:launch`,
+            request: {
+              kind: "launch",
+              input: {
+                project: next.project,
+                binding: next.binding,
+                threadId: next.threadId,
+                title: next.title,
+                modelSelection: next.modelSelection,
+                runtimeMode: next.runtimeMode,
+                interactionMode: next.interactionMode ?? "default",
+                ...(!offline && managed && next.keepOnComputer !== undefined
+                  ? { keepOnComputer: next.keepOnComputer }
+                  : {}),
+                ...(next.workspace ? { workspace: next.workspace } : {}),
+                ...(next.files ? { files: next.files } : {}),
+              },
+            },
+          },
+        });
+        if (launched._tag === "Failure") throw squashAtomCommandFailure(launched);
+        await openConversation(next);
+        return;
       }
       if (pendingPreparation || !launchCopy || launchCopy.state !== "ready") {
         let files = pendingPreparation;
@@ -1156,20 +1290,7 @@ export function useLibraryConversationSetup({
         });
         if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
       }
-      if (next.context.trim())
-        useComposerDraftStore
-          .getState()
-          .setPrompt(scopeThreadRef(next.environmentId, next.threadId), next.context);
-      saveAttempt(null);
-      markLibraryConversationStarted(
-        scopedThreadKey(scopeThreadRef(next.environmentId, next.threadId)),
-      );
-      onChanged();
-      onClose();
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: { environmentId: next.environmentId, threadId: next.threadId },
-      });
+      await openConversation(next);
     };
     try {
       await launch();

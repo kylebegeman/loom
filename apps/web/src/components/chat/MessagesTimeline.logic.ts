@@ -2023,8 +2023,10 @@ export function deriveMessagesTimelineRows(input: {
     input.worktreeSetup !== undefined &&
     worktreeSetupAgentStarted(input.worktreeSetup) &&
     input.latestRun?.startedAt != null;
+  // fork: library-launch-files: project files name themselves and leave the working row to the run
   const setupOwnsWorkingSlot =
     !setupHandedOff &&
+    input.worktreeSetup?.kind !== "project-files" &&
     (input.worktreeSetup?.phase === "running" || input.worktreeSetup?.phase === "done");
   if (input.worktreeSetup && (!setupHandedOff || input.worktreeSetup.phase !== "running")) {
     const setupRow = {
