@@ -3,14 +3,14 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts";
 
 /** Receipts own physical locations even when local project IDs or path spellings differ. */
 export const makeLibraryCheckoutOwners = Effect.gen(function* () {
   const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const windows = yield* HostProcess.isWindows;
-  const key = (target: string) => (windows ? target.toLowerCase() : target);
+  const key = SetupMarker.pathKey(yield* HostProcess.Platform);
   const contains = (root: string, target: string) => {
     const relative = path.relative(key(root), key(target));
     return (

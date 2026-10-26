@@ -8,6 +8,7 @@ import {
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: file-placement
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -45,6 +46,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: file-placement
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
@@ -184,6 +186,18 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig; // fork: file-placement
   const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
+  const workspaceKey = SetupMarker.pathKey(yield* HostProcess.Platform); // fork: file-placement
+  // fork: file-placement: macOS and Windows name one folder in any case or Unicode form.
+  const findWorkspaceOwner = Effect.fn("ProjectService.findWorkspaceOwner")(function* (
+    workspaceRoot: string,
+    projectId: ProjectId,
+  ) {
+    const key = workspaceKey(workspaceRoot);
+    const owners = (yield* projects.list()).filter(
+      (row) => workspaceKey(row.workspaceRoot) === key,
+    );
+    return owners.find((row) => row.projectId !== projectId) ?? owners[0];
+  });
 
   const toProject = (
     row: ProjectStore.ProjectRow,
@@ -254,13 +268,12 @@ export const make = Effect.gen(function* () {
     const workspaceRoot = command.type === "project.delete" ? undefined : command.workspaceRoot;
     const planAndCommit = Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* readRow(projectId, { includeDeleted: true }));
+      // fork: file-placement
       const workspaceOwner =
         workspaceRoot === undefined
           ? undefined
-          : Option.getOrUndefined(
-              yield* projects
-                .findActiveByWorkspaceRoot(workspaceRoot)
-                .pipe(Effect.mapError(dispatchError)),
+          : yield* findWorkspaceOwner(workspaceRoot, projectId).pipe(
+              Effect.mapError(dispatchError),
             );
       const now = yield* DateTime.now;
       const eventId = yield* idAllocator.allocate
@@ -295,7 +308,8 @@ export const make = Effect.gen(function* () {
         projectId,
         workspaceRoot === undefined
           ? planAndCommit
-          : workspaceLocks.withLock(workspaceRoot, planAndCommit),
+          : // fork: file-placement
+            workspaceLocks.withLock(workspaceKey(workspaceRoot), planAndCommit),
       )
       .pipe(Effect.mapError(dispatchError));
     if (receipt.projectId !== projectId || receipt.commandType !== command.type) {

@@ -227,11 +227,11 @@ apps/mobile/src/features/projects/AddProjectScreen.test.ts	project-home	1
 apps/mobile/src/lib/storage.test.ts	project-home	1
 apps/server/src/ws.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
-apps/server/src/project/ProjectService.ts	file-placement	14
+apps/server/src/project/ProjectService.ts	file-placement	20
 apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	5
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	3
-apps/server/src/project/ProjectService.test.ts	file-placement	7
+apps/server/src/project/ProjectService.test.ts	file-placement	9
 apps/server/src/ws.ts	file-placement	1
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
 apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
@@ -1065,5 +1065,5 @@ apps/server/src/project/WorktreeSetupTracker.ts	library-launch-files	3
 apps/server/src/project/WorktreeSetupTracker.test.ts	library-launch-files	1
 apps/server/src/orchestration-v2/RuntimePolicy.ts	library-launch-files	1
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-launch-files	2
-apps/server/src/storageCleanup.ts	file-placement	10
+apps/server/src/storageCleanup.ts	file-placement	11
 apps/server/src/storageCleanup.test.ts	file-placement	1
