@@ -83,7 +83,8 @@ describe("serverSettings helpers", () => {
       worktreeKeepWhen: "uncommitted-changes",
       projectAfterDays: null,
       projectOnSettle: false,
-      scratchAfterDays: null,
+      unusedCopiesAfterDays: 7,
+      scratchAfterDays: 30,
       browserArtifactsAfterDays: 14, // fork: retention-defaults
       logsAfterDays: 30,
     });
@@ -772,6 +773,35 @@ describe("worktreesDirectory", () => {
     expect(reset.previousWorktreesDirectories).toEqual(["/a", "/b"]);
     const back = applyServerSettingsPatch(reset, { worktreesDirectory: "/a" });
     expect(back.previousWorktreesDirectories).toEqual(["/b"]);
+  });
+});
+
+describe("projectsDirectory", () => {
+  it("remembers previous Projects folders once each so their copies stay managed", () => {
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { projectsDirectory: "/a" });
+    expect(first.previousProjectsDirectories).toEqual([]);
+    const second = applyServerSettingsPatch(first, { projectsDirectory: "/b" });
+    expect(second.previousProjectsDirectories).toEqual(["/a"]);
+    const third = applyServerSettingsPatch(second, { projectsDirectory: "/c" });
+    expect(third.previousProjectsDirectories).toEqual(["/a", "/b"]);
+    const revisit = applyServerSettingsPatch(
+      applyServerSettingsPatch(third, { projectsDirectory: "/a" }),
+      { projectsDirectory: "/c" },
+    );
+    expect(revisit.previousProjectsDirectories).toEqual(["/b", "/a"]);
+    const reset = applyServerSettingsPatch(revisit, { projectsDirectory: "" });
+    expect(reset.previousProjectsDirectories).toEqual(["/b", "/a", "/c"]);
+    expect(
+      applyServerSettingsPatch(reset, { projectsDirectory: "" }).previousProjectsDirectories,
+    ).toEqual(["/b", "/a", "/c"]);
+  });
+
+  it("leaves the worktree history alone", () => {
+    const moved = applyServerSettingsPatch(
+      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { projectsDirectory: "/a" }),
+      { projectsDirectory: "/b" },
+    );
+    expect(moved.previousWorktreesDirectories).toEqual([]);
   });
 });
 

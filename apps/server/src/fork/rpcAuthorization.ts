@@ -194,6 +194,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [LIB.archiveProject]: AuthSettingsWriteScope,
   [LIB.registerCopy]: AuthOrchestrationOperateScope,
   [LIB.prepareCopy]: AuthTerminalOperateScope,
+  [LIB.placement]: AuthTerminalOperateScope,
   [LIB.unregisterCopy]: AuthOrchestrationOperateScope,
   [LIB.releaseCopy]: AuthOrchestrationOperateScope,
   [LIB.setCopyRetention]: AuthOrchestrationOperateScope,

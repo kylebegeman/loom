@@ -504,11 +504,31 @@ export type LibraryFolderInspection = typeof LibraryFolderInspection.Type;
 export const LibraryPrepareCopyRequest = Schema.Struct({
   requestId: LibraryRequestId,
   project: LibraryProject,
-  rootPath: Schema.String,
+  /** Absent asks the computer to place the copy; send it to computers without `serverChosenFolders`. */
+  rootPath: Schema.optional(Schema.String),
   strategy: Schema.Literals(["reuse", "clone"]),
   resourceIds: Schema.optional(Schema.Array(LibraryId)),
 });
 export type LibraryPrepareCopyRequest = typeof LibraryPrepareCopyRequest.Type;
+export const LibraryPlacementRequest = Schema.Struct({
+  projectId: LibraryId,
+  resourceIds: Schema.optional(Schema.Array(LibraryId)),
+});
+export type LibraryPlacementRequest = typeof LibraryPlacementRequest.Type;
+/**
+ * Where this computer would put a project's files, in order of preference: a Library copy it
+ * already has, reopened when released, an existing checkout of the repository it can borrow, or a
+ * new folder it claims under its Projects folder.
+ */
+export const LibraryPlacement = Schema.Struct({
+  action: Schema.Literals(["use", "reopen", "reuse-existing", "clone"]),
+  rootPath: Schema.String,
+  ownership: LibraryWorkingCopy.fields.ownership,
+  copyId: Schema.optional(LibraryId),
+  localProjectId: Schema.optional(ProjectId),
+  reason: Schema.String,
+});
+export type LibraryPlacement = typeof LibraryPlacement.Type;
 export const LibraryCopyStatus = Schema.Struct({
   copy: LibraryWorkingCopy,
   blockers: Schema.Array(Schema.String),
@@ -616,6 +636,7 @@ export const LIBRARY_WS_METHODS = {
   verifyImport: "loom.library.verify-import",
   inspectFolder: "loom.library.inspect-folder",
   prepareCopy: "loom.library.prepare-copy",
+  placement: "loom.library.placement",
   copyStatus: "loom.library.copy-status",
   unregisterCopy: "loom.library.unregister-copy",
   releaseCopy: "loom.library.release-copy",
@@ -754,6 +775,11 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
   Rpc.make(LIBRARY_WS_METHODS.prepareCopy, {
     payload: LibraryPrepareCopyRequest,
     success: LibraryWorkingCopy,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.placement, {
+    payload: LibraryPlacementRequest,
+    success: LibraryPlacement,
     error,
   }),
   Rpc.make(LIBRARY_WS_METHODS.copyStatus, {

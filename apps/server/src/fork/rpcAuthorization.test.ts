@@ -408,6 +408,32 @@ it.effect("reads published pages with read access and changes them only with pre
   }),
 );
 
+it.effect("reveals where a Library copy would go only with terminal access", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("library-placement-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let placed = false;
+    const place = Effect.sync(() => {
+      placed = true;
+      return "/home/loom/Projects/loom";
+    });
+    const denied = yield* auth([AuthOrchestrationReadScope, AuthOrchestrationOperateScope])
+      .effect(LIB.placement, place)
+      .pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthTerminalOperateScope);
+    expect(placed).toBe(false);
+    expect(yield* auth([AuthTerminalOperateScope]).effect(LIB.placement, place)).toBe(
+      "/home/loom/Projects/loom",
+    );
+    expect(FORK_CLIENT_GUARDED_RPC_SCOPES[LIB.placement]).toBe(AuthTerminalOperateScope);
+  }),
+);
+
 it("guards each fork write in the client with the scope its server handler enforces", () => {
   const mismatched = Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES).filter(
     ([method, scope]) => FORK_RPC_REQUIRED_SCOPES[method as ForkRpcMethod] !== scope,
