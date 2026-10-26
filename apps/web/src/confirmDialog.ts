@@ -29,7 +29,6 @@ const idleState: ConfirmDialogState = { status: "idle" };
 let state: ConfirmDialogState = idleState;
 let activeConfirmation: PendingConfirmation | null = null;
 let queuedConfirmations: PendingConfirmation[] = [];
-let registeredHostCount = 0;
 const listeners = new Set<() => void>();
 
 function publish(next: ConfirmDialogState): void {
@@ -52,26 +51,16 @@ export function readConfirmDialogState(): ConfirmDialogState {
   return state;
 }
 
-export function subscribeConfirmDialog(listener: () => void): () => void {
+/**
+ * Only themed hosts subscribe, so a subscriber is a mounted host. When the last
+ * one leaves, pending confirmations resolve as cancelled.
+ */
+export function subscribeConfirmDialogHost(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function registerConfirmDialogHost(): () => void {
-  registeredHostCount += 1;
-  let registered = true;
-
-  return () => {
-    if (!registered) return;
-    registered = false;
-    registeredHostCount = Math.max(0, registeredHostCount - 1);
-
-    if (registeredHostCount === 0) {
-      resolvePendingConfirmations(false);
-      publish(idleState);
-    }
+    if (!listeners.delete(listener) || listeners.size > 0) return;
+    resolvePendingConfirmations(false);
+    publish(idleState);
   };
 }
 
@@ -80,7 +69,7 @@ export function requestConfirmDialog(
   message: string,
   options?: ConfirmDialogOptions,
 ): Promise<boolean> | undefined {
-  if (registeredHostCount === 0) return undefined;
+  if (listeners.size === 0) return undefined;
 
   const confirmation = new Promise<boolean>((resolve) => {
     const pending = {
@@ -141,8 +130,7 @@ export function completeConfirmDialogClose(): void {
 }
 
 export function resetConfirmDialogForTests(): void {
-  resolvePendingConfirmations(false);
-  registeredHostCount = 0;
-  publish(idleState);
   listeners.clear();
+  resolvePendingConfirmations(false);
+  publish(idleState);
 }

@@ -34,7 +34,7 @@ export function useAttachmentDocument(input: {
   readonly attachment: FileBackedComposerAttachment | null;
   readonly loadCaptured?: (signal: AbortSignal) => Promise<AttachmentPreviewFile | null>;
 }) {
-  const kind = filePreviewKind(input);
+  const kind = filePreviewKind(input, { richDocuments: false });
   const delimiter = filePreviewDelimiter(input);
   const shareController = useRef<AbortController | null>(null);
   useEffect(() => () => shareController.current?.abort(), []);

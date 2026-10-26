@@ -3,11 +3,11 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ExistingThreadSettingsRouteSession } from "../../features/threads/ThreadSettingsSheet";
+import type { ThreadConversationSettingsSession } from "./threadConversationSettingsRoute";
 
 const state = vi.hoisted(() => ({
-  session: null as ExistingThreadSettingsRouteSession | null,
-  present: vi.fn((session: ExistingThreadSettingsRouteSession) => {
+  session: null as ThreadConversationSettingsSession | null,
+  present: vi.fn((session: ThreadConversationSettingsSession) => {
     state.session = session;
   }),
   clear: vi.fn((ownerId: string) => {
@@ -24,8 +24,8 @@ vi.mock("@react-navigation/native", () => ({
     push: (route: string) => ({ route }),
   },
 }));
-vi.mock("../../features/threads/ThreadSettingsSheet", () => ({
-  useExistingThreadSettingsRoutePresentation: () => ({
+vi.mock("./threadConversationSettingsRoute", () => ({
+  useThreadConversationSettingsRoute: () => ({
     session: state.session,
     present: state.present,
     clear: state.clear,
@@ -107,7 +107,7 @@ describe("conversation details settings session", () => {
   it("keeps the open settings session current and applies options through the existing command", async () => {
     await render();
     await open();
-    expect(state.navigation.dispatch).toHaveBeenCalledWith({ route: "ThreadSettingsSheet" });
+    expect(state.navigation.dispatch).toHaveBeenCalledWith({ route: "ThreadConversationSettingsSheet" });
     await render({
       thread: {
         ...props.thread,

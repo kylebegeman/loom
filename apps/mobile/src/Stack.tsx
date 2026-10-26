@@ -32,6 +32,7 @@ import {
 } from "./fork/library/LibraryIdentityScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
 import { LibraryTidyRouteScreen } from "./fork/library/LibraryTidy";
+import { ThreadConversationSettingsRouteScreen } from "./fork/library/threadConversationSettingsRoute";
 import { APP_LINKING_CONFIG } from "./lib/appLinking"; // fork: project-navigation
 // fork: project-home - A durable project overview is a normal workspace route.
 import { ProjectHomeRouteScreen } from "./fork/project-home/ProjectHomeRouteScreen";
@@ -123,7 +124,6 @@ import {
   NewTaskEnvironmentPickerRouteScreen,
 } from "./features/threads/NewTaskContextPickerScreens";
 import {
-  ExistingThreadSettingsRouteProvider,
   ExistingThreadSettingsRouteScreen,
   NewTaskThreadSettingsRouteScreen,
 } from "./features/threads/ThreadSettingsSheet";
@@ -597,20 +597,18 @@ function RootStackLayout(props: {
         <ThreadOutboxDrainWorker />
         <ShowcaseCaptureCoordinator pathname={pathname} />
         <SettingsEnvironmentFilterProvider open={settingsOpen}>
-          <ExistingThreadSettingsRouteProvider>
-            <WorkspaceConnectionStatusProvider>
-              <AndroidWorkspaceTabsProvider state={props.state}>
-                <AdaptiveWorkspaceLayout
-                  pathname={workspaceLocation.pathname}
-                  workspaceRouteKey={workspaceLocation.routeKey}
-                  selectedPullRequestKey={selectedPullRequestKey(props.state)}
-                >
-                  {props.children}
-                  <HardwareKeyboardCommandOverlay />
-                </AdaptiveWorkspaceLayout>
-              </AndroidWorkspaceTabsProvider>
-            </WorkspaceConnectionStatusProvider>
-          </ExistingThreadSettingsRouteProvider>
+          <WorkspaceConnectionStatusProvider>
+            <AndroidWorkspaceTabsProvider state={props.state}>
+              <AdaptiveWorkspaceLayout
+                pathname={workspaceLocation.pathname}
+                workspaceRouteKey={workspaceLocation.routeKey}
+                selectedPullRequestKey={selectedPullRequestKey(props.state)}
+              >
+                {props.children}
+                <HardwareKeyboardCommandOverlay />
+              </AdaptiveWorkspaceLayout>
+            </AndroidWorkspaceTabsProvider>
+          </WorkspaceConnectionStatusProvider>
         </SettingsEnvironmentFilterProvider>
       </HardwareKeyboardCommandProvider>
     </NewTaskFlowProvider>
@@ -817,6 +815,18 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: LibraryBriefReviewRouteScreen,
       linking: "library/projects/:projectId/brief-suggestions",
       options: SOLID_HEADER_OPTIONS,
+    }),
+    ThreadConversationSettingsSheet: createNativeStackScreen({
+      screen: ThreadConversationSettingsRouteScreen,
+      options: {
+        gestureEnabled: true,
+        headerShown: false,
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const }
+          : {
+              ...THREAD_SETTINGS_SHEET_OPTIONS,
+            }),
+      },
     }),
     ...(__DEV__
       ? {
@@ -1301,6 +1311,7 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
   const nativeMetrics = useNativeLayoutMetrics();
   const usesSplitView = deriveLayout({ width, height, nativeMetrics }).usesSplitView;
 
+  /* oxlint-disable react/no-unstable-nested-components -- React Navigation invokes screenLayout as a render callback. */
   return (
     <Navigator
       screenLayout={(props) => <GuardedScreenLayout {...props} />}
@@ -1311,6 +1322,8 @@ export const RootStack = RootStackConfig.with(function AdaptiveRootStack({ Navig
       }
     />
   );
+
+  /* oxlint-enable react/no-unstable-nested-components */
 });
 
 type RootStackType = typeof RootStack;

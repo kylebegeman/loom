@@ -475,13 +475,11 @@ export function createVcsActionManager<R, E>(
         registry,
       ) {
         if (target === null) {
-          return yield* Effect.fail(
-            new VcsActionUnavailableError({
-              operation: "run_change_request",
-              environmentId: requestedTarget.environmentId,
-              cwd: requestedTarget.cwd,
-            }),
-          );
+          return yield* new VcsActionUnavailableError({
+            operation: "run_change_request",
+            environmentId: requestedTarget.environmentId,
+            cwd: requestedTarget.cwd,
+          });
         }
         // fork: source-control-cockpit
         const signal = yield* Deferred.make<void>();

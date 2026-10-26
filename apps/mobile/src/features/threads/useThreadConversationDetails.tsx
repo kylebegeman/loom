@@ -5,6 +5,10 @@ import {
   ThreadConversationDetails,
   type ThreadConversationDetailsProps,
 } from "../../fork/library/ThreadConversationDetails";
+import {
+  useThreadConversationSettingsRoute,
+  type ThreadConversationSettingsSession,
+} from "../../fork/library/threadConversationSettingsRoute";
 import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import {
@@ -16,10 +20,6 @@ import {
   rememberModelOptions,
   withRememberedModelOptions,
 } from "../../state/use-model-option-memory";
-import {
-  useExistingThreadSettingsRoutePresentation,
-  type ExistingThreadSettingsRouteSession,
-} from "./ThreadSettingsSheet";
 
 type Props = Pick<
   ThreadConversationDetailsProps,
@@ -39,7 +39,7 @@ type Props = Pick<
 
 export function useThreadConversationDetails(props: Props | null) {
   const navigation = useNavigation();
-  const { session, present, clear } = useExistingThreadSettingsRoutePresentation();
+  const { session, present, clear } = useThreadConversationSettingsRoute();
   const ownerId = props ? `details:${props.thread.environmentId}:${props.thread.id}` : null;
   const latest = useRef(props);
   useLayoutEffect(() => {
@@ -103,7 +103,7 @@ export function useThreadConversationDetails(props: Props | null) {
   const active = ownerId !== null && session?.ownerId === ownerId;
   // Only an open settings page follows the draft, so typing never re-renders the thread route.
   const activeDraftText = useComposerDraft(active ? draftKey : null).text;
-  const nextSession = useMemo<ExistingThreadSettingsRouteSession | null>(() => {
+  const nextSession = useMemo<ThreadConversationSettingsSession | null>(() => {
     if (!environmentId || !threadId || !projectId || !selection || !ownerId) return null;
     const lockedProviderInstanceId = canSwitchProvider ? undefined : selection.instanceId;
     const options = buildModelOptions(serverConfig, selection, lockedProviderInstanceId, projectId);
@@ -193,6 +193,6 @@ export function useThreadConversationDetails(props: Props | null) {
   return useCallback(() => {
     if (!nextSession) return;
     present({ ...nextSession, prompt: draftKey ? getComposerDraftSnapshot(draftKey).text : "" });
-    navigation.dispatch(StackActions.push("ThreadSettingsSheet"));
+    navigation.dispatch(StackActions.push("ThreadConversationSettingsSheet"));
   }, [nextSession, draftKey, present, navigation]);
 }

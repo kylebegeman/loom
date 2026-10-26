@@ -159,7 +159,6 @@ apps/mobile/src/features/connection/LocalEnvironmentList.tsx	fleet-connections	1
 apps/mobile/src/features/connection/useConnectionController.ts	computer-naming	2
 apps/mobile/src/features/keyboard/CommandPalette.tsx	fleet-connections	2
 apps/mobile/src/features/projects/AddProjectScreen.tsx	fleet-connections	2
-apps/mobile/src/features/projects/AddProjectSourceRoute.tsx	fleet-connections	1
 apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx	fleet-connect	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	computer-naming	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	fleet-connections	4
