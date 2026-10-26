@@ -12,6 +12,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -62,6 +63,12 @@ export class LanesRoots extends Context.Service<
   { readonly roots: Effect.Effect<ReadonlyArray<string>> }
 >()("t3/project/ProjectPlacement/LanesRoots") {}
 
+/** Roots Library copies still record, so a claim never mixes with a missing or releasing copy. */
+export class LibraryCopyRoots extends Context.Service<
+  LibraryCopyRoots,
+  { readonly roots: Effect.Effect<ReadonlyArray<string>, unknown> }
+>()("t3/project/ProjectPlacement/LibraryCopyRoots") {}
+
 export class ProjectPlacement extends Context.Service<
   ProjectPlacement,
   {
@@ -107,6 +114,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const lanes = yield* Effect.serviceOption(LanesRoots);
+  const library = yield* Effect.serviceOption(LibraryCopyRoots);
   const home = yield* HostProcess.HomeDirectory;
   const key = SetupMarker.pathKey(yield* HostProcess.Platform);
   const defaultProjectsRoot = path.resolve(
@@ -237,7 +245,12 @@ const make = Effect.gen(function* () {
   const folderName = (root: string, name: string, attempt: number) =>
     path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
 
-  // A receipt or a registered project keeps a name taken after its folder is gone.
+  const libraryCopyRoots = Option.match(library, {
+    onNone: () => Effect.succeed<ReadonlyArray<string>>([]),
+    onSome: (service) => service.roots,
+  });
+
+  // A receipt, a Library copy or a registered project keeps a name taken after its folder is gone.
   const nameTaken = Effect.fn("ProjectPlacement.nameTaken")(function* (folder: string) {
     if (yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true))) return true;
     const receipt = yield* hasManagedProjectReceipt(folder).pipe(
@@ -247,9 +260,15 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => true),
     );
     if (receipt) return true;
+    const copyRoots = yield* libraryCopyRoots.pipe(Effect.option);
+    if (Option.isNone(copyRoots)) return true;
     const real = yield* canonical(folder);
-    for (const project of yield* activeProjects)
-      if (overlaps(yield* canonical(path.resolve(project.workspaceRoot)), real)) return true;
+    const holders = [
+      ...(yield* activeProjects).map((project) => project.workspaceRoot),
+      ...copyRoots.value,
+    ];
+    for (const holder of holders)
+      if (overlaps(yield* canonical(path.resolve(holder)), real)) return true;
     return false;
   });
 
@@ -345,4 +364,21 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ProjectPlacement, make);
 
-export const layerWithProjectStore = layer.pipe(Layer.provide(ProjectStore.layer));
+/** Every copy not yet released holds its root, including one whose folder is missing or moving. */
+export const layerLibraryCopyRoots = Layer.effect(
+  LibraryCopyRoots,
+  Effect.map(LibraryWorkspaceStore.LibraryWorkspaceStore, (store) => ({
+    roots: store.receipts.pipe(
+      Effect.map((receipts) =>
+        receipts.flatMap((receipt) =>
+          receipt.copy.state === "released" ? [] : [receipt.copy.rootPath],
+        ),
+      ),
+    ),
+  })),
+).pipe(Layer.provide(LibraryWorkspaceStore.layer));
+
+export const layerWithProjectStore = layer.pipe(
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(layerLibraryCopyRoots),
+);
