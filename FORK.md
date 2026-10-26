@@ -882,17 +882,21 @@ of a large one per stable release. The `Loom upstream` workflow
 that `main` lacks, it merges it on `integrate/<tag>`. Each conflicted file gets its own
 Claude session (`integrate --resolve`, prompt in `scripts/fork/upstream-resolve.md`), so a
 merge that piled up over several days never exhausts one session; a session that cannot
-decide leaves its file conflicted and says why. Then the fork's checks run, Claude repairs a
-failing check on the same branch within the seam rules, and the pull request opens. A
-separate Claude session reviews any resolution or repair (`review-integration`, prompt in
-`scripts/fork/upstream-review.md`) and posts its verdict on the pull request. With the
-repository variable `LOOM_AUTO_MERGE`, a pull request that passed, and passed review when
-it needed one, merges by itself and `main` is tagged `loom-<tag>`. Each new integration
-pull request closes the older ones whose upstream tag it already contains, and a rerun
-replaces a failed attempt at the same tag.
+decide leaves its file conflicted and says why, and one that dropped a seam gets one more
+session told which marked lines it lost. Then the fork's checks run. They stop at the first
+failure, and each failure gets its own Claude repair session within the seam rules (prompt in
+`scripts/fork/upstream-repair.md`), whose changes become one commit on the same branch, for up
+to four rounds. Then the pull request opens. A separate Claude session reviews any resolution
+or repair (`review-integration`, prompt in `scripts/fork/upstream-review.md`) and posts its
+verdict on the pull request. With the repository variable `LOOM_AUTO_MERGE`, a pull request
+that passed, and passed review when it needed one, merges by itself and `main` is tagged
+`loom-<tag>`. Each new integration pull request closes the older ones whose upstream tag it
+already contains, and a rerun replaces a failed attempt at the same tag.
 
 Anything that does not merge alerts Kyle in Loom: a draft marked "needs Kyle" when the
-merge or its checks failed, or the waiting pull request when the review did not pass.
+merge or its checks failed, or the waiting pull request when the review did not pass. The
+workflow's last step sends that alert and runs whatever broke before it, so a failed checkout
+or a broken step still counts as a failure and alerts.
 `.github/workflows/loom-upstream-watch.yml` runs later each day and alerts when `main` has
 waited more than 30 hours for a nightly (`loom.sh upstream-status --check`), whatever the
 cause: a failed run, a run that never started, or a pull request left waiting. On Mondays
@@ -936,30 +940,30 @@ pushing. Mention `@claude` in any pull request comment to have Claude work on th
 
 The same steps run locally with `scripts/fork/loom.sh`:
 
-| Command                                           | What it does                                                                                                              |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/fork/loom.sh status`                     | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                   |
-| `scripts/fork/loom.sh upstream-status [--check]`  | How far `origin/main` trails upstream's nightlies; `--check` fails once one has waited past 30 hours.                     |
-| `scripts/fork/loom.sh upstream-overlap <arg>...`  | Upstream commits main lacks and open upstream pull requests touching each path or naming each topic.                      |
-| `scripts/fork/loom.sh check`                      | The fork's checks on the current checkout: seams, fork lint, fork tests, Omarchy pack checks, web build, typechecks.      |
-| `scripts/fork/loom.sh integrate`                  | Merge the newest stable tag on a test branch, check and build it, then fast-forward main, tag, push, publish and install. |
-| `scripts/fork/loom.sh integrate nightly`          | The same for the newest nightly tag, or pass any upstream tag.                                                            |
-| `scripts/fork/loom.sh integrate <tag> --dry-run`  | Merge, check and build, then discard it. main and the installed app are unchanged.                                        |
-| `scripts/fork/loom.sh integrate <tag> --pr`       | Merge and check, then push the test branch and open its pull request. Needs only `origin/main` checked out.               |
-| `scripts/fork/loom.sh integrate <tag> --resolve`  | Resolve conflicts one file per Claude session instead of stopping (the workflow runs `--pr --resolve`).                   |
-| `scripts/fork/loom.sh review-integration`         | Have a separate Claude session review the resolution on an `integrate/<tag>` branch; fails unless it passes.              |
-| `scripts/fork/loom.sh merge-integration <branch>` | Merge an integration pull request with a merge commit and tag it `loom-<tag>`, without publishing or installing.          |
-| `scripts/fork/loom.sh land [<pr>]`                | Merge an integration pull request, or tag main's fork changes, then publish and install.                                  |
-| `scripts/fork/loom.sh build` / `install`          | Build main to verify it, without keeping it / install the newest published build.                                         |
-| `scripts/fork/loom.sh rollback`                   | Reinstall the previous published build and restore the T3 data it last ran with.                                          |
+| Command                                           | What it does                                                                                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/fork/loom.sh status`                     | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                                |
+| `scripts/fork/loom.sh upstream-status [--check]`  | How far `origin/main` trails upstream's nightlies; `--check` fails once one has waited past 30 hours.                                  |
+| `scripts/fork/loom.sh upstream-overlap <arg>...`  | Upstream commits main lacks and open upstream pull requests touching each path or naming each topic.                                   |
+| `scripts/fork/loom.sh check`                      | The fork's checks on the current checkout: seams, fork lint, fork tests, Omarchy pack checks, web build, typechecks.                   |
+| `scripts/fork/loom.sh integrate`                  | Merge the newest stable tag on a test branch, check and build it, then fast-forward main, tag, push, publish and install.              |
+| `scripts/fork/loom.sh integrate nightly`          | The same for the newest nightly tag, or pass any upstream tag.                                                                         |
+| `scripts/fork/loom.sh integrate <tag> --dry-run`  | Merge, check and build, then discard it. main and the installed app are unchanged.                                                     |
+| `scripts/fork/loom.sh integrate <tag> --pr`       | Merge and check, then push the test branch and open its pull request. Needs only `origin/main` checked out.                            |
+| `scripts/fork/loom.sh integrate <tag> --resolve`  | Resolve conflicts one file per Claude session, then repair each failing check in its own session (the workflow runs `--pr --resolve`). |
+| `scripts/fork/loom.sh review-integration`         | Have a separate Claude session review the resolution on an `integrate/<tag>` branch; fails unless it passes.                           |
+| `scripts/fork/loom.sh merge-integration <branch>` | Merge an integration pull request with a merge commit and tag it `loom-<tag>`, without publishing or installing.                       |
+| `scripts/fork/loom.sh land [<pr>]`                | Merge an integration pull request, or tag main's fork changes, then publish and install.                                               |
+| `scripts/fork/loom.sh build` / `install`          | Build main to verify it, without keeping it / install the newest published build.                                                      |
+| `scripts/fork/loom.sh rollback`                   | Reinstall the previous published build and restore the T3 data it last ran with.                                                       |
 
 Without `--resolve`, a merge conflict stops on the `integrate/<tag>` branch and lists the
 files. Resolve them, `git add -A && git commit --no-edit`, then
 `scripts/fork/loom.sh integrate --continue` (add `--pr` to finish as a pull request). Each
-`--resolve` session's log, its summary and the review are in `.git/loom-resolve` of that
-checkout (the workflow keeps them as the run's `resolve-logs` artifact). The sessions run
-the `claude` CLI, so that needs a working login; `LOOM_AGENT` swaps in any executable that
-reads the prompt on stdin.
+`--resolve` session's log, its summary, the repair report (`repair.md`) and the review are in
+`.git/loom-resolve` of that checkout (the workflow keeps them as the run's `resolve-logs`
+artifact). The sessions run the `claude` CLI, so that needs a working login; `LOOM_AGENT`
+swaps in any executable that reads the prompt on stdin.
 
 Fork features that reach `main` join the next daily integration build. To install them
 before then, use `scripts/fork/loom.sh land` from Terminal.

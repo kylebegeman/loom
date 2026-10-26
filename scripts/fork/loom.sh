@@ -30,7 +30,8 @@
 #
 # --resolve gives each conflicted file its own Claude session instead of
 # stopping, so a merge that piled up over several days never exhausts one
-# session. review-integration has a separate session check that resolution
+# session, then gives each failing check its own repair session and commit.
+# review-integration has a separate session check that resolution and repair
 # before merge-integration merges it unattended. upstream-status says how far
 # main trails upstream (--check fails once a nightly has waited past the grace
 # period); upstream-overlap lists upstream work, merged or in open pull
@@ -86,6 +87,8 @@ UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
 UPSTREAM_GRACE_HOURS=30
 # Resolver sessions run this many at a time; each owns one conflicted file.
 LOOM_RESOLVE_JOBS=${LOOM_RESOLVE_JOBS:-4}
+# After a resolved merge, each failing check gets a fresh repair session, at most this many.
+LOOM_REPAIR_ROUNDS=${LOOM_REPAIR_ROUNDS:-4}
 LOOM_CLAUDE_MODEL=${LOOM_CLAUDE_MODEL:-claude-opus-5-5}
 # Read-only git for the sessions; they edit with Claude's own tools.
 CLAUDE_GIT_TOOLS=('Bash(git show:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git blame:*)')
@@ -158,18 +161,35 @@ restore_lockfile() {
 # merely contains "fork: " (an object key, say) never counts.
 marker_re() { printf '(//|/\\*|<!--|#) fork: %s([^a-z0-9-]|$)' "$1"; }
 
+# What one seams.tsv row's file lacks, or nothing when the seam survived.
+seam_row_shortfall() {
+  local path=$1 marker=$2 want=$3 have
+  if [ "$marker" = - ]; then
+    # Files that cannot carry a comment (JSON): the seam's own text is the check.
+    grep -qF -- "$want" "$path" 2>/dev/null || echo "no longer contains $want"
+  else
+    have=$(grep -cE "$(marker_re "$marker")" "$path" 2>/dev/null) || have=0
+    [ "$have" -ge "$want" ] || echo "has $have of $want 'fork: $marker' lines"
+  fi
+}
+
+# The seams one file lost, one per line.
+seam_shortfall() {
+  local file=$1 path marker want
+  [ -f "$SEAMS_MANIFEST" ] || return 0
+  while IFS=$'\t' read -r path marker want; do
+    [ "$path" = "$file" ] && seam_row_shortfall "$path" "$marker" "$want"
+  done < "$SEAMS_MANIFEST"
+  return 0
+}
+
 check_seams() {
   say "Checking that every fork seam survived"
-  local missing=0 path marker want have
+  local missing=0 path marker want short
   while IFS=$'\t' read -r path marker want; do
     case "$path" in '' | '#'*) continue ;; esac
-    if [ "$marker" = - ]; then
-      # Files that cannot carry a comment (JSON): the seam's own text is the check.
-      grep -qF -- "$want" "$path" 2>/dev/null || { echo "  $path no longer contains $want"; missing=1; }
-    else
-      have=$(grep -cE "$(marker_re "$marker")" "$path" 2>/dev/null) || have=0
-      [ "$have" -ge "$want" ] || { echo "  $path has $have of $want 'fork: $marker' lines"; missing=1; }
-    fi
+    short=$(seam_row_shortfall "$path" "$marker" "$want")
+    [ -z "$short" ] || { echo "  $path $short"; missing=1; }
   done < "$SEAMS_MANIFEST"
   [ "$missing" -eq 0 ] || die "a fork seam is gone; reapply it (see FORK.md), commit, and rerun with --continue"
   local unlisted
@@ -794,7 +814,11 @@ cmd_integrate() {
       fi
     fi
   fi
-  run_checks
+  if [ "$resolve" -eq 1 ]; then
+    checks_with_repair "$tag"
+  else
+    run_checks
+  fi
   if [ "$pr" -eq 1 ]; then
     if [ "$dry" -eq 1 ]; then
       say "Dry run passed; discarding it"
@@ -961,16 +985,16 @@ cmd_upstream_overlap() {
   [ "$found" -eq 1 ] || echo "No upstream work main lacks touches these. Open pull requests: https://github.com/$UPSTREAM_REPO/pulls"
 }
 
-# Runs Claude headless on the prompt from stdin: run_agent <permission mode> <tools...>.
+# Runs Claude headless on the prompt from stdin: run_agent <max turns> <permission mode> <tools...>.
 # LOOM_AGENT replaces it with any executable that reads the prompt from stdin.
 run_agent() {
-  local mode=$1
-  shift
+  local turns=$1 mode=$2
+  shift 2
   if [ -n "${LOOM_AGENT:-}" ]; then
     "$LOOM_AGENT"
     return
   fi
-  claude -p --model "$LOOM_CLAUDE_MODEL" --effort high --max-turns 80 --no-session-persistence \
+  claude -p --model "$LOOM_CLAUDE_MODEL" --effort high --max-turns "$turns" --no-session-persistence \
     --permission-mode "$mode" --allowedTools "$@"
 }
 
@@ -996,13 +1020,32 @@ resolve_prompt() {
   git log --no-merges --format='    %h %s' MERGE_HEAD..HEAD -- "$file" | head -n 40
 }
 
-# One session for one conflicted file. Its reply ends RESOLVED or UNRESOLVED: <why>.
+# One session for one conflicted file. Its reply ends RESOLVED or UNRESOLVED: <why>. A
+# resolution that dropped a seam gets one more session, told which marked lines it lost.
 resolve_file() {
-  local file=$1 tag=$2 log
+  local file=$1 tag=$2 log lost
   log=$(resolve_log "$file")
   export LOOM_RESOLVE_FILE=$file
-  resolve_prompt "$file" "$tag" | run_agent acceptEdits Read Edit Write Glob Grep "${CLAUDE_GIT_TOOLS[@]}" \
+  resolve_prompt "$file" "$tag" | run_agent 80 acceptEdits Read Edit Write Glob Grep "${CLAUDE_GIT_TOOLS[@]}" \
     >"$log" 2>&1 || echo "The session exited with status $?." >>"$log"
+  if [ "$(final_line "$log")" = RESOLVED ] && [ -e "$file" ] && ! has_conflict_markers "$file"; then
+    lost=$(seam_shortfall "$file" | awk 'NR > 1 { printf "; " } { printf "%s", $0 }')
+    if [ -n "$lost" ]; then
+      {
+        resolve_prompt "$file" "$tag"
+        cat <<EOF
+
+## Seams lost
+
+A first session resolved this file, but it now $lost (docs/fork/seams.tsv). Loom's marked
+lines are in \`git show :2:$file\`. Carry each lost one onto the resolved file in the working
+tree and keep its marker. If upstream now does what a lost seam did, leave it out and say so.
+Reply as above.
+EOF
+      } | run_agent 80 acceptEdits Read Edit Write Glob Grep "${CLAUDE_GIT_TOOLS[@]}" \
+        >>"$log" 2>&1 || echo "The session exited with status $?." >>"$log"
+    fi
+  fi
   echo "  $(final_line "$log" | cut -c1-200): $file"
 }
 
@@ -1060,6 +1103,55 @@ resolve_conflicts() {
   [ -z "$unresolved" ] || { cat "$summary"; return 1; }
 }
 
+# The fork's checks stop at their first failure. After a merge, each failure gets a fresh
+# repair session (prompt in scripts/fork/upstream-repair.md) whose changes become one commit,
+# up to LOOM_REPAIR_ROUNDS rounds, so a merge that breaks several checks never exhausts one
+# session. Dies when a session gives up or changes nothing, or the rounds run out; repair.md
+# beside the resolve logs records every round. Call it outside if and ||: run_checks relies on
+# errexit, which bash ignores in those contexts even when set again.
+checks_with_repair() {
+  local tag=$1 logs report round=0 code check log reply
+  logs=$(resolve_logs)
+  report="$logs/repair.md"
+  mkdir -p "$logs" && rm -f "$logs"/checks-*.log "$logs"/repair-*.log "$report"
+  while :; do
+    log="$logs/checks-$round.log"
+    set +e
+    (set -e; run_checks) 2>&1 | tee "$log"
+    code=${PIPESTATUS[0]}
+    set -e
+    [ "$code" -ne 0 ] || return 0
+    check=$(awk '/^==> / { last = substr($0, 5) } END { print last }' "$log")
+    if [ "$round" -ge "$LOOM_REPAIR_ROUNDS" ]; then
+      echo "- Still failing after $round repair rounds: $check." >>"$report"
+      die "the fork's checks still fail after repair; see $report"
+    fi
+    round=$((round + 1))
+    say "Repair round $round of $LOOM_REPAIR_ROUNDS: $check"
+    sed -e "s|{{tag}}|$tag|g" -e "s|{{log}}|$log|g" "$REPO_ROOT/scripts/fork/upstream-repair.md" |
+      run_agent 150 acceptEdits Bash Read Edit Write Glob Grep >"$logs/repair-$round.log" 2>&1 ||
+      echo "The session exited with status $?." >>"$logs/repair-$round.log"
+    reply=$(final_line "$logs/repair-$round.log")
+    echo "- Round $round, $check: $(printf '%s' "$reply" | cut -c1-300)" >>"$report"
+    [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
+    restore_lockfile
+    git add -A
+    if git diff --cached --quiet; then
+      echo "  The session changed nothing." >>"$report"
+      die "repair round $round changed nothing"
+    fi
+    {
+      echo "fix(fork): repair round $round after upstream $tag"
+      echo
+      echo "Failing check: $check"
+      echo
+      # The session's reply without its final REPAIRED line, at most 80 lines.
+      awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
+        "$logs/repair-$round.log"
+    } | git commit -q -F -
+  done
+}
+
 # The integration on HEAD, as a reviewer reads it: the merge's conflict resolution
 # (git show --remerge-diff) and every commit after it.
 resolution_diff() {
@@ -1081,7 +1173,7 @@ cmd_review_integration() {
   mkdir -p "$logs"
   resolution_diff >"$logs/resolution.diff"
   sed -e "s|{{tag}}|$tag|g" -e "s|{{diff}}|$logs/resolution.diff|g" "$REPO_ROOT/scripts/fork/upstream-review.md" |
-    run_agent default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
+    run_agent 80 default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
   cat "$logs/review.md"
   [ "$(final_line "$logs/review.md")" = "VERDICT: pass" ] || die "the review did not pass the resolution of $tag"
 }
@@ -1105,6 +1197,8 @@ cmd_merge_integration() {
 # Rings the Loom upstream alert: a scheduled task on Kyle's Mac that opens a thread and
 # looks into it. The request is a doorbell: status only, because the agent reads the
 # facts from GitHub itself, so a forged request can do no more than ask it to look.
+# loom-upstream.yml's Alert Kyle step sends the same request inline, so it works without
+# a checkout; change both together.
 cmd_notify() {
   local status=${1:-}
   case "$status" in

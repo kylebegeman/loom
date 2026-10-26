@@ -969,8 +969,17 @@ it("reports main stale only once a missing nightly has waited past the grace per
 });
 
 const NIGHTLY = "v1.0.0-nightly.20261014.1";
+// Built from parts so the repository's own seam check never counts this file.
+const SEAM = ["//", "fork:", "demo"].join(" ");
 
-function conflictFixture(agent: string) {
+function agentScript(root: string, name: string, body: string) {
+  const path = NodePath.join(root, "..", `${NodePath.basename(root)}-${name}.sh`);
+  roots.push(path);
+  NodeFS.writeFileSync(path, `#!/bin/bash\nprompt=$(cat)\n${body}\n`, { mode: 0o755 });
+  return path;
+}
+
+function conflictFixture(agent: string, options: { readonly seam?: boolean } = {}) {
   const f = repositoryFixture();
   const write = (file: string, text: string) => {
     NodeFS.mkdirSync(NodePath.dirname(NodePath.join(f.root, file)), { recursive: true });
@@ -979,6 +988,7 @@ function conflictFixture(agent: string) {
   write("apps/a.ts", "export const a = 1;\n");
   write("apps/b.ts", "export const b = 1;\n");
   write("apps/clean.ts", "export const clean = 1;\n");
+  if (options.seam) write("docs/fork/seams.tsv", "apps/a.ts\tdemo\t1\n");
   f.git("add", "-A");
   f.git("commit", "--quiet", "-m", "base");
   f.git("switch", "--quiet", "-c", "upstream");
@@ -988,7 +998,7 @@ function conflictFixture(agent: string) {
   f.git("commit", "--quiet", "-am", "upstream changes");
   f.git("tag", NIGHTLY);
   f.git("switch", "--quiet", "main");
-  write("apps/a.ts", "export const a = 3; // loom change\n");
+  write("apps/a.ts", `export const a = 3; ${options.seam ? SEAM : "// loom change"}\n`);
   write("apps/b.ts", "export const b = 3; // loom change\n");
   f.git("commit", "--quiet", "-am", "fork changes");
   f.git("switch", "--quiet", "-c", `integrate/${NIGHTLY}`);
@@ -997,16 +1007,15 @@ function conflictFixture(agent: string) {
     env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
   });
   expect(merge.status).not.toBe(0);
-  const agentPath = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-agent.sh`);
-  roots.push(agentPath);
-  NodeFS.writeFileSync(agentPath, `#!/bin/bash\ncat >/dev/null\n${agent}\n`, { mode: 0o755 });
+  const agentPath = agentScript(f.root, "agent", agent);
   const logs = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-logs`);
   roots.push(logs);
-  const resolve = () =>
+  const resolve = (extraEnv: Record<string, string> = {}) =>
     runSync(f.root, `resolve_conflicts ${NIGHTLY}`, {
       LOOM_AGENT: agentPath,
       LOOM_RESOLVE_LOGS: logs,
       LOOM_RESOLVE_JOBS: "2",
+      ...extraEnv,
     });
   const read = (file: string) => NodeFS.readFileSync(NodePath.join(f.root, file), "utf8");
   return { ...f, resolve, read, logs };
@@ -1056,14 +1065,8 @@ esac`);
 
 it("merges a resolution unattended only when the independent review passes it", () => {
   const f = conflictFixture("");
-  NodeFS.writeFileSync(
-    NodePath.join(f.root, "apps/a.ts"),
-    "export const a = 2; // loom change\n",
-  );
-  NodeFS.writeFileSync(
-    NodePath.join(f.root, "apps/b.ts"),
-    "export const b = 2; // loom change\n",
-  );
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/a.ts"), "export const a = 2; // loom change\n");
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/b.ts"), "export const b = 2; // loom change\n");
   f.git("add", "-A");
   f.git("commit", "--quiet", "--no-edit");
   const reviewer = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-reviewer.sh`);
@@ -1088,4 +1091,146 @@ printf 'Checked every hunk.\\n\\nVERDICT: %s\\n' "$LOOM_TEST_VERDICT"
   const failed = review("fail");
   expect(failed.status).toBe(1);
   expect(failed.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
+});
+
+it("gives a resolution that dropped a seam one more session, told what it lost", () => {
+  const f = conflictFixture(
+    `
+echo "$LOOM_RESOLVE_FILE" >> "$LOOM_TEST_CALLS"
+case "$LOOM_RESOLVE_FILE:$prompt" in
+  apps/a.ts:*"## Seams lost"*"has 0 of 1 'fork: demo' lines"*)
+    printf 'export const a = 2; %s\\n' "$LOOM_TEST_SEAM" > apps/a.ts ;;
+  apps/a.ts:*) printf 'export const a = 2;\\n' > apps/a.ts ;;
+  apps/b.ts:*) printf 'export const b = 2; // loom change\\n' > apps/b.ts ;;
+esac
+printf 'RESOLVED\\n'`,
+    { seam: true },
+  );
+  const calls = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-calls`);
+  roots.push(calls);
+
+  const result = f.resolve({ LOOM_TEST_CALLS: calls, LOOM_TEST_SEAM: SEAM });
+
+  expect(result.status).toBe(0);
+  expect(f.git("show", ":apps/a.ts")).toBe(`export const a = 2; ${SEAM}`);
+  expect(NodeFS.readFileSync(calls, "utf8").split("\n").filter(Boolean).sort()).toEqual([
+    "apps/a.ts",
+    "apps/a.ts",
+    "apps/b.ts",
+  ]);
+});
+
+function repairFixture(agent: string) {
+  const f = repositoryFixture();
+  NodeFS.mkdirSync(NodePath.join(f.root, "apps"));
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/seam.ts"), "lost\n");
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/test.ts"), "broken\n");
+  f.git("add", "-A");
+  f.git("commit", "--quiet", "-m", `chore(fork): integrate upstream ${NIGHTLY}`);
+  f.git("switch", "--quiet", "-c", `integrate/${NIGHTLY}`);
+  const agentPath = agentScript(f.root, "repair", agent);
+  const logs = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-logs`);
+  roots.push(logs);
+  // Two checks that stop at the first failure, as run_checks does.
+  const checks = `run_checks() {
+    say "Checking that every fork seam survived"
+    grep -q kept apps/seam.ts || { echo "apps/seam.ts lost its seam"; return 1; }
+    say "Running the fork's tests"
+    grep -q passing apps/test.ts || { echo "apps/test.ts failed"; return 1; }
+  }`;
+  const repair = (extraEnv: Record<string, string> = {}) =>
+    runSync(f.root, `${checks}; checks_with_repair ${NIGHTLY}`, {
+      LOOM_AGENT: agentPath,
+      LOOM_RESOLVE_LOGS: logs,
+      ...extraEnv,
+    });
+  const report = () => NodeFS.readFileSync(NodePath.join(logs, "repair.md"), "utf8");
+  return { ...f, repair, report };
+}
+
+it("repairs one failing check per round and commits each round", () => {
+  const f = repairFixture(`
+log=$(printf '%s' "$prompt" | grep -o '[^\`]*checks-[0-9]*\\.log' | head -n 1)
+case "$(tail -n 1 "$log")" in
+  *seam*) echo kept > apps/seam.ts; printf 'Reapplied the seam.\\n\\n**REPAIRED**\\n' ;;
+  *test*) echo passing > apps/test.ts; printf 'Fixed the fork test.\\n\\nREPAIRED\\n' ;;
+esac`);
+
+  const result = f.repair();
+
+  expect(result.status).toBe(0);
+  expect(f.git("log", "--format=%s", "-2").split("\n")).toEqual([
+    `fix(fork): repair round 2 after upstream ${NIGHTLY}`,
+    `fix(fork): repair round 1 after upstream ${NIGHTLY}`,
+  ]);
+  const second = f.git("log", "-1", "--format=%b");
+  expect(second).toContain("Failing check: Running the fork's tests");
+  expect(second).toContain("Fixed the fork test.");
+  expect(second).not.toContain("REPAIRED");
+  expect(f.git("status", "--porcelain")).toBe("");
+  expect(f.report()).toContain("- Round 1, Checking that every fork seam survived: REPAIRED");
+});
+
+it("stops repairing when a session gives up, changes nothing or runs out of rounds", () => {
+  const gaveUp = repairFixture(`printf "UNREPAIRABLE: upstream's own test fails\\n"`).repair();
+  expect(gaveUp.status).toBe(1);
+  expect(gaveUp.stderr).toContain(
+    "repair round 1 stopped: UNREPAIRABLE: upstream's own test fails",
+  );
+
+  const idle = repairFixture("printf 'Looks fine.\\nREPAIRED\\n'");
+  const idleResult = idle.repair();
+  expect(idleResult.status).toBe(1);
+  expect(idleResult.stderr).toContain("repair round 1 changed nothing");
+  expect(idle.git("log", "--format=%s", "-1")).toBe(`chore(fork): integrate upstream ${NIGHTLY}`);
+
+  const busy = repairFixture("echo tried >> apps/notes.txt; printf 'Tried again.\\nREPAIRED\\n'");
+  const busyResult = busy.repair({ LOOM_REPAIR_ROUNDS: "2" });
+  expect(busyResult.status).toBe(1);
+  expect(busyResult.stderr).toContain("the fork's checks still fail after repair");
+  expect(busy.report()).toContain(
+    "- Still failing after 2 repair rounds: Checking that every fork seam survived.",
+  );
+});
+
+// A quoting slip in a step's script fails here instead of silencing the step that alerts Kyle.
+function workflowScripts(file: string) {
+  const lines = NodeFS.readFileSync(file, "utf8").split("\n");
+  const scripts: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const match = /^(\s*)(?:- )?run:\s*(.*)$/.exec(lines[index] ?? "");
+    if (!match) continue;
+    const indent = match[1]?.length ?? 0;
+    const rest = match[2] ?? "";
+    if (!/^[|>]-?$/.test(rest)) {
+      scripts.push(rest);
+      continue;
+    }
+    const body: string[] = [];
+    while (index + 1 < lines.length) {
+      const next = lines[index + 1] ?? "";
+      if (next.trim() !== "" && next.search(/\S/) <= indent) break;
+      body.push(next);
+      index++;
+    }
+    scripts.push(body.join("\n"));
+  }
+  return scripts;
+}
+
+it("parses every shell script in the Loom workflows", () => {
+  const dir = NodePath.join(import.meta.dirname, "../../.github/workflows");
+  const files = NodeFS.readdirSync(dir).filter((name) => /^loom-.*\.yml$/.test(name));
+  expect(files).toContain("loom-upstream.yml");
+  for (const file of files) {
+    const scripts = workflowScripts(NodePath.join(dir, file));
+    expect(scripts.length, file).toBeGreaterThan(0);
+    for (const script of scripts) {
+      const parsed = NodeChildProcess.spawnSync("bash", ["-n"], {
+        input: script.replaceAll(/\$\{\{.*?\}\}/g, "X"),
+        encoding: "utf8",
+      });
+      expect({ file, stderr: parsed.stderr.trim() }).toEqual({ file, stderr: "" });
+    }
+  }
 });

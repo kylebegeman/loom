@@ -2,13 +2,14 @@
 #
 # Once a day, merge the newest upstream nightly on integrate/<tag>. Conflicts are
 # resolved one file per Claude session (loom.sh integrate --resolve), so days that
-# pile up never exhaust one session. Then the fork's checks run; Claude repairs a
-# failing check on the same branch, and a separate Claude session reviews any
-# resolution or repair. With the repository variable LOOM_AUTO_MERGE set to
-# "true", a pull request that passed, and passed review when it needed one,
-# merges and main is tagged loom-<tag>. Anything else alerts Kyle in Loom
-# (LOOM_ALERT_WEBHOOK_URL), and loom-upstream-watch.yml alerts when main falls
-# behind anyway. See FORK.md, "Updating from upstream".
+# pile up never exhaust one session. Then the fork's checks run, and each failing
+# check gets its own Claude repair session and commit on the same branch. A
+# separate Claude session reviews any resolution or repair. With the repository
+# variable LOOM_AUTO_MERGE set to "true", a pull request that passed, and passed
+# review when it needed one, merges and main is tagged loom-<tag>. Anything else
+# alerts Kyle in Loom (LOOM_ALERT_WEBHOOK_URL) from a last step that runs whatever
+# broke before it, and loom-upstream-watch.yml alerts when main falls behind
+# anyway. See FORK.md, "Updating from upstream".
 name: Loom upstream
 
 on:
@@ -35,14 +36,14 @@ concurrency:
 permissions:
   contents: read
   actions: write
-  id-token: write
 
 jobs:
   integrate:
     runs-on: ubuntu-latest
     # One day of upstream often conflicts in 60 files; six sessions at a time resolve
-    # that in under an hour, before the checks and the review.
-    timeout-minutes: 240
+    # that in under half an hour. Repair rounds and the review take the rest, inside
+    # GitHub's six-hour limit for hosted runners.
+    timeout-minutes: 350
     env:
       # Pushes and pull requests use the fork's own token: the built-in token
       # cannot push the upstream workflow changes that most merges carry.
@@ -96,6 +97,7 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LOOM_RESOLVE_JOBS: "6"
+          LOOM_REPAIR_ROUNDS: "4"
         run: |
           set +e
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"
@@ -107,54 +109,15 @@ jobs:
           if grep -q '^==> Resolving ' "$RUNNER_TEMP/integrate.log"; then
             echo "resolved=true" >> "$GITHUB_OUTPUT"
           fi
-
-      # Code 2 is a conflict a session could not resolve; Claude cannot do better with
-      # the whole merge. Any other failure is a check on a committed merge.
-      - name: Repair checks with Claude
-        id: repair
-        if: steps.integrate.outputs.code != '0' && steps.integrate.outputs.code != '2' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true'
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.LOOM_BOT_TOKEN }}
-          claude_args: >-
-            --model claude-opus-5-5 --effort high --max-turns 150
-            --allowedTools Bash,Read,Edit,Write,Glob,Grep
-          prompt: |
-            You are repairing an automated upstream merge in Loom, Kyle's additive fork of
-            T3 Code (pingdotgg/t3code). Read AGENTS.md, FORK.md and
-            docs/fork/packets/CONVENTIONS.md before changing anything.
-
-            `scripts/fork/loom.sh integrate ${{ env.TARGET }} --pr --resolve` committed the merge
-            on branch `${{ steps.integrate.outputs.branch }}`, then a check failed (exit code
-            ${{ steps.integrate.outputs.code }}): the seams in docs/fork/seams.tsv, the brand
-            copy, fork lint, the fork's tests, the web build or a typecheck. Its output is in
-            $RUNNER_TEMP/integrate.log.
-
-            Rules:
-            - Upstream's code wins everywhere except fork seams: the lines marked
-              `fork: <name>` and the rows of docs/fork/seams.tsv. Reapply each seam onto
-              upstream's new code and keep its marker.
-            - Change only seam lines and fork-owned files (any */fork/* path, scripts/fork/,
-              docs/fork/, FORK.md, .github/workflows/loom-*). When a seam moves, update
-              docs/fork/seams.tsv and FORK.md with it. Never rewrite, reformat or delete
-              upstream code to make a check pass.
-            - If the failure comes from upstream itself or from the runner (network,
-              install, memory), do not work around it; report it.
-            - Never commit pnpm-lock.yaml changes beyond the merge's, and never touch main.
-
-            Commit each fix with a message like `fix(fork): reapply the brand seam in
-            SidebarChrome`, then run `scripts/fork/loom.sh integrate --continue --pr`. It reruns
-            every check, pushes the branch and opens the pull request; a separate review runs
-            after you. If you cannot make the checks pass within these rules, stop and write
-            what fails, what you tried and what you recommend to $RUNNER_TEMP/repair-report.md.
-            Do not open a pull request yourself.
+          if grep -q '^==> Repair round ' "$RUNNER_TEMP/integrate.log"; then
+            echo "repaired=true" >> "$GITHUB_OUTPUT"
+          fi
 
       # A resolution or repair merges unattended only after an independent session checks
       # it. The verdict and its findings go on the pull request either way.
       - name: Review the resolution
         id: review
-        if: (steps.integrate.outputs.resolved == 'true' || steps.repair.outcome == 'success') && env.DRY_RUN != 'true'
+        if: steps.integrate.outputs.code == '0' && (steps.integrate.outputs.resolved == 'true' || steps.integrate.outputs.repaired == 'true') && env.DRY_RUN != 'true'
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           BRANCH: ${{ steps.integrate.outputs.branch }}
@@ -167,6 +130,7 @@ jobs:
             echo "Review of the unattended resolution: **$verdict**."
             echo
             cat "$LOOM_RESOLVE_LOGS/summary.md" 2>/dev/null && echo
+            cat "$LOOM_RESOLVE_LOGS/repair.md" 2>/dev/null && echo
             cat "$LOOM_RESOLVE_LOGS/review.md"
           } > "$RUNNER_TEMP/review-comment.md"
           gh pr comment "$BRANCH" --body-file "$RUNNER_TEMP/review-comment.md"
@@ -176,7 +140,7 @@ jobs:
       # contains, and the publisher releases it.
       - name: Merge automatically
         id: merge
-        if: vars.LOOM_AUTO_MERGE == 'true' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true' && (steps.integrate.outputs.code == '0' || steps.repair.outcome == 'success') && (steps.review.outputs.verdict == 'pass' || (steps.integrate.outputs.resolved != 'true' && steps.repair.outcome != 'success'))
+        if: vars.LOOM_AUTO_MERGE == 'true' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true' && steps.integrate.outputs.code == '0' && (steps.review.outputs.verdict == 'pass' || (steps.integrate.outputs.resolved != 'true' && steps.integrate.outputs.repaired != 'true'))
         env:
           BRANCH: ${{ steps.integrate.outputs.branch }}
         run: |
@@ -193,56 +157,95 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # Whatever did not merge alerts Kyle in Loom. A merge that stopped leaves no pull
-      # request, so open a draft marked "needs Kyle" with the reports; the next
-      # integration that contains its tag closes it (loom.sh close_superseded).
+      # Decide the outcome first, so the alert below knows it even if opening the draft
+      # breaks. A merge that stopped leaves no pull request, so open a draft marked "needs
+      # Kyle" with the reports; the next integration that contains its tag closes it
+      # (loom.sh close_superseded).
       - name: Result
+        id: result
         if: always()
         env:
           CODE: ${{ steps.integrate.outputs.code }}
           BRANCH: ${{ steps.integrate.outputs.branch }}
           MERGED: ${{ steps.merge.outputs.merged }}
           VERDICT: ${{ steps.review.outputs.verdict }}
+          AUTO_MERGE: ${{ vars.LOOM_AUTO_MERGE }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          LOOM_ALERT_WEBHOOK_URL: ${{ secrets.LOOM_ALERT_WEBHOOK_URL }}
         run: |
-          [ "$DRY_RUN" = true ] && { [ "$CODE" = 0 ] && exit 0; echo "::error::The dry run failed with exit code $CODE."; exit 1; }
-          [ "$MERGED" = true ] && exit 0
-          if [[ "$BRANCH" != integrate/* ]]; then
+          if [ "$DRY_RUN" = true ]; then
+            echo "status=dry-run" >> "$GITHUB_OUTPUT"
             [ "$CODE" = 0 ] && exit 0
-            scripts/fork/loom.sh notify failed || true
+            echo "::error::The dry run failed with exit code $CODE."
+            exit 1
+          fi
+          if [ "$MERGED" = true ]; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$BRANCH" != integrate/* ]]; then
+            if [ "$CODE" = 0 ]; then
+              echo "status=none" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "status=failed" >> "$GITHUB_OUTPUT"
             echo "::error::The upstream integration failed before it made a branch. See the Merge, resolve and check log."
             exit 1
           fi
           if [ -n "$(gh pr list --head "$BRANCH" --state open --json isDraft --jq '.[] | select(.isDraft | not) | 1')" ]; then
-            scripts/fork/loom.sh notify needs-review || true
-            echo "::error::The integration passed its checks but did not merge (review: ${VERDICT:-not run}, LOOM_AUTO_MERGE: ${{ vars.LOOM_AUTO_MERGE }}). Its pull request waits."
+            echo "status=needs-review" >> "$GITHUB_OUTPUT"
+            echo "::error::The integration passed its checks but did not merge (review: ${VERDICT:-not run}, LOOM_AUTO_MERGE: ${AUTO_MERGE:-unset}). Its pull request waits."
             exit 1
           fi
+          echo "status=failed" >> "$GITHUB_OUTPUT"
           tag=${BRANCH#integrate/}
           git merge --abort 2>/dev/null || true
           git reset -q
-          [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] &&
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             git commit -q --allow-empty -m "chore(fork): upstream $tag needs Kyle"
-          # shellcheck disable=SC2016 # backticks are Markdown, not a command
-          conflicts=$(sed -n 's/^CONFLICT ([^)]*): Merge conflict in \(.*\)$/- `\1`/p' "$RUNNER_TEMP/integrate.log")
-          resolution=$(cat "$RUNNER_TEMP/resolve/summary.md" 2>/dev/null) || true
-          report=$(cat "$RUNNER_TEMP/repair-report.md" 2>/dev/null) || true
-          body="Upstream T3 Code [$tag](https://github.com/pingdotgg/t3code/releases/tag/$tag) did not merge into Loom unattended (exit code $CODE). [Run log]($RUN_URL); each session's log is in its resolve-logs artifact.
-          ${conflicts:+
-          Conflicted files:
-          $conflicts
-          }${resolution:+
-          $resolution
-          }${report:+
-          Claude's repair report:
-
-          $report
-          }
-          Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag --resolve\`, or leave it: the next integration that contains this tag closes this draft."
-          git push -q -u origin "$BRANCH" &&
-            gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body "$body" ||
+          fi
+          body="$RUNNER_TEMP/needs-kyle.md"
+          {
+            echo "Upstream T3 Code [$tag](https://github.com/pingdotgg/t3code/releases/tag/$tag) did not merge into Loom unattended (exit code $CODE). [Run log]($RUN_URL); each session's log is in its resolve-logs artifact."
+            if grep -q '^CONFLICT ' "$RUNNER_TEMP/integrate.log" 2>/dev/null; then
+              printf '\nConflicted files:\n\n'
+              # shellcheck disable=SC2016 # backticks are Markdown, not a command
+              sed -n 's/^CONFLICT ([^)]*): Merge conflict in \(.*\)$/- `\1`/p' "$RUNNER_TEMP/integrate.log"
+            fi
+            for report in summary.md repair.md; do
+              if [ -s "$RUNNER_TEMP/resolve/$report" ]; then
+                echo
+                cat "$RUNNER_TEMP/resolve/$report"
+              fi
+            done
+            echo
+            echo "Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag --resolve\`, or leave it: the next integration that contains this tag closes this draft."
+          } > "$body"
+          if ! { git push -q -u origin "$BRANCH" &&
+            gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"; }; then
             echo "::error::Could not open the needs-Kyle draft."
-          scripts/fork/loom.sh notify failed || true
+          fi
           echo "::error::The upstream integration needs Kyle."
           exit 1
+
+      # Alerts Kyle in Loom for anything that did not merge. It runs whatever failed before
+      # it, including a checkout or a Result step that broke before setting a status (that
+      # counts as failed), so it sends the doorbell itself instead of using loom.sh notify.
+      - name: Alert Kyle
+        if: always() && env.DRY_RUN != 'true'
+        env:
+          STATUS: ${{ steps.result.outputs.status }}
+          LOOM_ALERT_WEBHOOK_URL: ${{ secrets.LOOM_ALERT_WEBHOOK_URL }}
+        run: |
+          case "${STATUS:-failed}" in
+            merged | none) exit 0 ;;
+            needs-review) status=needs-review ;;
+            *) status=failed ;;
+          esac
+          if [ -z "$LOOM_ALERT_WEBHOOK_URL" ]; then
+            echo "::error::LOOM_ALERT_WEBHOOK_URL is not set, so Loom was not alerted ($status)."
+            exit 1
+          fi
+          printf '{"source":"loom-upstream","status":"%s","run":"%s"}' "$status" "$GITHUB_RUN_ID" |
+            curl -fsS --retry 3 -X POST -H 'content-type: application/json' --data-binary @- \
+              "$LOOM_ALERT_WEBHOOK_URL" >/dev/null
+          echo "Alerted Loom: $status."
