@@ -123,6 +123,9 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
           ),
         ),
       ),
+    // Unadvertised until this server sends `serverChosenFolders`.
+    [L.placement]: () =>
+      auth.effect(L.placement, Effect.fail(new LibraryError({ reason: "invalid" }))),
     [L.copyStatus]: (input: Parameters<typeof workspace.status>[0]) =>
       auth.effect(L.copyStatus, workspace.status(input)),
     [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>

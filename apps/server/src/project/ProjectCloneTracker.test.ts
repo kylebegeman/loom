@@ -44,7 +44,7 @@ function makeHarness(options?: {
       Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
         prepareClone: (input) =>
           Effect.succeed({
-            destinationPath: input.destinationPath,
+            destinationPath: input.destinationPath ?? "",
             remoteUrl: input.remoteUrl ?? "",
             cloneUrl: input.remoteUrl ?? "",
             repository: null,
@@ -53,7 +53,7 @@ function makeHarness(options?: {
           options?.clone ??
           ((input) =>
             Effect.succeed({
-              cwd: input.destinationPath,
+              cwd: input.destinationPath ?? "",
               remoteUrl: input.remoteUrl ?? "",
               repository: null,
             })),
@@ -75,7 +75,11 @@ describe("ProjectCloneTracker", () => {
               Effect.void
           );
           yield* Deferred.await(release);
-          return { cwd: input.destinationPath, remoteUrl: input.remoteUrl ?? "", repository: null };
+          return {
+            cwd: input.destinationPath ?? "",
+            remoteUrl: input.remoteUrl ?? "",
+            repository: null,
+          };
         }),
     });
     return Effect.gen(function* () {
@@ -117,7 +121,11 @@ describe("ProjectCloneTracker", () => {
           yield* Deferred.await(resumed);
           yield* report({ stage: "receiving", percent: 25, detail: "170.00 MiB | 1.00 MiB/s" });
           yield* Deferred.await(release);
-          return { cwd: input.destinationPath, remoteUrl: input.remoteUrl ?? "", repository: null };
+          return {
+            cwd: input.destinationPath ?? "",
+            remoteUrl: input.remoteUrl ?? "",
+            repository: null,
+          };
         }),
     });
     return Effect.gen(function* () {
@@ -160,7 +168,7 @@ describe("ProjectCloneTracker", () => {
                 }),
               )
             : Effect.succeed({
-                cwd: input.destinationPath,
+                cwd: input.destinationPath ?? "",
                 remoteUrl: input.remoteUrl ?? "",
                 repository: null,
               });
@@ -220,7 +228,7 @@ describe("ProjectCloneTracker", () => {
       clone: (input) =>
         Effect.sync(() => {
           cloneUrls.push(input.remoteUrl ?? "");
-          return { cwd: input.destinationPath, remoteUrl: "", repository: null };
+          return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null };
         }),
     });
     const layer = ProjectCloneTracker.layer.pipe(
@@ -228,7 +236,7 @@ describe("ProjectCloneTracker", () => {
         Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
           prepareClone: (input) =>
             Effect.succeed({
-              destinationPath: input.destinationPath,
+              destinationPath: input.destinationPath ?? "",
               remoteUrl: "https://github.com/octocat/t3code.git",
               cloneUrl: "https://user:s3cret@github.com/octocat/t3code.git",
               repository: null,
@@ -236,7 +244,7 @@ describe("ProjectCloneTracker", () => {
           cloneRepository: (input) =>
             Effect.sync(() => {
               cloneUrls.push(input.remoteUrl ?? "");
-              return { cwd: input.destinationPath, remoteUrl: "", repository: null };
+              return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null };
             }),
           discardClone: () => Effect.void,
         }),

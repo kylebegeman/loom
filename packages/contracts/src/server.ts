@@ -579,6 +579,14 @@ export const ServerEventLoopStall = Schema.Struct({
 });
 export type ServerEventLoopStall = typeof ServerEventLoopStall.Type;
 
+export const ServerFolders = Schema.Struct({
+  projects: TrimmedNonEmptyString,
+  worktrees: TrimmedNonEmptyString,
+  lanes: Schema.optionalKey(TrimmedNonEmptyString),
+  scratch: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type ServerFolders = typeof ServerFolders.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
@@ -613,7 +621,15 @@ export const ServerConfig = Schema.Struct({
   threadFind: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),
   scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
+  /** The resolved Projects folder. */
   newProjectsRoot: Schema.optionalKey(TrimmedNonEmptyString),
+  /** Resolved folders the server places work in. Older servers omit it. */
+  folders: Schema.optionalKey(ServerFolders),
+  /**
+   * The server picks the folder for Library copies and clones when a request omits one.
+   * Clients send a path to servers without it, which require one.
+   */
+  serverChosenFolders: Schema.optionalKey(Schema.Literal(true)),
   /**
    * The latest stall long enough to notice, sent only for a few minutes after
    * it. A client that reconnects reads it to say why the host stopped

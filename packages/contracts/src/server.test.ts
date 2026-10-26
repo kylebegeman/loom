@@ -5,6 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   OtlpEndpointCheckInput,
   resolveEnvironmentMachineKind,
+  ServerConfig,
   ServerObservability,
   ServerProvider,
   ServerProviders,
@@ -130,5 +131,31 @@ describe("OtlpEndpointCheckInput", () => {
     for (const url of ["data:text/plain,ok", "file:///etc/hosts", "collector:4318/v1/traces"]) {
       expect(() => decode({ signal: "traces", url })).toThrow();
     }
+  });
+});
+
+describe("server-chosen folders", () => {
+  const { folders, newProjectsRoot, serverChosenFolders } = ServerConfig.fields;
+  const decode = Schema.decodeUnknownSync(
+    Schema.Struct({ folders, newProjectsRoot, serverChosenFolders }),
+  );
+
+  it("reads a server from before folder placement as one that needs a path", () => {
+    expect(decode({ newProjectsRoot: "/home/loom/Projects" })).toEqual({
+      newProjectsRoot: "/home/loom/Projects",
+    });
+  });
+
+  it("reads the resolved folders and the placement flag", () => {
+    const config = {
+      newProjectsRoot: "/home/loom/Projects",
+      folders: { projects: "/home/loom/Projects", worktrees: "/home/loom/.t3/worktrees" },
+      serverChosenFolders: true,
+    };
+    expect(decode(config)).toEqual(config);
+  });
+
+  it("only accepts the flag as true", () => {
+    expect(() => decode({ serverChosenFolders: false })).toThrow();
   });
 });

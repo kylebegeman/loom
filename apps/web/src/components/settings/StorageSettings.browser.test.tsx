@@ -112,6 +112,7 @@ function setup() {
       worktreeOnLand: false,
       projectAfterDays: null,
       projectOnSettle: false,
+      unusedCopiesAfterDays: null,
       scratchAfterDays: null,
       browserArtifactsAfterDays: null,
       logsAfterDays: null,

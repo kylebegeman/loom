@@ -1121,7 +1121,9 @@ export const StorageCleanupSettings = Schema.Struct({
   worktreeOnLand: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))), // fork: project-lifecycle
   projectAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   projectOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  scratchAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  /** Managed Library copies no conversation has used; borrowed checkouts are never removed. */
+  unusedCopiesAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(7))),
+  scratchAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(30))),
   browserArtifactsAfterDays: StorageRetentionDays.pipe(
     // fork: retention-defaults: screenshots and recordings otherwise grow without limit.
     Schema.withDecodingDefault(Effect.succeed(14)),
@@ -1144,6 +1146,12 @@ export const ServerSettings = Schema.Struct({
   worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Server-maintained history keeps old worktrees eligible for cleanup and review diffs. */
   previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  /** Where the server places Library copies and clones; empty means its default Projects folder. */
+  projectsDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Server-maintained history keeps copies in earlier Projects folders managed. */
+  previousProjectsDirectories: Schema.Array(TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   responseStreamingMode: ResponseStreamingMode.pipe(
@@ -1504,12 +1512,14 @@ export const ServerSettingsPatch = Schema.Struct({
       worktreeOnLand: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
       projectAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: project-lifecycle
       projectOnSettle: Schema.optionalKey(Schema.Boolean),
+      unusedCopiesAfterDays: Schema.optionalKey(StorageRetentionDays),
       scratchAfterDays: Schema.optionalKey(StorageRetentionDays),
       browserArtifactsAfterDays: Schema.optionalKey(StorageRetentionDays),
       logsAfterDays: Schema.optionalKey(StorageRetentionDays),
     }),
   ),
   worktreesDirectory: Schema.optionalKey(TrimmedString),
+  projectsDirectory: Schema.optionalKey(TrimmedString),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),

@@ -365,6 +365,18 @@ function patchedIdleCompaction(
   return globalIdleCompaction(current) === "off" ? "off" : "onReturn";
 }
 
+/** Empty is the server's default folder, which it always treats as managed. */
+function rememberPreviousDirectory(
+  previous: ReadonlyArray<string>,
+  current: string,
+  next: string,
+): Array<string> {
+  return [
+    ...previous.filter((directory) => directory !== next),
+    ...(current !== "" && !previous.includes(current) ? [current] : []),
+  ];
+}
+
 export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,
@@ -523,15 +535,21 @@ export function applyServerSettingsPatch(
     ...(patch.worktreesDirectory !== undefined &&
     patch.worktreesDirectory !== current.worktreesDirectory
       ? {
-          previousWorktreesDirectories: [
-            ...current.previousWorktreesDirectories.filter(
-              (directory) => directory !== patch.worktreesDirectory,
-            ),
-            ...(current.worktreesDirectory !== "" &&
-            !current.previousWorktreesDirectories.includes(current.worktreesDirectory)
-              ? [current.worktreesDirectory]
-              : []),
-          ],
+          previousWorktreesDirectories: rememberPreviousDirectory(
+            current.previousWorktreesDirectories,
+            current.worktreesDirectory,
+            patch.worktreesDirectory,
+          ),
+        }
+      : {}),
+    ...(patch.projectsDirectory !== undefined &&
+    patch.projectsDirectory !== current.projectsDirectory
+      ? {
+          previousProjectsDirectories: rememberPreviousDirectory(
+            current.previousProjectsDirectories,
+            current.projectsDirectory,
+            patch.projectsDirectory,
+          ),
         }
       : {}),
     // Per host, a patched field replaces the saved one: deepMerge would keep a cleared account pin.

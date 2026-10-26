@@ -290,7 +290,7 @@ export const make = Effect.gen(function* () {
   const prepareClone = Effect.fn("SourceControlRepositoryService.prepareClone")(function* (
     input: SourceControlCloneRepositoryInput,
   ) {
-    const preparedDestination = yield* prepareDestination(input.destinationPath);
+    const preparedDestination = yield* prepareDestination(input.destinationPath ?? "");
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
     let provider: SourceControlProviderKind =

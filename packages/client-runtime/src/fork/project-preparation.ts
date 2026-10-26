@@ -181,7 +181,7 @@ export type ProjectPreparationPlan =
   | {
       readonly kind: "create";
       readonly environmentId: EnvironmentId;
-      readonly input: ProjectCloneStartInput;
+      readonly input: ProjectCloneStartInput & { readonly destinationPath: string };
     };
 
 /** One explicit computer choice and one stable project ID, passed to the existing clone command. */

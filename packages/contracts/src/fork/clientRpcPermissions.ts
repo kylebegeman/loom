@@ -109,6 +109,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [LIB.archiveProject]: AuthSettingsWriteScope,
   [LIB.registerCopy]: AuthOrchestrationOperateScope,
   [LIB.prepareCopy]: AuthTerminalOperateScope,
+  [LIB.placement]: AuthTerminalOperateScope,
   [LIB.unregisterCopy]: AuthOrchestrationOperateScope,
   [LIB.releaseCopy]: AuthOrchestrationOperateScope,
   [LIB.setCopyRetention]: AuthOrchestrationOperateScope,

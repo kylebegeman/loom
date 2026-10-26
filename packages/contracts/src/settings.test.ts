@@ -35,13 +35,15 @@ describe("storage cleanup settings", () => {
     { projectOnSettle: false },
     { projectAfterDays: 8 },
     { projectAfterDays: null },
+    { unusedCopiesAfterDays: 14 },
+    { unusedCopiesAfterDays: null },
   ])("preserves managed project cleanup fields in RPC patches: %j", (storageCleanup) => {
     expect(decodeServerSettingsPatch({ storageCleanup })).toEqual({ storageCleanup });
   });
 
   // fork: retention-defaults
   // fork: project-lifecycle -- landed worktrees are released by default too.
-  it("keeps cleanup other than browser artifacts and landed worktrees off for existing installations", () => {
+  it("keeps cleanup off for existing installations except artifacts, landed worktrees, Scratch and unused copies", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
@@ -54,10 +56,21 @@ describe("storage cleanup settings", () => {
       worktreeKeepWhen: "uncommitted-changes",
       projectAfterDays: null,
       projectOnSettle: false,
-      scratchAfterDays: null,
+      unusedCopiesAfterDays: 7,
+      scratchAfterDays: 30,
       browserArtifactsAfterDays: 14, // fork: retention-defaults
       logsAfterDays: null,
     });
+  });
+
+  it("keeps a chosen Scratch and unused copy period, including Off", () => {
+    for (const days of [3, null]) {
+      expect(
+        decodeServerSettings({
+          storageCleanup: { scratchAfterDays: days, unusedCopiesAfterDays: days },
+        }).storageCleanup,
+      ).toMatchObject({ scratchAfterDays: days, unusedCopiesAfterDays: days });
+    }
   });
 
   // fork: retention-defaults
@@ -432,4 +445,23 @@ it("round-trips project default-branch consent without changing other projects",
   expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
   expect(decodeServerSettingsPatch(input)).toEqual(input);
   expect(decodeServerSettings({}).projectSettingsOverrides).toEqual({});
+});
+
+describe("projects directory settings", () => {
+  it("defaults to the server's own Projects folder with no history", () => {
+    expect(decodeServerSettings({})).toMatchObject({
+      projectsDirectory: "",
+      previousProjectsDirectories: [],
+    });
+    expect(DEFAULT_SERVER_SETTINGS.projectsDirectory).toBe("");
+  });
+
+  it("patches the folder but never its server-maintained history", () => {
+    expect(decodeServerSettingsPatch({ projectsDirectory: "  ~/Code  " })).toEqual({
+      projectsDirectory: "~/Code",
+    });
+    expect(
+      decodeServerSettingsPatch({ previousProjectsDirectories: ["/elsewhere"] }),
+    ).not.toHaveProperty("previousProjectsDirectories");
+  });
 });
