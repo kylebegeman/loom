@@ -1,5 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   libraryHistoryOffsetForItem,
@@ -7,7 +8,8 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
-import { AccessibilityInfo, View } from "react-native";
+import { AccessibilityInfo, Platform, View } from "react-native";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -43,6 +45,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
   const authority = useLibraryAuthority(),
     navigation = useNavigation<NativeStackNavigationProp<ReactNavigation.RootParamList>>(),
     { environments } = useEnvironments();
+  const selectDetail = useSelectWorkspaceDetail();
   const targetItem = params.item;
   const targetPosition =
     targetItem && params.position !== undefined ? Number(params.position) : undefined;
@@ -165,6 +168,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
       <LegendList
         ref={list}
         className="flex-1"
+        renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
         data={rows}
         keyExtractor={(row) => row.id}
         recycleItems={false}
@@ -237,9 +241,12 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
                 label={`Continue on ${host?.label ?? "original computer"}`}
                 disabled={!connected || !canContinue}
                 onPress={() =>
-                  navigation.navigate("Thread", {
-                    environmentId: archive.summary.environmentId,
-                    threadId: archive.summary.threadId,
+                  selectDetail({
+                    name: "Thread",
+                    params: {
+                      environmentId: archive.summary.environmentId,
+                      threadId: archive.summary.threadId,
+                    },
                   })
                 }
               />

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import { Pressable, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -40,6 +41,7 @@ import { commandValue, failureMessage } from "./runLogic";
 
 function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const capabilities = useBotsCapabilities(environmentId);
   const changes = useBotsChanges(environmentId, capabilities.supported && capabilities.connected);
   const waiting = useWaitingBotRuns(environmentId);
@@ -227,9 +229,9 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
                     label="Answer in thread"
                     tone="text"
                     onPress={() =>
-                      navigation.navigate("Thread", {
-                        environmentId: thread.environmentId,
-                        threadId: thread.id,
+                      selectDetail({
+                        name: "Thread",
+                        params: { environmentId: thread.environmentId, threadId: thread.id },
                       })
                     }
                   />

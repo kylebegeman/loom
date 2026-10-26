@@ -1,4 +1,5 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import {
   libraryHoldsLocalRefs,
   supportsLoomFeature,
@@ -198,7 +199,7 @@ export function NewTaskLibraryProjectChoices(props: {
   const share = props.incomingShareId ? { incomingShareId: props.incomingShareId } : {};
   // Options open on the computer and files the row named, so both show the same defaults.
   const open = (project: LibraryProject, start: LibraryStartDefaults | null, startNow: boolean) =>
-    navigation.getParent()?.dispatch(
+    navigation.dispatch(
       StackActions.replace(
         "LibraryStart",
         start
@@ -253,6 +254,7 @@ export function NewTaskLibraryProjectChoices(props: {
 /** Source actions carry settings, while ordinary New task actions keep project defaults. */
 export function useNewTaskFromSource() {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const authority = useLibraryAuthority();
   const { environments } = useEnvironments();
   const projects = useProjects();
@@ -352,7 +354,7 @@ export function useNewTaskFromSource() {
         },
       });
       if (created._tag === "Failure") throw squashAtomCommandFailure(created);
-      navigation.navigate("Thread", { environmentId: source.environmentId, threadId });
+      selectDetail({ name: "Thread", params: { environmentId: source.environmentId, threadId } });
     };
     try {
       await open();

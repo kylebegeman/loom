@@ -163,7 +163,9 @@ export function ComputerWorkSection({
         <SettingsActionRow
           icon="text.bubble"
           label={`Continue: ${recent.title || "Untitled conversation"}`}
-          onPress={() => navigation.navigate("Thread", { environmentId, threadId: recent.id })}
+          onPress={() =>
+            selectDetail({ name: "Thread", params: { environmentId, threadId: recent.id } })
+          }
         />
       ) : null}
       {connected && ready === 0 ? (
