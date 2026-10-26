@@ -61,6 +61,7 @@ const snapshot = (links: ReadonlyArray<PreviewLink>): PreviewLinksSnapshot => ({
     ready: true,
     tunnel: { state: "connected", message: null },
     gateway: { state: "listening", message: null },
+    library: { state: "registered", message: null },
   },
   links,
 });
@@ -328,6 +329,7 @@ it.effect("lists only the calling thread's links with the setup readiness", () =
     expect(listed).toEqual({
       ready: true,
       tunnel: "connected",
+      library: "registered",
       links: [linkFor("mine", 41000, caller)],
     });
   }),

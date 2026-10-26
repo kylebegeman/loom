@@ -174,7 +174,9 @@ Library runs on. After your Library is updated, signing in to a computer's links
 up to 30 minutes, until that computer checks in again. Opening links from Loom still works,
 and restarting Loom on that computer is quicker. Removing a computer's access to your Library
 stops sign-in to its links at once. Computers that connected with one shared Library token
-lose it together.
+lose it together. **Library** under Connection status in Settings > Loom > Preview links, and
+on the computer's previews screen in the mobile app, shows whether your Library can sign
+browsers in to this computer's links, and why not when it cannot.
 
 **Sign out preview browsers** in Settings > Loom > Preview links signs out every browser that
 opened any link on that computer, whether it came from Loom or signed in to your Library. It

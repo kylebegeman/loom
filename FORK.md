@@ -929,7 +929,14 @@ The first command builds, signs and publishes the current integration. `enable` 
 the publisher and its launch agent outside the checkout, so switching branches does not
 break the schedule. Run `enable` again after changing the publisher. `check` reports the
 candidate without building or publishing; `prepare` builds without publishing; `status`
-shows the service and log locations; `disable` removes the schedule.
+shows the service, build Node and log locations; `disable` removes the schedule.
+
+Builds run on the exact Node version in the release's `package.json` `engines.node`, never
+on the Node that started the publisher. The publisher looks for it only in fnm's
+`node-versions` directory and Homebrew's `opt` links, and stops with install instructions
+when it is missing. Install it with `fnm install <version>`, add pnpm with that Node's npm
+(Node 25 and later ship no corepack), then rerun `enable`, which also moves the launch agent
+to that Node.
 
 The signing key stays in the Mac's login keychain. The publisher verifies that the built
 app uses `kylebegeman/loom` as its feed and satisfies the installed app's signing

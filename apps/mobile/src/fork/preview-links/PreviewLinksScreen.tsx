@@ -4,7 +4,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { previewLinkBackingLabel } from "@t3tools/client-runtime/fork";
+import { previewLibraryStatus, previewLinkBackingLabel } from "@t3tools/client-runtime/fork";
 import {
   PREVIEW_LINK_LIFETIMES,
   type PreviewLink,
@@ -123,6 +123,7 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
   const [failure, setFailure] = useState<LinkFailure | null>(null);
   const snapshot = query.data;
   const status = snapshot ? previewSetupStatus(snapshot.setup) : null;
+  const library = snapshot ? previewLibraryStatus(snapshot.setup) : null;
   const links = snapshot
     ? visiblePreviewLinks(snapshot.links, snapshot.setup.settings, props.now)
     : [];
@@ -205,6 +206,14 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
         label={status?.label ?? (query.error ? "Could not load previews" : "Loading previews…")}
         description={status?.detail ?? undefined}
       />
+      {library ? (
+        <ListRowLayout
+          icon="person.crop.circle"
+          label={`Library: ${library.label}`}
+          description={library.detail}
+          tone={library.problem ? "danger" : "default"}
+        />
+      ) : null}
       {query.error ? (
         <Text
           selectable

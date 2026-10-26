@@ -936,6 +936,48 @@ describe("Loom iOS release boundaries", () => {
     }
   });
 
+  it("removes the oldest completed records beyond the retained few and keeps unconfirmed ones", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-ios-records-"));
+    const create = async (name: string, buildNumber: string, confirmed = true) => {
+      const output = NodePath.join(directory, name);
+      await NodeFSP.mkdir(NodePath.join(output, "archive-signing"), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(output, "Loom.ipa"), "owned artifact");
+      const saved = {
+        ...receipt,
+        buildNumber,
+        artifactSha256: "b".repeat(64),
+        ...(confirmed ? { buildId: name } : {}),
+      };
+      await NodeFSP.writeFile(
+        NodePath.join(output, "loom-ios-release.json"),
+        JSON.stringify(saved),
+      );
+      return { output, saved };
+    };
+    try {
+      for (const build of ["1", "2", "3", "4"]) await create(`build-${build}`, build);
+      const unconfirmed = await create("unconfirmed", "0", false);
+      const current = await create("current", "5");
+      await expect(pruneCompletedIosBuilds(current.output, current.saved, 3, 2)).rejects.toThrow(
+        "as many records",
+      );
+      await pruneCompletedIosBuilds(current.output, current.saved, 2, 3);
+      expect((await NodeFSP.readdir(directory)).sort()).toEqual([
+        "build-3",
+        "build-4",
+        "current",
+        "unconfirmed",
+      ]);
+      expect(await NodeFSP.readdir(NodePath.join(directory, "build-4"))).toContain("Loom.ipa");
+      expect(await NodeFSP.readdir(NodePath.join(directory, "build-3"))).toEqual([
+        "loom-ios-release.json",
+      ]);
+      expect(await NodeFSP.readdir(unconfirmed.output)).toContain("Loom.ipa");
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("resets stale archive signing receipts without deleting release evidence or other records", async () => {
     const directory = await NodeFSP.mkdtemp(
       NodePath.join(NodeOS.tmpdir(), "loom-ios-signing-reset-"),

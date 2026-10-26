@@ -125,10 +125,10 @@ configuration in its "Check Library push public configuration" step.
 
 ## Prepare and publish
 
-Use a clean isolated checkout with frozen dependencies, Node 24, CocoaPods, Xcode,
-and the installed `asc` CLI. A separate absolute output directory keeps archives,
-IPAs and receipts outside source. Commands below use a task-specific variable;
-choose an unused directory in the lane or the local publisher's private builds root.
+Use a clean isolated checkout with frozen dependencies, the exact Node in `package.json`
+`engines.node`, CocoaPods, Xcode, and the installed `asc` CLI. A separate absolute
+output directory keeps archives, IPAs and receipts outside source. Commands below use a
+task-specific variable; choose an unused directory in the lane or the local publisher's private builds root.
 
 ```sh
 loom_ios_output=/absolute/path/to/ios-build-record
@@ -156,10 +156,11 @@ Apple may send its own account or processing notifications independently.
 Repeating completed phases reuses the prepared record and signed artifact. A confirmed
 uploaded build is reconciled by its Apple build ID rather than uploaded again. Xcode
 intermediates stay inside the release record and are removed after archiving. The
-publisher keeps bulky artifacts for two completed records, preserving all unpublished
-or ambiguous uploads. Older confirmed records keep their source, IPA digest and Apple
-build ID; retries verify that exact valid Apple build and reuse it without rebuilding.
-Retention skips symlinked or unrelated records. If an
+publisher keeps bulky artifacts for two completed records and the records themselves for
+the six newest, preserving all unpublished or ambiguous uploads. Retained confirmed records
+keep their source, IPA digest and Apple build ID; retries verify that exact valid Apple
+build and reuse it without rebuilding. The scheduled publisher skips a release whose record
+already confirms its upload. Retention skips symlinked or unrelated records. If an
 upload times out after Apple accepts it but before a local receipt records that ID,
 the publisher stops on the existing build number. Inspect Apple's build and recover
 the local record before retrying. It deliberately does not assume an unrelated
