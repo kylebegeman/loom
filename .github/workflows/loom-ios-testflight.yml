@@ -70,6 +70,13 @@ jobs:
         env:
           LOOM_MOBILE_LIBRARY_PUSH_ENABLED: "1"
         run: node scripts/fork/ios-release.ts verify-config
+      # lint:mobile fails without ktlint and detekt, and skips SwiftLint when it is absent. The
+      # runner ships Homebrew off PATH.
+      - name: Install Kotlin static analysis tools
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew install ktlint detekt
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
       - name: Check affected packages
         run: |
           vp run --filter @t3tools/mobile --filter @t3tools/contracts --filter @t3tools/client-runtime --filter @t3tools/scripts typecheck
