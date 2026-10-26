@@ -4,6 +4,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+/**
+ * Carries one new pending request to its approvers. `stubbed` means no channel can carry it and
+ * `delivered` that one accepted it. A failure is reported as unconfirmed and never retried.
+ * The Library push adapter lives with that packet (library-push/VaultApprovalAlerts.ts).
+ */
 export class ApprovalNotificationTransport extends Context.Service<
   ApprovalNotificationTransport,
   {

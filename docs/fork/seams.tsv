@@ -144,6 +144,7 @@ packages/contracts/src/settings.ts	project-lifecycle	6
 apps/mobile/app.config.ts	fleet-connect	1
 apps/mobile/app.config.ts	library-push	2
 apps/mobile/src/App.tsx	library-push	2
+apps/mobile/src/features/agent-awareness/notificationPayload.ts	library-push	2
 apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	library-push	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-push	2
 apps/mobile/src/state/use-remote-environment-registry.ts	library-push	2

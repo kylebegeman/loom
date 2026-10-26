@@ -192,7 +192,8 @@ turn it on.
 
 Your Library can send notifications to Loom on your iPhone without a Connect
 account. With agent alerts on, it tells your iPhone when an agent needs your
-approval or an answer, fails, reaches a usage limit or finishes. This needs a
+approval or an answer, asks for Vault access, fails, reaches a usage limit or
+finishes. This needs a
 Loom build for iPhone that supports Library notifications, a Library with
 notifications turned on, and an iPhone signed in to the Library with Loom
 Identity.
@@ -220,7 +221,9 @@ and from each computer your Library lists that has a Library connection and runs
 a Loom version with agent alerts. A computer connected to your Library after it
 started sends alerts once it restarts. An alert names no conversation, project
 or computer. Tap it to open the conversation, which needs a connection to that
-computer on this iPhone. Each conversation keeps one notification, the latest.
+computer on this iPhone. A Vault access alert opens that computer's settings
+instead, and a computer sends it even when it connected to your Library after
+starting. Each conversation keeps one notification, the latest.
 Subagents, bot runs, and archived or settled conversations never alert. A
 snoozed conversation stays quiet when its agent finishes, but still alerts when
 it fails or asks you something. A computer sends at most 20 alerts an hour, and

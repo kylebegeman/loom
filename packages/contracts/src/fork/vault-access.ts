@@ -339,6 +339,8 @@ export const VaultApprovalChange = Schema.Struct({
 });
 export type VaultApprovalChange = typeof VaultApprovalChange.Type;
 export const VAULT_APPROVAL_RETENTION_MS = 86_400_000;
+/** How long a new request waits for a decision. Its alerts expire with it. */
+export const VAULT_APPROVAL_PENDING_MS = 600_000;
 export const VaultApprovalStatusInput = Schema.Struct({ id: VaultItemId });
 export const VaultApprovalCancel = Schema.Struct({
   id: VaultItemId,

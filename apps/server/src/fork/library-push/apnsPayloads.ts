@@ -2,7 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { LibraryPushActivityKind } from "@t3tools/contracts/fork";
+import { type LibraryPushActivityKind, VAULT_APPROVAL_PENDING_MS } from "@t3tools/contracts/fork";
 
 /**
  * APNs alert payloads, ported from `makePushNotificationRequest` in
@@ -64,39 +64,55 @@ const AGENT_ALERT_TEXT: Readonly<Record<LibraryPushActivityKind, string>> = {
   failed: "An agent run failed.",
   limited: "An agent reached a usage limit.",
   completed: "An agent finished.",
+  "vault-approval": "An agent is asking for Vault access.",
 };
 
 /**
  * Apple caps `apns-collapse-id` at 64 bytes and ids have no length limit, so the thread is named
- * by a digest. Every kind shares it, so a thread keeps one notification that the latest replaces.
+ * by a digest. Every agent kind shares one id, so a thread keeps one notification that the latest
+ * replaces. A Vault request has its own, so the run finishing never hides a decision still due.
  */
-const agentAlertCollapseId = (environmentId: EnvironmentId, threadId: ThreadId) =>
-  `loom-agent-${NodeCrypto.createHash("sha256")
+const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: ThreadId) =>
+  `${prefix}-${NodeCrypto.createHash("sha256")
     .update(`${environmentId}\0${threadId}`)
     .digest("base64url")
     .slice(0, 22)}`;
 
 /**
- * An agent alert. The text names no thread, project, computer or model, so none of them reaches
- * Apple or the lock screen. The data carries the relay's fields, which the app reads to open the
- * thread on a tap. The deep link has the shape `projectThreadAwarenessV2` builds.
+ * An agent alert. The text names no thread, project, computer, model or Vault item, so none of
+ * them reaches Apple or the lock screen. The data carries the relay's fields, which the app reads
+ * to open the thread on a tap. The deep link has the shape `projectThreadAwarenessV2` builds.
+ *
+ * A Vault request instead opens the iPhone app's settings for the computer, whose Vault access
+ * lists it for a decision; an app from before reads `threadId` and opens the thread. It expires
+ * with the request.
  */
 export const agentAlertRequest = (input: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly kind: LibraryPushActivityKind;
-}): ApnsAlertRequest => ({
-  payload: alertPayload({
-    title: "Loom",
-    body: AGENT_ALERT_TEXT[input.kind],
-    threadId: `${input.environmentId}/${input.threadId}`,
-    data: {
-      environmentId: input.environmentId,
-      threadId: input.threadId,
-      deepLink: `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`,
-    },
-  }),
-  priority: 10,
-  expiresInSeconds: 300,
-  collapseId: agentAlertCollapseId(input.environmentId, input.threadId),
-});
+}): ApnsAlertRequest => {
+  const environment = encodeURIComponent(input.environmentId);
+  const vault = input.kind === "vault-approval";
+  return {
+    payload: alertPayload({
+      title: "Loom",
+      body: AGENT_ALERT_TEXT[input.kind],
+      threadId: `${input.environmentId}/${input.threadId}`,
+      data: {
+        environmentId: input.environmentId,
+        threadId: input.threadId,
+        deepLink: vault
+          ? `/settings/environments/${environment}`
+          : `/threads/${environment}/${encodeURIComponent(input.threadId)}`,
+      },
+    }),
+    priority: 10,
+    expiresInSeconds: vault ? VAULT_APPROVAL_PENDING_MS / 1000 : 300,
+    collapseId: collapseId(
+      vault ? "loom-vault" : "loom-agent",
+      input.environmentId,
+      input.threadId,
+    ),
+  };
+};

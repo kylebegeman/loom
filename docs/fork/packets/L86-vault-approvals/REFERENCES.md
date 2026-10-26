@@ -27,7 +27,8 @@ this packet adds no application dependency.
 - [Access service](../../../../apps/server/src/fork/vault/VaultAccess.ts): same-policy atomic decisions.
 - [Grant evaluator](../../../../apps/server/src/fork/vault/VaultPolicy.ts): normal execution enforcement.
 - [Access contracts](../../../../packages/contracts/src/fork/vault-access.ts): request lifecycle and bounded grants.
-- [Notification adapter](../../../../apps/server/src/fork/vault/ApprovalNotifications.ts): explicit runtime stub.
+- [Notification adapter](../../../../apps/server/src/fork/vault/ApprovalNotifications.ts): bounded observations over one transport.
+- [Library push transport](../../../../apps/server/src/fork/library-push/VaultApprovalAlerts.ts): iPhone alert for a new request.
 - [MCP boundary](../../../../apps/server/src/fork/vault/access-mcp.ts): authenticated requests without self-approval.
 - [Service acceptance](../../../../apps/server/src/fork/vault/VaultAccess.test.ts): expiry, races and failures.
 
