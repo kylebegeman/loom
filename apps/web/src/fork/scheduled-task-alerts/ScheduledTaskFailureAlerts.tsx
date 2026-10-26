@@ -1,11 +1,11 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import type { EnvironmentId, ScheduledTask } from "@t3tools/contracts";
+import type { AnyRouter } from "@tanstack/react-router";
+import * as Option from "effect/Option";
+import { AsyncResult, type AtomRegistry } from "effect/reactivity";
 import { CalendarX2Icon } from "lucide-react";
-import { useEffect, useRef } from "react";
 
 import { toastManager } from "~/components/ui/toast";
 import { getClientSettings } from "~/hooks/useSettings";
-import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import {
   hasDesktopNotifications,
@@ -27,31 +27,26 @@ const SCHEDULED_TASKS_PATH = "/settings/scheduled-tasks";
  * This says so, the same way, and opens the task. "Failed" rather than "could not start": a
  * Vault-attached task also reports a started run that did not complete as failed.
  */
-export function ScheduledTaskFailureAlerts({
-  environmentId,
-  onNotification,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
-}) {
-  const query = useEnvironmentQuery(
-    serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
-  );
-  const tasks = query.data?.tasks ?? null;
-  const navigate = useNavigate();
-  const router = useRouter();
+export function startScheduledTaskFailureAlerts(
+  registry: AtomRegistry.AtomRegistry,
+  router: AnyRouter,
+  environmentId: EnvironmentId,
+  onNotification: (environmentId: EnvironmentId, notification: Notification) => void,
+): () => void {
   // Kept through a reconnect, so a run that failed in between is still news.
-  const seen = useRef<ScheduledTaskRunMarks | null>(null);
+  let seen: ScheduledTaskRunMarks | null = null;
 
-  useEffect(() => {
-    if (tasks === null) return;
-    const { marks, failed } = newScheduledTaskFailures(seen.current, tasks);
-    seen.current = marks;
+  const observe = (tasks: ReadonlyArray<ScheduledTask>) => {
+    const { marks, failed } = newScheduledTaskFailures(seen, tasks);
+    seen = marks;
     for (const task of failed) {
       const mark = scheduledTaskRunMark(task);
       const reason = task.lastRunError ?? "Its last run failed.";
       const open = () =>
-        void navigate({ to: SCHEDULED_TASKS_PATH, search: { environmentId, taskId: task.id } });
+        void router.navigate({
+          to: SCHEDULED_TASKS_PATH,
+          search: { environmentId, taskId: task.id },
+        });
       const settings = getClientSettings();
       if (hasNotificationSound(settings.notificationMode)) {
         void playNotificationSound("input", () =>
@@ -60,7 +55,11 @@ export function ScheduledTaskFailureAlerts({
       }
       if (document.visibilityState === "visible" && document.hasFocus()) {
         // The task's own row already shows the error.
-        if (!settings.inAppNotificationsEnabled || onTasksPage(router)) continue;
+        if (
+          !settings.inAppNotificationsEnabled ||
+          router.state.location.pathname === SCHEDULED_TASKS_PATH
+        )
+          continue;
         const toastId = toastManager.add({
           type: "error",
           title: "Scheduled task failed",
@@ -87,7 +86,7 @@ export function ScheduledTaskFailureAlerts({
         Notification.permission !== "granted"
       )
         continue;
-      const stale = () => seen.current?.get(task.id) !== mark;
+      const stale = () => seen?.get(task.id) !== mark;
       deliverDesktopNotification(`${environmentId}:scheduled-task:${task.id}:${mark}`, () => {
         if (
           stale() ||
@@ -119,11 +118,14 @@ export function ScheduledTaskFailureAlerts({
         }
       });
     }
-  }, [environmentId, navigate, onNotification, router, tasks]);
+  };
 
-  return null;
-}
-
-function onTasksPage(router: ReturnType<typeof useRouter>) {
-  return router.state.location.pathname === SCHEDULED_TASKS_PATH;
+  return registry.subscribe(
+    serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
+    (result) => {
+      const tasks = Option.getOrNull(AsyncResult.value(result))?.tasks;
+      if (tasks !== undefined) observe(tasks);
+    },
+    { immediate: true },
+  );
 }

@@ -80,6 +80,9 @@ import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-s
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
+// fork: library
+import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
+import { updateComposerDraftSettings } from "../../state/use-composer-drafts"; // fork: library
 import { resolveMergeBackTargetThreadId } from "@t3tools/client-runtime/state/thread-relationships";
 import { resolveLatestMergeBackRun } from "@t3tools/client-runtime/state/thread-workflows";
 import { threadEnvironment, useThreadFamily } from "../../state/threads";
@@ -471,6 +474,7 @@ function ThreadRouteContent(
   ]);
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Inspector selection follows route ownership but keeps an inspector the user opened.
     setInspectorSelection((current) => {
       if (props.renderInspector === undefined) {
         if (current === null || current.mode === "route") {
@@ -517,8 +521,23 @@ function ThreadRouteContent(
           draftKey: composer.composerDraftKey, // fork: library -- Ultrathink edits the composer draft
           canSwitchProvider: composer.canSwitchThreadProvider,
           canOperate: canOperateThread,
-          onUpdateModelSelection: composer.onUpdateModelSelection,
-          onUpdateRuntimeMode: composer.onUpdateRuntimeMode,
+          onUpdateModelSelection: (selection) =>
+            updateThreadDraftModelSelection(
+              scopedThreadKey(
+                selectedThreadWithDraftSettings.environmentId,
+                selectedThreadWithDraftSettings.id,
+              ),
+              selection,
+              routeEnvironmentRuntime?.serverConfig?.providers ?? [],
+            ),
+          onUpdateRuntimeMode: (runtimeMode) =>
+            updateComposerDraftSettings(
+              scopedThreadKey(
+                selectedThreadWithDraftSettings.environmentId,
+                selectedThreadWithDraftSettings.id,
+              ),
+              { runtimeMode },
+            ),
         }
       : null,
   );
@@ -617,14 +636,14 @@ function ThreadRouteContent(
   };
   const safeAreaInsets = useSafeAreaInsets();
   const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
-  const GitInspector = () => (
+  const renderGitInspector = () => (
     <GitOverviewSheet
       headerInset={inspectorHeaderInset}
       presentation="inspector"
       route={{ params: { environmentId: environmentId!, threadId: threadId! } }}
     />
   );
-  const FilesInspector = () =>
+  const renderFilesInspector = () =>
     selectedThread !== null && selectedThreadCwd !== null ? (
       <ThreadFileNavigatorPane
         cwd={selectedThreadCwd}
@@ -635,7 +654,7 @@ function ThreadRouteContent(
         onSelectFile={handleSelectInspectorFile}
       />
     ) : null;
-  const RouteInspector = () => props.renderInspector?.(inspectorHeaderInset);
+  const renderRouteInspector = () => props.renderInspector?.(inspectorHeaderInset);
   const renderPreviewInspector = () =>
     previewTarget && panes.auxiliaryPaneVisible ? (
       <ThreadInspectorPreview
@@ -659,11 +678,11 @@ function ThreadRouteContent(
     inspectorMode === null ? null : (
       <ThreadInspectorContentStack
         renderPreview={renderPreviewInspector}
-        renderFiles={FilesInspector}
-        renderGit={GitInspector}
+        renderFiles={renderFilesInspector}
+        renderGit={renderGitInspector}
         mode={inspectorMode}
         resetKeys={[routeThreadIdentity, selectedThreadCwd]}
-        renderRoute={props.renderInspector ? RouteInspector : undefined}
+        renderRoute={props.renderInspector ? renderRouteInspector : undefined}
       />
     );
   const activeInspectorRenderer =
@@ -1171,8 +1190,6 @@ function ThreadRouteContent(
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}
-          onUpdateThreadModelSelection={composer.onUpdateModelSelection}
-          onUpdateThreadRuntimeMode={composer.onUpdateRuntimeMode}
           onUpdateThreadInteractionMode={composer.onUpdateInteractionMode}
           onRespondToApproval={requests.onRespondToApproval}
           onSelectUserInputOption={requests.onSelectUserInputOption}

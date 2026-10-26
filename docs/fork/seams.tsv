@@ -847,7 +847,7 @@ packages/client-runtime/src/state/gitActions.test.ts	source-control-cockpit	1
 packages/client-runtime/src/state/gitActions.ts	source-control-cockpit	10
 packages/client-runtime/src/state/vcs.ts	source-control-cockpit	1
 packages/client-runtime/src/state/vcsAction.test.ts	source-control-cockpit	4
-packages/client-runtime/src/state/vcsAction.ts	source-control-cockpit	13
+packages/client-runtime/src/state/vcsAction.ts	source-control-cockpit	10
 packages/contracts/src/clientRpcPermissions.ts	source-control-cockpit	1
 packages/contracts/src/git.ts	source-control-cockpit	4
 packages/contracts/src/keybindings.ts	source-control-cockpit	1

@@ -1,10 +1,11 @@
 import { EnvironmentId, ScheduledTaskId, type ScheduledTaskRunStatus } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import type { AnyRouter } from "@tanstack/react-router";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { expect, it, vi } from "vite-plus/test";
+
+import { stubGlobal } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
-  tasks: null as unknown[] | null,
   pathname: "/",
   focused: true,
   add: vi.fn(
@@ -18,17 +19,17 @@ const state = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock(import("~/state/query"), async (original) => ({
-  ...(await original()),
-  useEnvironmentQuery: (() => ({
-    data: state.tasks === null ? null : { tasks: state.tasks },
-  })) as never,
-}));
-vi.mock(import("@tanstack/react-router"), async (original) => ({
-  ...(await original()),
-  useNavigate: (() => state.navigate) as never,
-  useRouter: (() => ({ state: { location: { pathname: state.pathname } } })) as never,
-}));
+vi.mock(import("~/state/server"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      // Called only after this module's own bindings exist.
+      scheduledTasksLive: (() => tasksAtom) as never,
+    },
+  };
+});
 vi.mock(import("~/hooks/useSettings"), async (original) => ({
   ...(await original()),
   getClientSettings: (() => ({
@@ -45,9 +46,12 @@ vi.mock(import("~/components/ui/toast"), async (original) => {
   };
 });
 
-import { ScheduledTaskFailureAlerts } from "./ScheduledTaskFailureAlerts";
+import { startScheduledTaskFailureAlerts } from "./ScheduledTaskFailureAlerts";
 
 const ENVIRONMENT = EnvironmentId.make("env-1");
+const tasksAtom = Atom.make<AsyncResult.AsyncResult<{ tasks: unknown[] }, never>>(
+  AsyncResult.initial(true),
+);
 const task = (lastRunStatus: ScheduledTaskRunStatus, lastRunAt: string) => ({
   id: ScheduledTaskId.make("nightly"),
   title: "Nightly triage",
@@ -56,41 +60,43 @@ const task = (lastRunStatus: ScheduledTaskRunStatus, lastRunAt: string) => ({
   lastRunError: lastRunStatus === "failed" ? "Provider codex is disabled." : null,
 });
 
-let root: Root;
-const onNotification = vi.fn();
-async function render() {
-  await act(() =>
-    root.render(
-      <ScheduledTaskFailureAlerts environmentId={ENVIRONMENT} onNotification={onNotification} />,
-    ),
+function setup() {
+  vi.clearAllMocks();
+  Object.assign(state, { pathname: "/", focused: true });
+  const stack = new DisposableStack();
+  const registry = AtomRegistry.make();
+  stack.defer(() => registry.dispose());
+  stack.use(vi.spyOn(navigator, "locks", "get").mockReturnValue(undefined as never));
+  stack.use(vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible"));
+  stack.use(vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused));
+  stack.use(
+    stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" })),
   );
+  const router = {
+    state: {
+      location: {
+        get pathname() {
+          return state.pathname;
+        },
+      },
+    },
+    navigate: state.navigate,
+  } as unknown as AnyRouter;
+  const onNotification = vi.fn();
+  stack.defer(startScheduledTaskFailureAlerts(registry, router, ENVIRONMENT, onNotification));
+  return {
+    onNotification,
+    setTasks: (tasks: unknown[]) => registry.set(tasksAtom, AsyncResult.success({ tasks })),
+    [Symbol.dispose]: () => stack.dispose(),
+  };
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  Object.assign(state, { tasks: null, pathname: "/", focused: true });
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.spyOn(navigator, "locks", "get").mockReturnValue(undefined as never);
-  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-  vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused);
-  vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" }));
-  root = createRoot(document.createElement("div"));
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-it("alerts a run that could not start once and opens its task", async () => {
-  state.tasks = [task("failed", "2026-10-24T02:00:00.000Z")];
-  await render();
+it("alerts a run that could not start once and opens its task", () => {
+  using app = setup();
+  app.setTasks([task("failed", "2026-10-24T02:00:00.000Z")]);
   expect(state.add).not.toHaveBeenCalled();
-  state.tasks = [task("failed", "2026-10-25T02:00:00.000Z")];
-  await render();
-  state.tasks = [task("failed", "2026-10-25T02:00:00.000Z")];
-  await render();
+  app.setTasks([task("failed", "2026-10-25T02:00:00.000Z")]);
+  app.setTasks([task("failed", "2026-10-25T02:00:00.000Z")]);
   expect(state.add).toHaveBeenCalledTimes(1);
   const toast = state.add.mock.calls[0]?.[0];
   expect(toast).toMatchObject({
@@ -104,21 +110,19 @@ it("alerts a run that could not start once and opens its task", async () => {
   });
 });
 
-it("stays quiet on the task's own page and uses a system alert in the background", async () => {
-  state.tasks = [task("running", "2026-10-25T02:00:00.000Z")];
-  await render();
+it("stays quiet on the task's own page and uses a system alert in the background", () => {
+  using app = setup();
+  app.setTasks([task("running", "2026-10-25T02:00:00.000Z")]);
   state.pathname = "/settings/scheduled-tasks";
-  state.tasks = [task("failed", "2026-10-25T02:00:00.000Z")];
-  await render();
+  app.setTasks([task("failed", "2026-10-25T02:00:00.000Z")]);
   expect(state.add).not.toHaveBeenCalled();
 
   state.focused = false;
-  state.tasks = [task("failed", "2026-10-25T03:00:00.000Z")];
-  await render();
+  app.setTasks([task("failed", "2026-10-25T03:00:00.000Z")]);
   expect(state.notification).toHaveBeenCalledWith("Scheduled task failed", {
     body: "Nightly triage: Provider codex is disabled.",
     tag: "scheduled-task:env-1:nightly",
     silent: true,
   });
-  expect(onNotification).toHaveBeenCalledTimes(1);
+  expect(app.onNotification).toHaveBeenCalledTimes(1);
 });

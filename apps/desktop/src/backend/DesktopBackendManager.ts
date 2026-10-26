@@ -487,9 +487,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
     forceKillAfter: BACKEND_TERMINATE_GRACE, // fork: restart-continuity
-    // wsl.exe drops additional file descriptors when forwarding to the Linux
-    // side, so the WSL spawn path delivers the bootstrap envelope via stdin
-    // (`--bootstrap-fd 0`) instead.
+    // wsl.exe drops extra file descriptors; deliver its bootstrap via stdin.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
 
@@ -1113,64 +1111,64 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
     yield* Option.match(active, {
       onNone: () => Effect.void,
-      onSome: (run) =>
-        Effect.gen(function* () {
-          const closed = yield* closeRun(run, parentScope, options);
-          // fork: restart-continuity: tells a stop that ran out of budget from one that finished.
-          yield* Effect.annotateCurrentSpan({ "backend.stopped_within_budget": closed });
-          if (!closed) {
-            // fork: restart-continuity
-            yield* logInstanceWarning("backend still stopping when its stop budget ran out", {
-              timeoutMs: options?.timeout === undefined ? null : Duration.toMillis(options.timeout),
-            });
-            return;
-          }
-          const cleanup = yield* mutex.withPermits(1)(
-            Ref.modify(
-              state,
-              (
-                latest,
-              ): readonly [
-                {
-                  readonly needsCleanup: boolean;
-                  readonly shouldStart: boolean;
-                },
-                BackendManagerState,
-              ] => {
-                const current = Option.getOrUndefined(latest.active);
-                if (current?.id !== run.id) {
-                  return [
-                    {
-                      needsCleanup: false,
-                      shouldStart:
-                        latest.desiredRunning &&
-                        Option.isNone(latest.active) &&
-                        Option.isNone(latest.restartFiber),
-                    },
-                    latest,
-                  ];
-                }
+      // The enclosing operation owns the span for this inline handler.
+      onSome: Effect.fnUntraced(function* (run) {
+        const closed = yield* closeRun(run, parentScope, options);
+        // fork: restart-continuity: tells a stop that ran out of budget from one that finished.
+        yield* Effect.annotateCurrentSpan({ "backend.stopped_within_budget": closed });
+        if (!closed) {
+          // fork: restart-continuity
+          yield* logInstanceWarning("backend still stopping when its stop budget ran out", {
+            timeoutMs: options?.timeout === undefined ? null : Duration.toMillis(options.timeout),
+          });
+          return;
+        }
+        const cleanup = yield* mutex.withPermits(1)(
+          Ref.modify(
+            state,
+            (
+              latest,
+            ): readonly [
+              {
+                readonly needsCleanup: boolean;
+                readonly shouldStart: boolean;
+              },
+              BackendManagerState,
+            ] => {
+              const current = Option.getOrUndefined(latest.active);
+              if (current?.id !== run.id) {
                 return [
                   {
-                    needsCleanup: true,
-                    shouldStart: latest.desiredRunning,
+                    needsCleanup: false,
+                    shouldStart:
+                      latest.desiredRunning &&
+                      Option.isNone(latest.active) &&
+                      Option.isNone(latest.restartFiber),
                   },
-                  {
-                    ...latest,
-                    active: Option.none<ActiveBackendRun>(),
-                  },
+                  latest,
                 ];
-              },
-            ),
-          );
-          if (cleanup.needsCleanup) {
-            yield* desktopTelemetryPublisher.removeControlSource(spec.id);
-            yield* backendOutputLog.discardSession;
-          }
-          if (cleanup.shouldStart) {
-            yield* start;
-          }
-        }),
+              }
+              return [
+                {
+                  needsCleanup: true,
+                  shouldStart: latest.desiredRunning,
+                },
+                {
+                  ...latest,
+                  active: Option.none<ActiveBackendRun>(),
+                },
+              ];
+            },
+          ),
+        );
+        if (cleanup.needsCleanup) {
+          yield* desktopTelemetryPublisher.removeControlSource(spec.id);
+          yield* backendOutputLog.discardSession;
+        }
+        if (cleanup.shouldStart) {
+          yield* start;
+        }
+      }),
     });
   });
 
