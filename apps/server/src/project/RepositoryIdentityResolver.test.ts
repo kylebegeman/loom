@@ -23,8 +23,33 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
+// fork: hermetic-git-tests
+// A developer's global url.*.insteadOf would rewrite the remotes these tests assert on.
+const hermeticGitConfig = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const emptyConfig = yield* fileSystem.makeTempFileScoped({ prefix: "t3-gitconfig-" });
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const saved = [process.env.GIT_CONFIG_GLOBAL, process.env.GIT_CONFIG_NOSYSTEM] as const;
+        process.env.GIT_CONFIG_GLOBAL = emptyConfig;
+        process.env.GIT_CONFIG_NOSYSTEM = "1";
+        return saved;
+      }),
+      ([global, noSystem]) =>
+        Effect.sync(() => {
+          if (global === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+          else process.env.GIT_CONFIG_GLOBAL = global;
+          if (noSystem === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
+          else process.env.GIT_CONFIG_NOSYSTEM = noSystem;
+        }),
+    );
+  }),
+);
+
 it.layer(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-repository-identity-state-" }).pipe(
+    Layer.provideMerge(hermeticGitConfig), // fork: hermetic-git-tests
     Layer.provideMerge(NodeServices.layer),
   ),
 )("RepositoryIdentityResolverLive", (it) => {
