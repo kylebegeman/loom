@@ -1,16 +1,15 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import type { AnyRouter } from "@tanstack/react-router";
+import { EnvironmentId, type PullRequestReviewGuideResult } from "@t3tools/contracts";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   previews: true,
-  data: null as unknown,
+  guide: null as unknown,
 }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
-vi.mock("~/state/pullRequests", () => ({ pullRequestEnvironment: { reviewGuide: () => null } }));
-vi.mock("~/state/query", () => ({
-  useEnvironmentQuery: () => ({ data: state.data, refresh: () => undefined }),
+vi.mock("~/state/pullRequests", () => ({
+  observedPullRequestTitle: () => null,
+  pullRequestEnvironment: { reviewGuide: () => state.guide },
 }));
 vi.mock("~/hooks/useSettings", () => ({
   getClientSettings: () => ({
@@ -20,8 +19,13 @@ vi.mock("~/hooks/useSettings", () => ({
 }));
 vi.mock("~/components/ui/toast", () => ({ toastManager: { add: vi.fn(), close: vi.fn() } }));
 
-import { PullRequestGuideRunCoordinator } from "~/components/pullRequest/guide/PullRequestGuideRunCoordinator";
-import { useGuideRunStore } from "~/components/pullRequest/guide/guideRunStore";
+import { startGuideRunNotifications } from "~/components/pullRequest/guide/PullRequestGuideRunCoordinator";
+import { guideRunKey, useGuideRunStore } from "~/components/pullRequest/guide/guideRunStore";
+
+const guideAtom = Atom.make<AsyncResult.AsyncResult<PullRequestReviewGuideResult, never>>(
+  AsyncResult.initial(),
+);
+state.guide = guideAtom;
 
 const sent: { title: string; options: NotificationOptions }[] = [];
 class TestNotification extends EventTarget {
@@ -32,12 +36,12 @@ class TestNotification extends EventTarget {
   }
 }
 
-let renderer: ReactTestRenderer | undefined;
+const environmentId = EnvironmentId.make("one");
+const reference = { repository: "acme/app", number: 7 } as never;
+let stop: (() => void) | undefined;
 
 beforeEach(() => {
   sent.length = 0;
-  state.data = null;
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("Notification", TestNotification);
   vi.stubGlobal("window", Object.assign(new EventTarget(), { focus: vi.fn() }));
   vi.stubGlobal(
@@ -46,40 +50,46 @@ beforeEach(() => {
   );
 });
 
-afterEach(async () => {
-  await act(async () => renderer?.unmount());
-  renderer = undefined;
+afterEach(() => {
+  stop?.();
+  stop = undefined;
   useGuideRunStore.setState({ watches: {} });
   vi.unstubAllGlobals();
 });
 
-async function finishGuideRun() {
-  useGuideRunStore.setState({
-    watches: {
-      run: {
-        environmentId: EnvironmentId.make("one"),
-        reference: { repository: "acme/app", number: 7 } as never,
-        title: "Private pull request title",
-        previousGuideAt: null,
-        previousFailedAt: null,
-        since: Date.now(),
-      },
-    },
+function finishGuideRun() {
+  const registry = AtomRegistry.make();
+  stop = startGuideRunNotifications(registry, { navigate: vi.fn() } as unknown as AnyRouter);
+  useGuideRunStore.getState().watch({
+    environmentId,
+    reference,
+    title: "Private pull request title",
+    previousGuideAt: null,
+    previousFailedAt: null,
+    since: 0,
   });
-  await act(async () => {
-    renderer = create(<PullRequestGuideRunCoordinator />);
-  });
-  state.data = { run: null, guide: { generatedAt: "2026-10-15T00:00:00.000Z" } };
-  await act(async () => renderer?.update(<PullRequestGuideRunCoordinator />));
+  registry.set(
+    guideAtom,
+    AsyncResult.success({
+      run: null,
+      guide: { generatedAt: "2026-10-15T00:00:00.000Z" },
+    } as unknown as PullRequestReviewGuideResult),
+  );
 }
 
 it.each([
   [true, "Private pull request title"],
   [false, "Open Loom to review this pull request."],
-])("with previews %s, a finished guide's system notification says %s", async (previews, body) => {
+])("with previews %s, a finished guide's system notification says %s", (previews, body) => {
   state.previews = previews;
-  await finishGuideRun();
+  finishGuideRun();
   expect(sent).toEqual([
-    { title: "Review guide ready", options: expect.objectContaining({ body, tag: "guide:run" }) },
+    {
+      title: "Review guide ready",
+      options: expect.objectContaining({
+        body,
+        tag: `guide:${guideRunKey(environmentId, reference)}`,
+      }),
+    },
   ]);
 });

@@ -16,7 +16,11 @@ vi.mock("./state", () => ({
   profileError: (error: unknown) => (error instanceof Error ? error.message : "Failed"),
 }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [], useServerConfigs: () => new Map() }));
-vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh } }));
+vi.mock("~/rpc/atomRegistry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/rpc/atomRegistry")>();
+  vi.spyOn(actual.appAtomRegistry, "refresh").mockImplementation(state.refresh);
+  return actual;
+});
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/settings/projects">{children}</a>,
 }));
