@@ -1049,6 +1049,8 @@ apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
 docs/user/project-settings.md	file-placement	1
+packages/shared/src/projectSettings.ts	file-placement	4
+packages/shared/src/projectSettings.test.ts	file-placement	2
 apps/server/src/storageCleanup.ts	library-launch-files	13
 apps/server/src/storageCleanup.test.ts	library-launch-files	3
 packages/contracts/src/settings.ts	library-launch-files	3

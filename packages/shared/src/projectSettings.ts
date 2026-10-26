@@ -171,6 +171,9 @@ export function resolveNewThreadEnvMode(input: {
   readonly workspaceRoot: string | null;
   readonly newProjectsRoot: string | null | undefined;
   readonly projectHasThreads: boolean;
+  // fork: file-placement -- whether Loom made the folder from a name. Known, it beats location,
+  // fork: file-placement -- since a user's Projects folder also holds their own checkouts.
+  readonly namedProject?: boolean; // fork: file-placement
 }): ThreadEnvMode {
   const configured = input.projectSettings.settings.defaultThreadEnvMode;
   if (
@@ -182,6 +185,7 @@ export function resolveNewThreadEnvMode(input: {
   ) {
     return configured;
   }
+  if (input.namedProject !== undefined) return input.namedProject ? "local" : configured; // fork: file-placement
   const root = normalizeProjectPathForComparison(input.newProjectsRoot);
   const folder = normalizeProjectPathForComparison(input.workspaceRoot);
   const separator = root.includes("\\") ? "\\" : "/";
