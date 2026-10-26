@@ -1558,8 +1558,8 @@ export default function ChatView(props: ChatViewProps) {
     retryableRunIds: retryableWorkspacePreparationRunIds,
     begin: beginWorktreeSetup,
     cancel: cancelWorktreeSetup,
-    canCancel: canCancelWorktreeSetup,
-    retryFiles: onRetryWorktreeSetupFiles,
+    canCancel: canCancelWorktreeSetup, // fork: library-launch-files
+    retryFiles: onRetryWorktreeSetupFiles, // fork: library-launch-files
     filesComputerLabel: worktreeSetupComputerLabel,
     retryPreparation: onRetryWorkspacePreparationStable,
     openSetupTerminal: onOpenWorktreeSetupTerminal,
@@ -3399,7 +3399,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(onRetryWorktreeSetupFiles
                   ? { onRetryWorktreeSetup: onRetryWorktreeSetupFiles }
                   : {})}
-                worktreeSetupComputerLabel={worktreeSetupComputerLabel}
+                worktreeSetupComputerLabel={worktreeSetupComputerLabel} // fork: library-launch-files
                 {...(paintOnlyDisplayedTimeline
                   ? {}
                   : {

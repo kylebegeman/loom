@@ -318,7 +318,7 @@ export function resolveWorktreeSetupProgress(input: {
     isPreparingWorktree:
       input.localPreparing ||
       input.runStatus === "preparing" ||
-      (snapshot !== null && worktreeSetupBlocksSend(snapshot)),
+      (snapshot !== null && worktreeSetupBlocksSend(snapshot)), // fork: library-launch-files
   };
 }
 

@@ -40,8 +40,8 @@ const longRunningRpcAckMethods = new Set<string>([
   WS_METHODS.serverRefreshProviders,
   WS_METHODS.serverUpdateServer,
   WS_METHODS.vcsRefreshStatus,
-  LIBRARY_WS_METHODS.prepareCopy,
-  PROJECT_WORKFLOW_WS_METHODS.execute,
+  LIBRARY_WS_METHODS.prepareCopy, // fork: library-launch-files
+  PROJECT_WORKFLOW_WS_METHODS.execute, // fork: library-launch-files
   PROJECT_WORKFLOW_WS_METHODS.resume,
 ]);
 
