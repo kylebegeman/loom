@@ -418,24 +418,21 @@ describe("EnvironmentSupervisor", () => {
       );
       expect(first.failingSince).toBe(10_000);
       yield* TestClock.adjust("3 seconds");
-      const second = yield* eventuallyState(
+      const second = yield* awaitState(
         supervisor.state,
         (state) => state.phase === "backoff" && state.attempt === 2,
       );
       expect(second.failingSince).toBe(10_000);
 
       yield* supervisor.retryNow;
-      const retried = yield* eventuallyState(
+      const retried = yield* awaitState(
         supervisor.state,
         (state) => state.phase === "backoff" && state.attempt === 1,
       );
       expect(retried.failingSince).toBe(10_000);
 
       yield* supervisor.retryNow;
-      const connected = yield* eventuallyState(
-        supervisor.state,
-        (state) => state.phase === "connected",
-      );
+      const connected = yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(connected.failingSince).toBeUndefined();
     }).pipe(Effect.provide(TestClock.layer())),
   );

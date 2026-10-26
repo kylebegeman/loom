@@ -930,12 +930,11 @@ export function createEnvironmentRpcCommand<
     label: options.label,
     idleTtlMs: 0,
     staleTimeMs: 0,
-    execute: (input: Input) =>
-      Effect.gen(function* () {
-        const registry = yield* AtomRegistry.AtomRegistry;
-        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
-        return yield* execute(input, registry, supervisor.target.environmentId);
-      }),
+    execute: Effect.fn("EnvironmentCommand.result")(function* (input: Input) {
+      const registry = yield* AtomRegistry.AtomRegistry;
+      const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+      return yield* execute(input, registry, supervisor.target.environmentId);
+    }),
   });
   return {
     ...command,
