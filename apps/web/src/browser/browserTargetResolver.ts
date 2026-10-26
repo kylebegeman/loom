@@ -41,8 +41,7 @@ const resolveEnvironmentPortTarget = (
   const protocol = target.protocol ?? "http";
   const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
   const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
-  // Local loopback environments should advertise `localhost` so Chromium
-  // dual-stack lookup can reach a Vite server bound only to ::1 or 127.0.0.1.
+  // localhost lets Chromium reach loopback servers bound to either IPv4 or IPv6.
   const resolvedHost = isLocalLoopbackHost(normalizedEnvironmentHost)
     ? "localhost"
     : normalizedEnvironmentHost.includes(":")

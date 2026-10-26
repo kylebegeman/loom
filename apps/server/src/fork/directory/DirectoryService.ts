@@ -116,12 +116,9 @@ const decodeRefusal = Schema.decodeUnknownEffect(
 );
 
 /**
- * A computer may publish a `public` route only as the reach hostname the Library recorded ready
- * for it, so a computer cannot point clients at a host it does not answer for.
- *
- * It goes only to the key that holds the reach pin. Retire clears the pin and lets the computer
- * be forgotten, so a new key that reports for the same id gets no public route until it sets
- * reach up itself.
+ * A computer may publish a `public` route only as the reach hostname the Library recorded ready for
+ * it, and only for the key holding the reach pin. Retire clears the pin, so a new key reporting the
+ * same id gets no public route until it sets reach up itself.
  */
 const withReach = (
   environment: DirectoryEnvironment,

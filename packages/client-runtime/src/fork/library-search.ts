@@ -59,13 +59,10 @@ export function librarySearchHitKey(hit: Pick<LibrarySearchHit, "id" | "itemId">
 }
 
 /**
- * Folds a page of one search into its feed. `cursor` is the cursor the page was read with; omit
- * it for the first page.
- *
- * Only the first page's first read and the page for the feed's current cursor count; any other
- * page is stale and ignored, which also makes folding the same page twice harmless. An item
- * edited or removed while paging can shift a later page by one, so hits already shown are not
- * repeated. Returns the same feed when nothing changed.
+ * Folds a page of one search into its feed; omit `cursor` for the first page. Only the first page's
+ * first read and the page at the feed's cursor count; others are stale and ignored. Hits already
+ * shown are not repeated, since an edit while paging can shift a later page by one. Returns the
+ * same feed when nothing changed.
  */
 export function mergeLibrarySearchPage(
   feed: LibrarySearchFeed,
@@ -124,11 +121,8 @@ const ITEM_CONTEXT_AFTER = 3;
 
 /**
  * The history offset to read so the page shows the item at `position` (oldest first, as a search
- * hit gives it), or null when `window` already shows it or no read would. History offsets count
- * back from the newest item.
- *
- * A page stops early when its items are large, so a read that leaves room for newer items can
- * miss the match; the next try starts at the item itself, which a page always includes.
+ * hit gives it), or null when `window` already shows it or no read would. Offsets count back from
+ * the newest item. A page of large items stops early, so the next try starts at the item itself.
  */
 export function libraryHistoryOffsetForItem(
   position: number,

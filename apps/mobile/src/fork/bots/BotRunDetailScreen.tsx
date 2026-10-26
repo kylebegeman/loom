@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import { Pressable, ScrollView, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
@@ -303,6 +304,7 @@ export function BotRunActions({
   readonly refresh: () => void;
 }) {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const capabilities = useBotsCapabilities(environmentId);
   const cancelAllowed = useAtomValue(bots.cancel.permissionAtom(environmentId));
   const retryAllowed = useAtomValue(bots.retry.permissionAtom(environmentId));
@@ -369,9 +371,12 @@ export function BotRunActions({
           <Button
             label="Open thread"
             onPress={() =>
-              navigation.navigate("Thread", {
-                environmentId: run.ranOn?.environmentId ?? environmentId,
-                threadId: run.threadId,
+              selectDetail({
+                name: "Thread",
+                params: {
+                  environmentId: run.ranOn?.environmentId ?? environmentId,
+                  threadId: run.threadId,
+                },
               })
             }
           />
@@ -421,7 +426,10 @@ export function BotRunActions({
                 const result = await promote({ environmentId, input: { runId: run.id } });
                 const promoted = commandValue(result);
                 if (!live.current) return;
-                navigation.navigate("Thread", { environmentId, threadId: promoted.threadId });
+                selectDetail({
+                  name: "Thread",
+                  params: { environmentId, threadId: promoted.threadId },
+                });
               })
             }
           />

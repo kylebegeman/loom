@@ -6,7 +6,7 @@ import {
   type SupervisorConnectionState,
 } from "@t3tools/client-runtime/connection";
 import type { RestartImpactThread } from "@t3tools/client-runtime/fork";
-import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
+import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 import {
   type DesktopBridge,
   type DesktopUpdateActionResult,
@@ -64,15 +64,11 @@ const primaryEntry = [
 ] as const;
 
 const live: EnvironmentShellState = {
+  ...EMPTY_SHELL_STATE,
   snapshot: Option.some({} as never),
   status: "live",
-  error: Option.none(),
 };
-const synchronizing: EnvironmentShellState = {
-  snapshot: Option.none(),
-  status: "synchronizing",
-  error: Option.none(),
-};
+const synchronizing: EnvironmentShellState = { ...EMPTY_SHELL_STATE, status: "synchronizing" };
 const settled: RestartImpactThread = {
   title: "Done",
   status: "completed",

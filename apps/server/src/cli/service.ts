@@ -13,6 +13,7 @@ import { compareExactServiceVersions } from "../cloud/serviceProtocol.ts";
 import type * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
+import { resolveEntryPath } from "./invocation.ts";
 
 export const layer = (config: ServerConfig.ServerConfig["Service"]) =>
   BootService.layer({
@@ -32,7 +33,7 @@ export type ServiceReconcileResult =
       readonly plan: BootService.BootServicePlan;
     };
 
-export const reconcileService = Effect.fn("cli.service.reconcile")(function* (options?: {
+const reconcileService = Effect.fn("cli.service.reconcile")(function* (options?: {
   readonly allowDowngrade?: boolean;
   readonly start?: boolean;
 }) {
@@ -70,10 +71,7 @@ function formatServiceChange(
   return `${result.previouslyInstalled ? "Updated" : "Installed"} Loom service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`;
 }
 
-export function formatServiceStatus(
-  status: BootService.BootServiceStatus,
-  cliVersion: string,
-): string {
+function formatServiceStatus(status: BootService.BootServiceStatus, cliVersion: string): string {
   if (!status.supported) {
     // fork: brand
     return "Loom service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
@@ -112,7 +110,7 @@ export function formatServiceStatus(
 
 const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E, R>(
   flags: { readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"] },
-  run: Effect.Effect<A, E, BootService.BootService | R>,
+  run: Effect.Effect<A, E, R>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel);
@@ -143,7 +141,8 @@ const serviceInstallCommand = Command.make("install", {
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `Loom service is already installed with t3@${packageJson.version}.`, // fork: brand
+            // fork: brand
+            `Loom service is already installed with t3@${packageJson.version} (${yield* resolveEntryPath}).`,
           );
           return;
         }
@@ -166,7 +165,9 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           // fork: brand
-          yield* Console.log(`Loom service is already using t3@${packageJson.version}.`);
+          yield* Console.log(
+            `Loom service is already using t3@${packageJson.version} (${yield* resolveEntryPath}).`,
+          );
           return;
         }
         yield* Console.log(formatServiceChange(result));

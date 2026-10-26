@@ -2,11 +2,9 @@ import { isElectron } from "~/env";
 import { ensureLocalApi } from "~/localApi";
 
 /**
- * Opens a URL that is only known after a request, such as a single-use entry. On the web the
- * window opens before the await, while the click still counts as a user gesture, or pop-up
- * blockers drop it. Electron routes window.open to the system browser and denies it, so the
- * desktop app hands the finished URL to the shell instead. A null URL, whose failure has
- * already been shown, opens nothing.
+ * Opens a URL known only after a request, such as a single-use entry. The web opens the window
+ * before the await, while the click still counts as a gesture. Electron denies window.open, so the
+ * desktop hands the finished URL to the shell. A null URL, whose failure was shown, opens nothing.
  */
 export async function openInSystemBrowser(resolveUrl: () => Promise<string | null>): Promise<void> {
   if (isElectron) {

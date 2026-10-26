@@ -91,11 +91,10 @@ interface ConnectRenewalInput {
 }
 
 /**
- * Renews a saved Identity credential the computer can no longer accept: one that expired, or
- * `rejectedToken` after the computer refused it. Live credentials are the worker's, which swaps
- * them under the registry's lock. The renewal is saved only while the store still holds the token
- * it replaces, so a removal or a worker swap in the meantime wins. Returns the token to connect
- * with, or null to keep the caller's block; a transient failure fails so the supervisor retries.
+ * Renews a saved Identity credential the computer no longer accepts: expired, or `rejectedToken`
+ * after a refusal. Live credentials belong to the worker. The renewal saves only while the store
+ * still holds the replaced token, so a removal or swap wins. Returns the token to connect with or
+ * null to keep the caller's block; a transient failure fails so the supervisor retries.
  */
 export const renewIdentityForConnect = Effect.fn("IdentityRenewal.renewForConnect")(function* (
   input: ConnectRenewalInput & { readonly rejectedToken?: string },

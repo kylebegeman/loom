@@ -186,7 +186,7 @@ fork_tests() {
 # are included automatically without linting upstream source.
 fork_lint_paths() {
   local path
-  for path in apps/*/src/fork packages/*/src/fork apps/web/src/routes/settings.loom*.tsx \
+  for path in apps/*/src/fork packages/*/src/fork apps/web/src/routes/_chat.settings.loom*.tsx \
     scripts/fork deploy/omarchy benchmarks/loom apps/server/scripts/benchmark-library.ts; do
     if [ -e "$path" ]; then printf '%s\n' "$path"; fi
   done
@@ -227,10 +227,11 @@ run_checks() {
   local d
   for d in "${TYPECHECK_DIRS[@]}"; do
     say "Typechecking $d"
-    (cd "$d" && pnpm run -s typecheck)
+    # Web and desktop define typecheck as a Vite+ task rather than a package script.
+    (cd "$d" && pnpm exec vp run typecheck)
   done
   say "Typechecking Loom benchmarks"
-  pnpm exec tsc-rs --noEmit -p benchmarks/loom/tsconfig.json
+  pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
   restore_lockfile
 }
 

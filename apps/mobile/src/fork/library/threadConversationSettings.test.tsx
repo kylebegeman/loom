@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   }),
   navigation: { dispatch: vi.fn() },
   remember: vi.fn(),
+  drafts: {} as Record<string, string>,
 }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => state.navigation,
@@ -40,6 +41,13 @@ vi.mock("../../lib/modelOptions", () => ({
   groupByProvider: () => [],
 }));
 vi.mock("../../lib/providerOptions", () => ({ resolveProviderOptionDescriptors: () => [] }));
+vi.mock("../../state/use-composer-drafts", () => ({
+  useComposerDraft: (key: string | null) => ({ text: key ? (state.drafts[key] ?? "") : "" }),
+  getComposerDraftSnapshot: (key: string) => ({ text: state.drafts[key] ?? "" }),
+  setComposerDraftText: (key: string, text: string) => {
+    state.drafts[key] = text;
+  },
+}));
 vi.mock("../../state/use-model-option-memory", () => ({
   rememberModelOptions: state.remember,
   withRememberedModelOptions: (selection: unknown) => selection,
@@ -68,6 +76,7 @@ beforeEach(() => {
   state.clear.mockClear();
   state.remember.mockClear();
   state.navigation.dispatch.mockClear();
+  state.drafts = {};
   props = {
     thread: {
       environmentId: EnvironmentId.make("computer"),
@@ -81,6 +90,7 @@ beforeEach(() => {
     cwd: "/project",
     runtimeMode: "full-access",
     serverConfig: null,
+    draftKey: "computer:thread",
     canSwitchProvider: true,
     canOperate: true,
     onUpdateModelSelection: vi.fn(),
@@ -124,6 +134,20 @@ describe("conversation details settings session", () => {
     expect(props.onUpdateModelSelection).not.toHaveBeenCalled();
     expect(props.onUpdateRuntimeMode).not.toHaveBeenCalled();
     expect(state.session).toBeNull();
+  });
+  it("reads and writes prompt-controlled reasoning through the conversation's composer draft", async () => {
+    state.drafts["computer:thread"] = "ultrathink about the plan";
+    await render();
+    await open();
+    expect(state.session?.prompt).toBe("ultrathink about the plan");
+    state.session!.onPromptChange("Ultrathink:\nPlan it");
+    expect(state.drafts["computer:thread"]).toBe("Ultrathink:\nPlan it");
+    await render();
+    expect(state.session?.prompt).toBe("Ultrathink:\nPlan it");
+    const previous = state.session!;
+    await render({ thread: { ...props.thread, id: ThreadId.make("another-thread") } });
+    previous.onPromptChange("stale");
+    expect(state.drafts["computer:thread"]).toBe("Ultrathink:\nPlan it");
   });
   it("stops edits if the computer disconnects while the model page is open", async () => {
     await render();

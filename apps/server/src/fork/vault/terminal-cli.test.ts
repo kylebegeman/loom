@@ -16,6 +16,10 @@ const server = (result: unknown) =>
       const calls: unknown[] = [];
       const http = NodeHttp.createServer(async (request, response) => {
         expect(request.headers.authorization).toBe("Bearer synthetic-only");
+        if (request.method === "DELETE") {
+          response.writeHead(204).end();
+          return;
+        }
         let body = "";
         for await (const chunk of request) body += chunk;
         const message = JSON.parse(body);

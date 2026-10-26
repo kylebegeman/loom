@@ -241,7 +241,7 @@ function ConfiguredComputerConnectSection({
           icon="person.crop.circle"
           label="Sign in to Connect"
           disabled={!isLoaded || pending !== null}
-          onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
+          onPress={() => navigation.navigate("SettingsAuth")}
         />
       ) : null}
       {state?.linked || needsCleanup ? (

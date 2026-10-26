@@ -263,13 +263,10 @@ function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, chan
 }
 
 /**
- * Order every computer that could start this project's conversation, best first:
- * online before offline, a copy covering the scope before getting one, up to date before
- * unchecked before behind, the computer used most recently for this project, then the one with
- * the fewest working threads. A computer whose checks show a required tool missing or too old
- * ranks after every online computer that passes or was not checked. Remaining ties fall to label,
- * computer and copy id, so the order never depends on input order. Live health wins over health
- * the Library published. Mini workers the profile allows come last and are never preselected.
+ * Orders computers that could start this project's conversation, best first: online, a copy
+ * covering the scope, up to date over unchecked over behind, most recently used, fewest working
+ * threads. Failed tool checks rank after other online computers. Ties fall to label, computer and
+ * copy id; live health beats published. Allowed Mini workers come last, never preselected.
  */
 export function rankLibraryLaunchCandidates(input: {
   readonly computers: readonly LibraryLaunchComputer[];

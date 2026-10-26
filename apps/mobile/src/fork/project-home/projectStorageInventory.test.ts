@@ -1,6 +1,6 @@
 import { projectStorageRolloutComputerLabels } from "@t3tools/client-runtime/fork";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { buildHomeProjectScopes } from "../../features/home/homeThreadList";
 import { filterProjectStorageInventory, projectStorageInventory } from "./projectStorageInventory";
@@ -81,7 +81,7 @@ const repositoryIdentity = {
     remoteName: "origin",
     remoteUrl: "https://github.com/kylebegeman/atlas.git",
   },
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   owner: "kylebegeman",
   name: "atlas",
   displayName: "Atlas",

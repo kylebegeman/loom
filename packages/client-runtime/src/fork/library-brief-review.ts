@@ -71,11 +71,10 @@ export const libraryBriefSuggestionsLabel = (count: number) =>
 export type LibraryBriefProposalPick = { readonly id: string; readonly index: number };
 
 /**
- * Which pending suggestion a review shows. It follows the picked id, so a newer suggestion arriving
- * at the front of the list never slides a different one under the Accept button. Once the picked
- * one leaves the list without a decision on this screen, it was replaced or decided elsewhere:
- * `proposal` is absent and `index` is where it stood, so the review can say so and offer the one
- * now in its place rather than silently showing it.
+ * Which pending suggestion a review shows. It follows the picked id, so a newer suggestion never
+ * slides under the Accept button. Once the picked one leaves the list undecided here, `proposal` is
+ * absent and `index` is where it stood, so the review can say so and offer the one now in its
+ * place.
  */
 export function libraryBriefProposalSelection<P extends { readonly id: string }>(
   proposals: readonly P[],

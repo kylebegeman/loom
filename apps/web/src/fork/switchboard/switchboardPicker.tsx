@@ -28,11 +28,9 @@ const POOLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set([
 ]);
 
 /**
- * With Switchboard on, the hub picks the account, so the picker shows one Claude and
- * one Codex in place of an entry per account. Each driver keeps the selected
- * instance when it has that driver, otherwise its first ready one, so the routing
- * key the composer sends is still a real instance. The kept entry takes the plain
- * brand name and no accent, which drops the account badge.
+ * With Switchboard on, the hub picks the account, so the picker shows one Claude and one Codex.
+ * Each driver keeps the selected instance when it has that driver, else its first ready one, so the
+ * composer still sends a real instance. The kept entry takes the plain brand name and no accent.
  */
 export function collapseForSwitchboard(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -84,12 +82,10 @@ function SwitchboardUnknownNote({ unconfigured }: { readonly unconfigured: boole
 }
 
 /**
- * Wraps a model picker so it shows the collapsed entries while Switchboard is on, and
- * disables, with the reason, models the hub confirms it cannot serve right now: a
- * model it reports unavailable, everything but the credit models while every Codex
- * account is on credits, or a whole provider with no allowance left. The caller's own
- * reasons come first. When availability is unknown nothing is disabled, and the
- * picker says so.
+ * Shows the collapsed entries while Switchboard is on, and disables, with the reason, models the
+ * hub confirms it cannot serve now: one reported unavailable, all but credit models while every
+ * Codex account is on credits, or a provider with no allowance left. The caller's reasons come
+ * first. With availability unknown nothing is disabled, and the picker says so.
  */
 export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentType<P>) {
   const ScopedPicker = memo(function EnvironmentSwitchboardModelPicker(

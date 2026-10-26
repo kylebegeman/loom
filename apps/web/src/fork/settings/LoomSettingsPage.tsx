@@ -27,7 +27,7 @@ import {
 import { FORK_SETTINGS_SECTIONS, type ForkSettingsSection } from "./registry";
 
 export function LoomSettingsPage() {
-  const search = useSearch({ from: "/settings/loom" });
+  const search = useSearch({ from: "/_chat/settings/loom" });
   const navigate = useNavigate();
   const selected = resolveLoomSettingsSection(FORK_SETTINGS_SECTIONS, search.section);
   const [query, setQuery] = useState("");

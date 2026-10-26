@@ -79,13 +79,9 @@ const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: Thre
     .slice(0, 22)}`;
 
 /**
- * An agent alert. The text names no thread, project, computer, model or Vault item, so none of
- * them reaches Apple or the lock screen. The data carries the relay's fields, which the app reads
- * to open the thread on a tap. The deep link has the shape `projectThreadAwarenessV2` builds.
- *
- * A Vault request instead opens the iPhone app's settings for the computer, whose Vault access
- * lists it for a decision; an app from before reads `threadId` and opens the thread. It expires
- * with the request.
+ * The text names no thread, project, computer, model or Vault item, so none reaches Apple or the
+ * lock screen. The deep link has `projectThreadAwarenessV2`'s shape. A Vault request opens the
+ * computer's Vault access instead; older apps read `threadId` and open the thread.
  */
 export const agentAlertRequest = (input: {
   readonly environmentId: EnvironmentId;

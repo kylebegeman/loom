@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import type { LibraryResource } from "@t3tools/contracts/fork";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 type CreateTarget = {
   readonly step: "create";
@@ -40,7 +40,8 @@ const cloneChoice = (id: string, title: string, url: string): NewProjectChoice =
   target: { step: "create", page: "name", title, repository: url },
 });
 
-const remoteKey = (remote: string) => canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
+const remoteKey = (remote: string) =>
+  sourceControlClients.canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
 
 /**
  * Whether `resources` still hold the repository a project was started from, over HTTPS or SSH.

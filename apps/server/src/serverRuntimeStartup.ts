@@ -180,7 +180,7 @@ const recordStartupHeartbeat = Effect.gen(function* () {
   yield* analytics.recordOwners(yield* getServerOwners, "server");
 });
 
-export const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
+const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
   instanceId: ProviderInstanceId.make("codex"),
   model: DEFAULT_MODEL,
 });
@@ -250,7 +250,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   );
 });
 
-export const resolveWelcomeBase = Effect.gen(function* () {
+const resolveWelcomeBase = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const segments = serverConfig.cwd.split(/[/\\]/).filter(Boolean);
   const projectName = segments[segments.length - 1] ?? "project";
@@ -347,11 +347,7 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
     : yield* serverAuth.issueStartupPairingUrl(baseTarget);
 });
 
-/**
- * Prints the startup pairing URL to stdout, where `t3` users and the dev runner
- * read it. The URL carries a one-time admin token, so it skips the logger: log
- * records also land in the trace file and any configured OTLP collector.
- */
+/** Prints the one-time admin pairing URL to stdout only; logger records reach trace files and collectors. */
 export const announceStartupPairingUrl = (pairingUrl: string) =>
   // fork: brand
   Effect.logInfo("Authentication required. Open Loom using the pairing URL.").pipe(
@@ -359,8 +355,7 @@ export const announceStartupPairingUrl = (pairingUrl: string) =>
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
 
-// No URL here: the browser target carries the pairing token, which
-// announceStartupPairingUrl has already printed to stdout.
+// Pairing tokens belong only in announceStartupPairingUrl's stdout output.
 export const logBrowserAutoOpenUnavailable = Effect.logInfo("browser auto-open unavailable", {
   hint: "Open the pairing URL above in your browser.",
 });
@@ -424,36 +419,36 @@ export const startEffectWorkerWithRelay = Effect.fn(
   );
 });
 
-export const runOrderedV2StartupPhases = Effect.fn(
-  "serverRuntimeStartup.runOrderedV2StartupPhases",
-)(function* <
-  Import,
-  Recovery,
-  Bootstrap,
-  ImportError,
-  RecoveryError,
-  DelegationError,
-  WorkerError,
-  BootstrapError,
-  ImportContext,
-  RecoveryContext,
-  DelegationContext,
-  WorkerContext,
-  BootstrapContext,
->(input: {
-  readonly importLegacyShells: Effect.Effect<Import, ImportError, ImportContext>;
-  readonly recover: Effect.Effect<Recovery, RecoveryError, RecoveryContext>;
-  readonly recoverDelegatedTasks: Effect.Effect<void, DelegationError, DelegationContext>;
-  readonly startEffectWorker: Effect.Effect<void, WorkerError, WorkerContext>;
-  readonly autoBootstrap: Effect.Effect<Bootstrap, BootstrapError, BootstrapContext>;
-}) {
-  yield* input.importLegacyShells;
-  const recovery = yield* input.recover;
-  yield* input.recoverDelegatedTasks;
-  yield* input.startEffectWorker;
-  const bootstrap = yield* input.autoBootstrap;
-  return { recovery, bootstrap } as const;
-});
+const runOrderedV2StartupPhases = Effect.fn("serverRuntimeStartup.runOrderedV2StartupPhases")(
+  function* <
+    Import,
+    Recovery,
+    Bootstrap,
+    ImportError,
+    RecoveryError,
+    DelegationError,
+    WorkerError,
+    BootstrapError,
+    ImportContext,
+    RecoveryContext,
+    DelegationContext,
+    WorkerContext,
+    BootstrapContext,
+  >(input: {
+    readonly importLegacyShells: Effect.Effect<Import, ImportError, ImportContext>;
+    readonly recover: Effect.Effect<Recovery, RecoveryError, RecoveryContext>;
+    readonly recoverDelegatedTasks: Effect.Effect<void, DelegationError, DelegationContext>;
+    readonly startEffectWorker: Effect.Effect<void, WorkerError, WorkerContext>;
+    readonly autoBootstrap: Effect.Effect<Bootstrap, BootstrapError, BootstrapContext>;
+  }) {
+    yield* input.importLegacyShells;
+    const recovery = yield* input.recover;
+    yield* input.recoverDelegatedTasks;
+    yield* input.startEffectWorker;
+    const bootstrap = yield* input.autoBootstrap;
+    return { recovery, bootstrap } as const;
+  },
+);
 
 const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: StartupOptions) {
   const serverConfig = yield* ServerConfig.ServerConfig;

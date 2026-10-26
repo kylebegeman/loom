@@ -21,10 +21,16 @@ vi.mock("../../state/threads", () => ({
     mergeBack: {},
     startTurn: {},
   },
+  useThreadFamily: () => {},
 }));
 vi.mock("../../state/use-thread-selection", () => ({
   useThreadSelection: () => ({
-    selectedThread: { environmentId: "computer", id: "thread", title: "Conversation" },
+    selectedThread: {
+      environmentId: "computer",
+      id: "thread",
+      title: "Conversation",
+      lineage: { rootThreadId: "thread", parentThreadId: null, relationshipToParent: null },
+    },
     selectedThreadCreation: null,
     selectedThreadDetailRef: { environmentId: "computer", threadId: "thread" },
     selectedThreadProject: null,
@@ -144,11 +150,21 @@ vi.mock("./useThreadConversationDetails", () => ({ useThreadConversationDetails:
 vi.mock("./use-worktree-setup", () => ({
   useWorktreeSetup: () => ({ snapshot: null, visible: null }),
 }));
-vi.mock("./ThreadDetailScreen", () => ({
-  ThreadDetailScreen: ({ onResumeQueue }: { onResumeQueue: (() => Promise<void>) | null }) => {
+// The host publishes the screen from a layout effect, which server rendering never runs.
+vi.mock("./ThreadScreenHost", () => ({
+  ThreadScreenHost: ({ children }: { children: ReactNode }) => children,
+  ThreadScreenFallback: () => null,
+  ThreadScreenBinding: ({ onResumeQueue }: { onResumeQueue: (() => Promise<void>) | null }) => {
     state.onResumeQueue = onResumeQueue;
     return null;
   },
+}));
+vi.mock("./NewTaskDraftRouteScreen", () => ({ NewTaskDraftRouteScreen: () => null }));
+vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: () => null }));
+vi.mock("./thread-inspector-preview", () => ({
+  InspectorContentScope: () => null,
+  ThreadInspectorHeader: () => null,
+  ThreadInspectorPreview: () => null,
 }));
 
 import { ThreadRouteScreen } from "./ThreadRouteScreen";

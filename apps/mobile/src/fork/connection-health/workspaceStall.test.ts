@@ -27,13 +27,15 @@ function reconnecting(label: string, failingSince = FAILING_SINCE): WorkspaceEnv
   };
 }
 
+// Upstream hides reconnects from the workspace status once any computer is ready.
 function workspace(connectingEnvironments: ReadonlyArray<WorkspaceEnvironment>): WorkspaceState {
   return {
     isLoadingConnections: false,
     hasConnections: true,
     hasLoadedShellSnapshot: true,
     hasPendingShellSnapshot: false,
-    hasReadyEnvironment: true,
+    hasReadyEnvironment: false,
+    hasSyncingConnectedEnvironment: false,
     hasConnectingEnvironment: connectingEnvironments.length > 0,
     connectingEnvironments,
     connectionState: "connected",
@@ -54,9 +56,10 @@ describe("stalled workspace connection status", () => {
 
   it("stops the spinner and says since when once the reconnect has stalled", () => {
     const state = workspace([reconnecting("Dorothy")]);
-    expect(workspaceConnectionStatusPresentation(state, { compact: false, now: STALLED })).toEqual(
-      { label: `Can't reach Dorothy since ${since}`, showsProgress: false },
-    );
+    expect(workspaceConnectionStatusPresentation(state, { compact: false, now: STALLED })).toEqual({
+      label: `Can't reach Dorothy since ${since}`,
+      showsProgress: false,
+    });
     expect(workspaceConnectionStatusPresentation(state, { compact: true, now: STALLED })).toEqual({
       label: "Can't reach Dorothy",
       accessibilityLabel: `Can't reach Dorothy since ${since}. Loom keeps trying.`,

@@ -1,12 +1,12 @@
 // fork: source-control-cockpit
 import { useCheckoutThreads } from "../../../fork/source-control-cockpit/useCheckoutThreads";
 import { AuthSettingsWriteScope, EnvironmentId } from "@t3tools/contracts";
-import { useThreadSelection } from "../../../state/use-thread-selection";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { serverEnvironment } from "../../../state/server";
 import { useEnvironmentScope } from "../../../state/session";
 import { Switch } from "react-native";
 import { resolveDefaultBranchActionDialogCopy } from "@t3tools/client-runtime/state/vcs";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
@@ -22,6 +22,7 @@ import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
+import { useThreadSelection } from "../../../state/use-thread-selection";
 import { SheetActionButton } from "./gitSheetComponents";
 
 type GitConfirmSheetProps = StaticScreenProps<{
@@ -41,10 +42,14 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
+  // fork: source-control-cockpit -- the remember toggle merges into the runtime's project overrides
+  const { selectedThreadProject, selectedEnvironmentRuntime } = useThreadSelection();
+  const terminology = sourceControlClients.get(
+    selectedThreadProject?.repositoryIdentity?.provider,
+  ).changeRequest;
 
   const params = props.route.params;
   // fork: source-control-cockpit
-  const { selectedThreadProject, selectedEnvironmentRuntime } = useThreadSelection();
   const [remember, setRemember] = useState(false);
   const { otherCount } = useCheckoutThreads();
   const canRemember = useEnvironmentScope(
@@ -88,9 +93,10 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
             action: confirmAction,
             branchName,
             includesCommit,
+            terminology,
           })
         : null,
-    [branchName, confirmAction, includesCommit],
+    [branchName, confirmAction, includesCommit, terminology],
   );
 
   const continuePendingAction = useCallback(async () => {

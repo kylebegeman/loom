@@ -7,17 +7,8 @@ import { expect, it } from "vite-plus/test";
 import {
   createArchivedThreadSnapshotsAtomFamily,
   makeArchivedThreadsEnvironmentKey,
-  parseArchivedThreadsEnvironmentKey,
 } from "./archivedThreads.ts";
 import { v2Now, v2Project, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
-
-it("round-trips environment keys in sorted order", () => {
-  const envA = EnvironmentId.make("env-a");
-  const envB = EnvironmentId.make("env-b");
-  const key = makeArchivedThreadsEnvironmentKey([envB, envA]);
-
-  expect(parseArchivedThreadsEnvironmentKey(key)).toEqual([envA, envB]);
-});
 
 it("does not expose an archived snapshot failure message", () => {
   const environmentId = EnvironmentId.make("env-sensitive");

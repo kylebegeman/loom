@@ -120,11 +120,10 @@ const NO_STORED_LISTING = Atom.make<StoredDirectoryListing | null>(null).pipe(
 );
 
 /**
- * The Library computer list, shared by web, desktop and mobile. `listing` reads the directory on
- * the Library's connection when it mounts (if older than a few seconds) and when refreshed, never
- * on a timer; pass null while no Library is chosen or it lacks `directory`. `stored` needs no
- * connection, so the last listing shows while the Library is loading or unreachable. Feed both
- * to `directoryComputersView`.
+ * The Library computer list for every client. `listing` reads the directory on the Library's
+ * connection on mount (if older than a few seconds) and on refresh, never on a timer; pass null
+ * without a Library or `directory`. `stored` needs no connection, so the last listing shows while
+ * the Library is unreachable. Feed both to `directoryComputersView`.
  */
 export function createDirectoryComputersAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | HttpClient.HttpClient | R, E>,

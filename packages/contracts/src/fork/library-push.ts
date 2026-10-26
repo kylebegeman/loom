@@ -202,12 +202,9 @@ export type LibraryPushServedTopic = typeof LibraryPushServedTopic.Type;
 
 /**
  * `devices` holds the caller's own rows for an Identity session, every row for an operator, and
- * nothing for a session that is neither. A row for a bundle or environment this build does not
- * know is left out rather than failing the whole status.
- *
- * `topics` lists the builds the Library's push settings accept. It is present whenever push is
- * on, and empty when those settings name no usable build, so every register is refused with
- * `unsupported-app`. A Library from before the list omits it, as does one with push off.
+ * none otherwise; rows for an unknown bundle or environment are left out. `topics` lists the builds
+ * push accepts: empty when none is usable, so every register gets `unsupported-app`, and absent
+ * with push off or from an older Library.
  */
 export const LibraryPushStatus = Schema.Struct({
   state: LibraryPushState,

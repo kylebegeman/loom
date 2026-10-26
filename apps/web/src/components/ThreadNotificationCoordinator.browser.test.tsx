@@ -1,3 +1,4 @@
+import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -178,6 +179,8 @@ let root: Root;
 
 async function render() {
   await act(() => root.render(<ThreadNotificationCoordinator />));
+  // fork: respectful-notifications - a completion waits out the Working shelf's exit grace.
+  await act(() => vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS));
 }
 
 async function complete() {
@@ -218,6 +221,8 @@ beforeEach(() => {
   );
   vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused);
   vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" }));
+  // fork: respectful-notifications - only timers, so tests can still pin Date.now.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   root = createRoot(document.createElement("div"));
 });
 
@@ -225,6 +230,7 @@ afterEach(async () => {
   await act(() => root.unmount());
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("thread notifications", () => {

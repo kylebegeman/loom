@@ -1,5 +1,4 @@
-// Measures React renders in a running T3 Code Dev client. See
-// docs/internals/mobile-development.md#measuring-renders.
+// See docs/internals/mobile-development.md#measuring-renders.
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -182,14 +181,12 @@ const connectServer = Effect.fn("measure.connectServer")(function* (options: Opt
   return { client, environmentId: EnvironmentId.make(descriptor.environmentId), projectId };
 });
 
-// Streaming lands in turn items. Some providers stream reasoning but deliver the
-// reply text in one piece, so any streaming text item counts as mid-stream.
+// Some providers stream only reasoning, so any streaming text item counts.
 const streamingItem = (projection: OrchestrationV2ThreadProjection) =>
   projection.turnItems.find(
     (item) => (item.type === "assistant_message" || item.type === "reasoning") && item.streaming,
   );
 
-/** A thread streams a long reply: the open one, or with `route` a thread the app never shows. */
 const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   options: Options,
   run: number,
@@ -249,8 +246,7 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   yield* evaluate("__t3RenderCounterStart()");
   yield* Effect.sleep(`${options.windowSeconds} seconds`);
   const report = yield* decodeReport(yield* evaluate("JSON.stringify(__t3RenderCounterStop())"));
-  // React commits on every streamed delta, so an empty window means the app is not on the thread.
-  // A thread streaming out of view may rightly commit nothing.
+  // An in-view streaming thread must commit; out-of-view streaming may commit nothing.
   if (report.commits === 0 && Option.isNone(route))
     return yield* new MeasureError({
       message: `Run ${run}: no React commits in the window. Check the device for a red box.`,
@@ -262,7 +258,6 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
 const appLink = (options: Options, route: string) =>
   `__t3RenderCounterOpen(${encodeJson(`${options.scheme}://${route.replace(/^\//, "")}`)})`;
 
-/** Reloads onto Home, then opens `route` and lets it settle; `/` stays on Home. */
 const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   options: Options,
   route: string,
@@ -283,7 +278,6 @@ const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   yield* Effect.sleep("5 seconds");
 });
 
-/** Opens a screen from a freshly loaded Home and records its mount and data settling. */
 const measureRouteOpen = Effect.fn("measure.routeOpen")(function* (
   options: Options,
   route: string,

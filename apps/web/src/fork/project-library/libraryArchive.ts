@@ -8,18 +8,21 @@ export function libraryArchiveTimeline(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "visibleTurnItems" | "turnItems">,
 ): readonly TimelineEntry[] {
   if (projection.visibleTurnItems.length === 0) {
-    return projection.messages.map(({ scheduledTaskId, senderThreadId, ...message }) => ({
-      id: message.id,
-      kind: "message" as const,
-      createdAt: DateTime.formatIso(message.createdAt),
-      message: {
-        ...message,
-        ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
-        ...(senderThreadId === undefined ? {} : { senderThreadId }),
+    return projection.messages.map(
+      ({ scheduledTaskId, senderThreadId, idleCompaction, ...message }) => ({
+        id: message.id,
+        kind: "message" as const,
         createdAt: DateTime.formatIso(message.createdAt),
-        updatedAt: DateTime.formatIso(message.updatedAt),
-      },
-    }));
+        message: {
+          ...message,
+          ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
+          ...(senderThreadId === undefined ? {} : { senderThreadId }),
+          ...(idleCompaction === undefined ? {} : { idleCompaction }),
+          createdAt: DateTime.formatIso(message.createdAt),
+          updatedAt: DateTime.formatIso(message.updatedAt),
+        },
+      }),
+    );
   }
   const fullItems = new Map(projection.turnItems.map((item) => [item.id, item]));
   const visibleTurnItems = projection.visibleTurnItems.map((row) => {

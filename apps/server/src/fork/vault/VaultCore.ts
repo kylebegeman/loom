@@ -176,11 +176,9 @@ const make = Effect.gen(function* () {
         return yield* new VaultError({ reason: "not-found" });
       if (current.version !== decoded.value.expectedVersion)
         return yield* new VaultError({ reason: "conflict" });
-      // Admin reveal, probes and secret-decoding adapters bypass the thread evaluator. Until a
-      // protected dispatcher exists, none may release a protected or unclassified credential.
-      // A caller that already read the policy for this call passes it instead of a second read.
-      // Its own write must be conditional on that read's version, so a policy change after the
-      // read discards this value.
+      // Admin reveal, probes and decoding adapters bypass the thread evaluator, so none may release
+      // a protected or unclassified credential. A caller that already read the policy passes it,
+      // and its own write must be conditional on that read's version.
       const policy = known === undefined ? yield* accessPolicy() : known;
       if (policy !== null && credentialUseRefusal(policy, decoded.value.id))
         return yield* new VaultError({ reason: "denied" });

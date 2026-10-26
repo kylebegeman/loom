@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, usePreventRemove, type StaticScreenProps } from "@react-navigation/native";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import {
   isRestingEntry,
   libraryActiveCopies,
@@ -509,6 +510,7 @@ function CopyGroup(props: {
 
 function CopyRepairActions({ copy }: { readonly copy: LibraryWorkingCopy }) {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const status = useEnvironmentQuery(
     library.copyStatus({ environmentId: copy.environmentId, input: { workingCopyId: copy.id } }),
   );
@@ -522,9 +524,9 @@ function CopyRepairActions({ copy }: { readonly copy: LibraryWorkingCopy }) {
             label={`Open conversation: ${thread.title}`}
             tone="secondary"
             onPress={() =>
-              navigation.navigate("Thread", {
-                environmentId: copy.environmentId,
-                threadId: thread.threadId,
+              selectDetail({
+                name: "Thread",
+                params: { environmentId: copy.environmentId, threadId: thread.threadId },
               })
             }
           />

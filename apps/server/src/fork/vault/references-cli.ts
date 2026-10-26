@@ -7,8 +7,7 @@ import * as Option from "effect/Option";
 import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 import * as Console from "effect/Console";
-import { callAcpMcpTool } from "../../mcp/AcpMcpStdioBridge.ts";
-import { readTerminalConnection } from "./TerminalConnection.ts";
+import { callTerminalTool, readTerminalConnection } from "./TerminalConnection.ts";
 
 class ReferenceCompletionError extends Schema.TaggedError<ReferenceCompletionError>()(
   "ReferenceCompletionError",
@@ -62,7 +61,7 @@ export const completeVaultReferences = Effect.fn("completeVaultReferences")(func
   // Completion is deliberately bounded. Explicit paged search remains available for a large vault.
   for (let request = 0; request < 4; request++) {
     const response = envelope(
-      yield* callAcpMcpTool({
+      yield* callTerminalTool({
         ...connection,
         tool: "loom_vault_references_search",
         arguments: { query, kind, cursor, includeArchived: false },

@@ -1,9 +1,8 @@
 /**
- * Scrubbing a parameter by its name: dragging the name sideways moves the value along its step
- * grid. Steps are counted from the drag start, so the value never drifts off the grid, and the
- * count is held inside the range so reversing at a limit responds at once. Ported from the Loom
- * 3D widget's `shared/scrub.ts`; a missing minimum or maximum leaves that side open, with the
- * grid through zero.
+ * Dragging a parameter's name moves its value along the step grid. Steps count from the drag start
+ * so the value stays on the grid, held inside the range so reversing at a limit responds at once.
+ * Ported from the Loom 3D widget's `shared/scrub.ts`; a missing bound leaves that side open, with
+ * the grid through zero.
  */
 import type { ScadParameter } from "@t3tools/contracts/fork";
 import { vectorParameterValue } from "./params";

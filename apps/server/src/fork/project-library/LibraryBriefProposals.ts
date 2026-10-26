@@ -69,12 +69,10 @@ const sourceKey = (source: LibraryBriefProposalSource) => {
 };
 
 /**
- * Brief proposals on the Library. Anyone may propose and list; only a person deciding
- * through the guarded RPC accepts or dismisses. Mutations run inside LibraryService's
- * request transaction, so accepting saves the brief and decides the proposal together.
- * Each proposal and decision is logged: `brief.proposed`, `brief.revised` (accepted), `brief.dismissed` and
- * `brief.superseded` (with the replacing proposal's id) carry the proposal's id, base revision,
- * summary and source, so a timeline can attribute them without reading the proposals table.
+ * Brief proposals on the Library. Anyone may propose and list; only a person deciding through the
+ * guarded RPC accepts or dismisses, inside LibraryService's request transaction. `brief.proposed`,
+ * `brief.revised`, `brief.dismissed` and `brief.superseded` log the proposal's id, base revision,
+ * summary and source, so a timeline needs no proposals table.
  */
 export const make = Effect.fn("LibraryBriefProposals.make")(function* (
   catalog: LibraryBriefProposalCatalog,

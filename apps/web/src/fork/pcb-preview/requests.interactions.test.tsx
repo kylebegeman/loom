@@ -25,7 +25,11 @@ const mocks = vi.hoisted(() => ({
   attach: vi.fn(),
   inspection: null as PcbInspection | null,
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
+// The React Compiler caches atom-family calls by argument, so a mocked atom is a reader that
+// useAtomValue calls on every render, the way the real hook reads the atom's current value.
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) => (typeof atom === "function" ? atom() : atom),
+}));
 vi.mock("~/state/entities", () => ({
   useServerConfigs: () => new Map(),
   useThreadProjection: () => undefined,
@@ -45,7 +49,7 @@ vi.mock("./state", () => ({
     asset: { permissionAtom: () => false },
     inspect: { permissionAtom: () => false },
     compare: { permissionAtom: () => false },
-    editorEvents: () => mocks.event,
+    editorEvents: () => () => mocks.event,
     completeEditorAction: {},
   },
 }));

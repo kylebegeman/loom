@@ -2,7 +2,6 @@ import { useCheckoutThreads } from "./useCheckoutThreads";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { View } from "react-native";
-import { useNavigation } from "@react-navigation/native";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import {
@@ -22,19 +21,20 @@ import { useEnvironmentScope } from "../../state/session";
 import { appendComposerDraftText } from "../../state/use-composer-drafts";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useThreadListActions } from "../../features/home/useThreadListActions";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 
 export function useGitRecoveryPrompt() {
   const { selectedThread } = useThreadSelection();
-  const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   return (status: VcsStatusResult) => {
     if (!selectedThread) return;
     appendComposerDraftText(
       scopedThreadKey(selectedThread.environmentId, selectedThread.id),
       buildGitRecoveryPrompt(status),
     );
-    navigation.navigate("Thread", {
-      environmentId: selectedThread.environmentId,
-      threadId: selectedThread.id,
+    selectDetail({
+      name: "Thread",
+      params: { environmentId: selectedThread.environmentId, threadId: selectedThread.id },
     });
   };
 }

@@ -10,15 +10,20 @@ import {
   retainSettingsScope,
   validateSettingsRouteSearch,
 } from "~/components/settings/settingsScopeNavigation";
-import { beforeLoomSettingsLoad, validateLoomSettingsSearch } from "../../routes/settings.loom";
+import {
+  beforeLoomSettingsLoad,
+  validateLoomSettingsSearch,
+} from "../../routes/_chat.settings.loom";
 
 function settingsRouter(
   initialEntry: string,
   beforeLoad: typeof beforeLoomSettingsLoad = beforeLoomSettingsLoad,
 ) {
   const root = createRootRoute();
+  // Mirrors the app tree, where Settings sits under the pathless chat layout.
+  const chat = createRoute({ getParentRoute: () => root, id: "_chat" });
   const settings = createRoute({
-    getParentRoute: () => root,
+    getParentRoute: () => chat,
     path: "settings",
     validateSearch: validateSettingsRouteSearch,
     search: { middlewares: [retainSettingsScope] },
@@ -31,7 +36,7 @@ function settingsRouter(
     beforeLoad,
   });
   return createRouter({
-    routeTree: root.addChildren([settings.addChildren([loom])]),
+    routeTree: root.addChildren([chat.addChildren([settings.addChildren([loom])])]),
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
 }
@@ -96,7 +101,7 @@ describe("Loom topic navigation", () => {
     // The outer settings layout keys form state by its own scope, not the topic.
     expect(
       validateSettingsRouteSearch({
-        ...router.state.matches.find((match) => match.routeId === "/settings")!.search,
+        ...router.state.matches.find((match) => match.routeId === "/_chat/settings")!.search,
       }),
     ).toEqual({ machine: "first" });
     const reloaded = settingsRouter(router.state.location.href);

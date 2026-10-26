@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { mcpToolSession, type McpToolSessionOptions } from "../../mcp/AcpMcpStdioBridge.ts";
 
 export class TerminalConnectionError extends Schema.TaggedError<TerminalConnectionError>()(
   "TerminalConnectionError",
@@ -81,3 +82,15 @@ export const readTerminalConnection = Effect.fn("readTerminalConnection")(functi
   if (!endpoint || !authorization || !valid(endpoint, authorization)) return yield* fail();
   return { endpoint, authorization };
 });
+
+/** One tool call over its own MCP session, which ends once the call settles. */
+export const callTerminalTool = (
+  options: Omit<McpToolSessionOptions, "clientName"> & {
+    readonly tool: string;
+    readonly arguments: Readonly<Record<string, unknown>>;
+  },
+) =>
+  mcpToolSession({ ...options, clientName: "loom-terminal" }).pipe(
+    Effect.flatMap((session) => session.call(options.tool, options.arguments)),
+    Effect.scoped,
+  );

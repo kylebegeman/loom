@@ -15,7 +15,7 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { windowsSystemTar } from "./build-cli-archive.ts";
+import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 export class CliArchiveSmokeError extends Schema.TaggedError<CliArchiveSmokeError>()(
@@ -45,8 +45,7 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   const child = yield* spawner.spawn(
     ChildProcess.make(executable, args, {
       cwd,
-      // Empty PATH: the archive must not reach a system node, and the
-      // launcher context must not leak in from a developer shell.
+      // Isolate system Node and inherited launcher context from the archive smoke check.
       env: { PATH: "", HOME: cwd, USERPROFILE: cwd, TMPDIR: cwd, TEMP: cwd },
       extendEnv: false,
     }),
@@ -68,9 +67,7 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   const platform = yield* HostProcess.Platform;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const scratch = yield* fs.makeTempDirectory({ prefix: "t3-cli-smoke-" });
-  // Windows can keep t3.exe locked (EBUSY) for a moment after the server
-  // exits. A leftover scratch directory on a CI runner is harmless, so
-  // cleanup retries briefly and never fails a smoke test that passed.
+  // Windows can briefly retain executable locks; cleanup retries but must not fail a successful smoke check.
   yield* Effect.addFinalizer(() =>
     fs.remove(scratch, { recursive: true }).pipe(
       Effect.retry({ times: 10, schedule: Schedule.spaced("500 millis") }),
@@ -80,8 +77,7 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     ),
   );
 
-  // On Windows the archive is a zip and the Git Bash `tar` on PATH is GNU
-  // tar; use the bsdtar Windows ships, which reads both formats.
+  // Windows bsdtar reads zip; Git Bash's GNU tar does not.
   const tar = platform === "win32" ? windowsSystemTar() : "tar";
   const extract = yield* spawner
     .spawn(ChildProcess.make(tar, ["-xf", input.archive, "-C", scratch]))
@@ -135,6 +131,9 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
           TMPDIR: scratch,
           TEMP: scratch,
           T3CODE_HOME: home,
+          // The archive has a release channel built in, so its events would
+          // look like a real new install.
+          T3CODE_TELEMETRY_ENABLED: "false",
         },
         extendEnv: false,
       },

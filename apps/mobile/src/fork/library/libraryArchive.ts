@@ -1,4 +1,7 @@
-import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ThreadProjection,
+  OrchestrationV2TurnItemStatus,
+} from "@t3tools/contracts";
 import type { LibraryReplicationStatus, LibraryThreadSummary } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import {
@@ -10,6 +13,28 @@ import {
 export type LibraryArchiveRow =
   | Extract<ThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
   | { readonly type: "activity"; readonly id: string; readonly activity: ThreadFeedActivity };
+
+export function libraryArchiveActivityStatus(status: OrchestrationV2TurnItemStatus): {
+  readonly label: string;
+  readonly tone: "active" | "danger" | "success" | "warning" | "neutral";
+} {
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  switch (status) {
+    case "idle":
+      return { label, tone: "neutral" };
+    case "completed":
+      return { label, tone: "success" };
+    case "failed":
+      return { label, tone: "danger" };
+    case "cancelled":
+    case "interrupted":
+      return { label, tone: "warning" };
+    case "pending":
+    case "running":
+    case "waiting":
+      return { label, tone: "active" };
+  }
+}
 
 /** Preserve the visible sequence, hydrating detail only from the captured archive. */
 export function libraryArchiveRows(

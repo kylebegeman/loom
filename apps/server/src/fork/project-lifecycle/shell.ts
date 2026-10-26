@@ -1,11 +1,8 @@
 /**
- * Shell integration: a zsh hook sourced from ~/.zshenv points TMPDIR and Xcode build output
- * at the lane of the checkout a command runs in. Providers run every command through the
- * user's shell, so this covers all of them without touching upstream.
- *
- * Helpers in the shims folder record leases in the lane's `leases.tsv` (`lane-run` processes,
- * simulators made with `xcrun simctl create|clone`) and share the machine's build slots
- * (`lane-slot`, which xcodebuild uses for heavy actions).
+ * A zsh hook sourced from ~/.zshenv points TMPDIR and Xcode build output at the lane of the
+ * checkout a command runs in, which covers every provider without touching upstream. Shims record
+ * leases in the lane's `leases.tsv` (`lane-run`, `xcrun simctl create|clone`) and share build slots
+ * through `lane-slot`.
  */
 import { PORT_BLOCK } from "./policy.ts";
 

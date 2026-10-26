@@ -61,16 +61,21 @@ export function Section() {
   return supportsLibraryPushBuild() ? <LibraryNotificationsContent /> : null;
 }
 
-/** The Settings entry for builds whose Settings has no Notifications row of its own. */
-export function Row() {
-  if (!supportsLibraryPushBuild()) return null;
-  return (
-    <SettingsRow
-      icon="bell.badge"
-      label={LIBRARY_PUSH_COPY.rowLabel}
-      target="SettingsNotifications"
-    />
-  );
+/**
+ * The Settings list row for builds whose Settings has no Notifications row of its own. Settings
+ * rows are data so the list's search can filter them.
+ */
+export function rows() {
+  return supportsLibraryPushBuild()
+    ? [
+        {
+          id: "SettingsNotifications",
+          icon: "bell.badge",
+          label: LIBRARY_PUSH_COPY.rowLabel,
+          target: "SettingsNotifications",
+        } as const,
+      ]
+    : [];
 }
 
 const IDLE_TEST: LibraryPushTestState = { phase: "idle" };

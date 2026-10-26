@@ -164,6 +164,7 @@ function SidebarUtilityItem({
   );
 }
 
+// fork: sites-navigation - exported for the fork's destination navigation tests.
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();

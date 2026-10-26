@@ -20,5 +20,6 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited)' + (has_hinge_api ? ' T3_HAS_UIKIT_HINGE_LAYOUT' : ''),
   }
+  s.resource_bundles = { 'T3NativeControlIcons' => ['Resources/Icons/pull-request*.png'] }
   s.source_files = '**/*.{h,m,mm,swift,hpp,cpp}'
 end

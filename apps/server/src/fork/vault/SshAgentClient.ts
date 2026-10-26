@@ -1,4 +1,4 @@
-import { readTerminalConnection } from "./TerminalConnection.ts";
+import { callTerminalTool, readTerminalConnection } from "./TerminalConnection.ts";
 import { decodeVaultTerminalError, type VaultTerminalError } from "./terminal-errors.ts";
 import {
   VaultSshAgentOpenInput,
@@ -14,7 +14,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { callAcpMcpTool } from "../../mcp/AcpMcpStdioBridge.ts";
 export class SshAgentClientError extends Schema.TaggedError<SshAgentClientError>()(
   "SshAgentClientError",
   {
@@ -63,7 +62,7 @@ const make = Effect.gen(function* () {
     if (Option.isNone(connection)) return yield* new SshAgentClientError({ reason: "connection" });
     const { endpoint, authorization } = connection.value;
     const envelope = decodeEnvelope(
-      yield* callAcpMcpTool({
+      yield* callTerminalTool({
         endpoint,
         authorization,
         tool,

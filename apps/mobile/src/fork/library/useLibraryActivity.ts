@@ -2,6 +2,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { LibraryTimelineLink } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentServerConfig } from "../../state/entities";
@@ -43,6 +44,7 @@ export function useLibraryActivity() {
 /** Follows a timeline entry: the pull request, the live thread, or its saved history. */
 export function useOpenLibraryTimelineLink(projectId: string) {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   return useCallback(
     (link: LibraryTimelineLink) => {
       switch (link.kind) {
@@ -50,9 +52,9 @@ export function useOpenLibraryTimelineLink(projectId: string) {
           void tryOpenExternalUrl(link.url, "pull-request");
           return;
         case "thread":
-          navigation.navigate("Thread", {
-            environmentId: link.environmentId,
-            threadId: link.threadId,
+          selectDetail({
+            name: "Thread",
+            params: { environmentId: link.environmentId, threadId: link.threadId },
           });
           return;
         case "conversation":
@@ -60,6 +62,6 @@ export function useOpenLibraryTimelineLink(projectId: string) {
           return;
       }
     },
-    [navigation, projectId],
+    [navigation, projectId, selectDetail],
   );
 }

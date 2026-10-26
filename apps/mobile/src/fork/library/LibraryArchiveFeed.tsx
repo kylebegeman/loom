@@ -11,7 +11,6 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
 import { Button } from "../../components/ui/Button";
 import { useMarkdownPreviewStyles } from "../../features/files/FileMarkdownPreview";
-import { resolveThreadActivityStatus } from "../../features/threads/thread-activity-row-presentation";
 import {
   ThreadMarkdownImageUnavailable,
   ThreadMarkdownImageView,
@@ -28,7 +27,7 @@ import {
   SelectableMarkdownText,
   type MarkdownImageRenderer,
 } from "../../native/SelectableMarkdownText";
-import type { LibraryArchiveRow } from "./libraryArchive";
+import { libraryArchiveActivityStatus, type LibraryArchiveRow } from "./libraryArchive";
 
 type ArchiveAttachment = {
   readonly id: string;
@@ -113,7 +112,7 @@ function SavedActivity({
   const [visibleCharacters, setVisibleCharacters] = useState(LOG_PREVIEW_CHARACTERS);
   const activity = row.activity,
     item = activity.projectedItem.item;
-  const status = resolveThreadActivityStatus(item.status);
+  const status = libraryArchiveActivityStatus(item.status);
   let call = "";
   if (expanded && (item.type === "command_execution" || item.type === "dynamic_tool")) {
     const input = toolCallLines(

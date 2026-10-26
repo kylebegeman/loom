@@ -9,7 +9,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { shouldRecommendDatabaseCompaction, type EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { RestartCompactionState } from "@t3tools/contracts/fork"; // fork: restart-compaction
 import * as Schema from "effect/Schema";
 import { useState } from "react"; // fork: restart-compaction
@@ -21,73 +21,83 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command"; // fork: restart-compaction
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast"; // fork: restart-compaction
-import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 const databaseCompaction = createDatabaseCompactionAtoms(connectionAtomRuntime); // fork: restart-compaction
 
-/** Suggests `t3 doctor` for a database that still holds at least 1 GiB of freed pages. */
+const DismissedEnvironmentIds = Schema.Array(Schema.String);
+
+/** Suggests `t3 doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
 export function DatabaseStorageNotice({
-  environmentId,
-  label,
+  environments,
 }: {
-  environmentId: EnvironmentId;
-  label: string;
+  environments: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>;
 }) {
-  const result = useAtomValue(serverEnvironment.databaseStorage({ environmentId, input: {} }));
+  const recommendations = useAtomValue(
+    serverEnvironment.databaseCompactionRecommendations(
+      JSON.stringify(environments.map((environment) => environment.environmentId)),
+    ),
+  );
   const [dismissed, setDismissed] = useLocalStorage(
-    `database-storage-notice-dismissed:${environmentId}`,
-    false,
-    Schema.Boolean,
+    "database-storage-notice-dismissed",
+    [],
+    DismissedEnvironmentIds,
   );
   const { copyToClipboard } = useCopyToClipboard({ target: "command" });
-  const status = result._tag === "Success" ? result.value : null;
-  if (dismissed || status === null || !shouldRecommendDatabaseCompaction(status)) return null;
+  const visible = recommendations.filter(
+    (recommendation) => !dismissed.includes(recommendation.environmentId),
+  );
+  if (visible.length === 0) return null;
+  const labelOf = (environmentId: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === environmentId)?.label ??
+    environmentId;
+  const dismiss = (environmentId: EnvironmentId) =>
+    setDismissed((current) => [...current, environmentId]);
   // fork: restart-compaction: the desktop app compacts its own database while it restarts.
-  if (status.restartCompaction !== undefined) {
-    return (
-      <SettingsSection id={`storage-database-${environmentId}`} title="Database">
-        <SettingsGroup>
+  const commandRecommendations = visible.filter(
+    ({ status }) => status.restartCompaction === undefined,
+  );
+  return (
+    <SettingsSection id="storage-database" title="Database">
+      {visible.map(({ environmentId, status }) =>
+        status.restartCompaction === undefined ? null : (
           <RestartCompactionRow
+            key={environmentId}
             environmentId={environmentId}
-            label={label}
+            label={labelOf(environmentId)}
             reclaimableBytes={status.reclaimableBytes}
             state={status.restartCompaction}
-            onDismiss={() => setDismissed(true)}
+            onDismiss={() => dismiss(environmentId)}
           />
-        </SettingsGroup>
-      </SettingsSection>
-    );
-  }
-  return (
-    <SettingsSection id={`storage-database-${environmentId}`} title="Database">
-      <SettingsGroup>
+        ),
+      )}
+      {commandRecommendations.length === 0 ? null : (
         <SettingsRow
-          title={`Reclaim ${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${label}`}
-          description={
-            <>
-              Old history is cleaned up automatically, but this database still holds the freed
-              space. Run the command on {label} to return it to disk; it pauses and restarts the
-              background service. Quit the desktop app first if it hosts this environment.
-              <code className="mt-2 block select-text break-all">{status.compactCommand}</code>
-            </>
-          }
+          title="Reclaim freed database space"
+          description="Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment."
+        />
+      )}
+      {commandRecommendations.map(({ environmentId, status }) => (
+        <SettingsRow
+          key={environmentId}
+          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${labelOf(environmentId)}`}
+          description={<code className="select-text break-all">{status.compactCommand}</code>}
           control={
             <div className="flex flex-wrap items-center gap-1.5">
               <Button
                 variant="outline"
-                size="sm"
+                size="xs"
                 onClick={() => copyToClipboard(status.compactCommand, undefined)}
               >
                 Copy command
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setDismissed(true)}>
+              <Button variant="ghost" size="xs" onClick={() => dismiss(environmentId)}>
                 Dismiss
               </Button>
             </div>
           }
         />
-      </SettingsGroup>
+      ))}
     </SettingsSection>
   );
 }
@@ -138,7 +148,7 @@ function RestartCompactionRow({
         state.requested ? (
           <Button
             variant="outline"
-            size="sm"
+            size="xs"
             disabled={!allowed || pending}
             onClick={() => void update(false)}
           >
@@ -148,13 +158,13 @@ function RestartCompactionRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
               variant="outline"
-              size="sm"
+              size="xs"
               disabled={!allowed || pending}
               onClick={() => void update(true)}
             >
               Compact at next restart
             </Button>
-            <Button variant="ghost" size="sm" onClick={onDismiss}>
+            <Button variant="ghost" size="xs" onClick={onDismiss}>
               Dismiss
             </Button>
           </div>

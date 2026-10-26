@@ -34,6 +34,10 @@ const fixture = (reply: (index: number) => unknown, rpcError = false) =>
           response.writeHead(401).end();
           return;
         }
+        if (request.method === "DELETE") {
+          response.writeHead(204).end();
+          return;
+        }
         let body = "";
         for await (const part of request) body += part;
         const message = JSON.parse(body);

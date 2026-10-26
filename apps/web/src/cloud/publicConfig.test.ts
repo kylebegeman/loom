@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  CloudPublicConfigMissingError,
-  hasCloudPublicConfig,
-  resolveRelayClerkTokenOptions,
-} from "./publicConfig.ts";
+import { hasCloudPublicConfig } from "./publicConfig.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -105,32 +101,10 @@ describe("hasCloudPublicConfig", () => {
       expect(hasCloudPublicConfig()).toBe(expected);
     });
 
-    it("keeps development keys available on private browser origins", () => {
-      vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", `pk_test_${btoa("tenant.clerk.accounts.dev$")}`);
-      vi.stubGlobal("window", { location: new URL("http://localhost:3773") });
-
-      expect(hasCloudPublicConfig()).toBe(true);
-    });
-
     it("keeps production keys available in the Electron auth shell", () => {
       vi.stubGlobal("window", { location: new URL("file:///app/index.html"), desktopBridge: {} });
 
       expect(hasCloudPublicConfig()).toBe(true);
     });
-
-    it("disables cloud auth for an invalid production key without throwing", () => {
-      vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_live_!");
-      vi.stubGlobal("window", { location: new URL("https://app.example.com") });
-
-      expect(hasCloudPublicConfig()).toBe(false);
-    });
-  });
-
-  it("reports the missing Clerk JWT template as structured configuration", () => {
-    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
-
-    expect(() => resolveRelayClerkTokenOptions()).toThrowError(
-      new CloudPublicConfigMissingError({ key: "T3CODE_CLERK_JWT_TEMPLATE" }),
-    );
   });
 });

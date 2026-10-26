@@ -25,7 +25,8 @@ import {
   type LibraryTimelineKind,
 } from "@t3tools/contracts/fork";
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
@@ -350,6 +351,7 @@ function TimelineFeed({
   return (
     <LegendList
       className="flex-1"
+      renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
       data={rows}
       // Rows read the project's color and which computers are connected from outside their data.
       extraData={`${ink ?? ""}|${hostsKey}`}

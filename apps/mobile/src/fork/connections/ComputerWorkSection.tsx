@@ -10,6 +10,8 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { uuidv4 } from "../../lib/uuid";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
@@ -27,6 +29,12 @@ export function ComputerWorkSection({
   readonly connected: boolean;
 }) {
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
+  const startDraft = (projectId: string, title: string) =>
+    selectDetail({
+      name: "Thread",
+      params: { draft: { requestId: uuidv4(), environmentId, projectId, title } },
+    });
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const projects = useProjects();
   const threads = useNavigationThreadShells();
@@ -68,10 +76,7 @@ export function ComputerWorkSection({
 
   function startProject(project: EnvironmentProject) {
     if (!canStart) return;
-    navigation.navigate("NewTaskSheet", {
-      screen: "NewTaskDraft",
-      params: { environmentId, projectId: project.id, title: project.title },
-    });
+    startDraft(project.id, project.title);
   }
 
   function startScratch() {
@@ -79,10 +84,7 @@ export function ComputerWorkSection({
     void run("scratch", async () => {
       const result = await openScratch({ environmentId, input: {} });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-      navigation.navigate("NewTaskSheet", {
-        screen: "NewTaskDraft",
-        params: { environmentId, projectId: result.value.id, title: result.value.title },
-      });
+      startDraft(result.value.id, result.value.title);
     });
   }
 
@@ -117,10 +119,7 @@ export function ComputerWorkSection({
           if (machineProjects.length === 0) {
             if (canStartScratch) startScratch();
             else {
-              navigation.navigate("NewTaskSheet", {
-                screen: "AddProject",
-                params: { environmentId },
-              });
+              navigation.navigate("AddProject", { environmentId });
             }
           } else if (machineProjects.length === 1 && !canStartScratch) {
             startProject(machineProjects[0]!);
@@ -158,15 +157,15 @@ export function ComputerWorkSection({
         icon="folder.badge.plus"
         label="Add project"
         disabled={!connected || !canOperate || pending !== null}
-        onPress={() =>
-          navigation.navigate("NewTaskSheet", { screen: "AddProject", params: { environmentId } })
-        }
+        onPress={() => navigation.navigate("AddProject", { environmentId })}
       />
       {recent ? (
         <SettingsActionRow
           icon="text.bubble"
           label={`Continue: ${recent.title || "Untitled conversation"}`}
-          onPress={() => navigation.navigate("Thread", { environmentId, threadId: recent.id })}
+          onPress={() =>
+            selectDetail({ name: "Thread", params: { environmentId, threadId: recent.id } })
+          }
         />
       ) : null}
       {connected && ready === 0 ? (

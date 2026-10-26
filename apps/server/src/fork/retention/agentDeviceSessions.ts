@@ -73,13 +73,9 @@ const holdsProcessRecord = Effect.fnUntraced(function* (
 });
 
 /**
- * Removes session folders under `stateDir/sessions` that nothing has written to
- * for 14 days. Call it only while no agent-device daemon runs on `stateDir`:
- * sessions, and the devices they hold, exist only inside a running daemon, so
- * none of these folders can belong to an open device then. Folders holding a
- * capture process record are kept for that daemon's recovery. Links, including
- * a linked `sessions` folder, are never followed, and failures are logged
- * without failing the caller.
+ * Removes `stateDir/sessions` folders unwritten for 14 days. Call it only while no agent-device
+ * daemon runs on `stateDir`, since sessions live only inside one. Folders with a capture process
+ * record are kept for recovery; links are never followed, and failures are logged, not raised.
  */
 export const pruneIdleAgentDeviceSessions = Effect.fn("AgentDeviceSessions.pruneIdle")(
   function* (fs: FileSystem.FileSystem, path: Path.Path, stateDir: string) {

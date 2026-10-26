@@ -27,6 +27,25 @@ const state = vi.hoisted(() => ({
   setStable: vi.fn(),
   refresh: vi.fn(),
 }));
+/**
+ * The mocked hooks subscribe here, so `render` re-renders every reader the way a store update
+ * would. The compiled components would otherwise skip children whose props did not change.
+ */
+const store = vi.hoisted(() => {
+  let version = 0;
+  const listeners = new Set<() => void>();
+  return {
+    version: () => version,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    bump: () => {
+      version += 1;
+      for (const listener of listeners) listener();
+    },
+  };
+});
 /** The URL search, kept outside React so the sheet opens the way the route would open it. */
 const nav = vi.hoisted(() => {
   let search: Record<string, unknown> = {};
@@ -63,51 +82,67 @@ vi.mock("./navigation", async () => {
     }),
   };
 });
-vi.mock("./state", () => ({
-  bots: {
-    listRuns: ({ input }: { input: BotsListRunsInput }) => {
-      state.listInputs.push(input);
-      return { kind: "runs", input };
+vi.mock("./state", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    bots: {
+      listRuns: ({ input }: { input: BotsListRunsInput }) => {
+        state.listInputs.push(input);
+        return { kind: "runs", input };
+      },
+      version: () => ({ kind: "version" }),
+      getReplay: () => ({ kind: "replay" }),
+      getRun: () => ({ kind: "run" }),
+      replay: "run",
+      cancelReplay: "cancel",
+      restoreVersion: "restore",
+      setStable: "setStable",
     },
-    version: () => ({ kind: "version" }),
-    getReplay: () => ({ kind: "replay" }),
-    getRun: () => ({ kind: "run" }),
-    replay: "run",
-    cancelReplay: "cancel",
-    restoreVersion: "restore",
-    setStable: "setStable",
-  },
-  useBots: () => ({
-    host: { environmentId: EnvironmentId.make("test"), connected: true },
-    live: true,
-    changes: state.changes,
-    bots: [bot],
-  }),
-  useBotsAccess: () => ({ canReplay: state.canReplay, canSave: true }),
-  useRefreshWhenBotsChangesPruned: () => {},
-}));
-vi.mock("~/state/query", () => ({
-  useEnvironmentQuery: (query: Query | null) => ({
-    data:
-      query === null
-        ? null
-        : query.kind === "version"
-          ? state.version
-          : query.kind === "replay"
-            ? state.replay
-            : query.kind === "run"
-              ? { run: null }
-              : state.pages[query.input.before === undefined ? 0 : 1],
-    error:
-      query?.kind === "version"
-        ? state.versionError
-        : query?.kind === "replay"
-          ? state.replayError
-          : null,
-    isPending: query?.kind === "version" && state.version === null && state.versionError === null,
-    refresh: state.refresh,
-  }),
-}));
+    useBots: () => {
+      useSyncExternalStore(store.subscribe, store.version);
+      return {
+        host: { environmentId: EnvironmentId.make("test"), connected: true },
+        live: true,
+        changes: state.changes,
+        bots: [bot],
+      };
+    },
+    useBotsAccess: () => {
+      useSyncExternalStore(store.subscribe, store.version);
+      return { canReplay: state.canReplay, canSave: true };
+    },
+    useRefreshWhenBotsChangesPruned: () => {},
+  };
+});
+vi.mock("~/state/query", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useEnvironmentQuery: (query: Query | null) => {
+      useSyncExternalStore(store.subscribe, store.version);
+      return {
+        data:
+          query === null
+            ? null
+            : query.kind === "version"
+              ? state.version
+              : query.kind === "replay"
+                ? state.replay
+                : query.kind === "run"
+                  ? { run: null }
+                  : state.pages[query.input.before === undefined ? 0 : 1],
+        error:
+          query?.kind === "version"
+            ? state.versionError
+            : query?.kind === "replay"
+              ? state.replayError
+              : null,
+        isPending:
+          query?.kind === "version" && state.version === null && state.versionError === null,
+        refresh: state.refresh,
+      };
+    },
+  };
+});
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: string) =>
     command === "run"
@@ -210,7 +245,14 @@ function Launcher({ source }: { readonly source: BotReplaySourceChoice }) {
   );
 }
 const render = (source: BotReplaySourceChoice = draft) =>
-  act(() => root.render(<Launcher source={source} />));
+  act(() => {
+    store.bump();
+    root.render(<Launcher source={source} />);
+  });
+/** Watched runs arrive as a new snapshot, which the compiled readers compare by reference. */
+const setChangedRuns = (runs: ReadonlyArray<readonly [string, BotRun]>) => {
+  state.changes = { ...state.changes, runs: new Map(runs) };
+};
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((element) => element.textContent === name)!;
 const submit = () =>
@@ -359,7 +401,7 @@ it("keeps selected original inputs and results through paging and the replay's n
     { runs: [makeBotRun("newer")], hasMore: false },
     { runs: [], hasMore: false },
   ];
-  state.changes.runs = new Map([
+  setChangedRuns([
     [
       "after-original",
       makeBotRun("after-original", { replayId: "comparison", result: "New result." }),
@@ -466,7 +508,7 @@ it("compares verdicts, runtime and complete token totals alongside retained repl
   state.pages[0] = { runs: [before], hasMore: false };
   render();
   await act(async () => submit().click());
-  state.changes.runs = new Map([
+  setChangedRuns([
     [
       "after-original",
       {
@@ -561,9 +603,7 @@ it("pages from the displayed boundary when live runs displace fetched rows", () 
     { runs: history, hasMore: false },
     { runs: [history[49]!], hasMore: false },
   ];
-  state.changes.runs = new Map([
-    ["new-live", makeBotRun("new-live", { createdAt: "2026-10-21T10:00:00Z" })],
-  ]);
+  setChangedRuns([["new-live", makeBotRun("new-live", { createdAt: "2026-10-21T10:00:00Z" })]]);
   render();
   expect(container.querySelector("fieldset")?.textContent).not.toContain("history-49");
   act(() => button("Older runs").click());

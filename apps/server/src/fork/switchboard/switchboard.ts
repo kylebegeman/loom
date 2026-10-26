@@ -11,12 +11,10 @@ import { AUTH_PROBE_TIMEOUT_MS } from "@t3tools/provider-core/server/snapshotPro
 import { ServerSettingsService } from "../../serverSettings.ts";
 
 /**
- * Switchboard is a CLIProxyAPI hub that holds every Claude and Codex subscription
- * and picks which one serves each request. With `switchboardEnabled` on, every
- * Claude and Codex launch on this server is pointed at it; off, launches are
- * exactly what the instance configures. The hub and its controller default to
- * this machine's loopback listeners. The client key never reaches Loom: both
- * CLIs run the key helper themselves.
+ * Switchboard is a CLIProxyAPI hub holding every Claude and Codex subscription. With
+ * `switchboardEnabled` on, every Claude and Codex launch here points at it; off, launches are what
+ * the instance configures. Hub and controller default to this machine's loopback listeners. The
+ * client key never reaches Loom: both CLIs run the key helper themselves.
  */
 const DEFAULT_URL = "http://127.0.0.1:8317";
 /** The controller's cached operations API (`/api/v1/*`), served beside the default hub. */

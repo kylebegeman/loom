@@ -86,11 +86,8 @@ export function LibraryPage(props: {
       const params = route.params;
       // A project in view only leads the picker, as on web; the others and No project follow it.
       if (params && "projectId" in params && typeof params.projectId === "string")
-        navigation.navigate("NewTaskSheet", {
-          screen: "NewTask",
-          params: { libraryProjectId: params.projectId },
-        });
-      else navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+        navigation.navigate("NewTaskProject", { libraryProjectId: params.projectId });
+      else navigation.navigate("NewTaskProject");
       return true;
     }, [focused, route.params, navigation]),
   );
@@ -463,7 +460,7 @@ export function LibraryAuthorityScreen() {
       <Button
         label="T3 Connect account settings"
         tone="text"
-        onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
+        onPress={() => navigation.navigate("SettingsAuth")}
       />
     </LibraryPage>
   );

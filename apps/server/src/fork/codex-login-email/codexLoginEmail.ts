@@ -9,16 +9,10 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
 /**
- * Codex reports no account when `model_provider` points at a custom provider,
- * such as a CLIProxyAPI hub, even though the home is still signed in to
- * ChatGPT and still reports that login's rate limits. Without an email those
- * limits cannot be matched to the hub's report of the same subscription, so the
- * usage views count the account twice. This reads the email from the home's
- * own login instead.
- *
- * Only instances with an explicit home (every per-account instance has one) are
- * read. Without one, the probe's CODEX_HOME comes from the instance environment,
- * which is not visible here, and guessing could credit the wrong account.
+ * Codex reports no account when `model_provider` names a custom provider such as a CLIProxyAPI hub,
+ * though the home is still signed in and reports its rate limits. Without the email the usage views
+ * count that subscription twice, so this reads it from the home's own login. Only instances with an
+ * explicit home are read; guessing CODEX_HOME could credit the wrong account.
  */
 /** The email claim of a ChatGPT login's ID token in a Codex `auth.json`. */
 export function emailFromCodexAuth(text: string): string | undefined {

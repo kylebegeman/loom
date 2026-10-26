@@ -11,6 +11,7 @@ import { makeThreadShellFixture } from "../../test-fixtures";
 const state = vi.hoisted(() => ({
   navigate: vi.fn(),
   dispatch: vi.fn(),
+  selectDetail: vi.fn(),
   alert: vi.fn(),
   binding: vi.fn(),
   lookup: vi.fn(),
@@ -26,9 +27,12 @@ const state = vi.hoisted(() => ({
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     navigate: state.navigate,
-    getParent: () => ({ dispatch: state.dispatch }),
+    dispatch: state.dispatch,
   }),
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
+}));
+vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+  useSelectWorkspaceDetail: () => state.selectDetail,
 }));
 vi.mock("./libraryState", () => ({
   useLibraryAuthority: () => ({
@@ -179,9 +183,10 @@ function expectFreshConversation(branch: string | null, worktreePath: string | n
   });
   const threadId = state.create.mock.calls[0]![0].input.threadId;
   expect(threadId).not.toBe(source.id);
-  expect(state.navigate).toHaveBeenCalledExactlyOnceWith("Thread", {
-    environmentId: source.environmentId,
-    threadId,
+  expect(state.navigate).not.toHaveBeenCalled();
+  expect(state.selectDetail).toHaveBeenCalledExactlyOnceWith({
+    name: "Thread",
+    params: { environmentId: source.environmentId, threadId },
   });
 }
 

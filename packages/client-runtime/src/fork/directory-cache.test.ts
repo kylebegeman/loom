@@ -111,7 +111,7 @@ describe("directoryListingView", () => {
     });
     expect(rows.find((row) => row.environmentId === BOOK)).toMatchObject({
       routes: [],
-      action: null,
+      action: "pair",
     });
   });
 });

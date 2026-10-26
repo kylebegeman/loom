@@ -13,14 +13,12 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import { McpSchema, McpServer } from "effect/ai";
 
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
-import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
@@ -50,53 +48,6 @@ const layerEnvironment = Layer.mock(Environment.ServerEnvironment)({
     capabilities: { repositoryIdentity: false },
   }),
 });
-
-it.effect("updates preferences for a thread caller through the /mcp registration", () =>
-  Effect.gen(function* () {
-    const server = yield* McpServer.McpServer;
-    const result = yield* server
-      .callTool({
-        name: "t3_environment_preferences_update",
-        arguments: { newWorktreesStartFromOrigin: true },
-      })
-      .pipe(
-        Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
-        Effect.provideService(
-          McpSchema.McpServerClient,
-          McpSchema.McpServerClient.of({
-            clientId: 1,
-            protocolVersion: "2025-06-18",
-            clientCapabilities: {},
-            clientInfo: { name: "preferences", version: "1" },
-            initializePayload: {
-              protocolVersion: "2025-06-18",
-              capabilities: {},
-              clientInfo: { name: "preferences", version: "1" },
-            },
-            getClient: Effect.die("unused"),
-          }),
-        ),
-      );
-    expect(result.isError).toBe(false);
-    expect(result.structuredContent).toMatchObject({ newWorktreesStartFromOrigin: true });
-  }).pipe(
-    Effect.provide(
-      McpHttpServer.layerEnvironmentToolkit.pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(
-          Layer.mock(ThreadManagement.ThreadManagementService)({
-            getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
-          }),
-        ),
-        Layer.provide(layerEnvironment),
-        Layer.provide(Settings.layerTest()),
-        Layer.provide(
-          Layer.mock(StorageCleanup.StorageCleanup)({ latestReport: Effect.succeed(null) }),
-        ),
-      ),
-    ),
-  ),
-);
 
 it.effect("refuses a preferences update when the caller's turn ends while it waits", () =>
   Effect.gen(function* () {

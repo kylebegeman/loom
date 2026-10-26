@@ -1,6 +1,6 @@
 import type { EnvironmentId, RepositoryIdentity } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "../sourceControlClients.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 import type { WorkspaceHandoffPhase } from "./workspace-handoff-flow.ts";
 
@@ -36,7 +36,7 @@ export interface WorkspaceHandoffDestinationGroup extends WorkspaceHandoffComput
 }
 
 function normalizeRepositoryKey(value: string): string {
-  return canonicalRepositoryKey(normalizeGitRemoteUrl(value));
+  return sourceControlClients.canonicalRepositoryKey(normalizeGitRemoteUrl(value));
 }
 
 function repositoryKeys(identity: RepositoryIdentity): ReadonlySet<string> {

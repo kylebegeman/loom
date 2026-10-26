@@ -94,12 +94,10 @@ const make = Effect.gen(function* () {
     path = yield* Path.Path,
     crypto = yield* Crypto.Crypto;
   const connections = yield* VaultConnections.VaultConnections;
-  // VaultSsh runs its guard before accepting a command and again before every agent frame. A full
-  // connection revalidation reveals and re-evaluates the item, taking seconds against a live Vault,
-  // so it runs once per operation. Frames still re-check the item version, which fixes the pin's
-  // destination, host and account, plus the workload session and current use policy. Only the
-  // inspect permission used to find the connection goes unchecked per frame; it never authorizes
-  // signing.
+  // VaultSsh guards before accepting a command and before every agent frame. Full revalidation
+  // takes seconds against a live Vault, so it runs once per operation; frames re-check the item
+  // version (fixing destination, host and account), workload session and use policy. Only the
+  // inspect permission goes unchecked per frame, and it never authorizes signing.
   const pinGuard = (pin: VaultConnectionPin, threadId: ThreadId) =>
     Effect.cached(connections.revalidate(pin, threadId));
   const profiles = yield* VaultProfiles.VaultProfiles,

@@ -47,12 +47,10 @@ const ROUTED_PROBE_RETRY_TTL = Duration.seconds(15);
 const ROUTED_PROBE_KEY = "switchboard";
 
 /**
- * Claude readiness while routed. The capability probe runs with the hub settings
- * resolved from the owning server's environment, never the instance's, and the
- * key helper runs on its own because initialization only reads its cache. The
- * routed result is cached apart from the native probe, so neither mode reuses the
- * other's login, and invalid hub configuration stays unverified instead of falling
- * back to native auth.
+ * Claude readiness while routed. The capability probe uses hub settings from the owning server's
+ * environment, never the instance's, and the key helper runs on its own since initialization only
+ * reads its cache. Routed results are cached apart from native ones, and invalid hub configuration
+ * stays unverified instead of falling back to native auth.
  */
 export const makeSwitchboardClaudeProbes = Effect.fn("Switchboard.makeClaudeProbes")(function* (
   claudeSettings: ClaudeSettings,

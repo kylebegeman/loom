@@ -291,7 +291,9 @@ describe("Managed primary project checkouts", () => {
         );
         expect(yield* resolver.resolve(f.cwd)).toEqual(f.identity);
         expect(yield* f.fs.exists(f.cwd)).toBe(false);
-        const paths = yield* WorkspacePaths.make;
+        const paths = yield* WorkspacePaths.WorkspacePaths.pipe(
+          Effect.provide(WorkspacePaths.layer),
+        );
         expect((yield* paths.normalizeWorkspaceRoot(f.cwd).pipe(Effect.result))._tag).toBe(
           "Failure",
         );

@@ -2,13 +2,10 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * Loom tables whose rows name the live install's own resources: lane images, ports and
- * leases, run folders, evidence files and graph folders. `migrate-dev-db` leaves them empty,
- * because a dev server reconciling copied rows would stop, clean or delete those real
- * resources. The Library history journal belongs to the live computer and its Library too: a
- * dev server has its own environment id, so a copied journal fails its fence on every pass and
- * the dev server never publishes history. Left empty, with its numbering, it starts a journal of
- * its own whose first entry is the 1 a new journal must begin with.
+ * Loom tables whose rows name the live install's resources (lane images, ports, leases, run
+ * folders, evidence and graph folders), which a dev server would stop, clean or delete. The Library
+ * history journal stays empty too: a dev server's own environment id fails its fence, so it starts
+ * its own journal at 1.
  */
 export const FORK_LIVE_RESOURCE_TABLES: ReadonlyArray<string> = [
   "fork_project_lifecycle_lanes",
@@ -77,11 +74,10 @@ export const stopCopiedBotWork = Effect.fn("stopCopiedBotWork")(function* (stopp
 });
 
 /**
- * Creates the source's full-text tables in the copy before anything else. Each one makes the
- * internal tables that hold its index, which SQLite refuses to create or write by name, so
- * `migrate-dev-db` skips every table named in `created` and runs `rebuild` once the rows the
- * indexes read from are copied. That assumes each index reads an ordinary table, as the
- * Library's search does; one that keeps its own text would come out empty.
+ * Creates the source's full-text tables in the copy first. SQLite refuses to write their internal
+ * tables by name, so `migrate-dev-db` skips every table in `created` and runs `rebuild` once the
+ * rows are copied. That assumes each index reads an ordinary table; one keeping its own text would
+ * come out empty.
  */
 export const createDevDbFullTextTables = Effect.fn("createDevDbFullTextTables")(function* (
   tables: ReadonlyArray<{ readonly name: string; readonly sql: string }>,
@@ -94,7 +90,9 @@ export const createDevDbFullTextTables = Effect.fn("createDevDbFullTextTables")(
   return {
     created: new Set(created.map((row) => row.name)),
     rebuild: Effect.forEach(
-      fullText,
+      // A contentless index keeps no text to rebuild from; its owner refills it, as
+      // rebuildMessageSearch does for message search.
+      fullText.filter((table) => !/\bcontent\s*=\s*''/i.test(table.sql)),
       ({ name }) =>
         sql.unsafe(`INSERT INTO main."${name}"("${name}") VALUES ('rebuild')`).unprepared,
       { discard: true },

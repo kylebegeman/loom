@@ -10,6 +10,7 @@ const harness = vi.hoisted(() => ({
   scratchRoot: null as string | null,
   canOperate: true,
   navigate: vi.fn(),
+  selectDetail: vi.fn(),
   openScratch: vi.fn(),
 }));
 
@@ -23,6 +24,10 @@ vi.mock("@effect/atom-react", () => ({
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
 }));
+vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+  useSelectWorkspaceDetail: () => harness.selectDetail,
+}));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => "request" }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => harness.projects,
   useNavigationThreadShells: () => [],
@@ -89,6 +94,7 @@ beforeEach(() => {
   harness.scratchRoot = null;
   harness.canOperate = true;
   harness.navigate.mockReset();
+  harness.selectDetail.mockReset();
   harness.openScratch.mockReset();
 });
 
@@ -99,10 +105,7 @@ describe("starting work from computer details", () => {
     act(() => root.render(<ComputerWorkSection environmentId={environmentId} connected />));
     act(() => button("New conversation").click());
 
-    expect(harness.navigate).toHaveBeenCalledWith("NewTaskSheet", {
-      screen: "AddProject",
-      params: { environmentId },
-    });
+    expect(harness.navigate).toHaveBeenCalledWith("AddProject", { environmentId });
     expect(container.textContent).not.toContain("Add a project to start a conversation");
   });
 
@@ -114,9 +117,11 @@ describe("starting work from computer details", () => {
     act(() => root.render(<ComputerWorkSection environmentId={environmentId} connected />));
     act(() => button("New conversation").click());
 
-    expect(harness.navigate).toHaveBeenCalledWith("NewTaskSheet", {
-      screen: "NewTaskDraft",
-      params: { environmentId, projectId: "project", title: "My project" },
+    expect(harness.selectDetail).toHaveBeenCalledWith({
+      name: "Thread",
+      params: {
+        draft: { requestId: "request", environmentId, projectId: "project", title: "My project" },
+      },
     });
   });
 
@@ -128,12 +133,14 @@ describe("starting work from computer details", () => {
     act(() => root.render(<ComputerWorkSection environmentId={environmentId} connected />));
     act(() => button("New conversation").click());
 
-    expect(harness.navigate).not.toHaveBeenCalled();
+    expect(harness.selectDetail).not.toHaveBeenCalled();
     expect(button("Start without a project").disabled).toBe(false);
     act(() => button("My project").click());
-    expect(harness.navigate).toHaveBeenCalledWith("NewTaskSheet", {
-      screen: "NewTaskDraft",
-      params: { environmentId, projectId: "project", title: "My project" },
+    expect(harness.selectDetail).toHaveBeenCalledWith({
+      name: "Thread",
+      params: {
+        draft: { requestId: "request", environmentId, projectId: "project", title: "My project" },
+      },
     });
   });
 
@@ -144,15 +151,22 @@ describe("starting work from computer details", () => {
     await act(async () => button("New conversation").click());
     expect(container.textContent).toContain("The folder is not writable.");
     expect(button("New conversation").disabled).toBe(false);
-    expect(harness.navigate).not.toHaveBeenCalled();
+    expect(harness.selectDetail).not.toHaveBeenCalled();
 
     harness.openScratch.mockResolvedValueOnce(
       AsyncResult.success({ id: "scratch", title: "Quick conversation" }),
     );
     await act(async () => button("New conversation").click());
-    expect(harness.navigate).toHaveBeenCalledWith("NewTaskSheet", {
-      screen: "NewTaskDraft",
-      params: { environmentId, projectId: "scratch", title: "Quick conversation" },
+    expect(harness.selectDetail).toHaveBeenCalledWith({
+      name: "Thread",
+      params: {
+        draft: {
+          requestId: "request",
+          environmentId,
+          projectId: "scratch",
+          title: "Quick conversation",
+        },
+      },
     });
   });
 });

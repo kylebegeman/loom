@@ -15,6 +15,7 @@ const harness = vi.hoisted(() => ({
   retryBatch: vi.fn(),
   dismiss: vi.fn(),
   navigate: vi.fn(),
+  selectDetail: vi.fn(),
   refresh: vi.fn(),
   reportRequested: vi.fn(),
   connected: true,
@@ -25,6 +26,9 @@ const harness = vi.hoisted(() => ({
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
+}));
+vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+  useSelectWorkspaceDetail: () => harness.selectDetail,
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("./state", () => ({
@@ -490,9 +494,9 @@ it("dismisses inbox runs in accepted chunks and can undo the completed subset af
     root.render(<BotsInboxRouteScreen route={{ params: { environmentId: "computer" } }} />),
   );
   click("Answer in thread");
-  expect(harness.navigate).toHaveBeenCalledWith("Thread", {
-    environmentId: "computer",
-    threadId: "waiting-thread",
+  expect(harness.selectDetail).toHaveBeenCalledWith({
+    name: "Thread",
+    params: { environmentId: "computer", threadId: "waiting-thread" },
   });
   click("Dismiss all shown");
   await act(async () => {});

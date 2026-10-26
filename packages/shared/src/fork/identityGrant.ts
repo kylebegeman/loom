@@ -149,12 +149,10 @@ export function identityResourceEnvironment(resource: string): string | null {
 }
 
 /**
- * Null when a computer may receive the sign-in it asks for, otherwise the refusal line. Check it,
- * after confirming the metadata names the expected computer, before the provider opens. Only
- * another computer's own resource is refused: that computer accepts the resulting token, so naming
- * it is how one computer would collect a sign-in for another. A shared audience passes, since
- * every computer set up with it already accepts its tokens, so a computer can move to its own
- * resource and back without stranding saved connections.
+ * Null when a computer may receive the sign-in it asks for, else the refusal line. Check it, after
+ * confirming the metadata names the expected computer, before the provider opens. Only another
+ * computer's own resource is refused, since that computer accepts the token. A shared audience
+ * passes, so a computer can move to its own resource and back.
  */
 export function identityResourceRefusal(
   metadata: Pick<LoomIdentityMetadata, "audience" | "resource" | "environmentId">,
@@ -187,12 +185,10 @@ export function identityAddressOrigin(address: string): string | null {
 }
 
 /**
- * Null when a native first sign-in to a typed address may go ahead, otherwise the refusal line.
- * Check it with the environment the address's metadata claims, before any token request. Public
- * metadata can be copied, so a server claiming a computer the Library knows must be at one of
- * that computer's known addresses: its directory routes of any kind, plus this device's own
- * addresses for the Library authority. A computer the Library does not know, or no directory at
- * all, passes, since nothing on this device says where it should be.
+ * Null when a native first sign-in to a typed address may go ahead, else the refusal line. Check it
+ * with the environment the metadata claims, before any token request. Metadata can be copied, so a
+ * computer the Library knows must be at one of its directory routes or this device's Library
+ * addresses. An unknown computer, or no directory, passes.
  */
 export function identityAddressRefusal(input: {
   readonly httpBaseUrl: string;

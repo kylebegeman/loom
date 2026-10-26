@@ -94,14 +94,10 @@ export const EMPTY_LIBRARY_TIMELINE_FEED: LibraryTimelineFeed = {
 };
 
 /**
- * Folds a page into the feed. `before` is the cursor the page was read with; omit it for the
- * newest page, which refreshes as the Library hears of new events.
- *
- * The log is append-only, so entries are kept by sequence and never dropped: a refreshed newest
- * page only adds what is new, and entries that slid off it stay in place, so paging never
- * leaves a gap or repeats a row. Only the newest page's first read and older pages move the
- * cursor. A page read with any other cursor is stale and ignored, which also makes folding the
- * same page twice harmless. Returns the same feed when nothing changed.
+ * Folds a page into the feed; omit `before` for the newest page, which refreshes as the Library
+ * hears of new events. Entries are kept by sequence and never dropped, so paging never gaps or
+ * repeats a row. Only the newest page's first read and older pages move the cursor; other pages are
+ * stale and ignored. Returns the same feed when nothing changed.
  */
 export function mergeLibraryTimelinePage(
   feed: LibraryTimelineFeed,

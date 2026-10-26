@@ -17,7 +17,7 @@ import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { CloudEnvironmentRows } from "../../features/connection/CloudEnvironmentRows";
 import { LocalEnvironmentList } from "../../features/connection/LocalEnvironmentList";
-import { GitHubRoutingSettings } from "../../features/connection/GitHubRoutingSettings";
+import { PullRequestRoutingSettings } from "../../features/connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../../features/connection/environmentSections";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { relayEnvironmentDiscovery } from "../../state/relay";
@@ -88,20 +88,14 @@ export function ConnectionsScreen() {
   const pairDirectoryComputer = useCallback(
     (pairing: DirectoryPairing) => {
       directoryAddress.open(pairing);
-      navigation.navigate("SettingsSheet", {
-        screen: "SettingsContent",
-        params: { screen: "SettingsEnvironmentNew", params: pairing.params },
-      });
+      navigation.navigate("SettingsEnvironmentNew", pairing.params);
     },
     [directoryAddress, navigation],
   );
 
   const openEnvironment = useCallback(
     (environmentId: EnvironmentId) => {
-      navigation.navigate("SettingsSheet", {
-        screen: "SettingsContent",
-        params: { screen: "SettingsEnvironmentDetail", params: { environmentId } },
-      });
+      navigation.navigate("SettingsEnvironmentDetail", { environmentId });
     },
     [navigation],
   );
@@ -164,11 +158,7 @@ export function ConnectionsScreen() {
         {
           accessibilityLabel: "Connect computer",
           icon: "plus",
-          onPress: () =>
-            navigation.navigate("SettingsSheet", {
-              screen: "SettingsContent",
-              params: { screen: "SettingsEnvironmentNew" },
-            }),
+          onPress: () => navigation.navigate("SettingsEnvironmentNew"),
         },
       ]}
     >
@@ -206,12 +196,7 @@ export function ConnectionsScreen() {
           expandedId={null}
           onToggle={openEnvironment}
           opensDetails
-          onConnect={() =>
-            navigation.navigate("SettingsSheet", {
-              screen: "SettingsContent",
-              params: { screen: "SettingsEnvironmentNew" },
-            })
-          }
+          onConnect={() => navigation.navigate("SettingsEnvironmentNew")}
           onReconnect={onReconnectEnvironment}
           onRemove={onRemoveEnvironmentPress}
           onSetEnabled={onSetEnvironmentEnabled}
@@ -236,7 +221,7 @@ export function ConnectionsScreen() {
             : {})}
         />
         <AccountSettings />
-        <GitHubRoutingSettings />
+        <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>
   );
@@ -258,7 +243,7 @@ function ConfiguredAccountSettings() {
         icon="person.crop.circle"
         label={isSignedIn ? "Manage account" : "Sign in to find your computers"}
         disabled={!isLoaded}
-        onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
+        onPress={() => navigation.navigate("SettingsAuth")}
       />
     </SettingsSection>
   );

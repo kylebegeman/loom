@@ -866,11 +866,10 @@ const make = Effect.gen(function* () {
     );
   });
 
-  // Archiving a project leaves its folders registered to it on each computer, and builds before
-  // one-owner folders could register one folder to several projects. Only when every holder is
-  // archived, or gone from the Library, is each retired the way unregister leaves it:
-  // unregistered with its state unchanged, so its old conversations keep their binding and still
-  // run there. Replication publishes the change, as it does after unregister.
+  // Archiving leaves a project's folders registered, and older builds could register one folder to
+  // several projects. Only when every holder is archived or gone is each retired as unregister
+  // leaves it: unregistered with state unchanged, so old conversations keep their binding.
+  // Replication publishes the change, as after unregister.
   const takeOverFolder = Effect.fn("LibraryWorkspace.takeOverFolder")(function* (
     owners: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
   ) {
