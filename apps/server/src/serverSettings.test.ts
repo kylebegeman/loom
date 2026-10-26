@@ -135,6 +135,26 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  // fork: file-placement
+  it.effect("refuses to save a Projects folder the placement guard refuses", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const guarded = Effect.provideService(ServerSettingsModule.ProjectsFolderGuard, (setting) =>
+        setting.startsWith("/refused")
+          ? Effect.fail(new Error("Choose another Projects folder. It is inside Loom's data."))
+          : Effect.void,
+      );
+      const refused = yield* guarded(
+        service.updateSettings({ projectsDirectory: "/refused/projects" }),
+      ).pipe(Effect.flip);
+      assert.equal(refused.operation, "save-projects-directory");
+      assert.equal(refused.message, "Choose another Projects folder. It is inside Loom's data.");
+      assert.equal((yield* service.getSettings).projectsDirectory, "");
+      const saved = yield* guarded(service.updateSettings({ projectsDirectory: "/allowed" }));
+      assert.equal(saved.projectsDirectory, "/allowed");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   // fork: retention-defaults
   it.effect("keeps browser artifact cleanup off across a reload once the user turns it off", () =>
     Effect.gen(function* () {

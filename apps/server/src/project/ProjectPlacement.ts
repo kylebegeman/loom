@@ -90,10 +90,16 @@ export class ProjectPlacement extends Context.Service<
       target: string,
       options?: PlacementGuardOptions,
     ) => Effect.Effect<string, ProjectPlacementRefusedError>;
+    /** Refuses a Projects folder setting that `claimFolder` would refuse as its root. */
+    readonly assertProjectsFolderAllowed: (
+      setting: string,
+    ) => Effect.Effect<void, ProjectPlacementRefusedError>;
   }
 >()("t3/project/ProjectPlacement") {}
 
 const MAX_FOLDER_ATTEMPTS = 100;
+/** A Projects folder may hold registered projects but not sit inside one. */
+const CLAIM_ROOT: PlacementGuardOptions = { projects: "within" };
 const ORIGIN_READ_CONCURRENCY = 8;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 /**
@@ -285,7 +291,7 @@ const make = Effect.gen(function* () {
   const claimFolder = Effect.fn("ProjectPlacement.claimFolder")(function* (title: string) {
     const root = yield* projectsRoot;
     // The setting accepts any absolute folder, so every claim checks where it points.
-    yield* assertPlacementAllowed(root, { projects: "within" }).pipe(
+    yield* assertPlacementAllowed(root, CLAIM_ROOT).pipe(
       Effect.mapError((cause) => new ProjectPlacementFolderError({ folder: root, cause })),
     );
     yield* fileSystem
@@ -351,6 +357,21 @@ const make = Effect.gen(function* () {
     return resolved;
   });
 
+  const assertProjectsFolderAllowed = Effect.fn("ProjectPlacement.assertProjectsFolderAllowed")(
+    function* (setting: string) {
+      if (setting.trim() === "") return;
+      yield* assertPlacementAllowed(setting, CLAIM_ROOT).pipe(
+        Effect.mapError(
+          (refused) =>
+            new ProjectPlacementRefusedError({
+              path: refused.path,
+              reason: `Choose another Projects folder. ${refused.reason}`,
+            }),
+        ),
+      );
+    },
+  );
+
   return ProjectPlacement.of({
     projectsRoot,
     managedProjectRoots,
@@ -359,6 +380,7 @@ const make = Effect.gen(function* () {
     claimFolder,
     previewFolder,
     assertPlacementAllowed,
+    assertProjectsFolderAllowed,
   });
 });
 

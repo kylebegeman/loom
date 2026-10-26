@@ -168,6 +168,32 @@ function ensureProviderInstanceMutationAllowed(
   return Effect.void;
 }
 
+// fork: file-placement: ProjectPlacement reads settings, so callers supply this guard.
+export class ProjectsFolderGuard extends Context.Service<
+  ProjectsFolderGuard,
+  (setting: string) => Effect.Effect<void, Error>
+>()("t3/serverSettings/ProjectsFolderGuard") {}
+
+// fork: file-placement
+const guardProjectsFolder = Effect.fn("ServerSettings.guardProjectsFolder")(function* (
+  settingsPath: string,
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+) {
+  const setting = patch.projectsDirectory;
+  if (setting === undefined || setting === current.projectsDirectory) return;
+  const guard = yield* Effect.serviceOption(ProjectsFolderGuard);
+  if (Option.isNone(guard)) return;
+  yield* guard
+    .value(setting)
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new ServerSettingsError({ settingsPath, operation: "save-projects-directory", cause }),
+      ),
+    );
+});
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -1147,11 +1173,15 @@ const make = Effect.gen(function* () {
     ),
     updateSettings: (patch) =>
       updateAndPersistSettings((current) =>
-        Effect.succeed(applyServerSettingsPatch(current, patch)),
+        // fork: file-placement
+        guardProjectsFolder(settingsPath, current, patch).pipe(
+          Effect.as(applyServerSettingsPatch(current, patch)),
+        ),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateAndPersistSettings((current) =>
         Effect.gen(function* () {
+          yield* guardProjectsFolder(settingsPath, current, patch); // fork: file-placement
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
           const patched = applyServerSettingsPatch(current, patch);
           return applyProviderInstanceMutation(patched, mutation);

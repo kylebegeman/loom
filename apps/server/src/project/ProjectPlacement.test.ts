@@ -444,4 +444,36 @@ describe("ProjectPlacement", () => {
         }),
     ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
+
+  it.effect("refuses a Projects folder setting it would refuse as a claim root", () =>
+    Effect.gen(function* () {
+      const elsewhere = yield* tempDir("t3-placement-elsewhere-");
+      const project = `${elsewhere}/project`;
+      yield* withPlacement(
+        ({ home }) => ({
+          projects: [projectRow("project", project)],
+          lanes: [`${home}/Developer/lanes`],
+        }),
+        (placement, { home }) =>
+          Effect.gen(function* () {
+            const config = yield* ServerConfig.ServerConfig;
+            for (const setting of [
+              `${config.stateDir}/projects`,
+              `${home}/Developer/lanes/projects`,
+              `${project}/nested`,
+              "~",
+              "Developer/active",
+            ]) {
+              const refused = yield* placement
+                .assertProjectsFolderAllowed(setting)
+                .pipe(Effect.flip);
+              assert.match(refused.message, /^Choose another Projects folder\. /, setting);
+            }
+            yield* placement.assertProjectsFolderAllowed("");
+            yield* placement.assertProjectsFolderAllowed(elsewhere);
+            yield* placement.assertProjectsFolderAllowed("~/Developer/active");
+          }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 });
