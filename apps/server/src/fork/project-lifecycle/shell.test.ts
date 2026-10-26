@@ -145,6 +145,34 @@ describe.skipIf(!hasZsh)("zsh hook", () => {
     NodeFS.rmSync(NodePath.join(lanes.space, "tmp"), { recursive: true });
     expect(zsh(lanes.checkout, lanes.lanesRoot, 'print -r -- "$TMPDIR"')).toBe("/original/");
   });
+
+  it("starts op with the TMPDIR the shell had before the lane, unless op is already a function", () => {
+    const lanes = makeLanes();
+    const stub = makeStubs({ op: 'printf "%s\\n" "${TMPDIR-unset}"' });
+    const hook = NodePath.join(lanes.lanesRoot, ".loom", "lanes.zsh");
+    const run = (cwd: string, tmpdir: string | undefined, script = `source ${hook}`) =>
+      NodeChildProcess.execFileSync(
+        "/bin/zsh",
+        ["-f", "-c", `${script}; print -r -- "$TMPDIR"; op`],
+        {
+          cwd,
+          env: {
+            PATH: `${stub}:/usr/bin:/bin`,
+            ...(tmpdir === undefined ? {} : { TMPDIR: tmpdir }),
+          },
+          encoding: "utf8",
+        },
+      )
+        .trim()
+        .split("\n");
+    expect(run(lanes.checkout, "/original/")).toEqual([`${lanes.space}/tmp/`, "/original/"]);
+    expect(run(lanes.checkout, undefined)).toEqual([`${lanes.space}/tmp/`, "unset"]);
+    expect(run(lanes.root, "/original/")).toEqual(["/original/", "/original/"]);
+    expect(run(lanes.checkout, "/original/", `op() { print mine; }; source ${hook}`)).toEqual([
+      `${lanes.space}/tmp/`,
+      "mine",
+    ]);
+  });
 });
 
 describe.skipIf(!hasZsh)("xcodebuild shim", () => {

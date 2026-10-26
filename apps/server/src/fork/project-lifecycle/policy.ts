@@ -121,6 +121,13 @@ export const laneActions = (reading: LaneReading, steered: boolean) => {
   return { actions, steered: nextSteered };
 };
 
+const DETACH_RETRY_FIRST_MS = 60 * 1000;
+const DETACH_RETRY_MAX_MS = 60 * 60 * 1000;
+
+/** How long the watchdog leaves a lane after open files blocked its detach this many times in a row. */
+export const detachRetryDelayMs = (failures: number) =>
+  Math.min(DETACH_RETRY_FIRST_MS * 2 ** Math.max(0, failures - 1), DETACH_RETRY_MAX_MS);
+
 /** True when an idle lane is still at the clear threshold after clearing `tmp`. */
 export const shouldGrow = (usedBytes: number, capBytes: number) =>
   usedBytes / capBytes >= CLEAR_RATIO;

@@ -101,6 +101,17 @@ xcrun() {
     command xcrun "$@"
   fi
 }
+# 1Password's op starts a daemon that never exits and works in $TMPDIR, which would keep a
+# released lane mounted. It gets the TMPDIR the shell started with, so one daemon serves all.
+(( $+functions[op] )) || op() {
+  if [[ -z \${LOOM_LANE_SPACE-} ]]; then
+    command op "$@"
+  elif [[ -n \${LOOM_LANE_SAVED_TMPDIR-} ]]; then
+    TMPDIR=$LOOM_LANE_SAVED_TMPDIR command op "$@"
+  else
+    (unset TMPDIR; command op "$@")
+  fi
+}
 
 _loom_lane_apply
 if [[ -o interactive ]]; then

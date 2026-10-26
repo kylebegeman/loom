@@ -157,6 +157,79 @@ export const parseLsofListeners = (stdout: string) => {
   return listeners;
 };
 
+/** A process with files open in a lane's space, as lsof reported it. */
+export interface MountHolder {
+  readonly pid: number;
+  readonly command: string;
+  readonly cwd: string | null;
+  /** Every other path it holds there, without repeats. */
+  readonly files: ReadonlyArray<string>;
+  /** It has a controlling terminal, so a person may be using it. Unknown counts as yes. */
+  readonly terminal: boolean;
+}
+
+/** `lsof -F pcfn` over one file system: `p<pid>`, `c<command>`, then `f<fd>` and `n<path>` per file. */
+export const parseLsofFiles = (stdout: string) => {
+  const holders = new Map<number, { command: string; cwd: string | null; files: Array<string> }>();
+  let current: { command: string; cwd: string | null; files: Array<string> } | undefined;
+  let fd = "";
+  for (const line of stdout.split("\n")) {
+    const value = line.slice(1);
+    if (line.startsWith("p")) {
+      current = /^\d+$/.test(value) ? { command: "", cwd: null, files: [] } : undefined;
+      if (current) holders.set(Number(value), current);
+    } else if (current && line.startsWith("c")) current.command = value;
+    else if (current && line.startsWith("f")) fd = value;
+    else if (current && line.startsWith("n") && value) {
+      if (fd === "cwd") current.cwd = value;
+      else if (!current.files.includes(value)) current.files.push(value);
+    }
+  }
+  return holders;
+};
+
+/** Output of `ps -o pid=,tty=`: whether each process has a controlling terminal. */
+export const parseTerminals = (stdout: string) => {
+  const terminals = new Map<number, boolean>();
+  for (const line of stdout.split("\n")) {
+    const match = /^\s*(\d+)\s+(\S+)/.exec(line);
+    // macOS prints `??` without a terminal, Linux `?`.
+    if (match) terminals.set(Number(match[1]), !/^[?-]+$/.test(match[2]!));
+  }
+  return terminals;
+};
+
+const MOUNT_HOLDERS_SHOWN = 5;
+
+/** Names the processes holding a lane open, with paths relative to its folder. */
+export const mountHoldersText = (holders: ReadonlyArray<MountHolder>, spacePath: string) => {
+  const where = (path: string) => {
+    const relative =
+      path === spacePath
+        ? ""
+        : path.startsWith(`${spacePath}/`)
+          ? path.slice(spacePath.length + 1)
+          : null;
+    return relative === null ? path : relative === "" ? "space" : `space/${relative}`;
+  };
+  const describe = (holder: MountHolder) => {
+    const holds = [
+      ...(holder.cwd === null ? [] : [`working directory ${where(holder.cwd)}`]),
+      ...(holder.files.length === 0
+        ? []
+        : [
+            holder.files.length === 1
+              ? `has ${where(holder.files[0]!)} open`
+              : `has ${where(holder.files[0]!)} and ${holder.files.length - 1} more files open`,
+          ]),
+    ];
+    return `${holder.command || "unknown"} (pid ${holder.pid}${holder.terminal ? ", in a terminal" : ""}${holds.length === 0 ? "" : `: ${holds.join(", ")}`})`;
+  };
+  const shown = holders.slice(0, MOUNT_HOLDERS_SHOWN).map(describe);
+  const more = holders.length - shown.length;
+  return `Files in this lane are open, so it stays mounted. Holding it: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}. Stop them, then try again.`;
+};
+
 /**
  * Host ports from `docker ps --format '{{.Ports}}'`, for example
  * `127.0.0.1:41003->80/tcp, [::]:41003->80/tcp` or `0.0.0.0:41003-41005->80-82/tcp`.
@@ -368,6 +441,29 @@ export const makeLeaseOps = Effect.fn("ProjectLifecycleLeases.makeLeaseOps")(fun
       Effect.map((stdout) => parseLsofListeners(stdout ?? "")),
     );
 
+  /**
+   * Processes with files open on the file system mounted at `mountPoint`, or null when lsof
+   * could not answer. lsof exits 1 both when nothing is open and when some process could not
+   * be read, so its output is what counts.
+   */
+  const mountHolders = Effect.fn("ProjectLifecycleLeases.mountHolders")(function* (
+    mountPoint: string,
+  ) {
+    const output = yield* run(options.lsofPath, ["-nP", "-Fpcfn", "+f", "--", mountPoint]);
+    if (output._tag === "None" || output.value.timedOut || output.value.stdoutTruncated)
+      return null;
+    const files = parseLsofFiles(output.value.stdout);
+    if (files.size === 0) return [];
+    // ps exits 1 when a listed process has exited since; the rest of its output still counts.
+    const ttys = yield* run("ps", ["-o", "pid=,tty=", "-p", [...files.keys()].join(",")]);
+    const terminals = parseTerminals(ttys._tag === "Some" ? ttys.value.stdout : "");
+    return [...files].map(([pid, held]): MountHolder => ({
+      pid,
+      ...held,
+      terminal: terminals.get(pid) ?? true,
+    }));
+  });
+
   const signal = (pid: number, name: NodeJS.Signals | 0) => {
     try {
       process.kill(pid, name);
@@ -428,6 +524,7 @@ export const makeLeaseOps = Effect.fn("ProjectLifecycleLeases.makeLeaseOps")(fun
     publishedPorts,
     runtimeProcesses,
     listeners,
+    mountHolders,
     terminate,
     removeDocker,
     deleteSimulator,

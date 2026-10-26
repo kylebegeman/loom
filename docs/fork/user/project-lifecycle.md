@@ -88,8 +88,11 @@ to keep on the disk. Each lane shows its usage and lets you free its `tmp` or `b
 folder, grow it, mount it again after a restart, or discard it.
 
 Freed space returns to the disk when the lane is next mounted, which Loom does on its own
-once no agent is running in that lane. A lane with open files cannot grow or be discarded
-until the processes using it stop.
+once no agent is running in that lane. When Loom removes or you discard a lane, it first
+stops processes that still have files open in the lane, except ones running in a terminal. If
+something still holds the lane, the lane names those processes and what they have open, and
+Loom waits longer between attempts, up to an hour. A lane cannot grow while files in it are
+open; it names the processes holding them instead.
 
 The lanes folder can only be moved while no lanes exist. Storage settings apply to the
 selected environment and are available in the web and desktop clients.

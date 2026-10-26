@@ -48,6 +48,7 @@ import {
   ledgerLine,
   liveProcess,
   makeLeaseOps,
+  mountHoldersText,
   parseLedger,
   parseSlotHolder,
   partitionListeners,
@@ -64,6 +65,7 @@ import {
   PORT_RANGE,
   allocatePortBase,
   autoBuildSlots,
+  detachRetryDelayMs,
   formatGb,
   growTarget,
   holdsLane,
@@ -131,6 +133,15 @@ interface LaneLive {
    * by port alone, so whatever listens there during a retry started after the lane was let go.
    */
   portsReleased: boolean;
+  /**
+   * Open files blocked the last automatic removal or remount. The watchdog leaves that kind of
+   * attempt until `retryAt`, waiting longer after each failure in a row.
+   */
+  detachBlocked: {
+    readonly removing: boolean;
+    readonly failures: number;
+    readonly retryAt: number;
+  } | null;
 }
 
 interface SpaceBackends {
@@ -222,6 +233,8 @@ Released with the lane:
 - Simulators made with \`xcrun simctl create\` or \`clone\` inside the checkout.
 - Docker containers and volumes labelled \`${DOCKER_LABEL}=${lane.id}\`.
 - Simulators and processes handed over with \`loom_project_lifecycle_adopt\`.
+- Processes that still have files open in \`space\` when the lane goes, unless they run in a
+  terminal.
 
 Heavy builds share the machine's build slots: xcodebuild waits for one automatically, and other
 builds can use \`${shims}/lane-slot command...\`.
@@ -375,6 +388,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         failed: false,
         leases: [],
         portsReleased: false,
+        detachBlocked: null,
       };
       live.set(id, entry);
     }
@@ -989,6 +1003,78 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         ),
       );
 
+  const isBusy = (cause: ProjectLifecycleError) => cause.reason === "busy";
+
+  const detachWaiting = (lane: LaneRow, removing: boolean, now: number) => {
+    const blocked = liveOf(lane.id).detachBlocked;
+    return blocked !== null && blocked.removing === removing && blocked.retryAt > now;
+  };
+
+  /**
+   * Wraps anything that detaches the lane. When open files block it, the error names the
+   * processes holding them and the watchdog backs off that kind of attempt.
+   */
+  const detaching =
+    (lane: LaneRow, removing: boolean) =>
+    <A, R>(effect: Effect.Effect<A, ProjectLifecycleError, R>) =>
+      effect.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            liveOf(lane.id).detachBlocked = null;
+          }),
+        ),
+        Effect.catchIf(isBusy, (cause) =>
+          Effect.gen(function* () {
+            const { spacePath } = lanePaths(lane);
+            const holders = yield* leaseOps.mountHolders(spacePath);
+            const entry = liveOf(lane.id);
+            const failures =
+              entry.detachBlocked?.removing === removing ? entry.detachBlocked.failures + 1 : 1;
+            const retryInMs = detachRetryDelayMs(failures);
+            entry.detachBlocked = {
+              removing,
+              failures,
+              retryAt: (yield* Clock.currentTimeMillis) + retryInMs,
+            };
+            yield* Effect.logWarning("Open files keep a lane mounted", {
+              lane: lane.laneDir,
+              holders,
+              retryInMs,
+            });
+            return yield* holders === null || holders.length === 0
+              ? cause
+              : error("busy", mountHoldersText(holders, spacePath));
+          }),
+        ),
+      );
+
+  /**
+   * Stops the processes lsof finds with files in a released lane's space. A process in a
+   * terminal, this server and its ancestors, and container runtimes are left. Returns whether
+   * any was stopped.
+   */
+  const stopMountHolders = Effect.fn("ProjectLifecycle.stopMountHolders")(function* (
+    lane: LaneRow,
+  ) {
+    const holders = yield* leaseOps.mountHolders(lanePaths(lane).spacePath);
+    if (holders === null || holders.length === 0) return false;
+    const table = yield* leaseOps.processTable;
+    const named = yield* leaseOps.runtimeProcesses;
+    if (table === null || named === null) return false;
+    const self = ancestorsOf(table, process.pid);
+    const spared = withDescendants(table, [...named, ...scan.runtime]);
+    const stopping = holders.filter(
+      (holder) => !holder.terminal && !self.has(holder.pid) && !spared.has(holder.pid),
+    );
+    if (stopping.length === 0) return false;
+    yield* Effect.logInfo("Stopping processes that hold a released lane open", {
+      lane: lane.laneDir,
+      holders: stopping,
+    });
+    yield* leaseOps.terminate(new Set(stopping.map((holder) => holder.pid)));
+    return true;
+  });
+
   const containsPath = (directory: string, candidate: string) => {
     const relative = NodePath.relative(directory, candidate);
     return (
@@ -1050,8 +1136,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   });
 
   /**
-   * Releases a lane's leases, then detaches and deletes it. A lane with open files stays and
-   * says why; the next attempt releases again.
+   * Releases a lane's leases, then detaches and deletes it. Processes still holding files in its
+   * space are stopped first; a lane that stays busy names them, and the next attempt releases
+   * again.
    */
   const removeLane = Effect.fn("ProjectLifecycle.removeLane")(function* (lane: LaneRow) {
     if ((yield* checkoutPathsWithin(lane.laneDir)).length > 0) {
@@ -1065,6 +1152,12 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         problems,
       });
     const detached = yield* detach(lane).pipe(
+      Effect.catchIf(isBusy, (cause) =>
+        stopMountHolders(lane).pipe(
+          Effect.flatMap((stopped) => (stopped ? detach(lane) : Effect.fail(cause))),
+        ),
+      ),
+      detaching(lane, true),
       Effect.as(true),
       Effect.catch((cause) =>
         Effect.sync(() => {
@@ -1133,11 +1226,13 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return;
     for (const laneId of readyLanes.keys()) if (!lanes.has(laneId)) readyLanes.delete(laneId);
+    const now = yield* Clock.currentTimeMillis;
     const free = [...lanes.values()].filter((lane) => holdersOf(lane, view).length === 0);
+    const due = free.filter((lane) => !detachWaiting(lane, true, now));
     let threadsChecked = 0;
     let notReady = 0;
     yield* Effect.forEach(
-      free,
+      due,
       (lane) =>
         Effect.gen(function* () {
           const key = settlementKey(lane, view);
@@ -1180,7 +1275,12 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         }).pipe(Effect.ignore({ log: true })),
       { concurrency: 8, discard: true },
     );
-    yield* Effect.annotateCurrentSpan({ lanesChecked: free.length, threadsChecked, notReady });
+    yield* Effect.annotateCurrentSpan({
+      lanesChecked: due.length,
+      detachBlocked: free.length - due.length,
+      threadsChecked,
+      notReady,
+    });
   });
 
   const clear = Effect.fn("ProjectLifecycle.clear")(function* (
@@ -1233,7 +1333,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   /** Detach and attach again so the host gets back the space deleted files held. */
   const remount = (lane: LaneRow) =>
     lane.backend === "image"
-      ? detach(lane).pipe(Effect.andThen(attach(lanes.get(lane.id) ?? lane)))
+      ? detach(lane).pipe(
+          detaching(lane, false),
+          Effect.andThen(attach(lanes.get(lane.id) ?? lane)),
+        )
       : Effect.void;
 
   const grow = Effect.fn("ProjectLifecycle.grow")(function* (lane: LaneRow) {
@@ -1249,7 +1352,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         "no-room",
         `This machine has ${host.free === null ? "unknown" : formatGb(host.free)} free and keeps a ${settings.reserveGb} GB reserve, so the lane cannot grow. Free space in the lane instead.`,
       );
-    const { device } = yield* opsFor(lane).resize(lanePaths(lane), target, lane.device);
+    const { device } = yield* opsFor(lane)
+      .resize(lanePaths(lane), target, lane.device)
+      .pipe(detaching(lane, false));
     const next = { ...lane, capBytes: target, device };
     lanes.set(lane.id, next);
     yield* store.updateLane(lane.id, { capBytes: target, device }).pipe(Effect.orDie);
@@ -1294,7 +1399,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
           Effect.gen(function* () {
             const holders = holdersOf(lane, view);
             if (holders.length === 0) return;
-            liveOf(lane.id).portsReleased = false;
+            const held = liveOf(lane.id);
+            held.portsReleased = false;
+            // Its next release starts afresh.
+            if (held.detachBlocked?.removing) held.detachBlocked = null;
             let entry = yield* measure(lane);
             if (!entry.mounted && lane.backend === "image") {
               yield* attach(lane);
@@ -1347,10 +1455,11 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
                   entry.usedBytes !== null &&
                   shouldGrow(entry.usedBytes, current.capBytes) &&
                   host.free !== null &&
-                  host.free >= reserveBytes
+                  host.free >= reserveBytes &&
+                  !detachWaiting(current, false, now)
                 )
                   yield* grow(current);
-              } else if (action.type === "remount") {
+              } else if (action.type === "remount" && !detachWaiting(lane, false, now)) {
                 yield* remount(lane);
               }
             }
