@@ -715,6 +715,51 @@ it.effect("verifies an offered native ID token even without a sign-in limit", ()
   }),
 );
 
+it.effect("names the account from a verified native ID token and skips odd profile claims", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const accessToken = yield* test.access();
+    const idToken = (claims: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        return yield* test.signed(
+          { at_hash: yield* atHash(accessToken), ...claims },
+          "loom-native",
+          "JWT",
+        );
+      });
+    const withoutIdToken = {
+      type: "native" as const,
+      accessToken,
+      environmentId: EnvironmentId.make("host-id"),
+    };
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const named = yield* identity.createSession(
+        {
+          ...withoutIdToken,
+          idToken: yield* idToken({ name: " Kyle ", email: "kyle@example.test" }),
+        },
+        CLIENT,
+      );
+      expect(named.identity).toEqual({
+        issuer: ISSUER,
+        subject: "owner-id",
+        name: "Kyle",
+        email: "kyle@example.test",
+      });
+      const odd = yield* identity.createSession(
+        { ...withoutIdToken, idToken: yield* idToken({ name: 7, preferred_username: "kb" }) },
+        CLIENT,
+      );
+      expect(odd.identity).toEqual({ issuer: ISSUER, subject: "owner-id", name: "kb" });
+      expect((yield* identity.createSession(withoutIdToken, CLIENT)).identity).toEqual({
+        issuer: ISSUER,
+        subject: "owner-id",
+      });
+    }).pipe(Effect.provide(test.layer));
+  }),
+);
+
 it.effect("caps browser sign-in age and asks Pocket ID for a recent enough sign-in", () =>
   Effect.gen(function* () {
     const test = yield* fixture;

@@ -349,7 +349,7 @@ describe("LibraryPushService", () => {
         appVersion: "1.2.3",
         registeredAt: "2026-10-24T12:00:00.000Z",
         refreshedAt: "2026-10-24T12:00:00.000Z",
-        expiresAt: "2026-11-23T12:00:00.000Z",
+        expiresAt: "2026-12-23T12:00:00.000Z",
         mine: true,
         lastDelivery: null,
       });
@@ -471,7 +471,7 @@ describe("LibraryPushService", () => {
       const refreshed = yield* push.register(alice, registration());
       expect(secrets.state.writeAttempts).toBe(2);
       expect(refreshed.registeredAt).toBe("2026-10-24T12:00:00.000Z");
-      expect(refreshed.expiresAt).toBe("2026-11-24T00:00:00.000Z");
+      expect(refreshed.expiresAt).toBe("2026-12-24T00:00:00.000Z");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -482,7 +482,7 @@ describe("LibraryPushService", () => {
       yield* push.register(alice, registration());
       secrets.state.failWrites = true;
       secrets.state.failReads = true;
-      yield* TestClock.adjust("30 days");
+      yield* TestClock.adjust("60 days");
       expect(yield* push.status(alice)).toMatchObject({ state: "ready", devices: [] });
       expect((yield* push.status(OPERATOR)).devices).toEqual([]);
       expect(secrets.state.writeAttempts).toBe(1);
@@ -642,13 +642,13 @@ describe("LibraryPushService", () => {
   it.effect("persists the prune of expired devices at startup", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
-      const env = libraryEnv(yield* writeKeyFile(), { LOOM_IDENTITY_MAX_SESSION_AGE: "1h" });
+      const env = libraryEnv(yield* writeKeyFile());
       const secrets = memorySecrets();
       const first = yield* start(env, { secrets });
       yield* first.push.register(identity(env, "alice"), registration());
-      yield* TestClock.adjust("30 minutes");
+      yield* TestClock.adjust("30 days");
       yield* first.push.register(identity(env, "bob"), registration({ token: BOB_TOKEN }));
-      yield* TestClock.adjust("31 minutes");
+      yield* TestClock.adjust("31 days");
       expect(secrets.state.writeAttempts).toBe(2);
 
       const restarted = yield* start(env, { secrets });

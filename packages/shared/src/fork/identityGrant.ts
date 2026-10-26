@@ -11,6 +11,7 @@ import {
   type LoomIdentityMetadata,
   LoomIdentitySessionRequest,
   LoomIdentitySessionResult,
+  loomIdentityAccount,
 } from "@t3tools/contracts/fork";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Hex from "effect/encoding/Hex";
@@ -433,7 +434,7 @@ export async function exchangeNativeIdentitySession(input: {
       httpBaseUrl: origin,
       environmentId: issued.environmentId,
       accessToken: issued.access_token,
-      identity: { issuer: issued.identity.issuer, subject: issued.identity.subject },
+      identity: loomIdentityAccount(issued.identity),
       expiresAt: Math.min(
         input.now() + Math.min(issued.expires_in, MAX_SESSION_SECONDS) * 1000,
         accessExpiresAt,

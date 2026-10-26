@@ -1,8 +1,9 @@
 import type { ReactNode, Ref } from "react";
 import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import type { LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
+import { needsLibrarySignIn, type LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
 import { cn } from "~/lib/utils";
+import { LibrarySignInLink } from "./LibrarySignInLink";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Dialog,
@@ -111,13 +112,17 @@ export function LibrarySearch({
 export function LibraryErrorNotice({
   error,
   onRetry,
+  onLeave,
 }: {
   readonly error: string | null;
   readonly onRetry?: () => void;
+  /** Runs before opening the Library sign-in, so a dialog can close first. */
+  readonly onLeave?: () => void;
 }) {
   return error ? (
     <div role="alert" className="flex flex-wrap items-center gap-3 py-2 text-sm text-destructive">
       <p>{error}</p>
+      {needsLibrarySignIn(error) ? <LibrarySignInLink onClick={onLeave} /> : null}
       {onRetry ? (
         <Button shape="pill" size="xs" variant="outline" onClick={onRetry}>
           Try again

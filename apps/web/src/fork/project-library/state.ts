@@ -87,6 +87,11 @@ export function useLibraryAuthority() {
   };
 }
 
+/** Only the chosen Library's id, for surfaces that do not need its connection or info. */
+export function useLibraryAuthorityId() {
+  return useLocalStorage(AUTHORITY_KEY, null, Authority)[0];
+}
+
 export function useSelectedLibraryProject() {
   return useLocalStorage(SELECTED_PROJECT_KEY, null, SelectedProject);
 }

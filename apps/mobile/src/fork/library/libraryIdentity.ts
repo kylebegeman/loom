@@ -19,6 +19,7 @@ import {
   type LoomIdentityDirectoryAddresses,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  loomIdentityAccount,
 } from "@t3tools/contracts/fork";
 import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
@@ -404,7 +405,7 @@ export async function completeNativeIdentitySignIn(input: {
         environmentId,
         label: input.label,
         ...destination,
-        identity: account,
+        identity: loomIdentityAccount(session.identity),
       }),
       credential: new BearerConnectionCredential({
         token: session.access_token,

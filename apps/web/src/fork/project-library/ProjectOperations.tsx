@@ -3,6 +3,7 @@ import {
   LIBRARY_OPERATION_LABELS,
   LIBRARY_OPERATION_STATES,
   libraryOperationNeedsAction,
+  needsLibrarySignIn,
   sortLibraryOperations,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
@@ -30,6 +31,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { projectLibrary, useLibraryPermission } from "./state";
 import { openLibraryAction } from "./actions";
 import { LIBRARY_ROW, LibraryErrorNotice, LibraryStateBadge } from "./LibraryControls";
+import { LibrarySignInLink } from "./LibrarySignInLink";
 import { ComputerLabel } from "./ProjectIdentity";
 
 const OPERATION_ICONS: Record<LibraryOperation["kind"], LucideIcon> = {
@@ -210,9 +212,12 @@ function OperationRow({
         <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
       </div>
       {operation.error ? (
-        <p role="status" className="ps-10 text-xs text-destructive-foreground">
-          {operation.error}
-        </p>
+        <div className="flex flex-wrap items-center gap-2 ps-10">
+          <p role="status" className="text-xs text-destructive-foreground">
+            {operation.error}
+          </p>
+          {needsLibrarySignIn(operation.error) ? <LibrarySignInLink /> : null}
+        </div>
       ) : null}
       {actionable ? (
         <div className="flex gap-1.5 ps-10">

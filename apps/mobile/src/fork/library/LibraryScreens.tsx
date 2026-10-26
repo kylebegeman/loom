@@ -20,6 +20,7 @@ import {
   libraryStartIntent,
   libraryStartRepositoryProjects,
   libraryResourceLocation,
+  needsLibrarySignIn,
   projectEntries,
   sortProjectEntries,
   supportsLoomFeature,
@@ -58,6 +59,7 @@ import {
   useLibraryAuthority,
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
+import { LibrarySignInAgainButton, LibrarySignInSection } from "./LibrarySignInStatus";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryRestingProjects } from "./LibraryTidy";
 import { LibraryProjectTile } from "./libraryProjectColors";
@@ -134,6 +136,7 @@ export function LibraryNotice(props: {
           {props.error}
         </Text>
       ) : null}
+      {needsLibrarySignIn(props.error) ? <LibrarySignInAgainButton /> : null}
       {props.onRetry ? <Button label="Reload library" tone="text" onPress={props.onRetry} /> : null}
     </View>
   );
@@ -388,6 +391,7 @@ export function LibraryAuthorityScreen() {
           saved projects.
         </Text>
       ) : null}
+      <LibrarySignInSection />
       <SettingsSection title="Library server">
         {environments.map((environment, index) => {
           const connected =
@@ -443,14 +447,9 @@ export function LibraryAuthorityScreen() {
       </SettingsSection>
       {error ? <LibraryNotice error={error} /> : null}
       <Button
-        label="Sign in to library"
-        tone="primary"
-        onPress={() =>
-          navigation.navigate(
-            "LibrarySignIn",
-            authority.environmentId ? { environmentId: authority.environmentId } : {},
-          )
-        }
+        label={authority.environmentId ? "Sign in to another library" : "Sign in to library"}
+        tone={authority.environmentId ? "secondary" : "primary"}
+        onPress={() => navigation.navigate("LibrarySignIn", {})}
       />
       <Button
         label="Manage computer connections"

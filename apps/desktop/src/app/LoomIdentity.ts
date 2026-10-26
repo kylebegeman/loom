@@ -17,6 +17,7 @@ import {
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  loomIdentityAccount,
 } from "@t3tools/contracts/fork";
 import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
@@ -448,17 +449,16 @@ export async function signInToLoom(
           "This Loom account is not authorized for this computer, or its session could not be issued.",
         );
       }
-      if (metadata.sessionExchangeEnabled) {
-        const enrolled = decodeIdentitySession(session);
-        if (
-          enrolled.environmentId !== metadata.environmentId ||
+      const enrolled = metadata.sessionExchangeEnabled ? decodeIdentitySession(session) : null;
+      if (
+        enrolled !== null &&
+        (enrolled.environmentId !== metadata.environmentId ||
           enrolled.identity.issuer !== metadata.issuer ||
-          enrolled.identity.subject !== subject
-        )
-          throw new Error(
-            "The computer returned a session for another environment or Identity account.",
-          );
-      }
+          enrolled.identity.subject !== subject)
+      )
+        throw new Error(
+          "The computer returned a session for another environment or Identity account.",
+        );
       if (session.token_type !== "Bearer" || session.expires_in <= 0)
         throw new Error("The computer returned an unsupported desktop session type.");
       const signedInAt = Date.now();
@@ -467,7 +467,10 @@ export async function signInToLoom(
           httpBaseUrl: origin,
           environmentId: metadata.environmentId,
           accessToken: session.access_token,
-          identity: { issuer: metadata.issuer, subject },
+          identity:
+            enrolled === null
+              ? { issuer: metadata.issuer, subject }
+              : loomIdentityAccount(enrolled.identity),
           expiresAt: Math.min(
             signedInAt + Math.min(session.expires_in, 3600) * 1000,
             (accessClaims.exp ?? 0) * 1000,

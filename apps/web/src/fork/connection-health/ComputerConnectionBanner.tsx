@@ -18,6 +18,7 @@ import { Button } from "~/components/ui/button";
 import { directoryComputers } from "~/fork/directory-computers/state";
 import { SavedIdentitySignIn } from "~/fork/identity/ComputerIdentityAccess";
 import { identityProfile } from "~/fork/identity/identityProfile";
+import { LIBRARY_SIGN_IN_TARGET } from "~/fork/project-library/accessBlock";
 import { readLibraryAuthorityId } from "~/fork/project-library/state";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { useEnvironment, type EnvironmentPresentation } from "~/state/environments";
@@ -42,7 +43,13 @@ function StallTitle({ label, failingSince }: { label: string; failingSince: numb
  * live when it appears, since a kept one cannot say the computer is running now, and only while
  * the Library is connected. Nothing shows until the read answers.
  */
-function DirectoryHealth({ environmentId, label }: { environmentId: EnvironmentId; label: string }) {
+function DirectoryHealth({
+  environmentId,
+  label,
+}: {
+  environmentId: EnvironmentId;
+  label: string;
+}) {
   const [libraryId] = useState(readLibraryAuthorityId);
   const library = useEnvironment(libraryId);
   const readable =
@@ -102,6 +109,7 @@ export function computerConnectionBanner(input: {
     </Button>
   );
   if (needsIdentitySignIn(environment)) {
+    const library = environment.environmentId === readLibraryAuthorityId();
     return {
       id,
       variant: "warning",
@@ -118,8 +126,17 @@ export function computerConnectionBanner(input: {
               Cancel send
             </Button>
           ) : null}
-          <Button size="xs" variant="ghost" render={<Link to="/settings/connections" />}>
-            Open connections
+          <Button
+            size="xs"
+            variant="ghost"
+            render={
+              <Link
+                to="/settings/connections"
+                {...(library ? { hash: LIBRARY_SIGN_IN_TARGET } : {})}
+              />
+            }
+          >
+            {library ? "Library sign-in" : "Open connections"}
           </Button>
         </>
       ),
@@ -136,7 +153,8 @@ export function computerConnectionBanner(input: {
           reconnectingText(label, connection)
         ) : (
           <>
-            <StallTitle label={label} failingSince={failingSince} />. <StallDescription environment={environment} />
+            <StallTitle label={label} failingSince={failingSince} />.{" "}
+            <StallDescription environment={environment} />
           </>
         ),
       actions: (

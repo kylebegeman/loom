@@ -55,15 +55,21 @@ export function useLoomFeature(environmentId: EnvironmentId | null, feature: str
   );
 }
 
+/** Only the chosen Library's id, for surfaces that do not need its connection or info. */
+export function useLibraryAuthorityId() {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const saved = AsyncResult.isSuccess(preferences)
+    ? preferences.value["loom.library.authorityEnvironmentId"]
+    : null;
+  return saved ? EnvironmentId.make(saved) : null;
+}
+
 /** One library authority is retained independently of execution host selection. */
 export function useLibraryAuthority() {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const { environments } = useEnvironments();
   const save = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
-  const saved = AsyncResult.isSuccess(preferences)
-    ? preferences.value["loom.library.authorityEnvironmentId"]
-    : null;
-  const environmentId = saved ? EnvironmentId.make(saved) : null;
+  const environmentId = useLibraryAuthorityId();
   const { presentation } = useEnvironmentPresentation(environmentId);
   const config = useEnvironmentServerConfig(environmentId);
   const canRead = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);

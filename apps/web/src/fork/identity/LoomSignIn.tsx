@@ -29,6 +29,8 @@ interface LoomSignInProps {
   readonly showUnavailable?: boolean;
   /** Say how long a sign-in keeps this device connected, from the computer's sign-in limit. */
   readonly renewal?: boolean;
+  readonly actionLabel?: string;
+  readonly actionVariant?: "default" | "outline";
   readonly onConnected?: (environmentId: EnvironmentId) => void;
 }
 
@@ -45,6 +47,8 @@ function LoomSignInTarget({
   onConnected,
   showUnavailable = false,
   renewal = false,
+  actionLabel = "Sign in with Identity",
+  actionVariant = "default",
   onAvailabilityChange,
 }: LoomSignInProps) {
   const [identity, setIdentity] = useState<{
@@ -195,8 +199,8 @@ function LoomSignInTarget({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => void signIn()}>
-          {busy ? "Waiting for sign-in..." : "Sign in with Identity"}
+        <Button variant={actionVariant} disabled={busy} onClick={() => void signIn()}>
+          {busy ? "Waiting for sign-in..." : actionLabel}
         </Button>
         {busy ? (
           <Button

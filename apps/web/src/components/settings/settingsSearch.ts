@@ -1046,6 +1046,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     cloudOnly: true,
   },
   {
+    // fork: library-sign-in
+    id: "library-sign-in",
+    title: "Library sign-in",
+    to: "/settings/connections",
+    searchTerms: [
+      "library identity account signed in sign in again sign out expired renew session address email",
+    ],
+  },
+  {
     id: "connections-environment",
     title: "This computer", // fork: fleet-connections
     to: "/settings/connections",

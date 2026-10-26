@@ -32,9 +32,13 @@ function useIdentityExpired(entry: ConnectionCatalogEntry, phase: EnvironmentCon
 export function SavedIdentitySignIn({
   entry,
   renewal = false,
+  actionLabel,
+  actionVariant,
 }: {
   readonly entry: ConnectionCatalogEntry;
   readonly renewal?: boolean;
+  readonly actionLabel?: string;
+  readonly actionVariant?: "default" | "outline";
 }) {
   const saved = savedIdentitySignIn(entry, isElectron ? "native" : "browser");
   if (saved === null)
@@ -51,6 +55,8 @@ export function SavedIdentitySignIn({
       description={false}
       showUnavailable
       renewal={renewal}
+      {...(actionLabel ? { actionLabel } : {})}
+      {...(actionVariant ? { actionVariant } : {})}
     />
   );
 }

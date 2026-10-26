@@ -379,7 +379,7 @@ export function CopyDialog({
             Update Loom on this computer to prepare project files.
           </p>
         ) : null}
-        <LibraryErrorNotice error={error} />
+        <LibraryErrorNotice error={error} onLeave={onClose} />
         {repair && repair.environmentId === hostId ? (
           <LibraryCloneRepair key={repair.environmentId} repair={repair} />
         ) : null}

@@ -97,6 +97,17 @@ const Claims = Schema.Struct({
   amr: Schema.optional(Schema.Array(Schema.String)),
 });
 const decodeClaims = Schema.decodeUnknownEffect(Claims);
+const PROFILE_CLAIM_MAX_LENGTH = 200;
+/** The account's display fields. A missing or odd profile claim is left out, never refused. */
+const accountProfile = (payload: Jose.JWTPayload) => {
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() && value.length <= PROFILE_CLAIM_MAX_LENGTH
+      ? value.trim()
+      : undefined;
+  const name = text(payload.name) ?? text(payload.preferred_username);
+  const email = text(payload.email);
+  return { ...(name ? { name } : {}), ...(email ? { email } : {}) };
+};
 const readUserInfo = HttpClientResponse.schemaBodyJson(
   Schema.Struct({
     sub: Schema.String.check(Schema.isMinLength(1)),
@@ -511,9 +522,10 @@ const make = Effect.gen(function* () {
         claims.azp !== input.audience)
     )
       return yield* new PocketIdError({ reason: "token" });
+    const verifiedClaims = { ...claims, profile: accountProfile(verified.payload) };
     if (claims.at_hash === undefined) {
       if (input.requireAtHash) return yield* new PocketIdError({ reason: "token" });
-      return claims;
+      return verifiedClaims;
     }
     const algorithm = AT_HASH_DIGESTS.get(verified.protectedHeader.alg);
     if (algorithm === undefined) return yield* new PocketIdError({ reason: "token" });
@@ -522,7 +534,7 @@ const make = Effect.gen(function* () {
       .pipe(Effect.orDie);
     if (!timingSafeEqualBase64Url(claims.at_hash, Base64Url.encode(hash.slice(0, hash.length / 2))))
       return yield* new PocketIdError({ reason: "token" });
-    return claims;
+    return verifiedClaims;
   });
   /**
    * Access tokens carry no `auth_time` and refreshes reset their `iat`, so the ID token's
@@ -758,6 +770,7 @@ const make = Effect.gen(function* () {
         const acceptedIdentity = yield* capSignInAge(
           {
             ...identity,
+            account: { ...identity.account, ...claims.profile },
             expiresAt: DateTime.toUtc(
               expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
                 ? expiration.value
@@ -861,7 +874,10 @@ const make = Effect.gen(function* () {
             if (claims.sub !== identity.account.subject)
               return yield* new PocketIdError({ reason: "subject" });
             yield* checkPasskey(claims.amr);
-            identity = yield* capSignInAge(identity, claims.auth_time);
+            identity = yield* capSignInAge(
+              { ...identity, account: { ...identity.account, ...claims.profile } },
+              claims.auth_time,
+            );
           }
         } else {
           const now = yield* DateTime.now;

@@ -15,6 +15,8 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
 import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
+import { needsLibrarySignIn } from "@t3tools/client-runtime/fork";
+import { LibrarySignInLink } from "./LibrarySignInLink";
 
 const NO_HIGHLIGHT = { id: null, choice: null } as const;
 
@@ -296,9 +298,10 @@ export function LibraryPaletteView({
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="px-4 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <div role="alert" className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+          <p className="text-destructive">{error}</p>
+          {needsLibrarySignIn(error) ? <LibrarySignInLink onClick={onClose} /> : null}
+        </div>
       ) : null}
       {children}
       <CommandPaletteResults
