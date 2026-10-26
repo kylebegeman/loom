@@ -98,6 +98,7 @@ const fixture = Effect.gen(function* () {
   const revokeAfterRead = yield* Ref.make(false);
   const dispatched = yield* Ref.make<string[]>([]);
   const retentionSaves = yield* Ref.make(0);
+  const placedBorrowed = yield* Ref.make(false);
   const failBind = yield* Ref.make(false);
   const threadDeleted = yield* Ref.make(false);
   const revokeAtResolve = yield* Ref.make(false);
@@ -163,9 +164,12 @@ const fixture = Effect.gen(function* () {
     }),
     Layer.mock(LibraryWorkspace)({
       setCopyRetention: (input) =>
-        Ref.update(retentionSaves, (count) => count + 1).pipe(
-          Effect.as({ ...copyFor(project), environmentId, keepOnComputer: input.keepOnComputer }),
-        ),
+        Effect.gen(function* () {
+          if ((yield* Ref.get(placedBorrowed)) && !input.keepOnComputer)
+            return yield* new LibraryError({ reason: "not-managed" });
+          yield* Ref.update(retentionSaves, (count) => count + 1);
+          return { ...copyFor(project), environmentId, keepOnComputer: input.keepOnComputer };
+        }),
       resolveBinding: (input) =>
         Ref.get(revokeAtResolve).pipe(
           Effect.flatMap((revoke) => (revoke ? Ref.set(active, []) : Effect.void)),
@@ -326,6 +330,7 @@ const fixture = Effect.gen(function* () {
     createdIn,
     boundIn,
     retentionSaves,
+    placedBorrowed,
     dispatched,
     failBind,
     threadDeleted,
@@ -958,6 +963,26 @@ describe("Project operations", () => {
         expect((yield* settled(state, "files-launch")).state).toBe("succeeded");
         expect(yield* Ref.get(state.fills)).toBe(1);
         expect(yield* Ref.get(state.retentionSaves)).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("finishes a launch whose files the computer placed in a borrowed checkout", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.placedBorrowed, true);
+        const request = filesLaunch("borrowed-thread");
+        const launched = yield* state.service.execute(
+          "files-borrowed",
+          { ...request, input: { ...request.input, keepOnComputer: false } },
+          actor,
+        );
+        expect(launched.result).toEqual({ threadId: "borrowed-thread" });
+        expect(yield* settled(state, "files-borrowed")).toMatchObject({
+          state: "succeeded",
+          error: null,
+        });
+        expect(yield* Ref.get(state.retentionSaves)).toBe(0);
       }),
     ),
   );

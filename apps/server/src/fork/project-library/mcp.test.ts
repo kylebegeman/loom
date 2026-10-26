@@ -12,6 +12,8 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { archiveFor, resource, source, threadId } from "./Library.testkit.ts";
 import * as Publisher from "./LibraryPublisher.ts";
+import * as Catalog from "./LibraryService.ts";
+import * as Workspace from "./LibraryWorkspace.ts";
 import { ProjectLibraryToolkit, projectLibraryHandlers } from "./mcp.ts";
 
 const project = {
@@ -277,6 +279,73 @@ it.effect("still validates the full history projection before encoding", () =>
       "Failure",
     );
   }),
+);
+
+const libraryProject = { ...project, title: "From the Library" };
+const notFound = new Library.LibraryError({ reason: "not-found" });
+const offline = new Library.LibraryError({ reason: "io" });
+
+it.effect.each([
+  {
+    name: "a first copy",
+    remote: Effect.succeed(libraryProject),
+    local: Effect.fail(notFound),
+    expected: { _tag: "Success", success: { rootPath: "/projects/From the Library" } },
+  },
+  {
+    name: "an offline copy",
+    remote: Effect.fail(offline),
+    local: Effect.succeed(project),
+    expected: { _tag: "Success", success: { rootPath: "/projects/Project" } },
+  },
+  {
+    name: "an offline first copy",
+    remote: Effect.fail(offline),
+    local: Effect.fail(notFound),
+    expected: { _tag: "Failure", failure: { reason: "io" } },
+  },
+  {
+    name: "a project the Library deleted",
+    remote: Effect.fail(notFound),
+    local: Effect.succeed(project),
+    expected: { _tag: "Failure", failure: { reason: "not-found" } },
+  },
+])(
+  "previews placement on a computer that is not the Library for $name",
+  ({ remote, local, expected }) =>
+    Effect.gen(function* () {
+      const runtime = yield* Layer.build(
+        Layer.mergeAll(
+          Layer.mock(Publisher.LibraryPublisher)({ enabled: true, project: () => remote }),
+          // An execution computer's catalog holds only projects with a live copy here.
+          Layer.mock(Catalog.LibraryService)({ project: () => local }),
+          Layer.mock(Workspace.LibraryWorkspace)({
+            placement: (input) =>
+              Effect.succeed({
+                action: "clone",
+                rootPath: `/projects/${input.project.title}`,
+                ownership: "managed",
+                reason: "New folder",
+              }),
+          }),
+        ),
+      );
+      const toolkit = yield* ProjectLibraryToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(projectLibraryHandlers).pipe(
+            Layer.provide(Layer.succeed(ForkRuntime, runtime as Context.Context<ForkServices>)),
+          ),
+        ),
+      );
+      const placed = yield* toolkit
+        .handle("loom_library_copy_placement", { projectId: project.id })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.map((results) => results[0]!.result),
+          Effect.result,
+        );
+      expect(placed).toMatchObject(expected);
+    }).pipe(Effect.scoped),
 );
 
 it("advertises compact Library schemas with reference-free inputs", () => {

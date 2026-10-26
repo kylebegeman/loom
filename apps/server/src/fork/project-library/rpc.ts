@@ -23,6 +23,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as LibraryBriefSuggestions from "./LibraryBriefSuggestions.ts";
+import * as LibraryPlacementPreview from "./LibraryPlacementPreview.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
@@ -45,6 +46,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
   const workspace = yield* LibraryWorkspace.LibraryWorkspace;
   const suggestions = yield* LibraryBriefSuggestions.LibraryBriefSuggestions;
   const operations = yield* ProjectOperations;
+  const previewPlacement = yield* LibraryPlacementPreview.make;
   const execute = Effect.fn("ProjectLibrary.executeOperation")(function* (
     request: Exclude<LibraryOperationInput, { kind: "launch" }>,
   ) {
@@ -125,16 +127,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
         ),
       ),
     [L.placement]: (input: LibraryPlacementRequest) =>
-      auth.effect(
-        L.placement,
-        library
-          .project({ projectId: input.projectId })
-          .pipe(
-            Effect.flatMap((project) =>
-              workspace.placement({ project, resourceIds: input.resourceIds }),
-            ),
-          ),
-      ),
+      auth.effect(L.placement, previewPlacement(input)),
     [L.copyStatus]: (input: Parameters<typeof workspace.status>[0]) =>
       auth.effect(L.copyStatus, workspace.status(input)),
     [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>

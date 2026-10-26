@@ -486,14 +486,27 @@ const make = Effect.gen(function* () {
               id: string;
             }>`SELECT id FROM fork_library_workflow_receipts WHERE id=${`${id}:retention`}`;
             if (!saved[0]) {
-              const copy = yield* workspace.setCopyRetention({
-                workingCopyId: binding.workingCopyId,
-                keepOnComputer: input.keepOnComputer,
-              });
-              const payload = yield* Schema.encodeEffect(copyCodec)(copy).pipe(Effect.mapError(io));
-              yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${`${id}:retention`},${"retention"},${payload})`.pipe(
-                Effect.mapError(io),
-              );
+              // Only the launch's placement knows whether its files are borrowed, and a borrowed
+              // checkout always stays on the computer, so a request to remove it has no effect.
+              const copy = yield* workspace
+                .setCopyRetention({
+                  workingCopyId: binding.workingCopyId,
+                  keepOnComputer: input.keepOnComputer,
+                })
+                .pipe(
+                  Effect.catchIf(
+                    (cause) => cause.reason === "not-managed",
+                    () => Effect.succeed(null),
+                  ),
+                );
+              if (copy !== null) {
+                const payload = yield* Schema.encodeEffect(copyCodec)(copy).pipe(
+                  Effect.mapError(io),
+                );
+                yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${`${id}:retention`},${"retention"},${payload})`.pipe(
+                  Effect.mapError(io),
+                );
+              }
             }
           }
           // Replication publishes the new conversation and the copy's retention within seconds

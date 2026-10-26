@@ -232,6 +232,17 @@ describe("resolveNewThreadEnvMode", () => {
     ).toBe("local");
   });
 
+  it("trusts the server on whether Loom made a Projects folder entry", () => {
+    expect(resolveNewThreadEnvMode({ ...newProject, namedProject: false })).toBe("worktree"); // fork: file-placement
+    expect(
+      resolveNewThreadEnvMode({
+        ...newProject,
+        workspaceRoot: "/elsewhere/app",
+        namedProject: true, // fork: file-placement
+      }),
+    ).toBe("local");
+  });
+
   it("keeps the configured default once the project has a thread or is not a new project", () => {
     expect(resolveNewThreadEnvMode({ ...newProject, projectHasThreads: true })).toBe("worktree");
     expect(resolveNewThreadEnvMode({ ...newProject, workspaceRoot: "/data/projects" })).toBe(
