@@ -1,3 +1,4 @@
+import * as NodeURL from "node:url";
 import { CheckpointScopeId, CheckpointRef, NodeId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { writeZip } from "./zipWriter.ts";
@@ -1661,7 +1662,7 @@ it.effect(
         yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
         t.setReviewNetlist(
           yield* t.fs.readFileString(
-            "apps/server/src/fork/pcb-preview/fixtures/review/i2c-missing.net",
+            NodeURL.fileURLToPath(new URL("./fixtures/review/i2c-missing.net", import.meta.url)),
           ),
         );
         const service = yield* t.create();
