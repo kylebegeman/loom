@@ -148,9 +148,10 @@ It also defines `op` (unless a function by that name exists) to run 1Password's 
 and Claude Code's login snapshot shell runs `.zshrc`, so an `op completion zsh` there left one
 daemon pinning each lane (31 of them on 2026-10-26).
 
-The `xcodebuild` shim adds `-derivedDataPath $LOOM_LANE_BUILD/DerivedData` and
-`-clonedSourcePackagesDirPath $LOOM_LANE_BUILD/SourcePackages` to build actions that do not
-pass them. When an agent passes a `/tmp` path that does not exist yet, the shim creates it as
+The `xcodebuild` shim adds `-derivedDataPath $LOOM_LANE_BUILD/DerivedData` to build actions
+that do not pass one. It never adds `-clonedSourcePackagesDirPath`: packages must stay at
+`<DerivedData>/SourcePackages`, because run scripts such as Firebase Crashlytics find them
+through `${BUILD_DIR%/Build/*}/SourcePackages`. When an agent passes a `/tmp` path that does not exist yet, the shim creates it as
 a link into the lane's `build/redirect`. It never changes non-build invocations.
 
 SwiftPM `.build` and Cargo `target` stay in the checkout: agents run binaries from those

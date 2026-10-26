@@ -970,7 +970,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       spacePath,
       tmpPath: `${spacePath}/tmp`,
       buildPath: `${spacePath}/build`,
-      /** Adds the lane's DerivedData and SourcePackages and takes a build slot for heavy actions. */
+      /** Adds the lane's DerivedData and takes a build slot for heavy actions. */
       xcodebuild: `${shims}/xcodebuild`,
       slot: `${shims}/lane-slot`,
     };

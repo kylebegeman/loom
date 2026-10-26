@@ -189,14 +189,13 @@ describe.skipIf(!hasZsh)("xcodebuild shim", () => {
       .split("\n");
   };
 
-  it("adds lane paths to build actions only", () => {
+  // Packages stay in DerivedData, where run scripts such as Firebase Crashlytics look for them.
+  it("adds the lane's derived data to build actions only", () => {
     const lanes = makeLanes();
     const build = NodePath.join(lanes.space, "build");
     expect(run(lanes, ["-scheme", "App", "build"])).toEqual([
       "-derivedDataPath",
       `${build}/DerivedData`,
-      "-clonedSourcePackagesDirPath",
-      `${build}/SourcePackages`,
       "-scheme",
       "App",
       "build",
@@ -208,15 +207,23 @@ describe.skipIf(!hasZsh)("xcodebuild shim", () => {
     const lanes = makeLanes();
     const parent = makeTemp("/tmp");
     const requested = NodePath.join(parent, "dd");
-    const args = run(lanes, ["test", "-derivedDataPath", requested]);
-    expect(args).toEqual([
-      "-clonedSourcePackagesDirPath",
-      `${lanes.space}/build/SourcePackages`,
+    const packages = NodePath.join(parent, "packages");
+    const args = run(lanes, [
       "test",
       "-derivedDataPath",
       requested,
+      "-clonedSourcePackagesDirPath",
+      packages,
+    ]);
+    expect(args).toEqual([
+      "test",
+      "-derivedDataPath",
+      requested,
+      "-clonedSourcePackagesDirPath",
+      packages,
     ]);
     expect(NodeFS.realpathSync(requested).startsWith(`${lanes.space}/build/redirect/`)).toBe(true);
+    expect(NodeFS.realpathSync(packages).startsWith(`${lanes.space}/build/redirect/`)).toBe(true);
   });
 });
 

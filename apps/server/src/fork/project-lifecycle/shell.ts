@@ -188,7 +188,7 @@ redirect() {
 }
 [ -n "$derived" ] && redirect "$derived"
 [ -n "$packages" ] && redirect "$packages"
-[ -n "$packages" ] || set -- -clonedSourcePackagesDirPath "$LOOM_LANE_BUILD/SourcePackages" "$@"
+# Packages stay in DerivedData, where run scripts such as Firebase Crashlytics look for them.
 [ -n "$derived" ] || set -- -derivedDataPath "$LOOM_LANE_BUILD/DerivedData" "$@"
 [ -n "$heavy" ] && exec "$shims/lane-slot" "$real" "$@"
 exec "$real" "$@"
