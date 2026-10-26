@@ -1095,6 +1095,16 @@ export const StorageCleanupReportEntry = Schema.Struct({
   files: Schema.NullOr(Schema.Number).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type StorageCleanupReportEntry = typeof StorageCleanupReportEntry.Type;
+// fork: library-launch-files: a remote's shared Git objects, which make new copies of it fast.
+export const StorageCleanupGitMirror = Schema.Struct({
+  path: Schema.String,
+  remoteUrl: Schema.NullOr(Schema.String),
+  bytes: Schema.Number,
+  lastUsedAt: Schema.NullOr(Schema.String),
+  outcome: Schema.Literals(["removed", "kept", "failed"]),
+  reason: Schema.String,
+});
+export type StorageCleanupGitMirror = typeof StorageCleanupGitMirror.Type; // fork: library-launch-files
 export const StorageCleanupReport = Schema.Struct({
   trigger: Schema.Literals(["automatic", "manual"]),
   startedAt: Schema.String,
@@ -1103,6 +1113,9 @@ export const StorageCleanupReport = Schema.Struct({
   counts: Schema.Struct({ removed: Schema.Number, kept: Schema.Number, failed: Schema.Number }),
   omittedCount: Schema.Number,
   bytesFreed: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  // fork: library-launch-files: absent on hosts without Library mirrors. Not an entry kind,
+  // because older clients reject an unknown kind and with it the whole report.
+  gitMirrors: Schema.optionalKey(Schema.Array(StorageCleanupGitMirror)),
 });
 export type StorageCleanupReport = typeof StorageCleanupReport.Type;
 

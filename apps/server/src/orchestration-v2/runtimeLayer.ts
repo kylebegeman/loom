@@ -2,6 +2,7 @@ import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
+import * as LibraryGitFetch from "../fork/project-library/LibraryGitFetch.ts"; // fork: library-launch-files
 import * as GuestShareService from "../guest/GuestShareService.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
@@ -280,6 +281,7 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
   Layer.provide(layerProjectService),
 );
 export const layerStorageCleanup = StorageCleanup.layer.pipe(
+  Layer.provide(LibraryGitFetch.layer), // fork: library-launch-files
   Layer.provide(
     Layer.mergeAll(
       ProjectionStore.layer,

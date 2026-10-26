@@ -30,6 +30,8 @@ export class WorktreeSetupTracker extends Context.Service<
       readonly baseRef: string | null;
       readonly stages: ReadonlyArray<WorktreeSetupStageId>;
       readonly fiber: Fiber.Fiber<unknown, unknown> | null;
+      readonly kind?: WorktreeSetupSnapshot["kind"]; // fork: library-launch-files
+      readonly operationId?: string | undefined; // fork: library-launch-files
     }) => Effect.Effect<void>;
     readonly update: (
       threadId: ThreadId,
@@ -159,6 +161,9 @@ export const make = Effect.gen(function* () {
         stages: ordered.map(emptyStage),
         error: null,
         sequence: (lastSequenceByThread.get(input.threadId) ?? -1) + 1,
+        // fork: library-launch-files
+        ...(input.kind === undefined ? {} : { kind: input.kind }),
+        ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
       };
       lastSequenceByThread.set(input.threadId, snapshot.sequence);
       yield* Ref.update(setups, (current) => {

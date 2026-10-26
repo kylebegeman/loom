@@ -107,6 +107,38 @@ describe("WorktreeSetupTracker", () => {
     }),
   );
 
+  // fork: library-launch-files
+  it.effect("passes the setup kind and its operation through to snapshots", () =>
+    Effect.gen(function* () {
+      const tracker = yield* WorktreeSetupTracker.make;
+      yield* tracker.begin({
+        threadId,
+        branch: null,
+        baseRef: null,
+        stages: ["fetch", "checkout"],
+        fiber: null,
+        kind: "project-files",
+        operationId: "launch-1:launch",
+      });
+      yield* tracker.stage(threadId, "fetch", { percent: 10 });
+      expect(yield* tracker.get(threadId)).toMatchObject({
+        kind: "project-files",
+        operationId: "launch-1:launch",
+      });
+
+      yield* tracker.begin({
+        threadId,
+        branch: null,
+        baseRef: null,
+        stages: ["agent"],
+        fiber: null,
+      });
+      const plain = yield* tracker.get(threadId);
+      expect(plain).not.toHaveProperty("kind");
+      expect(plain).not.toHaveProperty("operationId");
+    }),
+  );
+
   it.effect("cancel interrupts the bootstrap fiber and reports whether one was running", () =>
     Effect.gen(function* () {
       const tracker = yield* WorktreeSetupTracker.make;

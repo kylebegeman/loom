@@ -55,13 +55,20 @@ const searchParameters = Schema.Struct({
 });
 // Agents reuse a saved project, so its nested profile need not be repeated in the launch input.
 // Keep the JSON decoder: production MCP also accepts null for optional project/profile fields.
+const looseProject = Schema.Record(Schema.String, Schema.Unknown)
+  .annotate({
+    description: "Complete project returned by loom_library_project; pass it unchanged.",
+  })
+  .pipe(Schema.decodeTo(Schema.toCodecJson(Library.LibraryProject)));
 const launchOperationParameters = Schema.Struct({
   ...Library.LibraryLaunchOperation.fields,
-  project: Schema.Record(Schema.String, Schema.Unknown)
-    .annotate({
-      description: "Complete project returned by loom_library_project; pass it unchanged.",
-    })
-    .pipe(Schema.decodeTo(Schema.toCodecJson(Library.LibraryProject))),
+  project: looseProject,
+  files: Schema.optional(
+    Schema.Struct({ ...Library.LibraryPrepareCopyRequest.fields, project: looseProject }).annotate({
+      description:
+        "A loom_library_copy_prepare request to reserve; binding.workingCopyId repeats its requestId.",
+    }),
+  ),
 });
 // The full archive still validates and encodes the result. Only its advertised projection is
 // loose; encoding it again as a record preserves every field without inlining the turn unions.
@@ -137,7 +144,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }),
   Tool.make("loom_library_operation_run", {
     description:
-      "Launch a bound Library conversation. Reuse operationId and identical input after a lost response. For other jobs use the direct project and copy tools; resume or cancel with loom_library_operation_control. Prefer t3_thread_launch for a registered local Library copy.",
+      "Launch a bound Library conversation. With files, it reserves them, opens the conversation in them and answers while they download. Reuse operationId and identical input after a lost response. For other jobs use the direct project and copy tools; resume or cancel with loom_library_operation_control. Prefer t3_thread_launch for a registered local Library copy.",
     parameters: Schema.Struct({
       operationId: Library.LibraryRequestId,
       request: Schema.Struct({

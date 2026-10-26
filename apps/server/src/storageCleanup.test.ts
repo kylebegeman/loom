@@ -48,6 +48,8 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryGitFetch from "./fork/project-library/LibraryGitFetch.ts"; // fork: library-launch-files
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: library-launch-files
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -3407,6 +3409,147 @@ describe("primary project storage cleanup", () => {
         f.setThreads([shell({ settledOverride: "settled" })]);
         const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
         expect(entry?.outcome, entry?.reason).toBe("removed");
+      }),
+    ),
+  );
+});
+
+// fork: library-launch-files
+describe("Library Git mirror cleanup", () => {
+  const remote = (name: string) => `https://example.test/${name}.git`;
+  const mirror = (name: string, lastUsedAt: DateTime.Utc): LibraryGitFetch.LibraryGitMirror => ({
+    key: `key:${remote(name)}`,
+    path: `/mirrors/${name}.git`,
+    remoteUrl: remote(name),
+    bytes: 4_096,
+    lastUsedAt: DateTime.formatIso(lastUsedAt),
+  });
+  const libraryCopy = (name: string, state: "ready" | "released") => {
+    const receipt = libraryReceipt(`/library-copies/${name}`);
+    return {
+      ...receipt,
+      project: {
+        ...receipt.project,
+        resources: [
+          {
+            id: "repo",
+            title: "Repository",
+            remoteUrl: remote(name),
+            relativePath: "",
+            defaultBranch: "main",
+          },
+        ],
+      },
+      copy: { ...receipt.copy, id: `copy-${name}`, state },
+    };
+  };
+  const sweepMirrors = (input: {
+    readonly mirrors: ReadonlyArray<LibraryGitFetch.LibraryGitMirror>;
+    readonly copies?: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>;
+    readonly failing?: string;
+  }) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MS);
+      const removals: Array<{ readonly key: string; readonly unusedSince: string }> = [];
+      const f = yield* cleanupFixture().pipe(
+        Effect.provide(
+          Layer.mock(LibraryGitFetch.LibraryGitFetch)({
+            mirrorKey: (remoteUrl) => Effect.succeed(`key:${remoteUrl}`),
+            mirrors: Effect.succeed(input.mirrors),
+            removeMirror: (request) =>
+              request.key === input.failing
+                ? Effect.fail(new LibraryError({ reason: "io", detail: "Mirror folder is busy" }))
+                : Effect.sync(() => {
+                    removals.push(request);
+                    return 4_096;
+                  }),
+          }),
+        ),
+      );
+      f.disable();
+      for (const copy of input.copies ?? []) yield* f.libraryStore.put(copy);
+      return { report: yield* f.service.runNow, removals };
+    });
+
+  it.effect("removes an idle mirror that no live Library copy uses and counts its bytes", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const idle = mirror("idle", at(-40 * DAY_MS));
+        const { report, removals } = yield* sweepMirrors({
+          mirrors: [idle],
+          copies: [libraryCopy("idle", "released")],
+        });
+        expect(removals).toEqual([
+          { key: idle.key, unusedSince: DateTime.formatIso(at(-30 * DAY_MS)) },
+        ]);
+        expect(report.gitMirrors).toEqual([
+          {
+            path: idle.path,
+            remoteUrl: idle.remoteUrl,
+            bytes: 4_096,
+            lastUsedAt: idle.lastUsedAt,
+            outcome: "removed",
+            reason: "Unused for 30 days and no Library copy on this computer uses it",
+          },
+        ]);
+        expect(report.bytesFreed).toBe(4_096);
+      }),
+    ),
+  );
+
+  it.effect("keeps an idle mirror that a live Library copy uses", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { report, removals } = yield* sweepMirrors({
+          mirrors: [mirror("shared", at(-40 * DAY_MS))],
+          copies: [libraryCopy("shared", "ready")],
+        });
+        expect(removals).toEqual([]);
+        expect(report.gitMirrors).toMatchObject([
+          { outcome: "kept", reason: "A Library copy on this computer uses it" },
+        ]);
+        expect(report.bytesFreed).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("keeps a mirror used in the last 30 days", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { report, removals } = yield* sweepMirrors({
+          mirrors: [mirror("recent", at(-2 * DAY_MS))],
+        });
+        expect(removals).toEqual([]);
+        expect(report.gitMirrors).toMatchObject([
+          { outcome: "kept", reason: "Used in the last 30 days" },
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("records a failed removal and still removes the other idle mirrors", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const busy = mirror("busy", at(-40 * DAY_MS));
+        const idle = mirror("idle", at(-40 * DAY_MS));
+        const { report } = yield* sweepMirrors({ mirrors: [busy, idle], failing: busy.key });
+        expect(report.gitMirrors).toMatchObject([
+          { path: busy.path, outcome: "failed", reason: "Mirror folder is busy" },
+          { path: idle.path, outcome: "removed" },
+        ]);
+        expect(report.bytesFreed).toBe(4_096);
+      }),
+    ),
+  );
+
+  it.live("reports no mirrors on a host without the mirror service", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* cleanupFixture();
+        f.disable();
+        const report = yield* f.service.runNow;
+        expect(report.gitMirrors).toBeUndefined();
+        expect(report.counts.failed).toBe(0);
       }),
     ),
   );

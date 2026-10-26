@@ -28,6 +28,8 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
+import * as LibraryGitFetch from "./LibraryGitFetch.ts";
+import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import * as Store from "./LibraryWorkspaceStore.ts";
 
 const config = ServerConfig.layerTest(process.cwd(), { prefix: "library-real-project-service-" });
@@ -67,7 +69,10 @@ const dependencies = Layer.mergeAll(
   Layer.provideMerge(config),
   Layer.provideMerge(NodeServices.layer),
 );
-const layer = Workspace.layer.pipe(Layer.provideMerge(dependencies));
+const layer = Workspace.layer.pipe(
+  Layer.provide(Layer.mergeAll(LibraryGitFetch.layer, WorktreeSetupTracker.layer)),
+  Layer.provideMerge(dependencies),
+);
 const project: LibraryProject = {
   id: "library-real-project",
   title: "Real project service",

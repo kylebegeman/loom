@@ -88,16 +88,19 @@ export const layerFromProjectStore: Layer.Layer<
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         if (!input.libraryFilesPrepared && Option.isSome(workspace))
-          yield* workspace.value.prepareThreadFiles({ threadId: input.thread.id }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new RuntimePolicyResolveError({
-                  projectId: input.thread.projectId,
-                  providerInstanceId: input.modelSelection.instanceId,
-                  cause,
-                }),
-            ),
-          );
+          // fork: library-launch-files -- dispatch is serialized, so files still downloading never hold it.
+          yield* workspace.value
+            .prepareThreadFiles({ threadId: input.thread.id, waitForFiles: false })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new RuntimePolicyResolveError({
+                    projectId: input.thread.projectId,
+                    providerInstanceId: input.modelSelection.instanceId,
+                    cause,
+                  }),
+              ),
+            );
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
         const supportedRuntimeModes =
           instance === undefined

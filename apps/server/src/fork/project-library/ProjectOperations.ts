@@ -76,6 +76,16 @@ const workloadCodec = Schema.fromJsonString(Workload);
 const operationCodec = Schema.fromJsonString(LibraryOperation);
 const requestCodec = Schema.fromJsonString(LibraryOperationInput);
 const copyCodec = Schema.fromJsonString(LibraryWorkingCopy);
+const requireOneRepository = (resolved: LibraryResolvedBinding) =>
+  resolved.repositoryPaths.length === 1 && resolved.repositoryPaths[0] === resolved.cwd
+    ? Effect.void
+    : Effect.fail(
+        new LibraryError({
+          reason: "blocked",
+          detail:
+            "Only a conversation working in one repository can start in its own worktree. Choose that repository, or start in the project folder.",
+        }),
+      );
 const worktreeCodec = Schema.fromJsonString(
   Schema.Struct({ path: Schema.String, branch: Schema.String }),
 );
@@ -249,12 +259,7 @@ const make = Effect.gen(function* () {
       result_json: string;
     }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${receiptId}`;
     if (saved[0]) return yield* Schema.decodeEffect(worktreeCodec)(saved[0].result_json);
-    if (resolved.repositoryPaths.length !== 1 || resolved.repositoryPaths[0] !== resolved.cwd)
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail:
-          "Only a conversation working in one repository can start in its own worktree. Choose that repository, or start in the project folder.",
-      });
+    yield* requireOneRepository(resolved);
     const cwd = resolved.cwd;
     const uuid = yield* randomUuidV4;
     const temporary = buildTemporaryWorktreeBranchName(() => uuid.replaceAll("-", ""));
@@ -286,7 +291,54 @@ const make = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(io));
-  const worker = Effect.fn("ProjectOperations.worker")(function* (id: string) {
+  /**
+   * Moves a conversation that opened in its copy's folder into the worktree it asked for, once the
+   * files it is made from are in. One whose first message went ahead keeps working in the folder.
+   */
+  const moveToWorktree = Effect.fn("ProjectOperations.moveToWorktree")(function* (
+    id: string,
+    threadId: ThreadId,
+    resolved: LibraryResolvedBinding,
+  ) {
+    const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(io));
+    if (thread === null || thread.deletedAt !== null) return;
+    if (thread.worktreePath === resolved.cwd && thread.latestRunId !== null) return;
+    const worktree = yield* launchWorktree(id, resolved);
+    const movedThere = threads
+      .getThreadShell(threadId)
+      .pipe(Effect.map((current) => current?.worktreePath === worktree.path));
+    const moved = yield* workspace.moveThread({
+      threadId,
+      worktreePath: worktree.path,
+      move:
+        thread.worktreePath === worktree.path
+          ? Effect.succeed(true)
+          : threads
+              .dispatch({
+                type: "thread.metadata.update",
+                commandId: CommandId.make(`${id}:move-to-worktree`),
+                threadId,
+                branch: worktree.branch,
+                worktreePath: worktree.path,
+                expectedWorktreePath: resolved.cwd,
+                expectedEmpty: true,
+              })
+              .pipe(
+                Effect.as(true),
+                // Refused once a message lands, which keeps the conversation where it started.
+                Effect.catch(() => movedThere),
+                Effect.mapError(io),
+              ),
+    });
+    if (!moved)
+      yield* Effect.logInfo("A Library conversation started before its worktree was ready.", {
+        threadId,
+      });
+  });
+  const worker = Effect.fn("ProjectOperations.worker")(function* (
+    id: string,
+    opened: (operation: LibraryOperation) => Effect.Effect<void>,
+  ) {
     const row = yield* read(id);
     if (!row || ["succeeded", "cancelled"].includes(row.operation.state))
       return row?.operation ?? null;
@@ -294,8 +346,11 @@ const make = Effect.gen(function* () {
       Effect.mapError(io),
     );
     let operation = row.operation;
+    // Each step rechecks access until a launch's conversation exists. The steps after it finish
+    // that launch, so a download outlasting the session or agent turn that asked for it completes.
+    let launched = false;
     const phase = Effect.fn("ProjectOperations.phase")(function* (name: string) {
-      yield* authorize(row.session_id, row.subject, request);
+      if (!launched) yield* authorize(row.session_id, row.subject, request);
       operation = yield* save({
         ...operation,
         phase: name,
@@ -346,16 +401,31 @@ const make = Effect.gen(function* () {
           break;
         case "launch": {
           const input = request.input;
-          if (input.binding.environmentId !== environmentId)
+          const files = input.files;
+          if (
+            input.binding.environmentId !== environmentId ||
+            (files !== undefined &&
+              (files.requestId !== input.binding.workingCopyId ||
+                files.project.id !== input.project.id))
+          )
             return yield* new LibraryError({ reason: "invalid" });
           yield* phase("Checking files and project scope");
-          const resolved = yield* workspace.resolveBinding({
-            binding: input.binding,
-            project: input.project,
-          });
-          if (input.workspace === "worktree") yield* phase("Creating worktree");
-          const worktree =
-            input.workspace === "worktree" ? yield* launchWorktree(id, resolved) : null;
+          // With files, the launch reserves them, opens the conversation in them, then downloads.
+          const reserved = files === undefined ? null : yield* workspace.reserveCopy(files);
+          const binding =
+            reserved === null ? input.binding : { ...input.binding, workingCopyId: reserved.id };
+          const resolved = yield* workspace.resolveBinding({ binding, project: input.project });
+          const earlier = yield* threads.getThreadShell(input.threadId).pipe(Effect.mapError(io));
+          // A worktree is made from the copy's files, so a conversation opening before they
+          // arrive, or one an earlier try opened in the copy's folder, moves into it afterwards.
+          const worktreeAfter =
+            input.workspace === "worktree" &&
+            reserved !== null &&
+            (earlier === null ? reserved.state !== "ready" : earlier.worktreePath === resolved.cwd);
+          if (worktreeAfter) yield* requireOneRepository(resolved);
+          const worktreeFirst = input.workspace === "worktree" && !worktreeAfter;
+          if (worktreeFirst) yield* phase("Creating worktree");
+          const worktree = worktreeFirst ? yield* launchWorktree(id, resolved) : null;
           yield* phase("Creating conversation");
           yield* threads
             .dispatch({
@@ -385,10 +455,30 @@ const make = Effect.gen(function* () {
           yield* phase("Binding conversation to files");
           yield* workspace.bindThread({
             threadId: input.threadId,
-            binding: input.binding,
+            binding,
             project: input.project,
             ...(worktree === null ? {} : { worktreePath: worktree.path }),
           });
+          if (reserved !== null) {
+            launched = true;
+            // The caller gets the open conversation now; its files, worktree and retention follow.
+            operation = yield* save({
+              ...operation,
+              result: { threadId: input.threadId },
+              updatedAt: yield* now,
+            });
+            yield* opened(operation);
+            yield* phase("Downloading files");
+            yield* workspace.fillCopy({ workingCopyId: reserved.id, operationId: id });
+            if (worktreeAfter) {
+              yield* phase("Creating worktree");
+              yield* moveToWorktree(
+                id,
+                input.threadId,
+                yield* workspace.resolveBinding({ binding, project: input.project }),
+              );
+            }
+          }
           if (input.keepOnComputer !== undefined) {
             yield* phase("Saving file retention");
             // The receipt keeps a retried launch from undoing a change made since the first try.
@@ -397,7 +487,7 @@ const make = Effect.gen(function* () {
             }>`SELECT id FROM fork_library_workflow_receipts WHERE id=${`${id}:retention`}`;
             if (!saved[0]) {
               const copy = yield* workspace.setCopyRetention({
-                workingCopyId: input.binding.workingCopyId,
+                workingCopyId: binding.workingCopyId,
                 keepOnComputer: input.keepOnComputer,
               });
               const payload = yield* Schema.encodeEffect(copyCodec)(copy).pipe(Effect.mapError(io));
@@ -453,7 +543,9 @@ const make = Effect.gen(function* () {
         restoreGrants.delete(id);
       }
     });
-    yield* worker(id).pipe(
+    yield* worker(id, (operation) =>
+      Deferred.succeed(completion, operation).pipe(Effect.asVoid),
+    ).pipe(
       Effect.flatMap((result) =>
         release.pipe(
           Effect.andThen(
@@ -549,6 +641,8 @@ const make = Effect.gen(function* () {
     const completion = pending.get(id);
     const result = completion ? yield* Deferred.await(completion) : (yield* read(id))?.operation;
     if (!result) return yield* new LibraryError({ reason: "not-found" });
+    // A launch with files answers once its conversation exists, while the files still download.
+    if (result.state === "running" && result.result !== null) return result;
     if (result.state !== "succeeded")
       return yield* new LibraryError({
         reason: result.failureReason ?? "blocked",

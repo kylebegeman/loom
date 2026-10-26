@@ -106,6 +106,7 @@ const workspace = WorkspaceStore.LibraryWorkspaceStore.of({
   followArchived: () => Effect.void,
   importBindings: () => Effect.void,
   bind: () => Effect.void,
+  moveBinding: () => Effect.void,
   repositoriesForRoot: () => Effect.succeed([]),
   validateThreadCwd: (input) => Effect.succeed(input.cwd),
   savedThreads: Effect.succeed([]),
@@ -991,6 +992,42 @@ describe("durable Library history replication", () => {
         }));
         yield* service.drain;
         expect(yield* copyRegistrations).toHaveLength(2);
+      }),
+    ),
+  );
+  it.effect("registers a copy whose files just arrived even while history cannot upload", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const filled = { ...receipt, copy: { ...copy, id: "filled-copy" } };
+        const service = yield* Replication.LibraryReplication.pipe(
+          Effect.provide(Replication.layer),
+          Effect.provideService(Publisher.LibraryPublisher, f.publisher),
+          Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, {
+            ...workspace,
+            receipts: Effect.succeed([receipt, filled]),
+            get: (id) => Effect.succeed(id === filled.copy.id ? filled : receipt),
+          }),
+          Effect.provideService(ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(source),
+          }),
+          Effect.provideService(HistorySource.LibraryHistorySource, {
+            snapshotThread: () => Ref.get(f.archive),
+          }),
+          Effect.provide(
+            Layer.mock(Workspace.LibraryWorkspace)({
+              cleanupTemporaryCopies: () => Effect.void,
+              historyFolders: Effect.succeed([]),
+            }),
+          ),
+        );
+        yield* Ref.set(f.failAck, true);
+        yield* f.event(1, "thread.created", "{}");
+        expect((yield* Effect.flip(service.drain)).reason).toBe("io");
+        expect((yield* Ref.get(f.registered)).map((input) => input.copy.id)).toEqual([
+          copy.id,
+          filled.copy.id,
+        ]);
+        expect(yield* Ref.get(f.order)).toEqual(["copy", "copy", "assets", "history"]);
       }),
     ),
   );

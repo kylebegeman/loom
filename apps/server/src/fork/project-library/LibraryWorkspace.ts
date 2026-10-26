@@ -23,6 +23,7 @@ import {
   type LibrarySetCopyRetentionRequest,
   type LibraryReopenCopyRequest,
   type LibraryResolveBindingRequest,
+  type LibraryResource,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import * as NodeCrypto from "node:crypto";
@@ -31,11 +32,15 @@ import * as NodeStream from "@effect/platform-node/NodeStream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import type * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -53,6 +58,8 @@ import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
+import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
+import * as LibraryGitFetch from "./LibraryGitFetch.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
 import { LIBRARY_RECOVERY_MAX_BYTES } from "./assets/LibraryRecoveryStore.ts";
@@ -81,6 +88,19 @@ export class LibraryWorkspace extends Context.Service<
     readonly prepareCopy: (
       input: LibraryPrepareCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /**
+     * Makes a new copy's folders and local projects without downloading, so a conversation can
+     * start in it at once; `fillCopy` downloads the files. A copy with nothing to download is
+     * prepared in full.
+     */
+    readonly reserveCopy: (
+      input: LibraryPrepareCopyRequest,
+    ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /** Downloads a reserved copy's files once, however many callers wait for them. */
+    readonly fillCopy: (input: {
+      readonly workingCopyId: string;
+      readonly operationId?: string | undefined;
+    }) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     readonly restoreCopy: (
       input: LibraryRestoreCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -114,6 +134,8 @@ export class LibraryWorkspace extends Context.Service<
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     readonly prepareThreadFiles: (input: {
       readonly threadId: ThreadId;
+      /** False starts files that are still downloading without waiting for them. */
+      readonly waitForFiles?: boolean | undefined;
     }) => Effect.Effect<void, LibraryError>;
     readonly cleanupTemporaryCopies: (
       isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
@@ -145,6 +167,16 @@ export class LibraryWorkspace extends Context.Service<
       /** The conversation's own worktree, made from the bound copy folder when it started. */
       readonly worktreePath?: string | undefined;
     }) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
+    /**
+     * Moves a conversation bound to its copy's folder into a worktree made from that folder, as a
+     * worktree start whose files arrived after it opened does. `move` puts the conversation there
+     * and answers false when it refuses, which leaves the conversation in the copy's folder.
+     */
+    readonly moveThread: (input: {
+      readonly threadId: ThreadId;
+      readonly worktreePath: string;
+      readonly move: Effect.Effect<boolean, LibraryError>;
+    }) => Effect.Effect<boolean, LibraryError>;
     /**
      * The local projects of this computer's registered borrowed folders, each with the binding its
      * conversations' history is saved under. Folders Loom manages bind their conversations instead.
@@ -201,6 +233,13 @@ const CHANGED_SINCE_REVIEW =
   "These files changed since they were reviewed. Review them again, then retry.";
 const EXECUTION_DISABLED =
   "This computer hosts your Library but does not run work. Choose another computer for these files.";
+const FILL_CANCELLED =
+  "Downloading these files was cancelled. Retry from the conversation to finish getting them.";
+const CLONE_CONCURRENCY = 3;
+type FillReport = (
+  resource: LibraryResource,
+  progress: LibraryGitFetch.LibraryCloneProgress,
+) => Effect.Effect<void>;
 // LibraryError details are length-limited and worktree paths are not.
 const LISTED_WORKTREES = 3;
 const linkedWorktreesBlocker = (paths: ReadonlyArray<string>) => {
@@ -232,12 +271,10 @@ const FullRecoveryManifest = Schema.Struct({
 const decodeFullManifest = Schema.decodeEffect(Schema.fromJsonString(FullRecoveryManifest));
 const encodeFullManifest = Schema.encodeEffect(Schema.fromJsonString(FullRecoveryManifest));
 const isLibraryError = Schema.is(LibraryError);
+const mapLibraryError = (cause: unknown) =>
+  isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause });
 const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.mapError((cause) =>
-      isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
-    ),
-  );
+  effect.pipe(Effect.mapError(mapLibraryError));
 
 const make = Effect.gen(function* () {
   const restorationServices =
@@ -252,6 +289,10 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+  const gitFetch = yield* LibraryGitFetch.LibraryGitFetch;
+  const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+  const serviceScope = yield* Effect.scope;
+  const fills = new Map<string, Deferred.Deferred<LibraryWorkingCopy, LibraryError>>();
   const recoveryPublisher = yield* Effect.serviceOption(
     LibraryRecoveryPublisher.LibraryRecoveryPublisher,
   );
@@ -921,9 +962,116 @@ const make = Effect.gen(function* () {
       yield* store.put({ ...owner, copy: { ...owner.copy, registered: false, updatedAt } });
   });
 
+  const emptyOrMissing = Effect.fnUntraced(function* (folder: string) {
+    if (!(yield* fs.exists(folder))) return true;
+    return (
+      (yield* fs.stat(folder)).type === "Directory" &&
+      (yield* fs.readDirectory(folder)).length === 0
+    );
+  });
+  // A reserved copy made the repository's folder already, so an empty one is downloaded into.
+  const cloneResource = Effect.fn("LibraryWorkspace.cloneResource")(function* (
+    resource: LibraryResource,
+    rootPath: string,
+    report: FillReport | undefined,
+  ) {
+    const repositoryPath = path.resolve(rootPath, resource.relativePath);
+    if (yield* fs.exists(path.join(repositoryPath, ".git"))) return;
+    if (
+      resource.remoteUrl === null ||
+      resource.remoteUrl.startsWith("-") ||
+      resource.remoteUrl.includes("\0")
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    if (repositoryPath !== rootPath)
+      yield* fs.makeDirectory(path.dirname(repositoryPath), { recursive: true });
+    if (repositoryPath !== rootPath && !(yield* emptyOrMissing(repositoryPath)))
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: `${resource.relativePath} already exists and is not a Git repository, so Loom cannot download ${resource.title} there. Move that folder, or choose another location.`,
+      });
+    const cloned = yield* gitFetch.cloneRepository({
+      remoteUrl: resource.remoteUrl,
+      branch: resource.defaultBranch,
+      path: repositoryPath,
+      ...(report === undefined ? {} : { onProgress: (progress) => report(resource, progress) }),
+    });
+    if (cloned.code !== 0)
+      return yield* libraryCloneFailure({
+        stderr: cloned.stderr,
+        timedOut: cloned.timedOut,
+        remoteUrl: resource.remoteUrl,
+        environmentId,
+        computer: yield* HostProcess.Hostname,
+      });
+  });
+  /**
+   * Gives a new copy its folders and local projects before any download, or null when it cannot
+   * have them first: nothing to download, a repository inside another, or a folder in the way.
+   */
+  const reserveFolders = Effect.fn("LibraryWorkspace.reserveFolders")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    input: LibraryPrepareCopyRequest,
+    selected: ReadonlyArray<LibraryResource>,
+    rootPath: string,
+  ) {
+    if (receipt.reservation !== undefined) return receipt;
+    const paths = selected.map((resource) => path.resolve(rootPath, resource.relativePath));
+    if (
+      selected.length === 0 ||
+      selected.some(
+        (resource) =>
+          resource.remoteUrl === null ||
+          resource.remoteUrl.startsWith("-") ||
+          resource.remoteUrl.includes("\0"),
+      ) ||
+      paths.some((inner) => paths.some((outer) => outer !== inner && contained(outer, inner)))
+    )
+      return null;
+    for (const repositoryPath of paths) {
+      if (
+        !(yield* emptyOrMissing(repositoryPath)) &&
+        !(yield* fs.exists(path.join(repositoryPath, ".git")))
+      )
+        return null;
+      yield* fs.makeDirectory(repositoryPath, { recursive: true });
+    }
+    const repositories: Array<{ resourceId: string; path: string; localProjectId: ProjectId }> = [];
+    for (const [index, resource] of selected.entries())
+      repositories.push({
+        resourceId: resource.id,
+        path: paths[index]!,
+        localProjectId: yield* registerProject(
+          input.requestId,
+          receipt.copy.id,
+          paths[index]!,
+          resource.title,
+          rootPath,
+        ),
+      });
+    const reserved = {
+      ...receipt,
+      reservation: {
+        resourceIds: selected.map((resource) => resource.id),
+        rootLocalProjectId: yield* registerProject(
+          input.requestId,
+          receipt.copy.id,
+          rootPath,
+          input.project.title,
+          rootPath,
+        ),
+        repositories,
+      },
+    };
+    yield* store.put(reserved);
+    return reserved;
+  });
+
   const prepareCopy = Effect.fn("LibraryWorkspace.prepareCopy")(function* (
     input: LibraryPrepareCopyRequest,
     rootPath: string,
+    reserve = false,
+    report?: FillReport,
   ) {
     if (!supportsExecution)
       return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
@@ -1202,53 +1350,47 @@ const make = Effect.gen(function* () {
       };
       yield* store.put(receipt);
     } else receipt = existing;
+    if (reserve && input.strategy === "clone") {
+      const reserved = yield* reserveFolders(receipt, input, selected, rootPath);
+      if (reserved !== null) return reserved.copy;
+    }
     const prepared = yield* Effect.result(
       Effect.gen(function* () {
+        // Siblings download together; the loop below records them in order and stops at the first
+        // that failed, as it did when they downloaded one at a time. One inside another waits there.
+        const downloadFailures = new Map<string, Effect.Error<ReturnType<typeof cloneResource>>>();
+        if (input.strategy === "clone") {
+          const outermost = selected.filter(
+            (resource) =>
+              !selected.some(
+                (other) =>
+                  other !== resource &&
+                  contained(
+                    path.resolve(rootPath, other.relativePath),
+                    path.resolve(rootPath, resource.relativePath),
+                  ),
+              ),
+          );
+          yield* Effect.forEach(
+            outermost,
+            (resource) =>
+              cloneResource(resource, rootPath, report).pipe(
+                Effect.catch((error) =>
+                  Effect.sync(() => downloadFailures.set(resource.id, error)),
+                ),
+              ),
+            { concurrency: CLONE_CONCURRENCY, discard: true },
+          );
+        }
         const repositories: Array<LibraryWorkingCopy["repositories"][number]> = [];
         for (const resource of selected.toSorted(
           (left, right) => left.relativePath.length - right.relativePath.length,
         )) {
           const repositoryPath = path.resolve(rootPath, resource.relativePath);
-          if (
-            input.strategy === "clone" &&
-            !(yield* fs.exists(path.join(repositoryPath, ".git")))
-          ) {
-            if (
-              resource.remoteUrl === null ||
-              resource.remoteUrl.startsWith("-") ||
-              resource.remoteUrl.includes("\0")
-            )
-              return yield* new LibraryError({ reason: "invalid" });
-            if (repositoryPath !== rootPath)
-              yield* fs.makeDirectory(path.dirname(repositoryPath), { recursive: true });
-            if (repositoryPath !== rootPath && (yield* fs.exists(repositoryPath)))
-              return yield* new LibraryError({
-                reason: "blocked",
-                detail: `${resource.relativePath} already exists and is not a Git repository, so Loom cannot download ${resource.title} there. Move that folder, or choose another location.`,
-              });
-            const cloned = yield* runner.run({
-              command: "git",
-              args: [
-                "clone",
-                ...(resource.defaultBranch === null ? [] : ["--branch", resource.defaultBranch]),
-                "--",
-                resource.remoteUrl,
-                repositoryPath,
-              ],
-              // Keep the host's credential helpers and remote URL; only suppress interactive prompts.
-              env: { ...hostEnvironment, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
-              timeout: "10 minutes",
-              timeoutBehavior: "timedOutResult",
-              maxOutputBytes: 1024 * 1024,
-            });
-            if (cloned.code !== 0)
-              return yield* libraryCloneFailure({
-                stderr: cloned.stderr,
-                timedOut: cloned.timedOut,
-                remoteUrl: resource.remoteUrl,
-                environmentId,
-                computer: yield* HostProcess.Hostname,
-              });
+          if (input.strategy === "clone") {
+            const failure = downloadFailures.get(resource.id);
+            if (failure !== undefined) return yield* Effect.fail(failure);
+            yield* cloneResource(resource, rootPath, report);
           }
           const inspected = yield* inspectRepository(rootPath, repositoryPath);
           if (
@@ -1575,6 +1717,10 @@ const make = Effect.gen(function* () {
     const receipt = yield* store.get(input.binding.workingCopyId);
     const copy = receipt.copy;
     const project = input.project ?? receipt.project;
+    // Files still on their way bind to the folders reserved for them.
+    const reservation = LibraryWorkspaceStore.awaitingFiles(receipt)
+      ? receipt.reservation
+      : undefined;
     if (
       project.archived ||
       project.id !== copy.projectId ||
@@ -1583,7 +1729,7 @@ const make = Effect.gen(function* () {
       input.binding.environmentId !== environmentId ||
       copy.projectId !== input.binding.projectId ||
       project.revision !== input.binding.projectRevision ||
-      copy.state !== "ready" ||
+      (copy.state !== "ready" && reservation === undefined) ||
       (!allowUnregistered && copy.registered === false)
     )
       return yield* new LibraryError({ reason: "invalid" });
@@ -1606,7 +1752,9 @@ const make = Effect.gen(function* () {
     if (new Set(resourceIds).size !== resourceIds.length)
       return yield* new LibraryError({ reason: "invalid" });
     const repositories = resourceIds.map((id) =>
-      copy.repositories.find((repository) => repository.resourceId === id),
+      (reservation?.repositories ?? copy.repositories).find(
+        (repository) => repository.resourceId === id,
+      ),
     );
     if (repositories.some((repository) => repository === undefined))
       return yield* new LibraryError({ reason: "invalid" });
@@ -1633,6 +1781,7 @@ const make = Effect.gen(function* () {
         return yield* new LibraryError({ reason: "invalid" });
       if (!(yield* fs.exists(repository.path)))
         return yield* new LibraryError({ reason: "not-found" });
+      if (reservation !== undefined) continue;
       const actual = yield* inspectRepository(copy.rootPath, repository.path);
       if (
         actual === null ||
@@ -1644,7 +1793,8 @@ const make = Effect.gen(function* () {
     }
     const component = input.binding.resourceIds.length === 1 ? selected[0] : undefined;
     const cwd = component?.path ?? copy.rootPath;
-    const localProjectId = component?.localProjectId ?? receipt.rootLocalProjectId;
+    const localProjectId =
+      component?.localProjectId ?? reservation?.rootLocalProjectId ?? receipt.rootLocalProjectId;
     if (localProjectId === null) return yield* new LibraryError({ reason: "invalid" });
     for (const repositoryPath of [cwd, ...selected.map((repository) => repository.path)]) {
       if (!(yield* fs.exists(repositoryPath)))
@@ -2894,11 +3044,159 @@ const make = Effect.gen(function* () {
     return ready.copy;
   });
 
+  const copyKey = (workingCopyId: string) => `copy:${workingCopyId}`;
+  const fillExit = (exit: Exit.Exit<LibraryWorkingCopy, LibraryError>) =>
+    Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+      ? Exit.fail(new LibraryError({ reason: "blocked", detail: FILL_CANCELLED }))
+      : exit;
+  /** Downloads a reserved copy, showing its progress on each conversation already bound to it. */
+  const fillFiles = Effect.fn("LibraryWorkspace.fillFiles")(function* (
+    workingCopyId: string,
+    operationId: string | undefined,
+    fiber: Fiber.Fiber<unknown, unknown>,
+  ) {
+    const receipt = yield* store.get(workingCopyId);
+    if (receipt.copy.state === "ready") return receipt.copy;
+    const reservation = LibraryWorkspaceStore.awaitingFiles(receipt)
+      ? receipt.reservation
+      : undefined;
+    if (reservation === undefined) return yield* new LibraryError({ reason: "invalid" });
+    const request: LibraryPrepareCopyRequest = {
+      requestId: receipt.requestId,
+      project: receipt.project,
+      rootPath: receipt.copy.rootPath,
+      strategy: "clone",
+      resourceIds: reservation.resourceIds,
+    };
+    const threadIds = (yield* store.bindings)
+      .filter((row) => row.resolved.binding.workingCopyId === workingCopyId)
+      .map((row) => row.threadId);
+    for (const threadId of threadIds) {
+      yield* setupTracker.begin({
+        threadId,
+        branch: null,
+        baseRef: null,
+        stages: ["fetch", "checkout"],
+        fiber,
+        kind: "project-files",
+        operationId,
+      });
+      yield* setupTracker.stageStatus(threadId, "fetch", "running");
+    }
+    const progress = new Map<string, { fetch: number; checkout: number }>(
+      reservation.resourceIds.map((id) => [id, { fetch: 0, checkout: 0 }]),
+    );
+    let checkingOut = false;
+    let fetched = false;
+    // Every repository counts the same, so the card moves steadily across siblings downloading
+    // together. Progress arrives several times a second per repository, so it runs untraced.
+    const report: FillReport = Effect.fnUntraced(function* (
+      resource: LibraryResource,
+      update: LibraryGitFetch.LibraryCloneProgress,
+    ) {
+      const entry = progress.get(resource.id);
+      if (entry === undefined) return;
+      if (update.stage === "fetch") entry.fetch = Math.max(entry.fetch, update.percent ?? 0);
+      else {
+        entry.fetch = 100;
+        entry.checkout = Math.max(entry.checkout, update.percent ?? 0);
+      }
+      const totals = [...progress.values()];
+      const average = (key: "fetch" | "checkout") =>
+        Math.floor(totals.reduce((sum, value) => sum + value[key], 0) / totals.length);
+      const detail =
+        update.detail === null || progress.size === 1
+          ? update.detail
+          : `${resource.title}: ${update.detail}`;
+      const startCheckout = update.stage === "checkout" && !checkingOut;
+      if (startCheckout) checkingOut = true;
+      const finishFetch = average("fetch") === 100 && !fetched;
+      if (finishFetch) fetched = true;
+      for (const threadId of threadIds) {
+        yield* setupTracker.stage(threadId, "fetch", {
+          percent: average("fetch"),
+          ...(update.stage === "fetch" ? { detail } : {}),
+        });
+        if (startCheckout) yield* setupTracker.stageStatus(threadId, "checkout", "running");
+        if (update.stage === "checkout")
+          yield* setupTracker.stage(threadId, "checkout", {
+            percent: average("checkout"),
+            detail,
+          });
+        if (finishFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
+      }
+    });
+    return yield* prepareCopy(request, receipt.copy.rootPath, false, report).pipe(
+      Effect.tap((copy) => fillProfile(request, copy)),
+      Effect.onExit((exit) =>
+        Effect.forEach(
+          threadIds,
+          (threadId) =>
+            Exit.isSuccess(exit)
+              ? setupTracker.finish(threadId, "done")
+              : Cause.hasInterruptsOnly(exit.cause)
+                ? setupTracker.finish(threadId, "cancelled")
+                : setupTracker.finish(
+                    threadId,
+                    "failed",
+                    mapLibraryError(Cause.squash(exit.cause)).message,
+                  ),
+          { discard: true },
+        ),
+      ),
+    );
+  });
+  // The download runs on its own, so a caller that stops waiting leaves it to finish for the rest.
+  // The setup card's Cancel interrupts it, which every waiter sees as FILL_CANCELLED.
+  const fillCopy = (input: {
+    readonly workingCopyId: string;
+    readonly operationId?: string | undefined;
+  }): Effect.Effect<LibraryWorkingCopy, LibraryError> =>
+    Effect.suspend(() => {
+      const running = fills.get(input.workingCopyId);
+      if (running !== undefined) return Deferred.await(running);
+      const done = Deferred.makeUnsafe<LibraryWorkingCopy, LibraryError>();
+      fills.set(input.workingCopyId, done);
+      return locks
+        .withLock(
+          copyKey(input.workingCopyId),
+          Effect.withFiber((fiber) =>
+            mapIo(fillFiles(input.workingCopyId, input.operationId, fiber)),
+          ),
+        )
+        .pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => fills.delete(input.workingCopyId)).pipe(
+              Effect.andThen(Deferred.done(done, fillExit(exit))),
+            ),
+          ),
+          Effect.forkIn(serviceScope),
+          Effect.andThen(Deferred.await(done)),
+        );
+    });
+
   const prepareThreadFiles = Effect.fn("LibraryWorkspace.prepareThreadFiles")(function* (input: {
     readonly threadId: ThreadId;
+    readonly waitForFiles?: boolean | undefined;
   }) {
     const resolved = yield* store.getBinding(input.threadId);
     if (resolved === null) return;
+    const workingCopyId = resolved.binding.workingCopyId;
+    if (LibraryWorkspaceStore.awaitingFiles(yield* store.get(workingCopyId))) {
+      if (input.waitForFiles === false) {
+        yield* fillCopy({ workingCopyId }).pipe(Effect.ignore, Effect.forkIn(serviceScope));
+        return;
+      }
+      yield* fillCopy({ workingCopyId });
+    }
+    yield* locks.withLock(copyKey(workingCopyId), prepareBoundFiles(input.threadId, resolved));
+  });
+
+  const prepareBoundFiles = Effect.fn("LibraryWorkspace.prepareBoundFiles")(function* (
+    threadId: ThreadId,
+    resolved: LibraryResolvedBinding,
+  ) {
+    const input = { threadId };
     const receipt = yield* store.get(resolved.binding.workingCopyId);
     const thread = yield* projections.getThread(input.threadId);
     const project = yield* projects.getById(thread.projectId);
@@ -2932,40 +3230,169 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // The binding moves first, because dispatch refuses moving a bound conversation anywhere else.
+  // The move dispatches a command, so it never runs under the copy's lock, which a dispatch's
+  // own file check can wait on.
+  const moveThread = Effect.fn("LibraryWorkspace.moveThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly worktreePath: string;
+    readonly move: Effect.Effect<boolean, LibraryError>;
+  }) {
+    const current = yield* store.getBinding(input.threadId);
+    if (current === null) return yield* new LibraryError({ reason: "invalid" });
+    const folder = yield* threadFolder({ binding: current.binding });
+    const moved = yield* threadFolder({
+      binding: current.binding,
+      worktreePath: input.worktreePath,
+    });
+    if (current.cwd !== folder.cwd && current.cwd !== moved.cwd)
+      return yield* new LibraryError({ reason: "invalid" });
+    const rebind = (resolved: LibraryResolvedBinding) =>
+      locks.withLock(
+        copyKey(current.binding.workingCopyId),
+        store.moveBinding(input.threadId, resolved),
+      );
+    yield* rebind(moved);
+    const applied = yield* input.move.pipe(
+      Effect.onError(() => rebind(folder).pipe(Effect.ignore)),
+    );
+    if (!applied) yield* rebind(folder);
+    return applied;
+  });
+
+  /**
+   * A reservation whose conversations were all deleted before its files arrived never ran
+   * anything, so only its download is lost. A conversation still being created holds no binding
+   * yet, so a reservation without one stays.
+   */
+  const abandonedReservation = Effect.fn("LibraryWorkspace.abandonedReservation")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  ) {
+    const reservation = receipt.reservation;
+    if (
+      reservation === undefined ||
+      !LibraryWorkspaceStore.awaitingFiles(receipt) ||
+      receipt.copy.environmentId !== environmentId ||
+      receipt.copy.ownership !== "managed" ||
+      receipt.copy.keepOnComputer !== false ||
+      pendingKeeps.has(receipt.copy.id) ||
+      fills.has(receipt.copy.id)
+    )
+      return false;
+    const bound = (yield* store.bindings).filter(
+      (row) => row.resolved.binding.workingCopyId === receipt.copy.id,
+    );
+    if (bound.length === 0) return false;
+    for (const row of bound) {
+      const shell = yield* projections.getThreadShell(row.threadId);
+      if (shell !== null && shell.deletedAt === null) return false;
+    }
+    const projectIds = new Set([
+      reservation.rootLocalProjectId,
+      ...reservation.repositories.map((repository) => repository.localProjectId),
+    ]);
+    const snapshot = yield* projections.getShellSnapshot();
+    return ![...snapshot.threads, ...snapshot.archivedThreads].some(
+      (thread) =>
+        projectIds.has(thread.projectId) ||
+        (thread.worktreePath !== null && contained(receipt.copy.rootPath, thread.worktreePath)),
+    );
+  });
+  const discardReservation = Effect.fn("LibraryWorkspace.discardReservation")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  ) {
+    const rootPath = receipt.copy.rootPath;
+    if (yield* fs.exists(rootPath)) {
+      const identity = fileIdentity(yield* fs.stat(rootPath));
+      if (
+        (yield* fs.realPath(rootPath)) !== rootPath ||
+        identity.device === null ||
+        receipt.rootIdentity?.device !== identity.device ||
+        receipt.rootIdentity?.inode !== identity.inode
+      )
+        return;
+      yield* fs.remove(rootPath, { recursive: true });
+    }
+    yield* store.put({
+      ...receipt,
+      copy: { ...receipt.copy, state: "released", updatedAt: yield* now },
+    });
+  });
+
   const cleanupTemporaryCopies = Effect.fn("LibraryWorkspace.cleanupTemporaryCopies")(function* (
     isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
   ) {
-    for (const receipt of (yield* store.receipts).filter((entry) => isTemporaryCopy(entry.copy))) {
+    // Candidates are chosen under the shared lock; each copy is then cleaned under its own, and a
+    // copy another operation holds, such as a download, waits for a later pass.
+    const candidates = yield* locks.withLock(
+      "prepare",
+      Effect.gen(function* () {
+        const busy = new Set(yield* locks.activeKeys);
+        const receipts = (yield* store.receipts).filter(
+          (receipt) => !busy.has(copyKey(receipt.copy.id)) && !fills.has(receipt.copy.id),
+        );
+        const abandoned: Array<LibraryWorkspaceStore.WorkspaceReceipt> = [];
+        for (const receipt of receipts)
+          if (yield* abandonedReservation(receipt).pipe(Effect.orElseSucceed(() => false)))
+            abandoned.push(receipt);
+        return {
+          temporary: receipts.filter((receipt) => isTemporaryCopy(receipt.copy)),
+          abandoned,
+        };
+      }),
+    );
+    for (const receipt of candidates.abandoned) {
       const result = yield* Effect.result(
-        Effect.gen(function* () {
-          if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
-          const review =
-            receipt.removalPath !== null && receipt.releaseReviewToken !== null
-              ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
-              : yield* status({ workingCopyId: receipt.copy.id });
-          if (
-            review.reviewToken === null ||
-            review.blockers.length > 0 ||
-            review.releaseBlockers.length > 0
-          )
-            return;
-          yield* withWorkspaceLease(
-            receipt.copy.rootPath,
-            release(
-              {
-                requestId:
-                  receipt.releaseRequestId ?? `cleanup:${receipt.copy.id}:${review.reviewToken}`,
-                workingCopyId: receipt.copy.id,
-                reviewToken: receipt.releaseReviewToken ?? review.reviewToken,
-              },
-              isHistoryAcknowledged,
-            ),
-          );
-        }),
+        locks.withLock(
+          copyKey(receipt.copy.id),
+          Effect.gen(function* () {
+            const current = yield* store.get(receipt.copy.id);
+            if (yield* abandonedReservation(current))
+              yield* withWorkspaceLease(current.copy.rootPath, discardReservation(current));
+          }),
+        ),
+      );
+      if (result._tag === "Failure")
+        yield* Effect.logDebug("Reserved project files were preserved.", {
+          copyId: receipt.copy.id,
+          reason: isLibraryError(result.failure) ? result.failure.reason : "io",
+        });
+    }
+    for (const candidate of candidates.temporary) {
+      const result = yield* Effect.result(
+        locks.withLock(
+          copyKey(candidate.copy.id),
+          Effect.gen(function* () {
+            const receipt = yield* store.get(candidate.copy.id);
+            if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
+            const review =
+              receipt.removalPath !== null && receipt.releaseReviewToken !== null
+                ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
+                : yield* status({ workingCopyId: receipt.copy.id });
+            if (
+              review.reviewToken === null ||
+              review.blockers.length > 0 ||
+              review.releaseBlockers.length > 0
+            )
+              return;
+            yield* withWorkspaceLease(
+              receipt.copy.rootPath,
+              release(
+                {
+                  requestId:
+                    receipt.releaseRequestId ?? `cleanup:${receipt.copy.id}:${review.reviewToken}`,
+                  workingCopyId: receipt.copy.id,
+                  reviewToken: receipt.releaseReviewToken ?? review.reviewToken,
+                },
+                isHistoryAcknowledged,
+              ),
+            );
+          }),
+        ),
       );
       if (result._tag === "Failure")
         yield* Effect.logDebug("Temporary project files were preserved.", {
-          copyId: receipt.copy.id,
+          copyId: candidate.copy.id,
           reason: isLibraryError(result.failure) ? result.failure.reason : "io",
         });
     }
@@ -3111,6 +3538,38 @@ const make = Effect.gen(function* () {
     return folder.resolved;
   });
 
+  // A copy refreshes the mirrors this computer already keeps for the project's repositories it
+  // does not clone itself, in the background, so a later copy of them starts current.
+  const refreshMirrors = (input: LibraryPrepareCopyRequest) =>
+    Effect.forEach(
+      input.project.resources,
+      (resource) =>
+        resource.kind === "link" ||
+        resource.remoteUrl === null ||
+        (input.strategy === "clone" &&
+          (input.resourceIds === undefined || input.resourceIds.includes(resource.id)))
+          ? Effect.void
+          : gitFetch.warmMirror({ remoteUrl: resource.remoteUrl, create: false }),
+      { discard: true },
+    );
+  // Only the overlap and takeover checks share one lock, so a download never holds up the rest.
+  const reserveCopy = (input: LibraryPrepareCopyRequest) =>
+    locks
+      .withLock(
+        "prepare",
+        mapIo(
+          Effect.gen(function* () {
+            if (input.rootPath === undefined) return yield* new LibraryError({ reason: "invalid" });
+            const rootPath = yield* canonicalRoot(input.rootPath);
+            return yield* withWorkspaceLease(rootPath, prepareCopy(input, rootPath, true));
+          }),
+        ),
+      )
+      .pipe(
+        Effect.tap((copy) => fillProfile(input, copy)),
+        Effect.tap(() => refreshMirrors(input)),
+      );
+
   return LibraryWorkspace.of({
     historyFolders: historyFolders(),
     threadProject: (input) => store.getBoundProject(input.threadId),
@@ -3131,19 +3590,15 @@ const make = Effect.gen(function* () {
         ),
       ),
     prepareCopy: (input) =>
-      locks
-        .withLock(
-          "prepare",
-          mapIo(
-            Effect.gen(function* () {
-              if (input.rootPath === undefined)
-                return yield* new LibraryError({ reason: "invalid" });
-              const rootPath = yield* canonicalRoot(input.rootPath);
-              return yield* withWorkspaceLease(rootPath, prepareCopy(input, rootPath));
-            }),
-          ),
-        )
-        .pipe(Effect.tap((copy) => fillProfile(input, copy))),
+      reserveCopy(input).pipe(
+        Effect.flatMap((copy) =>
+          copy.state === "preparing" || copy.state === "failed"
+            ? fillCopy({ workingCopyId: copy.id })
+            : Effect.succeed(copy),
+        ),
+      ),
+    reserveCopy,
+    fillCopy,
     restoreCopy: (input) =>
       locks
         .withLock(
@@ -3177,7 +3632,7 @@ const make = Effect.gen(function* () {
     profileSettings: (input) => mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read))),
     applyProfile: (input) =>
       locks.withLock(
-        "prepare",
+        copyKey(input.workingCopyId),
         mapIo(
           settingsCopy(input).pipe(
             Effect.flatMap((copy) => settings.apply({ ...copy, reviewToken: input.reviewToken })),
@@ -3208,7 +3663,7 @@ const make = Effect.gen(function* () {
           if (input.keepOnComputer)
             pendingKeeps.set(input.workingCopyId, (pendingKeeps.get(input.workingCopyId) ?? 0) + 1);
         }),
-        () => locks.withLock("prepare", mapIo(setCopyRetention(input))),
+        () => locks.withLock(copyKey(input.workingCopyId), mapIo(setCopyRetention(input))),
         () =>
           Effect.sync(() => {
             if (!input.keepOnComputer) return;
@@ -3220,7 +3675,7 @@ const make = Effect.gen(function* () {
     reopenCopy: (input) =>
       locks
         .withLock(
-          "prepare",
+          copyKey(input.workingCopyId),
           mapIo(
             Effect.gen(function* () {
               const receipt = yield* store.get(input.workingCopyId);
@@ -3232,7 +3687,7 @@ const make = Effect.gen(function* () {
     snapshotCopy: (input) =>
       locks
         .withLock(
-          "prepare",
+          copyKey(input.workingCopyId),
           mapIo(
             Effect.gen(function* () {
               const receipt = yield* store.get(input.workingCopyId);
@@ -3241,13 +3696,13 @@ const make = Effect.gen(function* () {
           ),
         )
         .pipe(Effect.tap(publishCopy)),
-    prepareThreadFiles: (input) => locks.withLock("prepare", mapIo(prepareThreadFiles(input))),
+    prepareThreadFiles: (input) => mapIo(prepareThreadFiles(input)),
     cleanupTemporaryCopies: (isHistoryAcknowledged) =>
-      locks.withLock("prepare", mapIo(cleanupTemporaryCopies(isHistoryAcknowledged))),
-    unregister: (input) => locks.withLock("prepare", mapIo(unregister(input))),
+      mapIo(cleanupTemporaryCopies(isHistoryAcknowledged)),
+    unregister: (input) => locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input))),
     release: (input) =>
       locks.withLock(
-        "prepare",
+        copyKey(input.workingCopyId),
         mapIo(
           Effect.gen(function* () {
             const receipt = yield* store.get(input.workingCopyId);
@@ -3258,7 +3713,7 @@ const make = Effect.gen(function* () {
     resolveBinding: (input) => mapIo(resolveBinding(input)),
     bindThread: (input) =>
       locks.withLock(
-        "prepare",
+        copyKey(input.binding.workingCopyId),
         mapIo(
           Effect.gen(function* () {
             const savedBinding = yield* store.getBinding(input.threadId);
@@ -3299,6 +3754,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       ),
+    moveThread: (input) => mapIo(moveThread(input)),
   });
 });
 
