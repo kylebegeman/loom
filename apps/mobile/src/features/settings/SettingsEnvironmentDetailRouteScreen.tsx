@@ -34,6 +34,7 @@ import {
 // fork: fleet-connections - Computer work and access live beside its routes and permissions.
 import { ComputerNameSection } from "../../fork/connections/ComputerNameSection"; // fork: computer-naming
 import { ComputerConnectSection } from "../../fork/connect/ComputerConnectSection"; // fork: fleet-connect
+import { ComputerProjectsFolderSection } from "../../fork/connections/ComputerProjectsFolderSection"; // fork: file-placement
 import { ComputerReachSection } from "../../fork/connections/ComputerReachSection"; // fork: reach
 import { ComputerWorkSection } from "../../fork/connections/ComputerWorkSection";
 import { DevicesWithAccessSection } from "../../fork/connections/DevicesWithAccessSection";
@@ -261,6 +262,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             <ComputerWorkSection environmentId={environmentId} connected={connected} />
             {/* fork: computer-naming - One name follows the computer across clients. */}
             <ComputerNameSection environmentId={environmentId} connected={connected} />
+            {/* fork: file-placement - Each computer names where new project files go. */}
+            <ComputerProjectsFolderSection environmentId={environmentId} connected={connected} />
             <ComputerConnectSection environmentId={environmentId} connected={connected} />
             {/* fork: reach - Reach is per computer; the phone is never a reach host. */}
             <ComputerReachSection environmentId={environmentId} connected={connected} />

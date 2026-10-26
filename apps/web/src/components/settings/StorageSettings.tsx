@@ -540,6 +540,53 @@ function CleanupSection() {
   );
 }
 
+// fork: file-placement - Each computer's Projects folder, for new projects and Library files.
+function ProjectsDirectoryRow() {
+  const { connectedEnvironments, targets } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const mixed = useScopedSettingsMixed(["projectsDirectory"]);
+  const edited = useRef(false);
+  if (connectedEnvironments.some((environment) => !environment.serverConfig?.folders)) return null;
+  const scopeKey = targets.map((target) => target.environmentId).join(",");
+
+  return (
+    <SettingsRow
+      {...searchableSetting("storage-projects-location")}
+      description="Folder where Loom puts new projects and prepared Library files, such as ~/Developer. Existing projects stay where they are. Leave empty to use the Loom home folder."
+      serverScoped
+      settingKeys={["projectsDirectory"]}
+      resetAction={
+        mixed || settings.projectsDirectory !== "" ? (
+          <SettingResetButton
+            label="projects folder"
+            onClick={() => updateSettings({ projectsDirectory: "" })}
+          />
+        ) : null
+      }
+      control={
+        <Input
+          key={`${scopeKey}:${mixed}:${settings.projectsDirectory}`}
+          aria-label="Projects folder"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={mixed ? "Mixed" : "Default"}
+          defaultValue={mixed ? "" : settings.projectsDirectory}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onBlur={(event) => {
+            const value = event.target.value.trim();
+            if (edited.current && (mixed || value !== settings.projectsDirectory))
+              updateSettings({ projectsDirectory: value });
+            edited.current = false;
+          }}
+        />
+      }
+    />
+  );
+}
+
 export function StorageSettingsPanel() {
   const { scope, environments, connectedEnvironments, targets, target } = useSettingsScope();
   const scopedSettings = useScopedSettings();
@@ -623,6 +670,7 @@ export function StorageSettingsPanel() {
         />
       )}
       <SettingsSection id="storage-worktrees" title="Worktrees">
+        {!isProjectScope && <ProjectsDirectoryRow /> /* fork: file-placement */}
         {!isProjectScope && <WorktreesDirectoryRow />}
         {isProjectScope && (
           <SettingsRow

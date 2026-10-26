@@ -15,6 +15,10 @@ import {
   libraryLaunchWarning,
   libraryLaunchWorkspace,
   markLibraryConversationStarted,
+  libraryPlacementLine,
+  libraryPlacementReuses,
+  libraryPlacementStrategy,
+  serverChoosesFolders,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 
@@ -513,7 +517,22 @@ export function useLibraryConversationSetup({
     host?.serverConfig?.environment.capabilities,
     "library-portable-recovery",
   );
-  const suggestedPath = libraryLaunchRootPath({
+  // A computer that chooses folders previews where new files go; Start then sends no folder, so it
+  // resolves and claims one itself. A failed preview still starts and lets the computer choose.
+  const serverPlaces =
+    serverChoosesFolders(host?.serverConfig) && !locked && typedPath === null && copy === null;
+  const placement = useEnvironmentQuery(
+    hostId && host?.connection.phase === "connected" && serverPlaces
+      ? projectLibrary.placement.resultAtom({
+          environmentId: hostId,
+          input: {
+            projectId: launchProject.id,
+            ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
+          },
+        })
+      : null,
+  );
+  const legacyPath = libraryLaunchRootPath({
     project: launchProject,
     resourceId,
     resourceIds: selectedScope,
@@ -523,6 +542,17 @@ export function useLibraryConversationSetup({
     newProjectsRoot: host?.serverConfig?.newProjectsRoot,
     copies: retained.data ?? knownCopies,
   });
+  const retainedRoot = libraryLaunchRetainedCopy({
+    project: launchProject,
+    environmentId: hostId,
+    copies: retained.data ?? knownCopies,
+    resourceId,
+    resourceIds: selectedScope,
+    copyId: attempt?.binding.workingCopyId ?? copyId,
+    allowReopen: supportsReopen,
+  })?.rootPath;
+  const suggestedPath =
+    serverPlaces && placement.data ? (retainedRoot ?? placement.data.rootPath) : legacyPath;
   // The one place a start picks its files folder; every launch path reads it from here.
   const rootPath =
     attempt?.files?.rootPath ??
@@ -922,7 +952,14 @@ export function useLibraryConversationSetup({
       ) {
         const readyCopy = launchCopy?.state === "ready" ? launchCopy : null;
         let files = attempt?.files;
-        if (!attempt && !readyCopy) {
+        if (!attempt && !readyCopy && serverPlaces)
+          files = {
+            requestId: randomUUID(),
+            project: launchProject,
+            strategy: libraryPlacementStrategy(placement.data),
+            ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
+          };
+        else if (!attempt && !readyCopy) {
           const filesRootPath = rootPath.trim();
           if (
             (retained.data ?? knownCopies).some(
@@ -1024,13 +1061,15 @@ export function useLibraryConversationSetup({
       }
       if (pendingPreparation || !launchCopy || launchCopy.state !== "ready") {
         let files = pendingPreparation;
+        const filesRootPath = files ? files.input.rootPath : serverPlaces ? undefined : rootPath;
         if (
+          filesRootPath !== undefined &&
           (retained.data ?? knownCopies).some(
             (entry) =>
               entry.environmentId === hostId &&
               entry.ownership === "managed" &&
               entry.id !== files?.copy?.id &&
-              libraryLaunchPathOverlaps(entry.rootPath, files?.input.rootPath ?? rootPath.trim()),
+              libraryLaunchPathOverlaps(entry.rootPath, filesRootPath.trim()),
           )
         )
           throw new LibraryError({
@@ -1041,18 +1080,22 @@ export function useLibraryConversationSetup({
         if (!files) {
           if (attempt)
             throw new Error("Reopen this conversation's original project files before retrying.");
-          const inspected = await inspect({
-            environmentId: hostId,
-            input: { rootPath: rootPath.trim() },
-          });
-          if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
+          let strategy = libraryPlacementStrategy(placement.data);
+          if (!serverPlaces) {
+            const inspected = await inspect({
+              environmentId: hostId,
+              input: { rootPath: rootPath.trim() },
+            });
+            if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
+            strategy = inspected.value.exists ? "reuse" : "clone";
+          }
           files = {
             environmentId: hostId,
             input: {
               requestId: randomUUID(),
               project: launchProject,
-              rootPath: rootPath.trim(),
-              strategy: inspected.value.exists ? ("reuse" as const) : ("clone" as const),
+              ...(serverPlaces ? {} : { rootPath: rootPath.trim() }),
+              strategy,
               ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
             },
             registerRequestId: randomUUID(),
@@ -1384,9 +1427,8 @@ export function useLibraryConversationSetup({
           : (copy?.state === "ready" &&
               (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
             (canPrepare &&
-              canInspect &&
+              (serverPlaces || (canInspect && rootPath.trim().length > 0)) &&
               canRegisterCopy &&
-              rootPath.trim().length > 0 &&
               libraryCopyReadiness(retained) === "ready")) &&
     (locked || needsReopen || (filesPlan.kind !== "choose" && filesPlan.kind !== "unavailable")) &&
     supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library") &&
@@ -1541,6 +1583,21 @@ export function useLibraryConversationSetup({
     setInteractionChoice,
     rootPath,
     setRootPath,
+    serverPlaces,
+    filesLine: serverPlaces
+      ? placement.data
+        ? libraryPlacementLine(placement.data)
+        : placement.error
+          ? "Loom will choose a folder on this computer"
+          : "Finding a folder on this computer..."
+      : null,
+    placementReuses:
+      serverPlaces && placement.data ? libraryPlacementReuses(placement.data) : false,
+    browseStart:
+      rootPath ||
+      host?.serverConfig?.folders?.projects ||
+      host?.serverConfig?.newProjectsRoot ||
+      "~/",
     copy,
     filesPlan,
     candidates,

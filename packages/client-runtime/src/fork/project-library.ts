@@ -117,6 +117,14 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:register-thread",
       tag: L.registerThread,
     }),
+    /**
+     * Ask the computer that would hold the files, which must advertise `serverChosenFolders`.
+     * Guarded, so screens read the preview through `placement.resultAtom`.
+     */
+    placement: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:placement",
+      tag: L.placement,
+    }),
     inspectFolder: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:inspect-folder",
       tag: L.inspectFolder,

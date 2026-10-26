@@ -10,6 +10,7 @@ export const ProjectPreparationReceipt = Schema.Struct({
   createdAt: Schema.String,
   remoteUrl: Schema.String,
   repositoryKey: Schema.String,
+  /** Empty until a computer that chooses its own folder answers with the one it used. */
   destinationPath: Schema.String,
 });
 export type ProjectPreparationReceipt = typeof ProjectPreparationReceipt.Type;
@@ -67,5 +68,30 @@ export function recordPreparationReceipt(
         "This preparation already owns a reviewed destination. Open its saved progress before starting another copy.",
       );
   }
+  return { ...records, [key]: receipt };
+}
+
+/**
+ * Records the folder and project a computer chose for a receipt saved without one. A reused
+ * checkout answers with its own project, so only the request it answered must stay the same.
+ */
+export function settlePreparationReceipt(
+  records: ProjectPreparationReceipts | undefined,
+  receipt: ProjectPreparationReceipt,
+): ProjectPreparationReceipts {
+  const key = preparationReceiptKey(
+    receipt.sourceEnvironmentId,
+    receipt.sourceProjectId,
+    receipt.destinationEnvironmentId,
+  );
+  const previous = records?.[key];
+  const sameRequest =
+    previous &&
+    (["title", "createdAt", "remoteUrl", "repositoryKey"] as const).every(
+      (field) => previous[field] === receipt[field],
+    );
+  if (!previous || !sameRequest) throw new Error("Save this preparation before starting it.");
+  if (previous.destinationPath !== "" && previous.destinationPath !== receipt.destinationPath)
+    throw new Error("This preparation already owns a reviewed destination.");
   return { ...records, [key]: receipt };
 }

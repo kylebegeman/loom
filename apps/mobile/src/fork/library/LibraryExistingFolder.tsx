@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   libraryFolderRegistrations,
   libraryStartFolderProjects,
+  serverChoosesFolders,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -22,6 +23,7 @@ import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LibraryFolderPicker } from "./LibraryFolderPicker";
 import { library, useLibraryAuthority } from "./libraryState";
 import { libraryFolderResources, libraryProjectsForFolder } from "./libraryFolder";
 import {
@@ -71,6 +73,8 @@ export function LibraryExistingFolder(props: {
     label: string;
     excludedId: string | null;
   } | null>(null);
+  // The computer whose folders are open for browsing, so no path needs typing.
+  const [browsing, setBrowsing] = useState<EnvironmentId | null>(null);
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null),
     [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
@@ -176,6 +180,13 @@ export function LibraryExistingFolder(props: {
       });
   }
   const rowsDisabled = props.disabled || pending !== null;
+  const browsable = environments.filter(
+    (host) =>
+      host.entry.enabled &&
+      host.connection.phase === "connected" &&
+      supportsLoomFeature(host.serverConfig?.environment.capabilities, "project-library") &&
+      serverChoosesFolders(host.serverConfig),
+  );
   return (
     <SettingsSection title="Files you already have">
       <View className="gap-2 p-4">
@@ -260,6 +271,38 @@ export function LibraryExistingFolder(props: {
                     );
                   })
               : null}
+            {browsable.map((host) => (
+              <View key={host.environmentId} className="gap-2">
+                <Button
+                  label={
+                    browsing === host.environmentId
+                      ? "Hide folders"
+                      : `Browse folders on ${host.label}`
+                  }
+                  tone="text"
+                  disabled={rowsDisabled}
+                  onPress={() =>
+                    setBrowsing((current) =>
+                      current === host.environmentId ? null : host.environmentId,
+                    )
+                  }
+                />
+                {browsing === host.environmentId ? (
+                  <LibraryFolderPicker
+                    environmentId={host.environmentId}
+                    disabled={rowsDisabled}
+                    onChoose={(rootPath) => {
+                      setBrowsing(null);
+                      void choose(
+                        host.environmentId,
+                        rootPath,
+                        rowAction(host.environmentId, rootPath),
+                      );
+                    }}
+                  />
+                ) : null}
+              </View>
+            ))}
           </>
         ) : null}
         {/* Shown while the list is hidden too, so a failed add stays in view. */}

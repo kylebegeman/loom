@@ -186,6 +186,14 @@ export const SETTINGS_SEARCH_ITEMS = [
       "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
     ],
   },
+  // fork: file-placement
+  {
+    id: "storage-projects-location",
+    title: "Projects folder",
+    to: "/settings/storage",
+    scope: "environment-defaults",
+    searchTerms: ["projects folder directory path clone library files developer location"],
+  },
   {
     id: "storage-worktrees-location",
     title: "Worktree location",

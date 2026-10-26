@@ -9,10 +9,16 @@ import {
   LibraryPrepareCopyRequest,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { supportsLoomFeature, isRepositoryResource } from "@t3tools/client-runtime/fork";
+import {
+  supportsLoomFeature,
+  isRepositoryResource,
+  libraryPlacementLine,
+  libraryPlacementStrategy,
+  serverChoosesFolders,
+} from "@t3tools/client-runtime/fork";
+import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
 import * as Schema from "effect/Schema";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import {
   Select,
   SelectTrigger,
@@ -26,7 +32,12 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { usePrimaryEnvironmentId } from "~/state/environments";
+import { useEnvironmentQuery } from "~/state/query";
+import { readLocalApi } from "~/localApi";
+import { desktopLocalBackendId } from "~/connection/desktopLocal";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+import { LibraryFolderPalette } from "./LibraryFolderPalette";
+import { LibraryPaletteDialog } from "./LibraryPalette";
 
 const isLibraryError = Schema.is(LibraryError);
 const PreparationAttempt = Schema.NullOr(
@@ -37,6 +48,8 @@ const PreparationAttempt = Schema.NullOr(
     copy: Schema.NullOr(LibraryWorkingCopy),
   }),
 );
+
+type ChosenFolder = { readonly path: string; readonly strategy: "clone" | "reuse" };
 
 /** Keep the request and returned receipt until both the host and Library acknowledge it. */
 export function CopyDialog({
@@ -77,19 +90,56 @@ export function CopyDialog({
     attempt?.environmentId ?? initialHostId ?? defaultHostId,
   );
   const host = authority.environments.find((entry) => entry.environmentId === hostId);
-  const suggestedPath = host?.serverConfig?.newProjectsRoot
-    ? `${host.serverConfig.newProjectsRoot}/${
-        project.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "") || "project"
-      }`
-    : "";
-  // A clone starts in the suggested folder until someone types their own.
-  const [typedPath, setRootPath] = useState<string | null>(
-    attempt?.input.rootPath ?? initialRootPath ?? null,
+  const [chosen, setChosen] = useState<ChosenFolder | null>(() => {
+    const path = attempt ? attempt.input.rootPath : initialRootPath;
+    return path ? { path, strategy: attempt?.input.strategy ?? strategy } : null;
+  });
+  const [browsing, setBrowsing] = useState(false);
+  const connected = host?.connection.phase === "connected" && host.entry.enabled;
+  // Computers that choose folders place a new copy themselves; older ones get today's suggestion.
+  const serverPlaces =
+    strategy === "clone" && serverChoosesFolders(host?.serverConfig) && chosen === null;
+  const placement = useEnvironmentQuery(
+    hostId && connected && serverPlaces && !attempt
+      ? projectLibrary.placement.resultAtom({
+          environmentId: hostId,
+          input: { projectId: project.id, ...(resourceId ? { resourceIds: [resourceId] } : {}) },
+        })
+      : null,
   );
-  const rootPath = typedPath ?? (strategy === "clone" ? suggestedPath : "");
+  const legacyPath =
+    strategy === "clone" && host?.serverConfig?.newProjectsRoot
+      ? getNewProjectPathPreview(host.serverConfig.newProjectsRoot, project.title)
+      : "";
+  const rootPath = chosen?.path ?? (serverPlaces ? "" : legacyPath);
+  const folderLine = chosen
+    ? chosen.strategy === "reuse"
+      ? `Uses the files in ${chosen.path}`
+      : `Loom will put the files in ${chosen.path}`
+    : serverPlaces
+      ? attempt
+        ? attempt.copy
+          ? `Loom will put the files in ${attempt.copy.rootPath}`
+          : "Loom will choose a folder on this computer."
+        : placement.data
+          ? libraryPlacementLine(placement.data)
+          : placement.error
+            ? "Loom will choose a folder on this computer."
+            : "Finding a folder on this computer..."
+      : rootPath
+        ? `Loom will put the files in ${rootPath}`
+        : null;
+  const browseStart =
+    chosen?.path ??
+    host?.serverConfig?.folders?.projects ??
+    host?.serverConfig?.newProjectsRoot ??
+    "~/";
+  // The native picker reaches only the desktop's own computer.
+  const backend = host ? desktopLocalBackendId(host.entry.target) : null;
+  const nativePicker =
+    hostId !== null && hostId === primaryId && backend !== null && !backend.startsWith("wsl:")
+      ? readLocalApi()
+      : undefined;
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
@@ -112,14 +162,13 @@ export function CopyDialog({
         resource.id === (attempt?.input.resourceIds?.[0] ?? resourceId)),
   );
   const actualStrategy = attempt?.input.strategy ?? strategy;
-  const connected = host?.connection.phase === "connected" && host.entry.enabled;
   const supported = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
     "project-library",
   );
   const submit = async () => {
     const authorityId = authority.authorityId;
-    if (!authorityId || !hostId || !rootPath.trim() || busy) return;
+    if (!authorityId || !hostId || (!serverPlaces && !rootPath.trim()) || busy) return;
     setBusy(true);
     setError(null);
     setRepair(undefined);
@@ -130,8 +179,10 @@ export function CopyDialog({
         input: {
           requestId: randomUUID(),
           project,
-          rootPath: rootPath.trim(),
-          strategy,
+          ...(serverPlaces ? {} : { rootPath: rootPath.trim() }),
+          strategy: serverPlaces
+            ? libraryPlacementStrategy(placement.data)
+            : (chosen?.strategy ?? strategy),
           ...(resourceId ? { resourceIds: [resourceId] } : {}),
         },
         registerRequestId: randomUUID(),
@@ -233,6 +284,56 @@ export function CopyDialog({
     } else setCleaning(true);
     setBusy(false);
   };
+  const pickNatively = async () => {
+    const picked = await nativePicker?.dialogs
+      .pickFolder({ initialPath: browseStart })
+      .catch(() => null);
+    if (picked) void chooseFolder(picked);
+  };
+  // A folder that already holds files is used as it is; an empty or missing one gets new files.
+  const chooseFolder = async (path: string, repository?: boolean) => {
+    setBrowsing(false);
+    if (strategy === "reuse" || repository !== undefined || !hostId) {
+      setChosen({ path, strategy: strategy === "reuse" || repository ? "reuse" : "clone" });
+      return;
+    }
+    const result = await inspect({ environmentId: hostId, input: { rootPath: path } });
+    setChosen({
+      path,
+      strategy: result._tag === "Success" && result.value.exists ? "reuse" : "clone",
+    });
+  };
+  if (browsing && hostId && host)
+    return (
+      <LibraryPaletteDialog title="Choose a folder" onClose={() => setBrowsing(false)}>
+        <LibraryFolderPalette
+          environmentId={hostId}
+          computerName={host.label}
+          initialPath={browseStart}
+          onBack={() => setBrowsing(false)}
+          onClose={() => setBrowsing(false)}
+          actions={(folder) =>
+            folder
+              ? [
+                  folder.repository || strategy === "reuse"
+                    ? {
+                        id: "use-folder",
+                        title: "Use files in this folder",
+                        description: folder.path,
+                        select: () => void chooseFolder(folder.path, true),
+                      }
+                    : {
+                        id: "download-folder",
+                        title: "Download into this folder",
+                        description: folder.path,
+                        select: () => void chooseFolder(folder.path, false),
+                      },
+                ]
+              : []
+          }
+        />
+      </LibraryPaletteDialog>
+    );
   if (cleaning && attempt?.copy)
     return (
       <ReleaseCopyDialog
@@ -260,7 +361,7 @@ export function CopyDialog({
       }
       description={
         actualStrategy === "clone"
-          ? "Prepare files on a computer. Temporary files can be removed after work finishes. Turn on Keep files to leave them available."
+          ? "Prepare files on a computer. Temporary files can be removed after work finishes. Turn on Keep files on this computer to leave them available."
           : "Choose the folder that already contains your project. Its files stay on this computer."
       }
       actions={
@@ -285,7 +386,7 @@ export function CopyDialog({
               !connected ||
               !supported ||
               !authority.connected ||
-              !rootPath.trim() ||
+              (!serverPlaces && !rootPath.trim()) ||
               (actualStrategy === "clone" &&
                 selectedResources.some((resource) => !resource.remoteUrl))
             }
@@ -310,7 +411,11 @@ export function CopyDialog({
               value: entry.environmentId,
               label: entry.label,
             }))}
-            onValueChange={(value) => setHostId(value)}
+            onValueChange={(value) => {
+              setHostId(value);
+              setChosen(null);
+              setInspection(null);
+            }}
             disabled={busy || attempt !== null}
           >
             <SelectTrigger>
@@ -326,15 +431,40 @@ export function CopyDialog({
             </SelectPopup>
           </Select>
         </LibraryField>
-        <LibraryField label="Folder">
-          <Input
-            font="mono"
-            placeholder={suggestedPath || "/path/to/project"}
-            disabled={busy || attempt !== null}
-            value={rootPath}
-            onChange={(event) => setRootPath(event.target.value)}
-          />
-        </LibraryField>
+        {hostId ? (
+          <div className="space-y-2">
+            {folderLine ? (
+              <p className="wrap-anywhere text-sm" role="status">
+                {folderLine}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || attempt !== null || !connected}
+                onClick={() => setBrowsing(true)}
+              >
+                {strategy === "reuse" && !chosen ? "Choose folder" : "Choose another folder"}
+              </Button>
+              {nativePicker ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || attempt !== null}
+                  onClick={() => void pickNatively()}
+                >
+                  Use system folder picker
+                </Button>
+              ) : null}
+              {chosen && strategy === "clone" && !attempt ? (
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setChosen(null)}>
+                  Let Loom choose
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         {actualStrategy === "reuse" ? (
           <Button
             size="sm"

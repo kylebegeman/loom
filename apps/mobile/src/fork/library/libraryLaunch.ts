@@ -79,6 +79,8 @@ export const LibraryLaunchAttempt = Schema.Struct({
     title: Schema.String,
     mode: Schema.Literals(["reuse", "folder", "clone"]),
     rootPath: Schema.String,
+    /** Set when the computer chooses the folder itself; `rootPath` is then empty and not sent. */
+    placementStrategy: Schema.optional(Schema.Literals(["reuse", "clone"])),
     copy: Schema.NullOr(LibraryWorkingCopy),
     recoverySource: Schema.optional(LibraryWorkingCopy),
     carryContext: Schema.String,
@@ -293,7 +295,7 @@ export function libraryLaunchFilesPlan(input: {
   readonly receipt: LibraryLaunchReceipt;
   readonly review: Pick<
     (typeof LibraryLaunchAttempt.Type)["review"],
-    "mode" | "rootPath" | "copy" | "recoverySource"
+    "mode" | "rootPath" | "placementStrategy" | "copy" | "recoverySource"
   >;
 }): LibraryLaunchFiles | null {
   const { review, receipt } = input;
@@ -307,8 +309,8 @@ export function libraryLaunchFilesPlan(input: {
     request: {
       requestId: `${input.requestId}:files`,
       project: input.project,
-      rootPath: review.rootPath,
-      strategy: review.mode === "clone" ? "clone" : "reuse",
+      ...(review.placementStrategy ? {} : { rootPath: review.rootPath }),
+      strategy: review.placementStrategy ?? (review.mode === "clone" ? "clone" : "reuse"),
       resourceIds: [...input.resourceIds],
     },
   };

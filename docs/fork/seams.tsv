@@ -88,7 +88,7 @@ apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1
 apps/server/src/config.ts	mini-managed-projects	1
 apps/server/src/cli/config.ts	mini-managed-projects	1
-apps/server/src/project/ManagedProjectFolders.ts	mini-managed-projects	2
+apps/server/src/project/ManagedProjectFolders.ts	mini-managed-projects	1
 apps/server/src/cli/config.test.ts	mini-managed-projects	1
 apps/server/src/project/ManagedProjectFolders.test.ts	mini-managed-projects	2
 apps/server/src/storageCleanup.ts	mini-native-retention	2
@@ -225,7 +225,8 @@ apps/web/src/components/sidebar/mainAppLocation.ts	project-home	2
 apps/web/src/components/settings/settingsScopeNavigation.test.ts	project-home	1
 apps/mobile/src/features/projects/AddProjectScreen.test.ts	project-home	1
 apps/mobile/src/lib/storage.test.ts	project-home	1
-apps/server/src/ws.ts	project-preparation	3
+apps/server/src/ws.ts	project-preparation	1
+apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
 apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
@@ -1039,3 +1040,9 @@ packages/contracts/src/orchestratorMcp.ts	webhook-delivery-issues	1
 packages/contracts/src/scheduledTask.ts	webhook-delivery-issues	2
 scripts/effect-budget.json	-	"apps/web/src/components/ChatView.tsx": 26,
 apps/server/src/testUtils/gitConfig.setup.ts	hermetic-git-tests	2
+apps/mobile/src/features/projects/AddProjectScreen.tsx	file-placement	5
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	file-placement	2
+apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
+apps/web/src/components/settings/settingsSearch.ts	file-placement	1
+apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
+docs/user/project-settings.md	file-placement	1

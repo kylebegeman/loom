@@ -309,6 +309,18 @@ describe("explicit computer and destination preparation", () => {
       plan({ host: { ...host, newProjectsRoot: null }, destinationPath: "/reviewed/folder" }),
     ).toMatchObject({ kind: "create" });
   });
+  it("lets a computer that chooses folders pick one, and sends older computers a path", () => {
+    const chosen = plan({ host: { ...host, serverChosenFolders: true } });
+    expect(chosen).toMatchObject({ kind: "create" });
+    expect(chosen.kind === "create" && "destinationPath" in chosen.input).toBe(false);
+    expect(
+      plan({ host: { ...host, serverChosenFolders: true }, destinationPath: "/picked/folder" }),
+    ).toMatchObject({ kind: "create", input: { destinationPath: "/picked/folder" } });
+    expect(plan()).toMatchObject({
+      kind: "create",
+      input: { destinationPath: "/home/loom/projects/fork" },
+    });
+  });
   it("never issues a duplicate clone after a durable project claim or tracked clone", () => {
     expect(plan({ projects: [project({ id: projectId })] })).toMatchObject({
       kind: "blocked",

@@ -1,5 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { getCloneDestinationPath } from "@t3tools/client-runtime/operations/projects";
+import { serverChoosesFolders } from "@t3tools/client-runtime/fork"; // fork: file-placement
 import {
   findPromptLinkProjects,
   findPromptLinkPullRequestThread,
@@ -196,12 +197,18 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
   };
 
   const cloneRepository = async (repository: PromptLinkRepository) => {
-    const environmentId = lastActiveEnvironmentId();
-    const environment = environments.find((entry) => entry.environmentId === environmentId);
+    // fork: file-placement - Clones go to a computer that runs work, which picks the folder if it can.
+    const runsWork = (entry: (typeof environments)[number]) =>
+      entry.serverConfig?.environment.capabilities.supportsExecution !== false; // fork: file-placement
+    const environment = [lastActiveEnvironmentId(), primaryEnvironmentId] // fork: file-placement
+      .map((id) => environments.find((entry) => entry.environmentId === id)) // fork: file-placement
+      .find((entry) => entry !== undefined && runsWork(entry)); // fork: file-placement
+    const environmentId = environment?.environmentId ?? null; // fork: file-placement
     const newProjectsRoot = environment?.serverConfig?.newProjectsRoot ?? null;
+    const serverPlaces = serverChoosesFolders(environment?.serverConfig); // fork: file-placement
     if (
       environmentId === null ||
-      newProjectsRoot === null ||
+      (newProjectsRoot === null && !serverPlaces) || // fork: file-placement
       environment?.serverConfig?.environment.capabilities.projectCloneTracking !== true
     ) {
       setState({
@@ -221,7 +228,9 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
         title: repository.name,
         createdAt: new Date().toISOString(),
         remoteUrl: `https://github.com/${repository.owner}/${repository.name}.git`,
-        destinationPath: getCloneDestinationPath(newProjectsRoot, repository.name),
+        ...(serverPlaces || newProjectsRoot === null // fork: file-placement
+          ? {}
+          : { destinationPath: getCloneDestinationPath(newProjectsRoot, repository.name) }),
       },
     });
     if (result._tag === "Failure") {
@@ -238,9 +247,11 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       setState({ status: "missing-repository", repository });
       return;
     }
-    const project = await waitForProject(scopeProjectRef(environmentId, projectId), 5_000).catch(
-      () => null,
-    );
+    // fork: file-placement - A reused checkout answers with its existing project.
+    const project = await waitForProject(
+      scopeProjectRef(environmentId, result.value.projectId), // fork: file-placement
+      5_000,
+    ).catch(() => null);
     if (project === null) {
       setState({ status: "failed", message: "The clone started, but its project did not appear." });
       return;
