@@ -3831,6 +3831,42 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
+  it.effect("publishes where each repository came from so clients judge copies as we do", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const parent = yield* makeTemp;
+      const published = yield* Ref.make<readonly { readonly copy: LibraryWorkingCopy }[]>([]);
+      const publisher = Layer.mock(LibraryPublisher.LibraryPublisher)({
+        enabled: true,
+        info: Effect.succeed({
+          environmentId,
+          authorityId: "central-library",
+          authorityEpoch: 2,
+          assets: "local",
+        }),
+        registerCopy: (input) =>
+          Ref.update(published, (copies) => [...copies, input]).pipe(Effect.as(input.copy)),
+      });
+      const project = yield* remoteProject(parent, "placed-copy");
+      const copy = yield* (yield* LibraryWorkspace.LibraryWorkspace).prepareCopy({
+        requestId: "placed-copy",
+        project,
+        rootPath: path.join(parent, "files"),
+        strategy: "clone",
+      });
+      const placed = project.resources.map((resource) => ({
+        resourceId: resource.id,
+        relativePath: resource.relativePath,
+        remoteUrl: resource.remoteUrl,
+      }));
+      const service = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer).pipe(Layer.provide(publisher))),
+      );
+      yield* service.setCopyRetention({ workingCopyId: copy.id, keepOnComputer: true });
+      expect((yield* Ref.get(published)).at(-1)?.copy.repositories).toMatchObject(placed);
+    }),
+  );
+
   it.effect.each(["before-removal", "after-commit", "after-removal"] as const)(
     "retains only durably referenced recovery cache after a failed %s release receipt",
     (stage) =>

@@ -15,7 +15,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { makeCopyHealthReader } from "./LibraryCopyHealth.ts";
 import type { LibraryPublisher } from "./LibraryPublisher.ts";
-import type { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
+import { type LibraryWorkspaceStore, placedCopy } from "./LibraryWorkspaceStore.ts";
 
 /** How often a computer rereads its copies' health. Only a change is published. */
 export const HEALTH_REPORT_INTERVAL = Duration.minutes(5);
@@ -181,7 +181,7 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
   const report = lock.withPermit(
     Effect.gen(function* () {
       const copies = (yield* input.workspaces.receipts)
-        .map((receipt) => receipt.copy)
+        .map((receipt) => placedCopy(receipt.copy, receipt.project))
         .filter((copy) => copy.environmentId === input.environmentId && publishesHealth(copy));
       yield* SubscriptionRef.set(
         watched,

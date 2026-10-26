@@ -1,15 +1,18 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
+  LibraryCopyRepository,
   LibraryProfileReadiness,
   LibraryProject,
   LibraryProjectProfile,
   LibraryRepositoryHealth,
+  LibraryResource,
   LibraryThreadSummary,
   LibraryToolCheck,
   LibraryWorkingCopy,
   MiniWorkerReadiness,
 } from "@t3tools/contracts/fork";
+import { normalizeGitRemoteUrl } from "../git.ts";
 
 const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
 
@@ -17,18 +20,34 @@ const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/,
 const resourcePath = (rootPath: string, relativePath: string) =>
   relativePath === "." ? normalizePath(rootPath) : `${normalizePath(rootPath)}/${relativePath}`;
 
+const relativeKey = (relativePath: string) =>
+  relativePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((segment) => segment !== "" && segment !== ".")
+    .join("/");
+
 /**
- * Whether a copy's repository sits where the computer puts that resource. A copy holding one
- * repository keeps it at the copy root whatever its relativePath, as the computer clones it.
+ * Whether a copy still holds `resource` where the project now places it. A copy that records the
+ * resource's original place and remote is judged as the computer's `keepsResource` does. Older
+ * copies are judged by path, and a copy holding one repository keeps it at its root.
  */
 const repositoryInPlace = (
   copy: LibraryWorkingCopy,
-  relativePath: string,
-  repositoryPath: string,
+  resource: LibraryResource,
+  repository: LibraryCopyRepository,
 ) => {
-  const path = normalizePath(repositoryPath);
+  if (repository.relativePath !== undefined && repository.remoteUrl !== undefined)
+    return (
+      relativeKey(repository.relativePath) === relativeKey(resource.relativePath) &&
+      (repository.remoteUrl === null
+        ? resource.remoteUrl === null
+        : resource.remoteUrl !== null &&
+          normalizeGitRemoteUrl(repository.remoteUrl) === normalizeGitRemoteUrl(resource.remoteUrl))
+    );
+  const path = normalizePath(repository.path);
   return (
-    path === resourcePath(copy.rootPath, relativePath) ||
+    path === resourcePath(copy.rootPath, resource.relativePath) ||
     (copy.repositories.length === 1 && path === normalizePath(copy.rootPath))
   );
 };
@@ -67,8 +86,7 @@ export const libraryCopiesForScope = (
       required.every((resource) =>
         copy.repositories.some(
           (repository) =>
-            repository.resourceId === resource.id &&
-            repositoryInPlace(copy, resource.relativePath, repository.path),
+            repository.resourceId === resource.id && repositoryInPlace(copy, resource, repository),
         ),
       ),
   );

@@ -666,7 +666,7 @@ const make = Effect.gen(function* () {
       for (const [index, entry] of fullEntries.entries()) {
         const copyId = entry.thread.summary.workingCopyId;
         if (copyId !== null && !copies.has(copyId)) {
-          yield* registerChangedCopy(current, (yield* workspaces.get(copyId)).copy);
+          yield* registerChangedCopy(current, yield* workspaces.get(copyId));
           copies.add(copyId);
         }
         // History is acknowledged only after every referenced attachment has verified storage.
@@ -758,8 +758,9 @@ const make = Effect.gen(function* () {
       readonly authority_id: string;
       readonly authority_epoch: number;
     },
-    copy: LibraryWorkingCopy,
+    receipt: WorkspaceStore.WorkspaceReceipt,
   ) {
+    const copy = WorkspaceStore.placedCopy(receipt.copy, receipt.project);
     const fingerprint = Hex.encode(
       yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
     );
@@ -777,14 +778,15 @@ const make = Effect.gen(function* () {
   const publishCopyChanges = Effect.fn("LibraryReplication.publishCopyChanges")(function* () {
     if (Option.isNone(workspace)) return;
     const current = yield* state;
-    for (const { copy } of yield* workspaces.receipts) {
+    for (const receipt of yield* workspaces.receipts) {
+      const { copy } = receipt;
       if (
         copy.environmentId !== environmentId ||
         copy.state === "preparing" ||
         copy.state === "failed"
       )
         continue;
-      yield* registerChangedCopy(current, copy).pipe(
+      yield* registerChangedCopy(current, receipt).pipe(
         // The Library cannot record a copy of a project it no longer has. Skipping it keeps one
         // such copy from failing every later copy and the cleanup that follows.
         Effect.catch((error) =>

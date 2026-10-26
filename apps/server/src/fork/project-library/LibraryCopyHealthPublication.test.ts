@@ -191,6 +191,21 @@ describe("copy health publication", () => {
     ),
   );
 
+  it.effect("publishes where each repository came from with its health", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* f.report;
+        expect((yield* Ref.get(f.published))[0]?.copy.repositories).toEqual([
+          {
+            ...copy.repositories[0]!,
+            relativePath: resource.relativePath,
+            remoteUrl: resource.remoteUrl,
+          },
+        ]);
+      }),
+    ),
+  );
+
   it.effect("retries a report the Library did not accept", () =>
     run((f) =>
       Effect.gen(function* () {

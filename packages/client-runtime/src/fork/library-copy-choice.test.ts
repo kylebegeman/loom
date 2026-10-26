@@ -164,6 +164,34 @@ describe("Library working-copy selection", () => {
     });
     expect(libraryCopiesForScope(project, [twoAtRoot], host, ["app"])).toEqual([]);
   });
+  it("judges a copy by the place and remote it recorded, as the computer does", () => {
+    const rootCopy = copy({
+      repositories: [
+        {
+          ...copy().repositories[0]!,
+          path: "/workspace/loom",
+          relativePath: ".",
+          remoteUrl: "https://github.com/owner/app",
+        },
+      ],
+    });
+    const rootProject = {
+      ...project,
+      resources: [{ ...project.resources[0]!, relativePath: "." }],
+    };
+    expect(libraryCopiesForScope(rootProject, [rootCopy], host, null)).toEqual([rootCopy]);
+    expect(libraryCopiesForScope(project, [rootCopy], host, ["app"])).toEqual([]);
+    const renamed = {
+      ...rootProject,
+      resources: [{ ...rootProject.resources[0]!, remoteUrl: "git@github.com:owner/fork.git" }],
+    };
+    expect(libraryCopiesForScope(renamed, [rootCopy], host, null)).toEqual([]);
+    const sameRemote = {
+      ...rootProject,
+      resources: [{ ...rootProject.resources[0]!, remoteUrl: "git@github.com:owner/app.git" }],
+    };
+    expect(libraryCopiesForScope(sameRemote, [rootCopy], host, null)).toEqual([rootCopy]);
+  });
   it("offers no copies for an archived project", () => {
     expect(libraryCopiesForScope({ ...project, archived: true }, [copy()], host, null)).toEqual([]);
   });

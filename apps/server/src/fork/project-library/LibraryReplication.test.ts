@@ -948,7 +948,7 @@ describe("durable Library history replication", () => {
       }),
     ),
   );
-  it.effect("registers a working copy again only once it changed", () =>
+  it.effect("registers a copy and where it came from, again only once it changed", () =>
     run((f) =>
       Effect.gen(function* () {
         const current = yield* Ref.make(receipt);
@@ -986,6 +986,13 @@ describe("durable Library history replication", () => {
         yield* service.drain;
         expect(yield* Ref.get(f.requests)).toHaveLength(2);
         expect(yield* copyRegistrations).toHaveLength(1);
+        expect((yield* copyRegistrations)[0]?.copy.repositories).toEqual([
+          {
+            ...copy.repositories[0]!,
+            relativePath: resource.relativePath,
+            remoteUrl: resource.remoteUrl,
+          },
+        ]);
         yield* Ref.update(current, (value) => ({
           ...value,
           copy: { ...value.copy, keepOnComputer: !value.copy.keepOnComputer },

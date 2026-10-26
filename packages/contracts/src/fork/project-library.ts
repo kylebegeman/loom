@@ -97,6 +97,9 @@ export const LibraryCopyRepository = Schema.Struct({
   localProjectId: ProjectId,
   head: Schema.NullOr(Schema.String),
   branch: Schema.NullOr(Schema.String),
+  /** The resource's place and remote when the copy was made. Older computers omit them. */
+  relativePath: Schema.optional(Schema.String.check(Schema.isMaxLength(512))),
+  remoteUrl: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(2048)))),
 });
 export type LibraryCopyRepository = typeof LibraryCopyRepository.Type;
 export const LibraryRecoveryManifest = Schema.Struct({

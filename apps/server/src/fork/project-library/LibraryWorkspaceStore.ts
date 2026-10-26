@@ -75,6 +75,24 @@ export const WorkspaceReceipt = Schema.Struct({
   ),
 });
 export type WorkspaceReceipt = typeof WorkspaceReceipt.Type;
+/**
+ * The copy as the Library publishes it: each repository with its place and remote in the project
+ * the copy was made for, which `keepsResource` compares, so clients skip copies we would refuse.
+ */
+export const placedCopy = (
+  copy: LibraryWorkingCopy,
+  project: LibraryProject,
+): LibraryWorkingCopy => ({
+  ...copy,
+  repositories: copy.repositories.map((repository) => {
+    const resource = project.resources.find(
+      (entry) => entry.id === repository.resourceId && entry.kind !== "link",
+    );
+    return resource === undefined
+      ? repository
+      : { ...repository, relativePath: resource.relativePath, remoteUrl: resource.remoteUrl };
+  }),
+});
 /** A reserved copy's files are still on their way, so its conversations wait for them. */
 export const awaitingFiles = (receipt: WorkspaceReceipt) =>
   receipt.reservation !== undefined &&

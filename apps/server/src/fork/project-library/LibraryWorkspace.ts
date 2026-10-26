@@ -3780,11 +3780,15 @@ const make = Effect.gen(function* () {
   ) {
     if (Option.isNone(publisher) || !publisher.value.enabled) return;
     const authority = yield* publisher.value.info;
+    const receipt = yield* store.get(copy.id).pipe(Effect.option);
+    const placed = Option.isSome(receipt)
+      ? LibraryWorkspaceStore.placedCopy(copy, receipt.value.project)
+      : copy;
     yield* publisher.value.registerCopy({
-      requestId: `host-copy:${yield* digest(yield* encodeWorkingCopy(copy))}`,
+      requestId: `host-copy:${yield* digest(yield* encodeWorkingCopy(placed))}`,
       authorityId: authority.authorityId,
       authorityEpoch: authority.authorityEpoch,
-      copy,
+      copy: placed,
     });
   }, mapIo);
 
