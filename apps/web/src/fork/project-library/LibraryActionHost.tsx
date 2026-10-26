@@ -17,6 +17,7 @@ import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_WORKTREE_STARTS_FEATURE,
+  PROJECT_WORKFLOWS_FEATURE,
   type LibraryProject,
   type LibraryThreadSummary,
   type LibraryWorkingCopy,
@@ -25,7 +26,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlusIcon, MessageSquareDashedIcon, PlusIcon } from "lucide-react";
+import {
+  FileJsonIcon,
+  FolderGit2Icon,
+  FolderPlusIcon,
+  MessageSquareDashedIcon,
+  PlusIcon,
+} from "lucide-react";
 import {
   projectLibrary,
   useLibraryProject,
@@ -33,7 +40,19 @@ import {
   useLibraryProjects,
   useSelectedLibraryProject,
 } from "./state";
-import { onLibraryAction, type LibraryConversationDefaults, type LibraryAction } from "./actions";
+import {
+  onLibraryAction,
+  requestLibraryClone,
+  type LibraryConversationDefaults,
+  type LibraryAction,
+} from "./actions";
+import {
+  gitRepositoryChoice,
+  holdsGitRemote,
+  newProjectChoices,
+  newProjectDraftKey,
+  type NewProjectTarget,
+} from "./newProjectChoices";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import {
@@ -48,6 +67,14 @@ import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
 import { useNoProjectStart } from "./useNoProjectStart";
 
 const NO_PROJECT_TERMS = ["no project", "without project", "none"];
+
+function newProjectIcon(target: NewProjectTarget) {
+  if (target.step === "import") return <FolderPlusIcon className="size-4 text-(--project-teal)" />;
+  if (target.step === "git" || target.repository)
+    return <FolderGit2Icon className="size-4 text-(--project-blue)" />;
+  if (target.page === "blueprint") return <FileJsonIcon className="size-4 text-(--project-plum)" />;
+  return <PlusIcon className="size-4 text-(--project-green)" />;
+}
 
 export interface LibraryPaletteSession {
   readonly id: number;
@@ -83,7 +110,11 @@ export function useLibraryPaletteSession() {
   };
 }
 
-type ProjectStep = "project" | "create" | "import" | "conversation";
+/** `new` asks how a project starts and `git` takes the URL to clone; both lead to `create`. */
+type ProjectStep = "project" | "new" | "git" | "create" | "import" | "conversation";
+
+type CreateDraft = Extract<NewProjectTarget, { step: "create" }>;
+const BLANK_DRAFT: CreateDraft = { step: "create", page: "name", title: "", repository: "" };
 
 export function LibraryActionHost({
   session,
@@ -101,9 +132,12 @@ export function LibraryActionHost({
   const catalog = useLibraryProjects();
   const navigate = useNavigate();
   const action = session.action;
+  // Back leads to the step that chose what to do: the project list for a conversation, otherwise
+  // how a new project starts.
+  const home = action === "new-conversation" ? "project" : "new";
   const [step, setStep] = useState<ProjectStep>(
     action === "create-project"
-      ? "create"
+      ? "new"
       : action === "import-folder"
         ? "import"
         : session.projectId && !session.suggest
@@ -111,8 +145,8 @@ export function LibraryActionHost({
           : "project",
   );
   const [search, setSearch] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const [initialResource, setInitialResource] = useState("");
+  const [draft, setDraft] = useState(BLANK_DRAFT);
+  const [gitUrl, setGitUrl] = useState("");
   const [initialFolder, setInitialFolder] = useState("");
   // A start a project row or a folder just added promised, `pending` until it runs or its settings
   // show instead. `run` remounts the settings so they begin from its defaults.
@@ -134,16 +168,30 @@ export function LibraryActionHost({
       : [];
   // A visited step stays mounted so Back keeps its draft. Once saved it holds nothing to return to,
   // only checks and names from before the save, so the next visit starts fresh.
-  const [visited, setVisited] = useState({
-    create: action === "create-project",
-    import: action === "import-folder",
-  });
+  const [visited, setVisited] = useState({ create: false, import: action === "import-folder" });
   const show = (next: "create" | "import") => {
     setVisited((previous) => ({ ...previous, [next]: true }));
     setStep(next);
   };
-  const forget = (draft: "create" | "import") =>
-    setVisited((previous) => ({ ...previous, [draft]: false }));
+  const forget = (name: "create" | "import") =>
+    setVisited((previous) => ({ ...previous, [name]: false }));
+  // The create step is keyed by its draft, so the same choice returns to what was typed there and
+  // another choice starts over.
+  const startDraft = (next: CreateDraft) => {
+    setDraft(next);
+    show("create");
+  };
+  const go = (target: NewProjectTarget) => {
+    if (target.step === "git") setStep("git");
+    else if (target.step === "import") {
+      setInitialFolder(target.path);
+      show("import");
+    } else startDraft(target);
+  };
+  const supportsBlueprints = supportsLoomFeature(
+    catalog.environment?.serverConfig?.environment.capabilities,
+    PROJECT_WORKFLOWS_FEATURE,
+  );
   // Inherited settings belong to their settings step, so only a chooser the user did not fill in
   // starts in one step.
   const quickStarts = useQuickStarts({
@@ -212,7 +260,7 @@ export function LibraryActionHost({
   const needsProject =
     step === "project" || (step === "conversation" && (!project || project.archived));
   const back = () => {
-    setStep("project");
+    setStep(home);
     setQuick((previous) => (previous ? { ...previous, pending: false } : null));
   };
   const projectRow = (
@@ -272,9 +320,76 @@ export function LibraryActionHost({
   const suggested = session.suggest
     ? projectRows.filter((row) => row.id === session.projectId)
     : [];
+  const gitChoice = gitRepositoryChoice(gitUrl);
+  // A conversation clones its files when it starts; a new project from a Git URL clones on save.
+  const cloneAfterSave = home === "new" && draft.repository !== "";
   return (
     <>
-      {!library.authorityId || needsProject ? (
+      {home === "new" && (!library.authorityId || step === "new") ? (
+        <LibraryPaletteView
+          title="New project"
+          placeholder="Name it, paste a Git URL, or enter a folder path..."
+          query={search}
+          onQueryChange={setSearch}
+          onClose={onClose}
+          // Every way to start stays below what the typed text leads with.
+          filter={false}
+          items={
+            library.authorityId
+              ? newProjectChoices({
+                  query: search,
+                  blueprints: supportsBlueprints,
+                  draft: visited.create ? newProjectDraftKey(draft) : null,
+                }).map((choice) => ({
+                  id: choice.id,
+                  title: choice.title,
+                  description: choice.description,
+                  icon: newProjectIcon(choice.target),
+                  next: true,
+                  select: () => go(choice.target),
+                }))
+              : []
+          }
+        >
+          {!library.authorityId ? (
+            <div className="p-4">
+              <LibrarySetup showConnectionsLink={false} />
+            </div>
+          ) : null}
+        </LibraryPaletteView>
+      ) : null}
+      {library.authorityId && step === "git" ? (
+        <LibraryPaletteView
+          title="Clone a Git repository"
+          placeholder="Paste a Git URL..."
+          query={gitUrl}
+          onQueryChange={setGitUrl}
+          onBack={back}
+          onClose={onClose}
+          filter={false}
+          message="Name the project next, then choose the computer and folder to clone it into."
+          items={[
+            gitChoice
+              ? {
+                  id: gitChoice.id,
+                  title: gitChoice.title,
+                  description: gitChoice.description,
+                  icon: newProjectIcon(gitChoice.target),
+                  next: true,
+                  select: () => go(gitChoice.target),
+                }
+              : {
+                  id: "clone",
+                  title: gitUrl.trim() ? "Not a Git repository URL" : "Paste a Git URL",
+                  description: "For example, github.com/owner/repo or git@host:owner/repo.git",
+                  icon: newProjectIcon({ step: "git" }),
+                  disabled: true,
+                  select: () => {},
+                },
+          ]}
+        />
+      ) : null}
+      {home === "project" && (!library.authorityId || needsProject) ? (
         <LibraryPaletteView
           title="New conversation"
           placeholder="Search projects or choose an action..."
@@ -325,11 +440,12 @@ export function LibraryActionHost({
                             if (intent.kind === "folder") {
                               setInitialFolder(intent.path);
                               show("import");
-                            } else {
-                              setInitialResource(intent.url);
-                              setNewTitle(intent.title);
-                              show("create");
-                            }
+                            } else
+                              startDraft({
+                                ...BLANK_DRAFT,
+                                title: intent.title,
+                                repository: intent.url,
+                              });
                           },
                         },
                       ]
@@ -351,8 +467,8 @@ export function LibraryActionHost({
                           icon: <PlusIcon className="size-4 text-(--project-green)" />,
                           next: true,
                           select: () => {
-                            if (!visited.create) setNewTitle(search.trim());
-                            show("create");
+                            if (visited.create) show("create");
+                            else startDraft({ ...BLANK_DRAFT, title: search.trim() });
                           },
                         },
                       ]
@@ -392,17 +508,21 @@ export function LibraryActionHost({
       ) : null}
       {library.authorityId && visited.create ? (
         <ProjectEditorDialog
-          key={initialResource || "new"}
+          key={newProjectDraftKey(draft)}
           embedded
           open={step === "create"}
           authorityId={library.authorityId}
-          initialTitle={newTitle}
-          initialResource={initialResource}
-          continueToConversation={action === "new-conversation"}
+          initialTitle={draft.title}
+          initialResource={draft.repository}
+          initialPage={draft.page}
+          continueTo={cloneAfterSave ? "clone" : home === "project" ? "conversation" : "project"}
           onBack={back}
           onClose={onClose}
           onSaved={(saved) => {
             forget("create");
+            // The clone dialog belongs to the project page, which outlives this popup.
+            if (cloneAfterSave && holdsGitRemote(saved.resources, draft.repository))
+              requestLibraryClone(saved.id, defaults?.environmentId);
             choose(saved);
           }}
         />

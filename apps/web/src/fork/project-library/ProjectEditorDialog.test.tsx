@@ -192,3 +192,43 @@ it("explains blocked Library access instead of offering a create that cannot run
   await choose("Create “Coast”");
   expect(state.create).toHaveBeenCalledOnce();
 });
+
+it("leaves a form opened on the blueprint from it until a blueprint fills in the name", async () => {
+  const onBack = vi.fn();
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        key="blueprint"
+        initialPage="blueprint"
+        authorityId={EnvironmentId.make("library")}
+        onBack={onBack}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  await choose("Back");
+  expect(onBack).toHaveBeenCalledOnce();
+  const blueprint = container.querySelector("textarea")!;
+  await act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      blueprint,
+      JSON.stringify({
+        format: "loom-project",
+        version: 1,
+        title: "Harbor",
+        brief: "",
+        resources: [],
+        connections: [],
+      }),
+    );
+    blueprint.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await choose("Review this blueprint");
+  expect(input().value).toBe("Harbor");
+  // Reviewing the imported blueprint returns to its name, not out of the form.
+  await choose("Review imported blueprint");
+  await choose("Back");
+  expect(onBack).toHaveBeenCalledOnce();
+  expect(input().value).toBe("Harbor");
+});
