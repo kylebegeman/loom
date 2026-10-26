@@ -41,7 +41,7 @@ const fixture = Effect.gen(function* () {
     Effect.provide(
       Layer.mock(Library.LibraryService)({
         projects: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as([])),
-        threadIndex: (input) =>
+        conversations: (input) =>
           Ref.update(calls, (count) => count + 1).pipe(
             Effect.as({ threads: [], nextOffset: input.offset ?? null }),
           ),

@@ -1,4 +1,8 @@
-import type { LibraryFolderInspection, LibraryProject } from "@t3tools/contracts/fork";
+import type {
+  LibraryFolderInspection,
+  LibraryProject,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
@@ -29,4 +33,15 @@ export function folderProjectMatches(
       })
     );
   });
+}
+
+/**
+ * Copies that still hold their folder. Managed files keep it after removal, so their recovery stays
+ * reachable. A borrowed folder is let go once released or unregistered.
+ */
+export function libraryFolderHolders(copies: readonly LibraryWorkingCopy[]) {
+  return copies.filter(
+    (copy) =>
+      copy.ownership === "managed" || (copy.state !== "released" && copy.registered !== false),
+  );
 }

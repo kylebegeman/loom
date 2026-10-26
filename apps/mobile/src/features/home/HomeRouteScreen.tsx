@@ -6,6 +6,7 @@ import { Toolbar } from "../../components/ui/Toolbar";
 import {
   isLibraryProjectScopeKey,
   useHomeLibraryProjects,
+  useLibraryProjectFilter,
 } from "../../fork/library/useHomeLibraryProjects";
 // fork: project-navigation - Adaptive empty-detail headers reflect the selected navigation mode.
 import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
@@ -155,17 +156,17 @@ export function HomeRouteScreen() {
       setSelectedProjectKey(resolvedProjectKey);
     }
   }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
-  const projectFilterOptions = useMemo(
+  const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
         projects,
         environmentId: selectedEnvironmentId,
         projectGroupingMode: listOptions.projectGroupingMode,
-      })
-        .map((scope) => ({ key: scope.key, label: scope.title }))
-        .concat(libraryHome.filterOptions), // fork: library
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId, libraryHome.filterOptions], // fork: library
+      }),
+    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
+  const projectFilter = useLibraryProjectFilter(projectScopes, resolvedProjectKey); // fork: library
+  const projectFilterOptions = projectFilter.options; // fork: library
   const selectedProjectKey =
     isLibraryProjectScopeKey(resolvedProjectKey) || // fork: library
     projectFilterOptions.some((project) => project.key === resolvedProjectKey)
@@ -290,6 +291,8 @@ export function HomeRouteScreen() {
           pendingTasks={pendingTasks}
           projectGroupingMode={listOptions.projectGroupingMode}
           projects={projects}
+          projectFilterOptions={projectFilterOptions} // fork: library
+          libraryProjectKeys={projectFilter.libraryProjectKeys} // fork: library
           projectSortOrder={listOptions.projectSortOrder}
           savedConnectionsById={savedConnectionsById}
           searchQuery={searchQuery}

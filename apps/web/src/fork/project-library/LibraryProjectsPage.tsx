@@ -86,6 +86,7 @@ import {
 import { ComputerLabel, PathLabel, ProjectColorDot, projectColorStyle } from "./ProjectIdentity";
 import { LibraryAccessNotice } from "./LibraryAccessNotice";
 import {
+  LIBRARY_THREAD_INDEX_LIMIT,
   useLibraryAccessBlock,
   useLibraryPermission,
   useLibraryProjects,
@@ -106,8 +107,6 @@ const DEFAULT_PREFERENCES: ProjectsPreferences = {
   sort: "activity",
   group: "activity",
 };
-/** Shares the sidebar's request, so the page adds no extra index fetch. */
-const THREAD_INDEX_LIMIT = 100;
 
 /** Management shares the normal app shell. The thread filter remains the only project selector. */
 export function LibraryProjectsPage() {
@@ -155,7 +154,7 @@ export function LibraryProjectsPage() {
     catalog.authorityId
       ? projectLibrary.threadIndex({
           environmentId: catalog.authorityId,
-          input: { limit: THREAD_INDEX_LIMIT },
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
         })
       : null,
   );

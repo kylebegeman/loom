@@ -482,13 +482,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     if (resumingQueue || onResumeQueue === null) return;
     setResumingQueue(true);
     // fork: attention-status - The resume command reports its own failure; the button must come back.
+    // No finally: React Compiler cannot compile it, and this catch never rethrows.
     try {
       await onResumeQueue();
     } catch {
       // Already reported.
-    } finally {
-      setResumingQueue(false);
     }
+    setResumingQueue(false);
   };
 
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);

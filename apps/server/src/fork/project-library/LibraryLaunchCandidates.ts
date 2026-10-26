@@ -1,7 +1,7 @@
-import type {
+import {
   LibraryError,
-  LibraryLaunchCandidates as LibraryLaunchCandidatesResult,
-  LibraryLaunchCandidatesRequest,
+  type LibraryLaunchCandidates as LibraryLaunchCandidatesResult,
+  type LibraryLaunchCandidatesRequest,
 } from "@t3tools/contracts/fork";
 import {
   rankLibraryProjectLaunch,
@@ -44,6 +44,12 @@ const make = Effect.gen(function* () {
   ) {
     // Catalog reads fail with not-authority away from the Library, before anything is ranked.
     const project = yield* library.project({ projectId: input.projectId });
+    // Preparing and binding refuse an archived project, so no computer could start there.
+    if (project.archived)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: `${project.title} is archived. Restore it from Library > Projects > Archived before starting a conversation in it.`,
+      });
     const [copies, threads, info] = yield* Effect.all(
       [
         library.copies({ projectId: project.id }),

@@ -6,10 +6,11 @@ import type { SidebarProjectGroupMember } from "~/sidebarProjectGrouping";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentQuery } from "~/state/query";
 import { projectLibrary, useLibraryAccessBlock, useLibraryAuthority } from "./state";
+import { libraryFolderHolders } from "./folderProjectMatches";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { LibraryAccessNotice } from "./LibraryAccessNotice";
 
-/** Removed files retain their explicit identity so settings still reach the same project. */
+/** Removed managed files retain their explicit identity so settings still reach the same project. */
 export function libraryProjectForFolderSettings(
   members: readonly { environmentId: string; id: string }[],
   copies: readonly LibraryWorkingCopy[],
@@ -20,7 +21,7 @@ export function libraryProjectForFolderSettings(
       environmentId: member.environmentId,
       projectId: member.id,
     })),
-    copies,
+    libraryFolderHolders(copies),
     { includeInactiveCopies: true },
   );
 }

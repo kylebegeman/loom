@@ -1,5 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
-import { librarySearchRequest } from "@t3tools/client-runtime/fork";
+import { libraryOutsideArchivedProjects, librarySearchRequest } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
@@ -50,17 +50,18 @@ export function LibrarySavedThreads({
   // Titles alone miss what was said, so a typed search can carry on into saved history.
   const searchHistory = useLibrarySearchSupported() && librarySearchRequest(search) !== null;
   const query = search.trim().toLocaleLowerCase();
-  const threads =
-    index.data?.threads.filter(
-      (t) =>
-        !t.archived &&
-        !t.deleted &&
-        !local.has(`${t.environmentId}:${t.threadId}`) &&
-        (!environmentId || environmentId === t.environmentId) &&
-        (!projectKeys || projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&
-        (!query ||
-          `${t.title} ${titles.get(t.projectId) ?? ""}`.toLocaleLowerCase().includes(query)),
-    ) ?? [];
+  const threads = libraryOutsideArchivedProjects(
+    index.data?.threads ?? [],
+    catalog.data ?? [],
+  ).filter(
+    (t) =>
+      !t.archived &&
+      !t.deleted &&
+      !local.has(`${t.environmentId}:${t.threadId}`) &&
+      (!environmentId || environmentId === t.environmentId) &&
+      (!projectKeys || projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&
+      (!query || `${t.title} ${titles.get(t.projectId) ?? ""}`.toLocaleLowerCase().includes(query)),
+  );
   if (!threads.length && !searchHistory) return null;
   return (
     <View className="gap-1 px-4 py-4">

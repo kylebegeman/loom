@@ -67,6 +67,7 @@ vi.mock("./state", async () => {
       () => state.revision,
     );
   return {
+    LIBRARY_THREAD_INDEX_LIMIT: 200,
     projectLibrary: {
       threadIndex: (target: object) => ({ kind: "threadIndex", ...target }),
       copies: (target: object) => ({ kind: "copies", ...target }),

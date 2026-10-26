@@ -34,6 +34,7 @@ import {
   PlusIcon,
 } from "lucide-react";
 import {
+  LIBRARY_THREAD_INDEX_LIMIT,
   projectLibrary,
   useLibraryProject,
   useLibraryLocalCatalog,
@@ -158,7 +159,10 @@ export function LibraryActionHost({
   } | null>(null);
   const recent = useEnvironmentQuery(
     catalog.authorityId
-      ? projectLibrary.threadIndex({ environmentId: catalog.authorityId, input: { limit: 200 } })
+      ? projectLibrary.threadIndex({
+          environmentId: catalog.authorityId,
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
+        })
       : null,
   );
   const intent = libraryStartIntent(search);

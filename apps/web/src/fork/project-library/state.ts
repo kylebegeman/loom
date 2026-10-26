@@ -27,6 +27,8 @@ import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { accessBlock } from "./accessBlock";
 
 export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
+/** Every surface reads this one page of the thread index, so the client fetches it once. */
+export const LIBRARY_THREAD_INDEX_LIMIT = 200;
 const AUTHORITY_KEY = "loom:project-library:authority:v1";
 const SELECTED_PROJECT_KEY = "loom:project-library:selected-project:v1";
 const Authority = Schema.NullOr(EnvironmentId);

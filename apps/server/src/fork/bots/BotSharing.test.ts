@@ -15,7 +15,13 @@ import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { inProcessClient, type BotLibraryClient } from "./BotLibraryClient.ts";
 import { BotLibraryService, layer as libraryLayer } from "./BotLibraryService.ts";
-import { libraryProjectFor, makeSharing } from "./BotSharing.ts";
+import {
+  libraryProjectBlocker,
+  libraryProjectFor,
+  localProjectFor,
+  makeSharing,
+  reportedLibraryProjects,
+} from "./BotSharing.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
 import { model, projectId, reviewer, withHarness, type Harness } from "./testing/BotsHarness.ts";
 import { copyFor } from "../project-library/Library.testkit.ts";
@@ -1078,5 +1084,28 @@ describe("libraryProjectFor", () => {
     expect(libraryProjectFor([missing], projectId, true)).toBeNull();
     // A folder with no root project of its own is not the project of a bot without one.
     expect(libraryProjectFor([receiptFor("rootless", {}, null)], null)).toBeNull();
+  });
+
+  it("treats a released borrowed folder as no copy at all", () => {
+    // Unregistering a borrowed folder leaves its state ready.
+    const unregistered = receiptFor("left", { registered: false });
+    const released = receiptFor("gone", { state: "released" });
+    expect(libraryProjectFor([unregistered], projectId, true)).toBeNull();
+    expect(localProjectFor([unregistered, released], "left")).toBeNull();
+    expect(libraryProjectBlocker([unregistered], "left")).toBe(
+      "This computer has no ready copy of this run's project.",
+    );
+    expect(reportedLibraryProjects([unregistered, released])).toEqual([]);
+  });
+
+  it("reports no archived project and names archiving as the reason a run cannot start", () => {
+    const archived = receiptFor("set-aside");
+    const setAside = { ...archived, project: { ...archived.project, archived: true } };
+    const current = receiptFor("current");
+    expect(reportedLibraryProjects([setAside, current])).toEqual(["current"]);
+    expect(libraryProjectBlocker([setAside], "set-aside")).toBe(
+      "This run's project is archived in the Library. Restore it to run here.",
+    );
+    expect(libraryProjectBlocker([current], "current")).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "
 import { Link } from "@tanstack/react-router";
 import { useContext, useId, useRef, useState } from "react";
 import { PROJECT_CHECKOUT_FEATURE, projectCheckouts } from "~/fork/project-checkout/state";
+import { libraryFolderHolders } from "~/fork/project-library/folderProjectMatches";
 import { projectLibrary, useLibraryAuthority } from "~/fork/project-library/state";
 import { useEnvironment } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
@@ -110,7 +111,7 @@ function FolderLocationDialog({
         })
       : null,
   );
-  const libraryCopy = copies.data?.find((copy) =>
+  const libraryCopy = libraryFolderHolders(copies.data ?? []).find((copy) =>
     libraryProjectForLocalRefs(
       [],
       [{ environmentId: project.environmentId, projectId: project.id }],

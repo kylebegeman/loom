@@ -2055,6 +2055,34 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         ).toEqual(released);
       }),
   );
+  it.effect("ignores an unregistered copy inside the working folder when releasing it", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const rootPath = path.join(yield* makeTemp, "outer");
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const receipts = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const copy = yield* service.prepareCopy({
+        requestId: "outer-project",
+        project: makeProject([]),
+        rootPath,
+        strategy: "clone",
+      });
+      const outer = yield* receipts.get(copy.id);
+      const inner = {
+        ...outer,
+        requestId: "inner-project",
+        fingerprint: "inner-project",
+        copy: { ...outer.copy, id: "inner-copy", rootPath: path.join(rootPath, "inner") },
+      };
+      yield* receipts.put(inner);
+      expect((yield* service.status({ workingCopyId: copy.id })).blockers).toEqual([
+        "Another working copy uses a folder inside this working folder.",
+      ]);
+      // Unregistering a borrowed folder keeps its state, so registration alone retires it.
+      yield* receipts.put({ ...inner, copy: { ...inner.copy, registered: false } });
+      expect((yield* service.status({ workingCopyId: copy.id })).blockers).toEqual([]);
+    }),
+  );
   it.effect("refuses a stale release review after working files change", () =>
     Effect.gen(function* () {
       const parent = yield* makeTemp;

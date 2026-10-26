@@ -235,7 +235,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
       LibraryPublisher["Service"],
       "info" | "project" | "publishDocuments" | "copyRegistrations"
     >;
-    readonly workspaces: Pick<LibraryWorkspaceStore["Service"], "receipts">;
+    readonly workspaces: Pick<LibraryWorkspaceStore["Service"], "receipts" | "followArchived">;
     readonly source: LibraryDocumentSource["Service"];
   }) {
     const sql = yield* SqlClient.SqlClient;
@@ -276,6 +276,8 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
           if (!project) {
             project = yield* input.publisher.project(copy.projectId);
             projects.set(copy.projectId, project);
+            // This computer reads its copies' projects nowhere else, so archiving reaches it here.
+            yield* input.workspaces.followArchived(project);
           }
           for (const repository of copy.repositories) {
             const resource = project.resources.find(

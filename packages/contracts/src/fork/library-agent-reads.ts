@@ -9,6 +9,7 @@ export const LibraryConversationsRead = Schema.Struct({
   projectId: Schema.optional(LibraryId),
   offset: Schema.optional(NonNegativeInt),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 }))),
+  includeArchived: Schema.optional(Schema.Boolean),
 });
 export const LibraryConversationLookup = Schema.Struct({
   sourceEnvironmentId: EnvironmentId,

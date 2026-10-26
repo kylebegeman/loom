@@ -141,6 +141,11 @@ export class LibraryWorkspaceStore extends Context.Service<
   {
     readonly receipts: Effect.Effect<ReadonlyArray<WorkspaceReceipt>, LibraryError>;
     readonly put: (receipt: WorkspaceReceipt) => Effect.Effect<void, LibraryError>;
+    /**
+     * Takes the Library's archived flag onto every receipt of this project. The rest of each
+     * receipt's project stays the revision its copy was laid out from.
+     */
+    readonly followArchived: (project: LibraryProject) => Effect.Effect<void, LibraryError>;
     readonly get: (workingCopyId: string) => Effect.Effect<WorkspaceReceipt, LibraryError>;
     readonly getBinding: (
       threadId: ThreadId,
@@ -442,6 +447,26 @@ const make = Effect.gen(function* () {
                 ...database.receipts.filter((row) => row.copy.id !== receipt.copy.id),
                 receipt,
               ],
+            });
+          }),
+        ),
+      ),
+    followArchived: (project) =>
+      locks.withLock(
+        databasePath,
+        mapIo(
+          Effect.gen(function* () {
+            const database = yield* read;
+            const stale = (row: WorkspaceReceipt) =>
+              row.project.id === project.id && row.project.archived !== project.archived;
+            if (!database.receipts.some(stale)) return;
+            yield* write({
+              ...database,
+              receipts: database.receipts.map((row) =>
+                stale(row)
+                  ? { ...row, project: { ...row.project, archived: project.archived } }
+                  : row,
+              ),
             });
           }),
         ),

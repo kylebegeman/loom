@@ -6,8 +6,8 @@ import { SidebarInset } from "~/components/ui/sidebar";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryErrorNotice } from "./LibraryControls";
-import { LibrarySavedThreads } from "./LibrarySavedThreads";
-import { projectLibrary, useLibraryAuthority } from "./state";
+import { LibrarySavedThreads, librarySavedThreadsToList } from "./LibrarySavedThreads";
+import { LIBRARY_THREAD_INDEX_LIMIT, projectLibrary, useLibraryProjects } from "./state";
 import { useNoProjectStart } from "./useNoProjectStart";
 
 // Outside the component because React Compiler cannot lower try/finally.
@@ -25,10 +25,13 @@ async function whileStarting(
 
 /** A history authority opens conversations without pretending to be an execution computer. */
 export function LibraryThreadHome() {
-  const library = useLibraryAuthority();
+  const library = useLibraryProjects(true);
   const index = useEnvironmentQuery(
     library.authorityId
-      ? projectLibrary.threadIndex({ environmentId: library.authorityId, input: { limit: 100 } })
+      ? projectLibrary.threadIndex({
+          environmentId: library.authorityId,
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
+        })
       : null,
   );
   // This page replaces the no-projects home, so it keeps that page's way to start without one.
@@ -67,9 +70,8 @@ export function LibraryThreadHome() {
         </div>
       </SidebarInset>
     );
-  const hasConversations = index.data?.threads.some(
-    (thread) => !thread.deleted && !thread.archived,
-  );
+  const hasConversations =
+    librarySavedThreadsToList(index.data?.threads ?? [], library.query.data ?? []).length > 0;
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <WorkspacePageHeader>

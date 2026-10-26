@@ -140,7 +140,7 @@ const handler = (
         const input = yield* decodeConversationsRead(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
         );
-        return HttpServerResponse.jsonUnsafe(yield* library.threadIndex(input), {
+        return HttpServerResponse.jsonUnsafe(yield* library.conversations(input), {
           headers: { "cache-control": "no-store" },
         });
       }
@@ -291,7 +291,7 @@ const handler = (
       LibraryError: (error) =>
         Effect.succeed(
           HttpServerResponse.jsonUnsafe(
-            { reason: error.reason },
+            { reason: error.reason, detail: error.detail },
             { status: error.reason === "invalid" ? 400 : error.reason === "io" ? 503 : 409 },
           ),
         ),

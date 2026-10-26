@@ -38,6 +38,7 @@ import {
   LibraryDismissBriefProposalRequest,
   type LibraryBriefProposalSource,
   type LibraryBriefProposalsRequest,
+  type LibraryConversationsRead,
   type LibraryProposeBriefRequest,
 } from "@t3tools/contracts/fork";
 import {
@@ -157,6 +158,13 @@ export class LibraryService extends Context.Service<
       offset?: number | undefined;
       limit?: number | undefined;
     }) => Effect.Effect<LibraryThreadIndex, LibraryError>;
+    /**
+     * The agent read of the same index. It leaves out deleted conversations, and those of archived
+     * projects unless the read includes them or names the project.
+     */
+    readonly conversations: (
+      input: typeof LibraryConversationsRead.Type,
+    ) => Effect.Effect<LibraryThreadIndex, LibraryError>;
     readonly history: (input: {
       id: string;
       offset?: number | undefined;
@@ -1210,6 +1218,47 @@ const make = Effect.gen(function* () {
     );
   const catalogRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     isAuthority ? effect : Effect.fail(new LibraryError({ reason: "not-authority" }));
+  const threadPage = (
+    input: {
+      readonly projectId?: string | undefined;
+      readonly offset?: number | undefined;
+      readonly limit?: number | undefined;
+    },
+    filter: LibraryStore.ConversationFilter,
+  ) => {
+    const offset = input.offset ?? 0;
+    const limit = input.limit ?? 100;
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 200
+    )
+      return Effect.fail(new LibraryError({ reason: "invalid" }));
+    return catalogRead(
+      store
+        .transaction(
+          Effect.gen(function* () {
+            const rows = yield* (
+              input.projectId === undefined
+                ? store.threadIndex(limit + 1, offset, filter)
+                : store.threads(input.projectId, limit + 1, offset, filter)
+            ).pipe(
+              Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
+            );
+            return {
+              threads: rows.slice(0, limit),
+              nextOffset: rows.length > limit ? offset + limit : null,
+              ...(offset === 0 && input.projectId === undefined
+                ? { projectActivity: yield* store.projectActivity(filter.omitArchivedProjects) }
+                : {}),
+            };
+          }),
+        )
+        .pipe(Effect.mapError(io)),
+    );
+  };
   return LibraryService.of({
     publishDocuments: (input) =>
       transact(
@@ -1303,42 +1352,12 @@ const make = Effect.gen(function* () {
           Effect.mapError(io),
         ),
       ),
-    threadIndex: (input) => {
-      const offset = input.offset ?? 0;
-      const limit = input.limit ?? 100;
-      if (
-        !Number.isSafeInteger(offset) ||
-        offset < 0 ||
-        !Number.isSafeInteger(limit) ||
-        limit < 1 ||
-        limit > 200
-      )
-        return Effect.fail(new LibraryError({ reason: "invalid" }));
-      return catalogRead(
-        store
-          .transaction(
-            Effect.gen(function* () {
-              const rows = yield* (
-                input.projectId === undefined
-                  ? store.threadIndex(limit + 1, offset)
-                  : store.threads(input.projectId, limit + 1, offset)
-              ).pipe(
-                Effect.flatMap((rows) =>
-                  Effect.forEach(rows, (row) => decode(codecs.summary, row)),
-                ),
-              );
-              return {
-                threads: rows.slice(0, limit),
-                nextOffset: rows.length > limit ? offset + limit : null,
-                ...(offset === 0 && input.projectId === undefined
-                  ? { projectActivity: yield* store.projectActivity }
-                  : {}),
-              };
-            }),
-          )
-          .pipe(Effect.mapError(io)),
-      );
-    },
+    threadIndex: (input) => threadPage(input, { omitDeleted: false, omitArchivedProjects: false }),
+    conversations: (input) =>
+      threadPage(input, {
+        omitDeleted: true,
+        omitArchivedProjects: input.projectId === undefined && input.includeArchived !== true,
+      }),
     history: (input) =>
       catalogRead(
         Effect.gen(function* () {

@@ -297,6 +297,13 @@ export function siteSaveRequest(
   };
 }
 
+/** Archived projects stay out unless the site serves them, so they can be seen and removed. */
+export function siteProjectChoices(projects: readonly LibraryProject[], served: readonly string[]) {
+  return projects
+    .filter((project) => !project.archived || served.includes(project.id))
+    .toSorted((a, b) => Number(a.archived) - Number(b.archived));
+}
+
 /** Services already serving an origin, which a new site on it most likely runs on. */
 export function servicesForOrigin(services: readonly Service[], origin: string) {
   return services.filter((service) => originOf(service.url) === origin);
@@ -396,9 +403,8 @@ function SiteWizard({
   // Until someone types their own, the name follows the address and the ID follows the name.
   const [nameOverride, setNameOverride] = useState<string | null>(row ? row.name : null);
   const [idOverride, setIdOverride] = useState<string | null>(row ? row.id : null);
-  const [projectIds, setProjectIds] = useState<readonly string[]>(
-    row?.projectIds ?? (target.projectId ? [target.projectId] : []),
-  );
+  const initialProjectIds = row?.projectIds ?? (target.projectId ? [target.projectId] : []);
+  const [projectIds, setProjectIds] = useState<readonly string[]>(initialProjectIds);
   const [serviceIds, setServiceIds] = useState<readonly string[]>(row?.serviceIds ?? []);
   const [servicesTouched, setServicesTouched] = useState(editing);
   const [watch, setWatch] = useState(!editing);
@@ -636,6 +642,7 @@ function SiteWizard({
               ) : current === "serves" ? (
                 <ServesStep
                   projects={catalog.query}
+                  served={initialProjectIds}
                   selected={projectIds}
                   issue={shown.has("serves") ? issues.serves : null}
                   onToggle={edited((projectId: string) =>
@@ -850,6 +857,7 @@ function AddressStep({
 
 function ServesStep({
   projects,
+  served,
   selected,
   issue,
   onToggle,
@@ -860,12 +868,14 @@ function ServesStep({
     readonly isPending: boolean;
     readonly refresh: () => void;
   };
+  /** What the site served when the editor opened, so unticking one keeps it to tick again. */
+  readonly served: readonly string[];
   readonly selected: readonly string[];
   readonly issue: string | null;
   readonly onToggle: (projectId: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const catalog = (projects.data ?? []).toSorted((a, b) => Number(a.archived) - Number(b.archived));
+  const catalog = siteProjectChoices(projects.data ?? [], [...served, ...selected]);
   const needle = query.trim().toLowerCase();
   const shown = needle
     ? catalog.filter((project) => project.title.toLowerCase().includes(needle))
@@ -908,7 +918,9 @@ function ServesStep({
       ) : null}
       {projects.data && !catalog.length ? (
         <p className="text-sm text-muted-foreground">
-          This Library has no projects yet. Create one in Projects, then register the site.
+          {projects.data.length
+            ? "Every project in this Library is archived. Restore or create one in Projects, then register the site."
+            : "This Library has no projects yet. Create one in Projects, then register the site."}
         </p>
       ) : null}
       {catalog.length ? (

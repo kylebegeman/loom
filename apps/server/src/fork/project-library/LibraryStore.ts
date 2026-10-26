@@ -23,6 +23,13 @@ export class LibraryStoreError extends Schema.TaggedError<LibraryStoreError>()(
   }
 }
 
+/** Which saved conversations a page leaves out. Catalog reads keep them all. */
+export interface ConversationFilter {
+  readonly omitDeleted: boolean;
+  readonly omitArchivedProjects: boolean;
+}
+const EVERY_CONVERSATION: ConversationFilter = { omitDeleted: false, omitArchivedProjects: false };
+
 export class LibraryStore extends Context.Service<
   LibraryStore,
   {
@@ -80,18 +87,19 @@ export class LibraryStore extends Context.Service<
       projectId: string,
       limit: number,
       offset: number,
+      filter?: ConversationFilter,
     ) => Effect.Effect<readonly string[], LibraryStoreError>;
     readonly threadSummary: (
       environmentId: string,
       threadId: string,
     ) => Effect.Effect<string | null, LibraryStoreError>;
-    readonly projectActivity: Effect.Effect<
-      NonNullable<LibraryThreadIndex["projectActivity"]>,
-      LibraryStoreError
-    >;
+    readonly projectActivity: (
+      omitArchivedProjects: boolean,
+    ) => Effect.Effect<NonNullable<LibraryThreadIndex["projectActivity"]>, LibraryStoreError>;
     readonly threadIndex: (
       limit: number,
       offset: number,
+      filter?: ConversationFilter,
     ) => Effect.Effect<readonly string[], LibraryStoreError>;
     readonly putThread: (input: {
       id: string;
@@ -238,6 +246,15 @@ const make = Effect.gen(function* () {
   // straddle a save that commits in between and find the blob already gone.
   const packed = (table: string, where: Fragment) =>
     sql<PackedRow>`SELECT r.payload_json, b.bytes FROM ${sql(table)} r LEFT JOIN fork_library_history_blobs b ON b.digest = substr(r.payload_json, ${BLOB_PREFIX.length + 1}) WHERE ${where}`;
+  const outsideArchivedProjects = sql`project_id NOT IN (SELECT id FROM fork_library_projects WHERE archived = 1)`;
+  const shownConversations = (filter: ConversationFilter, ...clauses: Fragment[]) =>
+    sql.and([
+      ...clauses,
+      ...(filter.omitDeleted
+        ? [sql`COALESCE(json_extract(summary_json, '$.deleted'), 0) = 0`]
+        : []),
+      ...(filter.omitArchivedProjects ? [outsideArchivedProjects] : []),
+    ]);
   const unpack = Effect.fn("LibraryStore.unpack")(function* (row: PackedRow | null) {
     if (row === null || !row.payload_json.startsWith(BLOB_PREFIX)) return row?.payload_json ?? null;
     const { bytes } = row;
@@ -441,12 +458,12 @@ const make = Effect.gen(function* () {
           sql`r.source_environment_id = ${environmentId} AND r.source_thread_id = ${threadId}`,
         ),
       ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
-    threads: (projectId, limit, offset) =>
+    threads: (projectId, limit, offset, filter = EVERY_CONVERSATION) =>
       run(
         "threads",
         sql<{
           payload_json: string;
-        }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE project_id = ${projectId} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
+        }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE ${shownConversations(filter, sql`project_id = ${projectId}`)} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
       ).pipe(Effect.map(payloads)),
     threadSummary: (environmentId, threadId) =>
       run(
@@ -455,21 +472,23 @@ const make = Effect.gen(function* () {
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
       ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
-    projectActivity: run(
-      "project-activity",
-      sql<NonNullable<LibraryThreadIndex["projectActivity"]>[number]>`
+    projectActivity: (omitArchivedProjects) =>
+      run(
+        "project-activity",
+        sql<NonNullable<LibraryThreadIndex["projectActivity"]>[number]>`
         SELECT project_id AS "projectId", COUNT(*) AS conversations, MAX(updated_at) AS "latestAt"
         FROM fork_library_threads
         WHERE COALESCE(json_extract(summary_json, '$.deleted'), 0) = 0
           AND COALESCE(json_extract(summary_json, '$.archived'), 0) = 0
+          ${omitArchivedProjects ? sql`AND ${outsideArchivedProjects}` : sql``}
         GROUP BY project_id`,
-    ),
-    threadIndex: (limit, offset) =>
+      ),
+    threadIndex: (limit, offset, filter = EVERY_CONVERSATION) =>
       run(
         "thread-index",
         sql<{
           payload_json: string;
-        }>`SELECT summary_json AS payload_json FROM fork_library_threads ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
+        }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE ${shownConversations(filter)} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
       ).pipe(Effect.map(payloads)),
     putThread: (input) =>
       run(

@@ -146,6 +146,18 @@ it("retries an uncertain create with the same receipt and locked draft", async (
   expect(state.create.mock.calls[1]).toEqual(state.create.mock.calls[0]);
   expect(onSaved).toHaveBeenCalledOnce();
 });
+it("starts over from an unfinished create with the draft editable and a new receipt", async () => {
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+  await choose("Create “Coast”");
+  await choose("Start over");
+  expect(input().readOnly).toBe(false);
+  expect(input().value).toBe("Coast");
+  expect(container.textContent).not.toContain("Response lost");
+  await choose("Create “Coast”");
+  const [first, second] = state.create.mock.calls.map(([call]) => call.input);
+  expect(second).toEqual({ ...first, requestId: expect.any(String) });
+  expect(second.requestId).not.toBe(first.requestId);
+});
 
 it("keeps blueprint creation unavailable on older Library servers", async () => {
   state.workflows = false;

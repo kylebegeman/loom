@@ -35,12 +35,14 @@ import {
   requestLibraryBriefEdit,
   requestLibraryHistorySearch,
 } from "../project-library/actions";
-import { projectLibrary, useLibraryPermission, useLibraryProjects } from "../project-library/state";
+import {
+  LIBRARY_THREAD_INDEX_LIMIT,
+  projectLibrary,
+  useLibraryPermission,
+  useLibraryProjects,
+} from "../project-library/state";
 import { onForkCommand } from "../keybindings/forkCommandBus";
 import type { ForkCommandPaletteSource } from "./registry";
-
-// The Projects page asks for the same page of the index, so both read one cached result.
-const THREAD_INDEX_LIMIT = 100;
 
 /** Why the Library cannot be used yet. The palette then shows one quiet hint in its place. */
 export type LibraryPaletteBlocker =
@@ -325,7 +327,7 @@ export function useLibraryPaletteContext(
     authorityId
       ? projectLibrary.threadIndex({
           environmentId: authorityId,
-          input: { limit: THREAD_INDEX_LIMIT },
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
         })
       : null,
   );

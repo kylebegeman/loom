@@ -94,6 +94,12 @@ export function SiteEditor({
   const catalog = useEnvironmentQuery(
     library.projects({ environmentId, input: { includeArchived: true } }),
   );
+  // An archived project is offered only while the site selects it, so it can still be removed.
+  const savedProjectIds = target.kind === "site" ? (target.row?.projectIds ?? []) : [];
+  const offeredProjects = catalog.data?.filter(
+    (project) =>
+      !project.archived || projectIds.includes(project.id) || savedProjectIds.includes(project.id),
+  );
   const saveSite = useAtomCommand(sites.saveSite, { reportFailure: false });
   const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
   const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
@@ -220,7 +226,7 @@ export function SiteEditor({
               <Text className="font-t3-semibold">Projects (at least one)</Text>
               {catalog.isPending ? <Text>Loading projects…</Text> : null}
               {catalog.error ? <Text accessibilityRole="alert">{catalog.error}</Text> : null}
-              {catalog.data?.map((project) => (
+              {offeredProjects?.map((project) => (
                 <Button
                   key={project.id}
                   label={`${projectIds.includes(project.id) ? "Selected: " : ""}${project.title}${project.archived ? " (archived)" : ""}`}
@@ -229,7 +235,7 @@ export function SiteEditor({
                   onPress={() => setProjects(toggle(projectIds, project.id))}
                 />
               ))}
-              {!catalog.isPending && !catalog.data?.length ? (
+              {!catalog.isPending && !offeredProjects?.length ? (
                 <Text>Create a project in Projects before registering a site.</Text>
               ) : null}
               {projectIds

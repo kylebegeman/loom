@@ -65,6 +65,11 @@ import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
 import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
 import { buildHomeProjectScopes } from "../home/homeThreadList";
+// fork: library - The sidebar shares Home's project filter, Library projects included.
+import {
+  isLibraryProjectScopeKey,
+  useLibraryProjectFilter,
+} from "../../fork/library/useHomeLibraryProjects";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -241,10 +246,9 @@ function ThreadNavigationSidebarPane(
       }),
     [projects, options.selectedEnvironmentId, options.projectGroupingMode],
   );
-  const projectFilterOptions = projectScopes.map((scope) => ({
-    key: scope.key,
-    label: scope.title,
-  }));
+  const projectFilter = useLibraryProjectFilter(projectScopes, resolvedProjectKey); // fork: library
+  const projectFilterOptions = projectFilter.options; // fork: library
+  const libraryProjectKeys = projectFilter.libraryProjectKeys; // fork: library
   const projectTitleByProjectKey = useMemo(
     () =>
       new Map(
@@ -272,7 +276,9 @@ function ThreadNavigationSidebarPane(
   // This map reaches LegendList's extraData, which re-renders every row whenever it changes
   // identity; the hook keeps it stable.
   const threadSearchMatchByKey = useThreadListSearchMatches(threads, threadSearch);
-  const selectedProjectKey = selectedProjectScope?.key ?? null;
+  const selectedProjectKey = isLibraryProjectScopeKey(resolvedProjectKey) // fork: library
+    ? resolvedProjectKey
+    : (selectedProjectScope?.key ?? null);
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
     for (const project of projects) {
@@ -357,8 +363,17 @@ function ThreadNavigationSidebarPane(
     contentOnlyThreadKeys,
     olderSettledShelf,
   } = useThreadListV2({
-    threads,
-    pendingTasks,
+    // fork: library - A Library project is scoped by its saved threads' local projects.
+    threads: libraryProjectKeys
+      ? threads.filter((thread) =>
+          libraryProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)),
+        )
+      : threads,
+    pendingTasks: libraryProjectKeys
+      ? pendingTasks.filter((task) =>
+          libraryProjectKeys.has(scopedProjectKey(task.environmentId, task.projectId)),
+        )
+      : pendingTasks,
     environmentId: options.selectedEnvironmentId,
     projectRefs: selectedProjectScope === null ? null : selectedProjectScope.projectRefs,
     searchQuery: props.searchQuery,
@@ -830,8 +845,8 @@ function ThreadNavigationSidebarPane(
                 : threadSearch.failedEnvironmentIds.length > 0
                   ? "Search incomplete"
                   : "No matching threads"
-              : selectedProjectScope !== null
-                ? `No threads in ${selectedProjectScope.title}`
+              : selectedProjectKey !== null
+                ? `No threads in ${projectFilterOptions.find((option) => option.key === selectedProjectKey)?.label ?? "this project"}`
                 : "No threads yet"}
     </Text>
   );

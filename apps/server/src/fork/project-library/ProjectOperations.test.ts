@@ -83,6 +83,7 @@ const session = (
 });
 const fixture = Effect.gen(function* () {
   const active = yield* Ref.make<readonly AuthClientSession[]>([session()]);
+  const renewals = yield* Ref.make<ReadonlyMap<string, readonly AuthSessionId[]>>(new Map());
   const calls = yield* Ref.make(0);
   const failure = yield* Ref.make(false);
   const prepareFailure = yield* Ref.make<LibraryError | null>(null);
@@ -223,6 +224,10 @@ const fixture = Effect.gen(function* () {
           if (yield* Ref.get(revokeAfterRead)) yield* Ref.set(active, []);
           return value;
         }),
+      renewalsOf: (sessionId) =>
+        Ref.get(renewals).pipe(
+          Effect.map((links) => new Set([sessionId, ...(links.get(sessionId) ?? [])])),
+        ),
     }),
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   );
@@ -238,6 +243,7 @@ const fixture = Effect.gen(function* () {
     threadDeleted,
     revokeAtResolve,
     active,
+    renewals,
     calls,
     failure,
     prepareFailure,
@@ -366,6 +372,23 @@ describe("Project operations", () => {
           "succeeded",
         );
         expect((yield* state.service.list({}))[0]?.attempt).toBe(2);
+      }),
+    ),
+  );
+  it.effect("accepts the renewal a connection moved to after its opening session expired", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const renewal = { ...session(), sessionId: AuthSessionId.make("renewal") };
+        yield* Ref.set(state.active, [renewal]);
+        yield* Ref.set(state.renewals, new Map([[actor.sessionId, [renewal.sessionId]]]));
+        expect((yield* state.service.execute("renewed", create, actor)).state).toBe("succeeded");
+        expect(
+          (yield* state.service.executeClient("client-renewed", create, actor.sessionId)).state,
+        ).toBe("succeeded");
+        yield* Ref.set(state.active, [{ ...renewal, subject: "stranger" }]);
+        expect(
+          (yield* state.service.execute("stranger", create, actor).pipe(Effect.flip)).reason,
+        ).toBe("blocked");
       }),
     ),
   );

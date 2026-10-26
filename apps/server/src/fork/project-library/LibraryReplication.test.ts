@@ -102,6 +102,7 @@ const workspace = WorkspaceStore.LibraryWorkspaceStore.of({
   getBinding: () => Effect.succeed(resolved),
   getBoundProject: () => Effect.succeed(project),
   put: () => Effect.void,
+  followArchived: () => Effect.void,
   importBindings: () => Effect.void,
   bind: () => Effect.void,
   repositoriesForRoot: () => Effect.succeed([]),
@@ -1499,7 +1500,7 @@ describe("durable Library history replication", () => {
         const projections = yield* ProjectionStore.ProjectionStoreV2;
         const archive = yield* Ref.get(f.archive);
         let sequence = 0;
-        const seed = (id: ThreadId, at: string) =>
+        const seed = (id: ThreadId, at: string, parent?: ThreadId) =>
           Effect.gen(function* () {
             const occurredAt = DateTime.makeUnsafe(at);
             yield* projections.apply({
@@ -1509,7 +1510,13 @@ describe("durable Library history replication", () => {
               payload: {
                 ...archive.projection.thread,
                 id,
-                lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+                lineage: parent
+                  ? {
+                      parentThreadId: parent,
+                      relationshipToParent: "subagent",
+                      rootThreadId: parent,
+                    }
+                  : { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
                 createdAt: occurredAt,
                 updatedAt: occurredAt,
               },
@@ -1541,6 +1548,8 @@ describe("durable Library history replication", () => {
         const fresh = ThreadId.make("fresh-thread");
         yield* seed(older, "2026-10-01T00:00:00.000Z");
         yield* seed(newer, "2026-10-02T00:00:00.000Z");
+        // Subagent conversations stay on this computer, found by the folder check or a milestone.
+        yield* seed(ThreadId.make("subagent-thread"), "2026-10-02T12:00:00.000Z", newer);
         const store = yield* WorkspaceStore.LibraryWorkspaceStore.pipe(
           Effect.provide(WorkspaceStore.layer),
         );
@@ -1567,6 +1576,7 @@ describe("durable Library history replication", () => {
         ]);
         // A conversation with new work goes ahead of the backlog, and a flush sends only it.
         yield* seed(fresh, "2026-10-03T00:00:00.000Z");
+        yield* seed(ThreadId.make("later-subagent-thread"), "2026-10-03T00:00:00.000Z", fresh);
         yield* service.flush;
         expect(yield* uploaded).toEqual([newer, fresh]);
         yield* service.drain;

@@ -1,14 +1,24 @@
 import {
+  libraryOutsideArchivedProjects,
   libraryProjectFilterItems,
   libraryProjectForLocalRefs,
   libraryProjectScopeKey,
   parseLibraryProjectScope,
 } from "@t3tools/client-runtime/fork";
-import type { LibraryThreadSummary, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 
 import type { SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
 import { useEnvironmentQuery } from "~/state/query";
-import { projectLibrary, useLibraryProject, useLibraryProjects } from "./state";
+import {
+  LIBRARY_THREAD_INDEX_LIMIT,
+  projectLibrary,
+  useLibraryProject,
+  useLibraryProjects,
+} from "./state";
 
 interface ProjectScopeItem {
   readonly value: string;
@@ -52,6 +62,25 @@ export function libraryScopeLocalProjectKeys(
 }
 
 /**
+ * Finds the live Library project that holds a group's folders. A folder held only by an archived
+ * project stays a plain local folder, since the filter does not list the archived project.
+ * `projects` must include archived ones.
+ */
+export function librarySidebarGroupProjects(
+  projects: readonly LibraryProject[],
+  threads: readonly LibraryThreadSummary[],
+  copies: readonly LibraryWorkingCopy[],
+) {
+  const liveThreads = libraryOutsideArchivedProjects(threads, projects);
+  const liveCopies = libraryOutsideArchivedProjects(copies, projects);
+  const known = new Set(projects.map((project) => project.id));
+  return (refs: readonly { environmentId: string; projectId: string }[]) => {
+    const id = libraryProjectForLocalRefs(liveThreads, refs, liveCopies);
+    return id && known.has(id) ? id : null;
+  };
+}
+
+/**
  * The sidebar's project filter with Library projects in it. A local project group that belongs to
  * exactly one Library project is filtered through that project instead, so the same work is not
  * offered twice, and a Library scope lists the threads every computer saved for it.
@@ -64,7 +93,10 @@ export function useSidebarLibraryScope(input: {
   const catalog = useLibraryProjects(true);
   const index = useEnvironmentQuery(
     catalog.authorityId
-      ? projectLibrary.threadIndex({ environmentId: catalog.authorityId, input: { limit: 200 } })
+      ? projectLibrary.threadIndex({
+          environmentId: catalog.authorityId,
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
+        })
       : null,
   );
   const copies = useEnvironmentQuery(
@@ -75,14 +107,13 @@ export function useSidebarLibraryScope(input: {
   const scope = parseLibraryProjectScope(persistedScopeKey);
   const project = useLibraryProject(scope?.projectId ?? "");
 
-  const groupProjectId = (group: SidebarProjectSnapshot) => {
-    const id = libraryProjectForLocalRefs(
-      index.data?.threads ?? [],
-      group.memberProjectRefs,
-      copies.data ?? [],
-    );
-    return id && catalog.query.data?.some((entry) => entry.id === id) ? id : null;
-  };
+  const groupProjectFor = librarySidebarGroupProjects(
+    catalog.query.data ?? [],
+    index.data?.threads ?? [],
+    copies.data ?? [],
+  );
+  const groupProjectId = (group: SidebarProjectSnapshot) =>
+    groupProjectFor(group.memberProjectRefs);
   const scopeKeyForGroup = (group: SidebarProjectSnapshot) => {
     const id = groupProjectId(group);
     return id ? libraryProjectScopeKey(id) : group.projectKey;
@@ -97,7 +128,7 @@ export function useSidebarLibraryScope(input: {
     const groupByKey = new Map(projectGroups.map((group) => [group.projectKey, group] as const));
     return [
       ...(allItem ? [allItem] : []),
-      ...libraryProjectFilterItems(catalog.query.data ?? []),
+      ...libraryProjectFilterItems(catalog.query.data ?? [], persistedScopeKey),
       ...groupItems.filter((item) => {
         const group = groupByKey.get(item.value);
         return !group || !groupProjectId(group);

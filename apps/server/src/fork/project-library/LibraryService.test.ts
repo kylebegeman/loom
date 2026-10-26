@@ -9,6 +9,7 @@ import {
   LibraryIngestHistoryRequest,
   type LibraryProject,
   LibraryThreadArchive,
+  type LibraryThreadIndex,
 } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -487,6 +488,56 @@ describe("independent Library catalog and durable history", () => {
         expect((yield* Effect.result(service.threadIndex({ offset: -1 })))._tag).toBe("Failure");
       }),
     ),
+  );
+  it.effect(
+    "leaves deleted conversations and archived projects out of the agent read by default",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const live = yield* create(service, "agent-live");
+          const setAside = yield* create(service, "agent-archived");
+          const register = Effect.fnUntraced(function* (
+            project: LibraryProject,
+            name: string,
+            deleted = false,
+          ) {
+            const archive = yield* archiveFor(project);
+            const environmentId = EnvironmentId.make(name);
+            const thread = {
+              ...archive,
+              summary: {
+                ...archive.summary,
+                id: `${name}:${archive.summary.threadId}`,
+                environmentId,
+                workingCopyId: null,
+                deleted,
+              },
+            };
+            yield* service.registerThread({ requestId: `agent-${name}`, thread });
+            return thread.summary.id;
+          });
+          const current = yield* register(live, "current");
+          yield* register(live, "deleted", true);
+          const old = yield* register(setAside, "old");
+          yield* service.archiveProject({
+            requestId: "agent-archive",
+            projectId: setAside.id,
+            expectedRevision: setAside.revision,
+            archived: true,
+          });
+          const ids = (page: LibraryThreadIndex) => page.threads.map((thread) => thread.id).sort();
+
+          const page = yield* service.conversations({});
+          expect(ids(page)).toEqual([current]);
+          expect(page.projectActivity?.map((entry) => entry.projectId)).toEqual([live.id]);
+          expect(ids(yield* service.conversations({ includeArchived: true }))).toEqual(
+            [current, old].sort(),
+          );
+          expect(ids(yield* service.conversations({ projectId: setAside.id }))).toEqual([old]);
+          // Clients filter the catalog index themselves, and restore flows still need every row.
+          expect((yield* service.threadIndex({})).threads).toHaveLength(3);
+        }),
+      ),
   );
 
   it.effect(

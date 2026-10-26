@@ -128,6 +128,23 @@ const withProject = (
       : definition.workspace,
 });
 
+/** A copy this computer still holds for its project, not one released or unregistered. */
+const activeCopy = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+  receipt.copy.registered !== false && receipt.copy.state !== "released";
+const readyCopy = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+  receipt.copy.registered !== false && receipt.copy.state === "ready";
+
+/** The Library projects this computer reports on: those with an active copy, archived ones aside. */
+export const reportedLibraryProjects = (
+  receipts: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
+) => [
+  ...new Set(
+    receipts
+      .filter((receipt) => activeCopy(receipt) && !receipt.project.archived)
+      .map((receipt) => receipt.project.id),
+  ),
+];
+
 /**
  * The Library project a local project belongs to on this computer. A folder taken over by another
  * project keeps its retired receipt for old conversations, so the folder's current owner wins.
@@ -140,13 +157,38 @@ export const libraryProjectFor = (
   if (projectId === null) return null;
   const matches = receipts.filter(
     (receipt) =>
-      (!readyOnly || receipt.copy.state === "ready") &&
+      (!readyOnly || readyCopy(receipt)) &&
       (receipt.rootLocalProjectId === projectId ||
         receipt.copy.repositories.some((repository) => repository.localProjectId === projectId)),
   );
   return (
     (matches.find((receipt) => receipt.copy.registered !== false) ?? matches[0])?.project.id ?? null
   );
+};
+
+/** Why this computer cannot run in a Library project, or null when it holds a ready copy. */
+export const libraryProjectBlocker = (
+  receipts: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
+  libraryProjectId: string,
+) => {
+  const ready = receipts.filter(
+    (receipt) => receipt.project.id === libraryProjectId && readyCopy(receipt),
+  );
+  if (ready.length === 0) return "This computer has no ready copy of this run's project.";
+  if (ready.every((receipt) => receipt.project.archived))
+    return "This run's project is archived in the Library. Restore it to run here.";
+  return null;
+};
+
+/** The local project a ready copy of a Library project opens as on this computer. */
+export const localProjectFor = (
+  receipts: ReadonlyArray<LibraryWorkspaceStore.WorkspaceReceipt>,
+  libraryProjectId: string,
+) => {
+  const receipt = receipts.find(
+    (candidate) => candidate.project.id === libraryProjectId && readyCopy(candidate),
+  );
+  return receipt?.rootLocalProjectId ?? receipt?.copy.repositories[0]?.localProjectId ?? null;
 };
 
 const sameModel = (a: ModelSelection, b: ModelSelection) =>
@@ -1024,9 +1066,7 @@ const make = Effect.gen(function* () {
     bots,
     client,
     projects: {
-      libraryProjects: receipts.pipe(
-        Effect.map((all) => [...new Set(all.map((receipt) => receipt.project.id))]),
-      ),
+      libraryProjects: receipts.pipe(Effect.map(reportedLibraryProjects)),
       readiness: Effect.fn("BotSharing.projectReadiness")(function* (projectId, libraryProjectId) {
         const all = yield* workspace.receipts.pipe(Effect.option);
         if (Option.isNone(all))
@@ -1038,17 +1078,8 @@ const make = Effect.gen(function* () {
           ];
         const libraryId = libraryProjectId ?? libraryProjectFor(all.value, projectId);
         if (libraryId === null) return [];
-        if (
-          !all.value.some(
-            (receipt) => receipt.project.id === libraryId && receipt.copy.state === "ready",
-          )
-        )
-          return [
-            {
-              availability: "blocked" as const,
-              message: "This computer has no ready copy of this run's project.",
-            },
-          ];
+        const blocker = libraryProjectBlocker(all.value, libraryId);
+        if (blocker !== null) return [{ availability: "blocked" as const, message: blocker }];
         const report = yield* projectWorkspace
           .readiness({ projectId: libraryId })
           .pipe(Effect.option);
@@ -1064,17 +1095,7 @@ const make = Effect.gen(function* () {
       toLibrary: (projectId) =>
         receipts.pipe(Effect.map((all) => libraryProjectFor(all, projectId, true))),
       toLocal: (libraryProjectId) =>
-        receipts.pipe(
-          Effect.map((all) => {
-            const receipt = all.find(
-              (candidate) =>
-                candidate.project.id === libraryProjectId && candidate.copy.state === "ready",
-            );
-            return (
-              receipt?.rootLocalProjectId ?? receipt?.copy.repositories[0]?.localProjectId ?? null
-            );
-          }),
-        ),
+        receipts.pipe(Effect.map((all) => localProjectFor(all, libraryProjectId))),
     },
     vault: {
       status: vaultCore.status,

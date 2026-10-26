@@ -7,13 +7,8 @@ import {
 } from "../../fork/attention/ThreadAttentionHeader";
 import { environmentThreadShells } from "../../state/threads";
 // fork: library - Library projects scope the thread list and list saved threads.
-import {
-  parseLibraryProjectScope,
-  libraryProjectFilterItems,
-  libraryHoldsLocalRefs,
-} from "@t3tools/client-runtime/fork";
-import { library, useLibraryAuthority } from "../../fork/library/libraryState";
-import { useEnvironmentQuery } from "../../state/query";
+import { parseLibraryProjectScope } from "@t3tools/client-runtime/fork";
+import { useLibraryAuthority } from "../../fork/library/libraryState";
 import { LibrarySavedThreads } from "../../fork/library/LibrarySavedThreads";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -105,7 +100,10 @@ import {
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
-import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
+import type {
+  HomeListFilterMenuEnvironment,
+  HomeListFilterMenuProject,
+} from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
   findHomeProjectScope,
@@ -131,6 +129,9 @@ interface HomeScreenProps {
   readonly selectedProjectKey: string | null;
   readonly projectSortOrder: HomeProjectSortOrder;
   readonly projectGroupingMode: SidebarProjectGroupingMode;
+  // fork: library - Built once by the route so every mobile client lists the same projects.
+  readonly projectFilterOptions: ReadonlyArray<HomeListFilterMenuProject>;
+  readonly libraryProjectKeys: ReadonlySet<string> | null;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
@@ -413,51 +414,9 @@ export function HomeScreen(props: HomeScreenProps) {
     projectGroupingMode: props.projectGroupingMode,
   });
 
-  // fork: library - Library catalog, copies and saved threads scope the thread list.
+  // fork: library - A Library scope lists the local projects its saved threads came from.
   const sharedAuthority = useLibraryAuthority();
-  const sharedCatalog = useEnvironmentQuery(
-    sharedAuthority.environmentId
-      ? library.projects({
-          environmentId: sharedAuthority.environmentId,
-          input: { includeArchived: true },
-        })
-      : null,
-  );
-  const sharedIndex = useEnvironmentQuery(
-    sharedAuthority.environmentId
-      ? library.threadIndex({ environmentId: sharedAuthority.environmentId, input: { limit: 200 } })
-      : null,
-  );
-  const sharedCopies = useEnvironmentQuery(
-    sharedAuthority.environmentId
-      ? library.copies({ environmentId: sharedAuthority.environmentId, input: {} })
-      : null,
-  );
   const sharedScope = parseLibraryProjectScope(props.selectedProjectKey);
-  const sharedThreads = useEnvironmentQuery(
-    sharedAuthority.environmentId && sharedScope
-      ? library.threads({
-          environmentId: sharedAuthority.environmentId,
-          input: { projectId: sharedScope.projectId },
-        })
-      : null,
-  );
-  const filterItems = [
-    ...libraryProjectFilterItems(sharedCatalog.data ?? []).map((item) => ({
-      key: item.value,
-      label: item.label,
-    })),
-    ...projectScopes
-      .filter(
-        (scope) =>
-          !libraryHoldsLocalRefs(
-            sharedIndex.data?.threads ?? [],
-            scope.projectRefs,
-            sharedCopies.data ?? [],
-          ),
-      )
-      .map((scope) => ({ key: scope.key, label: scope.title })),
-  ];
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = (() => {
     const map = new Map<string, EnvironmentProject>();
@@ -488,16 +447,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ScopedProjectKeys =
     // fork: library
     sharedScope
-      ? new Set(
-          (sharedThreads.data ?? [])
-            .filter(
-              (thread) =>
-                !sharedScope.resourceId ||
-                (thread.resourceIds.length === 1 &&
-                  thread.resourceIds[0] === sharedScope.resourceId),
-            )
-            .map((thread) => scopedProjectKey(thread.environmentId, thread.localProjectId)),
-        )
+      ? (props.libraryProjectKeys ?? new Set<string>())
       : v2ScopedProjectGroup === null
         ? null
         : new Set(
@@ -939,7 +889,7 @@ export function HomeScreen(props: HomeScreenProps) {
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           environments={props.environments}
-          projects={filterItems} // fork: library
+          projects={props.projectFilterOptions} // fork: library
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}
           projectView={navigationView === "projects"} // fork: project-navigation

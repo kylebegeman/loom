@@ -211,7 +211,7 @@ const decodeProposal = Schema.decodeUnknownEffect(LibraryBriefProposal);
 const encodePreviews = Schema.encodeEffect(Schema.fromJsonString(LibraryPreviewRegisterRequest));
 const decodePreviewAccess = Schema.decodeUnknownEffect(LibraryPreviewAccess);
 const decodeReason = Schema.decodeUnknownEffect(
-  Schema.Struct({ reason: LibraryError.fields.reason }),
+  Schema.Struct({ reason: LibraryError.fields.reason, detail: LibraryError.fields.detail }),
 );
 const encodePagePublish = Schema.encodeEffect(Schema.fromJsonString(LibraryPagePublishRequest));
 const encodePageUpdate = Schema.encodeEffect(Schema.fromJsonString(PreviewPageUpdateInput));
@@ -357,7 +357,7 @@ const make = Effect.gen(function* () {
     return LibraryPublisher.of({
       enabled: true,
       projects: localLibrary.projects,
-      conversations: localLibrary.threadIndex,
+      conversations: localLibrary.conversations,
       lookupThread: localLibrary.lookupThread,
       history: (input) =>
         localLibrary.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
@@ -412,7 +412,7 @@ const make = Effect.gen(function* () {
     const response = yield* send(request);
     if (keepReason && (response.status === 400 || response.status === 409)) {
       const refused = yield* response.json.pipe(Effect.flatMap(decodeReason), Effect.option);
-      if (Option.isSome(refused)) return yield* new LibraryError({ reason: refused.value.reason });
+      if (Option.isSome(refused)) return yield* new LibraryError(refused.value);
     }
     if (notFound && response.status === 404)
       return yield* new LibraryError({ reason: "not-found" });

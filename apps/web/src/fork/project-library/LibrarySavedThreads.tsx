@@ -1,9 +1,37 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
+import { libraryOutsideArchivedProjects } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
 import { useEnvironmentQuery } from "~/state/query";
-import { projectLibrary, useLibraryProjects } from "./state";
+import { LIBRARY_THREAD_INDEX_LIMIT, projectLibrary, useLibraryProjects } from "./state";
+
+/**
+ * Saved conversations worth listing: not archived, deleted, open from a computer already, or in an
+ * archived project. `projects` must include archived ones.
+ */
+export function librarySavedThreadsToList(
+  threads: readonly LibraryThreadSummary[],
+  projects: readonly LibraryProject[],
+  filter: {
+    readonly local?: ReadonlySet<string>;
+    readonly projectKeys?: ReadonlySet<string> | null;
+    readonly search?: string;
+  } = {},
+) {
+  const query = filter.search?.trim().toLocaleLowerCase() ?? "";
+  const titles = query ? new Map(projects.map((p) => [p.id, p.title])) : null;
+  return libraryOutsideArchivedProjects(threads, projects).filter(
+    (t) =>
+      !t.archived &&
+      !t.deleted &&
+      !filter.local?.has(`${t.environmentId}:${t.threadId}`) &&
+      (!filter.projectKeys || filter.projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&
+      (!titles ||
+        `${t.title} ${titles.get(t.projectId) ?? ""}`.toLocaleLowerCase().includes(query)),
+  );
+}
 
 /** Uploaded threads appear in normal navigation even without a connection to their source computer. */
 export function LibrarySavedThreads({
@@ -23,7 +51,10 @@ export function LibrarySavedThreads({
   const library = useLibraryProjects(true);
   const index = useEnvironmentQuery(
     library.authorityId
-      ? projectLibrary.threadIndex({ environmentId: library.authorityId, input: { limit: 100 } })
+      ? projectLibrary.threadIndex({
+          environmentId: library.authorityId,
+          input: { limit: LIBRARY_THREAD_INDEX_LIMIT },
+        })
       : null,
   );
   const local = useMemo(
@@ -34,17 +65,11 @@ export function LibrarySavedThreads({
     () => new Map(library.query.data?.map((p) => [p.id, p.title]) ?? []),
     [library.query.data],
   );
-  const query = search.trim().toLocaleLowerCase();
-  const threads =
-    index.data?.threads.filter(
-      (t) =>
-        !t.archived &&
-        !t.deleted &&
-        !local.has(`${t.environmentId}:${t.threadId}`) &&
-        (!projectKeys || projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&
-        (!query ||
-          `${t.title} ${titles.get(t.projectId) ?? ""}`.toLocaleLowerCase().includes(query)),
-    ) ?? [];
+  const threads = librarySavedThreadsToList(index.data?.threads ?? [], library.query.data ?? [], {
+    local,
+    projectKeys,
+    search,
+  });
   if (!threads.length) return null;
   return (
     <section className="space-y-1 py-3" aria-label="Saved conversations">

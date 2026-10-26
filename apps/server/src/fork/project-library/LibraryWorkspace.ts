@@ -1433,6 +1433,7 @@ const make = Effect.gen(function* () {
         (other) =>
           other.copy.id !== copy.id &&
           other.copy.state !== "released" &&
+          other.copy.registered !== false &&
           contained(copy.rootPath, other.copy.rootPath),
       )
     )

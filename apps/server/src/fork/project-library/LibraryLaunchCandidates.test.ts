@@ -126,6 +126,34 @@ describe("LibraryLaunchCandidates", () => {
     ),
   );
 
+  it.effect("refuses an archived project until it is restored", () =>
+    run(true, ({ library, launch }) =>
+      Effect.gen(function* () {
+        const project = yield* library.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const archived = yield* library.archiveProject({
+          requestId: "archive",
+          projectId: project.id,
+          expectedRevision: project.revision,
+          archived: true,
+        });
+        const error = yield* Effect.flip(launch.candidates({ projectId: project.id }));
+        expect(error).toMatchObject({ reason: "blocked" });
+        expect(error.message).toContain("AspectAvy is archived. Restore it");
+        yield* library.archiveProject({
+          requestId: "restore",
+          projectId: project.id,
+          expectedRevision: archived.revision,
+          archived: false,
+        });
+        expect((yield* launch.candidates({ projectId: project.id })).projectId).toBe(project.id);
+      }),
+    ),
+  );
+
   it.effect("fails away from the Library, like the other catalog reads", () =>
     run(false, ({ launch }) =>
       Effect.gen(function* () {

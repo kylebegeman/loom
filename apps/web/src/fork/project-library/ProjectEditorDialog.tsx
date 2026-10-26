@@ -8,6 +8,7 @@ import {
   PaletteIcon,
   PencilLineIcon,
   PlusIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import { ProjectColorDot, ProjectTile } from "./ProjectIdentity";
 import { randomUUID } from "~/lib/utils";
@@ -245,7 +246,7 @@ export function ProjectEditorDialog({
         error={error ?? (page === "repository" ? resourceError : null)}
         message={
           attempt
-            ? "Creation is waiting for confirmation. Retry to finish the same project."
+            ? "The last try did not finish. Retry it, or start over to change the project."
             : continueTo === "conversation"
               ? "Create a project, then start a conversation. Repositories and a brief are optional."
               : clones
@@ -327,6 +328,20 @@ export function ProjectEditorDialog({
                     ),
                     select: () => void save(),
                   },
+                  ...(attempt && !busy
+                    ? [
+                        {
+                          id: "start-over",
+                          title: "Start over",
+                          description: "Keep what you entered and edit it before creating",
+                          icon: <RotateCcwIcon className="size-4" />,
+                          select: () => {
+                            saveAttempt(null);
+                            setError(null);
+                          },
+                        },
+                      ]
+                    : []),
                   ...(existing
                     ? [
                         {

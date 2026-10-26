@@ -19,13 +19,17 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
+import * as ServerConfig from "../../config.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { copyFor, resource, source } from "./Library.testkit.ts";
 import * as Publication from "./LibraryDocumentPublication.ts";
 import { documentDigest } from "./LibraryDocuments.ts";
+import * as LibraryLocalCatalog from "./LibraryLocalCatalog.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
+import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import type { WorkspaceReceipt } from "./LibraryWorkspaceStore.ts";
 
 const project: LibraryProject = {
@@ -97,7 +101,7 @@ const fixture = Effect.gen(function* () {
   const options = {
     environmentId: source,
     publisher,
-    workspaces: { receipts: Ref.get(copies) },
+    workspaces: { receipts: Ref.get(copies), followArchived: () => Effect.void },
     source: Publication.LibraryDocumentSource.of({
       read: () =>
         Ref.get(rows).pipe(Effect.map((documents) => ({ commit: "a".repeat(40), documents }))),
@@ -284,7 +288,10 @@ describe("document publication", () => {
           const publisher = yield* Publication.makeDocumentPublication({
             ...options,
             publisher: { ...options.publisher, project: () => Effect.succeed(expanded) },
-            workspaces: { receipts: Effect.succeed([{ ...receipt, copy: expandedCopy }]) },
+            workspaces: {
+              ...options.workspaces,
+              receipts: Effect.succeed([{ ...receipt, copy: expandedCopy }]),
+            },
             source: {
               read: ({ resource: current }) =>
                 Effect.gen(function* () {
@@ -332,6 +339,7 @@ describe("document publication", () => {
           ...options,
           environmentId: nextComputer,
           workspaces: {
+            ...options.workspaces,
             receipts: Effect.succeed([
               { ...receipt, copy: { ...copy, environmentId: nextComputer } },
             ]),
@@ -347,6 +355,54 @@ describe("document publication", () => {
           [nextComputer, 1],
         ]);
       }),
+    ),
+  );
+
+  it.effect("brings the Library's archived flag to this computer's catalog and back", () =>
+    run(({ options }) =>
+      Effect.gen(function* () {
+        const store = yield* WorkspaceStore.LibraryWorkspaceStore.pipe(
+          Effect.provide(WorkspaceStore.layer),
+        );
+        yield* store.put(receipt);
+        const current = yield* Ref.make<LibraryProject>({
+          ...project,
+          revision: 2,
+          brief: "Set aside",
+          archived: true,
+        });
+        const publication = yield* Publication.makeDocumentPublication({
+          ...options,
+          publisher: { ...options.publisher, project: () => Ref.get(current) },
+          workspaces: store,
+        });
+        const catalog = yield* LibraryLocalCatalog.LibraryLocalCatalog.pipe(
+          Effect.provide(
+            LibraryLocalCatalog.layer.pipe(
+              Layer.provide(Layer.succeed(WorkspaceStore.LibraryWorkspaceStore, store)),
+              Layer.provide(
+                Layer.succeed(ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(source),
+                }),
+              ),
+            ),
+          ),
+        );
+        expect(yield* catalog.projects({})).toEqual([project]);
+        yield* publication.report;
+        expect(yield* catalog.projects({})).toEqual([]);
+        // Only the flag follows; the copy keeps the revision it was laid out from.
+        expect(yield* catalog.projects({ includeArchived: true })).toEqual([
+          { ...project, archived: true },
+        ]);
+        yield* Ref.set(current, { ...project, revision: 3 });
+        yield* publication.report;
+        expect(yield* catalog.projects({})).toEqual([project]);
+      }).pipe(
+        Effect.provide(
+          ServerConfig.layerTest(process.cwd(), { prefix: "library-documents-archived-" }),
+        ),
+      ),
     ),
   );
 

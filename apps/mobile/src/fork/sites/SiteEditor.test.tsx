@@ -4,15 +4,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
 import type { SheetProps } from "../../components/ui/Sheet.types";
-import type { SitesSnapshot } from "@t3tools/contracts/fork";
+import type { LibraryProject, SitesSnapshot } from "@t3tools/contracts/fork";
 
-const harness = vi.hoisted(() => ({ platform: "ios", save: vi.fn() }));
+const harness = vi.hoisted(() => ({
+  platform: "ios",
+  save: vi.fn(),
+  projects: [] as LibraryProject[],
+}));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("./state", () => ({
   sites: { saveSite: { permissionAtom: () => null }, saveService: {}, saveCheck: {} },
 }));
 vi.mock("../library/libraryState", () => ({ library: { projects: () => null } }));
-vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => ({ data: [] }) }));
+vi.mock("../../state/query", () => ({
+  useEnvironmentQuery: () => ({ data: harness.projects }),
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.save }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({
@@ -210,6 +216,7 @@ beforeEach(() => {
   close.mockClear();
   saved.mockClear();
   harness.save.mockReset();
+  harness.projects = [];
 });
 afterEach(() => act(() => root.unmount()));
 
@@ -289,4 +296,36 @@ it("derives a new site's ID from its name and keeps its origin among the analyti
   type("Stable ID", "custom");
   type("Name", "Renamed");
   expect(field("Stable ID").value).toBe("custom");
+});
+
+it("offers an archived project only while the site selects it", () => {
+  harness.platform = "ios";
+  const project = (id: string, archived: boolean): LibraryProject => ({
+    id,
+    title: id,
+    brief: "",
+    revision: 1,
+    archived,
+    createdAt: "2026-10-15T00:00:00Z",
+    updatedAt: "2026-10-15T00:00:00Z",
+    resources: [],
+  });
+  harness.projects = [project("live", false), project("kept", true), project("gone", true)];
+  render({
+    kind: "site",
+    row: {
+      id: "site",
+      name: "Site",
+      url: "https://site.example.test",
+      active: 1,
+      origins: ["https://site.example.test"],
+      serviceIds: [],
+      projectIds: ["kept"],
+    },
+  });
+  const labels = () => Array.from(container.querySelectorAll("button"), (b) => b.textContent);
+  expect(labels()).toContain("live");
+  expect(labels()).not.toContain("gone (archived)");
+  click("Selected: kept (archived)");
+  expect(labels()).toContain("kept (archived)");
 });

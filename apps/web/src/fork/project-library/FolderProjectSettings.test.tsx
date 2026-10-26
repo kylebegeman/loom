@@ -187,6 +187,22 @@ describe("folder settings project identity", () => {
     expect(matches([component], [{ ...copy, registered: false }])).toBe(copy.projectId);
   });
 
+  it("lets go of a borrowed folder once its project stops using it", () => {
+    const borrowed = { ...copy, ownership: "borrowed" as const };
+    expect(matches([root], [borrowed])).toBe(copy.projectId);
+    expect(matches([root], [{ ...borrowed, registered: false }])).toBeNull();
+    expect(matches([component], [{ ...borrowed, state: "released" }])).toBeNull();
+    expect(
+      matches(
+        [root],
+        [
+          { ...borrowed, registered: false },
+          { ...copy, id: "new" },
+        ],
+      ),
+    ).toBe(copy.projectId);
+  });
+
   it("does not infer membership from a path or project name", () => {
     expect(matches([root], [{ ...copy, rootLocalProjectId: null, repositories: [] }])).toBeNull();
   });
@@ -250,6 +266,14 @@ describe("folder settings routing", () => {
     expect(router.state.location.pathname).toBe(`/library/${copy.projectId}`);
     expect(router.state.location.search).toEqual({ view: "setup" });
     expect(renderer!.root.findAllByType("input")).toHaveLength(0);
+  });
+
+  it("offers a released borrowed folder its way back into Projects", async () => {
+    state.copies = [{ ...copy, ownership: "borrowed", registered: false }];
+    const router = await mount();
+    expect(router.state.location.pathname).toBe("/settings/projects");
+    expect(button("Add folder to Projects").props.disabled).toBe(false);
+    expect(renderer!.root.findByType("input").props.value).toBe("Folder name");
   });
 
   it("keeps explicit computer folder settings editable instead of redirecting", async () => {

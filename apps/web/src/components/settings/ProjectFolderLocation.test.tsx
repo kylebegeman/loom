@@ -282,13 +282,13 @@ describe("updating an existing project folder location", () => {
   );
 
   it.each(["ready", "released"] as const)(
-    "protects %s Library roots by identity even when paths differ",
+    "protects %s managed Library roots by identity even when paths differ",
     async (copyState) => {
       state.authorityId = EnvironmentId.make("library-authority");
       registry.set(
         copiesAtom,
         AsyncResult.success([
-          { ...copy, rootPath: "/different/saved/path", state: copyState, registered: false },
+          { ...copy, ownership: "managed", rootPath: "/different/saved/path", state: copyState },
         ]),
       );
       await mount();
@@ -304,6 +304,26 @@ describe("updating an existing project folder location", () => {
       expect(state.update).not.toHaveBeenCalled();
     },
   );
+
+  it("lets a borrowed folder move once its project released it", async () => {
+    state.authorityId = EnvironmentId.make("library-authority");
+    registry.set(
+      copiesAtom,
+      AsyncResult.success([
+        { ...copy, registered: false },
+        { ...copy, id: "older-copy", state: "released" },
+      ]),
+    );
+    await mount();
+    await open();
+    expect(text()).not.toContain("Loom manages this location");
+    await change();
+    await submit();
+    expect(state.update).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { projectId: project.id, workspaceRoot: "/work/desk" },
+    });
+  });
 
   it("checks Library component project identity and ignores copies on other computers", async () => {
     state.authorityId = EnvironmentId.make("library-authority");

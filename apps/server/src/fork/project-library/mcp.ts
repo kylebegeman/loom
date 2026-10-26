@@ -163,7 +163,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_conversations", {
     description:
-      "Read a bounded page of saved conversations with source computer and watermark. Omit projectId to search all Library projects. Follow nextOffset for the next page.",
+      "Read a bounded page of saved conversations with source computer and watermark. Deleted conversations are left out. Omit projectId to page through current Library projects: conversations of archived projects are left out unless includeArchived is true. A projectId reads that project's conversations even when it is archived. Follow nextOffset for the next page.",
     parameters: Library.LibraryConversationsRead,
     success: Library.LibraryThreadIndex,
     failure,

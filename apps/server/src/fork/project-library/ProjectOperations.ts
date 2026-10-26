@@ -1,6 +1,7 @@
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import {
   AuthOrchestrationOperateScope,
+  AuthSessionId,
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
   CommandId,
@@ -61,7 +62,7 @@ const denied = (reason: "session" | "turn" | "workload" | "owner" = "session", t
             ? threadId?.startsWith("workload:")
               ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
               : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel."
-            : "This operation needs a current authorized session. Sign in again, then retry.",
+            : "This device's sign-in is no longer current. Sign in again from Connections in Settings, then retry.",
   });
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 const Workload = Schema.Struct({
@@ -186,6 +187,15 @@ const make = Effect.gen(function* () {
     yield* workflows.changed;
     return value;
   }, Effect.mapError(io));
+  // A socket keeps the session it opened with while Identity renews it hourly, so a renewal of
+  // that session speaks for the same client.
+  const currentSession = Effect.fn("ProjectOperations.currentSession")(function* (
+    sessionId: string,
+  ) {
+    const chain = yield* sessions.renewalsOf(AuthSessionId.make(sessionId));
+    const active = (yield* sessions.listActive()).filter((session) => chain.has(session.sessionId));
+    return active.find((session) => session.sessionId === sessionId) ?? active[0];
+  });
   const authorize = Effect.fn("ProjectOperations.authorize")(function* (
     sessionId: string,
     subject: string,
@@ -214,11 +224,12 @@ const make = Effect.gen(function* () {
         return yield* denied("workload");
       return;
     }
-    const active = (yield* sessions.listActive()).find(
-      (session) => session.sessionId === sessionId && session.subject === subject,
-    );
+    const active = yield* currentSession(sessionId);
     const required = operationScopes(request.kind);
-    if (!active || !required.every((permission) => active.scopes.includes(permission)))
+    if (
+      active?.subject !== subject ||
+      !required.every((permission) => active.scopes.includes(permission))
+    )
       return yield* denied();
   }, Effect.mapError(io));
   /**
@@ -589,9 +600,7 @@ const make = Effect.gen(function* () {
     request: LibraryOperationInput,
     sessionId: string,
   ) {
-    const actor = (yield* sessions.listActive().pipe(Effect.mapError(io))).find(
-      (session) => session.sessionId === sessionId,
-    );
+    const actor = yield* currentSession(sessionId).pipe(Effect.mapError(io));
     if (!actor) return yield* denied();
     return yield* execute(id, request, actor);
   });
@@ -636,9 +645,7 @@ const make = Effect.gen(function* () {
     action: "resume" | "cancel",
     sessionId: string,
   ) {
-    const actor = (yield* sessions.listActive().pipe(Effect.mapError(io))).find(
-      (session) => session.sessionId === sessionId,
-    );
+    const actor = yield* currentSession(sessionId).pipe(Effect.mapError(io));
     if (!actor) return yield* denied();
     return yield* (action === "resume" ? resume : cancel)(id, actor);
   });

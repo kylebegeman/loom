@@ -3,7 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
-import { SITES_FEATURE, type SitesSnapshot } from "@t3tools/contracts/fork";
+import { SITES_FEATURE, type LibraryProject, type SitesSnapshot } from "@t3tools/contracts/fork";
 
 const harness = vi.hoisted(() => ({
   authorityId: "first",
@@ -557,6 +557,24 @@ describe("site editor helpers", () => {
     expect(editor.unsentRequest({ ...first }, sent.key).request).toBeNull();
     const renamed = { ...first, name: "Store" };
     expect(editor.unsentRequest(renamed, sent.key).request).toBe(renamed);
+  });
+
+  it("offers archived projects only when the site already serves them", () => {
+    const project = (id: string, archived = false): LibraryProject => ({
+      id,
+      title: id,
+      brief: "",
+      revision: 1,
+      resources: [],
+      archived,
+      createdAt: "2026-10-15T12:00:00.000Z",
+      updatedAt: "2026-10-15T12:00:00.000Z",
+    });
+    const projects = [project("old", true), project("live"), project("kept", true)];
+    const ids = (selected: readonly string[]) =>
+      editor.siteProjectChoices(projects, selected).map((entry) => entry.id);
+    expect(ids([])).toEqual(["live"]);
+    expect(ids(["kept", "live"])).toEqual(["live", "kept"]);
   });
 
   it("replays an entry unchanged apart from whether it is watched", () => {
