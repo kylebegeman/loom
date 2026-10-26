@@ -30,6 +30,7 @@ import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
+import * as DocumentText from "../../provider/DocumentText.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestReviewGuideService.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
@@ -126,6 +127,7 @@ const serveProductionMcp = HttpRouter.serve(McpHttpServer.layer, {
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(PreviewBrowser.layer),
   Layer.provide(layerStubServices),
+  Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
   Layer.build,
   Effect.map((services) => Context.get(services, McpSessionRegistry.McpSessionRegistry)),
 );

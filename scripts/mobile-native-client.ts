@@ -974,6 +974,7 @@ const installIntoSession = Effect.fn("nativeClient.installIntoSession")(function
   const deviceAbi = platform === "android" ? abi : null;
   const task = deviceAbi ? `native-client:android-${deviceAbi}` : `native-client:${platform}`;
   const current = yield* fingerprint(platform);
+  const bundleId = developmentBundleId(platform); // fork: mobile-identity
   const key = `${platform}/${deviceAbi ? `development-${deviceAbi}` : "development"}/${current}`;
   const source = yield* sharedSource(home, key);
   // The session's host downloads the client itself; uploading a 166 MB APK through a

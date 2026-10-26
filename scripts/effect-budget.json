@@ -542,6 +542,7 @@
   "apps/web/src/fork/preview-links/LinksSheet.tsx": 3,
   "apps/web/src/fork/project-checkout/ProjectCheckoutSettings.tsx": 1,
   "apps/web/src/fork/project-checkout/useProjectStorageRollout.ts": 2,
+  "apps/web/src/fork/project-home/useEscapeToGoBack.ts": 1,
   "apps/web/src/fork/project-home/useProjectHomeClock.ts": 1,
   "apps/web/src/fork/project-home/useProjectHomeNewThreadShortcuts.ts": 1,
   "apps/web/src/fork/project-library/ConversationPalette.tsx": 1,

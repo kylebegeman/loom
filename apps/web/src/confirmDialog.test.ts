@@ -84,7 +84,7 @@ describe("confirm dialog coordinator", () => {
 
   // fork: confirm-label: each dialog keeps its own button label while it shows and closes.
   it("keeps each confirmation's button label through closing and the queue", async () => {
-    const unregister = registerConfirmDialogHost();
+    const unregister = mountHost();
     const first = requireConfirmation(
       requestConfirmDialog("Turn reach off?", {
         variant: "destructive",

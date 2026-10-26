@@ -67,7 +67,7 @@ const decodeOlder = Schema.decodeUnknownSync(Schema.Struct(olderFields));
 describe("LibraryProjectProfile", () => {
   it("round-trips a full profile through the saved project JSON exactly", () => {
     const codec = Schema.fromJsonString(LibraryProject);
-    const decoded = Schema.decodeUnknownSync(codec)(JSON.stringify(project));
+    const decoded = Schema.decodeSync(codec)(JSON.stringify(project));
     expect(decoded.profile).toEqual(profile);
     expect(JSON.parse(Schema.encodeSync(codec)(decoded))).toEqual(project);
     expect(decodeInput(profile)).toEqual(profile);

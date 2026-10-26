@@ -622,13 +622,13 @@ export const make = Effect.gen(function* () {
         if (thread.worktreePath === null) return yield* effect;
         return yield* withWorkspaceLease(path.resolve(thread.worktreePath), effect);
       }).pipe(
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterruptsOnly(cause),
-          (cause) =>
-            Effect.logWarning("cleaning up a settled thread failed", {
-              threadId,
-              cause: Cause.pretty(cause),
-            }).pipe(Effect.as(false)),
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("cleaning up a settled thread failed", {
+                threadId,
+                cause: Cause.pretty(cause),
+              }).pipe(Effect.as(false)),
         ),
       ),
   );

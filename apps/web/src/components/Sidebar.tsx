@@ -2753,7 +2753,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     if (!(await tryLibraryConversation(threadRef, { inheritSettings: true }))) {
       const source = readThreadShell(threadRef);
       if (!source) return;
-      await handleNewThreadRef.current(scopeProjectRef(source.environmentId, source.projectId), {
+      await handleNewThread(scopeProjectRef(source.environmentId, source.projectId), {
         branch: source.branch,
         worktreePath: source.worktreePath,
         envMode: source.worktreePath ? "worktree" : "local",

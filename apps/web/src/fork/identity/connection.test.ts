@@ -107,8 +107,9 @@ const libraryRegistry = (run: () => Effect.Effect<unknown, never>) =>
     return { entries, run } as unknown as EnvironmentRegistry.EnvironmentRegistry["Service"];
   });
 
-it.effect("sends desktop main the Library's directory for a typed address", () =>
-  Effect.gen(function* () {
+it.effect("sends desktop main the Library's directory for a typed address", () => {
+  const abort = new AbortController();
+  return Effect.gen(function* () {
     const signInToLoom = vi.fn(async () => signedIn);
     Object.defineProperty(window, "desktopBridge", {
       configurable: true,
@@ -147,7 +148,7 @@ it.effect("sends desktop main the Library's directory for a typed address", () =
       httpBaseUrl: URL,
       typedAddressLibrary: LIBRARY,
       verify: () => REFUSED,
-      signal: new AbortController().signal,
+      signal: abort.signal,
     }).pipe(Effect.flip, Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry));
 
     expect(signInToLoom).toHaveBeenCalledWith({
@@ -161,11 +162,12 @@ it.effect("sends desktop main the Library's directory for a typed address", () =
         computers: [{ environmentId: STUDIO, label: "Studio", addresses: [URL] }],
       },
     });
-  }),
-);
+  });
+});
 
-it.effect("never opens the browser for a sign-in cancelled while it reads the directory", () =>
-  Effect.gen(function* () {
+it.effect("never opens the browser for a sign-in cancelled while it reads the directory", () => {
+  const abort = new AbortController();
+  return Effect.gen(function* () {
     const signInToLoom = vi.fn(async () => signedIn);
     Object.defineProperty(window, "desktopBridge", {
       configurable: true,
@@ -173,7 +175,6 @@ it.effect("never opens the browser for a sign-in cancelled while it reads the di
     });
     // A Library that never answers keeps the sign-in reading until it is cancelled.
     const registry = yield* libraryRegistry(() => Effect.never);
-    const abort = new AbortController();
     const fiber = yield* execute({
       httpBaseUrl: URL,
       typedAddressLibrary: LIBRARY,
@@ -187,5 +188,5 @@ it.effect("never opens the browser for a sign-in cancelled while it reads the di
 
     expect((yield* Fiber.join(fiber)).message).toBe("Loom sign-in cancelled.");
     expect(signInToLoom).not.toHaveBeenCalled();
-  }),
-);
+  });
+});

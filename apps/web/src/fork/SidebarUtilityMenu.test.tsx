@@ -39,9 +39,10 @@ vi.mock("~/components/sidebar/SidebarUpdatePill", () => ({
 
 import { SidebarProvider } from "~/components/ui/sidebar";
 import { SidebarUtilityMenu } from "~/components/sidebar/SidebarChrome";
-import { MainAppLocationTracker } from "~/components/sidebar/mainAppLocation";
+import { startMainAppLocationTracking } from "~/components/sidebar/mainAppLocation";
 
 let root: Root;
+let stopTracking = () => {};
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -53,6 +54,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  stopTracking();
   container.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -62,7 +64,6 @@ async function renderMenu(pathname: string) {
   const layout = createRootRoute({
     component: () => (
       <SidebarProvider>
-        <MainAppLocationTracker />
         <SidebarUtilityMenu />
         <Outlet />
       </SidebarProvider>
@@ -86,6 +87,7 @@ async function renderMenu(pathname: string) {
     defaultPendingMinMs: 0,
   });
   await router.load();
+  stopTracking = startMainAppLocationTracking(router);
   await act(async () => root.render(<RouterProvider router={router} />));
   return router;
 }
@@ -99,7 +101,7 @@ const backButton = () =>
 
 it.each([
   ["Settings", "/settings", "/settings/connections"],
-  ["Pull Requests", "/pull-requests", "/pull-requests"],
+  ["Pull requests", "/pull-requests", "/pull-requests"],
   ["Usage", "/usage", "/usage"],
 ])("returns from %s to the previous conversation", async (label, path, detail) => {
   const router = await renderMenu("/draft/retained?view=diff#latest");
@@ -126,7 +128,7 @@ it("keeps highlighted navigation across Projects, Sites and Bots", async () => {
   for (const [label, path] of destinations) {
     for (const other of [
       "Settings",
-      "Pull Requests",
+      "Pull requests",
       "Usage",
       ...destinations.map(([name]) => name),
     ])
@@ -152,7 +154,7 @@ it("retains project selection on detail pages without marking conversations acti
 it("keeps capability-gated destinations hidden without hiding the rest of navigation", async () => {
   state.pullRequestsSupported = false;
   await renderMenu("/projects");
-  expect(button("Pull Requests")).toBeNull();
+  expect(button("Pull requests")).toBeNull();
   expect(button("Projects")).not.toBeNull();
   expect(button("Bots, attention needed")).not.toBeNull();
   expect(activeLabel()).toBe("Projects");
