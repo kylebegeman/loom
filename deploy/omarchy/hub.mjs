@@ -3,7 +3,6 @@ import * as NodeReadline from "node:readline";
 import { finderChoice, main } from "./loom-os.mjs";
 // Reject terminal control characters at the private API boundary.
 const safeText = (value, limit = 2048) =>
-  // eslint-disable-next-line no-control-regex -- Private API text must exclude terminal control characters.
   typeof value === "string" && value.length <= limit && !/[\u0000-\u001f\u007f]/.test(value);
 const states = new Set(["ready", "credits", "unavailable", "unknown", "provider-mismatch"]);
 export function hubOrigin(config) {
