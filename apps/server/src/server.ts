@@ -117,6 +117,8 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as ProjectPlacement from "./project/ProjectPlacement.ts";
+import { ProjectLifecycleService } from "./fork/project-lifecycle/ProjectLifecycleService.ts"; // fork: project-lifecycle
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
@@ -396,7 +398,27 @@ const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerGit),
 );
 
+const layerCheckpointStore = CheckpointStore.layer.pipe(
+  Layer.provide(layerVcsDriverRegistry),
+  Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
+);
+
+// fork: project-lifecycle -- clones must stay out of lanes folders.
+const layerLanesRoots = Layer.effect(
+  ProjectPlacement.LanesRoots,
+  Effect.map(ProjectLifecycleService, (lifecycle) => ({ roots: lifecycle.lanesRoots() })),
+).pipe(
+  Layer.provide(layerProjectLifecycle),
+  Layer.provide(Layer.mergeAll(layerCheckpointStore, layerGitManager, layerPullRequestService)),
+);
+
+const layerProjectPlacement = ProjectPlacement.layerWithProjectStore.pipe(
+  Layer.provide(layerLanesRoots),
+  Layer.provide(GitVcsDriver.layer),
+);
+
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
+  Layer.provideMerge(layerProjectPlacement),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
 );
@@ -436,11 +458,6 @@ const layerVcs = Layer.empty.pipe(
       ),
     ),
   ),
-);
-
-const layerCheckpointStore = CheckpointStore.layer.pipe(
-  Layer.provide(layerVcsDriverRegistry),
-  Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
 );
 
 const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));

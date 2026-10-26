@@ -102,7 +102,7 @@ const clientLaunchHarness = (input: {
             : Option.none(),
         ),
     }),
-    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
     NodeServices.layer,
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),

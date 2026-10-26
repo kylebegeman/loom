@@ -222,6 +222,8 @@ import {
   projectMutationOperation,
 } from "./project/ProjectMutation.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import { makeProjectCloneHooks } from "./project/ProjectCloneCompletion.ts";
+import * as ProjectPlacement from "./project/ProjectPlacement.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -1237,26 +1239,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-// fork: project-preparation - Refresh both metadata caches after cloning into the saved folder.
-/** Post-clone wiring refreshes the saved project's metadata without changing its folder. */
-export const makeProjectCloneCompletion = Effect.gen(function* () {
-  const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-  const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
-  const projectService = yield* ProjectService.ProjectService;
-  return (project: { readonly projectId: ProjectId; readonly workspaceRoot: string }) =>
-    repositoryIdentityResolver.resolve(project.workspaceRoot, { refresh: true }).pipe(
-      // Creation may have cached the empty folder. Updating the same root does not invalidate it.
-      Effect.andThen(projectEnrichment.invalidate([project.workspaceRoot])),
-      Effect.andThen(
-        projectService.update({
-          commandId: CommandId.make(`project-clone-done:${project.projectId}`),
-          projectId: project.projectId,
-        }),
-      ),
-      Effect.asVoid,
-    );
-});
-
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -1334,7 +1316,7 @@ export const layerWsRpc = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
-      const completeProjectClone = yield* makeProjectCloneCompletion; // fork: project-preparation
+      const placement = yield* ProjectPlacement.ProjectPlacement;
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
@@ -1782,6 +1764,7 @@ export const layerWsRpc = (
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
+        const folders = yield* placement.folders;
         const lastEventLoopStall = yield* eventLoopMonitor.latestNoticeableStall;
         const editorConfig = yield* resolveEditorConfig(
           yield* resolveAvailableEditorsForConfig(externalLauncher.resolveAvailableEditors()),
@@ -1841,7 +1824,11 @@ export const layerWsRpc = (
             onNone: () => ({}),
             onSome: (root) => ({ scratchWorkspaceRoot: root }),
           }),
-          newProjectsRoot: managedFolders.namedProjectsRoot,
+          newProjectsRoot: folders.projects,
+          folders: Option.match(scratchWorkspaceRoot, {
+            onNone: () => folders,
+            onSome: (scratch) => ({ ...folders, scratch }),
+          }),
           ...(lastEventLoopStall === undefined ? {} : { lastEventLoopStall }),
         };
       });
@@ -1934,6 +1921,9 @@ export const layerWsRpc = (
           );
         return Stream.concat(rpcInitialItems([{ kind: "snapshot" as const, snapshot }]), live);
       });
+
+      // fork: project-preparation
+      const cloneHooks = yield* makeProjectCloneHooks(refreshGitStatus);
 
       const mutateProject = Effect.fn("ws.projects.mutate")(function* (mutation: ProjectMutation) {
         const result = yield* projectMutationOperation(projectService, mutation);
@@ -2757,34 +2747,7 @@ export const layerWsRpc = (
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           sourceControlRepositories.cloneRepository(input),
-        [WS_METHODS.projectCloneStart]: (input) =>
-          projectCloneTracker.start(input, {
-            createProject: (project) =>
-              projectService
-                .create({
-                  commandId: CommandId.make(`project-clone-create:${project.projectId}`),
-                  projectId: project.projectId,
-                  title: project.title,
-                  workspaceRoot: project.workspaceRoot,
-                  createWorkspaceRootIfMissing: true,
-                })
-                .pipe(
-                  Effect.asVoid,
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationDispatchCommandError({
-                        message: "Failed to create clone project.",
-                        cause,
-                      }),
-                  ),
-                ),
-            onCloned: (project) =>
-              completeProjectClone(project).pipe(
-                // fork: project-preparation
-                Effect.andThen(refreshGitStatus(project.workspaceRoot)),
-                Effect.ignoreCause({ log: true }),
-              ),
-          }),
+        [WS_METHODS.projectCloneStart]: (input) => projectCloneTracker.start(input, cloneHooks),
         [WS_METHODS.projectsEnsureScratch]: () =>
           managedFolders.ensureScratchProject.pipe(
             Effect.mapError(
@@ -2802,7 +2765,9 @@ export const layerWsRpc = (
         [WS_METHODS.projectCloneCancel]: (input) =>
           projectCloneTracker.cancel(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.projectCloneRetry]: (input) =>
-          projectCloneTracker.retry(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
+          projectCloneTracker
+            .retry(input.projectId, cloneHooks)
+            .pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(

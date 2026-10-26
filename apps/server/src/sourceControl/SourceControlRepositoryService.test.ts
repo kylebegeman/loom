@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectPlacement from "../project/ProjectPlacement.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -63,8 +64,16 @@ function layer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
+  readonly placement?: Partial<ProjectPlacement.ProjectPlacement["Service"]>;
 }) {
   const layerService = SourceControlRepositoryService.layer.pipe(
+    Layer.provide(
+      Layer.mock(ProjectPlacement.ProjectPlacement)({
+        findRepositoryCheckouts: () => Effect.succeed([]),
+        assertPlacementAllowed: (target) => Effect.succeed(target),
+        ...input.placement,
+      }),
+    ),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
         resolveLink: () => undefined,
@@ -170,6 +179,8 @@ it.effect("clones a looked-up repository after creating missing parent directori
         cwd: destinationPath,
         remoteUrl: CLONE_URLS.url,
         repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
+        destinationPath,
+        reused: false,
       });
       assert.deepStrictEqual(cloneCalls, [
         {
@@ -193,6 +204,122 @@ it.effect("clones a looked-up repository after creating missing parent directori
     );
   }).pipe(Effect.provide(NodeServices.layer)),
 );
+
+it.effect("an omitted destination reuses a checkout of the same origin without running git", () => {
+  const gitCalls: Array<ReadonlyArray<string>> = [];
+  const asked: Array<string> = [];
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.cloneRepository({
+      remoteUrl: "https://github.com/octocat/t3code.git",
+    });
+    assert.deepStrictEqual(result, {
+      cwd: "/projects/t3code",
+      remoteUrl: "https://github.com/octocat/t3code.git",
+      repository: null,
+      destinationPath: "/projects/t3code",
+      reused: true,
+    });
+    assert.deepStrictEqual(asked, ["https://github.com/octocat/t3code.git"]);
+    assert.deepStrictEqual(gitCalls, []);
+  }).pipe(
+    Effect.provide(
+      layer({
+        git: {
+          execute: (input) =>
+            Effect.sync(() => void gitCalls.push(input.args)).pipe(Effect.as(processOutput())),
+        },
+        placement: {
+          findRepositoryCheckouts: (remoteUrl) =>
+            Effect.sync(() => {
+              asked.push(remoteUrl);
+              return [{ path: "/projects/t3code", projectId: null }];
+            }),
+          claimFolder: () => Effect.die("a reused checkout claims no folder"),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("an omitted destination clones into the folder the server claims", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const projects = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clone-claim-" });
+    const claimed = path.join(projects, "t3code");
+    const titles: Array<string> = [];
+    const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const result = yield* service.cloneRepository({
+        provider: SourceControlProviderKind.make("github"),
+        repository: "octocat/t3code",
+        protocol: "https",
+      });
+      assert.strictEqual(result.destinationPath, claimed);
+      assert.strictEqual(result.cwd, claimed);
+      assert.strictEqual(result.reused, false);
+      assert.deepStrictEqual(titles, ["t3code"]);
+      assert.deepStrictEqual(cloneCalls, [
+        { cwd: projects, args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"] },
+      ]);
+    }).pipe(
+      Effect.provide(
+        layer({
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                cloneCalls.push({ cwd: input.cwd, args: input.args });
+                return processOutput();
+              }),
+          },
+          placement: {
+            claimFolder: (title) =>
+              fs.makeDirectory(claimed).pipe(
+                Effect.orDie,
+                Effect.tap(() => Effect.sync(() => void titles.push(title))),
+                Effect.as(claimed),
+              ),
+          },
+        }),
+      ),
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("refuses a typed destination the placement guard refuses, before running git", () => {
+  const gitCalls: Array<ReadonlyArray<string>> = [];
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .cloneRepository({
+        remoteUrl: "https://github.com/octocat/t3code.git",
+        destinationPath: "/state/x",
+      })
+      .pipe(Effect.flip);
+    assert.strictEqual(error.detail, "A project cannot go inside or around Loom's data folder.");
+    assert.deepStrictEqual(gitCalls, []);
+  }).pipe(
+    Effect.provide(
+      layer({
+        git: {
+          execute: (input) =>
+            Effect.sync(() => void gitCalls.push(input.args)).pipe(Effect.as(processOutput())),
+        },
+        placement: {
+          assertPlacementAllowed: (target) =>
+            Effect.fail(
+              new ProjectPlacement.ProjectPlacementRefusedError({
+                path: target,
+                reason: "A project cannot go inside or around Loom's data folder.",
+              }),
+            ),
+        },
+      }),
+    ),
+  );
+});
 
 it.effect.each(["--bare", "source.git"])(
   "clones a local repository named %s as a working tree",
