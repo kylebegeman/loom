@@ -770,3 +770,190 @@ it.each(["state-copy", "state-swap", "replacement", "interrupted"])(
     );
   },
 );
+
+function runSync(root: string, command: string, extraEnv: Record<string, string> = {}) {
+  return NodeChildProcess.spawnSync(
+    "bash",
+    ["-c", `source "$LOOM_TEST_SCRIPT"; cd "$LOOM_TEST_ROOT"; ${command}`],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        LOOM_TEST_SCRIPT: script,
+        LOOM_TEST_ROOT: root,
+        ...extraEnv,
+      },
+    },
+  );
+}
+
+function commitAt(root: string, date: string, message: string) {
+  NodeChildProcess.execFileSync("git", ["commit", "--quiet", "--allow-empty", "-m", message], {
+    cwd: root,
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_AUTHOR_DATE: date,
+      GIT_COMMITTER_DATE: date,
+    },
+  });
+}
+
+const epoch = (date: string) => String(Date.parse(date) / 1000);
+
+it("reports main stale only once a missing nightly has waited past the grace period", () => {
+  const f = repositoryFixture();
+  f.git("tag", "v0.1.0-nightly.20261013.1");
+  f.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  commitAt(f.root, "2026-10-14T00:00:00Z", "next upstream");
+  f.git("tag", "v0.1.0-nightly.20261014.2");
+  const status = (now: string) =>
+    Object.fromEntries(
+      runSync(f.root, "upstream_status origin/main", { LOOM_NOW: epoch(now) })
+        .stdout.trim()
+        .split("\n")
+        .map((line) => line.split("=")),
+    );
+
+  expect(status("2026-10-14T12:00:00Z")).toMatchObject({
+    state: "behind",
+    newest: "v0.1.0-nightly.20261014.2",
+    main: "v0.1.0-nightly.20261013.1",
+    oldest_missing: "v0.1.0-nightly.20261014.2",
+    waited_hours: "12",
+    behind_commits: "1",
+  });
+  expect(status("2026-10-15T12:00:00Z")).toMatchObject({ state: "stale", waited_hours: "36" });
+
+  f.git("update-ref", "refs/remotes/origin/main", "v0.1.0-nightly.20261014.2");
+  expect(status("2026-10-20T00:00:00Z")).toMatchObject({
+    state: "in-sync",
+    oldest_missing: "",
+    behind_commits: "0",
+  });
+});
+
+const NIGHTLY = "v1.0.0-nightly.20261014.1";
+
+function conflictFixture(agent: string) {
+  const f = repositoryFixture();
+  const write = (file: string, text: string) => {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(f.root, file)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(f.root, file), text);
+  };
+  write("apps/a.ts", "export const a = 1;\n");
+  write("apps/b.ts", "export const b = 1;\n");
+  write("apps/clean.ts", "export const clean = 1;\n");
+  f.git("add", "-A");
+  f.git("commit", "--quiet", "-m", "base");
+  f.git("switch", "--quiet", "-c", "upstream");
+  write("apps/a.ts", "export const a = 2;\n");
+  write("apps/b.ts", "export const b = 2;\n");
+  write("apps/clean.ts", "export const clean = 2;\n");
+  f.git("commit", "--quiet", "-am", "upstream changes");
+  f.git("tag", NIGHTLY);
+  f.git("switch", "--quiet", "main");
+  write("apps/a.ts", "export const a = 3; // fork: example\n");
+  write("apps/b.ts", "export const b = 3; // fork: example\n");
+  f.git("commit", "--quiet", "-am", "fork changes");
+  f.git("switch", "--quiet", "-c", `integrate/${NIGHTLY}`);
+  const merge = NodeChildProcess.spawnSync("git", ["merge", "--no-edit", NIGHTLY], {
+    cwd: f.root,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+  });
+  expect(merge.status).not.toBe(0);
+  const agentPath = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-agent.sh`);
+  roots.push(agentPath);
+  NodeFS.writeFileSync(agentPath, `#!/bin/bash\ncat >/dev/null\n${agent}\n`, { mode: 0o755 });
+  const logs = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-logs`);
+  roots.push(logs);
+  const resolve = () =>
+    runSync(f.root, `resolve_conflicts ${NIGHTLY}`, {
+      LOOM_AGENT: agentPath,
+      LOOM_RESOLVE_LOGS: logs,
+      LOOM_RESOLVE_JOBS: "2",
+    });
+  const read = (file: string) => NodeFS.readFileSync(NodePath.join(f.root, file), "utf8");
+  return { ...f, resolve, read, logs };
+}
+
+it("resolves each conflicted file in its own session and stages what the sessions changed", () => {
+  const f = conflictFixture(`
+case "$LOOM_RESOLVE_FILE" in
+  apps/a.ts)
+    printf 'export const a = 2; // fork: example\\n' > apps/a.ts
+    printf 'export const moved = 3; // fork: example\\n' > apps/moved.ts ;;
+  apps/b.ts) printf 'export const b = 2; // fork: example\\n' > apps/b.ts ;;
+esac
+printf 'Kept upstream and reapplied the seam.\\n\\n**RESOLVED**\\n'`);
+
+  const result = f.resolve();
+
+  expect(result.status).toBe(0);
+  expect(f.git("diff", "--name-only", "--diff-filter=U")).toBe("");
+  expect(f.git("show", ":apps/a.ts")).toBe("export const a = 2; // fork: example");
+  expect(f.git("show", ":apps/b.ts")).toBe("export const b = 2; // fork: example");
+  expect(f.git("show", ":apps/moved.ts")).toBe("export const moved = 3; // fork: example");
+  expect(NodeFS.readFileSync(NodePath.join(f.logs, "summary.md"), "utf8")).toContain(
+    "- `apps/moved.ts`",
+  );
+  f.git("commit", "--quiet", "--no-edit");
+  expect(f.read("apps/clean.ts")).toBe("export const clean = 2;\n");
+});
+
+it("leaves a file conflicted when its session gives up or leaves conflict markers", () => {
+  const f = conflictFixture(`
+case "$LOOM_RESOLVE_FILE" in
+  apps/a.ts) printf 'Looks done.\\nRESOLVED\\n' ;;
+  apps/b.ts) printf 'UNRESOLVED: whether b keeps the fork value\\n' ;;
+esac`);
+
+  const result = f.resolve();
+
+  expect(result.status).toBe(1);
+  expect(f.git("diff", "--name-only", "--diff-filter=U").split("\n").sort()).toEqual([
+    "apps/a.ts",
+    "apps/b.ts",
+  ]);
+  expect(f.read("apps/a.ts")).toContain("<<<<<<<");
+  expect(result.stdout).toContain("- `apps/b.ts`: UNRESOLVED: whether b keeps the fork value");
+});
+
+it("merges a resolution unattended only when the independent review passes it", () => {
+  const f = conflictFixture("");
+  NodeFS.writeFileSync(
+    NodePath.join(f.root, "apps/a.ts"),
+    "export const a = 2; // fork: example\n",
+  );
+  NodeFS.writeFileSync(
+    NodePath.join(f.root, "apps/b.ts"),
+    "export const b = 2; // fork: example\n",
+  );
+  f.git("add", "-A");
+  f.git("commit", "--quiet", "--no-edit");
+  const reviewer = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-reviewer.sh`);
+  roots.push(reviewer);
+  NodeFS.writeFileSync(
+    reviewer,
+    `#!/bin/bash
+diff=$(grep -o '[^\`]*resolution.diff' | head -n 1)
+grep -q 'apps/a.ts' "$diff" && grep -q '^-<<<<<<<' "$diff" || exit 1
+printf 'Checked every hunk.\\n\\nVERDICT: %s\\n' "$LOOM_TEST_VERDICT"
+`,
+    { mode: 0o755 },
+  );
+  const review = (verdict: string) =>
+    runSync(f.root, "cmd_review_integration", {
+      LOOM_AGENT: reviewer,
+      LOOM_RESOLVE_LOGS: f.logs,
+      LOOM_TEST_VERDICT: verdict,
+    });
+
+  expect(review("pass").status).toBe(0);
+  const failed = review("fail");
+  expect(failed.status).toBe(1);
+  expect(failed.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
+});
