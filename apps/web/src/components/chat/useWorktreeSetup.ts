@@ -9,6 +9,8 @@ import type {
 import { workspacePreparationRetryRunIds } from "@t3tools/client-runtime/state/turn-item-presentation";
 import { useState } from "react";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { projectLibrary, useLibraryPermission } from "../../fork/project-library/state";
+import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -16,7 +18,7 @@ import { vcsEnvironment } from "../../state/vcs";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import type { Thread } from "../../types";
 import { resolveVisibleWorktreeSetup, resolveWorktreeSetupProgress } from "../ChatView.logic";
-import { worktreeSetupAgentStarted } from "./MessagesTimeline.logic";
+import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup";
 
 // Share in-flight preparation retries across ChatView instances.
 const retryingWorkspacePreparationRunIds = new Set<RunId>();
@@ -50,6 +52,9 @@ export function useWorktreeSetup(input: {
     reportFailure: false,
   });
   const retryWorkspacePreparation = useAtomCommand(threadEnvironment.retryWorkspacePreparation);
+  // fork: library-launch-files: project files belong to the Library launch operation filling them
+  const resumeOperation = useAtomCommand(projectLibrary.resumeOperation);
+  const cancelOperation = useAtomCommand(projectLibrary.cancelOperation);
   const storeEnsureTerminal = useTerminalUiStateStore((state) => state.ensureTerminal);
   const [startedSetup, setStartedSetup] = useState<{
     readonly environmentId: EnvironmentId;
@@ -105,9 +110,7 @@ export function useWorktreeSetup(input: {
   // After agent handoff, sends queue behind setup without awaiting its scripts.
   const blocksSend =
     !sendQueuesBehindSetup &&
-    (worktreeSetup !== null
-      ? worktreeSetup.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup)
-      : isPreparingWorktree);
+    (worktreeSetup !== null ? worktreeSetupBlocksSend(worktreeSetup) : isPreparingWorktree);
 
   const retryableRunIdsKey = [
     ...workspacePreparationRetryRunIds(
@@ -130,13 +133,35 @@ export function useWorktreeSetup(input: {
     (thread: { readonly environmentId: EnvironmentId; readonly threadId: ThreadId } | null) =>
       setStartedSetup(thread === null ? null : { ...thread, ownerKey }),
   );
+  const filesOperationId =
+    worktreeSetup?.kind === "project-files" ? (worktreeSetup.operationId ?? null) : null;
+  const canControlFiles = useLibraryPermission(
+    projectLibrary.resumeOperation,
+    filesOperationId ? target.environmentId : null,
+  );
+  const filesComputerLabel =
+    useEnvironment(filesOperationId ? target.environmentId : null)?.label ?? null;
   const cancel = useStableCallback(async () => {
+    if (worktreeSetup && filesOperationId) {
+      const result = await cancelOperation({
+        environmentId: target.environmentId,
+        input: { operationId: filesOperationId },
+      });
+      return result._tag === "Success";
+    }
     if (!worktreeSetup || worktreeSetup.phase !== "running") return false;
     const result = await cancelWorktreeSetup({
       environmentId: target.environmentId,
       input: { threadId: worktreeSetup.threadId },
     });
     return result._tag === "Success" && result.value.cancelled;
+  });
+  const retryFiles = useStableCallback(() => {
+    if (!filesOperationId) return;
+    void resumeOperation({
+      environmentId: target.environmentId,
+      input: { operationId: filesOperationId },
+    });
   });
   const retryPreparation = useStableCallback((runId: RunId) => {
     if (!threadRef || retryingWorkspacePreparationRunIds.has(runId)) return;
@@ -162,6 +187,10 @@ export function useWorktreeSetup(input: {
     retryableRunIds: retryableRunIds.ids,
     begin,
     cancel,
+    // A project-files card without its operation, or without access to it, offers neither action.
+    canCancel: filesOperationId === null || canControlFiles,
+    retryFiles: filesOperationId && canControlFiles ? retryFiles : null,
+    filesComputerLabel,
     retryPreparation,
     openSetupTerminal,
   };

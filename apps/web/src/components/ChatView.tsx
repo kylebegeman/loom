@@ -1558,6 +1558,9 @@ export default function ChatView(props: ChatViewProps) {
     retryableRunIds: retryableWorkspacePreparationRunIds,
     begin: beginWorktreeSetup,
     cancel: cancelWorktreeSetup,
+    canCancel: canCancelWorktreeSetup,
+    retryFiles: onRetryWorktreeSetupFiles,
+    filesComputerLabel: worktreeSetupComputerLabel,
     retryPreparation: onRetryWorkspacePreparationStable,
     openSetupTerminal: onOpenWorktreeSetupTerminal,
   } = useWorktreeSetup({
@@ -3390,7 +3393,13 @@ export default function ChatView(props: ChatViewProps) {
                 }
                 activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
                 worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
-                onCancelWorktreeSetup={onCancelWorktreeSetupStable}
+                {...(canCancelWorktreeSetup
+                  ? { onCancelWorktreeSetup: onCancelWorktreeSetupStable }
+                  : {})}
+                {...(onRetryWorktreeSetupFiles
+                  ? { onRetryWorktreeSetup: onRetryWorktreeSetupFiles }
+                  : {})}
+                worktreeSetupComputerLabel={worktreeSetupComputerLabel}
                 {...(paintOnlyDisplayedTimeline
                   ? {}
                   : {

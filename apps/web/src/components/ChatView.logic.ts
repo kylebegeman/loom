@@ -44,7 +44,7 @@ import {
   type RunId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
-import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup";
 import * as DateTime from "effect/DateTime";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
@@ -318,7 +318,7 @@ export function resolveWorktreeSetupProgress(input: {
     isPreparingWorktree:
       input.localPreparing ||
       input.runStatus === "preparing" ||
-      (snapshot?.phase === "running" && !worktreeSetupAgentStarted(snapshot)),
+      (snapshot !== null && worktreeSetupBlocksSend(snapshot)),
   };
 }
 

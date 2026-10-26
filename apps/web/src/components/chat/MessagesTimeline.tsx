@@ -190,6 +190,8 @@ interface MessagesTimelineProps {
   activeTurnStartedAt?: string | null;
   worktreeSetup?: WorktreeSetupSnapshot | null;
   onCancelWorktreeSetup?: () => void;
+  onRetryWorktreeSetup?: () => void; // fork: library-launch-files
+  worktreeSetupComputerLabel?: string | null; // fork: library-launch-files
   retryableWorkspacePreparationRunIds?: ReadonlySet<RunId>;
   onRetryWorkspacePreparation?: (runId: RunId) => void;
   failedRunRetry?: FailedRunRetry | null; // fork: failed-run-retry
@@ -303,6 +305,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   worktreeSetup = null,
   footer = null,
   onCancelWorktreeSetup,
+  onRetryWorktreeSetup,
+  worktreeSetupComputerLabel = null,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
   onRetryWorkspacePreparation,
   failedRunRetry = null, // fork: failed-run-retry
@@ -949,6 +953,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onToggleWorkGroup,
     onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
+    onRetryWorktreeSetup: onRetryWorktreeSetup ?? null,
+    worktreeSetupComputerLabel,
     retryableWorkspacePreparationRunIds,
     onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
     failedRunRetry, // fork: failed-run-retry
@@ -1355,9 +1361,14 @@ function WorktreeSetupTimelineRow({
       embedded={row.embedded}
       onCancel={row.embedded ? null : ctx.onCancelWorktreeSetup}
       onWorkLocally={
-        !row.embedded && row.snapshot.phase === "running" ? ctx.onWorktreeSetupWorkLocally : null
+        // fork: library-launch-files: Library files only exist on their computer
+        !row.embedded && row.snapshot.phase === "running" && row.snapshot.kind !== "project-files"
+          ? ctx.onWorktreeSetupWorkLocally
+          : null
       }
       onOpenTerminal={onOpenTerminal}
+      onRetry={row.embedded ? null : ctx.onRetryWorktreeSetup}
+      computerLabel={ctx.worktreeSetupComputerLabel}
     />
   );
 }

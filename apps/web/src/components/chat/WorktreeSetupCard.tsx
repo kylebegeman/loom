@@ -10,6 +10,7 @@ import {
   CircleIcon,
   LaptopIcon,
   MinusIcon,
+  RotateCcwIcon,
   TerminalIcon,
   XIcon,
 } from "lucide-react";
@@ -29,7 +30,12 @@ interface WorktreeSetupCardProps {
   onCancel: (() => void) | null;
   onWorkLocally: (() => void) | null;
   onOpenTerminal: (() => void) | null;
+  /** fork: library-launch-files: the computer filling a Library conversation's project files. */
+  computerLabel?: string | null;
+  onRetry?: (() => void) | null;
 }
+
+const isProjectFiles = (snapshot: WorktreeSetupSnapshot) => snapshot.kind === "project-files";
 
 function stageElapsedMs(stage: WorktreeSetupStage, nowMs: number): number | null {
   if (!stage.startedAt) return null;
@@ -95,7 +101,20 @@ function ShimmerOverlay({ children }: { children: ReactNode }) {
   );
 }
 
-function headerLabel(snapshot: WorktreeSetupSnapshot): string {
+function headerLabel(snapshot: WorktreeSetupSnapshot, computerLabel: string | null): string {
+  if (isProjectFiles(snapshot)) {
+    const computer = computerLabel ?? "this computer";
+    switch (snapshot.phase) {
+      case "running":
+        return `Preparing files on ${computer}…`;
+      case "done":
+        return "Project files ready";
+      case "failed":
+        return `Couldn't prepare files on ${computer}`;
+      case "cancelled":
+        return "File preparation cancelled";
+    }
+  }
   switch (snapshot.phase) {
     case "running":
       return "Preparing workspace…";
@@ -113,15 +132,17 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
 function SetupHeaderRow({
   snapshot,
   totalElapsed,
+  computerLabel,
 }: {
   snapshot: WorktreeSetupSnapshot;
   totalElapsed: number | null;
+  computerLabel: string | null;
 }) {
   const running = snapshot.phase === "running";
   const failed = snapshot.phase === "failed";
   const finishedWithFailedStage =
     snapshot.phase === "done" && snapshot.stages.some((stage) => stage.status === "failed");
-  const text = headerLabel(snapshot);
+  const text = headerLabel(snapshot, computerLabel);
   const tone = failed
     ? "text-destructive-foreground"
     : finishedWithFailedStage
@@ -156,21 +177,29 @@ function StageRow({
   stage,
   nowMs,
   scriptName,
+  projectFiles,
 }: {
   stage: WorktreeSetupStage;
   nowMs: number;
   scriptName: string | null;
+  projectFiles: boolean;
 }) {
   const elapsed = stageElapsedMs(stage, nowMs);
   const label =
-    stage.id === "setup-script" && scriptName ? scriptName : worktreeSetupStageLabel(stage.id);
+    stage.id === "setup-script" && scriptName
+      ? scriptName
+      : projectFiles && stage.id === "fetch"
+        ? "Download files"
+        : worktreeSetupStageLabel(stage.id);
   const running = stage.status === "running";
   const trailing =
     stage.status === "pending"
       ? null
       : stage.status === "skipped"
         ? (stage.detail ?? "skipped")
-        : stage.id === "checkout" && running && stage.percent !== null
+        : (stage.id === "checkout" || (projectFiles && stage.id === "fetch")) &&
+            running &&
+            stage.percent !== null
           ? `${stage.percent}%`
           : stage.detail;
   return (
@@ -275,9 +304,11 @@ function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
 function CollapsedSummaryRow({
   snapshot,
   totalElapsed,
+  computerLabel,
 }: {
   snapshot: WorktreeSetupSnapshot;
   totalElapsed: number | null;
+  computerLabel: string | null;
 }) {
   const status: WorktreeSetupStage["status"] =
     snapshot.phase === "failed" || snapshot.phase === "cancelled"
@@ -285,7 +316,7 @@ function CollapsedSummaryRow({
       : snapshot.stages.some((stage) => stage.id === "setup-script" && stage.status === "failed")
         ? "failed"
         : "done";
-  const label = headerLabel(snapshot);
+  const label = headerLabel(snapshot, computerLabel);
   return (
     <WorkLogRow
       data-worktree-setup-stage="summary"
@@ -312,6 +343,8 @@ export function WorktreeSetupCard({
   onCancel,
   onWorkLocally,
   onOpenTerminal,
+  computerLabel = null,
+  onRetry = null,
   embedded = false,
 }: WorktreeSetupCardProps & {
   embedded?: boolean;
@@ -327,7 +360,10 @@ export function WorktreeSetupCard({
   const setupStage = snapshot.stages.find((stage) => stage.id === "setup-script");
   const showTerminal = onOpenTerminal && setupStage && setupStage.status !== "pending";
   const collapsed = embedded && !running;
-  const showHeader = !embedded && !running && snapshot.phase !== "done";
+  const projectFiles = isProjectFiles(snapshot);
+  // Project files own no working row while they download, so their card names itself.
+  const showHeader = !embedded && (projectFiles || (!running && snapshot.phase !== "done"));
+  const failed = snapshot.phase === "failed";
   const showTail =
     setupStage !== undefined &&
     (setupStage.status === "failed" ||
@@ -335,9 +371,19 @@ export function WorktreeSetupCard({
 
   return (
     <section aria-label="Workspace setup" data-worktree-setup-phase={snapshot.phase}>
-      {showHeader ? <SetupHeaderRow snapshot={snapshot} totalElapsed={totalElapsed} /> : null}
+      {showHeader ? (
+        <SetupHeaderRow
+          snapshot={snapshot}
+          totalElapsed={totalElapsed}
+          computerLabel={computerLabel}
+        />
+      ) : null}
       {collapsed ? (
-        <CollapsedSummaryRow snapshot={snapshot} totalElapsed={totalElapsed} />
+        <CollapsedSummaryRow
+          snapshot={snapshot}
+          totalElapsed={totalElapsed}
+          computerLabel={computerLabel}
+        />
       ) : (
         <div className={showHeader ? "pt-1.5" : undefined}>
           {snapshot.stages.map((stage) => (
@@ -346,6 +392,7 @@ export function WorktreeSetupCard({
                 stage={stage}
                 nowMs={nowMs}
                 scriptName={snapshot.setupScript?.name ?? null}
+                projectFiles={projectFiles}
               />
               {stage.id === "setup-script" && showTail ? (
                 <OutputTail lines={stage.tail} failed={stage.status === "failed"} />
@@ -355,7 +402,7 @@ export function WorktreeSetupCard({
         </div>
       )}
 
-      {snapshot.phase === "failed" && snapshot.error ? (
+      {failed && snapshot.error ? (
         <p className="mt-1 ml-8 text-xs text-muted-foreground">{snapshot.error}</p>
       ) : null}
 
@@ -382,7 +429,13 @@ export function WorktreeSetupCard({
             Work locally
           </Button>
         ) : null}
-        {onCancel && running ? (
+        {onRetry && projectFiles && failed ? (
+          <Button type="button" size="xs" variant="ghost-muted" onClick={onRetry}>
+            <RotateCcwIcon aria-hidden />
+            Retry
+          </Button>
+        ) : null}
+        {onCancel && (running || (projectFiles && failed)) ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onCancel}>
             <XIcon aria-hidden />
             Cancel

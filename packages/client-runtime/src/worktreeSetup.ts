@@ -42,3 +42,15 @@ export function resolveVisibleWorktreeSetup(input: {
 export function worktreeSetupAgentStarted(snapshot: WorktreeSetupSnapshot): boolean {
   return snapshot.stages.some((stage) => stage.id === "agent" && stage.status === "done");
 }
+
+/**
+ * Whether this setup holds the composer. Project files fill in behind an open conversation and the
+ * computer holds its first turn until they land, so they never block Send.
+ */
+export function worktreeSetupBlocksSend(snapshot: WorktreeSetupSnapshot): boolean {
+  return (
+    snapshot.kind !== "project-files" &&
+    snapshot.phase === "running" &&
+    !worktreeSetupAgentStarted(snapshot)
+  );
+}
