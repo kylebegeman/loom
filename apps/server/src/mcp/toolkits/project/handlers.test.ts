@@ -4,6 +4,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   type Project as ProjectRecord,
+  type ProjectCloneStartInput,
   type ModelSelection,
   type RuntimeMode,
 } from "@t3tools/contracts";
@@ -22,6 +23,9 @@ import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProjectEnrichmentService from "../../../project/ProjectEnrichmentService.ts";
+import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -102,7 +106,7 @@ const clientLaunchHarness = (input: {
             : Option.none(),
         ),
     }),
-    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
     NodeServices.layer,
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
@@ -335,5 +339,76 @@ it.effect("launch retries keep the same command, thread and first-message identi
     expect(launched[0]?.commandId).not.toBe(launched[2]?.commandId);
     expect(launched[3]?.commandId).not.toBe(launched[4]?.commandId);
     expect(launched[0]?.libraryCaller).toEqual({ sessionId: "session-1" });
+  }),
+);
+
+it.effect("an agent clone without a folder registers the project and waits for the clone", () =>
+  Effect.gen(function* () {
+    const started: Array<ProjectCloneStartInput> = [];
+    const { dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched: [],
+    });
+    const snapshot = (projectId: ProjectId, phase: "running" | "done") => ({
+      projectId,
+      remoteUrl: "https://github.com/kyle/loom.git",
+      destinationPath: "/projects/loom",
+      repository: null,
+      phase,
+      stage: "connecting" as const,
+      percent: null,
+      detail: null,
+      error: null,
+      startedAt: "2026-10-26T00:00:00.000Z",
+      endedAt: null,
+      sequence: 0,
+    });
+    const cloneDependencies = Layer.mergeAll(
+      dependencies,
+      Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
+        start: (input) => {
+          started.push(input);
+          return Effect.succeed({
+            projectId: input.projectId,
+            cwd: "/projects/loom",
+            remoteUrl: "https://github.com/kyle/loom.git",
+            repository: null,
+            destinationPath: "/projects/loom",
+            reused: false,
+          });
+        },
+        stream: Stream.suspend(() => {
+          const projectId = started[0]!.projectId;
+          return Stream.make([snapshot(projectId, "running")], [snapshot(projectId, "done")]);
+        }),
+      }),
+      Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
+      Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+    );
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+          Layer.provide(cloneDependencies),
+        ),
+      ),
+    );
+    const result = yield* toolkit
+      .handle("t3_project_clone", { remoteUrl: "https://github.com/kyle/loom.git" })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(cloneDependencies));
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({
+      title: "loom",
+      remoteUrl: "https://github.com/kyle/loom.git",
+    });
+    expect(started[0]?.destinationPath).toBeUndefined();
+    expect(result.at(-1)?.result).toEqual({
+      projectId: started[0]?.projectId,
+      cwd: "/projects/loom",
+      remoteUrl: "https://github.com/kyle/loom.git",
+      repository: null,
+      destinationPath: "/projects/loom",
+      reused: false,
+      phase: "done",
+    });
   }),
 );

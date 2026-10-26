@@ -10,6 +10,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -17,6 +18,8 @@ import * as Stream from "effect/Stream";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
 import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -149,6 +152,54 @@ it.effect("reads cleanup reports without running cleanup and refuses another env
           Layer.mock(StorageCleanup.StorageCleanup)({
             latestReport: Effect.succeed(null),
             runNow: Effect.die("A read must not run cleanup"),
+          }),
+        ),
+      ),
+    ),
+  ),
+);
+
+it.effect("tells an agent where projects, worktrees, lanes and scratch work go", () =>
+  Effect.gen(function* () {
+    const toolkit = yield* EnvironmentToolkit;
+    const results = yield* toolkit
+      .handle("t3_environment_read", {})
+      .pipe(
+        Stream.unwrap,
+        Stream.runCollect,
+        Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+      );
+    expect(results.at(-1)?.result).toMatchObject({
+      folders: {
+        projects: "/home/kyle/Developer/active",
+        worktrees: "/home/kyle/.t3/worktrees",
+        lanes: "/home/kyle/Developer/lanes",
+        scratch: "/home/kyle/.t3/scratch",
+      },
+    });
+  }).pipe(
+    Effect.provide(
+      McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+        Layer.provideMerge(ThreadCommandExecutor.layer),
+        Layer.provideMerge(layerEnvironment),
+        Layer.provideMerge(Settings.layerTest()),
+        Layer.provideMerge(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.mock(ProjectPlacement.ProjectPlacement)({
+            folders: Effect.succeed({
+              projects: "/home/kyle/Developer/active",
+              worktrees: "/home/kyle/.t3/worktrees",
+              lanes: "/home/kyle/Developer/lanes",
+            }),
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            scratchRoot: Effect.succeed(Option.some("/home/kyle/.t3/scratch")),
           }),
         ),
       ),

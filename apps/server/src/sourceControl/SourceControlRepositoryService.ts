@@ -34,6 +34,8 @@ import * as SourceControlProvider from "@t3tools/source-control-core/server/Sour
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import * as ProjectPlacement from "../project/ProjectPlacement.ts";
+import { parseGitRemoteRepository } from "@t3tools/shared/git";
 import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
@@ -48,6 +50,7 @@ export class SourceControlRepositoryService extends Context.Service<
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
     readonly prepareClone: (
       input: SourceControlCloneRepositoryInput,
+      options?: SourceControlPrepareOptions,
     ) => Effect.Effect<SourceControlPreparedClone, SourceControlRepositoryError>;
     readonly cloneRepository: (
       input: SourceControlCloneRepositoryInput,
@@ -67,12 +70,37 @@ export interface SourceControlPreparedClone {
   readonly remoteUrl: string;
   readonly cloneUrl: string;
   readonly repository: SourceControlRepositoryInfo | null;
+  /** An existing checkout of the same origin, used instead of cloning. */
+  readonly reuse?: ProjectPlacement.RepositoryCheckout;
+  /** The server claimed this empty folder because the request named none. */
+  readonly claimed?: true;
 }
 
-export interface SourceControlCloneOptions {
+export interface SourceControlPrepareOptions {
+  /** Names a server-claimed folder; the repository name is used otherwise. */
+  readonly title?: string;
+  /** The caller prepared and guarded this destination already, and may have registered a project in it. */
+  readonly destinationPrepared?: boolean;
+}
+
+export interface SourceControlCloneOptions extends SourceControlPrepareOptions {
   readonly onProgress?: (line: GitCloneProgressLine) => Effect.Effect<void>;
   /** Overrides the default clone budget; `null` disables the deadline. */
   readonly timeoutMs?: number | null;
+}
+
+export function repositoryFolderTitle(
+  remoteUrl: string,
+  repository: SourceControlRepositoryInfo | null,
+): string {
+  const name = repository?.nameWithOwner ?? parseGitRemoteRepository(remoteUrl)?.path ?? remoteUrl;
+  return (
+    name
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/:]/)
+      .at(-1)
+      ?.replace(/\.git$/i, "") ?? name
+  );
 }
 
 // Older/mobile synchronous RPCs need deadlines; tracked clones use progress and Cancel instead.
@@ -196,6 +224,7 @@ export const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const path = yield* Path.Path;
   const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  const placement = yield* ProjectPlacement.ProjectPlacement;
 
   const ensureConcreteProvider = (input: {
     readonly operation: string;
@@ -248,8 +277,20 @@ export const make = Effect.gen(function* () {
   );
 
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
-    function* (destinationPath: string) {
+    function* (destinationPath: string, options?: { readonly guarded?: boolean }) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
+      if (options?.guarded !== true) {
+        yield* placement.assertPlacementAllowed(normalizedDestination).pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlRepositoryError({
+                operation: "cloneRepository",
+                provider: SourceControlProviderKind.make("unknown"),
+                detail: error.reason,
+              }),
+          ),
+        );
+      }
       if (yield* fileSystem.exists(normalizedDestination)) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
@@ -287,10 +328,10 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const prepareClone = Effect.fn("SourceControlRepositoryService.prepareClone")(function* (
+  const resolveRemote = Effect.fn("SourceControlRepositoryService.resolveRemote")(function* (
     input: SourceControlCloneRepositoryInput,
+    lookupCwd: string,
   ) {
-    const preparedDestination = yield* prepareDestination(input.destinationPath ?? "");
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
     let provider: SourceControlProviderKind =
@@ -300,7 +341,7 @@ export const make = Effect.gen(function* () {
       repository = yield* lookupRepository({
         provider: input.provider,
         repository: input.repository,
-        cwd: preparedDestination.parentPath,
+        cwd: lookupCwd,
       });
       remoteUrl = selectRemoteUrl(repository, input.protocol);
       provider = input.provider;
@@ -313,12 +354,57 @@ export const make = Effect.gen(function* () {
         detail: "Enter a repository path or clone URL before cloning.",
       });
     }
+    return { repository, remoteUrl };
+  });
 
+  const prepareClone = Effect.fn("SourceControlRepositoryService.prepareClone")(function* (
+    input: SourceControlCloneRepositoryInput,
+    options?: SourceControlPrepareOptions,
+  ) {
+    if (input.destinationPath !== undefined && input.destinationPath.trim().length > 0) {
+      const preparedDestination = yield* prepareDestination(input.destinationPath, {
+        guarded: options?.destinationPrepared === true,
+      });
+      const { repository, remoteUrl } = yield* resolveRemote(input, preparedDestination.parentPath);
+      return {
+        destinationPath: preparedDestination.destinationPath,
+        remoteUrl: redactRemoteUrl(remoteUrl),
+        cloneUrl: remoteUrl,
+        repository,
+      } satisfies SourceControlPreparedClone;
+    }
+
+    const { repository, remoteUrl } = yield* resolveRemote(input, config.cwd);
+    const redacted = redactRemoteUrl(remoteUrl);
+    const [existing] = yield* placement.findRepositoryCheckouts(redacted);
+    if (existing !== undefined) {
+      return {
+        destinationPath: existing.path,
+        remoteUrl: redacted,
+        cloneUrl: remoteUrl,
+        repository,
+        reuse: existing,
+      } satisfies SourceControlPreparedClone;
+    }
+    const claimed = yield* placement
+      .claimFolder(options?.title ?? repositoryFolderTitle(redacted, repository))
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider: input.provider ?? SourceControlProviderKind.make("unknown"),
+              detail: "Could not create a folder for the clone in the Projects folder.",
+              cause,
+            }),
+        ),
+      );
     return {
-      destinationPath: preparedDestination.destinationPath,
-      remoteUrl: redactRemoteUrl(remoteUrl),
+      destinationPath: claimed,
+      remoteUrl: redacted,
       cloneUrl: remoteUrl,
       repository,
+      claimed: true,
     } satisfies SourceControlPreparedClone;
   });
 
@@ -375,7 +461,16 @@ export const make = Effect.gen(function* () {
     input: SourceControlCloneRepositoryInput,
     options?: SourceControlCloneOptions,
   ) {
-    const prepared = yield* prepareClone(input);
+    const prepared = yield* prepareClone(input, options);
+    if (prepared.reuse !== undefined) {
+      return {
+        cwd: prepared.destinationPath,
+        remoteUrl: prepared.remoteUrl,
+        repository: prepared.repository,
+        destinationPath: prepared.destinationPath,
+        reused: true,
+      };
+    }
     const httpsUrl = httpsFallbackUrl(input, prepared);
     const remoteUrl = yield* runClone(
       input,
@@ -400,6 +495,12 @@ export const make = Effect.gen(function* () {
               ),
             ),
       ),
+      // A folder claimed for this clone holds nothing but git's partial output.
+      Effect.tapError(() =>
+        prepared.claimed === true
+          ? fileSystem.remove(prepared.destinationPath, { recursive: true }).pipe(Effect.ignore)
+          : Effect.void,
+      ),
     );
 
     // A failed ownership receipt keeps the completed clone permanently ineligible for release.
@@ -421,6 +522,8 @@ export const make = Effect.gen(function* () {
       cwd: prepared.destinationPath,
       remoteUrl,
       repository: prepared.repository,
+      destinationPath: prepared.destinationPath,
+      reused: false,
     };
   });
 
@@ -540,8 +643,8 @@ export const make = Effect.gen(function* () {
   return SourceControlRepositoryService.of({
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
-    prepareClone: (input) =>
-      prepareClone(input).pipe(
+    prepareClone: (input, options) =>
+      prepareClone(input, options).pipe(
         mapRepositoryError(
           "cloneRepository",
           input.provider ?? SourceControlProviderKind.make("unknown"),

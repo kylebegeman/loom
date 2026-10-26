@@ -37,7 +37,7 @@ export const AgentReceiptsToolkit = Toolkit.make(
   Tool.make("loom_agent_receipts_report", {
     description:
       "Report which sub-agent conversations hold nothing their receipt lacks, with byte counts. Read-only: it deletes nothing.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Struct({ text: Schema.String }),
     failure,
     dependencies: [McpInvocationContext],
@@ -48,7 +48,7 @@ export const AgentReceiptsToolkit = Toolkit.make(
   Tool.make("loom_agent_receipts_backfill", {
     description:
       "Write receipts for finished sub-agents that have none or an outdated one. Safe to run again; transcripts are only read.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Schema.Struct({ text: Schema.String }),
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],

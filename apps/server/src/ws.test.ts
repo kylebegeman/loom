@@ -60,6 +60,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as ProjectPlacement from "./project/ProjectPlacement.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
@@ -518,7 +519,9 @@ it.effect(
         Layer.mock(DirectEndpoints.DirectEndpoints)({ resolve: () => Effect.succeed([]) }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           scratchRoot: Effect.succeedNone,
-          namedProjectsRoot: process.cwd(),
+        }),
+        Layer.mock(ProjectPlacement.ProjectPlacement)({
+          folders: Effect.succeed({ projects: "/projects", worktrees: "/worktrees" }),
         }),
         Layer.mock(ServerEnvironment.ServerEnvironment)({
           getDescriptor: Effect.succeed({
@@ -695,7 +698,9 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       Layer.mock(DirectEndpoints.DirectEndpoints)({ resolve: () => Effect.succeed([]) }),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         scratchRoot: Effect.succeedNone,
-        namedProjectsRoot: process.cwd(),
+      }),
+      Layer.mock(ProjectPlacement.ProjectPlacement)({
+        folders: Effect.succeed({ projects: "/projects", worktrees: "/worktrees" }),
       }),
       Layer.mock(ServerEnvironment.ServerEnvironment)({
         getDescriptor: Effect.succeed({

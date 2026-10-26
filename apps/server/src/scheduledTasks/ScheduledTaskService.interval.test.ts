@@ -25,7 +25,6 @@ const dependencies = Layer.mergeAll(
     launch: () => Effect.die("synthetic dispatch failure"),
   }),
   Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-    namedProjectsRoot: "/projects",
     isScratchProject: () => Effect.succeed(false),
   }),
   Layer.mock(ThreadManagementService.ThreadManagementService)({}),

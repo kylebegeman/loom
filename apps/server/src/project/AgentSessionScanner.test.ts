@@ -49,6 +49,7 @@ interface ScannerTestInput {
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
+  readonly worktreesDirectory?: string;
 }
 
 const layerScannerTest = (input: ScannerTestInput) =>
@@ -67,6 +68,9 @@ const layerScannerTest = (input: ScannerTestInput) =>
             },
             ...input.providerInstances,
           },
+          ...(input.worktreesDirectory === undefined
+            ? {}
+            : { worktreesDirectory: input.worktreesDirectory }),
         }),
         ServerConfig.layerTest(
           input.claudeHomePath,
@@ -691,6 +695,40 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
 
         expect(result.candidates.map((candidate) => candidate.path)).toEqual([workspace]);
+      }),
+    );
+
+    it.effect("lists projects in the default Projects folder but not Loom's own folders", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const configBaseDir = yield* makeTempDir("t3code-scanner-base-");
+        const customWorktrees = yield* makeTempDir("t3code-scanner-worktrees-");
+        const project = path.join(configBaseDir, "projects", "app");
+        const excluded = [
+          path.join(configBaseDir, "userdata", "logs"),
+          path.join(configBaseDir, "scratch", "notes"),
+          path.join(customWorktrees, "app", "feature"),
+        ];
+        for (const [index, cwd] of [project, ...excluded].entries()) {
+          yield* fileSystem.makeDirectory(cwd, { recursive: true });
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", `-slug-${index}`, "session.jsonl"),
+            contents: claudeSessionLine(cwd),
+            mtimeMs: Date.parse("2026-01-01T00:00:00.000Z") + index,
+          });
+        }
+
+        const result = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          configBaseDir,
+          worktreesDirectory: customWorktrees,
+        });
+
+        expect(result.candidates.map((candidate) => candidate.path)).toEqual([project]);
       }),
     );
 

@@ -5,7 +5,6 @@ import {
   type ThreadId,
   VcsProcessSpawnError,
 } from "@t3tools/contracts";
-import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -23,6 +22,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ProjectPlacement from "./ProjectPlacement.ts";
 import * as ProjectService from "./ProjectService.ts";
 
 export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailableError>()(
@@ -97,7 +97,6 @@ export class ManagedProjectFolders extends Context.Service<
       readonly threadId: ThreadId;
       readonly text: string;
     }) => Effect.Effect<Option.Option<string>, ScratchFolderError>;
-    readonly namedProjectsRoot: string;
     /** Removes failed/cancelled creations' folders only while no project owns them. */
     readonly createNamedProject: (input: { readonly name: string }) => Effect.Effect<
       {
@@ -137,8 +136,6 @@ const ICON_BACKGROUNDS = [
   "#db2777",
   "#e11d48",
 ] as const;
-
-const MAX_NAMED_FOLDER_ATTEMPTS = 100;
 
 function escapeXml(value: string): string {
   return value
@@ -209,6 +206,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectService.ProjectService;
   const crypto = yield* Crypto.Crypto;
+  const placement = yield* ProjectPlacement.ProjectPlacement;
   const managedRoot = config.managedProjectsRoot ?? config.baseDir; // fork: mini-managed-projects
 
   // Non-recursive mkdir atomically claims a name; racers move on after AlreadyExists.
@@ -342,39 +340,14 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const namedProjectsRoot = path.resolve(managedRoot, "projects"); // fork: mini-managed-projects
-
-  const claimNamedFolder = Effect.fn("ManagedProjectFolders.claimNamedFolder")(function* (
-    name: string,
-  ) {
-    yield* fileSystem
-      .makeDirectory(namedProjectsRoot, { recursive: true })
+  const claimNamedFolder = (name: string) =>
+    placement
+      .claimFolder(name)
       .pipe(
         Effect.mapError(
-          (cause) => new NamedProjectFolderError({ folder: namedProjectsRoot, cause }),
+          (error) => new NamedProjectFolderError({ folder: error.folder, cause: error.cause }),
         ),
       );
-    const folderName = newProjectFolderName(name);
-    const claimed = yield* claimFreeFolder(
-      (attempt) =>
-        Effect.succeed(
-          attempt > MAX_NAMED_FOLDER_ATTEMPTS
-            ? Option.none()
-            : Option.some(
-                path.join(
-                  namedProjectsRoot,
-                  attempt === 1 ? folderName : `${folderName}-${attempt}`,
-                ),
-              ),
-        ),
-      (folder, cause) => new NamedProjectFolderError({ folder, cause }),
-    );
-    if (Option.isSome(claimed)) return claimed.value;
-    return yield* new NamedProjectFolderError({
-      folder: path.join(namedProjectsRoot, folderName),
-      cause: `Every folder name for "${folderName}" is taken.`,
-    });
-  });
 
   const scaffoldRepository = Effect.fn("ManagedProjectFolders.scaffoldRepository")(function* (
     cwd: string,
@@ -464,9 +437,10 @@ const make = Effect.gen(function* () {
     ensureScratchProject,
     isScratchProject,
     folderForThread,
-    namedProjectsRoot,
     createNamedProject,
   });
 });
 
-export const layer = Layer.effect(ManagedProjectFolders, make);
+export const layer = Layer.effect(ManagedProjectFolders, make).pipe(
+  Layer.provide(ProjectPlacement.layerWithProjectStore),
+);

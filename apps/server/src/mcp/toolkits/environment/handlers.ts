@@ -1,8 +1,11 @@
 // fork: mini-native-retention
 import { OrchestratorMcpFailure, type ServerSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
 import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -54,12 +57,24 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     Effect.gen(function* () {
       const { descriptor, settings } = yield* access;
       const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
+      const folders = yield* Effect.flatMap(
+        ProjectPlacement.ProjectPlacement,
+        (placement) => placement.folders,
+      );
+      const scratch = yield* Effect.flatMap(
+        ManagedProjectFolders.ManagedProjectFolders,
+        (managed) => managed.scratchRoot,
+      );
       return {
         environmentId: descriptor.environmentId,
         label: descriptor.label,
         serverVersion: descriptor.serverVersion,
         platform: descriptor.platform,
         preferences: preferences(current),
+        folders: Option.match(scratch, {
+          onNone: () => folders,
+          onSome: (root) => ({ ...folders, scratch: root }),
+        }),
       };
     }),
   ),
