@@ -15,7 +15,6 @@ function execute(file, args, env) {
 }
 const record = (id, title, state, detail, repair = null) => ({ id, title, state, detail, repair });
 const safeText = (value) =>
-  // oxlint-disable-next-line no-control-regex -- Diagnostic fields must remain printable single-line text.
   typeof value === "string" && value.length <= 2048 && !/[\x00-\x1f\x7f]/.test(value);
 
 export async function collectConnections(

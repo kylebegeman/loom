@@ -112,7 +112,6 @@ export function sanitizeEntryPath(path: string | undefined): string {
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return "/";
   // Landing on the gateway's own paths would replay the entry or show its pages instead of the app.
   if (path.startsWith(PREVIEW_RESERVED_PATH)) return "/";
-  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is rejected.
   if (/[\u0000-\u001f\u007f-\u009f]/.test(path)) return "/";
   try {
     return path.replace(/[^!-~]/gu, (character) => encodeURIComponent(character));
