@@ -429,6 +429,11 @@ export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
   return yield* workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
 }, mapFailure);
 
+const capabilities = (status: string, set: "CapEff" | "CapPrm") => {
+  const hex = new RegExp(`^${set}:\\s*([0-9a-f]+)$`, "m").exec(status)?.[1];
+  return hex === undefined ? null : BigInt(`0x${hex}`);
+};
+
 /** Unknown process visibility keeps data. Inspect cwd without walking package/build trees. */
 export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.processReason")(
   function* (workspaceRoot: string) {
@@ -444,15 +449,30 @@ export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.pro
       );
     };
     if (platform === "linux") {
+      const own = capabilities(yield* fs.readFileString("/proc/self/status"), "CapEff");
       for (const pid of (yield* fs.readDirectory("/proc")).filter((entry) => /^\d+$/.test(entry))) {
         const directory = `/proc/${pid}`;
         const info = yield* fs.stat(directory).pipe(Effect.option);
         if (Option.isNone(info) || Option.getOrNull(info.value.uid) !== uid) continue;
         const cwd = yield* fs.readLink(`${directory}/cwd`).pipe(Effect.option);
-        if (Option.isSome(cwd) && inside(cwd.value.replace(/ \(deleted\)$/, "")))
-          return "a process is using the project folder";
-        if (Option.isNone(cwd) && (yield* fs.exists(directory)))
-          return "process working directories could not be verified";
+        if (Option.isSome(cwd)) {
+          if (inside(cwd.value.replace(/ \(deleted\)$/, "")))
+            return "a process is using the project folder";
+          continue;
+        }
+        if (!(yield* fs.exists(directory))) continue;
+        // The kernel hides the cwd of a non-dumpable process, whose /proc files turn root-owned,
+        // and of one permitted capabilities this server lacks. Login sessions always run such
+        // helpers (systemd --user, sd-pam); any other unreadable cwd still keeps the folder.
+        const status = yield* fs.stat(`${directory}/status`).pipe(Effect.option);
+        if (uid !== 0 && Option.isSome(status) && Option.getOrNull(status.value.uid) === 0)
+          continue;
+        const theirs = yield* fs.readFileString(`${directory}/status`).pipe(
+          Effect.map((text) => capabilities(text, "CapPrm")),
+          Effect.orElseSucceed(() => null),
+        );
+        if (own !== null && theirs !== null && (theirs & ~own) !== 0n) continue;
+        return "process working directories could not be verified";
       }
       return null;
     }

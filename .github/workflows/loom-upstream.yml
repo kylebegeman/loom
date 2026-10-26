@@ -39,7 +39,8 @@ permissions:
 
 jobs:
   integrate:
-    runs-on: ubuntu-latest
+    # Upstream's CI image, so a new runner image cannot fail checks that pass upstream.
+    runs-on: ubuntu-24.04
     # One day of upstream often conflicts in 60 files; six sessions at a time resolve
     # that in under half an hour. Repair rounds and the review take the rest, inside
     # GitHub's six-hour limit for hosted runners.
@@ -88,8 +89,9 @@ jobs:
 
       - name: Prepare git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Global, so the git repositories tests create get an author too.
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/pingdotgg/t3code.git
 
       - name: Merge, resolve and check

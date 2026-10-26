@@ -1041,8 +1041,8 @@ resolve_conflicts() {
 # The fork's checks stop at their first failure. After a merge, each failure gets a fresh
 # repair session (prompt in scripts/fork/upstream-repair.md) whose changes become one commit,
 # up to LOOM_REPAIR_ROUNDS rounds, so a merge that breaks several checks never exhausts one
-# session. Dies when a session gives up or changes nothing, or the rounds run out; repair.md
-# beside the resolve logs records every round. Call it outside if and ||: run_checks relies on
+# session. Dies when a session gives up (after committing what it changed) or changes nothing,
+# or the rounds run out; repair.md beside the resolve logs records every round. Call it outside if and ||: run_checks relies on
 # errexit, which bash ignores in those contexts even when set again.
 checks_with_repair() {
   local tag=$1 logs report round=0 code check log reply
@@ -1068,22 +1068,29 @@ checks_with_repair() {
       echo "The session exited with status $?." >>"$logs/repair-$round.log"
     reply=$(final_line "$logs/repair-$round.log")
     echo "- Round $round, $check: $(printf '%s' "$reply" | cut -c1-300)" >>"$report"
-    [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
     restore_lockfile
     git add -A
     if git diff --cached --quiet; then
+      [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
       echo "  The session changed nothing." >>"$report"
       die "repair round $round changed nothing"
     fi
+    # A session that stops partway still commits, so the needs-Kyle draft keeps its work.
     {
-      echo "fix(fork): repair round $round after upstream $tag"
+      if [ "$reply" = REPAIRED ]; then
+        echo "fix(fork): repair round $round after upstream $tag"
+      else
+        echo "fix(fork): partial repair round $round after upstream $tag"
+      fi
       echo
       echo "Failing check: $check"
+      [ "$reply" = REPAIRED ] || printf '\nStopped before the check passed: %s\n' "$(printf '%s' "$reply" | cut -c1-300)"
       echo
-      # The session's reply without its final REPAIRED line, at most 80 lines.
+      # The session's reply without its final line, at most 80 lines.
       awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
         "$logs/repair-$round.log"
     } | git commit -q -F -
+    [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
   done
 }
 
