@@ -5,7 +5,9 @@ import {
   directoryAgeText,
   directoryCatalogRows,
   directoryConnectPlan,
+  backgroundCheckFailureText,
   directoryProofAge,
+  directoryReportingText,
   directoryRoutes,
   directoryUnattachedMachines,
   identityDirectoryAddresses,
@@ -417,5 +419,70 @@ describe("identityDirectoryAddresses", () => {
       library: { ...library, addresses: ["https://library.example.com/"] },
       computers: [],
     });
+  });
+});
+
+// fork: library-renewal-status
+describe("directoryReportingText", () => {
+  const signIn = {
+    state: "ready",
+    expiresAt: "2026-11-24T12:00:00.000Z",
+    renewsAt: "2026-11-05T12:00:00.000Z",
+    renewal: "automatic",
+    repair: null,
+  } as const;
+  const signInLine = (renewedAt?: string | null) =>
+    directoryReportingText({
+      state: "reporting",
+      lastReportedAt: null,
+      routes: [],
+      signIn: renewedAt === undefined ? signIn : { ...signIn, renewedAt },
+    }).find((line) => line.startsWith("Library sign-in"));
+
+  it("names the first renewal until one succeeds, then the last one", () => {
+    expect(signInLine(null)).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. First renewal scheduled for 2026-11-05T12:00:00.000Z.",
+    );
+    expect(signInLine("2026-10-26T09:00:00.000Z")).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. Last renewed 2026-10-26T09:00:00.000Z. Next renewal 2026-11-05T12:00:00.000Z.",
+    );
+  });
+
+  it("keeps the older wording for a server that does not report renewals", () => {
+    expect(signInLine()).toBe(
+      "Library sign-in expires 2026-11-24T12:00:00.000Z. Renews automatically.",
+    );
+  });
+});
+
+// fork: background-check-health
+describe("backgroundCheckFailureText", () => {
+  it("says since when a check has failed and why, and nothing once it passes", () => {
+    const report = { state: "reporting", lastReportedAt: null } as const;
+    expect(
+      backgroundCheckFailureText({
+        ...report,
+        failingChecks: [
+          {
+            check: "tailscale-cli",
+            message: "Loom is not allowed to run the Tailscale CLI (tailscale).",
+            firstSeenAt: "2026-09-23T06:21:00.000Z",
+            lastSeenAt: "2026-10-26T09:15:00.000Z",
+            count: 95_000,
+          },
+          {
+            check: "preview-registration",
+            message: "Could not reach the Library to register this computer's previews.",
+            firstSeenAt: "2026-10-26T09:00:00.000Z",
+            lastSeenAt: "2026-10-26T09:00:00.000Z",
+            count: 1,
+          },
+        ],
+      }),
+    ).toEqual([
+      "Tailscale CLI has failed 95000 times since 2026-09-23T06:21:00.000Z, most recently at 2026-10-26T09:15:00.000Z: Loom is not allowed to run the Tailscale CLI (tailscale).",
+      "Preview registration failed at 2026-10-26T09:00:00.000Z: Could not reach the Library to register this computer's previews.",
+    ]);
+    expect(backgroundCheckFailureText(report)).toEqual([]);
   });
 });

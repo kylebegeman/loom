@@ -23,6 +23,7 @@ import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/h
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { libraryComputerDirectory } from "./enrollment.ts";
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
 
 const LibraryHostCredential = Schema.Struct({
   computer: Schema.optional(LibraryComputerRegistration),
@@ -34,6 +35,7 @@ const LibraryHostCredential = Schema.Struct({
   accessToken: Schema.RedactedFromValue(Schema.String),
   expiresAt: IsoDateTime,
   issuedAt: Schema.optional(IsoDateTime),
+  renewedAt: Schema.optional(IsoDateTime),
 });
 export type LibraryHostCredential = typeof LibraryHostCredential.Type;
 const decodeCredential = Schema.decodeEffect(Schema.fromJsonString(LibraryHostCredential));
@@ -220,6 +222,13 @@ export class LibraryConnectionService extends Context.Service<
   }
 >()("t3/fork/project-library/LibraryConnection/LibraryConnectionService") {}
 
+const UNSUPPORTED_REPAIR =
+  "Update Loom on your Library to renew this computer's sign-in automatically. Its current sign-in is kept until it expires.";
+const RETRYING_REPAIR =
+  "Loom could not renew this computer's Library sign-in. Check the Library connection and that its private credential file is writable. Loom will retry.";
+const UNSAVED_REPAIR =
+  "Loom renewed this computer's Library sign-in but could not save its private credential file. Make the file writable. Loom will retry saving it.";
+
 const make = Effect.gen(function* () {
   const context = yield* Effect.context<Effect.Services<typeof readLibraryConnection>>();
   const read = readLibraryConnection.pipe(
@@ -229,6 +238,7 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const lock = yield* Semaphore.make(1);
+  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
   let retryAt = 0;
   let lastSession: string | null = null;
   let renewal: LibrarySignInStatus["renewal"] = "automatic";
@@ -259,79 +269,100 @@ const make = Effect.gen(function* () {
     );
     pending = null;
   });
+  const attempt = Effect.fn("LibraryConnection.renew")(function* (
+    connection: Extract<LibraryConnection, { kind: "remote" }>,
+    credential: LibraryHostCredential,
+    file: string,
+    now: number,
+  ) {
+    const result = yield* connection
+      .send(HttpClientRequest.post(connection.endpoint(LIBRARY_PUBLISHER_RENEW_ROUTE)))
+      .pipe(Effect.timeout("20 seconds"), Effect.result);
+    if (result._tag === "Failure") {
+      renewal = "retrying";
+      return connection;
+    }
+    const response = result.success;
+    if (
+      response.status === 404 ||
+      response.status === 405 ||
+      /^text\/html\b/i.test(response.headers["content-type"] ?? "")
+    ) {
+      if (renewal !== "unsupported") yield* Effect.logWarning(UNSUPPORTED_REPAIR);
+      renewal = "unsupported";
+      return connection;
+    }
+    const next =
+      response.status === 200
+        ? yield* response.json.pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(LibraryPublisherRenewal)),
+            Effect.option,
+          )
+        : Option.none();
+    if (
+      Option.isNone(next) ||
+      Date.parse(next.value.expiresAt) <= now ||
+      next.value.sessionId === credential.sessionId
+    ) {
+      renewal = "retrying";
+      return connection;
+    }
+    const contents = yield* encodeJson({
+      ...credential,
+      ...next.value,
+      renewedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
+    }).pipe(Effect.option);
+    if (Option.isNone(contents)) {
+      renewal = "retrying";
+      return UNAVAILABLE;
+    }
+    pending = {
+      file,
+      previous: credential.sessionId,
+      contents: contents.value + "\n",
+    };
+    const written = yield* save().pipe(Effect.result);
+    renewal = written._tag === "Failure" ? "retrying" : "automatic";
+    return written._tag === "Failure" ? UNAVAILABLE : yield* read;
+  });
   const refresh = lock.withPermit(
     Effect.gen(function* () {
       if (pending !== null) {
         const written = yield* save().pipe(Effect.result);
         if (written._tag === "Failure") {
           renewal = "retrying";
+          yield* checks.fail("library-renewal", UNSAVED_REPAIR); // fork: background-check-health
           return UNAVAILABLE;
         }
       }
       const connection = yield* read;
-      if (connection.kind !== "remote" || connection.credential === null) return connection;
+      if (connection.kind !== "remote" || connection.credential === null) {
+        yield* checks.clear("library-renewal"); // fork: background-check-health
+        return connection;
+      }
       const credential = connection.credential;
       const now = yield* Clock.currentTimeMillis;
       if (lastSession !== credential.sessionId) {
         lastSession = credential.sessionId;
         retryAt = 0;
         renewal = "automatic";
+        yield* checks.clear("library-renewal"); // fork: background-check-health
       }
       if (Date.parse(credential.expiresAt) <= now) return connection;
       if (now < renewalTime(credential) || now < retryAt || connection.credentialFile === undefined)
         return connection;
       retryAt = now + RETRY_MS;
-      const result = yield* connection
-        .send(HttpClientRequest.post(connection.endpoint(LIBRARY_PUBLISHER_RENEW_ROUTE)))
-        .pipe(Effect.timeout("20 seconds"), Effect.result);
-      if (result._tag === "Failure") {
-        renewal = "retrying";
-        return connection;
-      }
-      const response = result.success;
-      if (
-        response.status === 404 ||
-        response.status === 405 ||
-        /^text\/html\b/i.test(response.headers["content-type"] ?? "")
-      ) {
-        if (renewal !== "unsupported")
-          yield* Effect.logWarning(
-            "Update Loom on your Library to renew this computer's sign-in automatically. Its current sign-in is kept until it expires.",
-          );
-        renewal = "unsupported";
-        return connection;
-      }
-      const next =
-        response.status === 200
-          ? yield* response.json.pipe(
-              Effect.flatMap(Schema.decodeUnknownEffect(LibraryPublisherRenewal)),
-              Effect.option,
-            )
-          : Option.none();
-      if (
-        Option.isNone(next) ||
-        Date.parse(next.value.expiresAt) <= now ||
-        next.value.sessionId === credential.sessionId
-      ) {
-        renewal = "retrying";
-        return connection;
-      }
-      const contents = yield* encodeJson({
-        ...credential,
-        ...next.value,
-      }).pipe(Effect.option);
-      if (Option.isNone(contents)) {
-        renewal = "retrying";
-        return UNAVAILABLE;
-      }
-      pending = {
-        file: connection.credentialFile,
-        previous: credential.sessionId,
-        contents: contents.value + "\n",
-      };
-      const written = yield* save().pipe(Effect.result);
-      renewal = written._tag === "Failure" ? "retrying" : "automatic";
-      return written._tag === "Failure" ? UNAVAILABLE : yield* read;
+      // fork: background-check-health - an attempt leaves its outcome in `renewal`
+      return yield* attempt(connection, credential, connection.credentialFile, now).pipe(
+        Effect.tap(() =>
+          renewal === "automatic"
+            ? checks.clear("library-renewal")
+            : checks.fail(
+                "library-renewal",
+                renewal === "unsupported" ? UNSUPPORTED_REPAIR : RETRYING_REPAIR,
+              ),
+        ),
+      );
     }),
   );
   const current = Effect.gen(function* () {
@@ -363,10 +394,7 @@ const make = Effect.gen(function* () {
         ...empty,
         state: "unavailable" as const,
         renewal: pending === null ? empty.renewal : ("retrying" as const),
-        repair:
-          pending === null
-            ? LIBRARY_SIGN_IN_MISSING
-            : "Loom renewed this computer's Library sign-in but could not save its private credential file. Make the file writable. Loom will retry saving it.",
+        repair: pending === null ? LIBRARY_SIGN_IN_MISSING : UNSAVED_REPAIR,
       };
     const now = yield* Clock.currentTimeMillis;
     const credential = connection.credential;
@@ -383,13 +411,14 @@ const make = Effect.gen(function* () {
       expiresAt: credential.expiresAt,
       renewsAt: DateTime.formatIso(DateTime.makeUnsafe(due)),
       renewal,
+      renewedAt: credential.renewedAt ?? null,
       repair:
         state === "expired"
           ? LIBRARY_SIGN_IN_MISSING
           : renewal === "unsupported"
             ? "Update Loom on your Library to enable automatic sign-in renewal before this date."
             : renewal === "retrying"
-              ? "Loom could not renew this computer's Library sign-in. Check the Library connection and that its private credential file is writable. Loom will retry."
+              ? RETRYING_REPAIR
               : null,
     };
   });

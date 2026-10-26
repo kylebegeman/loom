@@ -45,6 +45,7 @@ import {
   LIBRARY_PUSH_TEST_ALERT,
 } from "./apnsPayloads.ts";
 import { libraryPushActivitySwitchOn, libraryPushConfig } from "./config.ts";
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import {
   applyRegistration,
   applyUnregister,
@@ -246,10 +247,18 @@ const takeSlot = (
   return true;
 };
 
+// fork: background-check-health
+const KEY_PROBLEMS: Record<"key-unreadable" | "key-invalid", string> = {
+  "key-unreadable": "The Library could not read its Apple push key file.",
+  "key-invalid": "The Library's Apple push key file does not hold a usable key.",
+};
+const KEY_REJECTED = "Apple refused the Library's push key.";
+
 const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const config = libraryPushConfig(env);
+  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
 
   if (config._tag === "Off") {
     // Off means nothing is held; phones register again once push is back on.
@@ -260,6 +269,7 @@ const make = Effect.gen(function* () {
           Effect.logWarning("Library push could not clear its device list", { error: error._tag }),
         ),
       );
+    yield* checks.clear("push-readiness"); // fork: background-check-health
     return disabled(config.reason);
   }
 
@@ -269,8 +279,16 @@ const make = Effect.gen(function* () {
       : null;
   const key = yield* loadSigningKey(config);
   const problem: LibraryPushStatusReason | null = key._tag === "Problem" ? key.reason : null;
-  if (problem !== null) {
-    yield* Effect.logWarning("Library push is misconfigured", { reason: problem });
+  if (key._tag === "Problem") {
+    yield* Effect.logWarning("Library push is misconfigured", { reason: key.reason });
+    yield* checks.fail("push-readiness", KEY_PROBLEMS[key.reason]); // fork: background-check-health
+  } else if (
+    // fork: background-check-health - Apple's refusal stands until a send with this key succeeds.
+    !(yield* checks.failures).some(
+      (failure) => failure.check === "push-readiness" && failure.message === KEY_REJECTED,
+    )
+  ) {
+    yield* checks.clear("push-readiness");
   }
   if (config.topics.length === 0) {
     yield* Effect.logWarning(
@@ -561,6 +579,7 @@ const make = Effect.gen(function* () {
         // Any success in the same batch proves the key works, so it wins.
         if (results.some((result) => result.delivery.outcome === "sent")) {
           yield* Ref.set(failingRef, false);
+          yield* checks.clear("push-readiness"); // fork: background-check-health
         } else if (
           results.some(
             (result) =>
@@ -568,6 +587,7 @@ const make = Effect.gen(function* () {
           )
         ) {
           yield* Ref.set(failingRef, true);
+          yield* checks.fail("push-readiness", KEY_REJECTED); // fork: background-check-health
         }
         const byId = new Map(results.map((result) => [result.row.id, result.delivery]));
         return {

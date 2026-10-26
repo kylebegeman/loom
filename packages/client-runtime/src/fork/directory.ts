@@ -31,16 +31,48 @@ export function directoryReportingText(report: DirectoryReporting): readonly str
       "Turn on Tailscale HTTPS or Reach from anywhere on this computer so other devices can find it. You can also pair a device using a reachable address.",
     );
   const signIn = report.signIn;
-  if (signIn?.expiresAt)
+  if (signIn?.expiresAt) {
+    // fork: library-renewal-status - older servers omit renewedAt
+    const renewal =
+      signIn.renewal !== "automatic" || signIn.state === "expired"
+        ? ""
+        : signIn.renewedAt === undefined
+          ? " Renews automatically."
+          : signIn.renewedAt === null
+            ? signIn.renewsAt
+              ? ` First renewal scheduled for ${signIn.renewsAt}.`
+              : ""
+            : ` Last renewed ${signIn.renewedAt}.${signIn.renewsAt ? ` Next renewal ${signIn.renewsAt}.` : ""}`;
     lines.push(
-      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${signIn.renewal === "automatic" && signIn.state !== "expired" ? " Renews automatically." : ""}`,
+      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${renewal}`,
     );
+  }
   if (signIn?.repair) lines.push(signIn.repair);
   else if (report.state === "signed-out")
     lines.push(
       "Your Library refused this computer's sign-in. Ask its administrator to replace the publisher credential on this computer. Loom reloads it automatically.",
     );
   return lines;
+}
+
+// fork: background-check-health
+const BACKGROUND_CHECK_NAMES: Readonly<Record<string, string>> = {
+  "tailscale-cli": "Tailscale CLI",
+  "tailscale-serve": "Tailscale Serve",
+  "directory-reporting": "Directory reporting",
+  "library-renewal": "Library sign-in renewal",
+  "preview-registration": "Preview registration",
+  "push-readiness": "Library push",
+};
+
+/** One line per recurring check that has failed since it last passed, kept across restarts. */
+export function backgroundCheckFailureText(report: DirectoryReporting): readonly string[] {
+  return (report.failingChecks ?? []).map((failure) => {
+    const name = BACKGROUND_CHECK_NAMES[failure.check] ?? failure.check;
+    return failure.count === 1
+      ? `${name} failed at ${failure.lastSeenAt}: ${failure.message}`
+      : `${name} has failed ${failure.count} times since ${failure.firstSeenAt}, most recently at ${failure.lastSeenAt}: ${failure.message}`;
+  });
 }
 
 import type { EnvironmentId } from "@t3tools/contracts";

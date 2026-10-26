@@ -2661,6 +2661,27 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
     );
 
+    // fork: webhook-delivery-issues
+    it.effect("reports a refused delivery with its time and reason", () =>
+      Effect.gen(function* () {
+        const upserted = yield* Ref.make(0);
+        const lastDeliveryIssue = {
+          outcome: "rejected_signature",
+          reason: "The signature was missing or did not match this task's secret.",
+          firstAt: "2026-10-26T09:15:01.000Z",
+          lastAt: "2026-10-26T09:15:01.000Z",
+          count: 1,
+        };
+        const listed = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.flatMap((mcp) => mcp.listScheduledTasks(supervisedClient, { projectId })),
+          Effect.provide(
+            service([task({ lastRunStatus: "succeeded", lastDeliveryIssue })], null, upserted),
+          ),
+        );
+        assert.deepEqual(listed.tasks[0]?.lastDeliveryIssue, lastDeliveryIssue);
+      }),
+    );
+
     it.effect("never shows a read-only client a webhook URL", () =>
       Effect.gen(function* () {
         const upserted = yield* Ref.make(0);

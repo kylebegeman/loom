@@ -18,6 +18,7 @@ import * as Queue from "effect/Queue";
 import * as EffectScheduler from "effect/Scheduler";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 
@@ -1888,3 +1889,94 @@ it.effect("filters run before replay and coalescing without claiming ignored del
     { workers },
   );
 });
+
+// fork: webhook-delivery-issues
+it.effect("shows refused and failed deliveries on the task until one is accepted", () =>
+  withService(
+    ({ service, launches }) =>
+      Effect.gen(function* () {
+        const secret = "s3cret";
+        const { task } = yield* service.upsert(
+          yield* webhookTaskInput({
+            schedule: {
+              type: "webhook",
+              signature: {
+                header: "X-Hub-Signature-256",
+                encoding: "hex",
+                prefix: "sha256=",
+                secret,
+              },
+              maxDeliveryAgeMinutes: 30,
+            },
+          }),
+        );
+        const signature = `sha256=${NodeCrypto.createHmac("sha256", secret).update(pullRequestBody).digest("hex")}`;
+        const signed = (overrides: Partial<ScheduledTaskService.WebhookTriggerRequest> = {}) =>
+          requestFor(task, {
+            headers: { "content-type": "application/json", "x-hub-signature-256": signature },
+            ...overrides,
+          });
+        const issue = service.list().pipe(Effect.map(({ tasks }) => tasks[0]?.lastDeliveryIssue));
+
+        const subscribed = yield* Deferred.make<void>();
+        const announced = yield* Deferred.make<string>();
+        yield* service.subscribeList().pipe(
+          Stream.runForEach(({ tasks }) => {
+            const current = tasks[0]?.lastDeliveryIssue;
+            return current === undefined
+              ? Deferred.succeed(subscribed, undefined)
+              : Deferred.succeed(announced, current.outcome);
+          }),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(subscribed);
+
+        const old = DateTime.formatIso(DateTime.subtract(yield* DateTime.now, { minutes: 31 }));
+        const tooOld = yield* service.triggerWebhook(
+          signed({ relayDeliveryId: "old", receivedAt: old }),
+        );
+        assert.equal(tooOld._tag, "expired");
+        assert.equal(yield* Deferred.await(announced), "expired");
+        assert.deepEqual(yield* issue, {
+          outcome: "expired",
+          reason: "The request was older than this task's maximum delivery age.",
+          firstAt: old,
+          lastAt: old,
+          count: 1,
+        });
+
+        yield* TestClock.adjust("1 minute");
+        assert.equal((yield* service.triggerWebhook(requestFor(task)))._tag, "rejected_signature");
+        assert.deepInclude(yield* issue, {
+          outcome: "rejected_signature",
+          reason: "The signature was missing or did not match this task's secret.",
+          firstAt: old,
+          lastAt: DateTime.formatIso(yield* DateTime.now),
+          count: 2,
+        });
+
+        yield* TestClock.adjust("1 minute");
+        yield* waitForSpan(
+          service.triggerWebhook(signed()),
+          "ScheduledTaskService.runWebhookDelivery",
+        );
+        yield* Queue.take(launches);
+        const failed = yield* issue;
+        assert.deepEqual(failed, {
+          outcome: "dispatch_failed",
+          reason: "The run failed to start.",
+          firstAt: old,
+          lastAt: DateTime.formatIso(yield* DateTime.now),
+          count: 3,
+        });
+        assert.notInclude(JSON.stringify(failed), secret);
+        assert.notInclude(JSON.stringify(failed), "pull_request");
+
+        yield* TestClock.adjust("1 minute");
+        assert.equal((yield* service.triggerWebhook(signed()))._tag, "accepted");
+        yield* Queue.take(launches);
+        assert.isUndefined(yield* issue);
+      }),
+    { failLaunches: { remaining: 1 } },
+  ),
+);

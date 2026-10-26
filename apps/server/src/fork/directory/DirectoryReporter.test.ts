@@ -40,6 +40,7 @@ import {
 } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import { MiniOffloadService } from "../mini-offload/MiniOffloadService.ts";
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts";
 import * as Reporter from "./DirectoryReporter.ts";
 
 const NOW = Date.parse("2026-10-20T12:00:00.000Z");
@@ -254,6 +255,7 @@ const withReporter = <A, E>(
             Layer.mock(MiniOffloadService)({ identities: Ref.get(workers) }),
             Layer.succeed(HttpClient.HttpClient, http),
             ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
+            BackgroundChecks.layer, // fork: background-check-health
           ),
         ),
       ),
@@ -453,11 +455,20 @@ describe("DirectoryReporter", () => {
         yield* TestClock.adjust("30 seconds");
         expect((yield* h.nextPost).status).toBe(503);
         expect(yield* h.nextSleep).toBe(60_000);
+        // fork: background-check-health
+        expect((yield* h.reporter.status).failingChecks).toMatchObject([
+          {
+            check: "directory-reporting",
+            message: "This computer could not reach its Library's directory.",
+            count: 2,
+          },
+        ]);
 
         yield* TestClock.adjust("1 minute");
         expect((yield* h.nextPost).status).toBe(200);
         expect(yield* h.nextSleep).toBe(30_000);
         expect((yield* h.reporter.status).state).toBe("reporting");
+        expect((yield* h.reporter.status).failingChecks).toBeUndefined();
         expect(h.logs.join("\n").split("could not report to the directory")).toHaveLength(2);
       }),
     ),

@@ -31,6 +31,7 @@ import { DirectEndpoints } from "../../environment/DirectEndpoints.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import { forkParked } from "../../serverActivation.ts";
+import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import { MiniOffloadService } from "../mini-offload/MiniOffloadService.ts";
 import { DIRECTORY_REPORT_ROUTE } from "./DirectoryService.ts";
 
@@ -72,6 +73,14 @@ const STOPPED_WARNING: Record<Stopped, string> = {
   "signed-out": SIGNED_OUT_WARNING,
 };
 
+// fork: background-check-health
+const failureMessage = (reason: FailureReason | Stopped) =>
+  reason === "io"
+    ? "This computer could not reach its Library's directory."
+    : reason === "signed-out"
+      ? SIGNED_OUT_WARNING
+      : new DirectoryError({ reason }).message;
+
 const isJson = (response: HttpClientResponse.HttpClientResponse) =>
   /^application\/json\b/i.test(response.headers["content-type"] ?? "");
 
@@ -110,6 +119,7 @@ const make = Effect.gen(function* () {
   const mini = yield* MiniOffloadService;
   const http = yield* HttpClient.HttpClient;
   const status = yield* Ref.make<DirectoryReporting>({ state: "off", lastReportedAt: null });
+  const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
 
   /** Everything a report says except its sequence and time. */
   const describe = Effect.gen(function* () {
@@ -141,7 +151,8 @@ const make = Effect.gen(function* () {
 
   const run = Effect.gen(function* () {
     const initial = yield* libraryConnection.current;
-    if (initial.kind === "none" || initial.kind === "authority") return;
+    if (initial.kind === "none" || initial.kind === "authority")
+      return yield* checks.clear("directory-reporting"); // fork: background-check-health
 
     // Asked without the publisher token: the descriptor is public. Only a Library that answers
     // lacks the directory; a proxy's error page or an unreadable answer is an outage to retry.
@@ -234,6 +245,7 @@ const make = Effect.gen(function* () {
       failures = 0;
       lastSent = null;
       yield* update({ state: "unsupported" });
+      yield* checks.clear("directory-reporting"); // fork: background-check-health
       return { delay: UNSUPPORTED_RECHECK_MS, wakeable: false };
     });
     const retry = Effect.fn("DirectoryReporter.retry")(function* (reason: FailureReason) {
@@ -243,6 +255,7 @@ const make = Effect.gen(function* () {
           reason,
         });
       yield* update({ state: "retrying", reason });
+      yield* checks.fail("directory-reporting", failureMessage(reason)); // fork: background-check-health
       return {
         delay: Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS),
         wakeable: false,
@@ -256,6 +269,10 @@ const make = Effect.gen(function* () {
           yield* Effect.logWarning(SIGNED_OUT_WARNING);
         stopped = connection.kind === "unavailable" ? "signed-out" : null;
         yield* update({ state: connection.kind === "unavailable" ? "signed-out" : "off" });
+        // fork: background-check-health
+        yield* stopped === null
+          ? checks.clear("directory-reporting")
+          : checks.fail("directory-reporting", SIGNED_OUT_WARNING);
         return { delay: CHECK_MS, wakeable: true };
       }
       const library = connection;
@@ -294,6 +311,7 @@ const make = Effect.gen(function* () {
             lastReportedAt: isoAt(now),
             routes: description.routes,
           });
+          yield* checks.clear("directory-reporting"); // fork: background-check-health
           return { delay: CHECK_MS, wakeable: true };
         case "unsupported":
           return yield* unsupported;
@@ -303,6 +321,7 @@ const make = Effect.gen(function* () {
           stopped = outcome;
           failures = 0;
           yield* update({ state: outcome });
+          yield* checks.fail("directory-reporting", failureMessage(outcome)); // fork: background-check-health
           return { delay: STOPPED_RETRY_MS, wakeable: false };
         default:
           return yield* retry(outcome);
@@ -324,7 +343,12 @@ const make = Effect.gen(function* () {
 
   return DirectoryReporter.of({
     status: Effect.gen(function* () {
-      return { ...(yield* Ref.get(status)), signIn: yield* libraryConnection.status };
+      const failingChecks = yield* checks.failures; // fork: background-check-health
+      return {
+        ...(yield* Ref.get(status)),
+        signIn: yield* libraryConnection.status,
+        ...(failingChecks.length === 0 ? {} : { failingChecks }),
+      };
     }),
     run,
   });

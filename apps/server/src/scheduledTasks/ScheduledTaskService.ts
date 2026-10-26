@@ -1,4 +1,5 @@
 import * as VaultScheduledOutcomes from "../fork/vault/VaultScheduledOutcomes.ts"; // fork: vault-scheduled-outcomes
+import * as WebhookDeliveryIssues from "../fork/scheduled-tasks/webhookDeliveryIssues.ts"; // fork: webhook-delivery-issues
 import {
   CommandId,
   MessageId,
@@ -396,6 +397,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const vaultOutcomes = yield* VaultScheduledOutcomes.make; // fork: vault-scheduled-outcomes
+    const deliveryIssues = yield* WebhookDeliveryIssues.make; // fork: webhook-delivery-issues
     const crypto = yield* Crypto.Crypto;
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
@@ -458,12 +460,13 @@ export const layer = Layer.effect(
     const listRows = Effect.fn("ScheduledTaskService.listRows")(function* () {
       const rows = yield* selectAllRows();
       const origin = yield* readWebhookOrigin;
-      // fork: vault-scheduled-outcomes
-      return yield* Effect.forEach(
+      // fork: vault-scheduled-outcomes, webhook-delivery-issues
+      const tasks = yield* Effect.forEach(
         rows,
         (row) => decodeRow(row, origin).pipe(Effect.flatMap(vaultOutcomes.decorate)),
         { concurrency: 1 },
       );
+      return yield* deliveryIssues.decorateAll(tasks);
     });
 
     const getRows = (id: ScheduledTaskId) =>
@@ -1490,7 +1493,7 @@ export const layer = Layer.effect(
         UPDATE scheduled_task_webhook_deliveries
         SET outcome = 'dispatch_failed', error = ${message}
         WHERE delivery_id = ${deliveryId}
-      `.pipe(Effect.ignore);
+      `.pipe(Effect.ignore, Effect.andThen(notifyChanged)); // fork: webhook-delivery-issues
 
     /** Sliding one-minute window for deliveries that can start work. */
     const takeRateSlot = (
@@ -1818,6 +1821,7 @@ export const layer = Layer.effect(
               });
             if (!verified) {
               yield* log("rejected_signature");
+              yield* notifyChanged; // fork: webhook-delivery-issues
               yield* observe("rejected_signature");
               return { _tag: "rejected_signature" as const };
             }
@@ -1829,6 +1833,7 @@ export const layer = Layer.effect(
               maxAgeMinutes * 60_000
           ) {
             yield* log("expired", { signatureVerified: signature !== null });
+            yield* notifyChanged; // fork: webhook-delivery-issues
             yield* observe("expired");
             return { _tag: "expired" as const };
           }
@@ -1963,6 +1968,7 @@ export const layer = Layer.effect(
               renderedPrompt: rendered.prompt,
               error: PROMPT_TOO_LONG,
             });
+            yield* notifyChanged; // fork: webhook-delivery-issues
             yield* releaseReplay(deliveryId);
             yield* observe("prompt_too_long");
             return yield* releaseClaim({

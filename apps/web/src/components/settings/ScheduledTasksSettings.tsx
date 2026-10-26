@@ -1,4 +1,5 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
+import { WebhookDeliveryIssue } from "../../fork/scheduled-task-alerts/WebhookDeliveryIssue"; // fork: webhook-delivery-issues
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
@@ -733,6 +734,13 @@ function ScheduledTaskRow({
             </Badge>
           ) : null}
           {task.lastRunError ? <span className="text-destructive">{task.lastRunError}</span> : null}
+          {/* fork: webhook-delivery-issues */}
+          {task.lastDeliveryIssue ? (
+            <WebhookDeliveryIssue
+              issue={task.lastDeliveryIssue}
+              onReview={() => setDeliveriesOpen(true)}
+            />
+          ) : null}
           {/* fork: vault-scheduled-outcomes */}
           <VaultScheduledRecovery
             task={task}

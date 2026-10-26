@@ -190,3 +190,29 @@ it.effect("uses the signed issuance time in older enrollment files", () =>
     },
   ),
 );
+
+it.effect("reports no renewal until the first succeeds, then when it last renewed", () =>
+  withConnection(
+    () => Response.json(successor),
+    (h) =>
+      Effect.gen(function* () {
+        expect(yield* h.service.status).toMatchObject({
+          state: "ready",
+          renewal: "automatic",
+          renewsAt: iso(NOW + 19 * DAY),
+          renewedAt: null,
+        });
+        yield* TestClock.adjust("19 days");
+        expect(yield* h.service.status).toMatchObject({
+          state: "ready",
+          expiresAt: successor.expiresAt,
+          renewedAt: iso(NOW + 19 * DAY),
+        });
+        const fs = yield* FileSystem.FileSystem;
+        expect(decode(yield* fs.readFileString(h.file))).toMatchObject({
+          renewedAt: iso(NOW + 19 * DAY),
+        });
+      }),
+    { ...initial, issuedAt: iso(NOW - DAY), expiresAt: iso(NOW + 29 * DAY) },
+  ),
+);
