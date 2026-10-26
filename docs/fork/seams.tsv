@@ -227,7 +227,7 @@ apps/mobile/src/features/projects/AddProjectScreen.test.ts	project-home	1
 apps/mobile/src/lib/storage.test.ts	project-home	1
 apps/server/src/ws.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
-apps/server/src/project/ProjectService.ts	file-placement	14
+apps/server/src/project/ProjectService.ts	file-placement	15
 apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	5
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	3
@@ -310,6 +310,7 @@ apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	1
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	2
 apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	4
+apps/server/src/server.ts	file-placement	2
 apps/server/src/storageCleanup.ts	project-checkout-management	1
 apps/server/src/storageCleanup.ts	project-lifecycle	60
 apps/server/src/vcs/VcsDriver.ts	library-projects	1

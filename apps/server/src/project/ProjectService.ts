@@ -43,6 +43,7 @@ import {
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
+import * as LanesRoots from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -671,10 +672,10 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ProjectService, make).pipe(
   Layer.provide(ThreadCommandExecutor.layer),
-  // fork: file-placement: lanes depend on this service, so its guard runs without a LanesRoots provider.
   Layer.provide(
     ProjectPlacement.layer.pipe(
       Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),
+      Layer.provide(LanesRoots.layer), // fork: file-placement
     ),
   ),
 );

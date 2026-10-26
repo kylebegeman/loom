@@ -11,8 +11,14 @@ import * as Ref from "effect/Ref";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as FileSystem from "effect/FileSystem";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: file-placement
 
 import * as ServerConfig from "../config.ts";
+// fork: file-placement
+import { lifecycleDefaults } from "../fork/project-lifecycle/lanesRoots.ts";
+import { ProjectLifecycleMigrations } from "../fork/project-lifecycle/migrations.ts"; // fork: file-placement
+import { makeStore as makeLifecycleStore } from "../fork/project-lifecycle/store.ts"; // fork: file-placement
+import { runForkMigrationSet } from "../fork/persistence/migrations.ts"; // fork: file-placement
 import { copyFor } from "../fork/project-library/Library.testkit.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import {
@@ -77,6 +83,13 @@ const layerTestFor = (
     Layer.provideMerge(projectMetadataLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
+    // fork: file-placement: the default lanes folder lives under home and may hold the temp folder.
+    Layer.provideMerge(
+      Layer.effect(
+        HostProcess.HomeDirectory,
+        Effect.map(ServerConfig.ServerConfig, (config) => config.baseDir),
+      ),
+    ),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })), // fork: file-placement
     Layer.provideMerge(NodeServices.layer),
   );
@@ -886,5 +899,53 @@ it.effect("refuses to create or move a project into T3 home", () =>
       .pipe(Effect.flip);
     assert.equal(moved._tag, "ProjectLocationManagedError");
     assert.equal(Option.getOrThrow(yield* service.getById(projectId)).workspaceRoot, root);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+// fork: file-placement
+it.effect("refuses to create or move a project into the lanes folder", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "project-service-lanes-" }),
+    );
+    const lanesRoot = `${root}/lanes`;
+    yield* runForkMigrationSet(ProjectLifecycleMigrations);
+    const store = yield* makeLifecycleStore;
+    yield* store.updateSettings({
+      ...lifecycleDefaults(yield* ServerConfig.ServerConfig, root),
+      lanesRoot,
+    });
+    const service = yield* ProjectService.ProjectService;
+    const created = yield* service
+      .create({
+        commandId: CommandId.make("command:lanes:create-inside"),
+        projectId: ProjectId.make("project:lanes-inside"),
+        title: "Inside",
+        workspaceRoot: `${lanesRoot}/app`,
+        createWorkspaceRootIfMissing: true,
+      })
+      .pipe(Effect.flip);
+    assert.equal(created._tag, "ProjectLocationManagedError");
+    assert.isFalse(yield* fs.exists(`${lanesRoot}/app`));
+
+    const projectId = ProjectId.make("project:lanes");
+    const workspaceRoot = `${root}/app`;
+    yield* fs.makeDirectory(workspaceRoot);
+    yield* service.create({
+      commandId: CommandId.make("command:lanes:create"),
+      projectId,
+      title: "Outside",
+      workspaceRoot,
+    });
+    const moved = yield* service
+      .update({
+        commandId: CommandId.make("command:lanes:move"),
+        projectId,
+        workspaceRoot: `${lanesRoot}/app`,
+      })
+      .pipe(Effect.flip);
+    assert.equal(moved._tag, "ProjectLocationManagedError");
+    assert.equal(Option.getOrThrow(yield* service.getById(projectId)).workspaceRoot, workspaceRoot);
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
