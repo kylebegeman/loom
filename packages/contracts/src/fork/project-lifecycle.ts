@@ -13,6 +13,7 @@ export const PROJECT_LIFECYCLE_WS_METHODS = {
   grow: "loom.project-lifecycle.grow",
   mount: "loom.project-lifecycle.mount",
   discard: "loom.project-lifecycle.discard",
+  discardUnrecorded: "loom.project-lifecycle.discardUnrecorded",
   installShell: "loom.project-lifecycle.installShell",
   removeShell: "loom.project-lifecycle.removeShell",
   releaseLease: "loom.project-lifecycle.releaseLease",
@@ -86,8 +87,23 @@ export const ProjectLifecycleLane = Schema.Struct({
   leases: Schema.Array(LaneLease),
   /** Helpers on the shell integration's PATH, also usable by full path. */
   helpers: Schema.Struct({ run: Schema.String, slot: Schema.String }),
+  /**
+   * Set while the checkout is gone. `freesAt` is when the lane is removed unless the checkout
+   * returns; null while a holder is running.
+   */
+  checkoutMissing: Schema.NullOr(
+    Schema.Struct({ since: Schema.String, freesAt: Schema.NullOr(Schema.String) }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type ProjectLifecycleLane = typeof ProjectLifecycleLane.Type;
+
+/** A folder two levels under the lanes root with no lane record. Loom never removes it unasked. */
+export const UnrecordedLane = Schema.Struct({
+  path: Schema.String,
+  project: Schema.String,
+  name: Schema.String,
+});
+export type UnrecordedLane = typeof UnrecordedLane.Type;
 
 export const ProjectLifecycleStatus = Schema.Struct({
   enabled: Schema.Boolean,
@@ -99,6 +115,9 @@ export const ProjectLifecycleStatus = Schema.Struct({
   belowReserve: Schema.Boolean,
   shell: Schema.Struct({ installed: Schema.Boolean, profilePath: Schema.String }),
   lanes: Schema.Array(ProjectLifecycleLane),
+  unrecordedLanes: Schema.Array(UnrecordedLane).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   buildSlots: Schema.Struct({
     count: Schema.Int,
     holders: Schema.Array(
@@ -168,6 +187,11 @@ export const ProjectLifecycleRpcGroup = RpcGroup.make(
   rpc(PROJECT_LIFECYCLE_WS_METHODS.grow, LaneRef, ProjectLifecycleLane),
   rpc(PROJECT_LIFECYCLE_WS_METHODS.mount, LaneRef, ProjectLifecycleLane),
   rpc(PROJECT_LIFECYCLE_WS_METHODS.discard, LaneRef, Schema.Void),
+  rpc(
+    PROJECT_LIFECYCLE_WS_METHODS.discardUnrecorded,
+    Schema.Struct({ path: Schema.String }),
+    Schema.Void,
+  ),
   rpc(PROJECT_LIFECYCLE_WS_METHODS.installShell, Schema.Struct({}), Schema.Void),
   rpc(PROJECT_LIFECYCLE_WS_METHODS.removeShell, Schema.Struct({}), Schema.Void),
   rpc(

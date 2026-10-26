@@ -6,6 +6,7 @@ import {
   type LaneLease,
   type ProjectLifecycleLane,
   type ProjectLifecycleStatus,
+  type UnrecordedLane,
 } from "@t3tools/contracts/fork";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -416,6 +417,13 @@ function LaneRow({
         {lane.checkoutPath}
         {lane.ports && `. Ports ${lane.ports.first} to ${lane.ports.last}.`}
       </p>
+      {lane.checkoutMissing && (
+        <LoomSettingsNotice>
+          {lane.checkoutMissing.freesAt === null
+            ? "Checkout gone. Kept while an agent runs."
+            : `Checkout gone, frees at ${new Date(lane.checkoutMissing.freesAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`}
+        </LoomSettingsNotice>
+      )}
       {lane.message && <LoomSettingsNotice>{lane.message}</LoomSettingsNotice>}
       <LeaseList
         lane={lane}
@@ -484,6 +492,49 @@ function LaneRow({
           Discard
         </Button>
       </LoomSettingsActions>
+      <ActionMessage message={message} />
+    </li>
+  );
+}
+
+function UnrecordedLaneRow({
+  environmentId,
+  folder,
+}: {
+  environmentId: EnvironmentId;
+  folder: UnrecordedLane;
+}) {
+  const { busy, message, act } = useAction();
+  const canEdit = useAtomValue(lanes.discardUnrecorded.permissionAtom(environmentId));
+  return (
+    <li className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <span className="min-w-0 break-all text-sm">
+          {folder.project} / {folder.name}
+          <span className="block text-xs text-muted-foreground">{folder.path}</span>
+        </span>
+        <Button
+          size="sm"
+          variant="destructive-outline"
+          disabled={busy || !canEdit}
+          onClick={async () => {
+            const confirmed = await ensureLocalApi().dialogs.confirm(
+              `Discard ${folder.path}? Loom has no record of this lane. Its disk image is detached and the folder is deleted. Registered checkouts inside it are never removed.`,
+            );
+            if (!confirmed) return;
+            await act(
+              () =>
+                runLaneCommand(lanes.discardUnrecorded, {
+                  environmentId,
+                  input: { path: folder.path },
+                }),
+              "Folder discarded.",
+            );
+          }}
+        >
+          Discard
+        </Button>
+      </div>
       <ActionMessage message={message} />
     </li>
   );
@@ -561,6 +612,22 @@ function StatusView({
             </ul>
           )}
         </LoomSettingsPanel>
+        {status.unrecordedLanes.length > 0 && (
+          <LoomSettingsPanel
+            title="Unrecorded lanes"
+            description="Folders in the lanes folder that Loom has no record of. They stay until you discard them."
+          >
+            <ul className="flex min-w-0 flex-col divide-y divide-border">
+              {status.unrecordedLanes.map((folder) => (
+                <UnrecordedLaneRow
+                  key={folder.path}
+                  environmentId={environmentId}
+                  folder={folder}
+                />
+              ))}
+            </ul>
+          </LoomSettingsPanel>
+        )}
       </LoomSettingsContent>
     </div>
   );

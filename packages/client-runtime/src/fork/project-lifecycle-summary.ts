@@ -26,6 +26,7 @@ export function summarizeProjectTemporaryResources(
   let shared = false;
   let waitingCleanupCount = 0;
   let attentionCount = 0;
+  let checkoutMissingCount = 0;
   for (const lane of matching.values()) {
     if (lane.usedBytes !== null && Number.isFinite(lane.usedBytes) && lane.usedBytes >= 0)
       measuredBytes = (measuredBytes ?? 0) + lane.usedBytes;
@@ -37,6 +38,7 @@ export function summarizeProjectTemporaryResources(
     shared ||= holders.size > 1;
     if (!lane.running && holders.size === 0) waitingCleanupCount++;
     if (lane.state === "error") attentionCount++;
+    if (lane.checkoutMissing !== null) checkoutMissingCount++;
   }
   return {
     laneCount: matching.size,
@@ -48,6 +50,7 @@ export function summarizeProjectTemporaryResources(
     shared,
     waitingCleanupCount,
     attentionCount,
+    checkoutMissingCount,
   };
 }
 
@@ -92,6 +95,7 @@ export function projectTemporaryResourceLabels({
     );
   if (summary.waitingCleanupCount > 0 && status.enabled) activity.push("Waiting for cleanup");
   if (summary.attentionCount > 0) activity.push("Resources need attention");
+  if (summary.checkoutMissingCount > 0) activity.push("Checkout gone, cleanup pending");
   return {
     usage:
       summary.laneCount === 0

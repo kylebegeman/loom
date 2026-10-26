@@ -22,6 +22,8 @@ export const makeProjectLifecycleRpcHandlers = Effect.fn("ProjectLifecycle.makeR
       [L.mount]: (input: { laneId: string }) => auth.effect(L.mount, service.mount(input.laneId)),
       [L.discard]: (input: { laneId: string }) =>
         auth.effect(L.discard, service.discard(input.laneId)),
+      [L.discardUnrecorded]: (input: { path: string }) =>
+        auth.effect(L.discardUnrecorded, service.discardUnrecorded(input.path)),
       [L.installShell]: () => auth.effect(L.installShell, service.installShell()),
       [L.removeShell]: () => auth.effect(L.removeShell, service.removeShell()),
       [L.releaseLease]: (input: { laneId: string; kind: LaneLeaseKind; ref: string }) =>

@@ -78,7 +78,28 @@ export const ProjectLifecycleToolkit = Toolkit.make(
     .annotate(Tool.Title, "Lane: release")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, true),
+  Tool.make("loom_project_lifecycle_discard_unrecorded", {
+    description:
+      "Delete a folder under the lanes root that Loom has no lane record for, after detaching its disk image. Only folders Settings lists as unrecorded lanes qualify; a folder holding a registered checkout is refused. Use only when the user asks.",
+    parameters: Schema.Struct({ path: Schema.String }),
+    success: Schema.Void,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Lane: discard unrecorded folder")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
 );
+
+const callerThread = Effect.gen(function* () {
+  const invocation = yield* McpInvocationContext;
+  if (invocation.thread === undefined)
+    return yield* new ProjectLifecycleError({
+      reason: "not-found",
+      message: "Use lane tools from an agent running in a Loom project thread.",
+    });
+  return invocation.thread.threadId;
+});
 
 /** Runs `use` against the calling thread's lane, creating the lane if it does not exist yet. */
 const onCallerLane = Effect.fn("ProjectLifecycle.onCallerLane")(function* <A, E>(
@@ -87,19 +108,21 @@ const onCallerLane = Effect.fn("ProjectLifecycle.onCallerLane")(function* <A, E>
     laneId: string,
   ) => Effect.Effect<A, E | ProjectLifecycleError>,
 ) {
-  const invocation = yield* McpInvocationContext;
-  if (invocation.thread === undefined)
-    return yield* new ProjectLifecycleError({
-      reason: "not-found",
-      message: "Use lane tools from an agent running in a Loom project thread.",
-    });
-  const threadId = invocation.thread.threadId;
+  const threadId = yield* callerThread;
   return yield* withForkRuntime(
     Effect.gen(function* () {
       const service = yield* ProjectLifecycleService;
       const lane = yield* service.ensureForThread(threadId);
       return yield* use(service, lane.id);
     }),
+  );
+});
+
+/** The calling thread's existing lane; a read never creates one. */
+const callerLaneView = Effect.fn("ProjectLifecycle.callerLaneView")(function* () {
+  const threadId = yield* callerThread;
+  return yield* withForkRuntime(
+    ProjectLifecycleService.pipe(Effect.flatMap((service) => service.currentLaneView(threadId))),
   );
 });
 
@@ -111,7 +134,7 @@ export const projectLifecycleHandlers = McpToolAccess.toLayer(
       effect.pipe(Effect.provideService(ForkRuntime, runtime));
     return {
       loom_project_lifecycle_status: McpToolAccess.readsAsCaller(() =>
-        withRuntime(onCallerLane((service, laneId) => service.laneView(laneId))),
+        withRuntime(callerLaneView()),
       ),
       loom_project_lifecycle_free: McpToolAccess.actsAsCaller((input) =>
         withRuntime(onCallerLane((service, laneId) => service.free(laneId, input.scope))),
@@ -129,6 +152,15 @@ export const projectLifecycleHandlers = McpToolAccess.toLayer(
       loom_project_lifecycle_release: McpToolAccess.actsAsCaller((input) =>
         withRuntime(
           onCallerLane((service, laneId) => service.releaseLease(laneId, input.kind, input.ref)),
+        ),
+      ),
+      loom_project_lifecycle_discard_unrecorded: McpToolAccess.writes((input) =>
+        withRuntime(
+          withForkRuntime(
+            ProjectLifecycleService.pipe(
+              Effect.flatMap((service) => service.discardUnrecorded(input.path)),
+            ),
+          ),
         ),
       ),
     };

@@ -20,7 +20,9 @@ import {
   type ProjectLifecycleLane,
   type ProjectLifecycleSettings,
   type ProjectLifecycleStatus,
+  type UnrecordedLane,
 } from "@t3tools/contracts/fork";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -61,6 +63,7 @@ import {
 } from "./leases.ts";
 import {
   GB,
+  MISSING_CHECKOUT_GRACE_MS,
   PORT_BLOCK,
   PORT_RANGE,
   allocatePortBase,
@@ -73,6 +76,7 @@ import {
   laneActions,
   laneBaseName,
   laneCapBytes,
+  laneReclaimable,
   laneSteerText,
   machinePressure,
   projectFolder,
@@ -193,6 +197,23 @@ const writeAtomically = (path: string, contents: string, mode = 0o644) =>
     await NodeFSP.rename(temporary, path);
   });
 
+/** An absolute lanes folder, or null for a relative path or a filesystem root. */
+const resolveLanesRoot = (setting: string, homeDir: string) => {
+  const expanded = expandHomePath(setting.trim(), homeDir);
+  if (!NodePath.isAbsolute(expanded)) return null;
+  const resolved = NodePath.resolve(expanded);
+  return NodePath.dirname(resolved) === resolved ? null : resolved;
+};
+
+/** Removes a project folder once its last lane is gone; Finder's .DS_Store does not keep it. */
+const removeEmptyProjectFolder = async (directory: string) => {
+  const entries = await NodeFSP.readdir(directory).catch(() => null);
+  if (entries === null) return;
+  if (entries.length === 1 && entries[0] === ".DS_Store")
+    await NodeFSP.rm(NodePath.join(directory, ".DS_Store"), { force: true });
+  await NodeFSP.rmdir(directory).catch(() => undefined);
+};
+
 const lanePaths = (lane: Pick<LaneRow, "laneDir">): LanePaths => ({
   laneDir: lane.laneDir,
   spacePath: `${lane.laneDir}/space`,
@@ -285,10 +306,11 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     buildSlots: null,
   };
   const getSettings = store.getSettings(defaults).pipe(Effect.orDie);
+  // Settings saved before validation could hold a relative path; those fall back to the default.
   const rootOf = (settings: ProjectLifecycleSettings) =>
-    settings.lanesRoot.startsWith("~/")
-      ? `${options.homeDir}${settings.lanesRoot.slice(1)}`
-      : settings.lanesRoot;
+    resolveLanesRoot(settings.lanesRoot, options.homeDir) ??
+    resolveLanesRoot(defaults.lanesRoot, options.homeDir) ??
+    defaults.lanesRoot;
 
   const lanes = new Map<string, LaneRow>();
   for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
@@ -396,6 +418,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   };
   const laneForCheckout = (checkout: string) =>
     [...lanes.values()].find((lane) => lane.checkoutPath === checkout);
+  /** When each lane's checkout was first seen missing. Memory only: a restart restarts the wait. */
+  const missingSince = new Map<string, number>();
+  /** Lane folders on disk without a row, from the last scan. */
+  let unrecorded: ReadonlyArray<UnrecordedLane> = [];
 
   // Lane changes run one at a time; creating or growing an image takes a second or two.
   const mutate = yield* Semaphore.make(1);
@@ -491,6 +517,17 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     }),
   );
 
+  const checkoutMissingOf = (laneId: string, holders: ReadonlyArray<Thread>) => {
+    const since = missingSince.get(laneId);
+    if (since === undefined) return null;
+    return {
+      since: DateTime.formatIso(DateTime.makeUnsafe(since)),
+      freesAt: holders.some(threadRunning)
+        ? null
+        : DateTime.formatIso(DateTime.makeUnsafe(since + MISSING_CHECKOUT_GRACE_MS)),
+    };
+  };
+
   const laneView = (
     lane: LaneRow,
     holders: ReadonlyArray<Thread>,
@@ -521,6 +558,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       ports: portsOf(lane),
       leases: entry.leases,
       helpers: { run: `${shimsDir(root)}/lane-run`, slot: `${shimsDir(root)}/lane-slot` },
+      checkoutMissing: checkoutMissingOf(lane.id, holders),
     };
   };
 
@@ -543,6 +581,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       lanes: [...lanes.values()].map((lane) =>
         laneView(lane, view === null ? [] : holdersOf(lane, view), root),
       ),
+      unrecordedLanes: unrecorded,
       buildSlots: {
         count: slotCount(settings),
         holders: slotHolders.map((holder) => ({
@@ -1170,11 +1209,12 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     yield* node("remove lane", async () => {
       await NodeFSP.chmod(lanePaths(lane).spacePath, 0o755).catch(() => undefined);
       await NodeFSP.rm(lane.laneDir, { recursive: true, force: true });
-      await NodeFSP.rmdir(NodePath.dirname(lane.laneDir)).catch(() => undefined);
+      await removeEmptyProjectFolder(NodePath.dirname(lane.laneDir));
     });
     yield* store.deleteLane(lane.id).pipe(Effect.orDie);
     lanes.delete(lane.id);
     live.delete(lane.id);
+    missingSince.delete(lane.id);
     const { portBase } = lane;
     if (portBase !== null)
       yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
@@ -1221,13 +1261,29 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
    */
   const readyLanes = new Map<string, string>();
 
+  /** Starts or resets each lane's missing-checkout wait. */
+  const trackCheckouts = Effect.fn("ProjectLifecycle.trackCheckouts")(function* (now: number) {
+    for (const laneId of missingSince.keys()) if (!lanes.has(laneId)) missingSince.delete(laneId);
+    for (const lane of lanes.values()) {
+      if (yield* exists(lane.checkoutPath)) missingSince.delete(lane.id);
+      else if (!missingSince.has(lane.id)) missingSince.set(lane.id, now);
+    }
+  });
+
   /** Settle actions can still use lane files after their thread becomes settled. */
   const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* () {
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return;
     for (const laneId of readyLanes.keys()) if (!lanes.has(laneId)) readyLanes.delete(laneId);
     const now = yield* Clock.currentTimeMillis;
-    const free = [...lanes.values()].filter((lane) => holdersOf(lane, view).length === 0);
+    yield* trackCheckouts(now);
+    const reclaimable = (lane: LaneRow, current: Threads) =>
+      laneReclaimable(holdersOf(lane, current), {
+        checkoutExists: !missingSince.has(lane.id),
+        missingSince: missingSince.get(lane.id) ?? null,
+        now,
+      });
+    const free = [...lanes.values()].filter((lane) => reclaimable(lane, view));
     const due = free.filter((lane) => !detachWaiting(lane, true, now));
     let threadsChecked = 0;
     let notReady = 0;
@@ -1264,8 +1320,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             mutate.withPermits(1)(
               Effect.gen(function* () {
                 const latest = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
-                if (latest === null || !lanes.has(lane.id) || holdersOf(lane, latest).length > 0)
-                  return;
+                if (latest === null || !lanes.has(lane.id) || !reclaimable(lane, latest)) return;
                 // A thread that settled after the probes has a settle action they did not await.
                 if (settlementKey(lane, latest) !== key) return;
                 yield* removeLane(lane);
@@ -1564,6 +1619,78 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     yield* publish();
   });
 
+  /** Lists folders two levels under the lanes root that no lane row names. Run under `mutate`. */
+  const scanUnrecorded = Effect.fn("ProjectLifecycle.scanUnrecorded")(function* () {
+    const root = rootOf(yield* getSettings);
+    const recorded = new Set([...lanes.values()].map((lane) => NodePath.resolve(lane.laneDir)));
+    const folders = (directory: string) =>
+      NodeFSP.readdir(directory, { withFileTypes: true }).then(
+        (entries) =>
+          entries
+            .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+            .map((entry) => entry.name),
+        () => [] as Array<string>,
+      );
+    unrecorded = yield* Effect.promise(async () => {
+      const found: Array<UnrecordedLane> = [];
+      for (const project of (await folders(root)).toSorted())
+        for (const name of (await folders(NodePath.join(root, project))).toSorted()) {
+          const path = NodePath.join(root, project, name);
+          if (!recorded.has(path)) found.push({ path, project, name });
+        }
+      return found;
+    });
+  });
+
+  /** Removes a listed unrecorded lane folder after detaching its image. */
+  const discardUnrecorded = Effect.fn("ProjectLifecycle.discardUnrecorded")(function* (
+    path: string,
+  ) {
+    yield* mutate.withPermits(1)(
+      Effect.gen(function* () {
+        yield* scanUnrecorded();
+        const target = unrecorded.find((entry) => entry.path === path);
+        if (target === undefined)
+          return yield* error(
+            "not-found",
+            unrecorded.length === 0
+              ? "That folder is not an unrecorded lane. There are none."
+              : `That folder is not an unrecorded lane. Unrecorded lanes: ${unrecorded.map((entry) => entry.path).join(", ")}.`,
+          );
+        if ((yield* checkoutPathsWithin(target.path)).length > 0)
+          return yield* error("busy", CHECKOUT_PROTECTION_MESSAGE);
+        const paths = lanePaths({ laneDir: target.path });
+        if (yield* exists(paths.imagePath)) yield* spaces.image.detach(paths, null);
+        yield* node("remove unrecorded lane", async () => {
+          await NodeFSP.chmod(paths.spacePath, 0o755).catch(() => undefined);
+          await NodeFSP.rm(target.path, { recursive: true, force: true });
+          await removeEmptyProjectFolder(NodePath.dirname(target.path));
+        });
+        yield* scanUnrecorded();
+      }),
+    );
+    yield* publish();
+  });
+
+  /** The thread's existing lane; never creates or mounts one. */
+  const currentLaneView = Effect.fn("ProjectLifecycle.currentLaneView")(function* (
+    threadId: ThreadId,
+  ) {
+    const view = yield* loadThreads.pipe(
+      Effect.mapError(() => error("command-failed", "Could not read threads.")),
+    );
+    const thread = view.threads.find((candidate) => candidate.id === threadId);
+    const checkout = thread === undefined ? null : checkoutOf(thread, view.projects);
+    const lane = checkout === null ? undefined : laneForCheckout(checkout);
+    if (lane === undefined)
+      return yield* error(
+        "not-found",
+        "This thread has no lane yet. Lane shells and the other lane tools create it when needed.",
+      );
+    yield* scanLeases(true).pipe(Effect.ignore({ log: true }));
+    return yield* refreshedView(lane.id);
+  });
+
   const adoptLease = Effect.fn("ProjectLifecycle.adoptLease")(function* (
     laneId: string,
     kind: AdoptableLeaseKind,
@@ -1670,11 +1797,17 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   const updateSettings = Effect.fn("ProjectLifecycle.updateSettings")(function* (
     next: ProjectLifecycleSettings,
   ) {
+    if (resolveLanesRoot(next.lanesRoot, options.homeDir) === null)
+      return yield* error(
+        "unsupported",
+        "Choose an absolute lanes folder, such as ~/Developer/lanes, that is not a disk's root.",
+      );
     const previous = yield* getSettings;
     if (rootOf(next) !== rootOf(previous) && lanes.size > 0)
       return yield* error("busy", "Discard the existing lanes before moving the lanes folder.");
     const saved = yield* store.updateSettings(next).pipe(Effect.orDie);
     yield* writeShellFiles;
+    if (rootOf(next) !== rootOf(previous)) yield* mutate.withPermits(1)(scanUnrecorded());
     if (shellInstalled && rootOf(next) !== rootOf(previous)) yield* installShell();
     // The watchdog skips measuring while lanes are off, so turning them on would show no free space.
     yield* measureHost();
@@ -1711,6 +1844,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       ),
     );
     if (lanes.size > 0) yield* writeShellFiles;
+    yield* mutate.withPermits(1)(scanUnrecorded());
     yield* scanLeases(true).pipe(Effect.ignore({ log: true }));
     yield* publish();
   });
@@ -1771,6 +1905,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     grow: growLane,
     mount,
     discard,
+    discardUnrecorded,
+    /** Lanes folders in use, so placement can refuse destinations inside them. */
+    lanesRoots: () => getSettings.pipe(Effect.map((settings) => [rootOf(settings)])),
+    currentLaneView,
     adoptLease,
     releaseLease,
     installShell,

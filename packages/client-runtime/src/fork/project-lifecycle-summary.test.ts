@@ -49,6 +49,7 @@ function lane(overrides: Partial<ProjectLifecycleLane> = {}): ProjectLifecycleLa
     ports: null,
     leases: [],
     helpers: { run: "/helpers/run", slot: "/helpers/slot" },
+    checkoutMissing: null,
     ...overrides,
   };
 }
@@ -63,6 +64,7 @@ function status(lanes: readonly ProjectLifecycleLane[], enabled = true): Project
     belowReserve: false,
     shell: { installed: false, profilePath: "/profile" },
     lanes,
+    unrecordedLanes: [],
     buildSlots: { count: 1, holders: [] },
   };
 }
@@ -174,6 +176,17 @@ describe("temporary resources for a physical working location", () => {
       "Waiting for cleanup · Resources need attention",
     );
     expect(labels([])).toEqual({ usage: "No temporary resources for these files", activity: null });
+    expect(
+      labels([
+        lane({
+          threadIds: [ThreadId.make("held")],
+          checkoutMissing: {
+            since: "2026-10-26T00:00:00.000Z",
+            freesAt: "2026-10-26T01:00:00.000Z",
+          },
+        }),
+      ]).activity,
+    ).toBe("1 conversation holding resources · Checkout gone, cleanup pending");
   });
 
   it("reports disabled cleanup while retaining measured usage for existing resources", () => {

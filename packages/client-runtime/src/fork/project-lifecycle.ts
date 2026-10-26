@@ -28,6 +28,10 @@ export function createProjectLifecycleAtoms<R, E>(
     grow: createEnvironmentRpcCommand(runtime, { label: "loom:lanes-grow", tag: L.grow }),
     mount: createEnvironmentRpcCommand(runtime, { label: "loom:lanes-mount", tag: L.mount }),
     discard: createEnvironmentRpcCommand(runtime, { label: "loom:lanes-discard", tag: L.discard }),
+    discardUnrecorded: createEnvironmentRpcCommand(runtime, {
+      label: "loom:lanes-discard-unrecorded",
+      tag: L.discardUnrecorded,
+    }),
     installShell: createEnvironmentRpcCommand(runtime, {
       label: "loom:lanes-shell-install",
       tag: L.installShell,
