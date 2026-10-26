@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { EnvironmentId, IsoDateTime } from "../baseSchemas.ts";
-import { LibraryId } from "./project-library.ts";
+import { LibraryId, LibraryPlacement } from "./project-library.ts";
 
 /** Advertised in `loomFeatures` by a Library that ranks where a project's conversation should start. */
 export const LIBRARY_LAUNCH_CANDIDATES_FEATURE = "library-launch-candidates";
@@ -29,6 +29,8 @@ export const LibraryLaunchCandidateSummary = Schema.Struct({
   reasons: Schema.Array(Schema.String),
   /** The candidate the dialog would choose for the user. At most one is preselected. */
   preselected: Schema.Boolean,
+  /** Where the files are, for a copy. A computer reports a new copy's folder itself. */
+  placement: Schema.optional(LibraryPlacement),
 });
 export type LibraryLaunchCandidateSummary = typeof LibraryLaunchCandidateSummary.Type;
 

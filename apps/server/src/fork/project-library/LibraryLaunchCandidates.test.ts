@@ -107,7 +107,14 @@ describe("LibraryLaunchCandidates", () => {
           freshness: "unknown",
           reasons: ["online", "not checked"],
           preselected: true,
+          placement: {
+            action: "use",
+            rootPath: copy.rootPath,
+            ownership: copy.ownership,
+            copyId: "book-copy",
+          },
         });
+        expect(whole.candidates[1]?.placement).toBeUndefined();
         expect(whole.candidates[1]).toMatchObject({
           online: false,
           reasons: ["offline", "no copy yet"],

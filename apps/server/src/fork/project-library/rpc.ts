@@ -18,6 +18,7 @@ import {
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
   LIBRARY_BRIEF_SUGGESTION_WS_METHODS as SUGGEST,
   LIBRARY_WS_METHODS as L,
+  type LibraryPlacementRequest,
   type LibraryReplicationStatusRequest,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -123,9 +124,17 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
           ),
         ),
       ),
-    // Unadvertised until this server sends `serverChosenFolders`.
-    [L.placement]: () =>
-      auth.effect(L.placement, Effect.fail(new LibraryError({ reason: "invalid" }))),
+    [L.placement]: (input: LibraryPlacementRequest) =>
+      auth.effect(
+        L.placement,
+        library
+          .project({ projectId: input.projectId })
+          .pipe(
+            Effect.flatMap((project) =>
+              workspace.placement({ project, resourceIds: input.resourceIds }),
+            ),
+          ),
+      ),
     [L.copyStatus]: (input: Parameters<typeof workspace.status>[0]) =>
       auth.effect(L.copyStatus, workspace.status(input)),
     [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>
