@@ -45,6 +45,7 @@ import {
 } from "./libraryExistingFolderTarget";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
+import { LibraryNewProjectChoices, type LibraryCreateStart } from "./LibraryNewProjectChoices";
 import {
   libraryActiveCopies,
   libraryStartIntent,
@@ -68,8 +69,15 @@ type ResourceDraft = {
 };
 export function LibraryCreateRouteScreen({
   route,
-}: StaticScreenProps<{ readonly initialInput?: string } | undefined>) {
-  return <LibraryProjectForm initialInput={route.params?.initialInput} />;
+}: StaticScreenProps<
+  { readonly initialInput?: string; readonly start?: LibraryCreateStart } | undefined
+>) {
+  const params = route.params;
+  return params?.start || params?.initialInput ? (
+    <LibraryProjectForm initialInput={params.initialInput} start={params.start} />
+  ) : (
+    <LibraryNewProjectChoices />
+  );
 }
 export function LibraryEditRouteScreen({
   route,
@@ -98,11 +106,14 @@ export function LibraryEditRouteScreen({
 function LibraryProjectForm({
   initial: seed,
   initialInput,
+  start,
 }: {
   initial?: LibraryProject;
   initialInput?: string | undefined;
+  start?: LibraryCreateStart | undefined;
 }) {
   const intent = libraryStartIntent(initialInput ?? "");
+  const lead = start === "folder" || start === "repository" ? start : null;
   const [initial] = useState(seed);
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
@@ -243,6 +254,8 @@ function LibraryProjectForm({
         defaultBranch: "",
       },
     ]);
+    // A name is required to create, so an unnamed project takes its first repository's.
+    if (!title.trim() && parsed.kind !== "link") setTitle(parsed.title);
     setPasted("");
   };
   const patch = (id: string, value: Partial<ResourceDraft>) =>
@@ -389,17 +402,209 @@ function LibraryProjectForm({
     decidedFolderRequest.current = folderRequest;
     finishFolderAction(folderOutcome);
   }, [folderOutcome, folderRequest]);
+  const repositorySections = (
+    <>
+      {resources.map((resource) => (
+        <SettingsSection
+          key={resource.id}
+          title={resource.kind === "repository" ? "Repository" : "Reference link"}
+        >
+          <View className="gap-3 p-4">
+            <TextInput
+              accessibilityLabel="Resource name"
+              placeholder={resource.kind === "repository" ? "iOS" : "Onboarding design"}
+              value={resource.title}
+              onChangeText={(value) => patch(resource.id, { title: value })}
+              maxLength={160}
+              editable={!pending && !awaitingResult}
+              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+            />
+            <TextInput
+              accessibilityLabel={
+                resource.kind === "repository" ? "Repository URL" : "Reference URL"
+              }
+              placeholder={
+                resource.kind === "repository" ? "https://github.com/team/ios" : "https://…"
+              }
+              value={resource.url}
+              onChangeText={(value) => patch(resource.id, { url: value })}
+              maxLength={2048}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!pending && !awaitingResult}
+              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+            />
+            {resource.kind === "repository" ? (
+              <>
+                <TextInput
+                  accessibilityLabel="Component folder inside project"
+                  placeholder="ios"
+                  value={resource.relativePath}
+                  onChangeText={(value) => patch(resource.id, { relativePath: value })}
+                  maxLength={512}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!pending && !awaitingResult}
+                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+                />
+                <TextInput
+                  accessibilityLabel="Default branch, optional"
+                  placeholder="Default branch (optional)"
+                  value={resource.defaultBranch}
+                  onChangeText={(value) => patch(resource.id, { defaultBranch: value })}
+                  autoCapitalize="none"
+                  editable={!pending && !awaitingResult}
+                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+                />
+              </>
+            ) : null}
+            <Button
+              label={
+                resource.kind === "repository"
+                  ? "Remove repository from project"
+                  : "Remove link from project"
+              }
+              tone="text"
+              disabled={pending || awaitingResult}
+              onPress={() =>
+                setResources((current) => current.filter((entry) => entry.id !== resource.id))
+              }
+            />
+          </View>
+        </SettingsSection>
+      ))}
+      {resources.length < 64 ? (
+        <SettingsSection title="Add a repository or link">
+          <View className="gap-2 p-4">
+            <TextInput
+              accessibilityLabel="Repository or link URL"
+              placeholder="Paste a GitHub URL or any link"
+              value={pasted}
+              onChangeText={(value) => {
+                setPasted(value);
+                setPasteProblem(null);
+              }}
+              onSubmitEditing={addPasted}
+              returnKeyType="done"
+              autoFocus={lead === "repository"}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              editable={!pending && !awaitingResult}
+              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+            />
+            {pasteProblem ? (
+              <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
+            ) : null}
+            <Button
+              label="Add"
+              disabled={pending || awaitingResult || !pasted.trim()}
+              onPress={addPasted}
+            />
+          </View>
+        </SettingsSection>
+      ) : null}
+    </>
+  );
+  const folderSection = !initial ? (
+    <LibraryExistingFolder
+      initialRootPath={intent.kind === "folder" ? intent.path : undefined}
+      initiallyExpanded={lead === "folder"}
+      disabled={pending || awaitingResult || !authority.ready || !canSave}
+      folder={existingFolder}
+      offeredProjectId={offeredProject?.id ?? null}
+      projectTitle={typedTitle}
+      onPending={setInspectingFolder}
+      onClear={() => {
+        setExistingFolder(null);
+        setFolderProject(null);
+        setFolderRequest(null);
+      }}
+      onChoose={(folder, request) => {
+        const previousIds = folderDraftIds.current;
+        const drafts: ResourceDraft[] = folder.resources.map((entry) => ({
+          id: uuidv4(),
+          title: entry.title,
+          kind: "repository",
+          url: entry.remoteUrl ?? "",
+          relativePath: entry.relativePath,
+          defaultBranch: "",
+        }));
+        folderDraftIds.current = new Set(drafts.map((draft) => draft.id));
+        setTitle((current) =>
+          !current.trim() || current === existingFolder?.title ? folder.title : current,
+        );
+        setExistingFolder(folder);
+        setFolderProject(rememberedLibraryFolderProject(authority.environmentId, folder));
+        setFolderRequest(request.action ? request : null);
+        setResources((current) => {
+          const retained = current
+            .filter((entry) => !previousIds.has(entry.id))
+            .map((entry) => {
+              const detected = drafts.find(
+                (draft) =>
+                  entry.kind === "repository" &&
+                  entry.url &&
+                  normalizeGitRemoteUrl(entry.url) === normalizeGitRemoteUrl(draft.url),
+              );
+              return detected ? { ...entry, relativePath: detected.relativePath } : entry;
+            });
+          const known = new Set(
+            retained
+              .filter((entry) => entry.kind === "repository")
+              .map((entry) =>
+                entry.url ? normalizeGitRemoteUrl(entry.url) : `local:${entry.relativePath}`,
+              ),
+          );
+          return [
+            ...retained,
+            ...drafts.filter(
+              (draft) =>
+                !known.has(
+                  draft.url ? normalizeGitRemoteUrl(draft.url) : `local:${draft.relativePath}`,
+                ),
+            ),
+          ];
+        });
+      }}
+    >
+      {savingFromFolder && pending ? <LibraryNotice detail="Creating project…" /> : null}
+      {savingFromFolder && error ? <LibraryNotice error={error} /> : null}
+      {folderTarget && (folderTarget.error || folderTarget.detail) ? (
+        <LibraryNotice
+          error={folderTarget.error}
+          detail={folderTarget.detail}
+          onRetry={catalog.error ? catalog.refresh : undefined}
+        />
+      ) : null}
+      {existingFolder && offeredProject ? (
+        <Button
+          label={`Add folder to ${offeredProject.title}`}
+          tone="primary"
+          disabled={pending || awaitingResult || inspectingFolder}
+          onPress={() => addFolderTo(offeredProject, folderTarget?.copyId ?? null)}
+        />
+      ) : null}
+    </LibraryExistingFolder>
+  ) : null;
   return (
     <LibraryPage title={initial ? "Edit project" : "New project"} back>
       {awaitingResult && !pending ? (
         <LibraryNotice detail="The save result is not yet confirmed. Retry the same save before making further edits." />
       ) : null}
-      <Text className="text-sm text-foreground-muted">
-        {initial
-          ? "Update the brief, repositories and links together. Your conversations stay saved."
-          : "Start with a name. Add a brief, repositories or links now or later. Files are prepared when you start work."}
-      </Text>
-      {!initial && supportsBlueprint ? (
+      {/* The folder list explains itself, so a folder start leads with it alone. */}
+      {lead !== "folder" ? (
+        <Text className="text-sm text-foreground-muted">
+          {initial
+            ? "Update the brief, repositories and links together. Your conversations stay saved."
+            : lead === "repository"
+              ? "Paste a Git URL. Loom clones it onto a computer when you start work."
+              : "Start with a name. Add a brief, repositories or links now or later. Files are prepared when you start work."}
+        </Text>
+      ) : null}
+      {lead === "repository" ? repositorySections : null}
+      {lead === "folder" ? folderSection : null}
+      {!initial && !lead && supportsBlueprint ? (
         <SettingsSection title="Start from a blueprint">
           <View className="gap-3 p-4">
             <Button
@@ -497,185 +702,8 @@ function LibraryProjectForm({
           disabled={pending || awaitingResult}
         />
       </SettingsSection>
-      {resources.map((resource) => (
-        <SettingsSection
-          key={resource.id}
-          title={resource.kind === "repository" ? "Repository" : "Reference link"}
-        >
-          <View className="gap-3 p-4">
-            <TextInput
-              accessibilityLabel="Resource name"
-              placeholder={resource.kind === "repository" ? "iOS" : "Onboarding design"}
-              value={resource.title}
-              onChangeText={(value) => patch(resource.id, { title: value })}
-              maxLength={160}
-              editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-            />
-            <TextInput
-              accessibilityLabel={
-                resource.kind === "repository" ? "Repository URL" : "Reference URL"
-              }
-              placeholder={
-                resource.kind === "repository" ? "https://github.com/team/ios" : "https://…"
-              }
-              value={resource.url}
-              onChangeText={(value) => patch(resource.id, { url: value })}
-              maxLength={2048}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-            />
-            {resource.kind === "repository" ? (
-              <>
-                <TextInput
-                  accessibilityLabel="Component folder inside project"
-                  placeholder="ios"
-                  value={resource.relativePath}
-                  onChangeText={(value) => patch(resource.id, { relativePath: value })}
-                  maxLength={512}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!pending && !awaitingResult}
-                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-                />
-                <TextInput
-                  accessibilityLabel="Default branch, optional"
-                  placeholder="Default branch (optional)"
-                  value={resource.defaultBranch}
-                  onChangeText={(value) => patch(resource.id, { defaultBranch: value })}
-                  autoCapitalize="none"
-                  editable={!pending && !awaitingResult}
-                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-                />
-              </>
-            ) : null}
-            <Button
-              label={
-                resource.kind === "repository"
-                  ? "Remove repository from project"
-                  : "Remove link from project"
-              }
-              tone="text"
-              disabled={pending || awaitingResult}
-              onPress={() =>
-                setResources((current) => current.filter((entry) => entry.id !== resource.id))
-              }
-            />
-          </View>
-        </SettingsSection>
-      ))}
-      {resources.length < 64 ? (
-        <SettingsSection title="Add a repository or link">
-          <View className="gap-2 p-4">
-            <TextInput
-              accessibilityLabel="Repository or link URL"
-              placeholder="Paste a GitHub URL or any link"
-              value={pasted}
-              onChangeText={(value) => {
-                setPasted(value);
-                setPasteProblem(null);
-              }}
-              onSubmitEditing={addPasted}
-              returnKeyType="done"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-            />
-            {pasteProblem ? (
-              <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
-            ) : null}
-            <Button
-              label="Add"
-              disabled={pending || awaitingResult || !pasted.trim()}
-              onPress={addPasted}
-            />
-          </View>
-        </SettingsSection>
-      ) : null}
-      {!initial ? (
-        <LibraryExistingFolder
-          initialRootPath={intent.kind === "folder" ? intent.path : undefined}
-          disabled={pending || awaitingResult || !authority.ready || !canSave}
-          folder={existingFolder}
-          offeredProjectId={offeredProject?.id ?? null}
-          projectTitle={typedTitle}
-          onPending={setInspectingFolder}
-          onClear={() => {
-            setExistingFolder(null);
-            setFolderProject(null);
-            setFolderRequest(null);
-          }}
-          onChoose={(folder, request) => {
-            const previousIds = folderDraftIds.current;
-            const drafts: ResourceDraft[] = folder.resources.map((entry) => ({
-              id: uuidv4(),
-              title: entry.title,
-              kind: "repository",
-              url: entry.remoteUrl ?? "",
-              relativePath: entry.relativePath,
-              defaultBranch: "",
-            }));
-            folderDraftIds.current = new Set(drafts.map((draft) => draft.id));
-            setTitle((current) =>
-              !current.trim() || current === existingFolder?.title ? folder.title : current,
-            );
-            setExistingFolder(folder);
-            setFolderProject(rememberedLibraryFolderProject(authority.environmentId, folder));
-            setFolderRequest(request.action ? request : null);
-            setResources((current) => {
-              const retained = current
-                .filter((entry) => !previousIds.has(entry.id))
-                .map((entry) => {
-                  const detected = drafts.find(
-                    (draft) =>
-                      entry.kind === "repository" &&
-                      entry.url &&
-                      normalizeGitRemoteUrl(entry.url) === normalizeGitRemoteUrl(draft.url),
-                  );
-                  return detected ? { ...entry, relativePath: detected.relativePath } : entry;
-                });
-              const known = new Set(
-                retained
-                  .filter((entry) => entry.kind === "repository")
-                  .map((entry) =>
-                    entry.url ? normalizeGitRemoteUrl(entry.url) : `local:${entry.relativePath}`,
-                  ),
-              );
-              return [
-                ...retained,
-                ...drafts.filter(
-                  (draft) =>
-                    !known.has(
-                      draft.url ? normalizeGitRemoteUrl(draft.url) : `local:${draft.relativePath}`,
-                    ),
-                ),
-              ];
-            });
-          }}
-        >
-          {savingFromFolder && pending ? <LibraryNotice detail="Creating project…" /> : null}
-          {savingFromFolder && error ? <LibraryNotice error={error} /> : null}
-          {folderTarget && (folderTarget.error || folderTarget.detail) ? (
-            <LibraryNotice
-              error={folderTarget.error}
-              detail={folderTarget.detail}
-              onRetry={catalog.error ? catalog.refresh : undefined}
-            />
-          ) : null}
-          {existingFolder && offeredProject ? (
-            <Button
-              label={`Add folder to ${offeredProject.title}`}
-              tone="primary"
-              disabled={pending || awaitingResult || inspectingFolder}
-              onPress={() => addFolderTo(offeredProject, folderTarget?.copyId ?? null)}
-            />
-          ) : null}
-        </LibraryExistingFolder>
-      ) : null}
+      {lead !== "repository" ? repositorySections : null}
+      {lead !== "folder" ? folderSection : null}
       {editsProfile ? (
         <View className="gap-2">
           <Button
