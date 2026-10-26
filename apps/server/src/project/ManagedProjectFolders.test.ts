@@ -469,36 +469,45 @@ it.effect("starts a named project in the Projects folder chosen in settings", ()
 );
 
 it.effect("keeps a folder that another project owns when the create conflicts", () =>
-  withScratch(({ baseDir }) =>
-    withGitEnv(
-      TEST_IDENTITY,
-      Effect.gen(function* () {
-        const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-        const projects = yield* ProjectService.ProjectService;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const taken = path.join(baseDir, "projects", "taken");
-        yield* projects.create({
-          commandId: CommandId.make("command:owner"),
-          projectId: ProjectId.make("project:owner"),
-          title: "Owner",
-          workspaceRoot: taken,
-          createWorkspaceRootIfMissing: true,
-        });
-        yield* fileSystem.remove(taken, { recursive: true });
+  withScratch(
+    ({ baseDir }) =>
+      withGitEnv(
+        TEST_IDENTITY,
+        Effect.gen(function* () {
+          const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+          const projects = yield* ProjectService.ProjectService;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const taken = path.join(baseDir, "projects", "taken");
 
-        const failure = yield* Effect.flip(folders.createNamedProject({ name: "Taken" }));
+          const failure = yield* Effect.flip(folders.createNamedProject({ name: "Taken" }));
 
-        assert.equal(failure._tag, "NamedProjectCreateError");
-        assert.equal(failure.message, "Failed to create the project.");
-        assert.isTrue(yield* fileSystem.exists(path.join(taken, "README.md")));
-        const owner = yield* projects.getByWorkspaceRoot(taken);
-        assert.equal(Option.getOrThrow(owner).id, ProjectId.make("project:owner"));
-        assert.deepEqual(yield* fileSystem.readDirectory(path.resolve(baseDir, "projects")), [
-          "taken",
-        ]);
-      }),
-    ),
+          assert.equal(failure._tag, "NamedProjectCreateError");
+          assert.equal(failure.message, "Failed to create the project.");
+          assert.isTrue(yield* fileSystem.exists(path.join(taken, "README.md")));
+          const owner = yield* projects.getByWorkspaceRoot(taken);
+          assert.equal(Option.getOrThrow(owner).id, ProjectId.make("project:owner"));
+          assert.deepEqual(yield* fileSystem.readDirectory(path.resolve(baseDir, "projects")), [
+            "taken",
+          ]);
+        }),
+      ),
+    {
+      // fork: file-placement: another project registers the claimed folder before this create.
+      projects: (real) =>
+        ProjectService.ProjectService.of({
+          ...real,
+          create: (input) =>
+            real
+              .create({
+                commandId: CommandId.make("command:owner"),
+                projectId: ProjectId.make("project:owner"),
+                title: "Owner",
+                workspaceRoot: input.workspaceRoot,
+              })
+              .pipe(Effect.andThen(real.create(input))),
+        }),
+    },
   ),
 );
 
