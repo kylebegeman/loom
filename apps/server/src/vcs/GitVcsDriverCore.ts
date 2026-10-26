@@ -43,7 +43,7 @@ import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
-import { resolveDirectorySetting } from "../worktreesDirectory.ts";
+import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   parseRemoteNames,
   parseRemoteNamesInGitOrder,
@@ -3878,7 +3878,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const repoName = path.basename(path.resolve(input.cwd));
     let worktreePath = input.path;
     if (worktreePath == null) {
-      const parentDir = resolveDirectorySetting(
+      const parentDir = resolveWorktreesDirectory(
         options?.worktreesDirectory ?? "",
         worktreesDir,
         path,

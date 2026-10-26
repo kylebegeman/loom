@@ -17,9 +17,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
   isFilesystemRoot,
-  managedProjectsDirectories,
   managedWorktreesDirectories,
-  resolveDirectorySetting,
+  resolveWorktreesDirectory as resolveDirectorySetting,
 } from "../worktreesDirectory.ts";
 
 export class ProjectPlacementRefusedError extends Schema.TaggedError<ProjectPlacementRefusedError>()(
@@ -110,7 +109,18 @@ const make = Effect.gen(function* () {
   );
 
   const managedProjectRoots = settings.pipe(
-    Effect.map((current) => managedProjectsDirectories(current, defaultProjectsRoot, path, home)),
+    // Earlier Projects folders stay managed, as earlier worktree folders do.
+    Effect.map((current) =>
+      managedWorktreesDirectories(
+        {
+          worktreesDirectory: current.projectsDirectory,
+          previousWorktreesDirectories: current.previousProjectsDirectories,
+        },
+        defaultProjectsRoot,
+        path,
+        home,
+      ),
+    ),
   );
 
   const lanesRoots = Option.match(lanes, {

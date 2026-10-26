@@ -9,7 +9,7 @@ import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 /** Null for filesystem roots or settings not absolute on this host, including synced foreign-platform paths. */
-export function resolveDirectorySetting(
+export function resolveWorktreesDirectory(
   setting: string,
   defaultDir: string,
   path: Path.Path,
@@ -27,21 +27,6 @@ export function isFilesystemRoot(directory: string, path: Path.Path): boolean {
   return path.dirname(directory) === directory;
 }
 
-/** The default always counts: previous-folder lists record only custom settings. */
-function managedDirectories(
-  settings: ReadonlyArray<string>,
-  defaultDir: string,
-  path: Path.Path,
-  home: string,
-): ReadonlyArray<string> {
-  const directories = new Set([defaultDir]);
-  for (const setting of settings) {
-    const directory = resolveDirectorySetting(setting, defaultDir, path, home);
-    if (directory !== null) directories.add(directory);
-  }
-  return [...directories];
-}
-
 export function managedWorktreesDirectories(
   settings: {
     readonly worktreesDirectory: string;
@@ -51,29 +36,12 @@ export function managedWorktreesDirectories(
   path: Path.Path,
   home: string,
 ): ReadonlyArray<string> {
-  return managedDirectories(
-    [settings.worktreesDirectory, ...settings.previousWorktreesDirectories],
-    defaultDir,
-    path,
-    home,
-  );
-}
-
-export function managedProjectsDirectories(
-  settings: {
-    readonly projectsDirectory: string;
-    readonly previousProjectsDirectories: ReadonlyArray<string>;
-  },
-  defaultDir: string,
-  path: Path.Path,
-  home: string,
-): ReadonlyArray<string> {
-  return managedDirectories(
-    [settings.projectsDirectory, ...settings.previousProjectsDirectories],
-    defaultDir,
-    path,
-    home,
-  );
+  const directories = new Set([defaultDir]);
+  for (const setting of [settings.worktreesDirectory, ...settings.previousWorktreesDirectories]) {
+    const directory = resolveWorktreesDirectory(setting, defaultDir, path, home);
+    if (directory !== null) directories.add(directory);
+  }
+  return [...directories];
 }
 
 // Client paths/branches are untrusted; recreate only real paths matching managed-folder/repo/branch.
