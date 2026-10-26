@@ -136,6 +136,38 @@ const regenerableIgnoredPath = (entry: string) => {
     pattern.startsWith("*") ? name.endsWith(pattern.slice(1)) : segments.includes(pattern),
   );
 };
+// fork: file-placement -- Git lists an ignored folder as one entry and never looks inside it, so a
+// repository or worktree in regenerable output (dist/nested) would be deleted with the folder.
+const NESTED_REPOSITORY_SCAN_LIMIT = 2_000_000;
+// fork: file-placement
+const nestedRepository = Effect.fnUntraced(function* (cwd: string, entry: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const root = yield* fs.realPath(cwd);
+  const pending = [yield* fs.realPath(path.join(root, entry))];
+  let scanned = 0;
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    const names = yield* fs.readDirectory(directory);
+    if (
+      names.includes(".git") ||
+      (names.includes("HEAD") && names.includes("objects") && names.includes("refs"))
+    )
+      return `${path.relative(root, directory)}/`;
+    scanned += names.length;
+    if (scanned > NESTED_REPOSITORY_SCAN_LIMIT) return entry;
+    for (const name of names) {
+      const child = path.join(directory, name);
+      // Removing a link leaves its target, so only real folders are searched.
+      if (
+        (yield* fs.realPath(child).pipe(Effect.orElseSucceed(() => null))) === child &&
+        (yield* fs.stat(child)).type === "Directory"
+      )
+        pending.push(child);
+    }
+  }
+  return null;
+});
 /**
  * The "landed" rule for `git ls-files --others --ignored --exclude-standard --directory -z`
  * output: the first ignored entry that holds local data, or null when every entry is
@@ -156,7 +188,14 @@ export const landedIgnoredFileBlocker = Effect.fn("StorageCleanup.landedIgnoredF
       }
     }
     for (const entry of listed) {
-      if (containers.has(entry) || regenerableIgnoredPath(entry)) continue;
+      if (containers.has(entry)) continue; // fork: file-placement
+      // fork: file-placement
+      if (regenerableIgnoredPath(entry)) {
+        // fork: file-placement
+        const nested = entry.endsWith("/") ? yield* nestedRepository(cwd, entry) : null;
+        if (nested !== null) return nested; // fork: file-placement
+        continue; // fork: file-placement
+      } // fork: file-placement
       if (entry.endsWith("/")) {
         // Git lists empty ignored folders too, and those hold nothing to lose.
         const contents = yield* git.execute({
@@ -868,6 +907,8 @@ const make = Effect.gen(function* () {
     if (rules.worktreeKeepWhen === "landed") {
       const entry = yield* landedIgnoredFileBlocker(cwd, ignored.stdout).pipe(
         Effect.provideService(GitVcsDriver.GitVcsDriver, git),
+        Effect.provideService(FileSystem.FileSystem, fs), // fork: file-placement
+        Effect.provideService(Path.Path, path), // fork: file-placement
       );
       return entry === null ? null : `has ignored local files such as ${entry}`;
     }

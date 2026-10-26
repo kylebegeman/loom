@@ -1056,3 +1056,5 @@ apps/server/src/project/WorktreeSetupTracker.ts	library-launch-files	3
 apps/server/src/project/WorktreeSetupTracker.test.ts	library-launch-files	1
 apps/server/src/orchestration-v2/RuntimePolicy.ts	library-launch-files	1
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-launch-files	2
+apps/server/src/storageCleanup.ts	file-placement	10
+apps/server/src/storageCleanup.test.ts	file-placement	1
