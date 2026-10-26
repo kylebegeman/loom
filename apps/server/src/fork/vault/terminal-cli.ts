@@ -1,4 +1,4 @@
-import { readTerminalConnection } from "./TerminalConnection.ts";
+import { callTerminalTool, readTerminalConnection } from "./TerminalConnection.ts";
 import { decodeVaultTerminalError } from "./terminal-errors.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- CLI boundary forwards scrubbed child output and preserves its exit code.
 import * as NodeProcess from "node:process";
@@ -8,7 +8,6 @@ import * as Effect from "effect/Effect";
 import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
-import { callAcpMcpTool } from "../../mcp/AcpMcpStdioBridge.ts";
 class TerminalCliError extends Schema.TaggedError<TerminalCliError>()("TerminalCliError", {
   reason: Schema.Literals(["connection", "tool", "response"]),
 }) {
@@ -59,7 +58,7 @@ export const runGitHubTerminalCli = Effect.fn("runGitHubTerminalCli")(function* 
   );
   const args = yield* decodeRun(argumentsJson);
   const envelope = decodeEnvelope(
-    yield* callAcpMcpTool({
+    yield* callTerminalTool({
       endpoint,
       authorization,
       tool: "loom_vault_github_exec",

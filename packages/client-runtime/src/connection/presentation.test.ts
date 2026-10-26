@@ -9,6 +9,7 @@ import {
 } from "./catalog.ts";
 import {
   BearerConnectionTarget,
+  ConnectionBlockedError,
   ConnectionTransientError,
   RelayConnectionTarget,
   type SupervisorConnectionState,

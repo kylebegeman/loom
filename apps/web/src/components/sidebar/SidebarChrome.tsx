@@ -164,7 +164,8 @@ function SidebarUtilityItem({
   );
 }
 
-const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+// fork: sites-navigation - exported for the fork's destination navigation tests.
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const pathname = useLocation({ select: (location) => location.pathname }); // fork: sites-navigation

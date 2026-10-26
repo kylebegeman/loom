@@ -22,6 +22,7 @@ import {
   ComposerContextId,
   type ChatAttachment,
   CommandId,
+  EnvironmentId,
   DEFAULT_SERVER_SETTINGS,
   GitCommandError,
   MessageId,
@@ -39,6 +40,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -301,6 +303,21 @@ function makeHarness(options: HarnessOptions = {}) {
     runSetup,
     closeTerminal,
   };
+}
+
+function waitUntil<E, R>(predicate: () => Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R> {
+  return Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (yield* predicate()) return;
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            setImmediate(resolve);
+          }),
+      );
+    }
+    assert.fail("Condition was not reached before timeout.");
+  });
 }
 
 function launchInput(input: {

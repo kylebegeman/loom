@@ -74,6 +74,7 @@ import {
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
+  MonitorIcon,
   PaletteIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -242,6 +243,7 @@ import {
   scrollCommandPaletteRowIntoView,
 } from "./CommandPaletteResults";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { COMMAND_PALETTE_META_ICON_CLASS } from "./ThreadCommandSubtitle";
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";

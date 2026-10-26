@@ -28,7 +28,7 @@ export function beforeLoomSettingsLoad({
   }
 }
 
-export const Route = createFileRoute("/settings/loom")({
+export const Route = createFileRoute("/_chat/settings/loom")({
   validateSearch: validateLoomSettingsSearch,
   search: { middlewares: [retainSearchParams(["section"])] },
   beforeLoad: beforeLoomSettingsLoad,

@@ -11,9 +11,9 @@ import {
   ShieldAlertIcon,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
+import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
 
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { formatWorkingDurationLabel } from "~/components/Sidebar.logic";
 import {
   ANCHORED_COPY_TOAST_TIMEOUT_MS,
   showAnchoredCopyErrorToast,

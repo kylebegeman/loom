@@ -27,6 +27,27 @@ import { EnvironmentToolkit } from "./tools.ts";
 
 const environmentId = EnvironmentId.make("environment:preferences");
 const threadId = ThreadId.make("thread:preferences");
+const caller: McpInvocationContext.McpInvocationScope = {
+  environmentId,
+  requestNamespace: "provider:preferences",
+  thread: {
+    threadId,
+    providerSessionId: "provider:preferences",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
+  client: undefined,
+  capabilities: new Set(["orchestration" as const]),
+  issuedAt: 0,
+};
+const layerEnvironment = Layer.mock(Environment.ServerEnvironment)({
+  getDescriptor: Effect.succeed({
+    environmentId,
+    label: "Test",
+    platform: { os: "linux", arch: "x64" },
+    serverVersion: "0.0.0",
+    capabilities: { repositoryIdentity: false },
+  }),
+});
 
 it.effect("refuses a preferences update when the caller's turn ends while it waits", () =>
   Effect.gen(function* () {

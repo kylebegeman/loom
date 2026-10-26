@@ -24,7 +24,7 @@ const handler = (method: "GET" | "PUT") =>
       const request = yield* HttpServerRequest.HttpServerRequest;
       const auth = yield* EnvironmentAuth.EnvironmentAuth;
       const session = yield* method === "GET"
-        ? auth.authenticateWebSocketUpgrade(request)
+        ? auth.authenticateWebSocketUpgrade(request, "media")
         : auth.authenticateHttpRequest(request);
       const publisher =
         session.scopes.includes(AuthLibraryPublishScope) &&

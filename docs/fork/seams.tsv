@@ -54,7 +54,7 @@ apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
 apps/web/src/components/settings/settingsSearch.ts	ext-settings	3
 apps/web/src/components/settings/SettingsSidebarNav.tsx	ext-settings	2
-apps/web/src/routes/settings.loom.tsx	-	/settings/loom
+apps/web/src/routes/_chat.settings.loom.tsx	-	/settings/loom
 apps/web/src/routeTree.gen.ts	-	/settings/loom
 apps/server/src/mcp/McpHttpServer.ts	ext-mcp	2
 apps/server/src/observability/RpcInstrumentation.ts	ext-core	1
@@ -147,6 +147,7 @@ apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	library-p
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-push	2
 apps/mobile/src/state/use-remote-environment-registry.ts	library-push	2
 docs/user/mobile-notifications.md	library-push	1
+apps/server/src/relay/AgentAwarenessRelay.ts	library-push	1
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
@@ -323,7 +324,7 @@ apps/web/src/routes/welcome.tsx	library-only	4
 scripts/setup-worktree.ts	dev-db	1
 scripts/setup-worktree.ts	setup-reuse	4
 scripts/smoke-cli-archive.ts	smoke-port-race	3
-apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1
+apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	2
 
 apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	1
 apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	1
@@ -757,7 +758,7 @@ apps/server/src/sourceControl/GitHubSetupFlow.ts	github-host-setup	2
 apps/server/src/vcs/GitVcsDriverCore.ts	github-host-setup	1
 apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	6
 apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	4
-apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	5
+apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	6
 apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	12
 apps/mobile/src/features/threads/threadListV2.test.ts	attention-status	1
@@ -944,7 +945,7 @@ apps/mobile/src/features/threads/ThreadComposer.tsx	attention-status	1
 apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	11
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	attention-status	7
 apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
-apps/desktop/src/app/DesktopApp.ts	restart-continuity	1
+apps/desktop/src/app/DesktopApp.ts	restart-continuity	2
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	2
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
 apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3

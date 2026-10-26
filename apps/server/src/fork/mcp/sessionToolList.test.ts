@@ -3,6 +3,7 @@ import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -84,11 +85,11 @@ const mcpHeaders = (authorization: string, sessionId?: string) => ({
 });
 
 const listToolsOverHttp = Effect.fn("test.listToolsOverHttp")(function* (
+  registry: McpSessionRegistry.McpSessionRegistryShape,
   request: McpSessionRegistry.McpCredentialRequest,
 ) {
-  const credential = yield* McpSessionRegistry.issueActiveMcpCredential(request);
-  expect(credential).toBeDefined();
-  const authorization = credential!.config.authorizationHeader;
+  const credential = yield* registry.issue(request);
+  const authorization = credential.config.authorizationHeader;
   const http = yield* HttpClient.HttpClient;
   const initialized = yield* http.post("/mcp", {
     headers: mcpHeaders(authorization),
@@ -112,10 +113,11 @@ const listToolsOverHttp = Effect.fn("test.listToolsOverHttp")(function* (
   return { tools: payload.result.tools, bytes: Buffer.byteLength(serialized) };
 });
 
-const serveProductionMcp = HttpRouter.serve(
-  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
-  { disableListenLog: true, disableLogger: true },
-).pipe(
+const serveProductionMcp = HttpRouter.serve(McpHttpServer.layer, {
+  disableListenLog: true,
+  disableLogger: true,
+}).pipe(
+  Layer.provideMerge(McpSessionRegistry.layer),
   Layer.provide(
     Layer.mock(ServerEnvironment.ServerEnvironment)({
       getEnvironmentId: Effect.succeed("environment-catalog" as never),
@@ -125,6 +127,7 @@ const serveProductionMcp = HttpRouter.serve(
   Layer.provide(PreviewBrowser.layer),
   Layer.provide(layerStubServices),
   Layer.build,
+  Effect.map((services) => Context.get(services, McpSessionRegistry.McpSessionRegistry)),
 );
 
 const layerHttpTest = Layer.mergeAll(
@@ -145,13 +148,15 @@ const CAPABILITY_TOOL = /^(preview_|t3_preview_|device_|loom_device_qa_)/;
 
 it.effect("lists each session only the tools its credential can call", () =>
   Effect.gen(function* () {
-    yield* serveProductionMcp;
-    const limited = (yield* listToolsOverHttp({
+    const registry = yield* serveProductionMcp;
+    const limited = (yield* listToolsOverHttp(registry, {
       threadId: ThreadId.make("thread-catalog-limited"),
       providerInstanceId,
       browserToolsAvailable: false,
     })).tools.map((tool) => tool.name);
-    const full = (yield* listToolsOverHttp(fullAccessSession)).tools.map((tool) => tool.name);
+    const full = (yield* listToolsOverHttp(registry, fullAccessSession)).tools.map(
+      (tool) => tool.name,
+    );
 
     expect(limited).toEqual(expect.arrayContaining(["delegate_task", "loom_preview_link_share"]));
     expect(limited.filter((name) => CAPABILITY_TOOL.test(name))).toEqual([]);
@@ -182,8 +187,8 @@ const TOOL_BUDGET_BYTES = 32 * 1024;
 
 it.effect("keeps the full tool catalog within its byte budgets", () =>
   Effect.gen(function* () {
-    yield* serveProductionMcp;
-    const { tools, bytes } = yield* listToolsOverHttp(fullAccessSession);
+    const registry = yield* serveProductionMcp;
+    const { tools, bytes } = yield* listToolsOverHttp(registry, fullAccessSession);
     const sized = tools.map((tool) => ({
       name: tool.name,
       bytes: Buffer.byteLength(JSON.stringify(tool)),

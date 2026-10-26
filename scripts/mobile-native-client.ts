@@ -809,7 +809,7 @@ const install = Effect.fn("nativeClient.install")(function* (
         Effect.fail(
           error.message.includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
             ? new NativeClientError({
-                message: `The installed client has a different signature. Remove it with adb -s ${device} uninstall ${bundleId} (this clears its pairings), then run ensure again.`,
+                message: `The installed client has a different signature. Remove it with adb -s ${device} uninstall ${developmentBundleId(platform)} (this clears its pairings), then run ensure again.`,
               })
             : error,
         ),

@@ -191,14 +191,18 @@ it("discovers existing fork paths, including future surfaces and Loom routes", (
     "packages/client-runtime/src/fork",
     "packages/contracts/src/fork",
     "packages/shared/src/fork",
-    "apps/web/src/routes/settings.loom.tsx",
-    "apps/web/src/routes/settings.loom.models.tsx",
+    "apps/web/src/routes/_chat.settings.loom.tsx",
+    "apps/web/src/routes/_chat.settings.loom.models.tsx",
     "scripts/fork",
     "deploy/omarchy",
     "benchmarks/loom",
     "apps/server/scripts/benchmark-library.ts",
   ];
-  const f = lintFixture([...paths, "apps/web/src/routes/settings.general.tsx", "apps/mobile/src"]);
+  const f = lintFixture([
+    ...paths,
+    "apps/web/src/routes/_chat.settings.general.tsx",
+    "apps/mobile/src",
+  ]);
   const result = runLint(f, "fork_lint_paths");
   expect(result.status).toBe(0);
   expect(result.stdout.trim().split("\n").sort()).toEqual([...paths].sort());
@@ -256,8 +260,8 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
     ],
     ["omarchy-pack"],
     ["exec", "vp", "build"],
-    ["run", "-s", "typecheck"],
-    ["exec", "tsc-rs", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
+    ["exec", "vp", "run", "typecheck"],
+    ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["restore-lockfile"],
   ]);
 });

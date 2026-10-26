@@ -25,6 +25,7 @@ import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as CodexAdapterV2 from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as CodexInstallation from "../../provider/CodexInstallation.ts";
+import * as CodexManagedTokenBroker from "../../provider/CodexManagedTokenBroker.ts";
 import { CodexDriver } from "../../provider/Drivers/CodexDriver.ts";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import * as ResetCreditCoordinator from "../../provider/resetCreditCoordinator.ts";
@@ -48,6 +49,12 @@ const layerTest = ServerConfig.layerTest(process.cwd(), {
     }),
   ),
   Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
+  Layer.provideMerge(
+    Layer.mock(CodexManagedTokenBroker.CodexManagedTokenBroker)({
+      endpoint: Effect.succeed("unused-private-pipe"),
+      awaitIdle: Effect.void,
+    }),
+  ),
   Layer.provideMerge(
     Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("00000000-0000-4000-8000-000000000001")),

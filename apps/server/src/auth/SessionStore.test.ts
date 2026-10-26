@@ -13,6 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref"; // fork: identity-renewal
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -682,9 +683,13 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
           LOOM_IDENTITY_CLIENT_ID: "host-client",
           LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner",
         };
-        const original = yield* SessionStore.make.pipe(
-          Effect.provideService(HostProcess.Environment, environment),
-        );
+        // Each store reads the host enrollment once, when it is built.
+        const storeWith = (env: Readonly<Record<string, string>>) =>
+          SessionStore.SessionStore.pipe(
+            Effect.provide(SessionStore.layer, { local: true }),
+            Effect.provideService(HostProcess.Environment, env),
+          );
+        const original = yield* storeWith(environment);
         const issued = yield* original.issue({
           subject: `${identitySessionPrefix(environment)}b3duZXI`,
           method: "bearer-access-token",
@@ -697,28 +702,21 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
           { ...environment, LOOM_IDENTITY_AUDIENCE: "different-host" },
           {},
         ]) {
-          const restarted = yield* SessionStore.make.pipe(
-            Effect.provideService(HostProcess.Environment, next),
-          );
+          const restarted = yield* storeWith(next);
           expect((yield* Effect.result(restarted.verify(issued.token)))._tag).toBe("Failure");
           expect((yield* Effect.result(restarted.verifyWebSocketToken(ticket.token)))._tag).toBe(
             "Failure",
           );
         }
-        const recovered = yield* SessionStore.make.pipe(
-          Effect.provideService(HostProcess.Environment, environment),
-        );
+        const recovered = yield* storeWith(environment);
         yield* recovered.verify(issued.token);
         yield* recovered.verifyWebSocketToken(ticket.token);
         const manual = yield* recovered.issue({ subject: "manual-pairing" });
-        const disabled = yield* SessionStore.make.pipe(
-          Effect.provideService(HostProcess.Environment, {}),
-        );
+        const disabled = yield* storeWith({});
         yield* disabled.verify(manual.token);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            AuthSessions.layer,
             ServerSecretStore.layer,
             layerServerEnvironment(EnvironmentId.make("host")),
           ).pipe(

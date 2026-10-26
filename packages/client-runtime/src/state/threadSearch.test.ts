@@ -125,7 +125,7 @@ it("distinguishes a failed search from no matches and clears the failure after r
     labelPrefix: "recovery",
   });
   const registry = AtomRegistry.make();
-  const atom = search(makeThreadSearchKey([envA], "needle"));
+  const atom = search.results(makeThreadSearchKey([envA], "needle"));
   const release = registry.mount(atom);
   try {
     expect(registry.get(atom)).toEqual({

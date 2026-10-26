@@ -21,7 +21,6 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as LibraryIndexRouteImport } from './routes/library.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
-import { Route as SettingsLoomRouteImport } from './routes/settings.loom'
 import { Route as ProjectsStorageRouteImport } from './routes/projects.storage'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as LoomBotsRouteImport } from './routes/loom.bots'
@@ -39,6 +38,7 @@ import { Route as ChatSettingsScheduledTasksRouteImport } from './routes/_chat.s
 import { Route as ChatSettingsProvidersRouteImport } from './routes/_chat.settings.providers'
 import { Route as ChatSettingsProjectsRouteImport } from './routes/_chat.settings.projects'
 import { Route as ChatSettingsOpenSourceLicensesRouteImport } from './routes/_chat.settings.open-source-licenses'
+import { Route as ChatSettingsLoomRouteImport } from './routes/_chat.settings.loom'
 import { Route as ChatSettingsKeybindingsRouteImport } from './routes/_chat.settings.keybindings'
 import { Route as ChatSettingsIntegrationsRouteImport } from './routes/_chat.settings.integrations'
 import { Route as ChatSettingsGeneralRouteImport } from './routes/_chat.settings.general'
@@ -108,11 +108,6 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ChatRoute,
-} as any)
-const SettingsLoomRoute = SettingsLoomRouteImport.update({
-  id: '/settings/loom',
-  path: '/settings/loom',
-  getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsStorageRoute = ProjectsStorageRouteImport.update({
   id: '/projects/storage',
@@ -203,6 +198,11 @@ const ChatSettingsOpenSourceLicensesRoute =
     path: '/open-source-licenses',
     getParentRoute: () => ChatSettingsRoute,
   } as any)
+const ChatSettingsLoomRoute = ChatSettingsLoomRouteImport.update({
+  id: '/loom',
+  path: '/loom',
+  getParentRoute: () => ChatSettingsRoute,
+} as any)
 const ChatSettingsKeybindingsRoute = ChatSettingsKeybindingsRouteImport.update({
   id: '/keybindings',
   path: '/keybindings',
@@ -275,7 +275,6 @@ export interface FileRoutesByFullPath {
   '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
-  '/settings/loom': typeof SettingsLoomRoute
   '/library/': typeof LibraryIndexRoute
   '/projects/': typeof ProjectsIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -288,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof ChatSettingsGeneralRoute
   '/settings/integrations': typeof ChatSettingsIntegrationsRoute
   '/settings/keybindings': typeof ChatSettingsKeybindingsRoute
+  '/settings/loom': typeof ChatSettingsLoomRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
@@ -314,7 +314,6 @@ export interface FileRoutesByTo {
   '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
-  '/settings/loom': typeof SettingsLoomRoute
   '/': typeof ChatIndexRoute
   '/library': typeof LibraryIndexRoute
   '/projects': typeof ProjectsIndexRoute
@@ -328,6 +327,7 @@ export interface FileRoutesByTo {
   '/settings/general': typeof ChatSettingsGeneralRoute
   '/settings/integrations': typeof ChatSettingsIntegrationsRoute
   '/settings/keybindings': typeof ChatSettingsKeybindingsRoute
+  '/settings/loom': typeof ChatSettingsLoomRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
@@ -357,7 +357,6 @@ export interface FileRoutesById {
   '/loom/bots': typeof LoomBotsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
-  '/settings/loom': typeof SettingsLoomRoute
   '/_chat/': typeof ChatIndexRoute
   '/library/': typeof LibraryIndexRoute
   '/projects/': typeof ProjectsIndexRoute
@@ -371,6 +370,7 @@ export interface FileRoutesById {
   '/_chat/settings/general': typeof ChatSettingsGeneralRoute
   '/_chat/settings/integrations': typeof ChatSettingsIntegrationsRoute
   '/_chat/settings/keybindings': typeof ChatSettingsKeybindingsRoute
+  '/_chat/settings/loom': typeof ChatSettingsLoomRoute
   '/_chat/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
   '/_chat/settings/projects': typeof ChatSettingsProjectsRoute
   '/_chat/settings/providers': typeof ChatSettingsProvidersRoute
@@ -401,7 +401,6 @@ export interface FileRouteTypes {
     | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
-    | '/settings/loom'
     | '/library/'
     | '/projects/'
     | '/$environmentId/$threadId'
@@ -414,6 +413,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
+    | '/settings/loom'
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
@@ -440,7 +440,6 @@ export interface FileRouteTypes {
     | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
-    | '/settings/loom'
     | '/'
     | '/library'
     | '/projects'
@@ -454,6 +453,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/integrations'
     | '/settings/keybindings'
+    | '/settings/loom'
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
@@ -482,7 +482,6 @@ export interface FileRouteTypes {
     | '/loom/bots'
     | '/projects/$projectKey'
     | '/projects/storage'
-    | '/settings/loom'
     | '/_chat/'
     | '/library/'
     | '/projects/'
@@ -496,6 +495,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/general'
     | '/_chat/settings/integrations'
     | '/_chat/settings/keybindings'
+    | '/_chat/settings/loom'
     | '/_chat/settings/open-source-licenses'
     | '/_chat/settings/projects'
     | '/_chat/settings/providers'
@@ -519,7 +519,6 @@ export interface RootRouteChildren {
   LoomBotsRoute: typeof LoomBotsRoute
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
   ProjectsStorageRoute: typeof ProjectsStorageRoute
-  SettingsLoomRoute: typeof SettingsLoomRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
 }
 
@@ -608,13 +607,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
-    }
-    '/settings/loom': {
-      id: '/settings/loom'
-      path: '/settings/loom'
-      fullPath: '/settings/loom'
-      preLoaderRoute: typeof SettingsLoomRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/projects/storage': {
       id: '/projects/storage'
@@ -735,6 +727,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatSettingsOpenSourceLicensesRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
+    '/_chat/settings/loom': {
+      id: '/_chat/settings/loom'
+      path: '/loom'
+      fullPath: '/settings/loom'
+      preLoaderRoute: typeof ChatSettingsLoomRouteImport
+      parentRoute: typeof ChatSettingsRoute
+    }
     '/_chat/settings/keybindings': {
       id: '/_chat/settings/keybindings'
       path: '/keybindings'
@@ -817,6 +816,7 @@ interface ChatSettingsRouteChildren {
   ChatSettingsGeneralRoute: typeof ChatSettingsGeneralRoute
   ChatSettingsIntegrationsRoute: typeof ChatSettingsIntegrationsRoute
   ChatSettingsKeybindingsRoute: typeof ChatSettingsKeybindingsRoute
+  ChatSettingsLoomRoute: typeof ChatSettingsLoomRoute
   ChatSettingsOpenSourceLicensesRoute: typeof ChatSettingsOpenSourceLicensesRoute
   ChatSettingsProjectsRoute: typeof ChatSettingsProjectsRoute
   ChatSettingsProvidersRoute: typeof ChatSettingsProvidersRoute
@@ -835,6 +835,7 @@ const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsGeneralRoute: ChatSettingsGeneralRoute,
   ChatSettingsIntegrationsRoute: ChatSettingsIntegrationsRoute,
   ChatSettingsKeybindingsRoute: ChatSettingsKeybindingsRoute,
+  ChatSettingsLoomRoute: ChatSettingsLoomRoute,
   ChatSettingsOpenSourceLicensesRoute: ChatSettingsOpenSourceLicensesRoute,
   ChatSettingsProjectsRoute: ChatSettingsProjectsRoute,
   ChatSettingsProvidersRoute: ChatSettingsProvidersRoute,
@@ -901,7 +902,6 @@ const rootRouteChildren: RootRouteChildren = {
   LoomBotsRoute: LoomBotsRoute,
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
   ProjectsStorageRoute: ProjectsStorageRoute,
-  SettingsLoomRoute: SettingsLoomRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
 }
 export const routeTree = rootRouteImport

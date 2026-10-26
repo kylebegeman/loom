@@ -54,6 +54,7 @@ const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> =
 const EMPTY_THREAD_SEARCH_ATOM = Atom.make<ThreadSearchResultsState>({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
+  failedEnvironmentIds: [],
   rows: [],
 }).pipe(Atom.withLabel("web:thread-search:empty"));
 

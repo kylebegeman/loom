@@ -15,8 +15,8 @@ export type RestartImpactThread = Pick<
 
 /**
  * The shell's status skips held queues, so a queued run here is one that would otherwise start,
- * and a waiting run is still capturing its checkpoint. A settled turn counts when its subagent,
- * monitor or background task would stop; a background shell command does not hold a thread.
+ * and a waiting run is still capturing its checkpoint. A settled turn counts when work that holds
+ * its completion would stop: a subagent, a background task, or a command or monitor it awaits.
  */
 export function threadRestartImpact(thread: RestartImpactThread): "working" | "background" | null {
   if (

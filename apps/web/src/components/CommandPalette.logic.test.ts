@@ -88,10 +88,13 @@ describe("reduceCommandPaletteUiState", () => {
 
   it("preserves the explicitly chosen computer for adding a project", () => {
     const environmentId = EnvironmentId.make("remote-computer");
-    const state = reduceCommandPaletteUiState(closedState, {
-      _tag: "OpenAddProject",
-      environmentId,
-    });
+    const state = reduceCommandPaletteUiState(
+      { open: false, mode: "command", openIntent: null },
+      {
+        _tag: "OpenAddProject",
+        environmentId,
+      },
+    );
     expect(state.openIntent).toEqual({ kind: "add-project", environmentId });
     expect(reduceCommandPaletteUiState(state, { _tag: "OpenAddProject" }).openIntent).toEqual({
       kind: "add-project",
@@ -154,13 +157,12 @@ describe("buildThreadActionItems", () => {
         makeThread({ id: ThreadId.make("thread-person"), title: "Fix navbar" }),
         makeThread({ id: botRunThreadId("run-1"), title: "Nightly triage" }),
       ],
-      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
-      sortOrder: "updated_at",
+      projectByKey: new Map([[`${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`, { title: "Project" }]]),
       icon: null,
       runThread: async (_thread) => undefined,
     });
 
-    expect(items.map((item) => item.value)).toEqual(["thread:thread-person"]);
+    expect(items.map((item) => item.value)).toEqual(["thread:environment-local:thread-person"]);
   });
 
   it("ranks thread title matches ahead of contextual project-name matches", () => {

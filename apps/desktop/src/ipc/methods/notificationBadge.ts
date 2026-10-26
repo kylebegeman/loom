@@ -17,7 +17,8 @@ const NotificationBadge = Schema.Struct({
   ),
 });
 
-function applyNotificationBadge(
+// fork: respectful-notifications - exported for the fork's per-platform badge tests.
+export function applyNotificationBadge(
   platform: NodeJS.Platform,
   { count, image }: typeof NotificationBadge.Type,
 ): void {

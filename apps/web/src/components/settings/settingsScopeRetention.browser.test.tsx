@@ -83,7 +83,7 @@ vi.mock(import("./SettingsPanels"), async (original) => ({
   useSettingsRestore: (() => ({ changedSettingLabels: [] })) as never,
 }));
 
-import { Route } from "../../routes/settings";
+import { Route } from "../../routes/_chat.settings";
 
 function StatefulContent() {
   const [value, setValue] = useState(0);

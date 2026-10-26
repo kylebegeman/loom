@@ -7,6 +7,7 @@ import { ThreadId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { RotatingFileSinkError } from "@t3tools/shared/logging";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";

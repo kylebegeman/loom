@@ -46,7 +46,7 @@ describe("threadRestartImpact", () => {
     expect(threadRestartImpact(thread({ status: "interrupted" }))).toBeNull();
   });
 
-  it.each(["subagent", "monitor", "background_task"] as const)(
+  it.each(["subagent", "background_task"] as const)(
     "counts a settled turn waiting on a %s",
     (kind) => {
       expect(threadRestartImpact(thread({ pendingBackgroundTasks: [task(kind)] }))).toBe(
@@ -55,8 +55,11 @@ describe("threadRestartImpact", () => {
     },
   );
 
-  it("does not count a background shell command", () => {
-    expect(threadRestartImpact(thread({ pendingBackgroundTasks: [task("command")] }))).toBeNull();
+  it.each(["command", "monitor"] as const)("counts a %s only while the agent awaits it", (kind) => {
+    expect(threadRestartImpact(thread({ pendingBackgroundTasks: [task(kind)] }))).toBeNull();
+    expect(
+      threadRestartImpact(thread({ pendingBackgroundTasks: [{ ...task(kind), awaited: true }] })),
+    ).toBe("background");
   });
 
   it("does not count a pull request watch, which survives the restart", () => {
@@ -101,7 +104,7 @@ describe("collectRestartImpact", () => {
           continuesThreads: false,
           threads: [
             thread({ status: "running" }),
-            thread({ title: "Nightly report", pendingBackgroundTasks: [task("monitor")] }),
+            thread({ title: "Nightly report", pendingBackgroundTasks: [task("subagent")] }),
             thread(),
           ],
         },

@@ -3251,7 +3251,7 @@ export const layerWsRpc = (
 
               // fork: computer-naming
               const namingUpdates = yield* computerNameConfigUpdates(config, () =>
-                loadServerConfig({ usageLimitsCommand }),
+                loadServerConfig({ usageLimitsCommand, workspaceSnapshotsOnDemand }),
               );
 
               const liveUpdates = Stream.merge(

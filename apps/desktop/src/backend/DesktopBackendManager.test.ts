@@ -29,7 +29,9 @@ import {
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: restart-continuity
 
+import * as DesktopApp from "../app/DesktopApp.ts";
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";

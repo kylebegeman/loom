@@ -69,15 +69,17 @@ it.layer(NodeServices.layer)("Loom native client identity", (it) => {
             fingerprint: "unchanged-native-inputs",
             binary: originalBinary,
           }),
-          build: Effect.sync(() => {
-            signed = true;
-          }),
+          install: () =>
+            Effect.sync(() => {
+              signed = true;
+              return "build" as const;
+            }),
           saveRecord: () =>
             Effect.sync(() => {
               recorded = true;
             }),
         });
-        assert.isTrue(result.rebuilt);
+        assert.isTrue(result.installed);
         assert.isTrue(recorded);
         assert.equal(result.status, "compatible");
       }),

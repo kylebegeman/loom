@@ -73,7 +73,8 @@ function isTurnItemPayload(
   );
 }
 
-function shouldPublishAgentAwarenessEvent(
+// fork: library-push - Library agent alerts post on the same events the relay publishes.
+export function shouldPublishAgentAwarenessEvent(
   event: Pick<OrchestrationV2DomainEvent, "type"> & { readonly payload?: unknown },
 ): boolean {
   if (

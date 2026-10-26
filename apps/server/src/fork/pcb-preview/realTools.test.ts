@@ -41,7 +41,9 @@ realTest(
         yield* fs.copy(fixtures, root, { overwrite: true });
         const state = yield* fs.makeTempDirectoryScoped({ prefix: "loom-pcb-real-" });
         const context = yield* Layer.build(Config.layerTest(root, state));
-        const paths = yield* WorkspacePaths.make;
+        const paths = yield* WorkspacePaths.WorkspacePaths.pipe(
+          Effect.provide(WorkspacePaths.layer),
+        );
         const runner = yield* ProcessRunner.ProcessRunner.pipe(Effect.provide(ProcessRunner.layer));
         const threadId = ThreadId.make("pcb-real-thread"),
           projectId = ProjectId.make("pcb-real-project");

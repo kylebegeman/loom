@@ -1,8 +1,7 @@
-import { readTerminalConnection } from "../vault/TerminalConnection.ts";
+import { callTerminalTool, readTerminalConnection } from "../vault/TerminalConnection.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Console from "effect/Console";
-import { callAcpMcpTool } from "../../mcp/AcpMcpStdioBridge.ts";
 
 class ForkCliError extends Schema.TaggedError<ForkCliError>()("ForkCliError", {
   message: Schema.String,
@@ -19,7 +18,7 @@ export const callForkTool = Effect.fn("callForkTool")(function* (
 ) {
   const { endpoint, authorization } = yield* readTerminalConnection(environment);
   const args = yield* Schema.decodeEffect(argumentsSchema)(argumentsJson);
-  const result = yield* callAcpMcpTool({ endpoint, authorization, tool, arguments: args });
+  const result = yield* callTerminalTool({ endpoint, authorization, tool, arguments: args });
   yield* Console.log(yield* encodeResult(result));
   if (Schema.is(toolFailure)(result))
     return yield* Effect.fail(

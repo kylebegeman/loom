@@ -116,6 +116,7 @@ const fixture = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       if (request.headers.authorization !== "Bearer synthetic-agent-proof")
         return HttpServerResponse.empty({ status: 401 });
+      if (request.method === "DELETE") return HttpServerResponse.empty({ status: 204 });
       const message = yield* decodeRequest(yield* request.json);
       if (message.method === "notifications/initialized")
         return HttpServerResponse.empty({ status: 202 });

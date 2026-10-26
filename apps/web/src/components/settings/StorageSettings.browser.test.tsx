@@ -144,6 +144,7 @@ it("keeps cleanup disabled when settled retention and all other rules are off", 
 
 // fork: project-lifecycle
 it("removes only an orphan the server marked safe, using that row's path", async () => {
+  setup();
   const row = {
     kind: "worktree" as const,
     outcome: "kept" as const,
@@ -169,13 +170,13 @@ it("removes only an orphan the server marked safe, using that row's path", async
     _tag: "Success",
     value: { ...state.report, entries: [{ ...row, outcome: "removed" }] },
   });
-  await render();
+  await using screen = await render(panel());
   await act(() =>
-    [...container.querySelectorAll("button")]
+    [...screen.container.querySelectorAll("button")]
       .find((button) => button.textContent?.includes("Last run"))
       ?.click(),
   );
-  const removes = [...container.querySelectorAll("button")].filter(
+  const removes = [...screen.container.querySelectorAll("button")].filter(
     (button) => button.textContent === "Remove",
   );
   expect(removes).toHaveLength(1);

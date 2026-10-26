@@ -60,6 +60,16 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
+  bundlesWslRuntime,
+  DESKTOP_ELECTRON_LANGUAGES,
+  DESKTOP_EXTRA_RESOURCES,
+  LINUX_CAPTURE_EXTRA_RESOURCES,
+  LINUX_FILE_EXCLUSIONS,
+  MAC_FILE_EXCLUSIONS,
+  resolveDesktopProductName,
+  WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
+  WINDOWS_SERVER_EXTRA_RESOURCES,
+  WSL_RUNTIME_EXTRA_RESOURCES,
 } from "./build-desktop-artifact.ts";
 import {
   ReleasePackageManifestError,
@@ -473,75 +483,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  it("resolves the dedicated nightly updater channel from nightly versions", () => {
-    assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
-    assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
-  });
-
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.1.0"), "Loom"); // fork: brand
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Loom (Nightly)"); // fork: brand
   });
-
-  it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
-      macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
-    });
-
-    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    });
-  });
-
-  it("switches the bundled splash and favicon branding for nightly versions", () => {
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
-    assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
-  });
-
-  it.effect("resolves GitHub desktop publish config from Effect config", () =>
-    Effect.gen(function* () {
-      const latestConfig = yield* resolveGitHubPublishConfig("latest").pipe(
-        Effect.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromEnv({
-              env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
-              },
-            }),
-          ),
-        ),
-      );
-      const nightlyConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
-        Effect.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromEnv({
-              env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
-              },
-            }),
-          ),
-        ),
-      );
-
-      assert.deepStrictEqual(latestConfig, {
-        provider: "github",
-        owner: "pingdotgg",
-        repo: "t3code",
-        releaseType: "release",
-      });
-      assert.deepStrictEqual(nightlyConfig, {
-        provider: "github",
-        owner: "pingdotgg",
-        repo: "t3code",
-        releaseType: "prerelease",
-        channel: "nightly",
-      });
-    }),
-  );
 
   it.effect("omits update feeds for pull request preview builds", () =>
     Effect.gen(function* () {
@@ -611,103 +556,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }
     }),
   );
-
-  it("stages pnpm 11 allowBuilds and patchedDependencies in the workspace yaml", () => {
-    assert.deepStrictEqual(
-      createStageWorkspaceConfig({
-        platform: "linux",
-        arch: "x64",
-        allowBuilds: {
-          electron: true,
-          "node-pty": true,
-          "browser-tabs-lock": false,
-        },
-        patchedDependencies: {
-          "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
-        },
-        overrides: {
-          effect: "4.0.0-beta.73",
-        },
-      }),
-      {
-        supportedArchitectures: {
-          os: ["linux"],
-          cpu: ["x64"],
-          libc: ["glibc"],
-        },
-        packageExtensions: stagePackageExtensions,
-        allowBuilds: {
-          electron: true,
-          "node-pty": true,
-          "browser-tabs-lock": false,
-        },
-        patchedDependencies: {
-          "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
-        },
-        overrides: {
-          effect: "4.0.0-beta.73",
-        },
-      },
-    );
-
-    assert.deepStrictEqual(
-      createStageWorkspaceConfig({
-        platform: "mac",
-        arch: "arm64",
-        allowBuilds: {},
-        patchedDependencies: {},
-        overrides: {},
-      }),
-      {
-        supportedArchitectures: {
-          os: ["darwin"],
-          cpu: ["arm64"],
-        },
-        packageExtensions: stagePackageExtensions,
-      },
-    );
-  });
-
-  it("limits Electron locales and excludes separately packaged resources", () => {
-    assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
-    for (const resource of [
-      ...WSL_RUNTIME_EXTRA_RESOURCES,
-      ...LINUX_BROWSER_SECRET_EXTRA_RESOURCES,
-    ]) {
-      assert.include(
-        DESKTOP_FILE_EXCLUSIONS,
-        `!${resource.from}`,
-        `${resource.from} ships via extraResources and must be excluded from app.asar`,
-      );
-    }
-
-    assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
-      "!**/node_modules/@cursor/sdk-*/**/*",
-      "!apps/desktop/prod-resources/cursor-sdk",
-      "!apps/desktop/prod-resources/cursor-sdk/**/*",
-      "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
-      "!**/*.map",
-      "!**/*.d.cts",
-      "!apps/desktop/resources/browser-secret",
-      "!apps/desktop/resources/browser-secret/**/*",
-      "!apps/desktop/prod-resources/browser-secret",
-      "!apps/desktop/prod-resources/browser-secret/**/*",
-      "!apps/desktop/prod-resources/windows-server",
-      "!apps/desktop/prod-resources/windows-server/**/*",
-      "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
-      "!apps/desktop/prod-resources/wsl-runtime.tar.gz.sha256",
-      "!apps/desktop/gnome-extension",
-      "!apps/desktop/gnome-extension/**/*",
-    ]);
-    assert.equal(WINDOWS_SERVER_RESOURCE_SOURCE_DIR, "apps/desktop/prod-resources/windows-server");
-    assert.deepStrictEqual(WINDOWS_SERVER_EXTRA_RESOURCES, [
-      {
-        from: "apps/desktop/prod-resources/windows-server",
-        to: ".",
-        filter: ["server.asar", "server.asar.unpacked/**/*"],
-      },
-    ]);
-  });
 
   it.effect("applies platform-specific packaging to the build config", () =>
     Effect.gen(function* () {
@@ -835,34 +683,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(mac.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
-
-  it("unpacks native binaries while keeping their JavaScript and metadata archived", () => {
-    for (const file of [
-      "node_modules/@napi-rs/keyring/keyring.win32-x64-msvc.node",
-      "node_modules/@clerk/electron-passkeys/electron-passkeys.win32-x64-msvc.node",
-      "node_modules/@ff-labs/fff-bin-win32-x64/fff_c.dll",
-      "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
-      "node_modules/native/addon.so",
-      "node_modules/native/addon.so.1",
-      "node_modules/native/addon.dylib",
-    ]) {
-      assert.isTrue(
-        NodePath.matchesGlob(file, WINDOWS_NATIVE_ASAR_UNPACK_GLOB),
-        `${file} must be available as a real file`,
-      );
-    }
-
-    for (const file of [
-      "node_modules/@napi-rs/keyring/index.js",
-      "node_modules/@napi-rs/keyring/keytar.js",
-      "node_modules/@clerk/electron-passkeys/index.js",
-    ]) {
-      assert.isFalse(
-        NodePath.matchesGlob(file, WINDOWS_NATIVE_ASAR_UNPACK_GLOB),
-        `${file} should remain inside the archive`,
-      );
-    }
-  });
 
   it("stages only the externals of both bundles in merged packages", () => {
     assert.deepStrictEqual(

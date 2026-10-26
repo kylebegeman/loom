@@ -62,6 +62,10 @@ const ProjectIconPickerDialog = lazy(() =>
   })),
 );
 
+function memberKey(member: { environmentId: string; id: string }): string {
+  return `${member.environmentId}:${member.id}`;
+}
+
 export type ProjectSettingsCategory = "general" | "source-control" | "project";
 
 export function ProjectSettingsPanel({

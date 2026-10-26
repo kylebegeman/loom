@@ -877,6 +877,19 @@ describe("pooled account columns", () => {
     );
     expect(keys(pool!)).toEqual([["b", "a"]]);
   });
+});
+
+describe("collectLimitNotices", () => {
+  const checkedAt = "2026-09-03T11:00:00.000Z";
+  const claude = ProviderDriverKind.make("claudeAgent");
+  const laptop = { entry: { target: { label: "Laptop" } } };
+  const hub = {
+    id: UsageLimitSourceId.make("hub"),
+    kind: "cliproxy" as const,
+    label: "hub",
+    checkedAt,
+    accounts: [],
+  };
 
   it("names source accounts left off the page unless another report shows them", () => {
     const unread = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };

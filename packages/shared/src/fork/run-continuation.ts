@@ -2,7 +2,6 @@ import type {
   OrchestrationV2ProviderFailure,
   OrchestrationV2ProviderFailureClass,
   OrchestrationV2Run,
-  OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 
 import { latestExecutedRun, latestRootProviderFailure } from "../orchestrationV2ThreadError.ts";
@@ -37,7 +36,8 @@ export interface ContinuableRun {
  */
 export function continuableRun(input: {
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
-  readonly turnItems: ReadonlyArray<OrchestrationV2TurnItem>;
+  // Only error items are read, so the quiet thread's items without streamed text fit too.
+  readonly turnItems: Parameters<typeof latestRootProviderFailure>[1];
   readonly lastErrorClass: OrchestrationV2ProviderFailureClass | null | undefined;
 }): ContinuableRun | null {
   const run = latestExecutedRun(input.runs);

@@ -55,11 +55,14 @@ import {
   EnvironmentId,
   EventId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  ProviderSessionId,
   RunId,
   RuntimeRequestId,
   ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ProviderSession,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";

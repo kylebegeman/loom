@@ -1294,7 +1294,7 @@ const make = Effect.gen(function* () {
           // only a repeat of the final write counts as resumed.
           resumed:
             input.initialMessage === undefined
-              ? Option.isSome(launchReceipt) || claimed.replayed === true
+              ? Option.isSome(launchReceipt) || claimed?.replayed === true
               : messageWasAlreadyAccepted,
         };
       });
