@@ -65,6 +65,7 @@ import {
   BotVersionsRpcGroup,
 } from "@t3tools/contracts/fork";
 import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
+import { makeAgentReceiptsRpcHandlers } from "./agent-receipts/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
 import { makeReachRpcHandlers } from "./reach/rpc.ts";
@@ -92,6 +93,8 @@ import {
   REACH_WS_METHODS,
   LibraryPushRpcGroup,
   LIBRARY_PUSH_WS_METHODS,
+  AgentReceiptsRpcGroup,
+  AGENT_RECEIPTS_WS_METHODS,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
@@ -126,6 +129,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(BOTS_ANYWHERE_WS_METHODS),
   ...Object.values(REACH_WS_METHODS),
   ...Object.values(LIBRARY_PUSH_WS_METHODS),
+  ...Object.values(AGENT_RECEIPTS_WS_METHODS),
   // Served by makeDatabaseCompactionRpcLayer, which needs DatabaseStorage.
   ...Object.values(DATABASE_COMPACTION_WS_METHODS),
 );
@@ -158,6 +162,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof BotsAnywhereRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ReachRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof LibraryPushRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof AgentReceiptsRpcGroup>>
 > =>
   Layer.mergeAll(
     ProjectWorkflowsRpcGroup.toLayer(
@@ -238,6 +243,9 @@ export const makeForkRpcLayer = (
     ),
     LibraryPushRpcGroup.toLayer(
       withForkRuntime(makeLibraryPushRpcHandlers(makeForkRpcAuth(session), session)),
+    ),
+    AgentReceiptsRpcGroup.toLayer(
+      withForkRuntime(makeAgentReceiptsRpcHandlers(makeForkRpcAuth(session))),
     ),
     otherForkRpcGroup.toLayer(
       Effect.gen(function* () {

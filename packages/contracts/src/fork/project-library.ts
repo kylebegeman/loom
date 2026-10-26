@@ -13,6 +13,7 @@ import {
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 import { OrchestrationV2ThreadProjection } from "../orchestrationV2.ts";
+import { AgentReceipt } from "./agent-receipts.ts";
 import { LibraryCopyHealth } from "./project-library-health-schema.ts";
 import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-library-profile.ts";
 
@@ -234,6 +235,8 @@ export const LibraryThreadArchive = Schema.Struct({
   context: Schema.optional(LibraryProject),
   summary: LibraryThreadSummary,
   projection: OrchestrationV2ThreadProjection,
+  /** Receipts for this conversation's runs and every sub-agent below it, oldest first. */
+  receipts: Schema.optionalKey(Schema.Array(AgentReceipt)),
 });
 export type LibraryThreadArchive = typeof LibraryThreadArchive.Type;
 export const LibraryComputerRegistration = Schema.Struct({
@@ -400,6 +403,8 @@ export const LibraryHistoryDelta = Schema.Struct({
     contextHandoffs: NonNegativeInt,
     contextTransfers: NonNegativeInt,
     visibleTurnItems: NonNegativeInt,
+    /** Absent from sources older than receipts, which keep the receipts already saved. */
+    receipts: Schema.optionalKey(NonNegativeInt),
   }),
 });
 export type LibraryHistoryDelta = typeof LibraryHistoryDelta.Type;

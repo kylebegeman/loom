@@ -87,6 +87,11 @@ import * as DeviceQa from "./device-qa/DeviceQaService.ts";
 import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
 import * as CodeGraph from "./code-graph/CodeGraphService.ts";
 import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
+import * as AgentReceipts from "./agent-receipts/AgentReceipts.ts";
+import {
+  AgentReceiptsLive,
+  reactorLayer as AgentReceiptsReactor,
+} from "./agent-receipts/reactor.ts";
 import * as BotBatches from "./bots/BotBatches.ts";
 import * as Bots from "./bots/BotsService.ts";
 import * as BotLibraryClient from "./bots/BotLibraryClient.ts";
@@ -505,6 +510,11 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provideMerge(
       CodeGraph.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
     ),
+  ),
+  // RPC, MCP and the reactor share one receipts service.
+  AgentReceiptsLive.pipe(
+    Layer.provide(AgentReceiptsReactor),
+    Layer.provideMerge(AgentReceipts.layer.pipe(Layer.provide(ProjectionStore.layer))),
   ),
   // Agent links end with their lane, so this watches the one ProjectLifecycle instance too.
   PreviewLinks.layer.pipe(

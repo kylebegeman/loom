@@ -44,10 +44,12 @@ export const createHistoryDelta = (before: LibraryThreadArchive, after: LibraryT
       retainedPrefix(before.projection[field], after.projection[field]),
     ]),
   ) as LibraryHistoryDelta["prefixes"];
+  const receipts = retainedPrefix(before.receipts ?? [], after.receipts ?? []);
   return {
-    delta: { baseSequence: before.summary.sequence, prefixes },
+    delta: { baseSequence: before.summary.sequence, prefixes: { ...prefixes, receipts } },
     thread: {
       ...after,
+      ...(after.receipts === undefined ? {} : { receipts: after.receipts.slice(receipts) }),
       projection: {
         ...after.projection,
         runs: after.projection.runs.slice(prefixes.runs),
@@ -94,12 +96,21 @@ export const applyHistoryDelta = Effect.fn("LibraryHistoryDelta.apply")(function
         !Number.isSafeInteger(delta.prefixes[field]) ||
         delta.prefixes[field] < 0 ||
         delta.prefixes[field] > before.projection[field].length,
-    )
+    ) ||
+    (delta.prefixes.receipts !== undefined &&
+      (!Number.isSafeInteger(delta.prefixes.receipts) ||
+        delta.prefixes.receipts < 0 ||
+        delta.prefixes.receipts > (before.receipts ?? []).length))
   ) {
     return yield* new LibraryError({ reason: "sequence-conflict" });
   }
+  const receipts =
+    delta.prefixes.receipts === undefined
+      ? before.receipts
+      : [...(before.receipts ?? []).slice(0, delta.prefixes.receipts), ...(tail.receipts ?? [])];
   return {
     ...tail,
+    ...(receipts === undefined ? {} : { receipts }),
     projection: {
       ...tail.projection,
       runs: [...before.projection.runs.slice(0, delta.prefixes.runs), ...tail.projection.runs],

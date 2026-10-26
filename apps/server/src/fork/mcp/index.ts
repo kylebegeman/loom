@@ -27,6 +27,7 @@ import { ProjectLifecycleToolkit, projectLifecycleHandlers } from "../project-li
 import { AppleBuildToolingToolkit, appleBuildToolingHandlers } from "../apple-build-tooling/mcp.ts";
 import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
+import { AgentReceiptsToolkit, agentReceiptsHandlers } from "../agent-receipts/mcp.ts";
 import { PreviewLinksToolkit, previewLinksHandlers } from "../preview-links/mcp.ts";
 import { DirectoryToolkit, directoryHandlers } from "../directory/mcp.ts";
 import { ReachToolkit, reachHandlers } from "../reach/mcp.ts";
@@ -180,6 +181,12 @@ export const FORK_MCP_TOOLKITS = [
     handlers: codeGraphHandlers,
     register: (register: typeof toolkitRegistration) =>
       register(CodeGraphToolkit, codeGraphHandlers),
+  },
+  {
+    toolkit: AgentReceiptsToolkit,
+    handlers: agentReceiptsHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(AgentReceiptsToolkit, agentReceiptsHandlers),
   },
   {
     toolkit: PreviewLinksToolkit,
