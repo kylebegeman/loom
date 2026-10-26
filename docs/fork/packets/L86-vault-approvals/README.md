@@ -18,7 +18,8 @@ through authenticated MCP identity; own-request status also exposes process-loca
 outcomes without sending an alert. There is no agent approval or delivery-mutation tool.
 The selected environment and its access permissions remain authoritative.
 
-External notification delivery remains stubbed behind an adapter. The inbox shows bounded,
+A new request alerts the owner's iPhone through the Library push path when the Library sends agent
+alerts; desktop and web attention for it is not wired yet. The inbox shows bounded,
 per-process delivery observations, including unconfirmed attempts and requests that no longer
 need an alert. Restart discards these observations without automatically resending anything. Pending requests expire after
 ten minutes. An approval covers one thread, item/version at review, action and destination

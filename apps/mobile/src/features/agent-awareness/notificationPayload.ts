@@ -1,3 +1,5 @@
+import { computerSettingsDeepLink } from "../../fork/library-push/libraryPushDeepLink"; // fork: library-push
+
 function dataFromNotificationResponse(response: unknown): Record<string, unknown> | null {
   if (typeof response !== "object" || response === null) {
     return null;
@@ -81,7 +83,8 @@ export function extractAgentNotificationDeepLink(response: unknown): string | nu
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;
   if (typeof deepLink === "string") {
-    const normalizedDeepLink = normalizeThreadDeepLink(deepLink);
+    const normalizedDeepLink =
+      normalizeThreadDeepLink(deepLink) ?? computerSettingsDeepLink(deepLink); // fork: library-push
     if (normalizedDeepLink) {
       return normalizedDeepLink;
     }

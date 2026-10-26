@@ -90,9 +90,10 @@ the server's current run. If that run changes, request new access for the new wo
 never resumes a command or consumes a one-time permission; recheck access before explicitly
 retrying work. Queue entries and retry evidence last 24 hours, with a 128-entry cap. Use fresh
 request/operation IDs after that window. Encrypted backend history follows its separate retention
-policy. There are no external notifications or automatic restarts yet. Approval
-does not verify an external login or override runner permissions. Older servers without approval
-support do not show this inbox.
+policy. When your Library sends agent alerts, a new request also alerts your iPhone, and tapping
+it opens that computer's settings, where Vault access lists the request; there is no email or
+text message, and work never restarts automatically. Approval does not verify an external login
+or override runner permissions. Older servers without approval support do not show this inbox.
 
 ## Import development records
 
@@ -822,10 +823,12 @@ returned repair step: wait for a decision, refresh changed context, review a cha
 or inspect a possibly completed write. A backend outage requires a fresh check after recovery.
 Automatic resumption and one-time approval consumption remain unavailable.
 
-The approval inbox also shows notification status. External alerts are not connected yet;
-requests remain available here regardless of that status. Delivery observations reset with the
-server session. “Unconfirmed” does not mean an alert arrived, and a delivery receipt would not
-mean someone reviewed or approved the request. Refreshing or restarting does not resend alerts.
+The approval inbox also shows notification status. It reports delivery only when your Library
+says an iPhone accepted the alert, and reports no connected delivery when your Library sends no
+agent alerts. Requests remain available here regardless of that status. Delivery observations
+reset with the server session. “Unconfirmed” does not mean an alert arrived, and a delivery
+receipt does not mean someone reviewed or approved the request. Refreshing or restarting does not
+resend alerts.
 
 Agents can inspect the same notification observation through their own request-status tool.
 If saving a request loses its reply, look it up by the original ID before retrying. A saved

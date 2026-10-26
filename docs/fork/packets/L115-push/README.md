@@ -210,11 +210,17 @@ Library decides whose iPhones hear it and how often. The computer side is
 - **Payload.** Title "Loom" and a fixed body per kind, with no thread, project, computer or model
   names. The data under the APNs key `body`, which Expo exposes as `notification.content.data`,
   carries `environmentId`, `threadId` and a `/threads/...` `deepLink`. Upstream's notification
-  handler opens that thread on tap and keeps the banner quiet while the thread is on screen, so
-  no mobile code changed. The iPhone needs a connection to that computer, or upstream shows
-  "Thread unavailable". `apns-collapse-id` is `loom-agent-` and a digest of the environment and
-  thread, under Apple's 64-byte cap, so each thread keeps one notification and the latest
-  replaces it. Priority 10, expiry 5 minutes.
+  handler opens that thread on tap and keeps the banner quiet while the thread is on screen. The
+  iPhone needs a connection to that computer, or upstream shows "Thread unavailable".
+  `apns-collapse-id` is `loom-agent-` and a digest of the environment and thread, under Apple's
+  64-byte cap, so each thread keeps one notification and the latest replaces it. Priority 10, expiry
+  5 minutes.
+- **Vault approvals (L86).** A new pending Vault access request posts kind `vault-approval` for its
+  thread through the same route, once and never retried. The computer reads its Library connection
+  per request, so a later sign-in needs no restart. Its `deepLink` opens that computer's settings,
+  where the request waits; an iPhone build without that route falls back to the thread. It expires
+  with the request after 10 minutes and collapses under `loom-vault-`, apart from the thread's other
+  alerts. A Library from before the kind answers 400, which the inbox shows as unconfirmed.
 - **Limits.** 20 per computer per hour, counting every accepted alert, sent or not. 30 per device
   per hour, past which that device is skipped. Alerts count apart from tests but share the last
   delivery and the failing flag, so the device list says "Last notification".

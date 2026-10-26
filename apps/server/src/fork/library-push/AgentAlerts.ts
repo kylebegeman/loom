@@ -202,7 +202,9 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
 
 const decodeReply = Schema.decodeUnknownEffect(LibraryPushActivityReply);
 
-const outcomeOfStatus = (status: number): AgentAlertOutcome => {
+type MissingReply = Exclude<AgentAlertOutcome, "sent">;
+
+const outcomeOfStatus = (status: number): MissingReply => {
   switch (status) {
     // No route, or alerts off on this Library.
     case 404:
@@ -221,41 +223,49 @@ const outcomeOfStatus = (status: number): AgentAlertOutcome => {
   }
 };
 
-/** Posts over the publisher session, which names this computer to the Library. */
+type RemoteLibrary = Pick<
+  Extract<LibraryConnection.LibraryConnection, { readonly kind: "remote" }>,
+  "endpoint" | "send"
+>;
+
+/**
+ * Posts one activity over the publisher session, which names this computer to the Library. Answers
+ * the Library's reply, or the outcome that stands in for a missing one; it never fails.
+ */
+export const postLibraryActivity = (
+  library: RemoteLibrary,
+  request: LibraryPushActivityRequest,
+): Effect.Effect<LibraryPushActivityReply | MissingReply> =>
+  library
+    .send(
+      HttpClientRequest.post(library.endpoint(LIBRARY_PUSH_ACTIVITY_ROUTE)).pipe(
+        HttpClientRequest.bodyJsonUnsafe(request),
+      ),
+    )
+    .pipe(
+      Effect.flatMap((response) =>
+        response.status >= 200 && response.status < 300
+          ? // A proxy's sign-in page or an older Library's app shell can also answer 200.
+            response.json.pipe(
+              Effect.flatMap(decodeReply),
+              Effect.orElseSucceed((): MissingReply => "unsupported"),
+            )
+          : Effect.succeed(outcomeOfStatus(response.status)),
+      ),
+      Effect.catchTags({
+        LibraryError: (error) =>
+          Effect.succeed<MissingReply>(error.reason === "blocked" ? "refused" : "unreachable"),
+      }),
+      Effect.timeout(POST_TIMEOUT),
+      Effect.orElseSucceed((): MissingReply => "unreachable"),
+    );
+
 export const remoteAgentAlertPost =
-  (
-    library: Pick<
-      Extract<LibraryConnection.LibraryConnection, { readonly kind: "remote" }>,
-      "endpoint" | "send"
-    >,
-  ): AgentAlertPost =>
+  (library: RemoteLibrary): AgentAlertPost =>
   (request) =>
-    library
-      .send(
-        HttpClientRequest.post(library.endpoint(LIBRARY_PUSH_ACTIVITY_ROUTE)).pipe(
-          HttpClientRequest.bodyJsonUnsafe(request),
-        ),
-      )
-      .pipe(
-        Effect.flatMap((response) =>
-          response.status >= 200 && response.status < 300
-            ? // A proxy's sign-in page or an older Library's app shell can also answer 200.
-              response.json.pipe(
-                Effect.flatMap(decodeReply),
-                Effect.as<AgentAlertOutcome>("sent"),
-                Effect.orElseSucceed((): AgentAlertOutcome => "unsupported"),
-              )
-            : Effect.succeed(outcomeOfStatus(response.status)),
-        ),
-        Effect.catchTags({
-          LibraryError: (error) =>
-            Effect.succeed<AgentAlertOutcome>(
-              error.reason === "blocked" ? "refused" : "unreachable",
-            ),
-        }),
-        Effect.timeout(POST_TIMEOUT),
-        Effect.orElseSucceed((): AgentAlertOutcome => "unreachable"),
-      );
+    postLibraryActivity(library, request).pipe(
+      Effect.map((answer) => (typeof answer === "string" ? answer : "sent")),
+    );
 
 const authorityPost =
   (push: LibraryPushService["Service"], environmentId: EnvironmentId): AgentAlertPost =>
