@@ -75,6 +75,9 @@ const fixture = Effect.gen(function* () {
     bind: () => Effect.void,
     repositoriesForRoot: () => Effect.succeed([]),
     validateThreadCwd: (input) => Effect.succeed(input.cwd),
+    savedThreads: Effect.succeed([]),
+    savedBinding: () => Effect.succeed(null),
+    saveHistory: () => Effect.void,
   });
   const publisher = Publisher.LibraryPublisher.of({
     projects: () => Effect.die("unused"),

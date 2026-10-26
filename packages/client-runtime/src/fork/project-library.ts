@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
+import { libraryThreadSaveStatusIsFinal } from "./library-save-state.ts";
 import { Atom } from "effect/reactivity";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
@@ -92,6 +93,13 @@ export function createProjectLibraryAtoms<R, E>(
     replicationStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:replication-status",
       tag: L.replicationStatus,
+    }),
+    /** One conversation's entry, polled while it is shown: uploads have no change stream. */
+    threadSaveStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:thread-save-status",
+      tag: L.replicationStatus,
+      refreshIntervalMs: 30_000,
+      isFinal: libraryThreadSaveStatusIsFinal,
     }),
     flushHistory: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:flush-history",

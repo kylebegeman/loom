@@ -16,7 +16,9 @@ export function LibraryUploadStatus({
   readonly threadId: ThreadId;
   readonly onSynced: () => void;
 }) {
-  const query = useEnvironmentQuery(projectLibrary.replicationStatus({ environmentId, input: {} }));
+  const query = useEnvironmentQuery(
+    projectLibrary.replicationStatus({ environmentId, input: { threadIds: [threadId] } }),
+  );
   const flush = useAtomCommand(projectLibrary.flushHistory, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.flushHistory, environmentId);
   const [busy, setBusy] = useState(false);
@@ -27,7 +29,7 @@ export function LibraryUploadStatus({
   const send = async () => {
     setBusy(true);
     setError(null);
-    const result = await flush({ environmentId, input: {} });
+    const result = await flush({ environmentId, input: { threadIds: [threadId] } });
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setError(

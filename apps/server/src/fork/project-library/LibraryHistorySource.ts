@@ -32,12 +32,14 @@ const make = Effect.gen(function* () {
   const snapshotThread = Effect.fnUntraced(
     function* (input: { readonly threadId: ThreadId }) {
       const environmentId = yield* identity.getEnvironmentId;
-      const resolved = yield* workspaces.getBinding(input.threadId);
+      const bound = yield* workspaces.getBinding(input.threadId);
+      const saved = bound === null ? yield* workspaces.savedBinding(input.threadId) : null;
+      const resolved = bound ?? saved;
       if (resolved === null) return yield* new LibraryError({ reason: "not-found" });
       if (resolved.binding.environmentId !== environmentId)
         return yield* new LibraryError({ reason: "invalid" });
       // The projection and its event watermark are read in one transaction by the store.
-      const context = yield* workspaces.getBoundProject(input.threadId);
+      const context = saved?.project ?? (yield* workspaces.getBoundProject(input.threadId));
       if (
         context === null ||
         context.id !== resolved.binding.projectId ||
@@ -51,6 +53,14 @@ const make = Effect.gen(function* () {
       // Checked after the snapshot: a purge records the deletion as acknowledged before its first
       // delete, so a snapshot that saw any of it is refused here.
       if (projection.thread.deletedAt !== null && (yield* isWithheld(sql, input.threadId)))
+        return yield* withheldError();
+      // A saved conversation deleted before its first upload never goes to the Library.
+      if (
+        saved !== null &&
+        projection.thread.deletedAt !== null &&
+        (yield* sql`SELECT 1 FROM fork_library_source_threads WHERE thread_id=${input.threadId}`)
+          .length === 0
+      )
         return yield* withheldError();
       const id = Hex.encode(
         yield* crypto.digest(

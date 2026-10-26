@@ -70,6 +70,7 @@ const run = <A, E, R>(
     const store = Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
       getBinding: () => Ref.get(binding),
       getBoundProject: () => Effect.succeed(project),
+      savedBinding: () => Effect.succeed(null),
     });
     const serviceLayer = HistorySource.layer.pipe(
       Layer.provide(store),
@@ -280,6 +281,74 @@ describe("execution host Library snapshots", () => {
       expect((yield* service.snapshotThread({ threadId })).summary.deleted).toBe(true);
       yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence,acknowledged_sequence) VALUES (${threadId},1,1)`;
       expect((yield* service.snapshotThread({ threadId })).summary.deleted).toBe(true);
+    }).pipe(
+      Effect.provide(
+        ProjectionStore.layer.pipe(
+          Layer.provideMerge(SqlitePersistence.layerMemory),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+      Effect.scoped,
+    ),
+  );
+  it.effect("keeps a saved conversation deleted before its first upload off the Library", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      const sql = yield* SqlClient.SqlClient;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const archive = yield* archiveFor(project);
+      yield* projections.apply({
+        id: EventId.make("thread-created"),
+        threadId,
+        type: "thread.created",
+        payload: archive.projection.thread,
+        occurredAt: archive.projection.updatedAt,
+      });
+      yield* projections.apply({
+        id: EventId.make("message-created"),
+        threadId,
+        type: "message.updated",
+        payload: archive.projection.messages[0]!,
+        occurredAt: archive.projection.updatedAt,
+      });
+      const service = yield* HistorySource.LibraryHistorySource.pipe(
+        Effect.provide(
+          HistorySource.layer.pipe(
+            Layer.provide(
+              Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
+                getBinding: () => Effect.succeed(null),
+                savedBinding: () =>
+                  Effect.succeed({ localProjectId, binding: resolved.binding, project }),
+              }),
+            ),
+            Layer.provide(
+              Layer.succeed(ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(source),
+              }),
+            ),
+          ),
+        ),
+      );
+      expect((yield* service.snapshotThread({ threadId })).summary).toMatchObject({
+        projectId: project.id,
+        workingCopyId: "copy",
+        deleted: false,
+      });
+      yield* projections.apply({
+        id: EventId.make("thread-deleted"),
+        threadId,
+        type: "thread.deleted",
+        payload: { ...archive.projection.thread, deletedAt: archive.projection.updatedAt },
+        occurredAt: archive.projection.updatedAt,
+      });
+      const deleted = service.snapshotThread({ threadId }).pipe(
+        Effect.map((archive) => archive.summary.deleted),
+        Effect.catchIf(isWithheldError, () => Effect.succeed("withheld" as const)),
+      );
+      expect(yield* deleted).toBe("withheld");
+      // Once the Library holds some of it, the deletion goes up like any bound conversation's.
+      yield* sql`INSERT INTO fork_library_source_threads (thread_id,queued_sequence,acknowledged_sequence) VALUES (${threadId},1,1)`;
+      expect(yield* deleted).toBe(true);
     }).pipe(
       Effect.provide(
         ProjectionStore.layer.pipe(

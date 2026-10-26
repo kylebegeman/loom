@@ -2747,6 +2747,86 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       }),
   );
   it.effect(
+    "saves a borrowed folder's conversation that already has work instead of binding it",
+    () =>
+      Effect.gen(function* () {
+        const rootPath = yield* makeTemp;
+        yield* initRepo(rootPath);
+        const elsewhere = yield* makeTemp;
+        const nativeProject = (yield* (yield* ProjectService.ProjectService).bootstrap({
+          commandId: CommandId.make("save-borrowed-native"),
+          projectId: ProjectId.make("save-borrowed-native"),
+          title: "Existing native project",
+          workspaceRoot: rootPath,
+        })).project;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const project = projectFor(true);
+        const copy = yield* service.prepareCopy({
+          requestId: "save-borrowed",
+          project,
+          rootPath,
+          strategy: "reuse",
+        });
+        const binding: LibraryThreadBinding = {
+          projectId: copy.projectId,
+          projectRevision: 1,
+          workingCopyId: copy.id,
+          environmentId,
+          resourceIds: [],
+        };
+        const resolved = yield* service.resolveBinding({ binding });
+        expect(resolved.localProjectId).toBe(nativeProject.id);
+        expect((yield* service.historyFolders).map((folder) => folder.resolved)).toEqual([
+          resolved,
+        ]);
+        const threads = new Map(
+          (
+            [
+              ["worktree-with-messages", elsewhere, null, 1],
+              ["folder-after-run", resolved.cwd, RunId.make("earlier-run"), 1],
+              ["folder-before-run", resolved.cwd, null, 1],
+              ["empty-elsewhere", elsewhere, null, 0],
+            ] as const
+          ).map(([id, worktreePath, latestRunId, messages]) => [
+            ThreadId.make(id),
+            { worktreePath, latestRunId, messages },
+          ]),
+        );
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const binder = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+          Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+          Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+            ...projections,
+            getThread: (threadId) =>
+              Effect.succeed({
+                id: threadId,
+                projectId: resolved.localProjectId,
+                worktreePath: threads.get(threadId)!.worktreePath,
+              } as never),
+            getThreadShell: (threadId) =>
+              Effect.succeed({ latestRunId: threads.get(threadId)!.latestRunId } as never),
+            getMessageCount: (threadId) => Effect.succeed(threads.get(threadId)!.messages),
+          }),
+        );
+        const bind = (id: string) =>
+          binder.bindThread({ threadId: ThreadId.make(id), binding, project });
+        for (const id of ["worktree-with-messages", "folder-after-run"]) {
+          expect(yield* bind(id)).toEqual(resolved);
+          expect(yield* store.getBinding(ThreadId.make(id))).toBeNull();
+          expect(yield* store.savedBinding(ThreadId.make(id))).toMatchObject({
+            localProjectId: resolved.localProjectId,
+            binding: resolved.binding,
+          });
+        }
+        // A conversation that has not run in the folder itself still binds, as a delegated one does.
+        expect(yield* bind("folder-before-run")).toEqual(resolved);
+        expect(yield* store.getBinding(ThreadId.make("folder-before-run"))).toEqual(resolved);
+        expect(yield* store.savedBinding(ThreadId.make("folder-before-run"))).toBeNull();
+        expect((yield* bind("empty-elsewhere").pipe(Effect.flip)).reason).toBe("invalid");
+      }),
+  );
+  it.effect(
     "unregisters missing borrowed folders using registration review without filesystem mutation",
     () =>
       Effect.gen(function* () {

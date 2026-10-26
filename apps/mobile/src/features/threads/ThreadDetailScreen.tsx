@@ -192,6 +192,7 @@ import { useThreadTurnSubagents } from "./ThreadAgentsSheet";
 import { ComposerQueuedEditBanner } from "./ComposerQueuedEdit";
 import { useThreadQueuedCount } from "./ThreadQueueControl";
 import { ThreadGuestShareBar } from "./ThreadGuestShareBar";
+import { LibrarySaveBar } from "../../fork/library/LibrarySaveBar"; // fork: library-save
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { resolveThreadFeedSubmissionAnchor } from "./thread-feed-live-follow";
 import { useOpenLinkedThread } from "./useOpenLinkedThread";
@@ -1578,6 +1579,8 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                     key={`chatgpt-limit:${props.selectedThread.latestRun?.runId}`}
                     thread={props.selectedThread}
                   />
+                  {/* fork: library-save */}
+                  <LibrarySaveBar threadRef={props.selectedThreadDetailRef} />
                   <ThreadGuestShareBar
                     threadRef={props.selectedThreadDetailRef}
                     canOperateThread={props.canOperateThread}
