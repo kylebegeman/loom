@@ -101,7 +101,8 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
  * talk to each other. Resolves once the clone starts. The caller opens the new
  * project, whose composer shows the clone and copy progress, so nothing toasts.
  */
-export async function addProjectToMachine(input: AddProjectToMachineInput): Promise<void> {
+// fork: file-placement - Resolves with the project the server used, which a reused checkout keeps.
+export async function addProjectToMachine(input: AddProjectToMachineInput): Promise<ProjectId> {
   // Read first, so the copy reflects the files as they were when the user asked.
   const reads = await Promise.all(
     input.files.map(async (relativePath) => {
@@ -120,10 +121,8 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
   );
 
   const targetRef = { environmentId: input.target.environmentId, projectId: input.projectId };
-  const copyKey = scopedProjectKey(targetRef);
   // Marked before the start request, since the clone list can arrive before its reply.
   silenceProjectCloneToasts(targetRef);
-  if (reads.length > 0) setFileCopy(copyKey, { phase: "copying" });
   const started = await runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.startProjectClone,
@@ -139,14 +138,18 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
     },
     { label: "Add project to machine", reportFailure: false },
   );
-  if (started._tag === "Failure") {
-    setFileCopy(copyKey, null);
-    throw new Error(failureMessage(started));
-  }
-  if (reads.length === 0) return;
+  // fork: file-placement
+  if (started._tag === "Failure") throw new Error(failureMessage(started));
+  // fork: file-placement - Copies follow the returned project; a reused checkout has no clone.
+  const { projectId, reused = false } = started.value;
+  if (reads.length === 0) return projectId; // fork: file-placement
+  // fork: file-placement
+  const copyKey = scopedProjectKey({ environmentId: input.target.environmentId, projectId });
+  setFileCopy(copyKey, { phase: "copying" }); // fork: file-placement
 
   void (async () => {
-    const clone = await waitForClone(input.target.environmentId, input.projectId);
+    // fork: file-placement
+    const clone = reused || (await waitForClone(input.target.environmentId, projectId));
     if (!clone) {
       setFileCopy(copyKey, null);
       return;
@@ -157,18 +160,24 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
         failed.push(`${read.relativePath}: ${read.error}`);
         continue;
       }
+      // fork: file-placement
+      const target = {
+        cwd: started.value.cwd,
+        relativePath: input.subdirectory
+          ? `${input.subdirectory}/${read.relativePath}`
+          : read.relativePath,
+      };
+      // fork: file-placement - A reused checkout keeps its own copy of a file.
+      if (reused && (await targetHasFile(input.target.environmentId, target))) {
+        failed.push(`${read.relativePath}: Kept the file already in that checkout.`);
+        continue;
+      }
       const written = await runAtomCommand(
         appAtomRegistry,
         projectEnvironment.writeFile,
         {
           environmentId: input.target.environmentId,
-          input: {
-            cwd: started.value.cwd,
-            relativePath: input.subdirectory
-              ? `${input.subdirectory}/${read.relativePath}`
-              : read.relativePath,
-            contents: read.contents,
-          },
+          input: { ...target, contents: read.contents }, // fork: file-placement
         },
         { label: "Copy file to machine", reportFailure: false },
       );
@@ -186,4 +195,18 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
           },
     );
   })();
+  return projectId; // fork: file-placement
+}
+
+// fork: file-placement
+async function targetHasFile(
+  environmentId: EnvironmentId,
+  input: { readonly cwd: string; readonly relativePath: string },
+) {
+  const result = await executeAtomQuery(
+    appAtomRegistry,
+    projectEnvironment.readFile({ environmentId, input }),
+    { label: "Check copied file", reportFailure: false, refresh: true },
+  );
+  return result._tag === "Success";
 }
