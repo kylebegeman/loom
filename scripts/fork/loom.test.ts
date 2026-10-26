@@ -232,7 +232,7 @@ it("reports lint failure and exits unsuccessfully", () => {
   expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
 });
 
-it("runs lint after installation and before tests, builds and typechecks", () => {
+it("runs lint after installation, then builds and typechecks, and the tests last", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks");
   expect(result.status).toBe(0);
@@ -248,6 +248,10 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
       "apps/web/src/fork",
       "scripts/fork",
     ],
+    ["omarchy-pack"],
+    ["exec", "vp", "build"],
+    ["exec", "vp", "run", "typecheck"],
+    ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["discover-tests"],
     [
       "exec",
@@ -258,10 +262,6 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
       "**/.claude/**",
       "apps/web/src/fork/example.test.ts",
     ],
-    ["omarchy-pack"],
-    ["exec", "vp", "build"],
-    ["exec", "vp", "run", "typecheck"],
-    ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["restore-lockfile"],
   ]);
 });

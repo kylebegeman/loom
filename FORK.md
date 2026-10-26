@@ -860,10 +860,10 @@ that `main` lacks, it merges it on `integrate/<tag>`. Each conflicted file gets 
 Claude session (`integrate --resolve`, prompt in `scripts/fork/upstream-resolve.md`), so a
 merge that piled up over several days never exhausts one session; a session that cannot
 decide leaves its file conflicted and says why, and one that dropped a seam gets one more
-session told which marked lines it lost. Then the fork's checks run. They stop at the first
-failure, and each failure gets its own Claude repair session within the seam rules (prompt in
-`scripts/fork/upstream-repair.md`), whose changes become one commit on the same branch, for up
-to four rounds. Then the pull request opens. A separate Claude session reviews any resolution
+session told which marked lines it lost. Then the fork's checks run, cheapest first and the
+tests last. They stop at the first failure, and each failure gets its own Claude repair session
+within the seam rules (prompt in `scripts/fork/upstream-repair.md`), whose changes become one
+commit on the same branch, for up to eight rounds. Then the pull request opens. A separate Claude session reviews any resolution
 or repair (`review-integration`, prompt in `scripts/fork/upstream-review.md`) and posts its
 verdict on the pull request. With the repository variable `LOOM_AUTO_MERGE`, a pull request
 that passed, and passed review when it needed one, merges by itself and `main` is tagged
