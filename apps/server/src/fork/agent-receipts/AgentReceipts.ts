@@ -38,7 +38,7 @@ import {
 } from "./claudeTranscript.ts";
 
 /** Bump when receipts gain a source the backfill should fill in for older records. */
-export const BACKFILL_VERSION = 1;
+const BACKFILL_VERSION = 1;
 
 /** Claude config folders searched for sub-agent transcripts; discovered from HOME when unset. */
 export const ClaudeConfigDirs = Context.Reference<ReadonlyArray<string> | undefined>(
@@ -586,7 +586,7 @@ const make = Effect.gen(function* () {
     }>`SELECT json_extract(value_json,'$.version') AS version FROM fork_agent_receipt_state WHERE key='backfill'`;
     if ((rows[0]?.version ?? 0) >= BACKFILL_VERSION) return null;
     return yield* backfill;
-  }).pipe(Effect.catchTag("SqlError", ioError("Reading the receipt backfill state failed")));
+  }).pipe(Effect.catchTags({ SqlError: ioError("Reading the receipt backfill state failed") }));
 
   const evictionReport: AgentReceipts["Service"]["evictionReport"] = Effect.gen(function* () {
     const children = yield* sql<{

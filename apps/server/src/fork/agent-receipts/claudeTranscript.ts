@@ -98,7 +98,7 @@ export const summarizeClaudeAgentTranscript = (
 };
 
 /** Claude's project folder name for a working directory. */
-export const claudeProjectSlug = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/gu, "-");
+const claudeProjectSlug = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/gu, "-");
 
 /**
  * Finds `<config>/projects/<slug>/<session>/subagents/agent-<id>.jsonl`, trying the folder named

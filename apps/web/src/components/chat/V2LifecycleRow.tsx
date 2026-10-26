@@ -53,6 +53,7 @@ import { formatShortTimestamp } from "../../timestampFormat";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
+import { SubagentReceipt } from "~/fork/agent-receipts/SubagentReceipt";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 import { subagentResumedSince } from "./V2LifecycleRow.logic";
 import { Button, InlineButton } from "../ui/button";
@@ -475,7 +476,7 @@ function SubagentTimelineLink(props: {
   );
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
-  return (
+  const row = (
     <Tooltip>
       <TooltipTrigger
         delay={200}
@@ -513,6 +514,19 @@ function SubagentTimelineLink(props: {
         />
       </ThreadHoverCardPopup>
     </Tooltip>
+  );
+  if (!SETTLED_SUBAGENT_STATUSES.has(liveStatus) || timing.completedAt === null) return row;
+  return (
+    <div className="min-w-0">
+      {row}
+      <SubagentReceipt
+        environmentId={props.parentRef.environmentId}
+        threadId={props.parentRef.threadId}
+        subagentId={props.subagentId}
+        finishedAt={timing.completedAt}
+        cwd={undefined}
+      />
+    </div>
   );
 }
 

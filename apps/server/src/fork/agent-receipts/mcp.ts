@@ -61,7 +61,7 @@ export const AgentReceiptsToolkit = Toolkit.make(
 const kib = (bytes: number) => `${(bytes / 1024).toFixed(1)} KiB`;
 const mib = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
-export const formatReceipt = (receipt: AgentReceipt) =>
+const formatReceipt = (receipt: AgentReceipt) =>
   [
     `${receipt.kind} ${receipt.subjectId} [${receipt.status}]${receipt.title === null ? "" : ` ${receipt.title}`}`,
     `receipt ${receipt.id} · finished ${receipt.finishedAt} · ${receipt.driver}${receipt.model === null ? "" : ` ${receipt.model}`}`,
@@ -91,7 +91,7 @@ const formatList = (receipts: ReadonlyArray<AgentReceipt>) =>
         )
         .join("\n");
 
-export const formatReport = (report: EvictionReport) =>
+const formatReport = (report: EvictionReport) =>
   [
     `${report.evictable} of ${report.children} sub-agent conversations hold nothing their receipt lacks.`,
     `Evictable: ${mib(report.evictableBytes)}. Kept: ${mib(report.keptBytes)}. Receipts: ${mib(report.receiptBytes)}.`,

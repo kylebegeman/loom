@@ -45,6 +45,7 @@ import * as Publisher from "./LibraryPublisher.ts";
 import * as Replication from "./LibraryReplication.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
+import { AgentReceiptsMigrations } from "../agent-receipts/migrations.ts";
 import { LibraryHistoryMigrations } from "./history-migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import { libraryAttachments } from "./attachments.ts";
@@ -132,6 +133,7 @@ const healthSource = CopyHealth.LibraryCopyHealthSource.of({
 const fixture = Effect.gen(function* () {
   yield* runForkMigrationSet(ProjectLibraryMigrations);
   yield* runForkMigrationSet(LibraryHistoryMigrations);
+  yield* runForkMigrationSet(AgentReceiptsMigrations);
   const sql = yield* SqlClient.SqlClient;
   const archive = yield* Ref.make<LibraryThreadArchive>(yield* archiveFor(project, 1));
   const snapshots = yield* Ref.make(0);

@@ -18,9 +18,9 @@ import * as DateTime from "effect/DateTime";
 
 import type { ClaudeAgentTranscript } from "./claudeTranscript.ts";
 
-export const PROMPT_CLIP_CHARS = 600;
-export const COMMAND_CLIP_CHARS = 240;
-export const RESULT_LINE_CHARS = 200;
+const PROMPT_CLIP_CHARS = 600;
+const COMMAND_CLIP_CHARS = 240;
+const RESULT_LINE_CHARS = 200;
 const FAILED_COMMANDS_KEPT = 20;
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
@@ -140,7 +140,7 @@ export const subagentPrompt = (subagent: OrchestrationV2Subagent, child: ChildRe
   nonEmpty(subagent.prompt) ?? firstUserText(child?.turnItems ?? []) ?? "";
 
 /** Files from file-change items and checkpoint lists, one entry per path. */
-export const changedFiles = (
+const changedFiles = (
   items: ReadonlyArray<OrchestrationV2TurnItem>,
   checkpoints: ReadonlyArray<OrchestrationV2ThreadProjection["checkpoints"][number]>,
 ): ReadonlyArray<AgentReceiptFile> => {
