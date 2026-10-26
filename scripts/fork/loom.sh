@@ -3,8 +3,13 @@
 # install it, and roll back. Fork-owned; upstream never edits this file.
 #
 #   scripts/fork/loom.sh status
+#   scripts/fork/loom.sh upstream-status [--check]
+#   scripts/fork/loom.sh upstream-overlap <path or topic>...
 #   scripts/fork/loom.sh check
-#   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr]
+#   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr] [--resolve]
+#   scripts/fork/loom.sh review-integration
+#   scripts/fork/loom.sh merge-integration <integrate/tag branch>
+#   scripts/fork/loom.sh notify <status> [<summary file>]
 #   scripts/fork/loom.sh land [<pr number>] [--no-install]
 #   scripts/fork/loom.sh build
 #   scripts/fork/loom.sh install
@@ -22,6 +27,15 @@
 # that pull request here: merge it with a merge commit, tag, publish and
 # install. With none open it brings this Mac up to main, which is how merges
 # the workflow made itself and fork changes on main get released.
+#
+# --resolve gives each conflicted file its own Claude session instead of
+# stopping, so a merge that piled up over several days never exhausts one
+# session. review-integration has a separate session check that resolution
+# before merge-integration merges it unattended. upstream-status says how far
+# main trails upstream (--check fails once a nightly has waited past the grace
+# period); upstream-overlap lists upstream work, merged or in open pull
+# requests, that touches what a fork change is about to. notify alerts Kyle in
+# Loom through LOOM_ALERT_WEBHOOK_URL.
 #
 # Only the publisher (scripts/fork/updates.ts) makes installable builds. land and
 # integrate run it, so this Mac, the update feed, the iOS build and remote
@@ -65,7 +79,16 @@ BRAND_TESTS=(
   scripts/build-desktop-artifact.test.ts
 )
 TYPECHECK_DIRS=(packages/shared packages/contracts packages/client-runtime apps/server apps/desktop apps/web scripts)
-UPSTREAM_RELEASES=https://github.com/pingdotgg/t3code/releases/tag
+UPSTREAM_REPO=pingdotgg/t3code
+UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
+# A nightly may wait this long for main: one daily integration plus its run time.
+# Longer means a day was missed, and upstream-status --check fails.
+UPSTREAM_GRACE_HOURS=30
+# Resolver sessions run this many at a time; each owns one conflicted file.
+LOOM_RESOLVE_JOBS=${LOOM_RESOLVE_JOBS:-4}
+LOOM_CLAUDE_MODEL=${LOOM_CLAUDE_MODEL:-claude-opus-5-5}
+# Read-only git for the sessions; they edit with Claude's own tools.
+CLAUDE_GIT_TOOLS=('Bash(git show:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git blame:*)')
 
 # The repo's own tools (vp) and Rust, which the desktop build needs for a
 # native helper. pnpm adds node_modules/.bin itself; plain node does not.
@@ -600,6 +623,9 @@ tag_main() {
   git fetch -q --no-prune origin 'refs/tags/*:refs/tags/*' \
     'refs/loom/publications/*:refs/loom/publications/*'
   version=$(node scripts/fork/updates.ts next-version "$upstream")
+  if upstream_status HEAD | grep -qx 'state=stale'; then
+    echo "Warning: main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly. Fix the daily integration (FORK.md, Updating from upstream) before building more fork work on it." >&2
+  fi
   say "Tagging main as Loom $version"
   git tag -a "loom-v$version" -m "Loom fork changes on main
 loom-release=$version${upstream:+
@@ -706,17 +732,18 @@ cmd_rollback() (
 )
 
 cmd_integrate() {
-  local target=stable install=1 cont=0 dry=0 pr=0 arg
+  local target=stable install=1 cont=0 dry=0 pr=0 resolve=0 arg
   for arg in "$@"; do
     case "$arg" in
       --no-install) install=0 ;;
       --continue) cont=1 ;;
       --dry-run) dry=1 ;;
       --pr) pr=1 ;;
+      --resolve) resolve=1 ;;
       *) target=$arg ;;
     esac
   done
-  local tag branch
+  local tag branch start
   if [ "$cont" -eq 1 ]; then
     branch=$(git rev-parse --abbrev-ref HEAD)
     [[ "$branch" == integrate/* ]] || die "--continue runs on an integrate/<tag> branch"
@@ -731,36 +758,47 @@ cmd_integrate() {
       *) tag=$target ;;
     esac
     git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "no upstream tag $tag"
-    [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "run integrate from main"
     require_clean
-    [ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main; sync them first"
-    if git merge-base --is-ancestor "$tag" main; then
+    # A pull request only needs origin/main checked out, so any worktree can open one;
+    # integrating here fast-forwards main itself.
+    if [ "$pr" -eq 1 ]; then
+      [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
+        || die "check out origin/main first: git switch --detach origin/main"
+    else
+      [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "run integrate from main"
+      [ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ] || die "main differs from origin/main; sync them first"
+    fi
+    if git merge-base --is-ancestor "$tag" HEAD; then
       echo "main already includes $tag. Nothing to integrate."
       return 0
     fi
+    start=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
     branch="integrate/$tag"
     if [ "$pr" -eq 1 ] && [ "$dry" -eq 0 ] && git ls-remote --exit-code -q --heads origin "$branch" >/dev/null; then
-      echo "$branch is already on origin, so its pull request is open or was abandoned. Nothing to do."
-      return 0
+      replace_failed_integration "$branch" || return 0
     fi
     git switch -q -c "$branch"
     say "Merging upstream $tag"
     if ! git merge --no-ff --no-edit -m "chore(fork): integrate upstream $tag" "$tag"; then
-      echo
-      echo "The merge stopped on conflicts in:"
-      git diff --name-only --diff-filter=U | sed 's/^/  /'
-      echo
-      echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
-      echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
-      echo "To give up: git merge --abort && git switch main && git branch -D $branch"
-      exit 2
+      if [ "$resolve" -eq 1 ] && resolve_conflicts "$tag"; then
+        git commit -q --no-edit
+      else
+        echo
+        echo "The merge stopped on conflicts in:"
+        git diff --name-only --diff-filter=U | sed 's/^/  /'
+        echo
+        echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
+        echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
+        echo "To give up: git merge --abort && git switch $start && git branch -D $branch"
+        exit 2
+      fi
     fi
   fi
   run_checks
   if [ "$pr" -eq 1 ]; then
     if [ "$dry" -eq 1 ]; then
       say "Dry run passed; discarding it"
-      git switch -q main
+      git checkout -q "${start:-origin/main}"
       git branch -q -D "$branch"
       echo "$tag merges and passes the fork's checks. Nothing was pushed."
     else
@@ -787,6 +825,25 @@ cmd_integrate() {
   finish_release "$install"
 }
 
+# An integrate/<tag> branch already on origin. A pull request that passed is waiting to
+# merge, so leave it (returns 1). A draft or an abandoned branch is a failed attempt: close
+# it so this run retries the tag, instead of the tag staying unintegrated for good.
+replace_failed_integration() {
+  local branch=$1 open
+  open=$(gh pr list --head "$branch" --state open --json number,isDraft \
+    --jq '.[] | "\(.number) \(.isDraft)"' | sed -n 1p)
+  case "$open" in
+    *" false")
+      echo "$branch has an open pull request (#${open% *}) that passed its checks; it waits to merge."
+      return 1
+      ;;
+    *" true")
+      gh pr close "${open% *}" --delete-branch --comment "Retrying this upstream tag from a fresh merge."
+      ;;
+    *) git push -q origin --delete "$branch" ;;
+  esac
+}
+
 # Prune old builds, then install the published build of main unless told not to.
 finish_release() {
   prune_builds
@@ -803,7 +860,7 @@ finish_release() {
 # Push a checked integrate/<tag> branch and open its pull request into main.
 open_pr() {
   local tag=$1 branch=$2 added
-  added=$(git diff --name-only --diff-filter=A main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
+  added=$(git diff --name-only --diff-filter=A origin/main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
   say "Pushing $branch and opening its pull request"
   git push -q -u origin "$branch"
   gh pr create --base main --head "$branch" \
@@ -834,6 +891,233 @@ close_superseded() {
 
 $left}"
     done
+}
+
+# --- Upstream sync -------------------------------------------------------------
+# The daily workflow merges unattended; these keep that merge small, reviewed and
+# visible, and keep fork work from starting on a main that trails upstream.
+
+now_epoch() { echo "${LOOM_NOW:-$(date +%s)}"; }
+
+# How far a ref trails upstream's nightlies, as key=value lines. state is in-sync when it
+# has the newest nightly, behind while every missing nightly is younger than
+# UPSTREAM_GRACE_HOURS, and stale once one has waited longer.
+upstream_status() {
+  local ref=${1:-origin/main} newest tag oldest="" waited=0 state=in-sync
+  newest=$(latest_nightly)
+  [ -n "$newest" ] || die "no upstream nightly tags; run git fetch upstream --tags"
+  while IFS= read -r tag; do
+    git merge-base --is-ancestor "$tag" "$ref" && break
+    oldest=$tag
+  done < <(git tag -l 'v*-nightly.*' --sort=-creatordate)
+  if [ -n "$oldest" ]; then
+    waited=$((($(now_epoch) - $(git log -1 --format=%ct "$oldest")) / 3600))
+    state=behind
+    [ "$waited" -lt "$UPSTREAM_GRACE_HOURS" ] || state=stale
+  fi
+  printf 'state=%s\nnewest=%s\nmain=%s\noldest_missing=%s\nwaited_hours=%s\nbehind_commits=%s\n' \
+    "$state" "$newest" "$(upstream_at "$ref")" "$oldest" "$waited" "$(git rev-list --count "$ref..$newest")"
+}
+
+cmd_upstream_status() {
+  git fetch -q upstream --tags
+  git fetch -q origin
+  local status
+  status=$(upstream_status origin/main)
+  printf '%s\n' "$status"
+  if [ "${1:-}" = --check ] && printf '%s\n' "$status" | grep -qx 'state=stale'; then
+    die "main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly; the daily integration is failing or not running"
+  fi
+}
+
+# Open upstream pull requests, with the files each one changes, as number<TAB>title<TAB>file lines.
+upstream_open_prs() {
+  gh pr list -R "$UPSTREAM_REPO" --state open --limit 300 --json number,title,files \
+    --jq '.[] | . as $pr | (.files // [])[] | "\($pr.number)\t\($pr.title)\t\(.path)"'
+}
+
+# Upstream work a fork change would conflict with or duplicate. A path lists upstream's
+# commits that main lacks and its open pull requests that touch it; any other argument
+# is a topic, matched against those commit messages and pull request titles.
+cmd_upstream_overlap() {
+  [ "$#" -gt 0 ] || die "name the paths or topics the change will touch"
+  git fetch -q upstream --tags
+  git fetch -q origin
+  local prs arg found=0 lines
+  prs=$(upstream_open_prs) || prs=""
+  for arg in "$@"; do
+    if [ -e "$arg" ] || git cat-file -e "upstream/main:$arg" 2>/dev/null; then
+      lines=$(git log --no-merges --date=short --format='  commit %h %ad %s' origin/main..upstream/main -- "$arg")
+      lines+=$(printf '%s\n' "$prs" | awk -F'\t' -v p="$arg" 'index($3, p) == 1 && !seen[$1]++ { printf "\n  open #%s %s", $1, $2 }')
+    else
+      lines=$(git log --no-merges --date=short -i -F --grep="$arg" --format='  commit %h %ad %s' origin/main..upstream/main)
+      lines+=$(printf '%s\n' "$prs" | awk -F'\t' -v t="$arg" 'index(tolower($2), tolower(t)) && !seen[$1]++ { printf "\n  open #%s %s", $1, $2 }')
+    fi
+    lines=$(printf '%s\n' "$lines" | sed '/^$/d')
+    [ -n "$lines" ] || continue
+    found=1
+    printf '%s\n%s\n' "$arg" "$lines"
+  done
+  [ "$found" -eq 1 ] || echo "No upstream work main lacks touches these. Open pull requests: https://github.com/$UPSTREAM_REPO/pulls"
+}
+
+# Runs Claude headless on the prompt from stdin: run_agent <permission mode> <tools...>.
+# LOOM_AGENT replaces it with any executable that reads the prompt from stdin.
+run_agent() {
+  local mode=$1
+  shift
+  if [ -n "${LOOM_AGENT:-}" ]; then
+    "$LOOM_AGENT"
+    return
+  fi
+  claude -p --model "$LOOM_CLAUDE_MODEL" --effort high --max-turns 80 --no-session-persistence \
+    --permission-mode "$mode" --allowedTools "$@"
+}
+
+# The last non-empty line of a session's reply, without Markdown emphasis.
+final_line() { sed '/^[[:space:]]*$/d' "$1" | tail -n 1 | tr -d '*`' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
+
+has_conflict_markers() { grep -qE '^(<<<<<<<|>>>>>>>|\|\|\|\|\|\|\|)( |$)|^=======$' -- "$1" 2>/dev/null; }
+
+resolve_logs() { echo "${LOOM_RESOLVE_LOGS:-$(git rev-parse --absolute-git-dir)/loom-resolve}"; }
+resolve_log() { echo "$(resolve_logs)/$(printf '%s' "$1" | tr '/' '_').log"; }
+# Files that differ from the index, new files included.
+changed_files() { { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u; }
+
+resolve_prompt() {
+  local file=$1 tag=$2
+  sed -e "s|{{file}}|$file|g" -e "s|{{tag}}|$tag|g" "$REPO_ROOT/scripts/fork/upstream-resolve.md"
+  printf '\n## This file\n\nIts rows in docs/fork/seams.tsv (path, marker, marked lines kept):\n\n'
+  awk -F'\t' -v f="$file" '$1 == f { print "    " $0; n++ } END { if (!n) print "    none" }' "$SEAMS_MANIFEST" 2>/dev/null ||
+    echo "    none"
+  printf '\nUpstream commits in this merge that change it:\n\n'
+  git log --no-merges --format='    %h %s' HEAD..MERGE_HEAD -- "$file" | head -n 40
+  printf '\nLoom commits since the last integration that change it:\n\n'
+  git log --no-merges --format='    %h %s' MERGE_HEAD..HEAD -- "$file" | head -n 40
+}
+
+# One session for one conflicted file. Its reply ends RESOLVED or UNRESOLVED: <why>.
+resolve_file() {
+  local file=$1 tag=$2 log
+  log=$(resolve_log "$file")
+  export LOOM_RESOLVE_FILE=$file
+  resolve_prompt "$file" "$tag" | run_agent acceptEdits Read Edit Write Glob Grep "${CLAUDE_GIT_TOOLS[@]}" \
+    >"$log" 2>&1 || echo "The session exited with status $?." >>"$log"
+  echo "  $(final_line "$log" | cut -c1-200): $file"
+}
+
+# Resolve a stopped merge one conflicted file per session, LOOM_RESOLVE_JOBS at a time, so
+# a large merge never exhausts one session and each sees both sides of its own file.
+# Stages what resolved; returns 1, leaving the rest conflicted, if any file did not.
+resolve_conflicts() {
+  local tag=$1 conflicted before logs file unresolved="" edited summary
+  conflicted=$(git diff --name-only --diff-filter=U)
+  logs=$(resolve_logs)
+  mkdir -p "$logs" && rm -f "$logs"/*.log "$logs/summary.md"
+  before=$(changed_files)
+  say "Resolving $(printf '%s\n' "$conflicted" | grep -c .) conflicted files, $LOOM_RESOLVE_JOBS at a time (logs in $logs)"
+  if printf '%s\n' "$conflicted" | grep -qvx pnpm-lock.yaml; then
+    # Each worker sources this script (with its own $0, so the command dispatch stays off);
+    # xargs appends its file after the fixed arguments.
+    printf '%s\n' "$conflicted" | grep -vx pnpm-lock.yaml | tr '\n' '\0' |
+      xargs -0 -n 1 -P "$LOOM_RESOLVE_JOBS" bash -c 'source "$1" >/dev/null && cd "$2" && resolve_file "$4" "$3"' \
+        loom-resolve "$REPO_ROOT/scripts/fork/loom.sh" "$PWD" "$tag"
+  fi
+  while IFS= read -r file; do
+    [ -n "$file" ] && [ "$file" != pnpm-lock.yaml ] || continue
+    if has_conflict_markers "$file" || [ "$(final_line "$(resolve_log "$file")")" != RESOLVED ]; then
+      unresolved+="$file"$'\n'
+    elif [ -e "$file" ]; then
+      git add -- "$file"
+    else
+      git rm -q --cached --ignore-unmatch -- "$file"
+    fi
+  done <<<"$conflicted"
+  edited=$(comm -13 <(printf '%s\n' "$before") <(changed_files))
+  [ -z "$edited" ] || printf '%s\n' "$edited" | while IFS= read -r file; do git add -A -- "$file"; done
+  if printf '%s\n' "$conflicted" | grep -qx pnpm-lock.yaml; then
+    say "Regenerating pnpm-lock.yaml from upstream's, with the fork's dependencies"
+    if git checkout -q --theirs -- pnpm-lock.yaml && pnpm install --lockfile-only --ignore-scripts >"$logs/pnpm-lock.yaml.log" 2>&1; then
+      git add pnpm-lock.yaml
+    else
+      unresolved+=$'pnpm-lock.yaml\n'
+    fi
+  fi
+  summary="$logs/summary.md"
+  {
+    echo "Merging upstream $tag conflicted in $(printf '%s\n' "$conflicted" | grep -c .) files; one Claude session took each."
+    if [ -n "$edited" ]; then
+      printf '\nSessions also edited these files to carry a seam to its new home:\n\n'
+      printf '%s\n' "$edited" | sed 's/^/- `/; s/$/`/'
+    fi
+    if [ -n "$unresolved" ]; then
+      printf '\nUnresolved:\n\n'
+      printf '%s' "$unresolved" | while IFS= read -r file; do
+        echo "- \`$file\`: $(final_line "$(resolve_log "$file")" 2>/dev/null | cut -c1-300)"
+      done
+    fi
+  } >"$summary"
+  [ -z "$unresolved" ] || { cat "$summary"; return 1; }
+}
+
+# The integration on HEAD, as a reviewer reads it: the merge's conflict resolution
+# (git show --remerge-diff) and every commit after it.
+resolution_diff() {
+  local merge
+  merge=$(git rev-list --first-parent --merges -n 1 HEAD)
+  git show --remerge-diff --format='Merge %h %s' "$merge"
+  git log -p --format='Commit %h %s' "$merge..HEAD"
+}
+
+# An independent session checks an unattended resolution before it merges without a
+# person: no upstream change dropped outside a seam, no seam lost, nothing unrelated.
+# Writes review.md beside the resolve logs and fails unless the verdict is pass.
+cmd_review_integration() {
+  local branch tag logs
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  [[ "$branch" == integrate/* ]] || die "review-integration runs on an integrate/<tag> branch"
+  tag=${branch#integrate/}
+  logs=$(resolve_logs)
+  mkdir -p "$logs"
+  resolution_diff >"$logs/resolution.diff"
+  sed -e "s|{{tag}}|$tag|g" -e "s|{{diff}}|$logs/resolution.diff|g" "$REPO_ROOT/scripts/fork/upstream-review.md" |
+    run_agent default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
+  cat "$logs/review.md"
+  [ "$(final_line "$logs/review.md")" = "VERDICT: pass" ] || die "the review did not pass the resolution of $tag"
+}
+
+# Merge an integration pull request with a merge commit and tag it loom-<tag>, as land
+# does, without publishing or installing: the publisher builds the tag on its schedule.
+cmd_merge_integration() {
+  local branch=${1:-} tag number merged
+  [[ "$branch" == integrate/* ]] || die "name the integrate/<tag> branch to merge"
+  tag=${branch#integrate/}
+  number=$(gh pr view "$branch" --json number --jq .number)
+  # gh deletes the merged branch locally too; it must not be checked out.
+  git checkout -q --detach
+  gh pr merge "$number" --merge --delete-branch
+  merged=$(gh pr view "$number" --json mergeCommit --jq .mergeCommit.oid)
+  git fetch -q origin main
+  git tag -a "loom-$tag" -m "Loom built from upstream $tag" "$merged"
+  git push -q origin "loom-$tag"
+}
+
+# Rings the Loom upstream alert: a scheduled task on Kyle's Mac that opens a thread and
+# looks into it. The request is a doorbell: status only, because the agent reads the
+# facts from GitHub itself, so a forged request can do no more than ask it to look.
+cmd_notify() {
+  local status=${1:-}
+  case "$status" in
+    failed | needs-review | stale | heartbeat) ;;
+    *) die "notify takes failed, needs-review, stale or heartbeat" ;;
+  esac
+  if [ -z "${LOOM_ALERT_WEBHOOK_URL:-}" ]; then
+    echo "LOOM_ALERT_WEBHOOK_URL is not set, so Loom was not alerted" >&2
+    return 1
+  fi
+  printf '{"source":"loom-upstream","status":"%s"}' "$status" |
+    curl -fsS --retry 3 -X POST -H 'content-type: application/json' --data-binary @- \
+      "$LOOM_ALERT_WEBHOOK_URL" >/dev/null || die "the Loom alert webhook did not accept the request"
 }
 
 # Finish an integration pull request on this Mac. With an open one, merge it
@@ -890,6 +1174,11 @@ cmd_land() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case "${1:-}" in
     status) cmd_status ;;
+    upstream-status) shift; cmd_upstream_status "$@" ;;
+    upstream-overlap) shift; cmd_upstream_overlap "$@" ;;
+    review-integration) cmd_review_integration ;;
+    merge-integration) shift; cmd_merge_integration "$@" ;;
+    notify) shift; cmd_notify "$@" ;;
     check) run_checks ;;
     integrate) shift; cmd_integrate "$@" ;;
     land) shift; cmd_land "$@" ;;
@@ -897,6 +1186,6 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     install) cmd_install ;;
     rollback) cmd_rollback ;;
     signing-setup) cmd_signing_setup ;;
-    *) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) awk 'NR > 1 && /^set -euo/ { exit } NR > 1' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
   esac
 fi

@@ -5,6 +5,19 @@ isolation and so that `scripts/fork/loom.sh integrate` keeps merging upstream T3
 conflicts only on a short, known list of seam lines. The repository's `AGENTS.md` still
 applies in full; this file only adds the fork rules.
 
+## Start from upstream's latest
+
+Fork work built on a `main` that trails upstream conflicts with upstream's newer code or
+rebuilds what upstream already did. Before a packet starts, and again before it merges:
+
+1. `scripts/fork/loom.sh upstream-status` must not say `state=stale`. If it does, the daily
+   integration is failing; get it merged first (FORK.md, Updating from upstream) instead of
+   building on the stale `main`.
+2. Run `scripts/fork/loom.sh upstream-overlap` with the upstream files and the topics the
+   packet will touch. When upstream has the behavior, merged or in an open pull request,
+   build on upstream's version or wait for it, and note that decision in the packet's
+   `TECHNICAL.md`.
+
 ## Where fork code lives
 
 New code goes in fork-owned directories. Upstream never creates files there, so they never

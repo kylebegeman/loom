@@ -1,0 +1,41 @@
+# Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
+#
+# The second half of the daily integration. It alerts Kyle in Loom when main has
+# waited too long for an upstream nightly, whether Loom upstream failed, never ran,
+# or left a pull request waiting. Every Monday it also rings a heartbeat, so a week
+# without one means the alert path itself is broken. A failed run here also emails
+# GitHub's usual workflow failure notice. See FORK.md, "Updating from upstream".
+name: Loom upstream watch
+
+on:
+  schedule:
+    # Six and a half hours after Loom upstream starts, once its run has finished.
+    - cron: "47 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check main against upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOOM_ALERT_WEBHOOK_URL: ${{ secrets.LOOM_ALERT_WEBHOOK_URL }}
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          if scripts/fork/loom.sh upstream-status --check; then
+            if [ "$(date -u +%u)" = 1 ]; then scripts/fork/loom.sh notify heartbeat; fi
+            exit 0
+          fi
+          scripts/fork/loom.sh notify stale
+          exit 1
