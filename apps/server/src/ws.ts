@@ -2590,9 +2590,14 @@ export const layerWsRpc = (
                 )
               : undefined;
             const nextPatch = { ...patch, ...(deviceHosts ? { deviceHosts } : {}) };
-            const settings = yield* providerInstanceMutation === undefined
-              ? serverSettings.updateSettings(nextPatch)
-              : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch);
+            // fork: file-placement
+            const settings = yield* Effect.provideService(
+              providerInstanceMutation === undefined
+                ? serverSettings.updateSettings(nextPatch)
+                : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch),
+              ServerSettings.ProjectsFolderGuard,
+              placement.assertProjectsFolderAllowed,
+            );
             return ServerSettings.redactServerSettingsForClient(settings);
           }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) => sourceControlDiscovery.discover,

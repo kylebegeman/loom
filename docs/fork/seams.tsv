@@ -232,7 +232,11 @@ apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	5
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	3
 apps/server/src/project/ProjectService.test.ts	file-placement	15
-apps/server/src/ws.ts	file-placement	1
+apps/server/src/ws.ts	file-placement	2
+apps/server/src/serverSettings.ts	file-placement	4
+apps/server/src/serverSettings.test.ts	file-placement	1
+packages/contracts/src/settings.ts	file-placement	2
+apps/server/src/project/ManagedProjectFolders.test.ts	file-placement	1
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
 apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1

@@ -1438,6 +1438,7 @@ export const ServerSettingsOperation = Schema.Literals([
   "write-secret",
   "write-file",
   "prepare-directory",
+  "save-projects-directory", // fork: file-placement
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 
@@ -1452,6 +1453,9 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
   },
 ) {
   override get message(): string {
+    // fork: file-placement: the refusal explains which folder to avoid.
+    if (this.operation === "save-projects-directory" && this.cause instanceof Error)
+      return this.cause.message;
     const provider =
       this.providerInstanceId === undefined ? "" : ` for provider ${this.providerInstanceId}`;
     const variable =

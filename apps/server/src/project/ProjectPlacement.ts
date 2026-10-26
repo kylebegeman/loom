@@ -1,4 +1,5 @@
 import type { ProjectId, ServerFolders } from "@t3tools/contracts";
+import type { LibraryError } from "@t3tools/contracts/fork";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -12,6 +13,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -62,6 +64,12 @@ export class LanesRoots extends Context.Service<
   { readonly roots: Effect.Effect<ReadonlyArray<string>> }
 >()("t3/project/ProjectPlacement/LanesRoots") {}
 
+/** Roots Library copies still record, so a claim never mixes with a missing or releasing copy. */
+export class LibraryCopyRoots extends Context.Service<
+  LibraryCopyRoots,
+  { readonly roots: Effect.Effect<ReadonlyArray<string>, LibraryError> }
+>()("t3/project/ProjectPlacement/LibraryCopyRoots") {}
+
 export class ProjectPlacement extends Context.Service<
   ProjectPlacement,
   {
@@ -83,10 +91,16 @@ export class ProjectPlacement extends Context.Service<
       target: string,
       options?: PlacementGuardOptions,
     ) => Effect.Effect<string, ProjectPlacementRefusedError>;
+    /** Refuses a Projects folder setting that `claimFolder` would refuse as its root. */
+    readonly assertProjectsFolderAllowed: (
+      setting: string,
+    ) => Effect.Effect<void, ProjectPlacementRefusedError>;
   }
 >()("t3/project/ProjectPlacement") {}
 
 const MAX_FOLDER_ATTEMPTS = 100;
+/** A Projects folder may hold registered projects but not sit inside one. */
+const CLAIM_ROOT: PlacementGuardOptions = { projects: "within" };
 const ORIGIN_READ_CONCURRENCY = 8;
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 /**
@@ -107,6 +121,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const lanes = yield* Effect.serviceOption(LanesRoots);
+  const library = yield* Effect.serviceOption(LibraryCopyRoots);
   const home = yield* HostProcess.HomeDirectory;
   const key = SetupMarker.pathKey(yield* HostProcess.Platform);
   const defaultProjectsRoot = path.resolve(
@@ -237,7 +252,12 @@ const make = Effect.gen(function* () {
   const folderName = (root: string, name: string, attempt: number) =>
     path.join(root, attempt === 1 ? name : `${name}-${attempt}`);
 
-  // A receipt or a registered project keeps a name taken after its folder is gone.
+  const libraryCopyRoots = Option.match(library, {
+    onNone: () => Effect.succeed<ReadonlyArray<string>>([]),
+    onSome: (service) => service.roots,
+  });
+
+  // A receipt, a Library copy or a registered project keeps a name taken after its folder is gone.
   const nameTaken = Effect.fn("ProjectPlacement.nameTaken")(function* (folder: string) {
     if (yield* fileSystem.exists(folder).pipe(Effect.orElseSucceed(() => true))) return true;
     const receipt = yield* hasManagedProjectReceipt(folder).pipe(
@@ -247,9 +267,15 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => true),
     );
     if (receipt) return true;
+    const copyRoots = yield* libraryCopyRoots.pipe(Effect.option);
+    if (Option.isNone(copyRoots)) return true;
     const real = yield* canonical(folder);
-    for (const project of yield* activeProjects)
-      if (overlaps(yield* canonical(path.resolve(project.workspaceRoot)), real)) return true;
+    const holders = [
+      ...(yield* activeProjects).map((project) => project.workspaceRoot),
+      ...copyRoots.value,
+    ];
+    for (const holder of holders)
+      if (overlaps(yield* canonical(path.resolve(holder)), real)) return true;
     return false;
   });
 
@@ -266,7 +292,7 @@ const make = Effect.gen(function* () {
   const claimFolder = Effect.fn("ProjectPlacement.claimFolder")(function* (title: string) {
     const root = yield* projectsRoot;
     // The setting accepts any absolute folder, so every claim checks where it points.
-    yield* assertPlacementAllowed(root, { projects: "within" }).pipe(
+    yield* assertPlacementAllowed(root, CLAIM_ROOT).pipe(
       Effect.mapError((cause) => new ProjectPlacementFolderError({ folder: root, cause })),
     );
     yield* fileSystem
@@ -332,6 +358,21 @@ const make = Effect.gen(function* () {
     return resolved;
   });
 
+  const assertProjectsFolderAllowed = Effect.fn("ProjectPlacement.assertProjectsFolderAllowed")(
+    function* (setting: string) {
+      if (setting.trim() === "") return;
+      yield* assertPlacementAllowed(setting, CLAIM_ROOT).pipe(
+        Effect.mapError(
+          (refused) =>
+            new ProjectPlacementRefusedError({
+              path: refused.path,
+              reason: `Choose another Projects folder. ${refused.reason}`,
+            }),
+        ),
+      );
+    },
+  );
+
   return ProjectPlacement.of({
     projectsRoot,
     managedProjectRoots,
@@ -340,9 +381,27 @@ const make = Effect.gen(function* () {
     claimFolder,
     previewFolder,
     assertPlacementAllowed,
+    assertProjectsFolderAllowed,
   });
 });
 
 export const layer = Layer.effect(ProjectPlacement, make);
 
-export const layerWithProjectStore = layer.pipe(Layer.provide(ProjectStore.layer));
+/** Every copy not yet released holds its root, including one whose folder is missing or moving. */
+export const layerLibraryCopyRoots = Layer.effect(
+  LibraryCopyRoots,
+  Effect.map(LibraryWorkspaceStore.LibraryWorkspaceStore, (store) => ({
+    roots: store.receipts.pipe(
+      Effect.map((receipts) =>
+        receipts.flatMap((receipt) =>
+          receipt.copy.state === "released" ? [] : [receipt.copy.rootPath],
+        ),
+      ),
+    ),
+  })),
+).pipe(Layer.provide(LibraryWorkspaceStore.layer));
+
+export const layerWithProjectStore = layer.pipe(
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(layerLibraryCopyRoots),
+);

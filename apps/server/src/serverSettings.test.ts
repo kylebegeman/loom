@@ -30,6 +30,7 @@ import * as ServerConfig from "./config.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerSettingsModule from "./serverSettings.ts";
+import { ProjectPlacementRefusedError } from "./project/ProjectPlacement.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
@@ -133,6 +134,31 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         );
         assert.deepEqual(persisted.storageCleanup, disabled.storageCleanup);
       }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  // fork: file-placement
+  it.effect("refuses to save a Projects folder the placement guard refuses", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const guarded = Effect.provideService(ServerSettingsModule.ProjectsFolderGuard, (setting) =>
+        setting.startsWith("/refused")
+          ? Effect.fail(
+              new ProjectPlacementRefusedError({
+                path: setting,
+                reason: "Choose another Projects folder. It is inside Loom's data.",
+              }),
+            )
+          : Effect.void,
+      );
+      const refused = yield* guarded(
+        service.updateSettings({ projectsDirectory: "/refused/projects" }),
+      ).pipe(Effect.flip);
+      assert.equal(refused.operation, "save-projects-directory");
+      assert.equal(refused.message, "Choose another Projects folder. It is inside Loom's data.");
+      assert.equal((yield* service.getSettings).projectsDirectory, "");
+      const saved = yield* guarded(service.updateSettings({ projectsDirectory: "/allowed" }));
+      assert.equal(saved.projectsDirectory, "/allowed");
+    }).pipe(Effect.provide(layerServerSettings())),
   );
 
   // fork: retention-defaults
