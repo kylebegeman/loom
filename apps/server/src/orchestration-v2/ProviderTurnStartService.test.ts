@@ -1876,7 +1876,10 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
         }
         let setupCount = 0;
         const order: string[] = [];
-        let listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+        type Listener = Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+        const listeners = new Set<Listener>();
+        const emit = (event: Parameters<Listener>[0]) =>
+          Effect.forEach([...listeners], (listener) => listener(event), { discard: true });
         const scripts = [
           {
             id: "setup",
@@ -1893,15 +1896,21 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                 getById: () => Effect.succeedSome({ workspaceRoot: cwd, scripts } as never),
               }),
               Layer.mock(TerminalManager.TerminalManager)({
-                open: () =>
-                  Effect.sync(() => {
+                open: (terminal) =>
+                  Effect.gen(function* () {
                     expect(order.at(-1)).toBe("lane-ready");
+                    yield* emit({
+                      type: "output",
+                      threadId: terminal.threadId,
+                      terminalId: terminal.terminalId,
+                      data: "\r\n$ \x1b[?2004h",
+                    });
                     return {} as never;
                   }),
                 subscribe: (onEvent) =>
                   Effect.sync(() => {
-                    listener = onEvent;
-                    return () => undefined;
+                    listeners.add(onEvent);
+                    return () => listeners.delete(onEvent);
                   }),
                 write: (input) =>
                   Effect.gen(function* () {
@@ -1911,7 +1920,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                     setupCount++;
                     order.push("setup");
                     const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
-                    yield* listener({
+                    yield* emit({
                       type: "output",
                       threadId: input.threadId,
                       terminalId: input.terminalId,
