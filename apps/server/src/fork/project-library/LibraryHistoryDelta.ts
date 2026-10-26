@@ -110,7 +110,7 @@ export const applyHistoryDelta = Effect.fn("LibraryHistoryDelta.apply")(function
       : [...(before.receipts ?? []).slice(0, delta.prefixes.receipts), ...(tail.receipts ?? [])];
   return {
     ...tail,
-    ...(receipts === undefined ? {} : { receipts }),
+    ...(receipts === undefined || receipts.length === 0 ? {} : { receipts }),
     projection: {
       ...tail.projection,
       runs: [...before.projection.runs.slice(0, delta.prefixes.runs), ...tail.projection.runs],

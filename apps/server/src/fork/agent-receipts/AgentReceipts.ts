@@ -138,6 +138,7 @@ export const receiptsForArchive = Effect.fn("AgentReceipts.forArchive")(function
   const rows = yield* sql<{ payload_json: string }>`
     SELECT payload_json FROM fork_agent_receipts
     WHERE root_thread_id=${threadId} AND visible_sequence<=${sequence}
+      AND (superseded_sequence IS NULL OR superseded_sequence>${sequence})
     ORDER BY visible_sequence, subject_id, generation`;
   return yield* Effect.forEach(rows, (row) => decodeReceipt(row.payload_json));
 });
@@ -229,25 +230,38 @@ const make = Effect.gen(function* () {
   });
 
   const existing = (subjectId: string, generation: string) =>
-    sql<{ receipt_id: string; payload_json: string }>`
-      SELECT receipt_id,payload_json FROM fork_agent_receipts
-      WHERE subject_id=${subjectId} AND generation=${generation}`.pipe(
+    sql<{ receipt_id: string; visible_sequence: number }>`
+      SELECT receipt_id,visible_sequence FROM fork_agent_receipts
+      WHERE subject_id=${subjectId} AND generation=${generation} AND superseded_sequence IS NULL`.pipe(
       Effect.map((rows) => rows[0]),
     );
 
-  /** Writes the receipt when its content changed; returns it and whether it was written. */
+  /**
+   * Writes the receipt when its content changed; returns it and whether it was written. A version a
+   * snapshot may already hold is closed rather than rewritten, so older snapshots stay reproducible.
+   */
   const store = Effect.fnUntraced(function* (body: ReceiptBody) {
     // The encoded form follows the schema's field order, so equal content hashes equally.
     const id = yield* sha256(yield* encodeReceipt({ id: "", ...body }));
     const receipt: AgentReceipt = { id, ...body };
-    const current = yield* existing(body.subjectId, body.generation);
-    if (current?.receipt_id === id) return { receipt, written: false };
     const payload = yield* encodeReceipt(receipt);
     const now = DateTime.formatIso(yield* DateTime.now);
-    yield* sql`INSERT INTO fork_agent_receipts (subject_id,generation,kind,receipt_id,thread_id,root_thread_id,child_thread_id,visible_sequence,payload_json,recorded_at)
-      VALUES (${body.subjectId},${body.generation},${body.kind},${id},${body.threadId},${body.rootThreadId},${body.childThreadId},(SELECT COALESCE(MAX(sequence),0)+1 FROM orchestration_events),${payload},${now})
-      ON CONFLICT(subject_id,generation) DO UPDATE SET receipt_id=excluded.receipt_id,kind=excluded.kind,thread_id=excluded.thread_id,root_thread_id=excluded.root_thread_id,child_thread_id=excluded.child_thread_id,visible_sequence=excluded.visible_sequence,payload_json=excluded.payload_json,recorded_at=excluded.recorded_at`;
-    return { receipt, written: true };
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const current = yield* existing(body.subjectId, body.generation);
+        if (current?.receipt_id === id) return { receipt, written: false };
+        const next =
+          (yield* sql<{ next: number }>`
+            SELECT COALESCE(MAX(sequence),0)+1 AS next FROM orchestration_events`)[0]?.next ?? 1;
+        if (current !== undefined && current.visible_sequence === next)
+          yield* sql`DELETE FROM fork_agent_receipts WHERE subject_id=${body.subjectId} AND generation=${body.generation} AND visible_sequence=${next}`;
+        else if (current !== undefined)
+          yield* sql`UPDATE fork_agent_receipts SET superseded_sequence=${next} WHERE subject_id=${body.subjectId} AND generation=${body.generation} AND superseded_sequence IS NULL`;
+        yield* sql`INSERT INTO fork_agent_receipts (subject_id,generation,kind,receipt_id,thread_id,root_thread_id,child_thread_id,visible_sequence,payload_json,recorded_at)
+          VALUES (${body.subjectId},${body.generation},${body.kind},${id},${body.threadId},${body.rootThreadId},${body.childThreadId},${next},${payload},${now})`;
+        return { receipt, written: true };
+      }),
+    );
   });
 
   const transcriptFor = Effect.fnUntraced(function* (
@@ -422,8 +436,8 @@ const make = Effect.gen(function* () {
       function* (body) {
         const owners = yield* sql<{ subject_id: string; kind: string; thread_id: string }>`
         SELECT subject_id,kind,thread_id FROM fork_agent_receipts
-        WHERE (child_thread_id=${body.threadId} AND kind='subagent')
-           OR (kind='run' AND subject_id=${body.parentSubjectId ?? ""} AND thread_id=${body.threadId})`;
+        WHERE superseded_sequence IS NULL AND ((child_thread_id=${body.threadId} AND kind='subagent')
+           OR (kind='run' AND subject_id=${body.parentSubjectId ?? ""} AND thread_id=${body.threadId}))`;
         const seen = new Set<string>();
         for (const owner of owners) {
           if (seen.has(owner.subject_id)) continue;
@@ -470,8 +484,8 @@ const make = Effect.gen(function* () {
     function* (input) {
       const rows = yield* sql<{ subject_id: string; kind: string; thread_id: string }>`
         SELECT DISTINCT subject_id,kind,thread_id FROM fork_agent_receipts
-        WHERE subject_id IN (${input.runId ?? ""},${input.nodeId})
-           OR (child_thread_id=${input.threadId} AND kind='subagent')`;
+        WHERE superseded_sequence IS NULL AND (subject_id IN (${input.runId ?? ""},${input.nodeId})
+           OR (child_thread_id=${input.threadId} AND kind='subagent'))`;
       for (const row of rows) {
         if (row.kind === "run")
           yield* recordRun(ThreadId.make(row.thread_id), row.subject_id as RunId);
@@ -484,7 +498,7 @@ const make = Effect.gen(function* () {
   const latestOnThread = (threadId: ThreadId) =>
     sql<{ payload_json: string }>`
       SELECT payload_json FROM fork_agent_receipts r
-      WHERE thread_id=${threadId} AND generation=(
+      WHERE thread_id=${threadId} AND superseded_sequence IS NULL AND generation=(
         SELECT MAX(generation) FROM fork_agent_receipts WHERE subject_id=r.subject_id)
       ORDER BY kind, subject_id`.pipe(
       Effect.flatMap((rows) => Effect.forEach(rows, (row) => decodeReceipt(row.payload_json))),
@@ -500,7 +514,7 @@ const make = Effect.gen(function* () {
     function* (threadId, subjectId) {
       const rows = yield* sql<{ payload_json: string }>`
         SELECT payload_json FROM fork_agent_receipts
-        WHERE thread_id=${threadId} AND subject_id=${subjectId}
+        WHERE thread_id=${threadId} AND subject_id=${subjectId} AND superseded_sequence IS NULL
         ORDER BY generation DESC LIMIT 1`;
       const row = rows[0];
       if (row === undefined)
@@ -593,7 +607,7 @@ const make = Effect.gen(function* () {
         receipt_id: string;
         source: string;
         bytes: number;
-      }>`SELECT subject_id,generation,receipt_id,json_extract(payload_json,'$.result.source') AS source,length(payload_json) AS bytes FROM fork_agent_receipts WHERE kind='subagent'`).map(
+      }>`SELECT subject_id,generation,receipt_id,json_extract(payload_json,'$.result.source') AS source,length(payload_json) AS bytes FROM fork_agent_receipts WHERE kind='subagent' AND superseded_sequence IS NULL`).map(
         (row) => [`${row.subject_id}\0${row.generation}`, row],
       ),
     );

@@ -11,6 +11,10 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { isWithheldError } from "../deleted-history/deletedHistory.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
+import { AgentReceipt } from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
+import { receiptFixture } from "../agent-receipts/AgentReceipts.testkit.ts";
+import { AgentReceiptsMigrations } from "../agent-receipts/migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
@@ -50,6 +54,7 @@ const run = <A, E, R>(
   }) => Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
+    yield* runForkMigrationSet(AgentReceiptsMigrations);
     const archive = yield* archiveFor(project);
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     yield* projections.apply({
@@ -123,6 +128,25 @@ describe("execution host Library snapshots", () => {
         }),
       ),
   );
+  it.effect("carries the receipts visible at the snapshot's event sequence", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const encode = Schema.encodeEffect(Schema.fromJsonString(AgentReceipt));
+        for (const [subject, visible] of [
+          ["node:early", 1],
+          ["node:late", 3],
+        ] as const) {
+          const receipt = receiptFixture(subject, threadId);
+          yield* sql`INSERT INTO fork_agent_receipts (subject_id,generation,kind,receipt_id,thread_id,root_thread_id,child_thread_id,visible_sequence,payload_json,recorded_at)
+            VALUES (${subject},${receipt.generation},'subagent',${receipt.id},${threadId},${threadId},NULL,${visible},${yield* encode(receipt)},${receipt.finishedAt})`;
+        }
+        const snapshot = yield* f.service.snapshotThread({ threadId });
+        expect(snapshot.summary.sequence).toBe(2);
+        expect(snapshot.receipts).toEqual([receiptFixture("node:early", threadId)]);
+      }),
+    ),
+  );
   it.effect("saves whether the conversation was settled", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -165,6 +189,8 @@ describe("execution host Library snapshots", () => {
     () =>
       Effect.gen(function* () {
         yield* runForkMigrationSet(ProjectLibraryMigrations);
+        yield* runForkMigrationSet(AgentReceiptsMigrations);
+        yield* runForkMigrationSet(AgentReceiptsMigrations);
         const sql = yield* SqlClient.SqlClient;
         const projections = yield* ProjectionStore.ProjectionStoreV2;
         const archive = yield* archiveFor(project);
@@ -240,6 +266,7 @@ describe("execution host Library snapshots", () => {
   it.effect("sends the deletion of a conversation that never had more than its creation", () =>
     Effect.gen(function* () {
       yield* runForkMigrationSet(ProjectLibraryMigrations);
+      yield* runForkMigrationSet(AgentReceiptsMigrations);
       const sql = yield* SqlClient.SqlClient;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const thread = (yield* archiveFor(project)).projection.thread;
@@ -294,6 +321,7 @@ describe("execution host Library snapshots", () => {
   it.effect("keeps a saved conversation deleted before its first upload off the Library", () =>
     Effect.gen(function* () {
       yield* runForkMigrationSet(ProjectLibraryMigrations);
+      yield* runForkMigrationSet(AgentReceiptsMigrations);
       const sql = yield* SqlClient.SqlClient;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const archive = yield* archiveFor(project);

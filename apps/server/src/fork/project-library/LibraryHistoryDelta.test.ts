@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { applyHistoryDelta, createHistoryDelta } from "./LibraryHistoryDelta.ts";
+import { receiptFixture } from "../agent-receipts/AgentReceipts.testkit.ts";
 import { archiveFor, resource } from "./Library.testkit.ts";
 import * as Schema from "effect/Schema";
 import { LibraryThreadArchive, type LibraryProject } from "@t3tools/contracts/fork";
@@ -29,6 +30,29 @@ describe("Library history deltas", () => {
       expect(entry.delta.prefixes.messages).toBe(1);
       expect(entry.thread.projection.messages).toEqual([]);
       expect(yield* applyHistoryDelta(persisted, entry.thread, entry.delta)).toEqual(after);
+    }),
+  );
+
+  it.effect("transfers only new receipts and keeps saved ones for sources without them", () =>
+    Effect.gen(function* () {
+      const base = yield* archiveFor(project, 1);
+      const before = { ...base, receipts: [receiptFixture("node:a")] };
+      const after = {
+        ...before,
+        summary: { ...before.summary, sequence: 2 },
+        receipts: [receiptFixture("node:a"), receiptFixture("node:b")],
+      };
+      const entry = createHistoryDelta(before, after);
+      expect(entry.delta.prefixes.receipts).toBe(1);
+      expect(entry.thread.receipts).toEqual([receiptFixture("node:b")]);
+      expect(yield* applyHistoryDelta(before, entry.thread, entry.delta)).toEqual(after);
+
+      const { receipts: _omitted, ...prefixes } = entry.delta.prefixes;
+      const older = { ...entry.delta, prefixes };
+      const { receipts: _tail, ...withoutReceipts } = entry.thread;
+      expect((yield* applyHistoryDelta(before, withoutReceipts, older)).receipts).toEqual(
+        before.receipts,
+      );
     }),
   );
 
