@@ -13,6 +13,7 @@ import {
   type ProviderProcessRecord as Record,
 } from "@t3tools/shared/fork/provider-processes";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "../../config.ts";
@@ -208,6 +209,14 @@ export const layer = Layer.effect(
   ProviderProcesses,
   Effect.gen(function* () {
     if ((yield* HostProcess.Platform) === "win32") return ProviderProcesses.defaultValue();
+    // A Library authority runs no providers by default, and its image ships no `ps`.
+    const libraryAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
+      Config.withDefault(false),
+    );
+    const supportsExecution = yield* Config.Boolean("LOOM_EXECUTION_ENABLED").pipe(
+      Config.withDefault(!libraryAuthority),
+    );
+    if (!supportsExecution) return ProviderProcesses.defaultValue();
     const { stateDir } = yield* ServerConfig.ServerConfig;
     const path = NodePath.join(stateDir, ...PROVIDER_PROCESS_LEDGER_PATH);
     const directory = NodePath.dirname(path);

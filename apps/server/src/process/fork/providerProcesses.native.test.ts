@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderProcesses } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -66,4 +67,26 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         ),
       ),
     ),
+);
+
+it.effect("a Library that runs no providers keeps no provider process ledger", () =>
+  Effect.gen(function* () {
+    const registry = yield* ProviderProcesses;
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    registry.register({ pid: process.pid, threadId: "fixture", cwd: config.stateDir })();
+    expect(yield* fs.exists(`${config.stateDir}/runtime/provider-processes.json`)).toBe(false);
+  }).pipe(
+    Effect.provide(
+      Processes.layer.pipe(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "provider-processes-" }),
+        ),
+        Layer.provideMerge(NodeServices.layer),
+        Layer.provide(
+          ConfigProvider.layer(ConfigProvider.fromUnknown({ LOOM_LIBRARY_AUTHORITY: "true" })),
+        ),
+      ),
+    ),
+  ),
 );
