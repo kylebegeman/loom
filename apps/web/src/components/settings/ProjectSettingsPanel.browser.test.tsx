@@ -533,7 +533,10 @@ describe("project settings scope", () => {
       .toBeVisible();
     await expect.element(page.getByText(message, { exact: true })).not.toBeInTheDocument();
     await expect
-      .element(page.getByRole("button", { name: "Remove project", exact: true }))
+      // fork: project-home
+      .element(
+        page.getByRole("button", { name: "Delete folder entry and conversations", exact: true }),
+      )
       .toBeEnabled();
   });
 });
@@ -543,7 +546,7 @@ it("returns to the project overview after removal, clearing the selection but ke
   state.projects = [state.projects[1]!];
   await using screen = await mountPanel({ machine: remoteId, checkout: "remote:/work/remote" });
   const removeProject = [...screen.container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Remove project",
+    (button) => button.textContent === "Delete folder entry and conversations", // fork: project-home
   )!;
 
   await userEvent.click(removeProject);

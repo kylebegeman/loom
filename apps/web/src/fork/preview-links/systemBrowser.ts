@@ -1,5 +1,4 @@
 import { isElectron } from "~/env";
-import { ensureLocalApi } from "~/localApi";
 
 /**
  * Opens a URL known only after a request, such as a single-use entry. The web opens the window
@@ -9,7 +8,8 @@ import { ensureLocalApi } from "~/localApi";
 export async function openInSystemBrowser(resolveUrl: () => Promise<string | null>): Promise<void> {
   if (isElectron) {
     const url = await resolveUrl();
-    if (url !== null) await ensureLocalApi().shell.openExternal(url);
+    // localApi imports this module; a static import back would make a cycle that deadlocks mocks.
+    if (url !== null) await (await import("~/localApi")).ensureLocalApi().shell.openExternal(url);
     return;
   }
   const target = window.open("about:blank", "_blank");
