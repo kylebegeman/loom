@@ -179,6 +179,7 @@ apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	2
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	computer-naming	5
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	fleet-connections	23
+apps/mobile/src/features/connection/ConnectionsNewRouteScreen.test.tsx	fleet-connections	2
 apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/connection/LocalEnvironmentList.tsx	fleet-connections	6
 apps/mobile/src/features/connection/useConnectionController.ts	computer-naming	2
@@ -514,6 +515,7 @@ apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3
+apps/desktop/src/app/DesktopStartupRecovery.ts	brand	8
 apps/desktop/src/snapShot/DesktopSnapShot.ts	brand	7
 apps/desktop/src/snapShot/GnomeCaptureSetup.ts	brand	5
 apps/desktop/src/snapShot/HyprlandSnapShot.ts	brand	1
@@ -766,6 +768,8 @@ apps/web/src/components/settings/ConnectionsSettings.tsx	machine-updates	3
 apps/web/src/components/settings/ConnectionsSettings.tsx	tailnet-ownership	28
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	directory-computers	5
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	library	1
+apps/mobile/src/features/connection/devAutoConnect.ts	directory-computers	3
+apps/mobile/src/features/connection/devAutoConnect.ts	library	1
 apps/server/src/telemetry/AnalyticsService.ts	telemetry-off	1
 apps/server/src/cloud/http.ts	connect-off	3
 apps/server/vite.config.ts	connect-off	1
@@ -1005,7 +1009,7 @@ packages/contracts/src/ipc.ts	machine-updates	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	ext-vault	1
 apps/mobile/src/features/connection/EnvironmentConnectionNotice.tsx	fleet-connections	9
 apps/mobile/src/features/files/WorkspaceFilePreviewError.tsx	fleet-connections	1
-apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx	fleet-connections	11
+apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx	fleet-connections	10
 apps/mobile/src/features/home/workspace-connection-status.ts	fleet-connections	10
 apps/mobile/src/features/home/workspace-connection-status.test.ts	fleet-connections	4
 apps/mobile/src/features/review/ReviewSheet.tsx	fleet-connections	1

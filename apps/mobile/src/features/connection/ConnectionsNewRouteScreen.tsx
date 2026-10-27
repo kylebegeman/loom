@@ -13,8 +13,8 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
-import { useEffect, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { useRef, useState } from "react"; // fork: fleet-connections
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,13 +25,11 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
-import {
-  setPendingConnectionError,
-  useRemoteConnections,
-} from "../../state/use-remote-environment-registry";
+import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
+import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { splitEnvironmentSections } from "./environmentSections";
 // fork: directory-computers
 import { pairingFormChecks } from "../../fork/directory-computers/directoryComputers";
@@ -49,25 +47,48 @@ type ConnectionsNewRouteParams = {
 export function ConnectionsNewRouteScreen({
   route,
 }: StaticScreenProps<ConnectionsNewRouteParams | undefined>) {
-  const {
-    connectionPairingUrl,
-    onChangeConnectionPairingUrl,
-    onConnectPress,
-    pairingConnectionError,
-  } = useRemoteConnections();
-  const navigation = useNavigation();
-  const routeName = useRoute().name;
   const params = route.params ?? {};
   // Dev-only prefill prevents production links from supplying an attacker-chosen host and token.
   const routePairingUrl = __DEV__ ? (params.pairingUrl?.trim() ?? "") : "";
-  const shouldAutoConnect =
-    __DEV__ &&
-    routePairingUrl.length > 0 &&
-    (params.autoConnect === "1" || params.autoConnect === "true");
+  // A new prefill link replaces whatever the form held.
+  return (
+    <PairingForm
+      key={routePairingUrl}
+      routePairingUrl={routePairingUrl}
+      routeFor={params.routeFor}
+      checks={pairingFormChecks(params)} // fork: directory-computers
+    />
+  );
+}
+
+function PairingForm({
+  routePairingUrl,
+  routeFor,
+  checks, // fork: directory-computers
+}: {
+  readonly routePairingUrl: string;
+  readonly routeFor: EnvironmentId | undefined;
+  readonly checks: ReturnType<typeof pairingFormChecks>; // fork: directory-computers
+}) {
+  const { connectionPairingUrl, onChangeConnectionPairingUrl, onConnectPress } =
+    useRemoteConnections();
+  const navigation = useNavigation();
+  const routeName = useRoute().name;
   const insets = useSafeAreaInsets();
-  const [hostInput, setHostInput] = useState("");
-  const [codeInput, setCodeInput] = useState("");
+  const [initialPairing] = useState(() => parsePairingUrl(routePairingUrl || connectionPairingUrl));
+  const [hostInput, setHostInput] = useState(initialPairing.host);
+  const [codeInput, setCodeInput] = useState(initialPairing.code);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // The user's own edit or submit dismisses the dev auto-connect report.
+  const [ownAttempt, setOwnAttempt] = useState(false);
+  const autoConnect = autoConnectReport(
+    useAtomValue(devAutoConnectAttemptAtom),
+    routePairingUrl,
+    ownAttempt,
+  );
+  const connecting = isSubmitting || autoConnect.connecting;
+  const pairingConnectionError = submitError ?? autoConnect.error;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
   // fork: fleet-connections
@@ -75,36 +96,15 @@ export function ConnectionsNewRouteScreen({
   const [scannerRequested, setScannerRequested] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
-  const attemptedAutoConnectRef = useRef<string | null>(null);
 
   // fork: fleet-connections
   const connectDisabled =
-    isSubmitting || hostInput.trim().length === 0 || codeInput.trim().length === 0;
+    connecting || hostInput.trim().length === 0 || codeInput.trim().length === 0;
 
-  useEffect(() => {
-    const { host, code } = parsePairingUrl(connectionPairingUrl);
-    // oxlint-disable-next-line react/set-state-in-effect -- A new pairing URL reseeds the editable host and code fields.
-    setHostInput(host);
-    setCodeInput(code);
-  }, [connectionPairingUrl]);
-
-  useEffect(() => {
-    if (routePairingUrl.length === 0) {
-      return;
-    }
-
-    const { host, code } = parsePairingUrl(routePairingUrl);
-    // oxlint-disable-next-line react/set-state-in-effect -- A pairing URL from the route reseeds the editable host and code fields.
-    setHostInput(host);
-    setCodeInput(code);
-  }, [routePairingUrl]);
-
-  useEffect(() => {
-    if (pairingConnectionError) {
-      // oxlint-disable-next-line react/set-state-in-effect -- A pairing failure reported by the connection runtime ends the submit.
-      setIsSubmitting(false);
-    }
-  }, [pairingConnectionError]);
+  const clearError = () => {
+    setSubmitError(null);
+    setOwnAttempt(true);
+  };
 
   const handleHostChange = (value: string) => {
     // fork: fleet-connections
@@ -115,19 +115,17 @@ export function ConnectionsNewRouteScreen({
       setScanComplete(true);
     }
     setScannerRequested(false);
-    setPendingConnectionError(null);
+    clearError();
   };
 
   const handleCodeChange = (value: string) => {
     setCodeInput(value);
     setScannerRequested(false); // fork: fleet-connections
-    setPendingConnectionError(null);
+    clearError();
   };
 
-  useEffect(() => () => setPendingConnectionError(null), []);
-
   const handleScanPress = async () => {
-    if (isSubmitting) return; // fork: fleet-connections
+    if (connecting) return; // fork: fleet-connections
     const permission = await requestCameraPermission();
     if (permission.granted) {
       // fork: fleet-connections
@@ -149,7 +147,7 @@ export function ConnectionsNewRouteScreen({
 
   const handleQrScan = ({ data }: { readonly data: string }) => {
     // fork: fleet-connections
-    if (scannerLockedRef.current || isSubmitting) {
+    if (scannerLockedRef.current || connecting) {
       return;
     }
 
@@ -162,7 +160,7 @@ export function ConnectionsNewRouteScreen({
       setCodeInput(code);
       onChangeConnectionPairingUrl(pairingUrl);
       setScanComplete(true);
-      setPendingConnectionError(null); // fork: fleet-connections
+      clearError(); // fork: fleet-connections
     } catch (error) {
       setScannerRequested(false); // fork: fleet-connections
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -174,21 +172,22 @@ export function ConnectionsNewRouteScreen({
     }
   };
 
-  const connectAndClose = async (pairingUrl: string) => {
+  const handleSubmit = async () => {
+    const pairingUrl = buildPairingUrl(hostInput, codeInput);
+    setOwnAttempt(true);
+    setSubmitError(null);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
     // fork: directory-computers
-    const result = await onConnectPress(
-      pairingUrl,
-      pairingFormChecks(params).expectedEnvironmentId,
-    );
+    const outcome = await onConnectPress(pairingUrl, checks.expectedEnvironmentId);
     setIsSubmitting(false);
+    setSubmitError(outcome.error);
     void Haptics.notificationAsync(
-      AsyncResult.isSuccess(result)
+      outcome.ok
         ? Haptics.NotificationFeedbackType.Success
         : Haptics.NotificationFeedbackType.Error,
     );
-    if (AsyncResult.isSuccess(result)) {
+    if (outcome.ok) {
       // Replacing with Home would nest it inside any sheet below; return to the opener.
       if (!navigation.canGoBack()) {
         navigation.dispatch(StackActions.replace("Library")); // fork: library
@@ -199,31 +198,18 @@ export function ConnectionsNewRouteScreen({
     }
   };
 
-  const handleSubmit = async () => {
-    await connectAndClose(buildPairingUrl(hostInput, codeInput));
-  };
-
-  useEffect(() => {
-    if (!shouldAutoConnect || attemptedAutoConnectRef.current === routePairingUrl) {
-      return;
-    }
-
-    attemptedAutoConnectRef.current = routePairingUrl;
-    void connectAndClose(routePairingUrl);
-  }, [connectAndClose, routePairingUrl, shouldAutoConnect]);
-
   const cameraActive =
     scannerRequested &&
     cameraPermission?.granted === true &&
     screenFocused &&
     !scanComplete &&
-    !isSubmitting;
+    !connecting;
 
   // fork: fleet-connections - The title distinguishes a computer from another address for it.
   return (
     <SettingsScreen
       formSheet={routeName === "ConnectionsNew"}
-      title={params.routeFor ? "Add connection address" : "Connect computer"} // fork: fleet-connections
+      title={routeFor ? "Add connection address" : "Connect computer"} // fork: fleet-connections
     >
       <ScrollView
         nestedScrollEnabled
@@ -241,7 +227,7 @@ export function ConnectionsNewRouteScreen({
         <View collapsable={false} className="gap-6.5">
           {/* fork: fleet-connections - Pairing guidance follows the selected computer. */}
           <Text className="px-4 text-sm leading-normal text-foreground-muted">
-            {params.routeFor
+            {routeFor
               ? "Open Connections settings on this same computer to add another way to reach it."
               : "Open Connections settings in Loom on your computer to get a pairing code."}
           </Text>
@@ -250,7 +236,7 @@ export function ConnectionsNewRouteScreen({
               label="Scan another code"
               icon="qrcode.viewfinder"
               tone="text"
-              disabled={isSubmitting}
+              disabled={connecting}
               onPress={() => void handleScanPress()}
             />
           ) : (
@@ -284,7 +270,7 @@ export function ConnectionsNewRouteScreen({
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
                 value={hostInput}
-                editable={!isSubmitting} // fork: fleet-connections
+                editable={!connecting} // fork: fleet-connections
                 onChangeText={handleHostChange}
               />
               <View className="ml-4 border-t border-border-subtle" />
@@ -293,7 +279,7 @@ export function ConnectionsNewRouteScreen({
                 placeholder="Pairing code"
                 returnKeyType="go"
                 value={codeInput}
-                editable={!isSubmitting} // fork: fleet-connections
+                editable={!connecting} // fork: fleet-connections
                 onChangeText={handleCodeChange}
                 onSubmitEditing={() => {
                   if (!connectDisabled) void handleSubmit();
@@ -314,7 +300,7 @@ export function ConnectionsNewRouteScreen({
           </View>
 
           {/* fork: directory-computers */}
-          {pairingFormChecks(params).offersIdentity ? (
+          {checks.offersIdentity ? (
             <View className="gap-2 px-4">
               <Text className="text-sm text-foreground-muted">
                 If this computer has Identity configured, use its address to sign in without a
@@ -323,26 +309,26 @@ export function ConnectionsNewRouteScreen({
               <Button
                 label="Sign in with Identity" // fork: directory-computers
                 tone="text"
-                disabled={isSubmitting}
+                disabled={connecting}
                 onPress={() =>
                   navigation.navigate("IdentitySignIn", {
                     ...(hostInput.trim() ? { address: hostInput.trim() } : {}),
-                    ...(params.routeFor ? { environmentId: params.routeFor } : {}),
+                    ...(routeFor ? { environmentId: routeFor } : {}),
                   })
                 }
               />
             </View>
           ) : null}
           <Button
-            label={params.routeFor ? "Add connection address" : "Connect computer"}
+            label={routeFor ? "Add connection address" : "Connect computer"}
             tone="primary"
             fullWidth
-            loading={isSubmitting}
+            loading={connecting}
             disabled={connectDisabled}
             onPress={() => void handleSubmit()}
           />
 
-          {hasCloudPublicConfig() && !params.routeFor ? <T3ConnectSection /> : null}
+          {hasCloudPublicConfig() && !routeFor ? <T3ConnectSection /> : null}
         </View>
       </ScrollView>
     </SettingsScreen>

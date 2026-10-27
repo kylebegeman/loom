@@ -433,7 +433,8 @@ the pairing form for a Library row with its address, passes the computer's envir
 remote and SSH connections so a wrong computer is refused, hides the form's unpinned Identity
 sign-in for that row, and clears the row's address when the form closes. iPhone's
 `ConnectionsNewRouteScreen.tsx` (4) does the same for its pairing form through a
-`libraryComputer` route param. See the
+`libraryComputer` route param, and `devAutoConnect.ts` (3) for development links that pair by
+themselves. See the
 [L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
 
 L114 `reach` seams publish a computer's public reach address, `https://<name>-loom.<zone>/`,
@@ -1174,6 +1175,7 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/cloud/publicConfig.ts`                             | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx`           | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`          | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.test.tsx`     | `fleet-connections` | Cover the pairing form's Connect button and computer wording.              |
 | `apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx`             | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/connection/LocalEnvironmentList.tsx`               | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/connection/useConnectionController.ts`             | `computer-naming`   | Publish and project the canonical computer name.                           |
