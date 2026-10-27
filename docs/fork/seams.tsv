@@ -709,7 +709,7 @@ apps/web/src/components/Sidebar.tsx	no-project-first	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	no-project-first	3
-apps/mobile/src/features/prompt-links/usePromptLinkResolver.ts	no-project-first	2
+apps/mobile/src/features/prompt-links/newTaskPromptLink.ts	no-project-first	2
 apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	no-project-first	2
 apps/desktop/src/ipc/DesktopIpcHandlers.ts	identity-renewal	3
 apps/desktop/src/ipc/channels.ts	identity-renewal	2
