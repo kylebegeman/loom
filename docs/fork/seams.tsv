@@ -1295,6 +1295,7 @@ apps/server/src/auth/EnvironmentAuth.ts	library-sign-in	5
 apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
 apps/server/src/bin.ts	mini-native-retention	1
+apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/checkpointing/Utils.ts	library-projects	3
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
@@ -1426,6 +1427,7 @@ apps/mobile/src/state/threadOutboxDelivery.test.ts	failed-run-retry	5
 apps/web/src/components/settings/WorktreesSettings.tsx	file-placement	2
 apps/mobile/src/features/threads/use-new-task-project-defaults.ts	file-placement	1
 apps/web/src/components/AddProjectToMachineDialog.browser.test.tsx	file-placement	8
+apps/server/src/provider/AgentContextBudget.test.ts	file-placement	9
 apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
 apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
 packages/provider-fx/src/server/status.ts	brand	2

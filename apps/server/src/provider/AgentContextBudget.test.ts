@@ -25,13 +25,18 @@ import { ThreadSearch } from "../orchestration-v2/ThreadSearch.ts";
 import { PreviewManager } from "../preview/Manager.ts";
 import { PreviewBrowser } from "../preview/PreviewBrowser.ts";
 import { ManagedProjectFolders } from "../project/ManagedProjectFolders.ts";
+import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts"; // fork: file-placement
+import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts"; // fork: file-placement
+import { ProjectPlacement } from "../project/ProjectPlacement.ts"; // fork: file-placement
 import { ProjectService } from "../project/ProjectService.ts";
 import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
+import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolver.ts"; // fork: file-placement
 import { PullRequestReviewGuideService } from "../pullRequest/PullRequestReviewGuideService.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
+import { StorageCleanup } from "../storageCleanup.ts"; // fork: mini-native-retention
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
@@ -45,17 +50,21 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(DocumentText)({}),
   Layer.mock(GitVcsDriver)({}),
   Layer.mock(GitWorkflowService)({}),
-  Layer.mock(ManagedProjectFolders)({ namedProjectsRoot: "" }),
+  Layer.mock(ManagedProjectFolders)({}), // fork: file-placement -- namedProjectsRoot moved to ProjectPlacement.
   Layer.mock(McpProviderSessions)({}),
   Layer.mock(OrchestratorV2)({}),
   Layer.mock(PreviewAutomationBroker)({}),
   Layer.mock(PreviewBrowser)({}),
   Layer.mock(PreviewManager)({}),
+  Layer.mock(ProjectCloneTracker)({}), // fork: file-placement
+  Layer.mock(ProjectEnrichmentService)({}), // fork: file-placement
+  Layer.mock(ProjectPlacement)({}), // fork: file-placement
   Layer.mock(ProjectService)({}),
   Layer.mock(ProjectSetupScriptRunner)({}),
   Layer.mock(ProviderAdapterRegistryV2)({}),
   Layer.mock(ProviderRegistry)({}),
   Layer.mock(PullRequestReviewGuideService)({}),
+  Layer.mock(RepositoryIdentityResolver)({}), // fork: file-placement
   Layer.mock(ScheduledTaskService)({}),
   Layer.mock(SecretRequests)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-agent-context-budget-" }),
@@ -63,6 +72,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ServerSecretStore)({}),
   Layer.mock(ServerSettingsService)({}),
   Layer.mock(SourceControlRepositoryService)({}),
+  Layer.mock(StorageCleanup)({}), // fork: mini-native-retention
   Layer.mock(ThreadLaunchService)({}),
   Layer.mock(ThreadManagementService)({}),
   Layer.mock(ThreadSearch)({}),
