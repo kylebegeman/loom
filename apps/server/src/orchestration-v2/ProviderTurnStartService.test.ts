@@ -10,7 +10,6 @@ import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   EnvironmentId,
-  GitCommandError,
   CheckpointScopeId,
   CheckpointId,
   CheckpointRef,
@@ -1070,6 +1069,7 @@ function makeLocalCommandHarness(input: {
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords,
           getTurnStartContext,
+          getCheckpointContext: () => Effect.sync(() => projection),
           getRuntimeRecoveryProjection: () =>
             Effect.as(failReadIfRunning, {
               ...projection,
