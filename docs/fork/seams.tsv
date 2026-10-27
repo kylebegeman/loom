@@ -1378,6 +1378,7 @@ apps/web/src/routes/_chat.settings.tsx	ext-settings	5
 apps/web/src/rpc/requestLatencyState.test.ts	library-launch-files	1
 apps/web/src/state/queries.ts	fleet-connections	1
 apps/web/src/state/session.ts	library-projects	1
+apps/web/vite.config.ts	update-publisher	2
 knip.jsonc	ext-lint	5
 package.json	-	"dev:fixtures": "node apps/server/scripts/dev-fixtures.ts"
 package.json	-	"seed-dev-db": "node apps/server/scripts/seed-dev-db.ts"
