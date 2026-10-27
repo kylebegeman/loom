@@ -1,7 +1,8 @@
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+// fork: desktop-primary-recovery
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
 import { readDesktopPrimaryBearerToken } from "./desktopAuth";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
@@ -21,7 +22,18 @@ function isSameOriginBrowserPrimary(): boolean {
 function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpClient {
   return client.pipe(
     HttpClient.mapRequestEffect((request) =>
-      Effect.promise(readDesktopPrimaryBearerToken).pipe(
+      // fork: desktop-primary-recovery
+      Effect.tryPromise({
+        try: readDesktopPrimaryBearerToken,
+        catch: (cause) =>
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              cause,
+              description: "Could not load the desktop primary credential.",
+            }),
+          }),
+      }).pipe(
         Effect.map((bearerToken) =>
           bearerToken ? HttpClientRequest.bearerToken(request, bearerToken) : request,
         ),
