@@ -169,15 +169,13 @@ export const makeWith = Effect.fn("CodeGraph.makeWith")(function* (options: Code
   });
 
   const requireGraphify = availability().pipe(
-    Effect.flatMap((value) =>
-      value._tag === "available"
-        ? Effect.succeed(value)
-        : Effect.fail(
-            error(
-              "graphify-missing",
-              `Graphify is not installed on this environment. Install it with: ${value.installHint}`,
-            ),
-          ),
+    Effect.filterOrFail(
+      (value) => value._tag === "available",
+      (value) =>
+        error(
+          "graphify-missing",
+          `Graphify is not installed on this environment. Install it with: ${value._tag === "missing" ? value.installHint : ""}`,
+        ),
     ),
   );
 
@@ -185,9 +183,7 @@ export const makeWith = Effect.fn("CodeGraph.makeWith")(function* (options: Code
     projects.get(ProjectId.make(projectId)).pipe(
       Effect.orElseSucceed(() => Option.none()),
       Effect.flatMap((project) =>
-        Option.isSome(project)
-          ? Effect.succeed(project.value)
-          : Effect.fail(error("project-not-found", "The project was not found.")),
+        Effect.fromOption(project, () => error("project-not-found", "The project was not found.")),
       ),
     );
 

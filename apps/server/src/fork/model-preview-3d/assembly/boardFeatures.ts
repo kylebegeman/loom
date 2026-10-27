@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { boardFeatures } from "../../pcb-preview/enclosure/features.ts";
 import { readGlbDocument } from "../../pcb-preview/enclosure/readJson.ts";
-const defaults = Schema.decodeUnknownSync(EnclosureRequirements)({});
+const defaults = Schema.decodeSync(EnclosureRequirements)({});
 const decodeMetadata = Schema.decodeUnknownEffect(Schema.fromJsonString(PcbReferenceMetadata));
 
 export const makeBoardFeatures = Effect.fn("Assembly.makeBoardFeatures")(function* (

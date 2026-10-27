@@ -201,23 +201,22 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     resolve: (workspaceRoot: string, revision: number) => Effect.Effect<void>,
     invalidateCache: (workspaceRoot: string) => Effect.Effect<void>,
   ) => {
-    const resolvePending = (workspaceRoot: string) =>
-      Effect.gen(function* () {
-        while (true) {
-          const revision = (yield* Ref.get(lane.pendingRoots)).get(workspaceRoot);
-          if (revision === undefined) return;
-          yield* resolve(workspaceRoot, revision);
-          const completed = yield* Ref.modify(lane.pendingRoots, (current) => {
-            if (current.get(workspaceRoot) !== revision) return [false, current] as const;
-            const next = new Map(current);
-            next.delete(workspaceRoot);
-            return [true, next] as const;
-          });
-          if (completed) return;
-          // A lookup may insert its cache entry after invalidation. Discard that old result too.
-          yield* invalidateCache(workspaceRoot);
-        }
-      });
+    const resolvePending = Effect.fn("resolvePending")(function* (workspaceRoot: string) {
+      while (true) {
+        const revision = (yield* Ref.get(lane.pendingRoots)).get(workspaceRoot);
+        if (revision === undefined) return;
+        yield* resolve(workspaceRoot, revision);
+        const completed = yield* Ref.modify(lane.pendingRoots, (current) => {
+          if (current.get(workspaceRoot) !== revision) return [false, current] as const;
+          const next = new Map(current);
+          next.delete(workspaceRoot);
+          return [true, next] as const;
+        });
+        if (completed) return;
+        // A lookup may insert its cache entry after invalidation. Discard that old result too.
+        yield* invalidateCache(workspaceRoot);
+      }
+    });
     const worker = Queue.take(lane.queue).pipe(
       Effect.flatMap((workspaceRoot) =>
         resolvePending(workspaceRoot).pipe(

@@ -13,7 +13,6 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Fiber from "effect/Fiber";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -37,7 +36,7 @@ const makeBatches = (harness: Harness, conflicted: ReadonlyArray<string> = []) =
   Effect.gen(function* () {
     const bots = yield* harness.service;
     const projects = {
-      get: () => Effect.succeed(Option.some({ workspaceRoot: "/repo", deletedAt: null })),
+      get: () => Effect.succeedSome({ workspaceRoot: "/repo", deletedAt: null }),
     } as unknown as ProjectStore.ProjectStoreV2["Service"];
     const git = {
       execute: () => Effect.succeed({ stdout: conflicted.join("\0"), stdoutTruncated: false }),

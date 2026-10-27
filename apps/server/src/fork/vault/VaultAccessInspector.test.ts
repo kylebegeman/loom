@@ -708,7 +708,7 @@ it.effect(
           Effect.provideContext(f.context),
         );
         const fiber = yield* inspector.explain(f.input).pipe(Effect.forkChild);
-        yield* Effect.all(markers.map(Deferred.await), { concurrency: 4 });
+        yield* Effect.forEach(markers, Deferred.await, { concurrency: 4 });
         yield* TestClock.adjust("501 millis");
         const report = yield* Fiber.join(fiber);
         expect(report.decision.allowed).toBe(true);

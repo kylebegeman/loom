@@ -74,10 +74,6 @@ vi.mock(import("../sidebar/mainAppLocation"), async (original) => ({
   ...(await original()),
   useNavigateToMainApp: () => vi.fn(),
 }));
-vi.mock(import("../../hooks/useNavigateBack"), async (original) => ({
-  ...(await original()),
-  useEscapeToGoBack: () => undefined,
-}));
 vi.mock(import("./SettingsPanels"), async (original) => ({
   ...(await original()),
   useSettingsRestore: (() => ({ changedSettingLabels: [] })) as never,

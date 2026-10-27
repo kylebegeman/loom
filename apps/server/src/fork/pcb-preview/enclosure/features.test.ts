@@ -25,7 +25,7 @@ export const boardJson = {
     { min: [0.057, 0, -0.025], max: [0.063, 0.012, -0.015] },
   ],
 };
-export const metadata = Schema.decodeUnknownSync(PcbReferenceMetadata)({
+export const metadata = Schema.decodeSync(PcbReferenceMetadata)({
   designId: "board.kicad_pro",
   sourceHash: "abcdef",
   units: "mm",

@@ -1161,11 +1161,8 @@ function AgentInstallTerminal({
             providerInstanceId={providerInstanceId}
             advancedTypography={advancedTypography}
             onSessionExited={onClose}
-            focusRequestId={1}
             autoFocus
             visible
-            resizeEpoch={0}
-            drawerHeight={256}
             keybindings={keybindings}
           />
         ) : null}

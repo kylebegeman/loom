@@ -40,9 +40,15 @@ export const makeRoutingTestHost = Effect.gen(function* () {
       ),
       subscribe,
     },
-    shouldRunBackgroundWork: () => Effect.succeed(false),
+    shouldRunBackgroundWork: Effect.fn("ProviderHost.ProviderHost.shouldRunBackgroundWork")(
+      function () {
+        return Effect.succeed(false);
+      },
+    ),
     resolveAttachmentPath: () => null,
-    credentials: () => Effect.die("Readiness must not read stored provider credentials"),
+    credentials: Effect.fn("ProviderHost.ProviderHost.credentials")(function () {
+      return Effect.die("Readiness must not read stored provider credentials");
+    }),
   });
   return {
     host,

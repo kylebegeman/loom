@@ -15,7 +15,8 @@ const harness = vi.hoisted(() => ({
   recoveryRequests: [] as VcsStatusResult[],
 }));
 
-vi.mock("@react-navigation/native", () => {
+vi.mock("@react-navigation/native", async () => {
+  const { createContext } = await import("react");
   const navigation = {
     canGoBack: () => true,
     dispatch: () => {},
@@ -30,6 +31,7 @@ vi.mock("@react-navigation/native", () => {
     },
   };
   return {
+    NavigationRouteContext: createContext<{ readonly key: string } | undefined>(undefined),
     StackActions: { replace: () => ({}) },
     useNavigation: () => navigation,
   };
@@ -72,6 +74,9 @@ vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
     togglePrimarySidebar: () => {},
     toggleAuxiliaryPane: () => {},
   }),
+}));
+vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
+  useWorkspaceBackNavigation: () => () => {},
 }));
 vi.mock("../layout/native-mail-search-toolbar", () => ({
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED: true,

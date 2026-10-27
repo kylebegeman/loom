@@ -156,14 +156,9 @@ const make = Effect.gen(function* () {
           resolved = { ...ref, id: matches[0]!.threadId, environmentId: matches[0]!.environmentId };
         }
         if (ref.url) {
-          let safe = false;
-          try {
-            const url = new URL(ref.url);
-            safe = url.protocol === "https:" && !url.username && !url.password;
-          } catch {
-            /* Invalid links must never be saved as clickable references. */
-          }
-          if (!safe) return yield* fail("invalid", "Use a valid HTTPS link without credentials.");
+          const url = URL.parse(ref.url);
+          if (!url || url.protocol !== "https:" || url.username || url.password)
+            return yield* fail("invalid", "Use a valid HTTPS link without credentials.");
         }
         references.push(resolved);
       }

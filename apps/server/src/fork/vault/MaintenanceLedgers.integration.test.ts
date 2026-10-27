@@ -5,7 +5,6 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -42,7 +41,7 @@ const dependencies = Layer.mergeAll(
   storeLayer,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   Layer.mock(ThreadManagementService)({ getThreadShell: () => Effect.succeed(null) }),
-  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeed(Option.none()) }),
+  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeedNone }),
 );
 const accessLayer = VaultAccess.layer.pipe(
   Layer.provide(ApprovalNotifications.stub),

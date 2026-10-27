@@ -124,7 +124,7 @@ export const layer = Layer.unwrap(
     const sessions = yield* SessionStore.SessionStore;
     const metadata = identity.metadata.pipe(
       Effect.map((value) => HttpServerResponse.jsonUnsafe(value, { headers: HEADERS })),
-      Effect.catch(() => Effect.succeed(failed(503))),
+      Effect.orElseSucceed(() => failed(503)),
     );
     const login = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -154,7 +154,7 @@ export const layer = Layer.unwrap(
         pending.cookieValue,
         pending.expiresAt,
       );
-    }).pipe(Effect.catch(() => Effect.succeed(failed(503))));
+    }).pipe(Effect.orElseSucceed(() => failed(503)));
     const callback = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const query = new URL(request.url, "https://localhost").searchParams;
@@ -226,7 +226,7 @@ export const layer = Layer.unwrap(
         }
       }
       return response;
-    }).pipe(Effect.catch(() => Effect.succeed(failed(401))));
+    }).pipe(Effect.orElseSucceed(() => failed(401)));
     return Layer.mergeAll(
       HttpRouter.add("POST", LOOM_IDENTITY_SESSION_PATH, exchange),
       HttpRouter.add("POST", LOOM_IDENTITY_LOGOUT_PATH, logout),

@@ -352,15 +352,22 @@ const make = Effect.gen(function* () {
   });
 
   return LibraryBriefSuggestions.of({
-    settled: (thread) => lock.withPermit(settled(thread)),
-    suggestion: (input) => read(input.threadId).pipe(Effect.map((row) => row?.suggestion ?? null)),
-    start: (input) => lock.withPermit(Effect.flatMap(offered(input.threadId), begin)),
-    decline: (input) =>
-      lock.withPermit(
+    settled: Effect.fn("LibraryBriefSuggestions.settled")(function (thread) {
+      return lock.withPermit(settled(thread));
+    }),
+    suggestion: Effect.fn("LibraryBriefSuggestions.suggestion")(function (input) {
+      return read(input.threadId).pipe(Effect.map((row) => row?.suggestion ?? null));
+    }),
+    start: Effect.fn("LibraryBriefSuggestions.start")(function (input) {
+      return lock.withPermit(Effect.flatMap(offered(input.threadId), begin));
+    }),
+    decline: Effect.fn("LibraryBriefSuggestions.decline")(function (input) {
+      return lock.withPermit(
         Effect.flatMap(offered(input.threadId), (stored) =>
           update(stored, { status: "declined" }, null),
         ),
-      ),
+      );
+    }),
     resume,
     propose,
     project,

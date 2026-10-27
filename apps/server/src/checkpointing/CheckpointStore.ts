@@ -245,7 +245,7 @@ export const make = Effect.gen(function* () {
         cwd: repository.cwd,
         checkpointRefs: [safetyRef],
       });
-    return restored._tag === "Failure" ? yield* Effect.fail(restored.failure) : restored.success;
+    return restored._tag === "Failure" ? yield* restored.failure : restored.success;
   });
 
   const diffCheckpoints: CheckpointStore["Service"]["diffCheckpoints"] = Effect.fn(

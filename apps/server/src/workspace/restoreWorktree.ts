@@ -60,11 +60,9 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
     yield* Effect.gen(function* () {
       const project = yield* projects.getById(input.projectId);
       if (Option.isNone(project))
-        return yield* Effect.fail(
-          new WorkspacePreparationError({
-            message: "The project is unavailable. Restore its checkout before continuing.",
-          }),
-        );
+        return yield* new WorkspacePreparationError({
+          message: "The project is unavailable. Restore its checkout before continuing.",
+        });
       yield* restoreManagedProjectCheckout(
         project.value.workspaceRoot,
         path.resolve(project.value.workspaceRoot) === cwd,
@@ -172,22 +170,18 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           },
         }));
         if (setup.completion === undefined)
-          return yield* Effect.fail(
-            new WorkspacePreparationError({
-              message: "Workspace setup did not provide a completion result.",
-            }),
-          );
+          return yield* new WorkspacePreparationError({
+            message: "Workspace setup did not provide a completion result.",
+          });
         // Restoration always waits: a reclaimed checkout has no prepared dependencies.
         const completion = yield* setup.completion;
         if (completion.exitCode !== 0)
-          return yield* Effect.fail(
-            new WorkspacePreparationError({
-              message:
-                completion.exitCode === null
-                  ? "Workspace setup was stopped before completion. Retry to prepare the workspace."
-                  : `Workspace setup exited with code ${completion.exitCode}. Fix the setup script and retry.`,
-            }),
-          );
+          return yield* new WorkspacePreparationError({
+            message:
+              completion.exitCode === null
+                ? "Workspace setup was stopped before completion. Retry to prepare the workspace."
+                : `Workspace setup exited with code ${completion.exitCode}. Fix the setup script and retry.`,
+          });
         yield* tracker.stageStatus(input.threadId, "setup-script", "done");
       } else yield* tracker.stageStatus(input.threadId, "setup-script", "skipped");
       yield* fs.remove(marker);

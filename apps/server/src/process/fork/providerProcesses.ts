@@ -65,40 +65,35 @@ export const makeRegistry = (
       if (!holds(record, threadId, cwd)) continue;
       // A second server accidentally pointed at the same state directory owns no right
       // to terminate the first server's providers, even though the child identity matches.
-      try {
+      const ownerAlive = yield* Effect.try(() => {
         const owner = host.inspect(record.owner.pid);
-        if (owner !== null && owner.lstart === record.owner.lstart) continue;
-      } catch {
-        continue;
-      }
+        return owner !== null && owner.lstart === record.owner.lstart;
+      }).pipe(Effect.orElseSucceed(() => true));
+      if (ownerAlive) continue;
       const state = inspect(record);
       if (state === "gone") {
         previous.delete(record.pid);
         continue;
       }
       if (state !== "owned") continue;
-      try {
+      // A failed stop keeps ownership so it blocks restart continuation.
+      yield* Effect.try(() => {
         const members = host.members(record.pgid).map((member) => ({ ...record, ...member }));
-        if (inspect(record) !== "owned") continue;
+        if (inspect(record) !== "owned") return;
         host.signal(record.pgid, "SIGTERM");
         pending.push({
           record,
           members: [record, ...members.filter((member) => member.pid !== record.pid)],
         });
-      } catch {
-        /* Keep ownership so a failed stop blocks restart continuation. */
-      }
+      }).pipe(Effect.ignore);
     }
     if (pending.length > 0) yield* Effect.sleep("250 millis");
     for (const { record, members } of pending) {
       // The leader may exit on TERM while a plugin child ignores it. Pin members before
       // signalling so escalation still has an identity witness for the original group.
       if (members.some((member) => inspect(member) === "owned")) {
-        try {
-          host.signal(record.pgid, "SIGKILL");
-        } catch {
-          /* Retain and report below. */
-        }
+        // A failed kill is retained and reported below.
+        yield* Effect.try(() => host.signal(record.pgid, "SIGKILL")).pipe(Effect.ignore);
       }
     }
     if (pending.length > 0) yield* Effect.sleep("50 millis");
@@ -183,7 +178,10 @@ export const makeRegistry = (
       [...previous.values()].find(
         (record) => holds(record, threadId, cwd) && inspect(record) !== "gone",
       )?.pid,
-    stop: (threadId, cwd) => reap(threadId, cwd),
+    // reap owns the span.
+    stop: Effect.fnUntraced(function* (threadId, cwd) {
+      return yield* reap(threadId, cwd);
+    }),
   });
 };
 

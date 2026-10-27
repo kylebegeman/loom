@@ -139,10 +139,9 @@ export const makeReachLibraryClient = (options: ReachLibraryClientOptions): Reac
     decode: (body: unknown) => Effect.Effect<A, unknown>,
   ) =>
     send(action, origin, decode).pipe(
-      Effect.flatMap((outcome) =>
-        outcome.kind === "refused" && outcome.reason === "stale-request"
-          ? send(action, origin, decode)
-          : Effect.succeed(outcome),
+      Effect.filterOrElse(
+        (outcome) => !(outcome.kind === "refused" && outcome.reason === "stale-request"),
+        () => send(action, origin, decode),
       ),
     );
 

@@ -64,6 +64,8 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
   useRemoteEnvironmentRuntime: () => ({ connectionState: "connected" }),
 }));
 vi.mock("../../state/workspace", () => ({ useConnectionsReady: () => true }));
+vi.mock("../../state/entities", () => ({ useProjects: () => [] }));
+vi.mock("../../state/use-composer-drafts", () => ({ updateComposerDraftSettings: () => {} }));
 vi.mock("../../state/shell", () => ({ useEnvironmentShellReadiness: () => ({}) }));
 vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => ({ data: null }) }));
 vi.mock("../../state/use-selected-thread-worktree", () => ({
@@ -104,6 +106,7 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({}),
+  useRoute: () => ({ name: "Thread" }),
   useFocusEffect: () => {},
   StackActions: {},
 }));

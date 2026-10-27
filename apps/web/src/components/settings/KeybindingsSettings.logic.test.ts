@@ -10,7 +10,7 @@ import { resolveShortcutCommand } from "../../keybindings";
 import {
   buildKeybindingCommandOptions,
   buildKeybindingRows,
-  commandLabel,
+  commandLabel, // fork: ext-keybindings
   filterKeybindingRows,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
@@ -225,13 +225,15 @@ describe("KeybindingsSettings.logic", () => {
       },
     });
   });
-});
 
-it("uses Loom feature names that the id cannot title-case", () => {
-  expect(commandLabel("loom.device-qa.run-last-flow")).toBe("Loom: Device QA: Run Last Flow");
-  expect(commandLabel("loom.pcb-preview.toggle")).toBe("Loom: PCB Preview: Toggle");
-  expect(commandLabel("loom.model-preview-3d.capture")).toBe("Loom: 3D Model: Capture");
-  expect(commandLabel("loom.file-outline.toggle")).toBe("Loom: File Outline: Toggle");
+  // fork: ext-keybindings
+  it("uses Loom feature names that the id cannot title-case", () => {
+    expect(commandLabel("loom.device-qa.run-last-flow")).toBe("Loom: Device QA: Run Last Flow");
+    expect(commandLabel("loom.pcb-preview.toggle")).toBe("Loom: PCB Preview: Toggle");
+    expect(commandLabel("loom.model-preview-3d.capture")).toBe("Loom: 3D Model: Capture");
+    expect(commandLabel("loom.file-outline.toggle")).toBe("Loom: File Outline: Toggle");
+  });
+
   it("hides archived inspector commands and ignores their shortcut conflicts", () => {
     const shortcut = {
       key: "j",

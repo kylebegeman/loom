@@ -1238,7 +1238,7 @@ const make = Effect.gen(function* () {
       yield* authorize;
       const result = yield* persist(next, version).pipe(Effect.result);
       if (result._tag === "Success") {
-        yield* notifications.pending(request).pipe(Effect.catch(() => Effect.void));
+        yield* notifications.pending(request);
         return request;
       }
       if (result.failure.reason !== "conflict") return yield* result.failure;
@@ -1820,12 +1820,8 @@ const make = Effect.gen(function* () {
       };
     }),
     catalog: Effect.gen(function* () {
-      const shell = yield* threads
-        .getShellSnapshot()
-        .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })));
-      const projectList = yield* projects
-        .listShells()
-        .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })));
+      const shell = yield* threads.getShellSnapshot();
+      const projectList = yield* projects.listShells();
       const available = shell.threads.filter(
         (thread) => thread.deletedAt === null && thread.archivedAt === null,
       );
@@ -1844,7 +1840,7 @@ const make = Effect.gen(function* () {
         ],
         truncated: projectList.length > 250 || available.length > 250,
       };
-    }),
+    }).pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" }))),
     snapshot: Effect.map(load(), ({ policy }) => snapshotView(policy)),
     setOwnerPolicy: Effect.fn("VaultAccess.setOwnerPolicy")(function* (raw, actor, authorize) {
       const input = yield* decodeOwnerPolicyChange(raw).pipe(

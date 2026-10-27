@@ -1,4 +1,3 @@
-/* oxlint-disable unicorn/prefer-add-event-listener -- The runner owns each worker, so one handler per event is the whole contract. */
 import type { RegexMatch, RegexMatchResult } from "./tools/regexMatch";
 
 /** How long one match may run before its worker is terminated. */

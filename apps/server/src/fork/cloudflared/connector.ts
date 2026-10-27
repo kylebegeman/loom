@@ -255,20 +255,25 @@ const runConnector = (
       let firstGaveUp = false;
       // After it had connected, a cloudflared that gives up stays up without connecting again.
       const gaveUp = yield* Deferred.make<void>();
-      const handleLine = (line: string) => {
+      // Runs per output line; the connector run owns the span.
+      const handleLine = Effect.fnUntraced(function* (line: string) {
         const metricsPort = METRICS_LINE.exec(line)?.[1];
         if (metricsPort !== undefined) {
-          return report({ ...status, metricsPort: Number(metricsPort) });
+          return yield* report({ ...status, metricsPort: Number(metricsPort) });
         }
         const connection = CONNECTION_INDEX.exec(line)?.[1] ?? "unknown";
         if (REGISTERED_LINE.test(line)) {
           connections.add(connection);
           if (connection === "0") firstGaveUp = false;
-          return report({ state: "connected", message: null, metricsPort: status.metricsPort });
+          return yield* report({
+            state: "connected",
+            message: null,
+            metricsPort: status.metricsPort,
+          });
         }
         if (UNREGISTERED_LINE.test(line)) {
           connections.delete(connection);
-          return connections.size > 0
+          return yield* connections.size > 0
             ? Effect.void
             : report({
                 state: "starting",
@@ -284,15 +289,15 @@ const runConnector = (
           if (refusal === "gave-up") firstGaveUp = true;
         }
         const error = errorText(line);
-        if (error === null) return Effect.void;
+        if (error === null) return;
         lastError = error;
-        return Effect.andThen(
+        return yield* Effect.andThen(
           status.state === "connected" && connections.size > 0
             ? Effect.void
             : report({ state: "starting", message: error, metricsPort: status.metricsPort }),
           firstGaveUp && connections.size === 0 ? Deferred.succeed(gaveUp, undefined) : Effect.void,
         );
-      };
+      });
 
       const observer = yield* child.all.pipe(
         Stream.decodeText(),
@@ -372,16 +377,16 @@ export const makeCloudflaredRunner = (names: CloudflaredRunnerNames) =>
       const install = yield* relayClient.install.pipe(
         Effect.map((installed): string | null => installed.executablePath),
         Effect.catchTags({
-          RelayClientInstallError: (error) =>
-            Effect.gen(function* () {
-              pinnedInstallFailedAt = yield* Clock.currentTimeMillis;
-              yield* Effect.logWarning("Could not install the pinned cloudflared", {
-                reason: error.reason,
-                using: resolved.version,
-                pinned: RelayClient.CLOUDFLARED_VERSION,
-              });
-              return null;
-            }),
+          // The enclosing operation owns the span for this inline handler.
+          RelayClientInstallError: Effect.fnUntraced(function* (error) {
+            pinnedInstallFailedAt = yield* Clock.currentTimeMillis;
+            yield* Effect.logWarning("Could not install the pinned cloudflared", {
+              reason: error.reason,
+              using: resolved.version,
+              pinned: RelayClient.CLOUDFLARED_VERSION,
+            });
+            return null;
+          }),
         }),
         Effect.ensuring(
           Effect.sync(() => {

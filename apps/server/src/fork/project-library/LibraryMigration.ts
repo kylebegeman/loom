@@ -326,14 +326,17 @@ const make = Effect.gen(function* () {
   return LibraryMigration.of({
     inventory,
     exportShadow,
-    withSnapshot: (effect) =>
-      sql
+    withSnapshot: Effect.fn("LibraryMigration.withSnapshot")(function* <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.fn.Return<A, E | LibraryError, R> {
+      return yield* sql
         .withTransaction(effect)
         .pipe(
           Effect.mapError((cause) =>
             isLibraryError(cause) ? cause : new LibraryError({ reason: "io" }),
           ),
-        ),
+        );
+    }),
   });
 });
 export const layer = Layer.effect(LibraryMigration, make);

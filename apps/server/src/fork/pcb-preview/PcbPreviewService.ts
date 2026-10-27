@@ -993,10 +993,10 @@ export const make = Effect.gen(function* () {
         snapshot,
         frozen,
       ).pipe(
-        Effect.catch((cause) =>
-          isPreviewError(cause) && cause.reason === "unsupported-view"
-            ? Effect.succeed({ error: cause })
-            : Effect.fail(cause),
+        Effect.catchIf(
+          (cause): cause is PcbPreviewError & { readonly reason: "unsupported-view" } =>
+            isPreviewError(cause) && cause.reason === "unsupported-view",
+          (cause) => Effect.succeed({ error: cause }),
         ),
       );
       const build = yield* variantSource === undefined
@@ -2023,10 +2023,11 @@ export const make = Effect.gen(function* () {
               }),
             )
             .pipe(
-              Effect.catch((cause) =>
-                isPreviewError(cause) && cause.reason === "source-limit"
-                  ? Effect.fail(cause)
-                  : Effect.succeed(null),
+              Effect.catchIf(
+                (cause): cause is PcbPreviewError =>
+                  isPreviewError(cause) && cause.reason === "source-limit",
+                Effect.fail,
+                () => Effect.succeed(null),
               ),
             );
           if (cached) return cached;
@@ -2328,13 +2329,11 @@ export const make = Effect.gen(function* () {
               path.join(directory, "nets.net"),
               resolved.cwd,
             ).pipe(
-              Effect.catch(() =>
-                Effect.succeed({
-                  inspection,
-                  netlist: null,
-                  log: "Netlist export failed; reviewing available source.",
-                }),
-              ),
+              Effect.orElseSucceed(() => ({
+                inspection,
+                netlist: null,
+                log: "Netlist export failed; reviewing available source.",
+              })),
             );
           }
           log = connected.log;
@@ -3436,19 +3435,24 @@ export const make = Effect.gen(function* () {
       checked(resolveDesign(i).pipe(Effect.flatMap(sourceSnapshot))).pipe(
         Effect.map((s) => s.sourceHash),
       ),
-    refresh: (root) =>
-      entries.refresh(root).pipe(
-        Effect.asVoid,
-        Effect.catch(() => Effect.void),
-      ),
+    refresh: (root) => entries.refresh(root).pipe(Effect.asVoid),
   });
   return PcbPreviewService.of({
     renderVariant,
     cancelVariant,
-    proposeVariants: (i, v) => checked(proposeVariants(i, v)),
+    proposeVariants: Effect.fn("PcbPreviewService.proposeVariants")(function (i, v) {
+      return checked(proposeVariants(i, v));
+    }),
     history: pcbHistory.history,
-    historyRestore: (i, options) => storageLock.withPermit(pcbHistory.restore(i, options)),
-    historyUndo: (i) => storageLock.withPermit(pcbHistory.undo(i)),
+    historyRestore: Effect.fn("PcbPreviewService.historyRestore")(function (
+      i: W.PcbHistoryRestoreInput,
+      options?: { checkContent: boolean },
+    ) {
+      return storageLock.withPermit(pcbHistory.restore(i, options));
+    }),
+    historyUndo: Effect.fn("PcbPreviewService.historyUndo")(function (i) {
+      return storageLock.withPermit(pcbHistory.undo(i));
+    }),
     ...turnDesignMethods,
     turnDesignEvents: (i) =>
       turnDesignMethods
@@ -3459,56 +3463,130 @@ export const make = Effect.gen(function* () {
           ),
         ),
     pinMap,
-    resolveSignedRequest: (token, relative) => checked(resolveSignedRequest(token, relative)),
+    resolveSignedRequest: Effect.fn("PcbPreviewService.resolveSignedRequest")(
+      function (token, relative) {
+        return checked(resolveSignedRequest(token, relative));
+      },
+    ),
     workspaceUpdates: (i) =>
       workspaceUpdates(i).pipe(
         Stream.mapError((c) => (c._tag === "PcbPreviewError" ? c : ioFailure())),
       ),
-    reuseHardware: (i) => checked(reuseHardware(i)),
-    enclosure: (i) => checked(enclosure(i)),
-    exportReference: (i) => checked(exportReference(i)),
+    reuseHardware: Effect.fn("PcbPreviewService.reuseHardware")(function (i) {
+      return checked(reuseHardware(i));
+    }),
+    enclosure: Effect.fn("PcbPreviewService.enclosure")(function (i) {
+      return checked(enclosure(i));
+    }),
+    exportReference: Effect.fn("PcbPreviewService.exportReference")(function (i) {
+      return checked(exportReference(i));
+    }),
     panelEvents: (id) =>
       panelEvents(id).pipe(Stream.mapError((e) => (isPreviewError(e) ? e : ioFailure()))),
     editorEvents: (i) =>
       editorEvents(i).pipe(
         Stream.mapError((cause) => (cause._tag === "PcbPreviewError" ? cause : ioFailure())),
       ),
-    editorAction: (i) => checked(editorAction(i)),
-    completeEditorAction: (i) => checked(completeEditorAction(i)),
-    print: (i) => checked(print(i)),
-    inspect: (i) => checked(inspect(i)),
-    getWorkspace: (i) => checked(getWorkspace(i)),
-    updateWorkspace: (i) => checked(updateWorkspace(i)),
+    editorAction: Effect.fn("PcbPreviewService.editorAction")(function (i) {
+      return checked(editorAction(i));
+    }),
+    completeEditorAction: Effect.fn("PcbPreviewService.completeEditorAction")(function (i) {
+      return checked(completeEditorAction(i));
+    }),
+    print: Effect.fn("PcbPreviewService.print")(function (i) {
+      return checked(print(i));
+    }),
+    inspect: Effect.fn("PcbPreviewService.inspect")(function (i) {
+      return checked(inspect(i));
+    }),
+    getWorkspace: Effect.fn("PcbPreviewService.getWorkspace")(function (i) {
+      return checked(getWorkspace(i));
+    }),
+    updateWorkspace: Effect.fn("PcbPreviewService.updateWorkspace")(function (i) {
+      return checked(updateWorkspace(i));
+    }),
     changeRequest: requests.changeRequest,
     listRequests: requests.listRequests,
-    asset: (i) => checked(asset(i)),
-    compare: (i) => checked(compare(i)),
-    revisions: (i) => checked(revisions(i)),
-    parameters: (i) => checked(parameters(i)),
-    applyParameters: (i) => checked(applyParameters(i)),
-    simulate: (i) => checked(simulate(i)),
-    library: () => checked(library()),
-    updateLibrary: (i) => checked(updateLibrary(i)),
+    asset: Effect.fn("PcbPreviewService.asset")(function (i) {
+      return checked(asset(i));
+    }),
+    compare: Effect.fn("PcbPreviewService.compare")(function (i) {
+      return checked(compare(i));
+    }),
+    revisions: Effect.fn("PcbPreviewService.revisions")(function (i) {
+      return checked(revisions(i));
+    }),
+    parameters: Effect.fn("PcbPreviewService.parameters")(function (i) {
+      return checked(parameters(i));
+    }),
+    applyParameters: Effect.fn("PcbPreviewService.applyParameters")(function (i) {
+      return checked(applyParameters(i));
+    }),
+    simulate: Effect.fn("PcbPreviewService.simulate")(function (i) {
+      return checked(simulate(i));
+    }),
+    library: Effect.fn("PcbPreviewService.library")(function () {
+      return checked(library());
+    }),
+    updateLibrary: Effect.fn("PcbPreviewService.updateLibrary")(function (i) {
+      return checked(updateLibrary(i));
+    }),
 
-    status: () => checked(status()),
-    listDesigns: (i) => checked(listDesigns(i)),
-    render: (i) => checked(render(i)),
-    readSheet: (i) => checked(readSheet(i)),
-    projectSettings: (i) => checked(projectSettings(i)),
-    updateProjectSettings: (i) => checked(updateProjectSettings(i)),
+    status: Effect.fn("PcbPreviewService.status")(function () {
+      return checked(status());
+    }),
+    listDesigns: Effect.fn("PcbPreviewService.listDesigns")(function (i) {
+      return checked(listDesigns(i));
+    }),
+    render: Effect.fn("PcbPreviewService.render")(function (i) {
+      return checked(render(i));
+    }),
+    readSheet: Effect.fn("PcbPreviewService.readSheet")(function (i) {
+      return checked(readSheet(i));
+    }),
+    projectSettings: Effect.fn("PcbPreviewService.projectSettings")(function (i) {
+      return checked(projectSettings(i));
+    }),
+    updateProjectSettings: Effect.fn("PcbPreviewService.updateProjectSettings")(function (i) {
+      return checked(updateProjectSettings(i));
+    }),
     checkEvents,
-    fabPackage: (i) => checked(fabPackages.build(i)),
-    fabPackages: (i) => checked(fabPackages.list(i)),
-    fabPackageZip: (i) => checked(fabPackages.zip(i)),
-    deleteFabPackage: (i) => checked(fabPackages.remove(i)),
-    fabCapabilities: () => checked(fabCatalog.read),
-    updateFabCapabilities: (i) => checked(fabCatalog.update(i)),
-    fabCheck: (i) => checked(fabChecks.run(i)),
-    latestFabCheck: (i) => checked(fabChecks.latest(i)),
-    review: (i) => checked(review(i)).pipe(Effect.map((value) => value as W.PcbReviewResult)),
-    latestReview: (i) => checked(latestReview(i)),
-    check: (i) => checked(check(i)).pipe(Effect.map((value) => value as PcbCheckResult)),
-    latestChecks: (i) => checked(latestChecks(i)),
+    fabPackage: Effect.fn("PcbPreviewService.fabPackage")(function (i) {
+      return checked(fabPackages.build(i));
+    }),
+    fabPackages: Effect.fn("PcbPreviewService.fabPackages")(function (i) {
+      return checked(fabPackages.list(i));
+    }),
+    fabPackageZip: Effect.fn("PcbPreviewService.fabPackageZip")(function (i) {
+      return checked(fabPackages.zip(i));
+    }),
+    deleteFabPackage: Effect.fn("PcbPreviewService.deleteFabPackage")(function (i) {
+      return checked(fabPackages.remove(i));
+    }),
+    fabCapabilities: Effect.fn("PcbPreviewService.fabCapabilities")(function () {
+      return checked(fabCatalog.read);
+    }),
+    updateFabCapabilities: Effect.fn("PcbPreviewService.updateFabCapabilities")(function (i) {
+      return checked(fabCatalog.update(i));
+    }),
+    fabCheck: Effect.fn("PcbPreviewService.fabCheck")(function (i) {
+      return checked(fabChecks.run(i));
+    }),
+    latestFabCheck: Effect.fn("PcbPreviewService.latestFabCheck")(function (i) {
+      return checked(fabChecks.latest(i));
+    }),
+    review: Effect.fn("PcbPreviewService.review")(function (i) {
+      return checked(review(i)).pipe(Effect.map((value) => value as W.PcbReviewResult));
+    }),
+    latestReview: Effect.fn("PcbPreviewService.latestReview")(function (i) {
+      return checked(latestReview(i));
+    }),
+    check: Effect.fn("PcbPreviewService.check")(function (i) {
+      return checked(check(i)).pipe(Effect.map((value) => value as PcbCheckResult));
+    }),
+    latestChecks: Effect.fn("PcbPreviewService.latestChecks")(function (i) {
+      return checked(latestChecks(i));
+    }),
     watch: (i) =>
       watch(i).pipe(
         Stream.mapError((cause) => (cause._tag === "PcbPreviewError" ? cause : ioFailure())),

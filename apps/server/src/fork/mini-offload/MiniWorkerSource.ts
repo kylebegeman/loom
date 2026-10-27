@@ -74,15 +74,16 @@ const makeFile = Effect.gen(function* () {
     write(all.map((row) => (row.id === next.id ? next : row)));
   return MiniWorkerSource.of({
     list,
-    lookup: (workerId) =>
-      rows.pipe(
+    lookup: Effect.fn("MiniWorkerSource.lookup")(function (workerId) {
+      return rows.pipe(
         Effect.map((all) => {
           const row = all.find((candidate) => candidate.id === workerId);
           return row && live(row);
         }),
-      ),
-    register: (input) =>
-      writeLock.withPermit(
+      );
+    }),
+    register: Effect.fn("MiniWorkerSource.register")(function (input) {
+      return writeLock.withPermit(
         Effect.gen(function* () {
           const worker = yield* decode(MiniWorker, input);
           if (worker.sshConfig !== null && !NodePath.isAbsolute(worker.sshConfig))
@@ -94,9 +95,10 @@ const makeFile = Effect.gen(function* () {
           yield* write([...all.filter((row) => row.id !== worker.id), worker]);
           return worker;
         }),
-      ),
-    setEnabled: (input) =>
-      writeLock.withPermit(
+      );
+    }),
+    setEnabled: Effect.fn("MiniWorkerSource.setEnabled")(function (input) {
+      return writeLock.withPermit(
         Effect.gen(function* () {
           const all = yield* rows;
           const worker = all.find((row) => row.id === input.workerId && !row.removed);
@@ -105,9 +107,10 @@ const makeFile = Effect.gen(function* () {
           yield* replace(all, next);
           return next;
         }),
-      ),
-    update: (input) =>
-      writeLock.withPermit(
+      );
+    }),
+    update: Effect.fn("MiniWorkerSource.update")(function (input) {
+      return writeLock.withPermit(
         Effect.gen(function* () {
           const connection = yield* decode(MiniWorkerConnection, input);
           if (connection.sshConfig !== null && !NodePath.isAbsolute(connection.sshConfig))
@@ -120,9 +123,10 @@ const makeFile = Effect.gen(function* () {
           yield* replace(all, next);
           return next;
         }),
-      ),
-    remove: (input) =>
-      writeLock.withPermit(
+      );
+    }),
+    remove: Effect.fn("MiniWorkerSource.remove")(function (input) {
+      return writeLock.withPermit(
         Effect.gen(function* () {
           const { workerId } = yield* decode(MiniWorkerRef, input);
           const all = yield* rows;
@@ -131,7 +135,8 @@ const makeFile = Effect.gen(function* () {
           yield* replace(all, { ...worker, enabled: false, removed: true });
           return worker;
         }),
-      ),
+      );
+    }),
   });
 });
 

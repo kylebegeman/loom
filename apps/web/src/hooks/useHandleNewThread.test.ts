@@ -218,7 +218,7 @@ vi.mock("../uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "remote-project",
   useUiStateStore: () => [],
 }));
-vi.mock("./useSettings", () => ({ useClientSettings: () => ({}) }));
+vi.mock("./useSettings", () => ({ getClientSettings: () => ({}) }));
 
 // fork: library-projects
 vi.mock("../fork/project-library/libraryLocalProjectStart", () => ({

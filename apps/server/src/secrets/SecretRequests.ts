@@ -306,8 +306,15 @@ const make = Effect.gen(function* () {
   });
 
   // fork: ext-vault
-  const transfer: SecretRequests["Service"]["transfer"] = (input, use) =>
-    Effect.gen(function* () {
+  const transfer: SecretRequests["Service"]["transfer"] = Effect.fn("SecretRequests.transfer")(
+    function* <A, E, R>(
+      input: {
+        readonly ref: SecretRef;
+        readonly projectId: ProjectId;
+        readonly operationId: string;
+      },
+      use: (value: string) => Effect.Effect<A, E, R>,
+    ) {
       if (!input.operationId || input.operationId.length > 512)
         return yield* new SecretRequestError({ reason: "invalid_ref" });
       const stored = yield* readRef(input);
@@ -330,7 +337,9 @@ const make = Effect.gen(function* () {
       yield* removeLogged(storeName(input.ref));
       yield* Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" });
       return result;
-    }).pipe(consumeLock.withPermits(1), Effect.withSpan("SecretRequests.transfer"));
+    },
+    consumeLock.withPermits(1),
+  );
 
   const sweepExpired = Effect.gen(function* () {
     if (store.directory === undefined) return;

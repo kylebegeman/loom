@@ -37,7 +37,7 @@ import { SidebarInset } from "~/components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useThreadActions } from "~/hooks/useThreadActions";
-import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
+import { useEscapeToGoBack } from "./useEscapeToGoBack";
 import { useConnectedEnvironmentIds } from "~/state/environments";
 import { useThreadShellsForProjectRefs } from "~/state/entities";
 import { environmentServerConfigsAtom } from "~/state/server";

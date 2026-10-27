@@ -7,7 +7,6 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -44,7 +43,7 @@ const dependencies = Layer.mergeAll(
   NodeServices.layer,
   storeLayer,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
-  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeed(Option.none()) }),
+  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeedNone }),
   Layer.mock(ThreadManagementService)({
     getThreadShell: () =>
       Effect.succeed({

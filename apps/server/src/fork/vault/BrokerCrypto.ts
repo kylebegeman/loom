@@ -54,24 +54,26 @@ export const layer = Layer.succeed(
       },
       catch: invalid,
     }),
-    fingerprint: (key) =>
-      Effect.try({
+    fingerprint: Effect.fn("BrokerCrypto.fingerprint")(function (key) {
+      return Effect.try({
         try: () =>
           NodeCrypto.createHash("sha256")
             .update(publicObject(key).export({ type: "spki", format: "der" }))
             .digest("hex"),
         catch: invalid,
-      }),
-    publicKey: (key) =>
-      Effect.try({
+      });
+    }),
+    publicKey: Effect.fn("BrokerCrypto.publicKey")(function (key) {
+      return Effect.try({
         try: () =>
           NodeCrypto.createPublicKey(Redacted.value(key))
             .export({ type: "spki", format: "der" })
             .toString("base64"),
         catch: invalid,
-      }),
-    sign: (key, message) =>
-      Effect.try({
+      });
+    }),
+    sign: Effect.fn("BrokerCrypto.sign")(function (key, message) {
+      return Effect.try({
         try: () =>
           NodeCrypto.sign(
             null,
@@ -79,9 +81,10 @@ export const layer = Layer.succeed(
             NodeCrypto.createPrivateKey(Redacted.value(key)),
           ).toString("base64"),
         catch: invalid,
-      }),
-    verify: (key, message, signature) =>
-      Effect.try({
+      });
+    }),
+    verify: Effect.fn("BrokerCrypto.verify")(function (key, message, signature) {
+      return Effect.try({
         try: () =>
           NodeCrypto.verify(
             null,
@@ -90,6 +93,7 @@ export const layer = Layer.succeed(
             Buffer.from(signature, "base64"),
           ),
         catch: invalid,
-      }),
+      });
+    }),
   }),
 );

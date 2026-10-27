@@ -26,7 +26,8 @@ import { isHostedStaticApp } from "~/hostedPairing";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { accessBlock } from "./accessBlock";
 
-export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
+export const projectLibrary: ReturnType<typeof createProjectLibraryAtoms> =
+  createProjectLibraryAtoms(connectionAtomRuntime);
 const AUTHORITY_KEY = "loom:project-library:authority:v1";
 const SELECTED_PROJECT_KEY = "loom:project-library:selected-project:v1";
 const Authority = Schema.NullOr(EnvironmentId);

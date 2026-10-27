@@ -13,7 +13,11 @@ export function ThreadListFilters(
     | "selectedProjectKey"
     | "onEnvironmentChange"
     | "onProjectChange"
-  > & { readonly projectView?: boolean },
+  > & {
+    /** List padding the scroller bleeds through so pills start where row content does. */
+    readonly gutter: number;
+    readonly projectView?: boolean;
+  },
 ) {
   const selectedEnvironment = props.environments.find(
     (environment) => environment.environmentId === props.selectedEnvironmentId,
@@ -25,7 +29,8 @@ export function ThreadListFilters(
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10, gap: 8 }}
+      style={{ marginHorizontal: -props.gutter }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 2, paddingBottom: 10, gap: 8 }}
     >
       <ListFilterMenu
         label={selectedEnvironment?.label ?? "All computers"}
