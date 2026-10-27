@@ -115,7 +115,7 @@ export interface Preferences {
   readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
   readonly loomLibraryFileChanges?: Readonly<Record<string, string>>;
   readonly "loom.library.authorityEnvironmentId"?: string | null;
-  /** What the Return key does in the composer on a hardware keyboard. iOS only. */
+  /** Hardware Return behavior is iOS-only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;

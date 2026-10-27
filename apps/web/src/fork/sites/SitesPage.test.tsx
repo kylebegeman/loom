@@ -58,7 +58,8 @@ vi.mock("~/state/query", () => ({
         }
       : { data: null, error: null, isPending: false, refresh: vi.fn() },
 }));
-vi.mock("./SiteEditor", () => ({
+vi.mock("./SiteEditor", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./SiteEditor")>()),
   SiteEditor: ({ environmentId }: { environmentId: string }) => (
     <span role="dialog">Editing on {environmentId}</span>
   ),
@@ -98,8 +99,18 @@ import {
   SitesPage,
   type SiteFilters,
 } from "./SitesPage";
-
-const editor = await vi.importActual<typeof import("./SiteEditor")>("./SiteEditor");
+import {
+  activeToggleRequest,
+  checkNameFromPath,
+  idFromName,
+  readCheckPath,
+  readSiteAddress,
+  siteDraftIssues,
+  siteProjectChoices,
+  siteSaveRequest,
+  uniqueId,
+  unsentRequest,
+} from "./SiteEditor";
 
 type Site = SitesSnapshot["sites"][number];
 type Service = SitesSnapshot["services"][number];
@@ -469,12 +480,12 @@ it("filters services by failing and paused, counting each", () => {
 
 describe("site editor helpers", () => {
   it("reads typed hosts and pasted page URLs as an HTTPS origin", () => {
-    expect(editor.readSiteAddress("Shop.Example.com/pricing?plan=pro")).toEqual({
+    expect(readSiteAddress("Shop.Example.com/pricing?plan=pro")).toEqual({
       ok: true,
       origin: "https://shop.example.com",
       droppedPath: "/pricing?plan=pro",
     });
-    expect(editor.readSiteAddress("https://example.com/")).toEqual({
+    expect(readSiteAddress("https://example.com/")).toEqual({
       ok: true,
       origin: "https://example.com",
       droppedPath: null,
@@ -483,37 +494,36 @@ describe("site editor helpers", () => {
 
   it("says why an address cannot be a site", () => {
     for (const input of ["", "http://example.com", "ftp://example.com", "localhost"]) {
-      expect(editor.readSiteAddress(input).ok, input).toBe(false);
+      expect(readSiteAddress(input).ok, input).toBe(false);
     }
-    expect(editor.readSiteAddress("https://me:secret@example.com")).toEqual({
+    expect(readSiteAddress("https://me:secret@example.com")).toEqual({
       ok: false,
       reason: "Leave sign-in details out of the address.",
     });
   });
 
   it("derives IDs and keeps them unique within the length limit", () => {
-    expect(editor.idFromName("Café Menu!")).toBe("cafe-menu");
-    expect(editor.uniqueId("blog", new Set(["blog", "blog-2"]))).toBe("blog-3");
-    expect(editor.uniqueId("", new Set())).toBe("site");
+    expect(idFromName("Café Menu!")).toBe("cafe-menu");
+    expect(uniqueId("blog", new Set(["blog", "blog-2"]))).toBe("blog-3");
+    expect(uniqueId("", new Set())).toBe("site");
     const long = "a".repeat(64);
-    const next = editor.uniqueId(long, new Set([long]));
+    const next = uniqueId(long, new Set([long]));
     expect(next).toHaveLength(64);
     expect(next.endsWith("-2")).toBe(true);
   });
 
   it("names checks from their page and keeps them on their service", () => {
-    expect(editor.checkNameFromPath("/")).toBe("Home");
-    expect(editor.checkNameFromPath("/api/health-check?full=1")).toBe("Health check");
-    expect(editor.readCheckPath("health", "https://api.example.com")).toEqual({
+    expect(checkNameFromPath("/")).toBe("Home");
+    expect(checkNameFromPath("/api/health-check?full=1")).toBe("Health check");
+    expect(readCheckPath("health", "https://api.example.com")).toEqual({
       ok: true,
       url: "https://api.example.com/health",
     });
-    expect(
-      editor.readCheckPath("https://api.example.com/v1?x=1", "https://api.example.com"),
-    ).toEqual({ ok: true, url: "https://api.example.com/v1?x=1" });
-    expect(editor.readCheckPath("https://other.example.com/", "https://api.example.com").ok).toBe(
-      false,
-    );
+    expect(readCheckPath("https://api.example.com/v1?x=1", "https://api.example.com")).toEqual({
+      ok: true,
+      url: "https://api.example.com/v1?x=1",
+    });
+    expect(readCheckPath("https://other.example.com/", "https://api.example.com").ok).toBe(false);
   });
 
   const draft = {
@@ -528,18 +538,18 @@ describe("site editor helpers", () => {
   };
 
   it("holds each wizard step until it is complete", () => {
-    expect(editor.siteDraftIssues(draft, new Set())).toEqual({
+    expect(siteDraftIssues(draft, new Set())).toEqual({
       address: null,
       serves: null,
       monitoring: null,
     });
-    const issues = editor.siteDraftIssues({ ...draft, projectIds: [] }, new Set(["shop"]));
+    const issues = siteDraftIssues({ ...draft, projectIds: [] }, new Set(["shop"]));
     expect(issues.address).toBe("Another site already uses the ID shop.");
     expect(issues.serves).toBe("Choose at least one project this site serves.");
   });
 
   it("saves the site's own origin first and its watch service once", () => {
-    expect(editor.siteSaveRequest(draft, "https://shop.example.com", "shop")).toEqual({
+    expect(siteSaveRequest(draft, "https://shop.example.com", "shop")).toEqual({
       id: "shop",
       name: "Shop",
       url: "https://shop.example.com",
@@ -552,11 +562,11 @@ describe("site editor helpers", () => {
 
   it("lets a retry skip only a request that already went through unedited", () => {
     const first = { id: "shop", name: "Shop", url: "https://shop.example.com" };
-    const sent = editor.unsentRequest(first, null);
+    const sent = unsentRequest(first, null);
     expect(sent.request).toBe(first);
-    expect(editor.unsentRequest({ ...first }, sent.key).request).toBeNull();
+    expect(unsentRequest({ ...first }, sent.key).request).toBeNull();
     const renamed = { ...first, name: "Store" };
-    expect(editor.unsentRequest(renamed, sent.key).request).toBe(renamed);
+    expect(unsentRequest(renamed, sent.key).request).toBe(renamed);
   });
 
   it("offers archived projects only when the site already serves them", () => {
@@ -572,13 +582,13 @@ describe("site editor helpers", () => {
     });
     const projects = [project("old", true), project("live"), project("kept", true)];
     const ids = (selected: readonly string[]) =>
-      editor.siteProjectChoices(projects, selected).map((entry) => entry.id);
+      siteProjectChoices(projects, selected).map((entry) => entry.id);
     expect(ids([])).toEqual(["live"]);
     expect(ids(["kept", "live"])).toEqual(["live", "kept"]);
   });
 
   it("replays an entry unchanged apart from whether it is watched", () => {
-    expect(editor.activeToggleRequest({ kind: "site", row: site("shop") }, false)).toEqual({
+    expect(activeToggleRequest({ kind: "site", row: site("shop") }, false)).toEqual({
       kind: "site",
       input: {
         id: "shop",
@@ -591,14 +601,14 @@ describe("site editor helpers", () => {
       },
     });
     const bare = check("shop", { state: "disabled" });
-    expect(editor.activeToggleRequest({ kind: "check", row: bare }, true).input).toMatchObject({
+    expect(activeToggleRequest({ kind: "check", row: bare }, true).input).toMatchObject({
       active: true,
       expected_status: 200,
       content: "",
     });
     // The API rejects a site with no projects, so resuming one sends people to its editor instead.
     expect(() =>
-      editor.activeToggleRequest({ kind: "site", row: site("docs", { projectIds: [] }) }, true),
+      activeToggleRequest({ kind: "site", row: site("docs", { projectIds: [] }) }, true),
     ).toThrow();
   });
 });

@@ -144,6 +144,7 @@ export function WorkspaceConnectionTitle(props: {
       onPress={props.onPress}
       className="flex-row items-center gap-2"
       style={[
+        // fork: fleet-connections
         {
           flexShrink: 1,
           marginLeft: Platform.OS === "ios" ? 0 : (props.statusOffset ?? 0),

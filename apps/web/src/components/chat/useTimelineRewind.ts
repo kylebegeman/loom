@@ -22,22 +22,24 @@ import {
 import { readLocalApi } from "../../localApi";
 import { findRevertCheckpoint } from "../../session-logic";
 import { type ChatMessage } from "../../types";
-import { newThreadId, randomUUID } from "~/lib/utils"; // fork: project-lifecycle
+import { newThreadId } from "~/lib/utils";
+import { randomUUID } from "~/lib/utils"; // fork: project-lifecycle
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { threadEnvironment } from "../../state/threads";
 import { waitForThreadShell } from "../../state/entities";
-import { openRevertConfirm, type PendingRevert } from "./ChatOverlayHosts"; // fork: project-lifecycle
+import { openRevertConfirm } from "./ChatOverlayHosts";
+import type { PendingRevert } from "./ChatOverlayHosts"; // fork: project-lifecycle
 import { assetEnvironment } from "../../state/assets";
 import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { rewindToMessage } from "./chatViewSend";
-import { makeThreadErrorSetter, waitForRevertedMessage } from "../ChatView.logic";
-// fork: project-lifecycle
-import { serverEnvironment } from "../../state/server";
-import { toastManager } from "../ui/toast";
+import { makeThreadErrorSetter } from "../ChatView.logic";
+import { waitForRevertedMessage } from "../ChatView.logic"; // fork: project-lifecycle
+import { serverEnvironment } from "../../state/server"; // fork: project-lifecycle
+import { toastManager } from "../ui/toast"; // fork: project-lifecycle
 interface TimelineRewindInput {
   readonly environmentId: EnvironmentId;
   readonly routeThreadRef: ScopedThreadRef;

@@ -21,7 +21,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FiberSet from "effect/FiberSet"; // fork: project-lifecycle
+import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -291,6 +291,7 @@ const make = Effect.gen(function* () {
   const cleanup = yield* StorageCleanup.StorageCleanup;
   const path = yield* Path.Path;
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
+  // fork: project-lifecycle
   const settleActionResults = new Map<ThreadId, { readonly at: number; readonly ready: boolean }>();
   // fork: server-weight -- every settings read materializes secrets, so a sweep reuses its own
   // read until a change arrives, and decisions made after a change still read it fresh.
@@ -575,6 +576,7 @@ const make = Effect.gen(function* () {
   const doneWithWorktree = cleanup.requestSweep.pipe(Effect.as(true));
 
   // Skip settle scripts in shared checkouts where other threads may still work.
+  // fork: project-lifecycle
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
@@ -731,9 +733,10 @@ const make = Effect.gen(function* () {
 
   return {
     start,
-    prepareForCleanup: cleanUpSettledThread,
+    prepareForCleanup: cleanUpSettledThread, // fork: project-lifecycle
+    // fork: project-lifecycle
     drain: Effect.andThen(fullSweeps.drain, FiberSet.awaitEmpty(threadSweeps)).pipe(
-      Effect.andThen(FiberSet.awaitEmpty(settlementTasks)), // fork: project-lifecycle
+      Effect.andThen(FiberSet.awaitEmpty(settlementTasks)),
     ),
   } satisfies ThreadSettlementServiceV2["Service"];
 });

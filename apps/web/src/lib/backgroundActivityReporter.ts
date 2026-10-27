@@ -206,6 +206,8 @@ export const layer = Layer.effectDiscard(
           ),
         );
       },
+      // Not `ignore`: tearing down an environment mid-request interrupts its report,
+      // and an interrupt leaking out here would end the reporting loop for good.
       (effect) => effect.pipe(Effect.ignoreCause),
     );
     const report = Effect.gen(function* () {

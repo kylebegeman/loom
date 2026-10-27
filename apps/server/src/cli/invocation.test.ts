@@ -125,8 +125,6 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.IsExecutable, false),
         )).command,
       ).toBe('loom doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"'); // fork: brand
-      // POSIX hosts keep single quotes for the same input. The shim prefix is
-      // a host path, so only the arguments are asserted.
       expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
         / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
       );

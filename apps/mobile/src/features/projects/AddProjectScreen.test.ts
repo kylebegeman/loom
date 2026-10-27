@@ -29,7 +29,6 @@ const state = vi.hoisted(() => ({
   baseDirectory: "",
   projects: [] as string[],
   // fork: fleet-connections
-  createRequests: [] as { environmentId: string; workspaceRoot: string }[],
   newProjectName: "",
   newProjectRequests: [] as { environmentId: string; name: string }[],
   publishRequests: [] as { environmentId: string; cwd: string }[],
@@ -319,16 +318,13 @@ vi.mock("../../state/projects", () => ({
         )
       );
     },
+    // fork: fleet-connections
     create: ({
-      environmentId,
       input,
     }: {
-      environmentId: string;
       input: { workspaceRoot: string; createWorkspaceRootIfMissing: boolean };
     }) => {
-      state.createRequests.push({ environmentId, workspaceRoot: input.workspaceRoot });
-      const scopes = environmentId === "other-environment" ? state.otherScopes : state.scopes;
-      if (!scopes.has(AuthOrchestrationOperateScope)) {
+      if (!state.scopes.has(AuthOrchestrationOperateScope)) {
         return Promise.resolve(
           AsyncResult.failure(Cause.fail(new Error("Project creation denied"))),
         );
@@ -1244,7 +1240,6 @@ describe("open an existing folder", () => {
     state.baseDirectory = NodePath.join(temporaryRoot, "existing");
     state.scopes = new Set([AuthOrchestrationOperateScope]);
     state.projects = [];
-    state.createRequests = [];
     state.createResult = null;
     resetForkNavigation();
     state.checkDirectories = true;

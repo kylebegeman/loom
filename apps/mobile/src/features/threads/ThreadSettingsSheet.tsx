@@ -297,19 +297,23 @@ export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
   readonly ownerId: string;
 };
 
+// fork: library
 const presentedSettingsSessionAtom = Atom.make<ExistingThreadSettingsRouteSession | null>(
   null,
 ).pipe(Atom.keepAlive, Atom.withLabel("mobile:presented-thread-settings-session"));
 
+// fork: library
 function presentExistingThreadSettingsRouteSession(session: ExistingThreadSettingsRouteSession) {
   appAtomRegistry.set(presentedSettingsSessionAtom, session);
 }
 
+// fork: library
 function clearExistingThreadSettingsRouteSession(ownerId: string) {
   if (appAtomRegistry.get(presentedSettingsSessionAtom)?.ownerId !== ownerId) return;
   appAtomRegistry.set(presentedSettingsSessionAtom, null);
 }
 
+// fork: library
 export function useExistingThreadSettingsRoutePresentation() {
   return {
     session: useAtomValue(presentedSettingsSessionAtom),
@@ -878,6 +882,7 @@ function ThreadSettingsOptionsItem(props: {
   return (
     <View style={{ paddingBottom: insets.bottom + bottomToolbarInset + 12 }}>
       <ChatGptSharingStatus provider={selectedProvider} />
+      {/* fork: bots: bot forms without options or runtime hide the card. */}
       {session.displayedDescriptors.length > 0 || !session.hideRuntimeMode ? (
         <>
           <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">
@@ -956,7 +961,6 @@ function ThreadSettingsOptionsItem(props: {
                 />
               </Animated.View>
             )}
-            {/* fork: bots */}
           </Animated.View>
         </>
       ) : null}
@@ -1679,6 +1683,7 @@ export function ThreadSettingsSheetRouteScreen({
   );
 }
 
+// fork: library
 function PresentedThreadSettingsRouteScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const presentation = useExistingThreadSettingsRoutePresentation();

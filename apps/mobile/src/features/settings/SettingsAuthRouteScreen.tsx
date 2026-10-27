@@ -44,7 +44,7 @@ function ConfiguredSettingsAuthRouteScreen() {
     if (hasBeenSignedIn && isLoaded && isSignedIn === false) {
       navigation.goBack();
     }
-  }, [handleHostBack, hasBeenSignedIn, isLoaded, isSignedIn]);
+  }, [hasBeenSignedIn, isLoaded, isSignedIn, navigation]);
 
   return (
     <View collapsable={false} className="flex-1 overflow-hidden bg-sheet">

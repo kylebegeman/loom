@@ -76,6 +76,7 @@ if (!process.argv.includes("--force-install") && workspaceInstallationReady(work
   // Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation
   // flag and closed stdin so other prompts fail. A stale lockfile must fail, not be rewritten.
   // Pipe output so the failure marker can keep its tail.
+  // fork: setup-reuse: the checkout's own vp when present, preferring the offline store.
   const install = NodeChildProcess.spawn(
     NodeFS.existsSync(localVp) ? localVp : "vp",
     ["i", "--", "--yes", "--frozen-lockfile", "--prefer-offline"],
@@ -105,7 +106,7 @@ if (!process.argv.includes("--force-install") && workspaceInstallationReady(work
       : installOutput.trimEnd().split("\n").slice(-30).join("\n");
     process.exit(installStatus || 1);
   }
-  recordWorkspaceInstallation(worktree);
+  recordWorkspaceInstallation(worktree); // fork: setup-reuse
   process.stdout.write(
     `Dependencies ready (${Math.round(performance.now() - installStarted)} ms).\n`,
   );
@@ -162,19 +163,6 @@ const seed = NodeChildProcess.spawnSync(
 if (seed.status !== 0) process.exit(seed.status ?? 1);
 process.stdout.write(
   `Development data ready (${Math.round(performance.now() - dataStarted)} ms).\n`,
-);
-
-const warmStarted = performance.now(); // fork: setup-reuse
-process.stdout.write("Warming web dependencies...\n");
-const warm = NodeChildProcess.spawnSync(
-  process.execPath,
-  [NodePath.join(worktree, "apps", "web", "scripts", "warm-dep-cache.ts")],
-  { cwd: worktree, stdio: "inherit" },
-);
-// fork: setup-reuse
-if (warm.status !== 0) process.exit(warm.status ?? 1);
-process.stdout.write(
-  `Web dependencies ready (${Math.round(performance.now() - warmStarted)} ms).\n`,
 );
 
 process.stdout.write(

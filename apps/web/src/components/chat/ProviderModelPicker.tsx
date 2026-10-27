@@ -5,7 +5,8 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useRef, useState, type ReactNode } from "react"; // fork: switchboard
+import { memo, useRef, useState } from "react";
+import type { ReactNode } from "react"; // fork: switchboard
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";

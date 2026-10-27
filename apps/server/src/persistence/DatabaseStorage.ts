@@ -118,9 +118,7 @@ const make = Effect.gen(function* () {
     const mode = yield* sql<{ readonly auto_vacuum: number }>`PRAGMA auto_vacuum`;
     if (mode[0]?.auto_vacuum !== 2) return;
     let reclaimedPages = 0; // fork: server-weight
-    // The driver steps a statement without result columns once, and each
-    // step of incremental_vacuum frees one page. Yield between pages so
-    // client requests can run.
+    // The driver steps once per statement; incremental_vacuum frees one page per step. Yield between pages.
     for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page++) {
       // fork: server-weight
       const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`.pipe(

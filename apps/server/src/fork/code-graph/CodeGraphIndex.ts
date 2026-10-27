@@ -164,6 +164,7 @@ export const parseGraph = (json: unknown): ParsedGraph => {
   };
 };
 
+/** @public benchmarks/loom/graph.ts, outside knip's workspaces, maps results with it. */
 export const toNode = (node: IndexedNode): CodeGraphNode => ({
   id: node.id,
   label: node.label,

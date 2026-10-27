@@ -9,12 +9,11 @@ import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
 
 const handlers = {
-  // fork: agent-catalog
   orchestrator_capabilities: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.capabilities(scope, input); // fork: agent-catalog
+      return yield* service.capabilities(scope, input);
     }),
   ),
   delegate_task: McpToolAccess.actsAsCaller((input) =>

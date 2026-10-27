@@ -322,6 +322,7 @@ const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof m
 // fork: browser-timeout-recovery
 let desktopPageInitialUrl = "about:blank";
 let desktopDetachListening = Promise.withResolvers<void>();
+let desktopAttachListening = Promise.withResolvers<void>();
 let desktopCloseGate: PromiseWithResolvers<void> | null = null;
 let desktopCloseStarted: PromiseWithResolvers<void> | null = null;
 let desktopAttachChecked: PromiseWithResolvers<void> | null = null;
@@ -381,6 +382,7 @@ const dependencies = Layer.mergeAll(
           const onAttach = (key: { threadId: string; tabId: string }) =>
             Queue.offerUnsafe(queue, key);
           desktopDetaches.on("attach", onAttach);
+          desktopAttachListening.resolve(); // fork: browser-timeout-recovery
           return onAttach;
         }),
         (onAttach) => Effect.sync(() => desktopDetaches.off("attach", onAttach)),
@@ -424,7 +426,7 @@ const attachDesktop = (manager: Manager.PreviewManager["Service"], tabId: string
       return list(input);
     });
     yield* Effect.addFinalizer(() => Effect.sync(() => observed.mockRestore()));
-    while (desktopDetaches.listenerCount("attach") === 0) yield* Effect.yieldNow;
+    yield* Effect.promise(() => desktopAttachListening.promise);
     desktopTabs.add(tabId);
     desktopDetaches.emit("attach", { threadId: scope.thread.threadId, tabId });
     desktopDetaches.emit("attach", { threadId: marker, tabId: "marker" });
@@ -458,6 +460,7 @@ beforeEach(() => {
   // fork: browser-timeout-recovery
   desktopPageInitialUrl = "about:blank";
   desktopDetachListening = Promise.withResolvers<void>();
+  desktopAttachListening = Promise.withResolvers<void>();
   desktopCloseGate = null;
   desktopCloseStarted = null;
   desktopAttachChecked = null;
@@ -1610,11 +1613,22 @@ it.live(
     ).pipe(Effect.provide(layer)),
 );
 
+// fork: browser-timeout-recovery
 it.live("a desktop reconnect waits until its previous relay has been released", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const browser = yield* ServerBrowser.ServerBrowser;
       const manager = yield* Manager.PreviewManager;
+      const contextsPrototype = ServerBrowserContexts.ServerBrowserContexts.prototype;
+      const connect = contextsPrototype.connectDesktopPage.bind(contextsPrototype);
+      const secondConnection = Promise.withResolvers<void>();
+      const connecting = vi
+        .spyOn(contextsPrototype, "connectDesktopPage")
+        .mockImplementation((endpoint) => {
+          if (desktopConnections.length === 1) secondConnection.resolve();
+          return connect(endpoint);
+        });
+      yield* Effect.addFinalizer(() => Effect.sync(() => connecting.mockRestore()));
       yield* Effect.yieldNow;
       desktopRendersNext = true;
       const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
@@ -1629,18 +1643,24 @@ it.live("a desktop reconnect waits until its previous relay has been released", 
         .attachViewer(viewerInput(opened.tabId, false))
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => desktopAttachChecked!.promise);
-      // Drain queued promise continuations while the old close is deliberately held.
-      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
-      expect(desktopConnections).toHaveLength(1);
+      // A later tab connects through the same path, so the held reconnect would have run first.
+      desktopRendersNext = true;
+      const other = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* Effect.promise(() => secondConnection.promise);
+      expect(desktopConnections.map((connection) => connection.endpoint)).toEqual([
+        `ws://desktop/${opened.tabId}`,
+        `ws://desktop/${other.tabId}`,
+      ]);
       expect(releasedDesktopTabs).toEqual([]);
       desktopCloseGate.resolve();
       yield* Fiber.join(reconnecting);
       expect(releasedDesktopTabs).toEqual([opened.tabId]);
-      expect(desktopConnections).toHaveLength(2);
+      expect(desktopConnections).toHaveLength(3);
     }).pipe(Effect.ensuring(Effect.sync(() => desktopCloseGate?.resolve()))),
   ).pipe(Effect.provide(layer)),
 );
 
+// fork: browser-timeout-recovery
 it.live("failed desktop initialization releases its relay without closing the native page", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1652,7 +1672,10 @@ it.live("failed desktop initialization releases its relay without closing the na
       desktopInitializationRejected = Promise.withResolvers<void>();
       const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
       yield* Effect.promise(() => desktopInitializationRejected!.promise);
-      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      // Open events run in order, so the next tab's attach check follows the failed tab's release.
+      desktopAttachChecked = Promise.withResolvers<void>();
+      yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* Effect.promise(() => desktopAttachChecked!.promise);
       expect(releasedDesktopTabs).toEqual([opened.tabId]);
       expect(desktopConnections[0]!.context.page.close).not.toHaveBeenCalled();
       yield* browser.attachViewer(viewerInput(opened.tabId, false));

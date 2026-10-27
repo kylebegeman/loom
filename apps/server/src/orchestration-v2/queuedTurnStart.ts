@@ -6,12 +6,7 @@ const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const toMillis = (value: DateTime.Utc | null | undefined) =>
   value == null ? null : DateTime.toEpochMillis(value);
 
-/**
- * A recent user message stays queued until a run adopts its timestamp.
- * Absolute age bounds client clock skew in both directions and stops stale
- * pre-adoption data from blocking the thread forever. A failed run start
- * clears the block immediately (mirrors the v1 session "error" rule).
- */
+/** Absolute age bounds clock skew in both directions and expires stale pre-adoption data. */
 export function threadHasQueuedTurnStart(
   thread: Pick<
     OrchestrationV2ThreadShell,

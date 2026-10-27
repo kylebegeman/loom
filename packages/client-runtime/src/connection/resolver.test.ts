@@ -24,7 +24,7 @@ import {
 } from "./catalog.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import {
-  BearerConnectionTarget,
+  BearerConnectionTarget, // fork: identity-renewal
   type ConnectionAttemptError, // fork: identity-renewal
   ConnectionBlockedError, // fork: identity-renewal
   ConnectionTransientError,

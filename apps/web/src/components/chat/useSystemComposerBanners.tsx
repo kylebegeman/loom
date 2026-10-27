@@ -41,7 +41,7 @@ import {
 } from "../../versionSkew";
 // fork: fleet-connections
 import { computerConnectionBanner } from "../../fork/connection-health/ComputerConnectionBanner";
-import { useConnectionStalled } from "../../fork/connection-health/useConnectionStalled";
+import { useConnectionStalled } from "../../fork/connection-health/useConnectionStalled"; // fork: fleet-connections
 import {
   OS_MANAGED_RUNTIME_NOTE,
   runtimeManagedByOperatingSystem,
@@ -228,6 +228,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             disconnectAction,
           })
         : null;
+    // fork: fleet-connections
     if (computerBanner !== null) {
       items.push(computerBanner);
     } else if (

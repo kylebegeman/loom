@@ -209,7 +209,7 @@ const make = Effect.gen(function* () {
       Effect.withSpan("SecretRequests.consume"),
     );
 
-  // fork: ext-vault
+  /** A live ref's value, left in the store. */
   const readRef = Effect.fn("SecretRequests.readRef")(function* (input: {
     readonly ref: SecretRef;
     readonly projectId: ProjectId;
@@ -229,7 +229,7 @@ const make = Effect.gen(function* () {
       yield* removeLogged(storeName(input.ref));
       return yield* new SecretRequestError({ reason: "ref_expired" });
     }
-    return decoded.value; // fork: ext-vault
+    return decoded.value; // fork: ext-vault: the whole record, so callers can see a Vault claim
   });
 
   // fork: ext-vault

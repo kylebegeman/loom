@@ -16,10 +16,7 @@ export const sandboxDisabled = (env: Readonly<Record<string, string | undefined>
 const USERNS_RESTRICTION = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
 export const APPARMOR_PROFILE_PATH = "/etc/apparmor.d/t3-chrome-headless-shell";
 
-/**
- * Modelled on the profile Ubuntu ships for Google Chrome; `unconfined` adds
- * nothing beyond `userns`.
- */
+/** Match Ubuntu's Chrome profile; unconfined adds nothing beyond userns. */
 // fork: brand
 export const APPARMOR_PROFILE = `# Written by \`t3 browser setup\`: lets Loom's headless browser use Chrome's sandbox.
 abi <abi/4.0>,

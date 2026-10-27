@@ -184,7 +184,7 @@ export function ThreadSubagentGroup(props: {
                         { type: "thread", environmentId: props.environmentId, threadId },
                       )
                     )
-                      return; // fork: agent-receipts
+                      return;
                     navigation.dispatch(
                       StackActions.push("Thread", {
                         environmentId: String(props.environmentId),
@@ -200,6 +200,7 @@ export function ThreadSubagentGroup(props: {
                     elapsed={<SubagentElapsed agents={[agent]} />}
                   />
                 </Pressable>
+                {/* fork: agent-receipts */}
                 {finishedAt === null ? null : (
                   <SubagentReceipt
                     environmentId={props.environmentId}

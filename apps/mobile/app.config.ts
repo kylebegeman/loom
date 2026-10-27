@@ -92,8 +92,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
     enablePushNotifications: identity.pushEnabled, // fork: mobile-identity
-    // Agent activity can update many times an hour; without the
-    // frequent-updates entitlement iOS throttles the update budget sooner.
+    // Frequent updates need the iOS entitlement to avoid early throttling.
     frequentUpdates: true,
     enableAndroid: true,
     widgets: [
@@ -209,6 +208,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
+    // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
     // fork: mobile-identity
     ...(identity.iosBuildNumber ? { buildNumber: identity.iosBuildNumber } : {}),
     ...(identity.teamId ? { appleTeamId: identity.teamId } : {}),
@@ -228,8 +228,7 @@ const config: ExpoConfig = {
       NSLocalNetworkUsageDescription:
         "Allow Loom to connect to coding servers on your local network or tailnet.", // fork: brand
       NSPhotoLibraryAddUsageDescription: "Allow Loom to save images to your photo library.", // fork: brand
-      // "Audio, AirPlay, and Picture in Picture": the browser screen's system
-      // picture in picture needs it to start and to stay up outside the app.
+      // System picture in picture needs background audio to start and survive outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
       // fork: mobile-identity
@@ -317,8 +316,7 @@ const config: ExpoConfig = {
         mode: APP_VARIANT === "development" ? "development" : "production",
       },
     ],
-    // appleSignIn must be gated here: withoutIosPersonalTeamCapabilities.cjs runs before
-    // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
+    // Gate Clerk here: withoutIosPersonalTeamCapabilities runs too early to strip its entitlement.
     // fork: mobile-identity
     ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: identity.appleSignInEnabled }],
     "expo-web-browser",

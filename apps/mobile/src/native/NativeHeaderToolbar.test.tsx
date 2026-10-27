@@ -187,6 +187,7 @@ function ProviderOnlyReader(props: { readonly children: ReactNode }) {
   return props.children;
 }
 
+// fork: header-elements
 type Placement = "left" | "right" | "bottom";
 
 function LoadingToolbar(props: { readonly placement: Placement }) {
@@ -203,6 +204,7 @@ function LoadingToolbar(props: { readonly placement: Placement }) {
   );
 }
 
+// fork: header-elements
 it.each(["left", "right", "bottom"] as const)(
   "applies a custom %s header element once without walking its owner",
   (placement) => {
@@ -217,6 +219,7 @@ it.each(["left", "right", "bottom"] as const)(
     expect(harness.renderedItems).toMatchObject([{ type: "custom" }]);
   },
 );
+
 it("applies a custom header element rendered inside a navigation container", () => {
   renderConnecting("Connecting");
   expect(renderedCustomLabel()).toBe("Connecting");

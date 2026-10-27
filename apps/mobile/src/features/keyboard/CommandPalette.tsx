@@ -391,9 +391,10 @@ export function CommandPalette(props: {
         kind: "action",
         title: `New thread in ${activeProject.title}`,
         searchTerms: ["new task", "chat", "create"],
+        // fork: library
         run: () => {
           void startInProject(activeProject);
-        }, // fork: library
+        },
       });
     }
     if (activeThreadRef) {
@@ -420,9 +421,10 @@ export function CommandPalette(props: {
       title: project.title,
       detail: `New thread · ${savedConnectionsById[project.environmentId]?.environmentLabel ?? project.environmentId}`,
       searchTerms: [project.workspaceRoot, "new thread", "project"],
+      // fork: library
       run: () => {
         void startInProject(project);
-      }, // fork: library
+      },
     }));
     const threadItems: CommandPaletteItem[] = threads
       .filter(

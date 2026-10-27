@@ -90,12 +90,9 @@ export function readPreparedConnection(environmentId: EnvironmentId) {
   );
 }
 
-/**
- * `data` stays populated across SWR revalidations; `isPending` is only
- * meaningful before the first resolve.
- */
+/** data survives SWR revalidation; isPending applies only before first resolve. */
+// fork: library-projects
 export function useEnvironmentSessionState(environmentId: EnvironmentId | null) {
-  // fork: library-projects
   const result = useAtomValue(
     environmentId === null
       ? EMPTY_SESSION_STATE_ATOM

@@ -444,13 +444,9 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
-      {isServerThread ? (
-        <>
-          {/* fork: library-save */}
-          <LibrarySaveIndicator threadRef={activeThreadRef} />
-          <GuestShareIndicator threadRef={activeThreadRef} />
-        </>
-      ) : null}
+      {/* fork: library-save */}
+      {isServerThread ? <LibrarySaveIndicator threadRef={activeThreadRef} /> : null}
+      {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );
 });

@@ -14,7 +14,7 @@ export function isSidebarUtilityPage(pathname: string) {
     // fork: project-home Library overview pages also return to the previous conversation.
     pathname === "/library" ||
     pathname.startsWith("/library/") ||
-    pathname === "/sites" ||
+    pathname === "/sites" || // fork: sites-navigation
     pathname === "/loom/bots" || // fork: bots
     pathname === "/computers" || // fork: fleet-connections
     pathname === "/pull-requests"

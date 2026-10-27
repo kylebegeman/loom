@@ -68,10 +68,11 @@ import {
   ExpiredComputerIdentity,
   SavedComputerIdentity,
 } from "~/fork/identity/ComputerIdentityAccess";
+// fork: runtime-owner
 import {
   OS_MANAGED_RUNTIME_NOTE,
   runtimeManagedByOperatingSystem,
-} from "@t3tools/client-runtime/fork"; // fork: runtime-owner
+} from "@t3tools/client-runtime/fork";
 // fork: fleet-connections
 import { ComputerWorkActions } from "~/fork/connections/ComputerWorkActions";
 import { ComputerConnectionDetails } from "~/fork/connections/ComputerConnectionDetails";
@@ -177,9 +178,10 @@ export function SavedBackendListRow({
     },
   });
   const versionMismatch = resolveServerConfigVersionMismatch(environment.serverConfig);
+  // fork: runtime-owner
   const osManaged = runtimeManagedByOperatingSystem(
     environment.serverConfig?.environment.capabilities,
-  ); // fork: runtime-owner
+  );
   const serverUpdateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const resumingServerUpdate =
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
@@ -258,6 +260,8 @@ export function SavedBackendListRow({
       subtitle={
         // fork: fleet-connections
         <Tooltip>
+          {/* The status can change while the tooltip is open, and base-ui only
+              re-measures the popup when the trigger's payload changes. */}
           <TooltipTrigger
             payload={statusTooltip}
             render={
@@ -273,7 +277,6 @@ export function SavedBackendListRow({
               />
             }
           >
-            {/* fork: fleet-connections */}
             {subtitleText}
           </TooltipTrigger>
           <TooltipPopup side="top" className="whitespace-pre-wrap">
@@ -342,7 +345,6 @@ export function SavedBackendListRow({
                 connected={isConnected}
                 routeContext
               />
-              {/* fork: fleet-connections */}
             </section>
           </ComputerConnectionDetails>
         </>

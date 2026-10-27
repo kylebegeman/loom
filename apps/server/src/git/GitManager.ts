@@ -22,7 +22,7 @@ import {
   GitActionProgressEvent,
   GitActionProgressPhase,
   GitCommandError,
-  type GitResolveOperationInput,
+  type GitResolveOperationInput, // fork: source-control-cockpit
   type GitResolveOperationResult, // fork: source-control-cockpit
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
@@ -738,7 +738,7 @@ export const make = Effect.gen(function* () {
     branch: string | null,
     options?: Parameters<typeof gitCore.pushCurrentBranch>[2], // fork: source-control-cockpit
   ) {
-    const result = yield* gitCore.pushCurrentBranch(cwd, branch, options);
+    const result = yield* gitCore.pushCurrentBranch(cwd, branch, options); // fork: source-control-cockpit
     if (result.status === "pushed" && result.branch) {
       yield* shareBranchBase(cwd, result.branch);
     }

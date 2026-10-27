@@ -108,10 +108,12 @@ export function useAttachmentDocument(input: {
   const refreshLocalPreview = useAtomRefresh(localPreviewAtom);
   // fork: library
   const loadCaptured = attachment ? undefined : input.loadCaptured;
+  // fork: library
   const [captured, setCaptured] = useState<{ uri: string | null; error: string | null }>({
     uri: null,
     error: null,
   });
+  // fork: library: Library history files load through the caller, not a signed asset URL.
   useEffect(() => {
     if (!loadCaptured) return;
     let cancelled = false;

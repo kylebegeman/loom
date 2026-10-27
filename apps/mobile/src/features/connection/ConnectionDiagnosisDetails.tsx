@@ -72,6 +72,7 @@ export function ConnectionDiagnosisDetails(props: {
         tone="text"
         onPress={() => setDetailsOpen((open) => !open)}
       />
+      {/* fork: fleet-connections */}
       {detailsOpen ? (
         <View className="gap-3">
           <View className="gap-0.5">

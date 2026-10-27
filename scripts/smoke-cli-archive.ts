@@ -144,8 +144,7 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     Effect.all([collect(server.stdout), collect(server.stderr)]),
   );
   const httpClient = yield* HttpClient.HttpClient;
-  // A request that connects while the server is still initializing can hang,
-  // so each probe gets its own deadline, like the SSH readiness probe.
+  // Probes can hang during server initialization; bound each request as SSH readiness does.
   // fork: smoke-port-race
   const serverRuntimeStatePath = path.join(home, "userdata", "server-runtime.json");
   const decodeRuntime = Schema.decodeUnknownEffect(

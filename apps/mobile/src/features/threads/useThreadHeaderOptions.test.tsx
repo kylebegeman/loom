@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 // Native header item factories are only read when options are applied, so the fake
 // navigation snapshots the right items at each setOptions, as native-stack does.
 const harness = vi.hoisted(() => ({
-  setOptionsCalls: 0,
   renderedRightItems: [] as Array<ReadonlyArray<Record<string, unknown>>>,
   navigatedRoutes: [] as string[],
   // fork: source-control-cockpit
@@ -26,7 +25,6 @@ vi.mock("@react-navigation/native", async () => {
     },
     addListener: () => () => {},
     setOptions: (options: { unstable_headerRightItems?: () => Array<Record<string, unknown>> }) => {
-      harness.setOptionsCalls += 1;
       harness.renderedRightItems.push(options.unstable_headerRightItems?.() ?? []);
     },
   };
@@ -179,10 +177,6 @@ function renderedGitMenuItems(): Array<{
   return git?.menu.items ?? [];
 }
 
-function renderedGitStatusDescription(): unknown {
-  return renderedGitMenuItems()[0]?.description;
-}
-
 let root: Root | null = null;
 
 function render(element: React.ReactElement) {
@@ -194,7 +188,6 @@ function render(element: React.ReactElement) {
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
-  harness.setOptionsCalls = 0;
   harness.renderedRightItems = [];
   harness.navigatedRoutes = [];
   // fork: source-control-cockpit
@@ -266,27 +259,8 @@ describe("ThreadHeader", () => {
       true,
     );
   });
-  it("re-applies native header items when Git status changes", () => {
-    render(<Header gitStatus={status([])} />);
-    expect(renderedGitStatusDescription()).toBe("Clean");
 
-    render(<Header gitStatus={status(["audit.txt"])} />);
-    expect(renderedGitStatusDescription()).toBe("1 changed");
-
-    render(<Header gitStatus={status([])} />);
-    expect(renderedGitStatusDescription()).toBe("Clean");
-  });
-
-  it("does not re-apply options for re-renders with equivalent header content", () => {
-    render(<Header gitStatus={status([])} />);
-    const applied = harness.setOptionsCalls;
-
-    for (let index = 0; index < 20; index += 1) {
-      render(<Header gitStatus={status([])} />);
-    }
-    expect(harness.setOptionsCalls).toBe(applied);
-  });
-
+  // fork: source-control-cockpit -- without remembered consent, a default-branch push still asks.
   it("re-applies menu actions when the default ref changes behind the same label", async () => {
     const pushable = (isDefaultRef: boolean) =>
       status([], {

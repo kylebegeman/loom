@@ -1170,9 +1170,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
               }) !== "app"
             ) {
               if (takeUnreachableLoopbackClick(event, threadRef?.environmentId, href)) return; // fork: preview-links
-              // Chromium turns an Option/Alt-click into a download that never reaches the
-              // shell. On desktop, open the link here while the key is still down, so link
-              // routers such as Finicky can still read it.
+              // Open desktop Alt-clicks before Chromium downloads them so link routers can read the held key.
               if (isElectron && event.altKey) {
                 event.preventDefault();
                 event.stopPropagation();

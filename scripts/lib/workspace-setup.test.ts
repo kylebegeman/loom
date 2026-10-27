@@ -115,7 +115,6 @@ it("runs the setup CLI end-to-end and skips only installation on a valid repeat"
   NodeFS.chmodSync(bin, 0o755);
   for (const [folder, file, marker] of [
     ["apps/server/scripts", "seed-dev-db.ts", "fixture-count"],
-    ["apps/web/scripts", "warm-dep-cache.ts", "warm-count"],
   ]) {
     NodeFS.mkdirSync(NodePath.join(root, folder!), { recursive: true });
     NodeFS.writeFileSync(
@@ -133,7 +132,6 @@ it("runs the setup CLI end-to-end and skips only installation on a valid repeat"
   expect(run()).toContain("Using prepared dependencies");
   expect(NodeFS.readFileSync(NodePath.join(root, "install-count"), "utf8")).toBe("1");
   expect(NodeFS.readFileSync(NodePath.join(root, "fixture-count"), "utf8")).toBe("2");
-  expect(NodeFS.readFileSync(NodePath.join(root, "warm-count"), "utf8")).toBe("2");
   NodeFS.appendFileSync(NodePath.join(root, "pnpm-lock.yaml"), "changed\n");
   expect(run()).toContain("Installing dependencies from the shared package cache");
   expect(NodeFS.readFileSync(NodePath.join(root, "install-count"), "utf8")).toBe("2");

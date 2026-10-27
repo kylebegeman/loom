@@ -1,8 +1,8 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "npx t3 triage";
-const DOWNLOAD_URL = "https://t3.codes/download";
-const ISSUE_URL = "https://github.com/pingdotgg/t3code/issues/new";
+// fork: brand -- Loom ships from its own releases and takes no upstream bug reports.
+const DOWNLOAD_URL = "https://github.com/kylebegeman/loom/releases";
 const LAST_FAILURE_KEY = "t3code:boot-failed-at";
 const REPEAT_FAILURE_MS = 5 * 60_000;
 const MAX_CAUSES = 3;
@@ -342,12 +342,6 @@ export function showBootError(error: unknown) {
     ),
   );
 
-  const issue = new URL(ISSUE_URL);
-  issue.searchParams.set("template", "bug_report.yml");
-  issue.searchParams.set("title", "Loom failed to start"); // fork: brand
-  issue.searchParams.set("area", "apps/web");
-  issue.searchParams.set("version", `${environment.version} (${environment.channel})`);
-  issue.searchParams.set("environment", `${environment.surface}, ${environment.platform}`);
   const link = (href: string, textContent: string) =>
     element("a", { href, textContent, target: "_blank", rel: "noreferrer" });
   const nightly = environment.channel === "nightly";
@@ -357,7 +351,7 @@ export function showBootError(error: unknown) {
     ...(bridge
       ? [
           link(
-            nightly ? `${DOWNLOAD_URL}?channel=nightly` : DOWNLOAD_URL,
+            DOWNLOAD_URL, // fork: brand
             nightly
               ? "Download and reinstall the latest nightly build"
               : "Download and reinstall Loom", // fork: brand
@@ -377,10 +371,7 @@ export function showBootError(error: unknown) {
       element("p", {
         textContent: "Details may include local file paths and names. Check before sharing.",
       }),
-      element("div", { id: "boot-error-report" }, [
-        copyDetails,
-        link(issue.href, "File a bug report on GitHub"),
-      ]),
+      element("div", { id: "boot-error-report" }, [copyDetails]), // fork: brand
     ]),
   ]);
 

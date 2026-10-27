@@ -328,7 +328,7 @@ describe("ProjectCloneTracker", () => {
             detail: "Destination path already exists and is not empty.",
           }),
         ),
-    });
+    }); // fork: file-placement
     return Effect.gen(function* () {
       const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const error = yield* Effect.flip(tracker.start(startInput, harness.hooks));

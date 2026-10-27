@@ -61,6 +61,7 @@ export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
 // fork: tailnet-ownership -- Tailscale Serve row helpers replace missingTailscaleEndpointDescription
 const DEFAULT_HTTPS_PORT = 443;
 
+// fork: tailnet-ownership
 export function parseTailscaleServePort(input: string): number | null {
   const trimmed = input.trim();
   if (!/^\d+$/u.test(trimmed)) return null;
@@ -68,10 +69,12 @@ export function parseTailscaleServePort(input: string): number | null {
   return port >= 1 && port <= 65_535 ? port : null;
 }
 
+// fork: tailnet-ownership
 export function tailscaleServeBaseUrl(magicDnsName: string, port: number): string {
   return `https://${magicDnsName}${port === DEFAULT_HTTPS_PORT ? "" : `:${port}`}`;
 }
 
+// fork: tailnet-ownership
 /** The desktop backend's own port, read from the loopback endpoint every desktop advertises. */
 export function localBackendPort(endpoints: ReadonlyArray<AdvertisedEndpoint>): number | null {
   const loopback = endpoints.find((endpoint) => endpoint.reachability === "loopback");
@@ -84,6 +87,7 @@ export function localBackendPort(endpoints: ReadonlyArray<AdvertisedEndpoint>): 
   }
 }
 
+// fork: tailnet-ownership
 /** Why Tailscale Serve cannot be set up on any port, or null when only the port matters. */
 export function tailscaleServeSetupBlocker(
   status: DesktopTailscaleServeStatus | null,
@@ -100,6 +104,7 @@ export function tailscaleServeSetupBlocker(
   }
 }
 
+// fork: tailnet-ownership
 export function tailscaleServePortProblem(input: {
   readonly portInput: string;
   readonly backendPort: number | null;
@@ -114,12 +119,14 @@ export function tailscaleServePortProblem(input: {
   return held ? `Port ${port} already serves ${held.holder}. Choose another port.` : null;
 }
 
+// fork: tailnet-ownership
 export interface TailscaleServeRowStatus {
   readonly text: string;
   /** Serve is on but not working, so the row offers a retry. */
   readonly needsAttention: boolean;
 }
 
+// fork: tailnet-ownership
 /** The line under the Tailscale HTTPS switch, which follows the saved setting. */
 export function describeTailscaleServeRow(input: {
   readonly state: Pick<

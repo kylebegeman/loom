@@ -1086,6 +1086,7 @@ const make = Effect.gen(function* () {
         }
 
         const workspaceStrategy: ThreadLaunchWorkspaceStrategy =
+          // fork: library-projects
           libraryLaunch !== null
             ? {
                 type: "existing_worktree",
@@ -1093,7 +1094,7 @@ const make = Effect.gen(function* () {
                 ...(input.workspaceStrategy.branch === undefined
                   ? {}
                   : { branch: input.workspaceStrategy.branch }),
-              } // fork: library-projects
+              }
             : input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
               ? Option.match(
                   yield* managedFolders

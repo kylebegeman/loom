@@ -64,7 +64,7 @@ import {
   parseRemotePairingFields,
   formatDesktopSshConnectionError,
 } from "./ConnectionsSettings.logic";
-import { ComputerIdentityConnect } from "~/fork/identity/ComputerIdentityAccess";
+import { ComputerIdentityConnect } from "~/fork/identity/ComputerIdentityAccess"; // fork: directory-computers
 
 // fork: directory-computers
 export type LibraryComputerPairing = {
@@ -651,7 +651,6 @@ export function AddEnvironmentDialog({
       </Tooltip>
       <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
         <DialogHeader>
-          {/* fork: fleet-connections */}
           <DialogTitle>
             {/* fork: fleet-connections */}
             {routeTarget ? `Add a route to ${routeTarget.label}` : "Connect computer"}

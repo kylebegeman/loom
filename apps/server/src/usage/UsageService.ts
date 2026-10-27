@@ -386,9 +386,7 @@ export const make = Effect.gen(function* () {
     pruneLegacyUsageCaches(fileSystem, path, config.stateDir, LEGACY_SCAN_CACHE_FILE_NAMES),
   );
 
-  // The dirty flag is cleared before encoding, so a change while the write is
-  // in flight marks it dirty again. A failed write restores the flag, so the
-  // next persist retries instead of leaving disk stale.
+  // Clear dirty before encoding to retain concurrent changes; restore it on failure for retry.
   const persistCaches = Effect.gen(function* () {
     if (cacheDirty) {
       cacheDirty = false;

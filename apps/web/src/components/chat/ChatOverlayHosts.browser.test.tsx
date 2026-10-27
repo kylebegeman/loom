@@ -1,26 +1,9 @@
 import { MessageId } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
+import { act, render } from "../../../test/render";
 import { openRevertConfirm, RevertConfirmHost } from "./ChatOverlayHosts";
-
-let root: Root;
-let container: HTMLDivElement;
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
 
 // fork: project-lifecycle
 const messageId = MessageId.make("message-1");
@@ -48,12 +31,12 @@ describe("RevertConfirmHost", () => {
         />
       </AppAtomRegistryProvider>
     );
-    await act(() => root.render(host("env:a")));
+    await using screen = await render(host("env:a"));
 
-    await act(() => openRevertConfirm("env:b", pending));
+    await act(() => openRevertConfirm("env:b", pending)); // fork: project-lifecycle
     expect(dialog()).toBeNull();
 
-    await act(() => openRevertConfirm("env:a", pending));
+    await act(() => openRevertConfirm("env:a", pending)); // fork: project-lifecycle
     const keep = [...(dialog()?.querySelectorAll("button") ?? [])].find(
       (button) => button.textContent === "Revert and keep changes",
     );
@@ -62,9 +45,9 @@ describe("RevertConfirmHost", () => {
     expect(onConfirm).toHaveBeenCalledExactlyOnceWith(pending, false);
     await vi.waitFor(() => expect(dialog()).toBeNull());
 
-    await act(() => openRevertConfirm("env:a", { ...pending, turnCount: 3 }));
+    await act(() => openRevertConfirm("env:a", { ...pending, turnCount: 3 })); // fork: project-lifecycle
     expect(dialog()).not.toBeNull();
-    await act(() => root.render(host("env:b")));
+    await screen.rerender(host("env:b"));
     await vi.waitFor(() => expect(dialog()).toBeNull());
   });
 });
@@ -73,17 +56,10 @@ describe("RevertConfirmHost", () => {
 it("explains shared workspace restrictions and forks without confirming a restore", async () => {
   const onFork = vi.fn();
   const onConfirm = vi.fn();
-  await act(() =>
-    root.render(
-      <AppAtomRegistryProvider>
-        <RevertConfirmHost
-          threadKey="env:shared"
-          canOperate
-          onConfirm={onConfirm}
-          onFork={onFork}
-        />
-      </AppAtomRegistryProvider>,
-    ),
+  await using _screen = await render(
+    <AppAtomRegistryProvider>
+      <RevertConfirmHost threadKey="env:shared" canOperate onConfirm={onConfirm} onFork={onFork} />
+    </AppAtomRegistryProvider>,
   );
   await act(() =>
     openRevertConfirm("env:shared", {

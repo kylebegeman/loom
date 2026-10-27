@@ -1,70 +1,45 @@
-import { act, useState, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import type { SettingsScopeSearch } from "./settingsScope";
+// fork: ext-settings: upstream deleted this file; Loom keeps its device-only topic check.
+import type { ReactNode } from "react";
+import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
-interface ScopeState {
-  readonly search: SettingsScopeSearch;
-  readonly environmentId: string | null;
-}
-
-const state = vi.hoisted(() => ({
-  pathname: "/settings/diagnostics",
-  section: undefined as string | undefined,
-  unavailable: false,
-  scope: { search: {}, environmentId: null } as ScopeState,
-}));
+import { render } from "../../../test/render";
 
 vi.mock(import("@tanstack/react-router"), async (original) => ({
   ...(await original()),
   createFileRoute: (() => (options: { component: () => ReactNode }) => ({
     options,
-    useSearch: () => state.scope.search,
+    useSearch: () => ({ machine: "missing" }),
     useNavigate: () => vi.fn(),
   })) as never,
   useLocation: ((options?: { select: (location: unknown) => unknown }) => {
     const location = {
-      pathname: state.pathname,
+      pathname: "/settings/loom",
       hash: "",
       state: {},
-      search: { section: state.section },
+      search: { section: "panel-picker" },
     };
     return options ? options.select(location) : location;
   }) as never,
-  Outlet: (() => <StatefulContent />) as never,
+  Outlet: (() => <p>Panel picker preferences</p>) as never,
 }));
-vi.mock(import("./SettingsScopeContext"), async (original) => {
-  const { createContext, useContext } = await import("react");
-  const Scope = createContext<ScopeState>(state.scope);
-  return {
-    ...(await original()),
-    SettingsScopeProvider: (({ children }: { children: ReactNode }) => (
-      <Scope value={state.scope}>{children}</Scope>
-    )) as never,
-    useSettingsScope: (() => {
-      const { search, environmentId } = useContext(Scope);
-      return {
-        search,
-        scope: state.unavailable
-          ? { kind: "unavailable", message: "Environment unavailable" }
-          : { kind: "all" },
-        environment: environmentId ? { environmentId } : null,
-        connectedEnvironments: environmentId ? [{}] : [],
-      };
-    }) as never,
-  };
-});
+vi.mock(import("./SettingsScopeContext"), async (original) => ({
+  ...(await original()),
+  SettingsScopeProvider: (({ children }: { children: ReactNode }) => children) as never,
+  useSettingsScope: (() => ({
+    search: { machine: "missing" },
+    scope: { kind: "unavailable", message: "Environment unavailable" },
+    environment: null,
+    connectedEnvironments: [],
+  })) as never,
+}));
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: (() => ({ environments: [] })) as never,
 }));
-vi.mock(import("../ui/sidebar"), async (original) => ({
+vi.mock(import("./SettingsSidebarNav"), async (original) => ({
   ...(await original()),
-  SidebarInset: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-}));
-vi.mock(import("../WorkspacePageHeader"), async (original) => ({
-  ...(await original()),
-  WorkspacePageHeader: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsSidebarNav: (() => null) as never,
 }));
 vi.mock(import("./SettingsBreadcrumb"), async (original) => ({
   ...(await original()),
@@ -72,87 +47,16 @@ vi.mock(import("./SettingsBreadcrumb"), async (original) => ({
 }));
 vi.mock(import("../sidebar/mainAppLocation"), async (original) => ({
   ...(await original()),
-  useNavigateToMainApp: () => vi.fn(),
-}));
-vi.mock(import("./SettingsPanels"), async (original) => ({
-  ...(await original()),
-  useSettingsRestore: (() => ({ changedSettingLabels: [] })) as never,
+  useCloseAppModal: () => vi.fn(),
 }));
 
 import { Route } from "../../routes/_chat.settings";
 
-function StatefulContent() {
-  const [value, setValue] = useState(0);
-  return (
-    <button aria-label="Retained value" onClick={() => setValue(value + 1)}>
-      {value}
-    </button>
-  );
-}
-
-let root: Root;
-let container: HTMLDivElement;
-const Layout = Route.options.component!;
-await Layout.preload?.();
-
-async function render(scope: ScopeState) {
-  state.scope = scope;
-  await act(async () => root.render(<Layout />));
-}
-function retainedValue() {
-  return container.querySelector('button[aria-label="Retained value"]')?.textContent ?? null;
-}
-
-beforeEach(() => {
-  state.section = undefined;
-  state.unavailable = false;
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-});
-
-const first = { search: { machine: "first", project: "one" }, environmentId: "first" };
-const otherProject = { search: { machine: "first", project: "two" }, environmentId: "first" };
-const otherMachine = { search: { machine: "second", project: "one" }, environmentId: "second" };
-const implicitFirst = { search: { project: "one" }, environmentId: "first" };
-const implicitSecond = { search: { project: "one" }, environmentId: "second" };
-
-const disconnected = { search: first.search, environmentId: null };
-
-it.each([
-  ["/settings/diagnostics", "another project", "1", first, otherProject],
-  ["/settings/providers", "another project", "1", first, otherProject],
-  ["/settings/diagnostics", "another environment", "0", first, otherMachine],
-  ["/settings/providers", "another environment", "0", first, otherMachine],
-  ["/settings/diagnostics", "an implicit environment change", "0", implicitFirst, implicitSecond],
-  ["/settings/providers", "an implicit environment change", "0", implicitFirst, implicitSecond],
-  ["/settings/diagnostics", "a disconnect", "0", first, disconnected],
-  ["/settings/keybindings", "another project", "0", first, otherProject],
-])("%s after %s shows %s", async (pathname, _change, expected, before, after) => {
-  state.pathname = pathname;
-  await render(before);
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Retained value"]')?.click(),
-  );
-  expect(retainedValue()).toBe("1");
-
-  await render(after);
-
-  expect(retainedValue()).toBe(expected);
-});
-
 it("keeps device-only Loom preferences available with an unavailable environment", async () => {
-  state.pathname = "/settings/loom";
-  state.section = "panel-picker";
-  state.unavailable = true;
-  await render({ search: { machine: "missing" }, environmentId: null });
-  expect(retainedValue()).toBe("0");
-  await act(() =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Retained value"]')!.click(),
-  );
-  expect(retainedValue()).toBe("1");
+  const Layout = Route.options.component!;
+  await Layout.preload?.();
+  await using _screen = await render(<Layout />);
+
+  await expect.element(page.getByText("Panel picker preferences")).toBeVisible();
+  expect(document.body.textContent).not.toContain("Environment unavailable");
 });

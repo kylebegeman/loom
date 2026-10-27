@@ -255,6 +255,13 @@ The `codex-login-email` seam in `CodexProvider.ts` names a Codex account from it
 home's `auth.json` when a custom `model_provider` makes Codex report no account, so
 usage views do not count a hub-routed subscription twice.
 
+The `tailnet-ownership` seams route every Tailscale Serve change through
+`packages/tailscale/src/serve.ts`, which the server, `t3 pair`, the desktop and
+`vp run dev --share` share. A port is claimed only when it is free or already proxies to
+Loom, claims are recorded in `tailscale-serve.json`, and release removes only the `/` mount
+that still points here, because other apps on the computer (Atlas on 443) own their own
+mappings. Upstream Serve code that sets or resets a port directly must go through it too.
+
 The `secure-session-cookies` seam in `apps/server/src/auth/utils.ts` (2 marker lines),
 `http.ts` (6) and `http.test.ts` (3) marks browser session cookies `Secure` when a TLS
 proxy forwards the request with `X-Forwarded-Proto: https`. The Library sits behind an edge

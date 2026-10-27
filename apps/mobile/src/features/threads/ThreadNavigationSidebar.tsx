@@ -843,10 +843,10 @@ function ThreadNavigationSidebarPane(
             : props.searchQuery.trim().length > 0
               ? threadSearch.isPending
                 ? "Searching thread messages…"
-                : threadSearch.failedEnvironmentIds.length > 0
+                : threadSearch.failedEnvironmentIds.length > 0 // fork: everyday-workflows
                   ? "Search incomplete"
                   : "No matching threads"
-              : selectedProjectKey !== null
+              : selectedProjectKey !== null // fork: library
                 ? `No threads in ${projectFilterOptions.find((option) => option.key === selectedProjectKey)?.label ?? "this project"}`
                 : "No threads yet"}
     </Text>
@@ -987,7 +987,7 @@ function ThreadNavigationSidebarPane(
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               style={styles.threadList}
-              ListHeaderComponent={navigationControl}
+              ListHeaderComponent={navigationControl} // fork: project-navigation
               ListEmptyComponent={listEmpty}
             />
           </GestureDetector>

@@ -1,4 +1,3 @@
-// fork: mini-native-retention
 import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -42,6 +41,7 @@ const caller: McpInvocationContext.McpInvocationScope = {
   capabilities: new Set(["orchestration" as const]),
   issuedAt: 0,
 };
+// fork: mini-native-retention
 const layerEnvironment = Layer.mock(Environment.ServerEnvironment)({
   getDescriptor: Effect.succeed({
     environmentId,

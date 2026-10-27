@@ -149,8 +149,7 @@ export function AgentActivity(
   const showCompactGlyph = !attentionRow && !failedRow && !allDone && !environment.isStale;
   const summary = attentionSuffix || activeLabel;
 
-  // fork: mobile-identity
-  // Keep widget taps in the app variant that created the activity.
+  // fork: mobile-identity: keep widget taps in the app variant that created the activity.
   const appScheme = /^(loom|t3code)(-dev|-preview)?$/.test(props.appScheme ?? "")
     ? props.appScheme
     : "loom";

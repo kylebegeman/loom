@@ -169,6 +169,7 @@ it.effect.each([false, true])(
     }),
 );
 
+// fork: library-launch-files
 it.effect("rejects a send before checkpoint preparation when Library recovery is unavailable", () =>
   Effect.gen(function* () {
     const policy = yield* RuntimePolicy.RuntimePolicyV2.pipe(

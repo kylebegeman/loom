@@ -158,8 +158,8 @@ export function ThreadRouteView({
     if (target.kind !== "server" || !bootstrapComplete) {
       return;
     }
+    // fork: library-archive
     if (renderState === "missing" && !canUseArchive) {
-      // fork: library-archive
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
       if (environmentHasAnyThreads && !background) {

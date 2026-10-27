@@ -355,10 +355,11 @@ function findErrorCode(cause: unknown): string | undefined {
   return undefined;
 }
 
+// fork: restart-continuity: exported for the last-probe test, and suspended so
+// each wait tracks its own last probe.
 export const waitForHttpReady = (
   options: BackendProcessContext & { readonly timeout: Duration.Duration },
 ): Effect.Effect<void, BackendReadinessTimeoutError, HttpClient.HttpClient> =>
-  // fork: restart-continuity: suspended so each wait tracks its own last probe.
   Effect.suspend(() => {
     const readinessUrl = new URL(BACKEND_READINESS_PATH, options.httpBaseUrl);
     let lastProbe: string | undefined; // fork: restart-continuity
@@ -487,9 +488,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
     forceKillAfter: BACKEND_TERMINATE_GRACE, // fork: restart-continuity
-    // wsl.exe drops additional file descriptors when forwarding to the Linux
-    // side, so the WSL spawn path delivers the bootstrap envelope via stdin
-    // (`--bootstrap-fd 0`) instead.
+    // wsl.exe drops extra file descriptors; deliver its bootstrap via stdin.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
 

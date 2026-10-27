@@ -193,8 +193,7 @@ const SWITCHBOARD_UNVERIFIED =
 const SWITCHBOARD_SIGNED_OUT =
   "Claude could not authenticate through Switchboard. Check this environment's Switchboard key helper."; // fork: switchboard
 
-// Amazon Bedrock initializes far slower than first-party auth: the SDK boots the Bedrock
-// backend and runs the `awsAuthRefresh` credential hook before returning account info.
+// Bedrock initialization includes backend startup and awsAuthRefresh, taking longer than first-party auth.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
 // Native CLI startup on Windows can exceed the shared probe deadline.
 const CLAUDE_VERSION_CHECK_TIMEOUT_MS = 20_000;
@@ -218,9 +217,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     pathToClaudeCodeExecutable: input.executablePath,
     abortController: input.abortController,
     settingSources: [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES],
-    // The probe keeps filesystem setting sources for slash-command discovery,
-    // but must not run the user's hooks: it fires every few minutes, so
-    // SessionStart hooks would run on every health check.
+    // Keep settings for slash-command discovery, but disable hooks so health checks do not run SessionStart repeatedly.
     settings: { ...input.switchboardSettings, disableAllHooks: true }, // fork: switchboard
     allowedTools: [],
     // Exclude filesystem MCP servers; omit strict mode when managed-mcp.json already excludes them and forbids the flag.
@@ -229,8 +226,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     env: {
       ...input.environment,
       ...input.switchboardSettings?.env, // fork: switchboard
-      // Connected claude.ai MCP servers are discovered outside filesystem
-      // config; disable them independently for this health check.
+      // Disable claude.ai MCP separately; it is discovered outside filesystem config.
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
       // Skipping this avoids a Windows tasklist | findstr process tree on every refresh.
       FORCE_CODE_TERMINAL: undefined,

@@ -11,6 +11,7 @@ import {
   shouldHandleAppLink,
 } from "./appLinking";
 
+// fork: library
 const requireNavigation = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
 );
@@ -21,6 +22,7 @@ const { getStateFromPath } = requireNavigation(
   ),
 ) as { getStateFromPath: typeof import("@react-navigation/native").getStateFromPath };
 
+// fork: library
 describe("cold app links", () => {
   it.each([
     ["connections/new", "ConnectionsNew"],

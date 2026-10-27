@@ -28,6 +28,7 @@ describe("hasCloudPublicConfig", () => {
     expect(hasCloudPublicConfig()).toBe(true);
   });
 
+  // fork: connect-compat
   it("keeps unsupported production browser origins out of the Clerk-dependent entry points", () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_live_Y2xlcmsudDMuY29kZXMk");
     vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "t3-relay");

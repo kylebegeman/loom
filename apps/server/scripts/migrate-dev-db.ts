@@ -159,10 +159,7 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-/**
- * The server writes its pid to server-runtime.json next to the database, which also catches an idle server holding an open-but-inactive
- * connection. A leftover -shm alone is not a signal — read-only connections cannot clean it up on close.
- */
+// The runtime PID catches idle servers; leftover -shm files can come from read-only connections.
 // fork: dev-db -- exported for scripts/seed-dev-db.ts.
 export const ensureDevDbNotInUse = Effect.fn("ensureDevDbNotInUse")(function* (
   databasePath: string,
@@ -555,8 +552,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     );
 
     yield* Console.log(`Compacting into ${databasePath}...`);
-    // Re-check right before the swap: a dev server started while the
-    // snapshot was migrating and pruning must not lose its database.
+    // A server may have started during pruning; re-check before replacing its database.
     yield* ensureDevDbNotInUse(databasePath); // fork: dev-db
     yield* removeDatabaseFiles(databasePath);
     yield* Effect.gen(function* () {

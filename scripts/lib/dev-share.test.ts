@@ -77,7 +77,7 @@ const hostLayer = (input: {
         kill: () => Effect.void,
         unref: Effect.succeed(Effect.void),
         stdin: Sink.drain,
-        stdout: stdout !== undefined ? encode(stdout) : Stream.empty,
+        stdout: stdout !== undefined ? encode(stdout) : Stream.empty, // fork: tailnet-ownership
         stderr: result.stderr ? encode(result.stderr) : Stream.empty,
         all: Stream.empty,
         getInputFd: () => Sink.drain,
@@ -193,7 +193,7 @@ describe("shareDevServer", () => {
       assert.deepEqual(mutations(calls), [
         ["serve", "--bg", "--https=5788", "http://localhost:5788"],
       ]);
-      assert.equal(shared.url, "https://host.example.ts.net:5788/");
+      assert.equal(shared.url, "https://host.example.ts.net:5788/"); // fork: tailnet-ownership
     }),
   );
 

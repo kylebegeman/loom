@@ -1455,6 +1455,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
     ),
   );
 
+  // fork: project-lifecycle
   it.effect("prepares lane cleanup before settlement delivery and runs the hook once", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1498,6 +1499,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
     ),
   );
 
+  // fork: project-lifecycle
   it.effect("keeps failed settle work retryable before releasing its lane", () =>
     Effect.scoped(
       Effect.gen(function* () {

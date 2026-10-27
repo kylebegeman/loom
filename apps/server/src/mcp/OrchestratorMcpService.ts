@@ -20,7 +20,7 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
   OrchestratorMcpFailure,
-  type OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
+  type OrchestratorMcpCapabilitiesInput,
   type OrchestratorMcpCapabilitiesResult,
   type OrchestratorMcpModelCatalog, // fork: agent-catalog
   type OrchestratorMcpModelOption,
@@ -149,7 +149,7 @@ type TerminalTaskStatus = Extract<
 export interface OrchestratorMcpServiceShape {
   readonly capabilities: (
     scope: McpInvocationScope,
-    input?: OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
+    input?: OrchestratorMcpCapabilitiesInput,
   ) => Effect.Effect<OrchestratorMcpCapabilitiesResult, OrchestratorMcpFailure>;
   readonly delegateTask: (
     scope: McpInvocationScope,

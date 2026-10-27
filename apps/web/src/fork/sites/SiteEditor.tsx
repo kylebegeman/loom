@@ -84,12 +84,7 @@ const SERVICE_KIND_ORDER = ["website", "api", "redirect"] as const;
 const COMMON_STATUSES = ["200", "204", "301", "302", "304"] as const;
 const OTHER_STATUS = "other";
 
-// @public marks helpers SitesPage.test.tsx reads through vi.importActual, which knip cannot trace.
-
-/**
- * The ID a new entry would get from its name; the person can still change it before saving.
- * @public
- */
+/** The ID a new entry would get from its name; the person can still change it before saving. */
 export function idFromName(name: string) {
   return name
     .toLowerCase()
@@ -100,10 +95,7 @@ export function idFromName(name: string) {
     .replace(/-+$/, "");
 }
 
-/**
- * `base`, or `base-2`, `base-3`... when an entry already holds it, kept within the ID limit.
- * @public
- */
+/** `base`, or `base-2`, `base-3`... when an entry already holds it, kept within the ID limit. */
 export function uniqueId(base: string, taken: ReadonlySet<string>) {
   const root = base || "site";
   if (!taken.has(root)) return root;
@@ -126,7 +118,6 @@ export type AddressReading =
 /**
  * What a typed address means as a site or service origin. People type hosts, paste page URLs and
  * forget the scheme, so this accepts all three and says plainly what it will not take.
- * @public
  */
 export function readSiteAddress(input: string): AddressReading {
   const trimmed = input.trim();
@@ -163,10 +154,7 @@ function suggestedName(origin: string) {
   }
 }
 
-/**
- * A check's name from the page it requests: "/" is the home page, others take their last part.
- * @public
- */
+/** A check's name from the page it requests: "/" is the home page, others take their last part. */
 export function checkNameFromPath(path: string) {
   const segment = (path.split(/[?#]/)[0] ?? "").split("/").findLast(Boolean);
   if (!segment) return "Home";
@@ -187,7 +175,6 @@ export type CheckPathReading =
 /**
  * The URL a check requests: a path on its service's origin. A pasted full URL is fine when it is on
  * that origin, since a check may only ever request its own service.
- * @public
  */
 export function readCheckPath(input: string, serviceOrigin: string): CheckPathReading {
   const trimmed = input.trim();
@@ -264,10 +251,7 @@ function idIssue(id: string, takenIds: ReadonlySet<string> | null, noun: string)
   return takenIds?.has(id) ? `Another ${noun} already uses the ID ${id}.` : null;
 }
 
-/**
- * The first thing each wizard step still needs, or null once the step is complete.
- * @public
- */
+/** The first thing each wizard step still needs, or null once the step is complete. */
 export function siteDraftIssues(
   draft: SiteDraft,
   takenIds: ReadonlySet<string> | null,
@@ -295,10 +279,7 @@ function siteOrigins(origin: string, extras: readonly string[]) {
   return [...new Set([origin, ...extras])];
 }
 
-/**
- * The save request for a draft: its own origin always first among the analytics origins.
- * @public
- */
+/** The save request for a draft: its own origin always first among the analytics origins. */
 export function siteSaveRequest(
   draft: SiteDraft,
   origin: string,
@@ -316,10 +297,7 @@ export function siteSaveRequest(
   };
 }
 
-/**
- * Archived projects stay out unless the site serves them, so they can be seen and removed.
- * @public
- */
+/** Archived projects stay out unless the site serves them, so they can be seen and removed. */
 export function siteProjectChoices(projects: readonly LibraryProject[], served: readonly string[]) {
   return projects
     .filter((project) => !project.archived || served.includes(project.id))
@@ -334,7 +312,6 @@ function servicesForOrigin(services: readonly Service[], origin: string) {
 /**
  * A request's identity for a save that may be retried, and the request itself unless that exact
  * one already went through. A retry after an edit sends the edited entry rather than skipping it.
- * @public
  */
 export function unsentRequest<T>(request: T, sent: string | null | undefined) {
   const key = JSON.stringify(request);
@@ -1884,10 +1861,7 @@ function Choice({
   );
 }
 
-/**
- * The save request that replays an entry exactly as it is, apart from whether it is watched.
- * @public
- */
+/** The save request that replays an entry exactly as it is, apart from whether it is watched. */
 export function activeToggleRequest(target: ActiveToggleTarget, active: boolean) {
   switch (target.kind) {
     case "site": {

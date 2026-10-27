@@ -174,7 +174,9 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
         });
       }
       const localVersion = installLocal ? localUpdateVersion : null;
+      // fork: machine-updates
       let started = false;
+      // fork: machine-updates
       setUpdateEverythingRun((existing) => {
         if (existing !== null) return existing;
         started = true;
@@ -187,7 +189,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
           machines: Array.from(machinesById.values()),
         };
       });
-      if (!started) return;
+      if (!started) return; // fork: machine-updates
       const providerFailures = new Map<UpdateRunMachine["environmentId"], string>();
       const finishedServers: Array<{ label: string; outcome: ServerUpdateOutcome }> = [];
       try {

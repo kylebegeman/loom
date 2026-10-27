@@ -1,5 +1,5 @@
 import {
-  OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
+  OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestrationV2StopWorkflowInput,
   OrchestratorMcpCreateThreadsInput,
@@ -56,7 +56,7 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
   description:
     // fork: agent-catalog
     "List providers, models, options, and runtime modes for `delegate_task`. Short list. `search` finds others. Any catalog model works. Each provider's `modelCatalog` names its list in `modelCatalogs`, sent once per distinct list. `providerInstanceId` or `driverKind` reports fewer instances.",
-  parameters: OrchestratorMcpCapabilitiesInput, // fork: agent-catalog
+  parameters: OrchestratorMcpCapabilitiesInput,
   success: OrchestratorMcpCapabilitiesResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",

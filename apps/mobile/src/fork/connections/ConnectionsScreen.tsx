@@ -205,9 +205,7 @@ export function ConnectionsScreen() {
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
         <LibraryReachSection libraryReach={libraryReach} />
 
-        {/* Always mounted: already-connected relay environments must stay
-            visible (and removable) even when cloud config is missing or the
-            user is signed out — the component gates discovery itself. */}
+        {/* Keep connected relays visible and removable without cloud config or sign-in; this component gates discovery. */}
         <CloudEnvironmentRows
           connectedCloudEnvironments={connectedCloudEnvironments}
           onOpenEnvironment={openEnvironment}

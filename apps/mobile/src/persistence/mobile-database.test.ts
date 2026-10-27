@@ -38,8 +38,8 @@ describe("mobile database legacy cache migration", () => {
   });
 });
 
+// fork: library
 describe("offline database caches", () => {
-  // fork: library
   const environmentId = "cached-environment" as import("@t3tools/contracts").EnvironmentId;
   const otherEnvironment = "other-environment" as import("@t3tools/contracts").EnvironmentId;
 
@@ -94,13 +94,15 @@ describe("offline database caches", () => {
     () =>
       Effect.scoped(
         Effect.gen(function* () {
+          const now = Date.UTC(2026, 9, 15);
+          using _now = vi.spyOn(Date, "now").mockReturnValue(now);
           const sqlite = yield* Effect.promise(sqliteDatabase);
           const database = yield* MobileDatabase.make;
           yield* database.saveCache(environmentId, "pull-request", "pr", 1, "pr");
           yield* database.saveCache(environmentId, "project-library", "old", 1, "old");
           sqlite
             .prepare("UPDATE client_cache SET updated_at = ? WHERE cache_key = 'old'")
-            .run(Date.now() - 8 * 24 * 60 * 60_000);
+            .run(now - 8 * 24 * 60 * 60_000);
           expect((yield* database.loadCache(environmentId, "project-library", "old"))._tag).toBe(
             "None",
           );

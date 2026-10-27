@@ -1212,7 +1212,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // fork: ext-composer-menu
   const forkTriggerItems = useForkTriggerMenuItems(forkComposer.context, composerTrigger);
   const {
-    items: upstreamComposerMenuItems,
+    items: upstreamComposerMenuItems, // fork: ext-composer-menu
     isLoading: isComposerMenuLoading,
     emptyState: composerMenuEmptyState,
   } = useComposerMenuItems({

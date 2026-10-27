@@ -78,8 +78,7 @@ export default mergeConfig(
       },
     },
     pack: {
-      // The executable embeds one entry; the history worker becomes a hidden
-      // subcommand there instead of a sibling script.
+      // SEA embeds one entry; expose the history worker as a hidden subcommand.
       // fork: model-print-check
       entry: packExecutable
         ? ["src/bin.ts"]

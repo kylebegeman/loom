@@ -238,6 +238,7 @@ export function startThreadNotifications(
           trackNotification(environmentId, notification);
           notification.addEventListener("click", () => {
             notification.close();
+            // fork: respectful-notifications
             if (!hasDesktopNotifications(getClientSettings().notificationMode) || stale()) return;
             window.focus();
             void window.desktopBridge?.revealWindow?.().catch(() => undefined);
@@ -246,10 +247,10 @@ export function startThreadNotifications(
               params: { environmentId, threadId: thread.id },
             });
           });
-          return true;
+          return true; // fork: respectful-notifications
         } catch {
           // Some browsers expose Notification but reject desktop presentation.
-          return false;
+          return false; // fork: respectful-notifications
         }
       },
     );

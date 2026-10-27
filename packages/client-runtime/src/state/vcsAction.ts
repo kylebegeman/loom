@@ -469,7 +469,6 @@ export function createVcsActionManager<R, E>(
       label: `vcs-action:run-stacked:${commandKey}`,
       scheduler: vcsCommandScheduler,
       concurrency: { mode: "serial", key: () => commandKey },
-      // fork: source-control-cockpit
       execute: Effect.fn("VcsAction.runStackedAction")(function* (
         input: RunVcsStackedActionInput,
         registry,
@@ -563,7 +562,7 @@ export function createVcsActionManager<R, E>(
           ),
           Effect.onInterrupt(() => clearOwnedState),
         );
-      }), // fork: source-control-cockpit
+      }),
     });
     runStackedActionCommands.set(commandKey, command);
     return command;

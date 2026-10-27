@@ -62,6 +62,7 @@ export function DatabaseStorageNotice({
       ? [{ target, status, state: status.restartCompaction }]
       : [];
   });
+  // fork: restart-compaction
   const commands = visible.filter(({ status }) => status.restartCompaction === undefined);
   return (
     // fork: restart-compaction

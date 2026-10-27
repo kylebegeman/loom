@@ -209,9 +209,7 @@ export const make = Effect.gen(function* () {
   // fork: runtime-owner: no install method either, or an older client would build an npm command that replaces the operating system's runtime.
   const serverInstallation =
     serverSelfUpdate === null && selfUpdateEnabled ? yield* resolveServerInstallation : null; // fork: runtime-owner
-  // Static is correct: the control fd is known at bootstrap, and the desktop
-  // app and its bundled server ship in one artifact, so a present fd means the
-  // app speaks the requestDesktopUpdate protocol.
+  // Desktop and server ship together; a control fd guarantees requestDesktopUpdate support.
 
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
@@ -294,9 +292,7 @@ export const make = Effect.gen(function* () {
 
   return ServerEnvironment.of({
     getEnvironmentId: Effect.succeed(environmentId),
-    // The publish opt-in and relay link change at runtime (`t3 connect
-    // publish`, the client settings toggle), so the capability is read per
-    // descriptor request rather than baked in at startup.
+    // Publishing opt-in and relay links change at runtime; read the capability per request.
     // fork: computer-naming
     getDescriptor: Effect.all({
       agentActivityPublishing: readAgentActivityPublishingActive(secrets),

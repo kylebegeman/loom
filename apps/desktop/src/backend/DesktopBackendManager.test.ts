@@ -29,9 +29,9 @@ import {
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: restart-continuity
 
-import * as DesktopApp from "../app/DesktopApp.ts";
+import * as DesktopApp from "../app/DesktopApp.ts"; // fork: restart-continuity
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
-import * as DesktopBackendPool from "./DesktopBackendPool.ts";
+import * as DesktopBackendPool from "./DesktopBackendPool.ts"; // fork: restart-continuity
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
@@ -747,6 +747,7 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  // fork: restart-continuity: covers the fork's longer stop budget.
   it.effect("stopAllPoolInstances bounds the quit finalizer when backends hang", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -202,7 +202,7 @@ export const linkEnvironmentToCloud = Effect.fn("linkEnvironment.linkEnvironment
         ),
       );
     const environmentClient = yield* makeEnvironmentHttpApiClient(input.connection.httpBaseUrl);
-    yield* requireCurrentAccess();
+    yield* requireCurrentAccess(); // fork: fleet-connect
     const proof = yield* environmentClient.connect
       .linkProof({
         headers: { authorization: `Bearer ${localBearerToken}` },
@@ -218,14 +218,14 @@ export const linkEnvironmentToCloud = Effect.fn("linkEnvironment.linkEnvironment
         },
       })
       .pipe(Effect.mapError(cloudEnvironmentLinkError("Could not obtain environment link proof.")));
-    yield* requireCurrentAccess();
+    yield* requireCurrentAccess(); // fork: fleet-connect
     const link = yield* relayClient
       .linkEnvironment({
         clerkToken: input.clerkToken,
         payload: {
           deviceId,
           proof,
-          notificationsEnabled: input.notificationsEnabled,
+          notificationsEnabled: input.notificationsEnabled, // fork: fleet-connect
           liveActivitiesEnabled,
           managedTunnelsEnabled: true,
         },
@@ -239,7 +239,7 @@ export const linkEnvironmentToCloud = Effect.fn("linkEnvironment.linkEnvironment
       link,
     });
 
-    yield* requireCurrentAccess();
+    yield* requireCurrentAccess(); // fork: fleet-connect
     yield* environmentClient.connect
       .relayConfig({
         headers: { authorization: `Bearer ${localBearerToken}` },

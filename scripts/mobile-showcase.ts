@@ -40,8 +40,7 @@ const ANDROID_PACKAGE = "com.t3tools.t3code";
 const productionIdentity = resolveLoomMobileIdentity({ APP_VARIANT: "production" });
 const APP_SCHEME = productionIdentity.scheme;
 const IOS_PRODUCT_NAME = productionIdentity.appName;
-// expo-dev-launcher reads these off the manifest URL and updates the dev menu
-// preferences before the app loads, keeping captures free of dev chrome.
+// Manifest flags update expo-dev-launcher preferences before loading, hiding dev chrome in captures.
 const DEV_CLIENT_LAUNCH_FLAGS = "disableOnboarding=1&disableFab=1&disableAutoLaunch=1";
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";

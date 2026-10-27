@@ -226,9 +226,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     Effect.forkScoped,
   );
 
+  // fork: runtime-owner
   const capability = resolveServerSelfUpdateCapability({
-    desktopManaged: serverConfig.mode === "desktop" && selfUpdateEnabled, // fork: runtime-owner
-    launcherManaged: launcher.managed && selfUpdateEnabled, // fork: runtime-owner
+    desktopManaged: serverConfig.mode === "desktop" && selfUpdateEnabled,
+    launcherManaged: launcher.managed && selfUpdateEnabled,
   });
   const failWith = (reason: string, cause?: unknown) =>
     cause === undefined

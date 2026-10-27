@@ -1,4 +1,4 @@
-import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession";
+import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession"; // fork: library-sign-in
 import { LibrarySignInSettings } from "~/fork/project-library/LibrarySignInSettings"; // fork: library-sign-in
 import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { SessionPermissions } from "./SessionPermissions";
@@ -137,6 +137,7 @@ import {
   CloudRemoteEnvironmentRows,
   SavedBackendListRow,
 } from "./SavedEnvironmentRows";
+// fork: directory-computers
 import { AddEnvironmentDialog, type LibraryComputerPairing } from "./AddEnvironmentDialog";
 
 // fork: fleet-connections
@@ -237,7 +238,7 @@ export function ConnectionsSettings() {
     readonly checking: boolean;
     readonly status: DesktopTailscaleServeStatus | null;
   } | null>(null);
-  const tailscaleSetupRequest = useRef(0);
+  const tailscaleSetupRequest = useRef(0); // fork: tailnet-ownership
   const [disableTailscaleServeDialogOpen, setDisableTailscaleServeDialogOpen] = useState(false);
   const [tailscaleServePortInput, setTailscaleServePortInput] = useState(
     String(DEFAULT_TAILSCALE_SERVE_PORT),

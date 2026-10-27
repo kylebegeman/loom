@@ -374,8 +374,7 @@ export const make = Effect.gen(function* () {
 
       return yield* Effect.acquireUseRelease(
         Effect.tryPromise({
-          // Non-blocking so a FIFO cannot hang the open; the stat below rejects
-          // it. Regular files ignore the flag. Windows lacks it.
+          // Non-blocking opens prevent FIFO hangs before stat rejects them; Windows lacks the flag.
           try: () =>
             NodeFSP.open(
               realTargetPath,

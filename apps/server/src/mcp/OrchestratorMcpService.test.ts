@@ -1619,9 +1619,10 @@ describe("OrchestratorMcpService provider resolution", () => {
 
     it.effect("describes models by id, distinct label, and option values", () =>
       Effect.gen(function* () {
-        const capabilities = yield* capabilitiesWith();
+        const capabilities = yield* capabilitiesWith(); // fork: agent-catalog
         // fork: agent-catalog
         const codex = capabilities.modelCatalogs[capabilities.providers[0]?.modelCatalog ?? ""];
+        // fork: agent-catalog
         assert.deepEqual(codex?.slice(0, 4), [
           {
             id: "gpt-6",

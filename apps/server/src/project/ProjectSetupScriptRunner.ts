@@ -425,8 +425,7 @@ export const make = Effect.gen(function* () {
           );
     }
 
-    // A thread settles again after it is resumed, and an earlier settle shell
-    // may still be busy; typing into it would feed its foreground program.
+    // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
     const terminalId =
       input.preferredTerminalId ??
       (trigger === "settle"

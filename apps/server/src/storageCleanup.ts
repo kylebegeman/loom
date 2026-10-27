@@ -542,7 +542,7 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => null),
   );
 
-  // The snapshot takes seconds on large databases, so it runs on the reader worker.
+  // Large snapshots take seconds; use the reader worker instead of blocking the event loop.
   // fork: mini-native-retention -- archived threads must stay included: they settle
   // their project and keep their Scratch folder eligible for archiving.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
@@ -1759,8 +1759,7 @@ const make = Effect.gen(function* () {
           bytes,
         });
         yield* gitManager.invalidateStatus(project.workspaceRoot);
-        // Preserve branch and path: ProviderTurnStartService recreates the checkout
-        // from that branch when the thread is resumed.
+        // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
         // fork: project-lifecycle -- a deleted landed branch is recreated from the latest checkpoint.
         yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
       }).pipe(

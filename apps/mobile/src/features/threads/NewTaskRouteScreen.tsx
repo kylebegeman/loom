@@ -8,12 +8,8 @@ import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { NavigationRow } from "../../components/ui/NavigationRow";
 import { AppBar } from "../../components/ui/AppBar";
-import {
-  StackActions,
-  useIsFocused,
-  useNavigation,
-  type StaticScreenProps,
-} from "@react-navigation/native";
+// fork: library: Add project opens LibraryCreate, so StackActions is unused.
+import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useNoProjectTarget } from "../../fork/no-project/useNoProjectTarget"; // fork: no-project-first
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection"; // fork: fleet-connections

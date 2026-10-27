@@ -1068,9 +1068,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ),
         },
   );
+  // fork: library-projects - A local filter that now belongs to a Library project follows it.
   useEffect(() => {
     if (libraryScope.scope) return; // fork: library-projects
-    // fork: library-projects - A local filter that now belongs to a Library project follows it.
     if (!libraryScope.migratedScopeKey) return;
     clearSelection();
     setPersistedProjectScopeKey(libraryScope.migratedScopeKey);

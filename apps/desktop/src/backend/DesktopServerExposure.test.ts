@@ -296,6 +296,7 @@ describe("DesktopServerExposure", () => {
 
           yield* settings.load;
           yield* serverExposure.configureFromSettings({ port: 4173 });
+          // fork: tailnet-ownership: with Serve off, nothing probes tailscale.
           assert.equal((yield* serverExposure.getState).tailscaleServe, null);
           assert.deepEqual(spawned, []);
 

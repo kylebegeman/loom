@@ -20,7 +20,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 // fork: project-navigation
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react"; // fork: project-navigation
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -111,6 +111,7 @@ export function SettingsProjectOverviewRouteScreen({
   // fork: project-navigation
   // Folder paths can change grouping keys, while the selected project IDs stay the same.
   const previousSelection = useRef<(typeof projectGroups)[number] | null>(null);
+  // oxlint-disable-next-line t3code/react-effect-budget -- the successor is written to the Settings filter provider, which another component owns
   useEffect(() => {
     if (group) {
       previousSelection.current = group;

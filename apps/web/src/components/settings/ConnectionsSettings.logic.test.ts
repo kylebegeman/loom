@@ -138,6 +138,7 @@ const TAILSCALE_PROVIDER = {
   isAddon: true,
 } as const;
 
+// fork: tailnet-ownership
 const servedEndpoint = (status: "available" | "unavailable") =>
   createAdvertisedEndpoint({
     provider: TAILSCALE_PROVIDER,
@@ -149,6 +150,7 @@ const servedEndpoint = (status: "available" | "unavailable") =>
     status,
   });
 
+// fork: tailnet-ownership
 const serveStatus = (
   state: DesktopTailscaleServeStatus["state"],
   holder: string | null = null,
@@ -159,6 +161,7 @@ const serveStatus = (
   heldPorts: [],
 });
 
+// fork: tailnet-ownership
 describe("describeTailscaleServeRow", () => {
   const enabled = (tailscaleServe: DesktopTailscaleServeStatus | null) => ({
     tailscaleServeEnabled: true,
@@ -203,6 +206,7 @@ describe("describeTailscaleServeRow", () => {
   });
 });
 
+// fork: tailnet-ownership
 describe("tailscaleServePortProblem", () => {
   const heldPorts = [{ port: 443, holder: "http://127.0.0.1:8397" }];
 

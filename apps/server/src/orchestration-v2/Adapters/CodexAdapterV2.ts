@@ -7481,6 +7481,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     ...(boundary.lastTurnId === undefined
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
+                    // fork: switchboard
                     ...codexThreadRuntimeParams(
                       {
                         mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
@@ -7492,7 +7493,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                           : { runtimePolicy: threadInput.runtimePolicy }),
                       },
                       switchboardRouting,
-                    ), // fork: switchboard
+                    ),
                   }),
                 ),
                 Effect.mapError(

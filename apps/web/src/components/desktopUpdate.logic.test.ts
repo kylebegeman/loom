@@ -88,6 +88,7 @@ describe("desktop update UI helpers", () => {
     ).toBe("Install update 1.1.1 and restart Loom"); // fork: brand
   });
 
+  // fork: machine-updates
   it("falls back to a generic install confirmation title when no version is available", () => {
     expect(
       getDesktopUpdateInstallConfirmationTitle({
@@ -97,6 +98,7 @@ describe("desktop update UI helpers", () => {
     ).toBe("Install update and restart Loom"); // fork: brand
   });
 
+  // fork: machine-updates
   it("names the available version before its download finishes", () => {
     expect(
       getDesktopUpdateInstallConfirmationTitle({

@@ -60,17 +60,7 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
-  // fork: brand -- the kept brand tests below need these
-  bundlesWslRuntime,
-  DESKTOP_ELECTRON_LANGUAGES,
-  DESKTOP_EXTRA_RESOURCES,
-  LINUX_CAPTURE_EXTRA_RESOURCES,
-  LINUX_FILE_EXCLUSIONS,
-  MAC_FILE_EXCLUSIONS,
-  resolveDesktopProductName,
-  WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
-  WINDOWS_SERVER_EXTRA_RESOURCES,
-  WSL_RUNTIME_EXTRA_RESOURCES,
+  resolveDesktopProductName, // fork: brand
 } from "./build-desktop-artifact.ts";
 import {
   ReleasePackageManifestError,
@@ -484,7 +474,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  // fork: brand -- kept after upstream deleted it, for the product name check
+  // fork: brand
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.1.0"), "Loom"); // fork: brand
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Loom (Nightly)"); // fork: brand
@@ -559,8 +549,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  // fork: brand -- kept after upstream deleted it, for the DMG title and protocol checks
-  it.effect("applies platform-specific packaging to the build config", () =>
+  // fork: brand
+  it.effect("brands the DMG title, URL protocols and local network prompt as Loom", () =>
     Effect.gen(function* () {
       const mac = yield* createBuildConfig(
         "mac",
@@ -580,110 +570,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
-      const win = yield* createBuildConfig(
-        "win",
-        "nsis",
-        "1.2.3",
-        false,
-        false,
-        undefined,
-        undefined,
-        true,
-      );
-      const winWithoutWslRuntime = yield* createBuildConfig(
-        "win",
-        "nsis",
-        "1.2.3",
-        false,
-        false,
-        undefined,
-        undefined,
-        false,
-      );
+      const protocol = { name: "Loom", schemes: ["t3code", "t3code-dev"] };
 
-      assert.notProperty(mac, "asar");
-      assert.notProperty(linux, "asar");
-      assert.notProperty(mac, "asarUnpack");
-      assert.notProperty(linux, "asarUnpack");
-      assert.deepStrictEqual(win.asar, { smartUnpack: false });
-      assert.deepStrictEqual(win.asarUnpack, [WINDOWS_NATIVE_ASAR_UNPACK_GLOB]);
-      assert.deepStrictEqual(winWithoutWslRuntime.asar, win.asar);
-      assert.deepStrictEqual(winWithoutWslRuntime.asarUnpack, win.asarUnpack);
-      assert.deepStrictEqual(mac.extraResources, DESKTOP_EXTRA_RESOURCES);
-      assert.deepStrictEqual(linux.extraResources, [
-        ...DESKTOP_EXTRA_RESOURCES,
-        ...LINUX_CAPTURE_EXTRA_RESOURCES,
-        { from: "apps/desktop/prod-resources/browser-secret", to: "browser-secret" },
-      ]);
-      assert.deepStrictEqual(win.extraResources, [
-        ...DESKTOP_EXTRA_RESOURCES,
-        ...WINDOWS_SERVER_EXTRA_RESOURCES,
-        ...WSL_RUNTIME_EXTRA_RESOURCES,
-      ]);
-      assert.deepStrictEqual(winWithoutWslRuntime.extraResources, [
-        ...DESKTOP_EXTRA_RESOURCES,
-        ...WINDOWS_SERVER_EXTRA_RESOURCES,
-      ]);
-      assert.deepStrictEqual(win.nsis, {
-        differentialPackage: true,
-        include: "apps/desktop/resources/installer.nsh",
-      });
-      assert.deepStrictEqual(WINDOWS_SERVER_ASAR_IGNORE_GLOBS, [
-        "**/node_modules/@cursor/sdk-*",
-        "**/node_modules/@cursor/sdk-*/**",
-        "**/node_modules/@anthropic-ai/claude-agent-sdk-*",
-        "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**",
-        "**/node_modules/.bin",
-        "**/node_modules/.bin/**",
-        "**/*.map",
-      ]);
-      assert.deepStrictEqual(mac.dmg, {
-        title: "Loom 1.2.3 Installer", // fork: brand
-        background: "dmg/dmg-background-latest.png",
-        window: { width: 640, height: 432 },
-        contents: [
-          { x: 166, y: 214, type: "file" },
-          { x: 474, y: 214, type: "link", path: "/Applications" },
-        ],
-        iconSize: 120,
-        iconTextSize: 12,
-      });
-      assert.deepStrictEqual((linux.linux as Record<string, unknown>).target, ["AppImage", "deb"]);
-      assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "Loom", schemes: ["t3code", "t3code-dev"] }, // fork: brand
-      ]);
-      assert.deepStrictEqual((mac.mac as Record<string, unknown>).protocols, [
-        { name: "Loom", schemes: ["t3code", "t3code-dev"] }, // fork: brand
-        { name: "Web site URL", schemes: ["http", "https"], role: "Viewer" },
-      ]);
-      const macInfo = (mac.mac as { extendInfo: Record<string, unknown> }).extendInfo;
-      assert.strictEqual(macInfo.NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac, true);
-      assert.deepStrictEqual(macInfo.CFBundleDocumentTypes, [
-        {
-          CFBundleTypeName: "Web page",
-          CFBundleTypeRole: "Viewer",
-          LSHandlerRank: "Alternate",
-          LSItemContentTypes: ["public.html", "public.xhtml"],
-        },
-      ]);
-      assert.deepStrictEqual(linux.toolsets, { appimage: "1.0.3" });
-      assert.notProperty(mac, "toolsets");
-      assert.notProperty(win, "toolsets");
-      assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
-      assert.deepStrictEqual(linux.files, [...DESKTOP_FILE_EXCLUSIONS, ...LINUX_FILE_EXCLUSIONS]);
-      assert.deepStrictEqual(win.files, DESKTOP_FILE_EXCLUSIONS);
-      assert.deepStrictEqual(winWithoutWslRuntime.files, win.files);
-      assert.notProperty(mac.mac as Record<string, unknown>, "sign");
+      assert.propertyVal(mac.dmg, "title", "Loom 1.2.3 Installer");
+      assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [protocol]);
+      assert.deepStrictEqual(
+        ((mac.mac as Record<string, unknown>).protocols as ReadonlyArray<unknown>)[0],
+        protocol,
+      );
       assert.propertyVal(
         (mac.mac as Record<string, unknown>).extendInfo as Record<string, unknown>,
         "NSLocalNetworkUsageDescription",
-        // fork: brand
         "Loom connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
       );
-      for (const config of [linux, win]) {
-        assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
-      }
-      assert.deepStrictEqual(mac.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

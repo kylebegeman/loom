@@ -489,7 +489,7 @@ it.effect("keeps a folder that another project owns when the create conflicts", 
           const projects = yield* ProjectService.ProjectService;
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const taken = path.join(baseDir, "projects", "taken");
+          const taken = path.join(baseDir, "projects", "taken"); // fork: file-placement
 
           const failure = yield* Effect.flip(folders.createNamedProject({ name: "Taken" }));
 

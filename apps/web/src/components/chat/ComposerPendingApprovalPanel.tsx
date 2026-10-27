@@ -83,7 +83,7 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
         tabIndex={0}
       >
         {approval.responseCapability === "not_resumable"
-          ? "The provider process is gone. Interrupt or restart the run to respond." // fork: failed-run-retry
+          ? "Provider process is gone. Interrupt or restart the run to respond."
           : approval.detail || fallbackLabel}
       </Detail>
       {approval.reason ? (

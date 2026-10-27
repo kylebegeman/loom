@@ -8,11 +8,8 @@ import {
   deriveAvailableRevertTurnCounts,
   deriveWorkspaceMutationId,
 } from "./ChatView.logic";
-import {
-  recallCheckoutIsRepo,
-  rememberCheckoutIsRepo,
-  resolveProactiveTurnDiffAction, // fork: checkpoint-capable
-} from "./ChatView.logic";
+import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
+import { resolveProactiveTurnDiffAction } from "./ChatView.logic"; // fork: checkpoint-capable
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { deriveProviderInstanceEntries } from "../providerInstances";
 import { ensureInlineContextReferences } from "../lib/composerContextReferences";

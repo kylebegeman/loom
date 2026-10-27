@@ -891,10 +891,7 @@ const make = Effect.gen(function* () {
           timestamp: new Date().toISOString(),
         });
         if (!isMainNavigation(request)) return;
-        // fork: browser-timeout-recovery
-        // A navigation a newer one replaced leaves the status to the newer one. A
-        // popup's first request can predate the listener, so it is untracked and
-        // superseded by any tracked one.
+        // Newer navigations own status; untracked initial popup requests yield to any tracked navigation.
         const generation = navigationGenerations.get(request) ?? 0;
         if (generation !== tab.navigationGeneration) return;
         // An aborted navigation is usually a download; its `download` event settles the status.

@@ -97,10 +97,12 @@ const ProjectCloneTool = Tool.make("t3_project_clone", {
   description:
     // fork: file-placement
     "Clone a repository and register it as a project. Omit `destinationPath`: an existing checkout is reused (`reused: true`) or Loom picks a folder in the Projects folder. Waits for the clone; `phase` is done, failed or cancelled.",
+  // fork: file-placement
   parameters: Schema.Struct({
     ...SourceControlCloneRepositoryInput.fields,
     title: Schema.optional(TrimmedNonEmptyString),
   }),
+  // fork: file-placement
   success: Schema.Struct({
     ...ProjectCloneStartResult.fields,
     phase: ProjectClonePhase,

@@ -351,7 +351,6 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
 export const announceStartupPairingUrl = (pairingUrl: string) =>
   // fork: brand
   Effect.logInfo("Authentication required. Open Loom using the pairing URL.").pipe(
-    // Indented to match the annotation line the pretty logger printed before.
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
 
@@ -379,9 +378,7 @@ export const maybeOpenBrowser = Effect.fn("serverRuntimeStartup.maybeOpenBrowser
 
 const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
-    // Attributes on the span itself, not annotateSpans: an annotation follows
-    // every fiber forked inside the phase, such as the effect worker, for the
-    // life of the server.
+    // Use span attributes; annotations would follow long-lived forked fibers for the server's lifetime.
     Effect.withSpan(`server.startup.${phase}`, {
       root: true, // fork: server-weight
       attributes: { "startup.phase": phase },

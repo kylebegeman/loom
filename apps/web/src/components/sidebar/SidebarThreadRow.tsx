@@ -1,6 +1,5 @@
-// fork: attention-status
-import { useEnvironment } from "../../state/environments";
-import { MonitorOffIcon, PauseCircleIcon } from "lucide-react";
+import { useEnvironment } from "../../state/environments"; // fork: attention-status
+import { MonitorOffIcon, PauseCircleIcon } from "lucide-react"; // fork: attention-status
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
@@ -704,65 +703,68 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
+  // fork: attention-status: upstream's topStatus, wrapped below by the paused and offline states.
+  const runtimeStatus =
+    status === "working"
+      ? {
+          label: thread.goal?.status === "active" ? "Goal" : "Working",
+          icon: "working" as const,
+          className: "text-info-foreground",
+        }
+      : status === "waiting"
+        ? {
+            label: "Waiting",
+            icon: "waiting" as const,
+            className: "text-muted-foreground",
+          }
+        : status === "approval"
+          ? {
+              label: "Approval",
+              icon: "approval" as const,
+              className: "text-warning-foreground",
+            }
+          : status === "input"
+            ? {
+                label: "Input",
+                icon: "input" as const,
+                className: "text-indigo-600 dark:text-indigo-300",
+              }
+            : status === "request"
+              ? {
+                  label: "Request",
+                  icon: "request" as const,
+                  className: "text-guest-foreground",
+                }
+              : status === "limited"
+                ? {
+                    label: "Limited",
+                    icon: "failed" as const,
+                    className: "text-warning-foreground",
+                  }
+                : status === "failed"
+                  ? {
+                      label: "Failed",
+                      icon: "failed" as const,
+                      className: "text-error-foreground",
+                    }
+                  : isWoke
+                    ? {
+                        label: "Woke",
+                        icon: "woke" as const,
+                        className: "text-warning-foreground",
+                      }
+                    : isUnread
+                      ? {
+                          label: "Done",
+                          icon: "done" as const,
+                          className: "text-success-foreground",
+                        }
+                      : null;
   // fork: attention-status
   const lastKnownStatus =
     status === "paused"
       ? { label: "Paused", icon: "paused" as const, className: "text-warning-foreground" }
-      : status === "working"
-        ? {
-            label: thread.goal?.status === "active" ? "Goal" : "Working",
-            icon: "working" as const,
-            className: "text-info-foreground",
-          }
-        : status === "waiting"
-          ? {
-              label: "Waiting",
-              icon: "waiting" as const,
-              className: "text-muted-foreground",
-            }
-          : status === "approval"
-            ? {
-                label: "Approval",
-                icon: "approval" as const,
-                className: "text-warning-foreground",
-              }
-            : status === "input"
-              ? {
-                  label: "Input",
-                  icon: "input" as const,
-                  className: "text-indigo-600 dark:text-indigo-300",
-                }
-              : status === "request"
-                ? {
-                    label: "Request",
-                    icon: "request" as const,
-                    className: "text-guest-foreground",
-                  }
-                : status === "limited"
-                  ? {
-                      label: "Limited",
-                      icon: "failed" as const,
-                      className: "text-warning-foreground",
-                    }
-                  : status === "failed"
-                    ? {
-                        label: "Failed",
-                        icon: "failed" as const,
-                        className: "text-error-foreground",
-                      }
-                    : isWoke
-                      ? {
-                          label: "Woke",
-                          icon: "woke" as const,
-                          className: "text-warning-foreground",
-                        }
-                      : isUnread
-                        ? {
-                            label: "Done",
-                            icon: "done" as const,
-                            className: "text-success-foreground",
-                          }
-                        : null;
+      : runtimeStatus;
   // fork: attention-status
   const topStatus = connected
     ? lastKnownStatus

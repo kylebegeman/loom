@@ -48,11 +48,10 @@ export function DatabaseStorageNotice({
     (recommendation) => !dismissed.includes(recommendation.environmentId),
   );
   if (visible.length === 0) return null;
+  // fork: restart-compaction
   const labelOf = (environmentId: EnvironmentId) =>
     environments.find((environment) => environment.environmentId === environmentId)?.label ??
     environmentId;
-  const dismiss = (environmentId: EnvironmentId) =>
-    setDismissed((current) => [...current, environmentId]);
   // fork: restart-compaction: the desktop app compacts its own database while it restarts.
   const commandRecommendations = visible.filter(
     ({ status }) => status.restartCompaction === undefined,
@@ -68,20 +67,25 @@ export function DatabaseStorageNotice({
             label={labelOf(environmentId)}
             reclaimableBytes={status.reclaimableBytes}
             state={status.restartCompaction}
-            onDismiss={() => dismiss(environmentId)}
+            onDismiss={() => setDismissed((current) => [...current, environmentId])}
           />
         ),
       )}
+      {/* fork: restart-compaction */}
       {commandRecommendations.length === 0 ? null : (
         <SettingsRow
           title="Reclaim freed database space"
           description="Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment."
         />
       )}
+      {/* fork: restart-compaction */}
       {commandRecommendations.map(({ environmentId, status }) => (
         <SettingsRow
           key={environmentId}
-          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${labelOf(environmentId)}`} // fork: restart-compaction
+          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${
+            environments.find((environment) => environment.environmentId === environmentId)
+              ?.label ?? environmentId
+          }`}
           description={<code className="select-text break-all">{status.compactCommand}</code>}
           control={
             <div className="flex flex-wrap items-center gap-1.5">
@@ -92,8 +96,11 @@ export function DatabaseStorageNotice({
               >
                 Copy command
               </Button>
-              {/* fork: restart-compaction */}
-              <Button variant="ghost" size="xs" onClick={() => dismiss(environmentId)}>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => setDismissed((current) => [...current, environmentId])}
+              >
                 Dismiss
               </Button>
             </div>

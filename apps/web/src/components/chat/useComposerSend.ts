@@ -27,10 +27,8 @@ import {
   RuntimeMode,
 } from "@t3tools/contracts";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
-import {
-  isTransportConnectionErrorMessage, // fork: fleet-connections
-  wasBootstrapThreadDeleted,
-} from "@t3tools/client-runtime/errors";
+import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors"; // fork: fleet-connections
 import {
   declinePendingApprovals,
   sendApprovalFeedback,
@@ -144,6 +142,7 @@ import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
 // fork: fleet-connections
 import { needsIdentitySignIn } from "../../fork/connection-health/ComputerConnectionBanner";
+// fork: fleet-connections
 import {
   heldDraftSignature,
   newCommandId,
@@ -152,7 +151,7 @@ import {
   useHeldSendStore,
   type HeldSend,
 } from "../../fork/connection-health/heldSend";
-import type { EnvironmentPresentation } from "../../state/environments";
+import type { EnvironmentPresentation } from "../../state/environments"; // fork: fleet-connections
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 

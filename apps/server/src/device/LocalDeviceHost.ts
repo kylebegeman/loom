@@ -565,8 +565,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       yield* fs.remove(daemonFilePath(), { force: true }).pipe(Effect.ignore);
     }
     yield* pruneIdleAgentDeviceSessions(fs, path, stateDir); // fork: retention-defaults
-    // There is no `daemon start`; the first command in a state dir spawns the
-    // daemon and blocks until it answers. `devices` is the cheapest one.
+    // No `daemon start` exists; `devices` is the cheapest command that starts and awaits it.
     const runResult = yield* runner
       .run({
         command: nodePath,

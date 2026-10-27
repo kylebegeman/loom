@@ -1,22 +1,21 @@
+import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models"; // fork: project-lifecycle
+import { useNavigate } from "@tanstack/react-router"; // fork: project-lifecycle
 // fork: project-lifecycle
-import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
-import { useNavigate } from "@tanstack/react-router";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type StorageCleanupReportEntry,
 } from "@t3tools/contracts";
-import { useThreadActions } from "../../hooks/useThreadActions";
-import { useThreadShells } from "../../state/entities";
-import { useEnvironmentScope } from "../../state/session";
+import { useThreadActions } from "../../hooks/useThreadActions"; // fork: project-lifecycle
+import { useThreadShells } from "../../state/entities"; // fork: project-lifecycle
+import { useEnvironmentScope } from "../../state/session"; // fork: project-lifecycle
 import { ProjectCheckoutSettings } from "../../fork/project-checkout/ProjectCheckoutSettings"; // fork: project-checkout-management
-// fork: mini-native-retention
 import type {
   StorageCleanupReport,
   StorageCleanupSettings,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
-import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
+import { loomFeaturesOf } from "@t3tools/client-runtime/fork"; // fork: mini-native-retention
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -420,12 +419,12 @@ function CleanupSection() {
       rules.worktreeOnMerge ||
       rules.worktreeOnDelete ||
       rules.worktreeOnSettle || // fork: project-lifecycle
-      rules.worktreeUnchanged ||
-      rules.worktreeOnLand; // fork: project-lifecycle
+      rules.worktreeOnLand || // fork: project-lifecycle
+      rules.worktreeUnchanged;
     return (
       // fork: project-checkout-management
       settings.storageCleanup.projectAfterDays !== null ||
-      settings.storageCleanup.projectOnSettle ||
+      settings.storageCleanup.projectOnSettle || // fork: project-checkout-management
       settings.storageCleanup.scratchAfterDays !== null || // fork: mini-native-retention
       settings.storageCleanup.browserArtifactsAfterDays !== null ||
       settings.storageCleanup.logsAfterDays !== null ||
@@ -657,11 +656,8 @@ export function StorageSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      {
-        isProjectScope && (
-          <ProjectCheckoutSettings projects={scope.members} />
-        ) /* fork: project-checkout-management */
-      }
+      {/* fork: project-checkout-management */}
+      {isProjectScope && <ProjectCheckoutSettings projects={scope.members} />}
       {!isProjectScope && (
         <DatabaseStorageNotice
           environments={connectedEnvironments.filter(

@@ -308,6 +308,7 @@ const lookupFailureCodeOf = (cause: unknown): "ENOENT" | "EACCES" | undefined =>
 /** Keyed by spawner so each runtime resolves once and tests never share a result. */
 const resolvedExecutables = new WeakMap<object, TailscaleExecutableCandidate>();
 
+// fork: tailnet-ownership: untraced because runTailscale owns the span.
 const spawnTailscale = Effect.fnUntraced(function* (
   subcommand: TailscaleSubcommand,
   args: readonly string[],

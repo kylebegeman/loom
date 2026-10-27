@@ -81,10 +81,10 @@ const matchingPageIndex = (
 
 const make = Effect.gen(function* () {
   const terminal = yield* makeTerminalConnections; // fork: ext-vault-terminal
+  // fork: ext-vault-terminal
   const sessions = yield* SynchronizedRef.make(new Map<ThreadId, McpProviderSessionConfig>());
   const htmlRenders = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptHtmlRender>>());
   return McpProviderSessions.of({
-    // fork: ext-vault-terminal
     set: Effect.fn("McpProviderSessions.set")(function* (config) {
       const current = yield* SynchronizedRef.get(sessions); // fork: ext-vault-terminal
       if (current.get(config.threadId)?.providerSessionId !== config.providerSessionId) {
@@ -113,7 +113,6 @@ const make = Effect.gen(function* () {
       // fork: ext-vault-terminal
       return SynchronizedRef.get(sessions).pipe(Effect.map((current) => current.get(threadId)));
     }),
-    // fork: ext-vault-terminal
     clear: Effect.fn("McpProviderSessions.clear")(function (threadId) {
       // fork: ext-vault-terminal
       return SynchronizedRef.updateEffect(sessions, (current) =>

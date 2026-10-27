@@ -5840,7 +5840,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       )`;
     };
 
-    // fork: attention-status - EXISTS reads only queued runs for this thread.
     const selectShellThreadRows = (
       threadId?: ThreadId,
       {
@@ -5866,6 +5865,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               presented.requested_at AS latest_run_requested_at,
               json_extract(presented.payload_json, '$.startedAt') AS latest_run_started_at,
               presented.completed_at AS latest_run_completed_at,
+              /* fork: attention-status: EXISTS reads only queued runs for this thread. */
               EXISTS (SELECT 1 FROM orchestration_v2_projection_runs held
                 WHERE held.thread_id = t.thread_id AND held.status = 'queued'
                   AND json_extract(held.payload_json, '$.queueHeld') = 1) AS queue_held,

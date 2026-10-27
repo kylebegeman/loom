@@ -233,10 +233,7 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
   for (const entry of libraryEmbedderRuntimeRemovals(embedderRuntimePaths)) {
     yield* fs.remove(path.join(embedderRuntimeDir, entry), { recursive: true, force: true });
   }
-  // A hoisted install still leaves nested `node_modules/.bin` shim directories
-  // inside packages that declare bins (msgpackr-extract's). They are symlinks
-  // nothing runs, and the npm registry refuses a tarball that contains any
-  // symlink, so strip every `.bin` directory below node_modules.
+  // Nested .bin shims are unused symlinks, which the npm registry rejects in tarballs.
   yield* removeNestedBinDirectories(fs, path, path.join(input.stageDir, "node_modules"));
 });
 

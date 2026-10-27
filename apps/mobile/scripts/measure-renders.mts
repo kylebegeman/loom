@@ -80,7 +80,6 @@ const median = (values: ReadonlyArray<number>) => {
   return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 };
 
-/** One Hermes inspector session, reached through Metro's inspector proxy. */
 const connectInspector = Effect.fn("measure.connectInspector")(function* (
   metro: string,
   appId: string, // fork: mobile-identity
@@ -94,8 +93,7 @@ const connectInspector = Effect.fn("measure.connectInspector")(function* (
     return yield* new MeasureError({
       message: `No app with ID ${appId} is attached to Metro at ${metro}.`, // fork: mobile-identity
     });
-  // Expo terminates inspector sockets whose Origin differs from the URL Metro
-  // advertises (the LAN address with `--lan`), so pass that URL as `--metro`.
+  // Expo closes inspector sockets unless Origin matches Metro's advertised URL; pass that URL as --metro.
   const socket = yield* Socket.makeWebSocket(target.webSocketDebuggerUrl, {
     headers: { origin: new URL(metro).origin },
     openTimeout: "10 seconds",
@@ -367,7 +365,7 @@ const command = Command.make(
       Flag.withDescription("Exact native app ID attached to Metro."),
       Flag.withDefault("com.kylebegeman.loom.dev"),
     ),
-    scheme: Flag.String("scheme").pipe(Flag.withDefault("loom-dev")),
+    scheme: Flag.String("scheme").pipe(Flag.withDefault("loom-dev")), // fork: mobile-identity
     runs: Flag.Int("runs").pipe(Flag.withDefault(3)),
     window: Flag.Int("window").pipe(
       Flag.withDescription("Seconds to record; defaults to 12 for a reply and 6 for --route."),

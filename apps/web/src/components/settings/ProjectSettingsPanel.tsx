@@ -48,6 +48,7 @@ import {
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ProjectFolderLocation } from "./ProjectFolderLocation"; // fork: project-home
+// fork: project-home
 import {
   projectGroupTitleNeedsUpdate,
   projectSettingsLocationSuccessor,
@@ -61,11 +62,6 @@ const ProjectIconPickerDialog = lazy(() =>
     default: module.ProjectIconPickerDialog,
   })),
 );
-
-// fork: project-home
-function memberKey(member: { environmentId: string; id: string }): string {
-  return `${member.environmentId}:${member.id}`;
-}
 
 export type ProjectSettingsCategory = "general" | "source-control" | "project";
 
@@ -111,26 +107,27 @@ export function ProjectSettingsPanel({
         (checkoutKey === null || member.physicalProjectKey === checkoutKey),
     ) ?? [];
 
-  // fork: project-home
-  // Project IDs survive folder moves and grouping changes; path-based keys do not.
+  // Retain group members so grouping-rule changes can follow the project to its new group.
   const [lastSelection, setLastSelection] = useState<ProjectSelection | null>(null);
   if (selected && members.length > 0) {
     const current: ProjectSelection = {
       key: selected.projectKey,
       environmentId,
       checkoutKey,
-      memberKeys: members.map(memberKey), // fork: project-home
+      // fork: project-home: project IDs survive folder moves; path-based keys do not.
+      memberKeys: members.map((member) => `${member.environmentId}:${member.id}`),
     };
     if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
   }
 
+  // fork: project-home
   const successor =
     members.length === 0 &&
     lastSelection?.key === projectKey &&
     lastSelection.environmentId === environmentId &&
     lastSelection.checkoutKey === checkoutKey
       ? projectSettingsLocationSuccessor(groups, lastSelection.memberKeys, checkoutKey)
-      : null; // fork: project-home
+      : undefined;
   if (successor) {
     return (
       <Navigate
@@ -484,10 +481,11 @@ function ProjectDetail({
   return (
     <>
       <SettingsPageContainer className="gap-6">
+        {/* fork: project-home */}
         <SettingsSection
           id="project-overview"
           title="Computer folder"
-          headerAction={<BrowseProjectsButton size="xs" /> /* fork: project-home */}
+          headerAction={<BrowseProjectsButton size="xs" />}
         >
           {!canEditGroup ? (
             <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">
@@ -497,7 +495,8 @@ function ProjectDetail({
             </p>
           ) : null}
           <SettingsRow
-            title="Folder label" // fork: project-home
+            // fork: project-home
+            title="Folder label"
             description="The label for these computer folders in the sidebar. Edit the shared project name from Projects."
             control={
               <Input
@@ -570,6 +569,7 @@ function ProjectDetail({
             }
           />
         </SettingsSection>
+        {/* fork: project-home */}
         <SettingsSection title="Folder locations">
           {group.memberProjects.map((member) => (
             <SettingsRow
@@ -587,11 +587,12 @@ function ProjectDetail({
         {hasMultipleCheckouts ? checkoutChoices : null}
         <SettingsSection title="Danger">
           <SettingsRow
+            // fork: project-home
             title={
               hasOtherMembers
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
-                  ? "Delete folder entries and conversations" // fork: project-home
+                  ? "Delete folder entries and conversations"
                   : "Delete folder entry and conversations"
             }
             description={

@@ -114,10 +114,7 @@ interface RightPanelStoreState {
   closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
   openSurface: (ref: ScopedThreadRef, surface: RightPanelSurface) => void; // fork: ext-panels
-  /**
-   * Refused when the user made a panel choice after
-   * `expectedUserActionRevision` was read.
-   */
+  /** Refused if the user chose a panel after expectedUserActionRevision was read. */
   openProactive: (
     ref: ScopedThreadRef,
     request:

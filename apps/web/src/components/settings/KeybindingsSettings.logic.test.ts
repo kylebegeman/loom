@@ -11,7 +11,7 @@ import {
   buildKeybindingCommandOptions, // fork: ext-keybindings
   buildKeybindingRows,
   commandLabel, // fork: ext-keybindings
-  filterKeybindingRows,
+  filterKeybindingRows, // fork: ext-keybindings
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
@@ -234,6 +234,7 @@ describe("KeybindingsSettings.logic", () => {
     expect(commandLabel("loom.file-outline.toggle")).toBe("Loom: File Outline: Toggle");
   });
 
+  // fork: ext-keybindings
   it("hides archived inspector commands and ignores their shortcut conflicts", () => {
     const shortcut = {
       key: "j",

@@ -448,17 +448,16 @@ export function HomeScreen(props: HomeScreenProps) {
       ),
     ),
   );
-  const v2ScopedProjectKeys =
-    // fork: library
-    sharedScope
-      ? (props.libraryProjectKeys ?? new Set<string>())
-      : v2ScopedProjectGroup === null
-        ? null
-        : new Set(
-            v2ScopedProjectGroup.projectRefs.map((projectRef) =>
-              scopedProjectKey(projectRef.environmentId, projectRef.projectId),
-            ),
-          );
+  // fork: library
+  const v2ScopedProjectKeys = sharedScope
+    ? (props.libraryProjectKeys ?? new Set<string>())
+    : v2ScopedProjectGroup === null
+      ? null
+      : new Set(
+          v2ScopedProjectGroup.projectRefs.map((projectRef) =>
+            scopedProjectKey(projectRef.environmentId, projectRef.projectId),
+          ),
+        );
   const handleSettleThread = props.onSettleThread;
   const handleSnoozeThread = props.onSnoozeThread;
   const handleUnsnoozeThread = props.onUnsnoozeThread;
@@ -571,6 +570,7 @@ export function HomeScreen(props: HomeScreenProps) {
               v2ScopedProjectKeys?.has(scopedProjectKey(thread.environmentId, thread.projectId)) ===
                 true),
         );
+  // fork: library
   const listedPendingTasks = sharedScope
     ? props.pendingTasks.filter(
         (pendingTask) =>
@@ -586,7 +586,7 @@ export function HomeScreen(props: HomeScreenProps) {
     olderSettledShelf,
   } = useThreadListV2({
     threads: listedThreads, // fork: library
-    pendingTasks: listedPendingTasks,
+    pendingTasks: listedPendingTasks, // fork: library
     environmentId: props.selectedEnvironmentId,
     // fork: library - A Library project is scoped by its saved threads' local projects.
     projectRefs: sharedScope
@@ -787,6 +787,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // fork: project-navigation - One list renders either threads or project library rows.
   const navigationItems: ReadonlyArray<HomeNavigationItem> =
     navigationView === "projects" ? projectLibrary.items : threadListV2Items;
+  // fork: project-navigation
   const renderNavigationItem = ({ item }: { readonly item: HomeNavigationItem }) => {
     if (item.type !== "loom-project") return renderV2Item({ item });
     return (
@@ -807,11 +808,12 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
   };
+  // fork: project-navigation
   const navigationItemsAreEqual = (previous: HomeNavigationItem, item: HomeNavigationItem) => {
     if (previous.type === "loom-project" || item.type === "loom-project") return previous === item;
     return threadListV2ListItemsAreEqual(previous, item);
   };
-  const v2KeyExtractor = (item: HomeNavigationItem) => item.key;
+  const v2KeyExtractor = (item: HomeNavigationItem) => item.key; // fork: project-navigation
 
   // extraData changes invalidate every visible row; put the minute clock on items to limit updates.
   const v2ExtraData = {
