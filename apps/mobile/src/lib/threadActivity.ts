@@ -345,6 +345,18 @@ const runFoldRowsCache = new WeakMap<
   Extract<ThreadFeedEntry, { readonly type: "run-fold" }>
 >();
 let cachedThinkingRow: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
+// fork: feed-history-reads: check each prompt for `/compact` once; rebuilds skip old text.
+const compactionPromptVerdicts = new WeakMap<OrchestrationV2TurnItem, boolean>();
+function isCompactionPromptItem(
+  item: Extract<OrchestrationV2TurnItem, { readonly type: "user_message" }>,
+): boolean {
+  let verdict = compactionPromptVerdicts.get(item);
+  if (verdict === undefined) {
+    verdict = isCompactionCommandMessage({ role: "user", ...item });
+    compactionPromptVerdicts.set(item, verdict);
+  }
+  return verdict;
+}
 
 export function isContextCompactionActivityGroup(entry: ThreadFeedActivityGroup): boolean {
   return (
@@ -2181,7 +2193,8 @@ export function buildThreadFeed(
   const compactedRunIds = new Set<RunId>();
   for (const { item } of visibleTurnItems) {
     if (item.runId === null) continue;
-    if (item.type === "user_message" && isCompactionCommandMessage({ role: "user", ...item })) {
+    // fork: feed-history-reads
+    if (item.type === "user_message" && isCompactionPromptItem(item)) {
       compactPromptRunIds.add(item.runId);
     } else if (item.type === "compaction") {
       compactedRunIds.add(item.runId);

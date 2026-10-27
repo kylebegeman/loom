@@ -701,6 +701,13 @@ note. Keep `text-foreground-muted` on both lines when upstream rewrites them, an
 once upstream makes the same fix. New upstream mobile code that uses the web token has the same
 bug.
 
+The `feed-history-reads` seam in `apps/mobile/src/lib/threadActivity.ts` (2 marker lines) keeps
+a streamed update from rereading a long conversation's history. Upstream's `buildThreadFeed`
+checks every user message for a `/compact` prompt on each rebuild, which reads every message
+body. The seam remembers each turn item's verdict, so an unchanged item is checked once, and
+the fork's `thread-rendering.performance.test.ts` proves it. Drop the seam once upstream skips
+unchanged history there itself.
+
 The `test-case-folding` seams in `apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts` (3
 marker lines) let the desktop suite pass on a Mac. Two theme icon tests write both app id
 spellings, `com.t3tools.t3code.png` and `com.t3tools.T3Code.png`, into one folder and expect
