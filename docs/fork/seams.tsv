@@ -794,6 +794,15 @@ apps/server/src/git/GitWorkflowService.test.ts	checkpoint-capable	6
 apps/server/src/git/GitWorkflowService.test.ts	project-lifecycle	3
 apps/server/src/server.ts	project-root-worktree	1
 apps/server/src/git/GitManager.test.ts	test-temp-isolation	6
+apps/web/src/hooks/useThreadActions.ts	agent-work	3
+apps/web/src/components/settings/ArchivedThreadsPanel.tsx	agent-work	4
+apps/mobile/src/features/home/useThreadListActions.ts	agent-work	2
+apps/mobile/src/features/archive/ArchivedThreadsRouteScreen.tsx	agent-work	2
+apps/mobile/src/features/archive/ArchivedThreadsScreen.tsx	agent-work	5
+apps/server/src/vcs/GitVcsDriverCore.ts	git-gitfile-errors	2
+apps/server/src/vcs/GitVcsDriverCore.test.ts	git-gitfile-errors	2
+apps/server/src/storageCleanup.ts	git-gitfile-errors	2
+apps/server/src/git/GitManager.ts	git-gitfile-errors	2
 packages/shared/package.json	-	"./fork/reach"
 packages/shared/package.json	-	"./fork/thread-alerts"
 packages/shared/package.json	-	"./fork/run-continuation"

@@ -811,7 +811,7 @@ export function useArchivedThreadListActions(
         environmentId: thread.environmentId,
         input: { threadId: thread.id },
       });
-      if (result._tag === "Failure") failure ??= result.cause;
+      if (result._tag === "Failure" && failure === null) failure = result.cause;
     }
     for (const environmentId of new Set(threads.map((thread) => thread.environmentId))) {
       refreshArchivedThreadsForEnvironment(environmentId);

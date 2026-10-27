@@ -36,6 +36,7 @@ import {
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as ServerConfig from "../config.ts";
 import {
+  classifyGitFailure, // fork: git-gitfile-errors
   makeGitVcsDriverCore,
   parseGitCheckoutProgressLine,
   splitNullSeparatedGitStdoutPaths,
@@ -93,6 +94,21 @@ const makeFailedHandle = (stderr: string) =>
     exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(1)),
     stderr: Stream.encodeText(Stream.make(stderr)),
   });
+
+// fork: git-gitfile-errors
+describe("non-repository diagnostics", () => {
+  it("reads both Git wordings for a .git file whose repository is gone", () => {
+    assert.strictEqual(
+      classifyGitFailure("fatal: not a git repository: /gone"),
+      "not_a_repository",
+    );
+    // Git 2.56 reworded it.
+    assert.strictEqual(
+      classifyGitFailure("fatal: gitfile does not point to a valid repository: /work/.git"),
+      "not_a_repository",
+    );
+  });
+});
 
 describe("Git output collection", () => {
   // Git writes in arbitrary chunk sizes; one byte per chunk splits every

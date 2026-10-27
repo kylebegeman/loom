@@ -469,6 +469,20 @@ The `test-temp-isolation` seam in `apps/server/src/git/GitManager.test.ts` (9) c
 test's extra worktree inside its own scoped temp directory. Upstream placed them beside the
 scoped repository, so every run left orphaned worktree folders in `$TMPDIR`.
 
+The `agent-work` seams add one Delete all for archived subagent and bot run conversations to
+Settings > Archived. Parent conversations keep their agent receipts and runs keep their results,
+so the rule (`isAgentWorkThread` in `@t3tools/client-runtime/fork`) never includes an
+agent-launched top-level thread, which can hold real work. Web `useThreadActions.ts` (3) deletes
+them in order and reloads the archive once per computer; `ArchivedThreadsPanel.tsx` (4) shows the
+section. Mobile `useThreadListActions.ts` (2), `ArchivedThreadsRouteScreen.tsx` (2) and
+`ArchivedThreadsScreen.tsx` (5) do the same in the archive sheet.
+
+The `git-gitfile-errors` seams read Git 2.56's "gitfile does not point to a valid repository",
+its new wording for a `.git` file whose repository is gone, as a non-repository like the older
+"not a git repository". `GitVcsDriverCore.ts` (2) holds the shared check and its test file (2)
+covers both wordings; `storageCleanup.ts` (2) and `GitManager.ts` (2) use it instead of their own
+copies, so a worktree left behind by a deleted repository is not reported as a Git failure.
+
 The `failed-run-retry` seams let a failed run continue when its root failure is one another try
 can get past (usage limit, provider or transport error, unknown), using the rule in
 `@t3tools/shared/fork/run-continuation`. `Orchestrator.ts` (3) accepts that manual continuation
