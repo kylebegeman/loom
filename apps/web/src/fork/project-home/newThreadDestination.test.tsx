@@ -24,7 +24,7 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
   useAtomValue: () => state.configs,
 }));
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => state.router, useParams: () => null }));
-vi.mock("~/hooks/useSettings", () => ({ useClientSettings: () => ({}) }));
+vi.mock("~/hooks/useSettings", () => ({ getClientSettings: () => ({}) }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
 vi.mock("~/state/presentation", () => ({
   environmentPresentations: { presentationAtom: () => ({}) },
