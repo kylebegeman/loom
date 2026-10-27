@@ -1,5 +1,6 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
 import { scheduledTaskDeliveryIssueText } from "@t3tools/client-runtime/fork"; // fork: webhook-delivery-issues
+import { PathField } from "../../fork/path-picker/PathField"; // fork: path-picker
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -940,13 +941,20 @@ function TaskForm({
             />
           ) : null}
           {draft.workspace === "existing_worktree" ? (
-            <FormField
-              label="Checkout path"
-              disabled={saving}
-              value={draft.checkoutPath}
-              borderTop
-              onChange={(checkoutPath) => setDraft({ ...draft, checkoutPath })}
-            />
+            // fork: path-picker
+            <View className="border-t border-border-subtle">
+              <PathField
+                environmentId={environmentId}
+                label="Checkout path"
+                value={draft.checkoutPath}
+                placeholder="Not chosen"
+                disabled={saving || environmentUnavailable}
+                startPath={
+                  projects.find((project) => project.id === draft.projectId)?.workspaceRoot
+                }
+                onChange={(checkoutPath) => setDraft({ ...draft, checkoutPath })}
+              />
+            </View>
           ) : null}
         </SettingsSection>
 

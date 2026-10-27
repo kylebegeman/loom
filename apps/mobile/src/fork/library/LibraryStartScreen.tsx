@@ -31,6 +31,7 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
+import { getBrowseParentPath } from "@t3tools/client-runtime/state/projects";
 import type { LibraryLaunchCandidate } from "@t3tools/shared/fork/library-launch";
 import {
   squashAtomCommandFailure,
@@ -117,6 +118,7 @@ import type { LibrarySourceSettings } from "./librarySourceLaunch";
 import { LibraryFolderStorage } from "./LibraryFolderStorage";
 import { preparePortableLibraryLaunchCopy } from "./libraryPortableLaunch";
 import { LibraryFolderPicker } from "./LibraryFolderPicker";
+import { PathField } from "../path-picker/PathField";
 import {
   libraryLaunchCopyMatchesScope,
   libraryLaunchCopiesForScope,
@@ -1694,7 +1696,28 @@ function LibraryStartContent(props: {
                   setKeepFiles(null);
                 }}
               />
-              {mode !== "reuse" ? (
+              {mode !== "reuse" && !choosesFolders ? (
+                <PathField
+                  environmentId={execution}
+                  label={mode === "clone" ? "Folder for new files" : "Project folder"}
+                  value={mode === "clone" ? (getBrowseParentPath(rootPath) ?? "") : rootPath}
+                  placeholder="Not chosen"
+                  disabled={locked}
+                  onChange={(path) => {
+                    pin();
+                    setRootPath(
+                      mode === "clone" ? getNewProjectPathPreview(path, launchProject.title) : path,
+                    );
+                  }}
+                  helperText={
+                    mode === "clone"
+                      ? "Loom prepares the files in a new folder inside this one."
+                      : undefined
+                  }
+                />
+              ) : null}
+              {mode !== "reuse" &&
+              (choosesFolders || (mode === "folder" && repositories.length > 0)) ? (
                 <View className="gap-2 p-4">
                   {choosesFolders ? (
                     <>
@@ -1727,21 +1750,7 @@ function LibraryStartContent(props: {
                         />
                       ) : null}
                     </>
-                  ) : (
-                    <TextInput
-                      accessibilityLabel="Project folder on selected computer"
-                      placeholder="Absolute project folder on this computer"
-                      value={rootPath}
-                      onChangeText={(text) => {
-                        pin();
-                        setRootPath(text);
-                      }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!locked}
-                      className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-                    />
-                  )}
+                  ) : null}
                   {mode === "folder" && repositories.length > 0 ? (
                     <Text className="text-xs text-foreground-muted">
                       Choose the folder containing{" "}

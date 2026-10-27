@@ -27,7 +27,6 @@ import type { ProjectCheckoutPreview, WorkspaceHandoffOffer } from "@t3tools/con
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 import {
   Select,
   SelectItem,
@@ -65,6 +64,7 @@ import {
   libraryFolderActions,
 } from "../project-library/LibraryFolderPalette";
 import { LibraryPaletteDialog } from "../project-library/LibraryPalette";
+import { PathField } from "../settings/PathField";
 import { readCurrentPreparationAttempt, useProjectPreparationAttempt } from "./preparationState";
 
 const EMPTY_PREVIEW = Atom.make(AsyncResult.initial<ProjectCheckoutPreview>());
@@ -451,22 +451,23 @@ function PreparationOnComputer({
               : `Loom will put the files in ${projectsFolder ?? "this computer's Projects folder"}, or use a checkout of this repository already there.`}
         </p>
       ) : (
-        <label className="space-y-1.5">
-          <span className="block text-sm font-medium">
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">
             Destination folder on {environment?.label ?? "this computer"}
-          </span>
-          <Input
-            nativeInput
-            size="sm"
-            font="mono"
-            aria-label="Preparation destination folder"
+          </p>
+          <PathField
+            environmentId={environmentId}
+            kind="folder"
+            label="Destination folder"
+            newFolder
+            startPath={projectsFolder}
             value={path}
-            disabled={attempt !== null || pending}
-            onChange={(event) => setPath(event.currentTarget.value)}
+            disabled={attempt !== null || pending || !connected}
+            onChange={setPath}
           />
-        </label>
+        </div>
       )}
-      {!attempt ? (
+      {!attempt && serverPlaces ? (
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -476,7 +477,7 @@ function PreparationOnComputer({
           >
             Choose another folder
           </Button>
-          {serverPlaces && editedPath !== null ? (
+          {editedPath !== null ? (
             <Button size="sm" variant="ghost" disabled={pending} onClick={() => setPath(null)}>
               Let Loom choose the folder
             </Button>

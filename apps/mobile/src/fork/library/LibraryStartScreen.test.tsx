@@ -415,6 +415,22 @@ vi.mock("./LibraryFolderPicker", () => ({
     </button>
   ),
 }));
+vi.mock("../path-picker/PathField", () => ({
+  PathField: (props: {
+    label: string;
+    value: string;
+    disabled?: boolean;
+    onChange: (path: string) => void;
+  }) => (
+    <button
+      aria-label={`Choose ${props.label}`}
+      disabled={props.disabled}
+      onClick={() => props.onChange("/Projects")}
+    >
+      {props.value}
+    </button>
+  ),
+}));
 vi.mock("./LibraryFolderStorage", () => ({
   LibraryFolderStorage: () => <button>Review folder storage</button>,
 }));
@@ -583,7 +599,7 @@ beforeEach(() => {
     AsyncResult.success({
       ...copy,
       id: "new-copy",
-      rootPath: "/Projects/Reviewed",
+      rootPath: "/Projects/loom",
       keepOnComputer: true,
     }),
   );
@@ -678,17 +694,15 @@ describe("Library start progressive disclosure", () => {
     await click("Codex: custom");
     await click("Files");
     await click("Prepare files in a new folder");
-    await input("Project folder on selected computer", "/Projects/Reviewed");
+    await click("Choose Folder for new files");
     await click("Keep files on this computer");
     await click("Files");
-    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.querySelector('[aria-label="Choose Folder for new files"]')).toBeNull();
     expect(button("Files").textContent).toContain("Files stay kept.");
     await click("Files");
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="Project folder on selected computer"]',
-      )!.value,
-    ).toBe("/Projects/Reviewed");
+    // New files go in a folder of their own inside the chosen one.
+    expect(container.textContent).toContain("/Projects/loom");
+    expect(button("Choose Folder for new files").textContent).toBe("/Projects/");
     expect(button("Keep files on this computer").getAttribute("aria-checked")).toBe("true");
     await click("Files");
     await click("Start work");
@@ -699,7 +713,7 @@ describe("Library start progressive disclosure", () => {
     });
     expect(state.restore).toHaveBeenCalledWith({
       environmentId: computerA,
-      input: expect.objectContaining({ rootPath: "/Projects/Reviewed", resourceIds: [] }),
+      input: expect.objectContaining({ rootPath: "/Projects/loom", resourceIds: [] }),
     });
     expect(state.create).toHaveBeenCalledWith({
       environmentId: computerA,
@@ -904,11 +918,8 @@ describe("Library start progressive disclosure", () => {
     expect(button("Agent model").textContent).toContain("Codex: custom");
     await click("Files");
     // The computer may still be preparing this folder, so a second one is never suggested.
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="Project folder on selected computer"]',
-      )!.value,
-    ).toBe("/Work/Loom");
+    expect(container.textContent).toContain("/Work/Loom");
+    expect(button("Choose Folder for new files").textContent).toBe("/Work/");
     await click("Start work");
     expect(state.launch.mock.calls[0]![0].executionEnvironmentId).toBe(computerA);
     expect(state.prepare).toHaveBeenCalledWith({
@@ -1535,7 +1546,9 @@ describe("Library starts on computers that choose folders", () => {
       "Loom will put the files in /Users/kyle/Projects/loom-2",
     );
     expect(
-      container.querySelector("textarea[aria-label='Project folder on selected computer']"),
+      container.querySelector(
+        "[aria-label='Choose Folder for new files'], [aria-label='Choose Project folder']",
+      ),
     ).toBeNull();
     expect(button("Choose another folder").disabled).toBe(false);
     await click("Start work");

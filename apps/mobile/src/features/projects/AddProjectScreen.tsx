@@ -1,6 +1,13 @@
 // fork: project-home - Optional preparation requests reuse clone tracking and stable destination ownership.
 import { preparationReceiptKey } from "../../fork/project-home/projectPreparationReceipt";
 import { useProjectPreparationReceipt } from "../../fork/project-home/useProjectPreparationReceipt";
+// fork: path-picker
+import {
+  FolderBrowseField,
+  useFolderFilter,
+  type FolderFilter,
+} from "../../fork/path-picker/FolderBrowseField";
+import { hiddenFoldersLast } from "../../fork/path-picker/folderPickerLogic"; // fork: path-picker
 import {
   buildProjectPreparationPlan,
   getProjectPreparationRecovery,
@@ -296,19 +303,10 @@ function ProjectPathInput(props: {
   readonly value: string;
   readonly onChangeText: (value: string) => void;
   readonly onSubmit: () => void;
+  readonly filter: FolderFilter; // fork: path-picker
 }) {
-  return (
-    <TextInput
-      className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
-      value={props.value}
-      onChangeText={props.onChangeText}
-      autoCapitalize="none"
-      autoCorrect={false}
-      placeholder="~/projects/my-app"
-      returnKeyType="done"
-      onSubmitEditing={props.onSubmit}
-    />
-  );
+  // fork: path-picker - The path is browsed, not typed: typing filters FolderBrowser or moves it.
+  return <FolderBrowseField path={props.value} filter={props.filter} />;
 }
 
 // fork: file-placement - Exported, needing only what it reads, for the Library folder picker.
@@ -1006,6 +1004,7 @@ export function FolderBrowser(props: {
     readonly selectedDirectoryName?: string;
   }) => Promise<boolean>;
   readonly pinnedDirectoryName?: string;
+  readonly showHidden?: boolean; // fork: path-picker
 }) {
   const browsePath = getFilesystemBrowsePath(props.pathInput, props.environment.platform);
   const browseInput =
@@ -1038,6 +1037,10 @@ export function FolderBrowser(props: {
     browseState.data?.entries ?? [],
     browseFilterQuery,
   );
+  // fork: path-picker - Settings pickers list hidden folders after the others, as on web.
+  const listedBrowseEntries = props.showHidden
+    ? hiddenFoldersLast(browseState.data?.entries ?? [], browseFilterQuery)
+    : visibleBrowseEntries;
 
   return (
     <>
@@ -1074,7 +1077,8 @@ export function FolderBrowser(props: {
             }}
           />
         ) : null}
-        {visibleBrowseEntries.map((entry, index) => (
+        {/* fork: path-picker */}
+        {listedBrowseEntries.map((entry, index) => (
           <ListRow
             key={entry.fullPath}
             title={entry.name}
@@ -1449,6 +1453,11 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   const createProject = useCreateProject(environment, false); // fork: fleet-connections
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
+  // fork: path-picker
+  const folderFilter = useFolderFilter(
+    { pathInput, setPathInput, navigateToBrowsePath },
+    environment?.platform ?? "",
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1492,7 +1501,12 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
           {!canCreateProject ? (
             <ErrorBanner message="This connection cannot add projects." />
           ) : null}
-          <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+          <ProjectPathInput
+            value={pathInput}
+            onChangeText={setPathInput}
+            onSubmit={submitPath}
+            filter={folderFilter} // fork: path-picker
+          />
           <PrimaryActionButton
             label="Open folder" // fork: fleet-connections
             disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
@@ -1501,8 +1515,8 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
           />
           <FolderBrowser
             environment={environment}
-            navigateToBrowsePath={navigateToBrowsePath}
-            pathInput={pathInput}
+            navigateToBrowsePath={folderFilter.navigateToBrowsePath} // fork: path-picker
+            pathInput={folderFilter.browsePath} // fork: path-picker
             setPathInput={setPathInput}
           />
         </>
@@ -1626,6 +1640,12 @@ export function AddProjectDestinationScreen(props: {
     environment,
     repositoryName,
     preparationRequested ? stringParam(props.preparationDestinationPath) : null, // fork: project-home
+  );
+  // fork: path-picker
+  const folderFilter = useFolderFilter(
+    { pathInput, setPathInput, navigateToBrowsePath },
+    environment?.platform ?? "",
+    repositoryName,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1859,7 +1879,12 @@ export function AddProjectDestinationScreen(props: {
               </Text>
             </View>
           ) : (
-            <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+            <ProjectPathInput
+              value={pathInput}
+              onChangeText={setPathInput}
+              onSubmit={submitPath}
+              filter={folderFilter} // fork: path-picker
+            />
           )}
           <PrimaryActionButton
             label="Clone project"
@@ -1927,8 +1952,8 @@ export function AddProjectDestinationScreen(props: {
           {!savedReceipt ? (
             <FolderBrowser
               environment={environment}
-              navigateToBrowsePath={navigateToBrowsePath}
-              pathInput={pathInput}
+              navigateToBrowsePath={folderFilter.navigateToBrowsePath} // fork: path-picker
+              pathInput={folderFilter.browsePath} // fork: path-picker
               setPathInput={setPathInput}
               pinnedDirectoryName={repositoryName}
             />

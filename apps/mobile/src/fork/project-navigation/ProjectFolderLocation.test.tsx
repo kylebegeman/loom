@@ -32,7 +32,6 @@ const state = vi.hoisted(() => ({
   supported: true,
   handlers: new Map<string, () => void>(),
   change: (_value: string) => {},
-  submit: () => {},
   dismiss: () => {},
   dismissible: true,
 }));
@@ -84,22 +83,24 @@ vi.mock("../../components/ui/AppText", () => ({
     children: ReactNode;
     accessibilityRole?: string;
   }) => <span role={accessibilityRole}>{children}</span>,
-  AppTextInput: ({
+}));
+vi.mock("../../components/ui/ListSection", () => ({
+  ListSection: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../path-picker/PathField", () => ({
+  PathField: ({
+    label,
     value,
-    editable,
-    onChangeText,
-    onSubmitEditing,
-    accessibilityLabel,
+    disabled,
+    onChange,
   }: {
+    label: string;
     value: string;
-    editable: boolean;
-    onChangeText: (value: string) => void;
-    onSubmitEditing: () => void;
-    accessibilityLabel: string;
+    disabled?: boolean;
+    onChange: (path: string) => void;
   }) => {
-    state.change = onChangeText;
-    state.submit = onSubmitEditing;
-    return <input aria-label={accessibilityLabel} value={value} disabled={!editable} readOnly />;
+    state.change = onChange;
+    return <input aria-label={label} value={value} disabled={disabled} readOnly />;
   },
 }));
 vi.mock("../../components/ui/Button", () => ({
@@ -190,7 +191,7 @@ function change(value = "/work/desk") {
   act(() => state.change(value));
 }
 async function submit() {
-  await act(async () => state.submit());
+  await act(async () => state.handlers.get("Save folder location")!());
 }
 
 beforeEach(() => {
@@ -233,13 +234,13 @@ describe("correcting a mobile project folder location", () => {
     expect(state.copies).not.toHaveBeenCalled();
   });
 
-  it("saves only the trimmed folder path on the existing project's computer", async () => {
+  it("saves the chosen folder on the existing project's computer", async () => {
     render();
     expect(state.preview).not.toHaveBeenCalled();
     await open();
     expect(state.preview).toHaveBeenCalledWith({ environmentId, input: { projectId: project.id } });
     expect(button("Save folder location").disabled).toBe(true);
-    change("  /work/desk  ");
+    change("/work/desk");
     await submit();
     expect(state.update).toHaveBeenCalledExactlyOnceWith({
       environmentId,
@@ -248,16 +249,18 @@ describe("correcting a mobile project folder location", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("cancels without saving and refuses an empty or unchanged path", async () => {
+  it("cancels without saving and refuses an unchosen or unchanged folder", async () => {
     render();
     await open();
-    change("   ");
+    expect(container.querySelector("input")?.value).toBe("");
+    await submit();
+    change(project.workspaceRoot);
     expect(button("Save folder location").disabled).toBe(true);
     await submit();
     await click("Cancel");
     expect(state.update).not.toHaveBeenCalled();
     await open();
-    expect(container.querySelector("input")?.value).toBe(project.workspaceRoot);
+    expect(container.querySelector("input")?.value).toBe("");
     await submit();
     expect(state.update).not.toHaveBeenCalled();
   });
@@ -301,7 +304,7 @@ describe("correcting a mobile project folder location", () => {
     render();
     await open();
     change();
-    const staleSubmit = state.submit;
+    const staleSubmit = state.handlers.get("Save folder location")!;
     act(() => registry.set(state.permissions.get(environmentId)!, false));
     await act(async () => staleSubmit());
     expect(state.update).not.toHaveBeenCalled();
@@ -333,7 +336,7 @@ describe("correcting a mobile project folder location", () => {
     render();
     await open();
     change();
-    const staleSubmit = state.submit;
+    const staleSubmit = state.handlers.get("Save folder location")!;
     await submit();
     expect(button("Saving…").disabled).toBe(true);
     expect(button("Cancel").disabled).toBe(true);

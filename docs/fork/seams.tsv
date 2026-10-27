@@ -1450,4 +1450,6 @@ apps/web/src/routeTree.gen.ts	-	/settings/tools
 apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	ext-settings	1
 apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
+apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
+apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
 apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899

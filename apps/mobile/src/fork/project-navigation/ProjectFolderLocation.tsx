@@ -9,12 +9,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { getBrowseParentPath } from "@t3tools/client-runtime/state/projects";
 import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import { useContext, useRef, useState } from "react";
 import { View } from "react-native";
 
-import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { ListSection } from "../../components/ui/ListSection";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { Sheet } from "../../components/ui/Sheet";
 import { connectionAtomRuntime } from "../../connection/runtime";
@@ -25,6 +27,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { library, useLibraryAuthority } from "../library/libraryState";
+import { PathField } from "../path-picker/PathField";
 
 const checkouts = createProjectCheckoutAtoms(connectionAtomRuntime);
 type FolderTarget = {
@@ -152,7 +155,7 @@ function FolderLocationEditor({
                     ? "Loom manages this folder's location and recovery. Use Working files to review or restore it. Its location cannot be changed here."
                     : null;
   const update = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-  const [location, setLocation] = useState(project.workspaceRoot);
+  const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const savingRef = useRef(false);
@@ -197,7 +200,7 @@ function FolderLocationEditor({
         contentContainerClassName="gap-4 p-4 pb-8"
       >
         <Text className="text-sm leading-normal text-foreground-muted">
-          If this folder was renamed or moved on {computerLabel}, enter its current location. This
+          If this folder was renamed or moved on {computerLabel}, choose its current location. This
           changes the saved location only. Files stay in place, and your project and conversations
           are kept.
         </Text>
@@ -209,27 +212,18 @@ function FolderLocationEditor({
             {reason}
           </Text>
         ) : (
-          <View className="gap-2">
-            <Text className="text-sm font-t3-medium text-foreground">
-              Folder location on {computerLabel}
-            </Text>
-            <AppTextInput
-              accessibilityLabel={`Folder location on ${computerLabel}`}
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
+          <ListSection>
+            <PathField
+              environmentId={project.environmentId}
+              label={`Folder location on ${computerLabel}`}
               value={location}
-              editable={!saving}
-              onChangeText={setLocation}
-              onSubmitEditing={() => void save()}
-              returnKeyType="done"
-              className="min-h-12 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+              placeholder="Not chosen"
+              onChange={setLocation}
+              disabled={saving}
+              startPath={getBrowseParentPath(project.workspaceRoot)}
+              helperText={`Only folders that already exist on ${computerLabel} can be chosen. No folders will be created or moved.`}
             />
-            <Text className="text-xs leading-normal text-foreground-muted">
-              The folder must already exist on {computerLabel}. No folders will be created or moved.
-            </Text>
-          </View>
+          </ListSection>
         )}
         {error ? (
           <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">

@@ -6,33 +6,38 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
 
-const { state, command, computer } = vi.hoisted(() => ({
-  state: {
-    start: vi.fn(),
-    browsed: null as null | { path: string; repository: boolean; entries: string[] },
-  },
-  command: (run: unknown) => ({ run, permissionAtom: () => true }),
-  computer: {
+const { state, command, computers } = vi.hoisted(() => {
+  const computer = (serverChosenFolders: boolean) => ({
     environmentId: "mini",
     label: "Mini",
     entry: { enabled: true },
     connection: { phase: "connected" },
     serverConfig: {
-      serverChosenFolders: true,
+      ...(serverChosenFolders ? { serverChosenFolders: true } : {}),
       newProjectsRoot: "/Users/kyle/Projects",
       folders: { projects: "/Users/kyle/Projects" },
       environment: { capabilities: { supportsExecution: true, projectCloneTracking: true } },
     },
-  },
-}));
+  });
+  const computers = { choosing: computer(true), legacy: computer(false) };
+  return {
+    state: {
+      start: vi.fn(),
+      browsed: null as null | { path: string; repository: boolean; entries: string[] },
+      computer: computers.choosing,
+    },
+    command: (run: unknown) => ({ run, permissionAtom: () => true }),
+    computers,
+  };
+});
 vi.mock("@effect/atom-react", async (original) => ({
   ...(await original<typeof import("@effect/atom-react")>()),
   useAtomValue: (atom: unknown) => atom,
 }));
 vi.mock("~/state/environments", async (original) => ({
   ...(await original<object>()),
-  useEnvironment: (id: string) => (id === "mini" ? computer : null),
-  useEnvironments: () => ({ environments: [computer] }),
+  useEnvironment: (id: string) => (id === "mini" ? state.computer : null),
+  useEnvironments: () => ({ environments: [state.computer] }),
 }));
 vi.mock("~/state/entities", async (original) => ({
   ...(await original<object>()),
@@ -90,17 +95,25 @@ vi.mock("../project-library/LibraryFolderPalette", async (original) => {
     ...actual,
     LibraryFolderPalette: ({
       actions,
+      onSelect,
     }: {
-      actions: (
+      actions?: (
         folder: typeof state.browsed,
       ) => { id: string; title: string; select: () => void }[];
+      onSelect?: (path: string) => void;
     }) => (
       <div>
-        {actions(state.browsed).map((action) => (
-          <button key={action.id} type="button" onClick={action.select}>
-            {action.title}
+        {actions ? (
+          actions(state.browsed).map((action) => (
+            <button key={action.id} type="button" onClick={action.select}>
+              {action.title}
+            </button>
+          ))
+        ) : (
+          <button type="button" onClick={() => onSelect?.(state.browsed!.path)}>
+            Use this folder
           </button>
-        ))}
+        )}
       </div>
     ),
   };
@@ -118,11 +131,26 @@ const offer = {
   repositoryKey: "github.com/kyle/corbelo",
 };
 
+function setup({
+  browsed,
+  destinationPath,
+  computer = computers.choosing,
+}: {
+  browsed: NonNullable<typeof state.browsed>;
+  destinationPath: string;
+  computer?: typeof state.computer;
+}) {
+  state.start.mockReset();
+  state.start.mockResolvedValue(AsyncResult.success({ projectId: "new-project", destinationPath }));
+  state.browsed = browsed;
+  state.computer = computer;
+}
+
 it("lets a computer that chooses folders take a folder picked without typing", async () => {
-  state.start.mockResolvedValue(
-    AsyncResult.success({ projectId: "new-project", destinationPath: "/Users/kyle/Code/corbelo" }),
-  );
-  state.browsed = { path: "/Users/kyle/Code", repository: false, entries: ["notes"] };
+  setup({
+    browsed: { path: "/Users/kyle/Code", repository: false, entries: ["notes"] },
+    destinationPath: "/Users/kyle/Code/corbelo",
+  });
   await using _screen = await render(
     <ProjectPreparationDialog
       sourceProject={sourceProject}
@@ -146,9 +174,10 @@ it("lets a computer that chooses folders take a folder picked without typing", a
 });
 
 it("goes back to the computer's own folder after a picked one", async () => {
-  state.start.mockReset();
-  state.start.mockResolvedValue(AsyncResult.success({ projectId: "other", destinationPath: "" }));
-  state.browsed = { path: "/Users/kyle/Empty", repository: false, entries: [] };
+  setup({
+    browsed: { path: "/Users/kyle/Empty", repository: false, entries: [] },
+    destinationPath: "",
+  });
   await using _screen = await render(
     <ProjectPreparationDialog
       sourceProject={{ ...sourceProject, id: ProjectId.make("other") }}
@@ -167,4 +196,28 @@ it("goes back to the computer's own folder after a picked one", async () => {
   await userEvent.click(page.getByRole("button", { name: "Prepare on Mini" }));
   await vi.waitFor(() => expect(state.start).toHaveBeenCalledOnce());
   expect(state.start.mock.calls[0]![0].input.destinationPath ?? null).toBeNull();
+});
+
+it("sends the folder chosen by browsing to a computer that needs one", async () => {
+  setup({
+    browsed: { path: "/Users/kyle/Code/corbelo-next", repository: false, entries: [] },
+    destinationPath: "/Users/kyle/Code/corbelo-next",
+    computer: computers.legacy,
+  });
+  await using _screen = await render(
+    <ProjectPreparationDialog
+      sourceProject={{ ...sourceProject, id: ProjectId.make("legacy") }}
+      sourceOffer={offer as never}
+      initialEnvironmentId={EnvironmentId.make("mini")}
+      onClose={() => undefined}
+    />,
+  );
+  await expect.element(page.getByText("/Users/kyle/Projects/corbelo")).toBeVisible();
+  await userEvent.click(page.getByRole("button", { name: "Choose Destination folder" }));
+  await userEvent.click(page.getByRole("button", { name: "Use this folder" }));
+  await expect.element(page.getByText("/Users/kyle/Code/corbelo-next")).toBeVisible();
+
+  await userEvent.click(page.getByRole("button", { name: "Prepare on Mini" }));
+  await vi.waitFor(() => expect(state.start).toHaveBeenCalledOnce());
+  expect(state.start.mock.calls[0]![0].input.destinationPath).toBe("/Users/kyle/Code/corbelo-next");
 });
