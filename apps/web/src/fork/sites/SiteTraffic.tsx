@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { SiteAnalytics } from "@t3tools/contracts/fork";
-import { siteTrafficDays } from "@t3tools/client-runtime/fork";
+import {
+  siteTrafficDays,
+  siteTrafficBreakdowns,
+  siteTrafficRatios,
+} from "@t3tools/client-runtime/fork";
 import { AppWindowIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -57,6 +61,7 @@ export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }
   const focused = focus?.index ?? null;
   const current = focused === null ? null : (days[focused] ?? null);
   const quiet = quietWindow(analytics) || !days.length;
+  const ratios = siteTrafficRatios(analytics);
   // Only a day picked with the keys is read out. Hover changes the figures many times a second,
   // and the chart's label and table already give screen readers every day.
   const announced = focus?.byKeyboard && current ? current : null;
@@ -105,11 +110,35 @@ export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }
           : ""}
       </p>
       <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-        Visitors are counted once per day
+        Visitors are counted once per day; a return on another day counts again
         {analytics.lastEventAt
           ? `. The latest visit arrived ${formatRelativeTimeLabel(analytics.lastEventAt)}.`
           : "."}
       </p>
+      {analytics.pageviews > 0 ? (
+        <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+          <dl className="flex flex-wrap gap-x-6 gap-y-2">
+            <div className="flex items-baseline gap-2">
+              <dt>Views per daily visitor</dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {ratios.viewsPerVisitor?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ??
+                  "Not available"}
+              </dd>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <dt>Actions per 100 views</dt>
+              <dd className="font-medium tabular-nums text-foreground">
+                {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                }) ?? "Not available"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-2xs">
+            Activity averages, not unique-person conversion rates. Actions can exceed page views.
+          </p>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -223,11 +252,15 @@ export function SiteTrafficSummary({ analytics }: { readonly analytics: SiteAnal
       <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
         <span>
           <span className="font-semibold tabular-nums">{formatCount(analytics.pageviews)}</span>{" "}
-          <span className="text-muted-foreground">page views</span>
+          <span className="text-muted-foreground">
+            {analytics.pageviews === 1 ? "page view" : "page views"}
+          </span>
         </span>
         <span>
           <span className="font-semibold tabular-nums">{formatCount(analytics.visitors)}</span>{" "}
-          <span className="text-muted-foreground">visitors</span>
+          <span className="text-muted-foreground">
+            {analytics.visitors === 1 ? "visitor" : "visitors"}
+          </span>
         </span>
         <span className="text-xs text-muted-foreground">
           Last {analytics.days} days
@@ -280,7 +313,64 @@ export function SiteTrafficBreakdown({
     <div className="grid items-start gap-x-8 gap-y-8 xl:grid-cols-2">
       <TopPages pages={analytics.pages} onPreview={onPreview} />
       <TopEvents events={analytics.named} />
+      {analytics.pageviews > 0
+        ? siteTrafficBreakdowns(analytics).map((group) => (
+            <TrafficBreakdown key={group.id} group={group} />
+          ))
+        : null}
     </div>
+  );
+}
+
+function TrafficBreakdown({
+  group,
+}: {
+  readonly group: ReturnType<typeof siteTrafficBreakdowns>[number];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = expanded ? group.rows : group.rows.slice(0, BREAKDOWN_ROWS);
+  const max = Math.max(1, ...group.rows.map((row) => row.value));
+  return (
+    <section aria-label={group.title} className="flex min-w-0 flex-col gap-2">
+      <LibraryGroupHeading title={group.title} count={group.rows.length || undefined} />
+      <p className="text-xs text-muted-foreground">{group.note}</p>
+      {rows.length ? (
+        <LibraryTable
+          label={group.title}
+          columns={[
+            { key: "name", label: group.title, className: "w-full" },
+            { key: "views", label: "Page views", className: "w-36" },
+          ]}
+        >
+          {rows.map((row) => (
+            <tr key={row.key} className="transition-colors duration-150 hover:bg-accent/40">
+              <td className={cn(LIBRARY_CELL, "max-w-0 py-2")}>
+                <span className="block break-words text-xs font-medium">{row.label}</span>
+                {row.detail ? (
+                  <span className="block break-words text-2xs text-muted-foreground">
+                    {row.detail}
+                  </span>
+                ) : null}
+              </td>
+              <td className={cn(LIBRARY_CELL, "py-2 text-xs")}>
+                <LibraryBar share={row.value / max}>{formatCount(row.value)}</LibraryBar>
+              </td>
+            </tr>
+          ))}
+        </LibraryTable>
+      ) : (
+        <p className="rounded-xl border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
+          {group.available
+            ? "No page views with this breakdown in the selected period."
+            : "This server has not supplied this breakdown. Update the connected Loom server to see it."}
+        </p>
+      )}
+      <ShowAll
+        total={group.rows.length}
+        expanded={expanded}
+        onToggle={() => setExpanded((open) => !open)}
+      />
+    </section>
   );
 }
 
@@ -392,12 +482,10 @@ function TopEvents({ events }: { readonly events: SiteAnalytics["named"] }) {
               className="transition-colors duration-150 hover:bg-accent/40"
             >
               <td className={cn(LIBRARY_CELL, "max-w-0 py-2")}>
-                <span className="block truncate text-xs font-medium">
-                  {event.label || event.name}
-                </span>
-                {event.target ? (
-                  <span className="block truncate font-mono text-2xs text-muted-foreground">
-                    {event.target}
+                <span className="block truncate text-xs font-medium">{event.name}</span>
+                {event.label || event.target ? (
+                  <span className="block break-all font-mono text-2xs text-muted-foreground">
+                    {[event.label, event.target].filter(Boolean).join(" · ")}
                   </span>
                 ) : null}
               </td>

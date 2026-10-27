@@ -30,6 +30,22 @@ const analytics = {
   pages: [],
   named: [],
 };
+
+it.effect("returns attribution and audience breakdowns without discarding API fields", () => {
+  const payload = {
+    ...analytics,
+    referrers: [{ referrer_host: "example.com", pageviews: 5 }],
+    sources: [{ source: "x", medium: "social", campaign: "launch", pageviews: 4 }],
+    countries: [{ country: "US", pageviews: 5 }],
+    devices: [{ device: "mobile", pageviews: 3 }],
+    browsers: [{ browser: "safari", pageviews: 3 }],
+  };
+  const f = fixture({ payload });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    expect(yield* service.analytics({ siteId: "portfolio" })).toEqual(payload);
+  }).pipe(Effect.provide(f.layer));
+});
 function fixture(
   options: {
     env?: NodeJS.ProcessEnv;

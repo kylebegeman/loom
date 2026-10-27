@@ -136,3 +136,89 @@ export function siteTrafficDays(
     return { day, pageviews: entry?.pageviews ?? 0, visitors: entry?.visitors ?? 0 };
   });
 }
+
+export function siteTrafficRatios(
+  analytics: Pick<SiteAnalytics, "pageviews" | "visitors" | "events">,
+) {
+  return {
+    viewsPerVisitor: analytics.visitors ? analytics.pageviews / analytics.visitors : null,
+    actionsPerHundredViews: analytics.pageviews
+      ? (analytics.events / analytics.pageviews) * 100
+      : null,
+  };
+}
+
+export type SiteTrafficRow = {
+  readonly key: string;
+  readonly label: string;
+  readonly detail?: string;
+  readonly value: number;
+};
+
+export function siteTrafficBreakdowns(analytics: SiteAnalytics) {
+  const group = (
+    id: string,
+    title: string,
+    note: string,
+    available: boolean,
+    rows: readonly SiteTrafficRow[],
+  ) => ({ id, title, note, available, rows });
+  return [
+    group(
+      "referrers",
+      "Referring sites",
+      "Top 20 referring sites. Visits from this site's own addresses are excluded.",
+      analytics.referrers !== undefined,
+      (analytics.referrers ?? []).map((row) => ({
+        key: row.referrer_host,
+        label: row.referrer_host || "Unknown referrer",
+        value: row.pageviews,
+      })),
+    ),
+    group(
+      "sources",
+      "Campaigns and sources",
+      "Top 20 tagged sources. A blank tag is shown as not set.",
+      analytics.sources !== undefined,
+      (analytics.sources ?? []).map((row) => ({
+        key: JSON.stringify([row.source, row.medium, row.campaign]),
+        label: row.campaign || "Campaign not set",
+        detail: `Source: ${row.source || "not set"} · Medium: ${row.medium || "not set"}`,
+        value: row.pageviews,
+      })),
+    ),
+    group(
+      "countries",
+      "Countries",
+      "Approximate country, inferred by the network provider.",
+      analytics.countries !== undefined,
+      (analytics.countries ?? []).map((row) => ({
+        key: row.country,
+        label: row.country || "Unknown country",
+        value: row.pageviews,
+      })),
+    ),
+    group(
+      "devices",
+      "Devices",
+      "Coarse device categories, not individual devices.",
+      analytics.devices !== undefined,
+      (analytics.devices ?? []).map((row) => ({
+        key: row.device,
+        label: row.device || "Unknown device",
+        value: row.pageviews,
+      })),
+    ),
+    group(
+      "browsers",
+      "Browsers",
+      "Browser families, including recognized social-app browsers.",
+      analytics.browsers !== undefined,
+      (analytics.browsers ?? []).map((row) => ({
+        key: row.browser,
+        label: row.browser || "Unknown browser",
+        value: row.pageviews,
+      })),
+    ),
+  ];
+}

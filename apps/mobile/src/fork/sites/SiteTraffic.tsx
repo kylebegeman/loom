@@ -1,6 +1,12 @@
+import { useState } from "react";
 import { View } from "react-native";
+import { Button } from "../../components/ui/Button";
 import type { SiteAnalytics } from "@t3tools/contracts/fork";
-import { siteTrafficDays } from "@t3tools/client-runtime/fork";
+import {
+  siteTrafficDays,
+  siteTrafficBreakdowns,
+  siteTrafficRatios,
+} from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import { ago, siteHost } from "./SiteHealth";
@@ -39,6 +45,7 @@ export function SiteTraffic({
 }) {
   const days = siteTrafficDays(analytics);
   const quiet = !analytics.pageviews && !analytics.events;
+  const ratios = siteTrafficRatios(analytics);
   return (
     <View className="gap-5 rounded-2xl border border-border p-4">
       <View className="flex-row">
@@ -76,15 +83,45 @@ export function SiteTraffic({
             color={color}
             rows={analytics.named.map((event) => ({
               key: JSON.stringify([event.name, event.label, event.target]),
-              label: event.label || event.name,
-              ...(event.target ? { detail: event.target } : {}),
+              label: event.name,
+              ...(event.label || event.target
+                ? { detail: [event.label, event.target].filter(Boolean).join(" · ") }
+                : {}),
               value: event.count,
             }))}
           />
+          {analytics.pageviews > 0 ? (
+            <>
+              <Text className="text-xs text-foreground-muted">
+                {ratios.viewsPerVisitor?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ??
+                  "Not available"}{" "}
+                views per daily visitor.{" "}
+                {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
+                  maximumFractionDigits: 1,
+                }) ?? "Not available"}{" "}
+                actions per 100 views. Activity averages, not unique-person conversion rates.
+              </Text>
+              {siteTrafficBreakdowns(analytics).map((group) => (
+                <View key={group.id} className="gap-1.5">
+                  <RankedList
+                    title={group.title}
+                    rows={group.rows}
+                    color={color}
+                    empty={
+                      group.available
+                        ? "No page views with this breakdown in this period."
+                        : "Update the connected Loom server to see this breakdown."
+                    }
+                  />
+                  <Text className="text-2xs text-foreground-muted">{group.note}</Text>
+                </View>
+              ))}
+            </>
+          ) : null}
         </>
       )}
       <Text className="border-t border-border-subtle pt-3 text-xs text-foreground-muted">
-        Visitors are counted once per day
+        Visitors are counted once per day; a return on another day counts again
         {analytics.lastEventAt
           ? `, and the latest visit arrived ${ago(analytics.lastEventAt)}`
           : ""}
@@ -185,6 +222,8 @@ function RankedList({
   readonly empty: string;
   readonly color: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleRows = expanded ? rows : rows.slice(0, 8);
   const max = Math.max(1, ...rows.map((row) => row.value));
   return (
     <View className="gap-1.5">
@@ -192,7 +231,7 @@ function RankedList({
         {title}
       </Text>
       {rows.length ? (
-        rows.map((row) => (
+        visibleRows.map((row) => (
           <View
             key={row.key}
             accessible
@@ -206,7 +245,7 @@ function RankedList({
                 backgroundColor: `${color}${SHARE_ALPHA}`,
               }}
             />
-            <Text numberOfLines={1} className="min-w-0 flex-1 text-sm text-foreground">
+            <Text className="min-w-0 flex-1 text-sm text-foreground">
               {row.label}
               {row.detail ? (
                 <Text className="text-xs text-foreground-muted"> {row.detail}</Text>
@@ -220,6 +259,13 @@ function RankedList({
       ) : (
         <Text className="py-1 text-xs text-foreground-muted">{empty}</Text>
       )}
+      {rows.length > 8 ? (
+        <Button
+          tone="text"
+          label={expanded ? "Show fewer" : `Show all ${rows.length}`}
+          onPress={() => setExpanded((value) => !value)}
+        />
+      ) : null}
     </View>
   );
 }

@@ -81,6 +81,28 @@ export const SiteAnalytics = Schema.Struct({
   byDay: Schema.Array(Schema.Struct({ day: Schema.String, pageviews: count, visitors: count })),
   pages: Schema.Array(Schema.Struct({ path: text, pageviews: count, visitors: count })),
   named: Schema.Array(Schema.Struct({ name: text, label: text, target: text, count })),
+  referrers: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ referrer_host: Schema.String, pageviews: count })),
+  ),
+  sources: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        source: Schema.String,
+        medium: Schema.String,
+        campaign: Schema.String,
+        pageviews: count,
+      }),
+    ),
+  ),
+  countries: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ country: Schema.String, pageviews: count })),
+  ),
+  devices: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ device: Schema.String, pageviews: count })),
+  ),
+  browsers: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ browser: Schema.String, pageviews: count })),
+  ),
 });
 export type SiteAnalytics = typeof SiteAnalytics.Type;
 const name = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120));

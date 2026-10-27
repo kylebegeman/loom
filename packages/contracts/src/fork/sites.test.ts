@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { SaveSiteRequest, SaveSiteServiceRequest } from "./sites.ts";
+import { SaveSiteRequest, SaveSiteServiceRequest, SiteAnalytics } from "./sites.ts";
 
 const isSite = Schema.is(SaveSiteRequest);
 const isService = Schema.is(SaveSiteServiceRequest);
@@ -14,6 +14,34 @@ const site = {
   serviceIds: [],
   projectIds: ["project-1"],
 };
+
+it("preserves every analytics breakdown across the typed transport", () => {
+  const breakdowns = {
+    referrers: [{ referrer_host: "example.com", pageviews: 3 }],
+    sources: [{ source: "x", medium: "social", campaign: "launch", pageviews: 2 }],
+    countries: [{ country: "", pageviews: 1 }],
+    devices: [{ device: "mobile", pageviews: 2 }],
+    browsers: [{ browser: "safari", pageviews: 2 }],
+  };
+  const base = {
+    siteId: "site",
+    lastEventAt: null,
+    days: 30,
+    since: "2026-10-01",
+    pageviews: 3,
+    visitors: 2,
+    events: 1,
+    byDay: [],
+    pages: [],
+    named: [],
+  };
+  const decode = Schema.decodeUnknownSync(SiteAnalytics);
+  expect(decode({ ...base, ...breakdowns })).toMatchObject(breakdowns);
+  expect(decode(base)).toEqual(base);
+  expect(() =>
+    decode({ ...base, sources: [{ source: "x", medium: "", campaign: "", pageviews: -1 }] }),
+  ).toThrow();
+});
 
 it.each([
   { ...site, url: "https://portfolio.example/page" },

@@ -4,6 +4,8 @@ import {
   siteChecksHealth,
   siteTlsDaysLeft,
   siteTrafficDays,
+  siteTrafficRatios,
+  siteTrafficBreakdowns,
 } from "./sites-presentation.ts";
 const check = {
   id: "check",
@@ -30,6 +32,47 @@ it("ages cached healthy checks without showing offline data as current", () => {
   expect(siteCheckState({ ...check, last: null }, 900, Date.parse("2026-10-18T00:00:00Z"))).toBe(
     "unknown",
   );
+});
+
+it("labels ratios as daily visitor and action activity without treating them as conversion rates", () => {
+  expect(siteTrafficRatios({ pageviews: 10, visitors: 4, events: 15 })).toEqual({
+    viewsPerVisitor: 2.5,
+    actionsPerHundredViews: 150,
+  });
+  expect(siteTrafficRatios({ pageviews: 0, visitors: 0, events: 3 })).toEqual({
+    viewsPerVisitor: null,
+    actionsPerHundredViews: null,
+  });
+});
+
+it("keeps campaign dimensions distinct and separates absent from empty breakdowns", () => {
+  const base = {
+    siteId: "site",
+    lastEventAt: null,
+    days: 30,
+    since: "2026-10-01",
+    pageviews: 4,
+    visitors: 2,
+    events: 1,
+    byDay: [],
+    pages: [],
+    named: [],
+  };
+  expect(siteTrafficBreakdowns(base).every((group) => !group.available)).toBe(true);
+  const groups = siteTrafficBreakdowns({
+    ...base,
+    referrers: [],
+    sources: [
+      { source: "x", medium: "social", campaign: "launch", pageviews: 2 },
+      { source: "email", medium: "", campaign: "launch", pageviews: 1 },
+    ],
+    countries: [{ country: "", pageviews: 1 }],
+  });
+  expect(groups[0]?.available).toBe(true);
+  expect(groups[0]?.rows).toEqual([]);
+  expect(new Set(groups[1]?.rows.map((row) => row.key)).size).toBe(2);
+  expect(groups[1]?.rows[1]?.detail).toContain("Medium: not set");
+  expect(groups[2]?.rows[0]?.label).toBe("Unknown country");
 });
 
 it("reports the worst live state across checks and leaves paused checks out", () => {
