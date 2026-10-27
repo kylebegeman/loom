@@ -101,6 +101,7 @@ install, appear under **Unrecorded lanes**. Loom never deletes them on its own; 
 removes one after you confirm.
 
 To move the lanes folder, select **Choose** and pick a folder in that computer's folder browser,
-or type a path in its search. It can only be moved while no lanes exist. Lanes settings apply to
+or type a path in its search and select **Use new folder** for one that does not exist yet. It can
+only be moved while no lanes exist. Lanes settings apply to
 one computer at a time; when Settings covers several computers, the section names the one it
 changes. They are available in the web and desktop clients.

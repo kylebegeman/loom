@@ -1290,9 +1290,9 @@ command workers on Computers, and topics with no upstream home go on the fork's 
   set of single-environment fork pages.
 - `/settings/loom` is a permanent redirect. `?section=<id>` and `#loom-<id>` go to the topic's
   home with hash `loom-<id>`, keeping the other search params; bare `/settings/loom` goes to
-  Lanes. Agent-facing text in `packages/contracts/src/fork/vault-*.ts` and
-  `apps/server/src/fork/vault/VaultGitHub.ts` still links to `/settings/loom`, because changing
-  model-facing text needs an eval run, so never remove the route.
+  Lanes. Older servers, past agent replies and the repository repair link built in
+  `apps/server/src/fork/vault/VaultGitHub.ts` still carry `/settings/loom` links, so never remove
+  the route.
 
 ### Seams (all `fork: ext-settings`)
 

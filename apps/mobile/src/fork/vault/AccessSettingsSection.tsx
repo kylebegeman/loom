@@ -132,7 +132,7 @@ function AccessManager({
         Recurring access
       </Text>
       <Text>
-        For GitHub, choose projects and repositories in GitHub access and approve them together.
+        For GitHub, choose projects and repositories in GitHub for agents and approve them together.
       </Text>
       <Text className="text-foreground-muted">
         A recurring project grant covers all current and future threads until revoked. Temporary
@@ -166,8 +166,8 @@ function AccessManager({
           ) : null}
           {(advanced ? snapshot.data.grants : recurring).length === 0 ? (
             <Text>
-              No recurring grants yet. Choose projects in GitHub access, or add a custom grant in
-              advanced access controls.
+              No recurring grants yet. Choose projects in GitHub for agents, or add a custom grant
+              in advanced access controls.
             </Text>
           ) : null}
           {(advanced

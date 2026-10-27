@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { Link } from "@tanstack/react-router";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import {
   COMMAND_INTENTS,
@@ -503,17 +502,6 @@ export function ProfileEditor({
             />
           ))
         : null}
-      <p className="text-xs text-muted-foreground">
-        Models, permissions, worktrees and project actions are in{" "}
-        <Link
-          to="/settings/projects"
-          search={(previous) => ({ ...previous, section: undefined })}
-          className="underline"
-        >
-          Project settings
-        </Link>
-        .
-      </p>
       {!allowed ? (
         <LoomSettingsNotice>
           Orchestration operate access is required on every selected environment.

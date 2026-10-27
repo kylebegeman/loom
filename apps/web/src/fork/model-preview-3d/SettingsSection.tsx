@@ -33,6 +33,7 @@ import {
   LoomSettingsNotice,
   LoomSettingsPanel,
 } from "~/fork/settings/parts";
+import { PathField } from "~/fork/settings/PathField";
 import {
   Select,
   SelectGroup,
@@ -531,20 +532,22 @@ function SettingsForm({
             <SettingsRow
               className="px-0 sm:px-0"
               title="OpenSCAD executable"
-              description="Leave blank to search PATH and macOS applications."
-            >
-              <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-                <Input
-                  aria-label="OpenSCAD executable"
-                  autoComplete="off"
-                  spellCheck={false}
+              description="Unset searches PATH and macOS applications."
+              control={
+                <PathField
+                  environmentId={environmentId}
+                  kind="file"
+                  label="OpenSCAD executable"
+                  defaultLabel="Found automatically"
                   value={settings.openscadPath ?? ""}
-                  onChange={(event) => set("openscadPath", event.target.value || null)}
+                  onChange={(next) => set("openscadPath", next || null)}
+                  className="w-full @min-[32rem]/settings-row:w-80"
                 />
-              </div>
-            </SettingsRow>
+              }
+            />
             {features.includes("model-python-cad") && (
               <PythonCadSettings
+                environmentId={environmentId}
                 info={info?.python}
                 pythonPath={settings.pythonPath}
                 canSetup={canSetupPython}

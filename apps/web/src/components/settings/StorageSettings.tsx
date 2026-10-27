@@ -87,6 +87,7 @@ export function WorktreesDirectoryRow() {
           kind="folder"
           label="Worktree location"
           defaultLabel="Loom home folder"
+          newFolder
           value={settings.worktreesDirectory}
           mixed={mixed}
           onChange={(next) => updateSettings({ worktreesDirectory: next })}
@@ -538,6 +539,7 @@ export function ProjectsDirectoryRow() {
           kind="folder"
           label="Projects folder"
           defaultLabel="Loom home folder"
+          newFolder
           value={settings.projectsDirectory}
           mixed={mixed}
           onChange={(next) => updateSettings({ projectsDirectory: next })}
@@ -926,7 +928,7 @@ export function StorageCleanupSections() {
             <SettingsRow
               title="Release unused Library files"
               status={ruleStatus("unusedCopiesAfterDays")}
-              description="Release Library files prepared on a computer when no conversation has used them for this many days. Files you chose to keep, existing checkouts Loom reused and unpublished work stay."
+              description="Release Library files prepared on a computer that no conversation used, this many days after they were prepared or updated. Files used in a conversation are released once their conversations settle, whatever this is set to. Files you chose to keep, existing checkouts Loom reused and unpublished work stay."
               serverScoped
               control={
                 <RetentionControl

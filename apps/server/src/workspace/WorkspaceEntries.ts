@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import type * as NodeFS from "node:fs"; // fork: path-picker
 import * as NodeFSP from "node:fs/promises";
 
 import * as Context from "effect/Context";
@@ -145,6 +146,40 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   );
 });
 
+// fork: path-picker - readdir types a link as neither file nor folder, so stat, which follows
+// it, classifies it. fullPath stays the link path so a saved path survives its target moving.
+// Broken links, loops and unreadable targets drop out.
+const classifyBrowseEntries = Effect.fn("WorkspaceEntries.classifyBrowseEntries")(function* (
+  path: Path.Path,
+  parentPath: string,
+  dirents: ReadonlyArray<NodeFS.Dirent>,
+  includeFiles: boolean,
+) {
+  const kindOf = (target: { isDirectory(): boolean; isFile(): boolean }) =>
+    target.isDirectory()
+      ? ("directory" as const)
+      : includeFiles && target.isFile()
+        ? ("file" as const)
+        : undefined;
+  const toEntries = (
+    name: string,
+    kind: "directory" | "file" | undefined,
+  ): Array<FilesystemBrowseResult["entries"][number]> =>
+    kind === undefined
+      ? []
+      : [{ name, fullPath: path.join(parentPath, name), ...(includeFiles ? { kind } : {}) }];
+  const linked = yield* Effect.forEach(
+    dirents.filter((dirent) => dirent.isSymbolicLink()),
+    ({ name }) =>
+      Effect.tryPromise(() => NodeFSP.stat(path.join(parentPath, name))).pipe(
+        Effect.map((stats) => toEntries(name, kindOf(stats))),
+        Effect.orElseSucceed(() => []),
+      ),
+    { concurrency: 8 },
+  );
+  return [...dirents.flatMap((dirent) => toEntries(dirent.name, kindOf(dirent))), ...linked.flat()];
+});
+
 /** @public */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
@@ -229,22 +264,23 @@ export const make = Effect.gen(function* () {
 
       const showHidden = endsWithSeparator || prefix.startsWith(".");
       const lowerPrefix = prefix.toLowerCase();
-      const entries: Array<FilesystemBrowseResult["entries"][number]> = []; // fork: path-picker
+      const matching: Array<NodeFS.Dirent> = []; // fork: path-picker
       for (const dirent of dirents) {
         if (
-          (dirent.isDirectory() || (input.includeFiles === true && dirent.isFile())) && // fork: path-picker
+          dirent.name === dirent.name.trim() && // fork: path-picker - the wire schema trims names
           dirent.name.toLowerCase().startsWith(lowerPrefix) &&
           (showHidden || !dirent.name.startsWith("."))
         ) {
-          entries.push({
-            name: dirent.name,
-            fullPath: path.join(parentPath, dirent.name),
-            ...(input.includeFiles === true // fork: path-picker
-              ? { kind: dirent.isDirectory() ? ("directory" as const) : ("file" as const) }
-              : {}),
-          });
+          matching.push(dirent); // fork: path-picker
         }
       }
+      // fork: path-picker
+      const entries = yield* classifyBrowseEntries(
+        path,
+        parentPath,
+        matching,
+        input.includeFiles === true,
+      );
 
       return {
         parentPath,

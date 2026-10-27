@@ -77,9 +77,9 @@ available.
 Install an [OpenSCAD development snapshot](https://openscad.org/downloads.html#snapshots)
 on the environment host to preview SCAD. Snapshots support the faster Manifold backend,
 geometry summaries and model-color export; stable 2021.01 lacks those capabilities.
-In **Settings > Tools > 3D models**, set the executable path if automatic detection does not
-find it. Save an edited executable path before refreshing detection. Refresh detection after
-installing or changing the executable.
+In **Settings > Tools > 3D models**, choose the executable on that host if automatic detection
+does not find it, or clear it to detect again. Save the change before refreshing detection.
+Refresh detection after installing or changing the executable.
 
 The inspector has five tabs: **Customize** and **Variants** for source files, then **Markup**,
 **Views** and **Part** for every model. A badge on a tab points to something that needs you,

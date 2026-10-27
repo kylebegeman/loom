@@ -620,27 +620,22 @@ it.effect.each(["revoked", "expired"] as const)(
 it.effect.each([
   ["plan mode", "caller-permission", "switch-to-full-access"],
   ["a finished turn", "workload-inactive", "continue-in-active-turn"],
-] as const)(
-  "reports %s as the owner access cause, not a missing connection",
-  ([, state, repair]) =>
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      yield* f.owner("owner-trusted");
-      if (state === "caller-permission")
-        f.state.thread = { ...f.state.thread, interactionMode: "plan" };
-      else f.state.runs = [vaultRun(f.state.thread, { status: "completed" })];
-      for (const connection of [
-        { resource: "example.test" },
-        { id: f.itemId, expectedVersion: 1 },
-      ]) {
-        const result = yield* f.resolver.resolve({ kind: "ssh", connection }, f.threadId);
-        expect(result).toEqual({ state, selected: null, choices: [], repair });
-      }
-      const error = yield* f.resolver
-        .require({ kind: "ssh", connection: { resource: "example.test" } }, f.threadId)
-        .pipe(Effect.flip);
-      expect(error.message).toContain("/settings/loom?section=vault");
-    }).pipe(Effect.provide(dependencies)),
+] as const)("reports %s as the owner access cause, not a missing connection", ([, state, repair]) =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.owner("owner-trusted");
+    if (state === "caller-permission")
+      f.state.thread = { ...f.state.thread, interactionMode: "plan" };
+    else f.state.runs = [vaultRun(f.state.thread, { status: "completed" })];
+    for (const connection of [{ resource: "example.test" }, { id: f.itemId, expectedVersion: 1 }]) {
+      const result = yield* f.resolver.resolve({ kind: "ssh", connection }, f.threadId);
+      expect(result).toEqual({ state, selected: null, choices: [], repair });
+    }
+    const error = yield* f.resolver
+      .require({ kind: "ssh", connection: { resource: "example.test" } }, f.threadId)
+      .pipe(Effect.flip);
+    expect(error.message).toContain("Loom Settings > Vault (/settings/vault)");
+  }).pipe(Effect.provide(dependencies)),
 );
 
 it.effect.each([

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import {
   FileCodeIcon,
   GitCompareIcon,
@@ -21,6 +22,7 @@ import {
   type CodeGraphStatus,
 } from "@t3tools/contracts/fork";
 import type { Atom } from "effect/reactivity";
+import { SETTINGS_SECTION_LABELS } from "~/components/settings/settingsSearch";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -33,6 +35,8 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useThreadShell } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import type { ForkPanelProps } from "../panels/types";
+import { forkSettingsTarget } from "../settings/navigation";
+import { FORK_SETTINGS_SECTIONS } from "../settings/registry";
 import { impactSummary } from "./impactSummary";
 import { NeighborhoodGraph } from "./NeighborhoodGraph";
 import {
@@ -52,6 +56,8 @@ import {
 } from "./parts";
 import { appendToComposer, codeGraph, runCommand } from "./state";
 import { useCodeGraphViewStore, viewOf, type CodeGraphTab, type ImpactRequest } from "./viewStore";
+
+const SETTINGS_TOPIC = FORK_SETTINGS_SECTIONS.find((topic) => topic.id === "code-graph")!;
 
 const TABS: ReadonlyArray<{ value: CodeGraphTab; label: string }> = [
   { value: "overview", label: "Overview" },
@@ -178,7 +184,16 @@ function MissingGraphify({
       <CommandLine command={availability.installHint} />
       <Muted>
         Loom looked for <code className="font-mono">{availability.command.join(" ")}</code>. You can
-        change the command in Settings, under Loom.
+        change the command in{" "}
+        <Link
+          {...forkSettingsTarget(SETTINGS_TOPIC.id)}
+          search={{ machine: threadRef.environmentId }}
+          hashScrollIntoView={false}
+          className="underline underline-offset-4"
+        >
+          Settings &gt; {SETTINGS_SECTION_LABELS[SETTINGS_TOPIC.home]} &gt; {SETTINGS_TOPIC.title}
+        </Link>
+        .
       </Muted>
       {check.error && <Alert>{check.error}</Alert>}
     </Section>

@@ -4,8 +4,21 @@ import {
   ensureBrowseDirectoryPath,
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
-import { FolderIcon, FileIcon, CornerLeftUpIcon, CheckIcon, HouseIcon } from "lucide-react";
+import {
+  FolderIcon,
+  FolderPlusIcon,
+  FileIcon,
+  CornerLeftUpIcon,
+  CheckIcon,
+  HouseIcon,
+} from "lucide-react";
 import { LIBRARY_FOLDER_CHOICE_TITLES, libraryNewFolderPath } from "@t3tools/client-runtime/fork";
+import {
+  isFolderReadFailure,
+  pathPickerEntries,
+  pathPickerNewFolder,
+  pathPickerParentProbe,
+} from "~/fork/settings/pathFieldLogic";
 import { filesystemEnvironment, useFilesystemReadAccess } from "~/state/filesystem";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
@@ -65,6 +78,8 @@ export function LibraryFolderPalette({
   error,
   children,
   files = false,
+  showHidden = false,
+  newFolder = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly computerName: string;
@@ -73,6 +88,10 @@ export function LibraryFolderPalette({
   readonly onSelect?: ((path: string) => void) | undefined;
   /** Lists files too. Folders still open; choosing a file selects it. */
   readonly files?: boolean | undefined;
+  /** Lists dot entries without a search for ".", after the others. */
+  readonly showHidden?: boolean | undefined;
+  /** Offers a typed folder path that does not exist yet. Folder pickers without `actions` only. */
+  readonly newFolder?: boolean | undefined;
   /** Rows that act on the browsed folder, in place of "Use this folder". */
   readonly actions?:
     | ((folder: LibraryBrowsedFolder | null) => readonly LibraryPaletteItem[])
@@ -95,17 +114,42 @@ export function LibraryFolderPalette({
   // The home folder the browser opens on is where browsing starts, not a choice. Its actions
   // follow its folders so Enter on opening never adds the whole home folder.
   const chosen = typedPath || history.length > 0 || path !== "~/";
+  const offersNewFolder = newFolder && !files && !actions;
+  // A typed name that is already a file must not be offered as a new folder, so list files too.
   const listing = useEnvironmentQuery(
     access.canReadFiles
       ? filesystemEnvironment.browse({
           environmentId,
-          input: files
-            ? { partialPath: browsePath, includeFiles: true }
-            : { partialPath: browsePath },
+          input:
+            files || (offersNewFolder && typedPath)
+              ? { partialPath: browsePath, includeFiles: true }
+              : { partialPath: browsePath },
         })
       : null,
   );
   const ready = access.canReadFiles && listing.isSuccess && !listing.isPending;
+  const probePath =
+    offersNewFolder && isFolderReadFailure(listing.failure)
+      ? pathPickerParentProbe(browsePath)
+      : null;
+  const probe = useEnvironmentQuery(
+    probePath === null
+      ? null
+      : filesystemEnvironment.browse({
+          environmentId,
+          input: { partialPath: probePath, includeFiles: true },
+        }),
+  );
+  // A search term is not a path, so without a typed path only the browsed folder can be new.
+  const newFolderPath = offersNewFolder
+    ? pathPickerNewFolder({
+        browsePath,
+        filter: typedPath ? filter : "",
+        browsed: ready ? listing.data : null,
+        parent: probe.isSuccess && !probe.isPending ? probe.data : null,
+      })
+    : null;
+  const listingError = newFolderPath !== null || probe.isPending ? null : listing.error;
   const currentPath = listing.data?.parentPath;
   const parentPath = currentPath
     ? getBrowseParentPath(ensureBrowseDirectoryPath(currentPath))
@@ -128,27 +172,24 @@ export function LibraryFolderPalette({
   useEffect(() => {
     reportFolder(folderPath, repository);
   }, [folderPath, repository]);
-  const entries = listed.filter(
-    (entry) =>
-      (!entry.name.startsWith(".") || filter.startsWith(".")) &&
-      entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
-  );
-  const folderActions: readonly LibraryPaletteItem[] = filter
-    ? []
-    : actions
-      ? actions(folder)
-      : [
-          {
-            id: "select-folder",
-            title: "Use this folder",
-            description: currentPath,
-            icon: <CheckIcon className="size-4" />,
-            disabled: !ready || !currentPath,
-            select: () => {
-              if (ready && currentPath) onSelect?.(currentPath);
+  const entries = pathPickerEntries(listed, { filter, files, showHidden });
+  const folderActions: readonly LibraryPaletteItem[] =
+    filter || newFolderPath !== null
+      ? []
+      : actions
+        ? actions(folder)
+        : [
+            {
+              id: "select-folder",
+              title: "Use this folder",
+              description: currentPath,
+              icon: <CheckIcon className="size-4" />,
+              disabled: !ready || !currentPath,
+              select: () => {
+                if (ready && currentPath) onSelect?.(currentPath);
+              },
             },
-          },
-        ];
+          ];
   return (
     <LibraryPaletteView
       title={`${files ? "Files" : "Folders"} on ${computerName}`}
@@ -166,7 +207,7 @@ export function LibraryFolderPalette({
       busy={busy}
       filter={false}
       message={
-        listing.isPending || access.isPending
+        listing.isPending || access.isPending || probe.isPending
           ? `Loading ${files ? "files" : "folders"}...`
           : `${computerName}: ${currentPath ?? browsePath}`
       }
@@ -175,7 +216,7 @@ export function LibraryFolderPalette({
         access.error ??
         (!access.isPending && !access.canReadFiles
           ? "Allow file access to browse this computer."
-          : listing.error)
+          : listingError)
       }
       items={[
         ...(chosen && !files ? folderActions : []),
@@ -197,6 +238,17 @@ export function LibraryFolderPalette({
                 select: () => open(entry.fullPath),
               },
         ),
+        ...(newFolderPath === null
+          ? []
+          : [
+              {
+                id: "use-new-folder",
+                title: "Use new folder",
+                description: newFolderPath,
+                icon: <FolderPlusIcon className="size-4" />,
+                select: () => onSelect?.(newFolderPath),
+              },
+            ]),
         ...(chosen || files ? [] : folderActions),
         ...(!filter && parentPath
           ? [
@@ -221,7 +273,7 @@ export function LibraryFolderPalette({
               },
             ]
           : []),
-        ...(listing.error ? [{ id: "retry", title: "Try again", select: listing.refresh }] : []),
+        ...(listingError ? [{ id: "retry", title: "Try again", select: listing.refresh }] : []),
       ]}
     >
       {children}

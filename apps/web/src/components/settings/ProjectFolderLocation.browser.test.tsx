@@ -47,6 +47,24 @@ vi.mock("~/fork/project-library/state", () => ({
   projectLibrary: { copies: (request: unknown) => state.copies(request) },
   useLibraryAuthority: () => ({ authorityId: state.authorityId }),
 }));
+// Filling this stand-in is choosing a folder; the picker has its own tests.
+vi.mock("~/fork/settings/PathField", () => ({
+  PathField: (props: {
+    label: string;
+    value: string;
+    startPath?: string;
+    disabled?: boolean;
+    onChange: (next: string) => void;
+  }) => (
+    <input
+      aria-label={props.label}
+      data-start={props.startPath}
+      value={props.value}
+      disabled={props.disabled}
+      onChange={(event) => props.onChange(event.currentTarget.value)}
+    />
+  ),
+}));
 
 import { ProjectFolderLocation } from "./ProjectFolderLocation";
 
@@ -171,7 +189,9 @@ describe("updating an existing project folder location", () => {
     await expect.element(dialog()).not.toBeInTheDocument();
     expect(state.update).not.toHaveBeenCalled();
     await open();
-    await expect.element(locationInput()).toHaveValue(project.workspaceRoot);
+    await expect.element(locationInput()).toHaveValue("");
+    // The saved folder may be gone, so browsing starts beside it.
+    await expect.element(locationInput()).toHaveAttribute("data-start", "/work/");
   });
 
   it.each(["The folder does not exist.", "This folder already belongs to another project."])(

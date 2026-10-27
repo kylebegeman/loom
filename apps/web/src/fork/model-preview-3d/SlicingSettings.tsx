@@ -27,6 +27,7 @@ import {
 } from "~/components/ui/select";
 import { models, runModelCommand } from "./state";
 import { usePrinterLibrary } from "./printers";
+import { PathField } from "../settings/PathField";
 import {
   LoomSettingsActions,
   LoomSettingsDetails,
@@ -260,31 +261,27 @@ export function SlicingSettings({
             {(Object.keys(SLICER_LABELS) as SlicerApp[]).map((name) => {
               const info = status.find((item) => item.app === name);
               return (
-                <label key={name} className="flex min-w-0 flex-col gap-2 text-sm">
+                <div key={name} className="flex min-w-0 flex-col gap-2 text-sm">
                   <span className="font-medium">{SLICER_LABELS[name]}</span>
                   <span className="text-xs text-muted-foreground wrap-anywhere">
                     {info?.path
-                      ? ` ${info.version ?? ""}${info.supported ? "" : " (unsupported version)"}`
+                      ? `${info.version ?? "Unknown version"}${info.supported ? "" : " (unsupported)"} · ${info.path}`
                       : info
                         ? "Not detected"
                         : "Detection pending"}
                   </span>
-                  <Input
-                    size="sm"
-                    aria-label={`${SLICER_LABELS[name]} executable`}
-                    placeholder="Automatic detection"
+                  <PathField
+                    environmentId={environmentId}
+                    kind="file"
+                    label={`${SLICER_LABELS[name]} executable`}
+                    defaultLabel="Automatic detection"
                     disabled={disabled}
-                    autoComplete="off"
-                    spellCheck={false}
                     value={value.paths[name] ?? ""}
-                    onChange={(event) =>
-                      onChange({
-                        ...value,
-                        paths: { ...value.paths, [name]: event.target.value || null },
-                      })
+                    onChange={(next) =>
+                      onChange({ ...value, paths: { ...value.paths, [name]: next || null } })
                     }
                   />
-                </label>
+                </div>
               );
             })}
           </div>

@@ -26,6 +26,8 @@ interface PathFieldProps {
   readonly rootPath?: string | undefined;
   /** Where browsing starts while the setting is unset. */
   readonly startPath?: string | undefined;
+  /** Also accepts a typed folder that does not exist yet, for a setting that creates its folder. */
+  readonly newFolder?: boolean | undefined;
   readonly className?: string | undefined;
 }
 
@@ -40,6 +42,7 @@ export function PathField({
   disabled = false,
   rootPath,
   startPath,
+  newFolder = false,
   className,
 }: PathFieldProps) {
   const [browsing, setBrowsing] = useState(false);
@@ -126,6 +129,8 @@ export function PathField({
               fallback: startPath || "~/",
             })}
             files={kind === "file"}
+            showHidden
+            newFolder={newFolder}
             onSelect={choose}
             onBack={close}
             onClose={close}

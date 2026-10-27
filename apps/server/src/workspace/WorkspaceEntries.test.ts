@@ -624,5 +624,50 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(prefixed.entries.map((entry) => entry.name)).toEqual(["a-file.txt"]);
       }),
     );
+
+    // fork: path-picker
+    it.effect("lists links as their targets and skips names the wire would trim", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const platform = yield* HostProcess.Platform;
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-browse-links-" });
+        yield* writeTextFile(cwd, "target.txt", "");
+        yield* writeTextFile(cwd, "real-folder/inner.txt", "");
+        const posix = platform !== "win32";
+        if (posix) {
+          yield* fileSystem.symlink("target.txt", path.join(cwd, "file-link"));
+          yield* fileSystem.symlink(path.join(cwd, "real-folder"), path.join(cwd, "folder-link"));
+          yield* fileSystem.symlink("missing", path.join(cwd, "broken-link"));
+          yield* fileSystem.symlink("loop-link", path.join(cwd, "loop-link"));
+          yield* writeTextFile(cwd, "notes.txt ", "");
+          yield* fileSystem.makeDirectory(path.join(cwd, "  "));
+        }
+        const cwdWithSeparator = yield* appendSeparator(cwd);
+        const entry = (name: string, kind?: "directory" | "file") => ({
+          name,
+          fullPath: path.join(cwd, name),
+          ...(kind ? { kind } : {}),
+        });
+
+        const folders = yield* workspaceEntries.browse({ partialPath: cwdWithSeparator });
+        const withFiles = yield* workspaceEntries.browse({
+          partialPath: cwdWithSeparator,
+          includeFiles: true,
+        });
+
+        expect(folders.entries).toEqual([
+          ...(posix ? [entry("folder-link")] : []),
+          entry("real-folder"),
+        ]);
+        expect(withFiles.entries).toEqual([
+          ...(posix ? [entry("folder-link", "directory")] : []),
+          entry("real-folder", "directory"),
+          ...(posix ? [entry("file-link", "file")] : []),
+          entry("target.txt", "file"),
+        ]);
+      }),
+    );
   });
 });

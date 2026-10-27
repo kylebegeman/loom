@@ -41,8 +41,8 @@ must be enabled on the worker. Disabling a worker prevents new submissions;
 existing jobs remain inspectable, cancellable and recoverable.
 
 If the same worker moved or its SSH setup changed, choose **Change connection**
-on its row and enter the new host alias and, if it needs one, the SSH config
-path again; the new values replace the saved connection. Its earlier jobs use
+on its row, enter the new host alias and, if it needs one, choose its SSH config
+file again; the new values replace the saved connection. Its earlier jobs use
 the new connection too. Add a different computer as a new worker instead.
 **Remove** stops new commands to a worker; its earlier jobs stay listed and
 keep reaching its last connection, so its ID can only be registered again at

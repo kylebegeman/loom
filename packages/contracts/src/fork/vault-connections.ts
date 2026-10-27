@@ -109,7 +109,7 @@ export class VaultConnectionError extends Schema.TaggedError<VaultConnectionErro
       revoked: "Access to this Vault connection was revoked. An administrator must restore access.",
       expired: "Access to this Vault connection expired. An administrator must renew access.",
       "policy-denied":
-        "Vault policy does not allow this connection and destination for this run. Review access in Loom Settings > Access & permissions (/settings/loom?section=vault-access).",
+        "Vault policy does not allow this connection and destination for this run. Review access in Loom Settings > Vault > Access (/settings/vault#loom-vault-access).",
       "workload-inactive": vaultDeniedMessage("workload-inactive"),
       "caller-permission": vaultDeniedMessage("caller-permission"),
       "backend-unavailable": "The Vault backend is unavailable. Check its connection.",

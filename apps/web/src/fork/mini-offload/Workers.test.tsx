@@ -16,6 +16,7 @@ vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh } }));
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
+vi.mock("~/fork/settings/PathField", () => ({ PathField: "path-field" }));
 vi.mock("../apple-build-tooling/parts", () => ({
   valueOf: (result: { value: unknown }) => result.value,
   failureOf: () => null,
@@ -49,6 +50,7 @@ import { MiniWorkers } from "./Workers";
 let renderer: ReactTestRenderer;
 const button = (text: string) =>
   renderer.root.findAllByType("button").find((node) => node.props.children === text)!;
+const sshConfigFile = () => renderer.root.findByProps({ label: "SSH config file" });
 async function edit(label: string, value: string) {
   await act(async () => {
     renderer.root.findByProps({ "aria-label": label }).props.onChange({ target: { value } });
@@ -87,4 +89,21 @@ it("closes a successfully registered worker form even when its readiness check f
   expect(renderer.root.findAllByType("form")).toHaveLength(0);
   await act(async () => button("Add command worker").props.onClick());
   expect(renderer.root.findByProps({ "aria-label": "Name" }).props.value).toBe("");
+});
+
+it("registers the chosen SSH config file, and the server default once it is cleared", async () => {
+  for (const cleared of [false, true]) {
+    await act(async () => button("Add command worker").props.onClick());
+    await edit("Name", "Build Mini");
+    await edit("SSH host alias", "build-mini");
+    await act(async () => sshConfigFile().props.onChange("/srv/loom/ssh-config"));
+    if (cleared) await act(async () => sshConfigFile().props.onChange(""));
+    await act(async () => {
+      renderer.root.findByType("form").props.onSubmit({ preventDefault() {} });
+    });
+    expect(state.run).toHaveBeenCalledWith(expect.objectContaining({ name: "register" }), {
+      environmentId: "workers-env",
+      input: expect.objectContaining({ sshConfig: cleared ? null : "/srv/loom/ssh-config" }),
+    });
+  }
 });

@@ -89,7 +89,7 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
       <h3 className="text-base font-medium">Temporary access requests</h3>
       <p className="text-sm text-muted-foreground">
         These requests authorize one thread for 5 or 15 minutes. For ongoing GitHub access,
-        configure projects in GitHub access. Approvals do not restart an operation.
+        configure projects in GitHub for agents. Approvals do not restart an operation.
       </p>
       <div>
         <Button size="sm-multiline" variant="outline" onClick={refresh} disabled={busy}>

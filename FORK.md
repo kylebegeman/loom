@@ -318,7 +318,10 @@ The `respectful-notifications` seams come from LoomOS packet 07
 `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
 setting, on by default, chooses between the thread or pull request title and a generic body
 in system notifications, for thread alerts and review guide alerts
-(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch renders under `ThreadNotificationCoordinator.tsx` (38 marker lines) withdraws a notification once its
+(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch sits under Thread
+notifications in General settings and is disabled unless they send system alerts
+(`SettingsPanels.tsx`, `settingsSearch.ts`, `packages/contracts/src/settings.ts`).
+`ThreadNotificationCoordinator.tsx` (44 marker lines) withdraws a notification once its
 thread is answered, archived or removed, ignores clicks on stale ones, and delivers through
 Web Locks so several windows on one origin show one notification. Each environment's last known
 thread state outlives a reconnect and is seeded from the cached snapshot at launch, so the next
@@ -1126,7 +1129,7 @@ ways an older build cannot read, which is why a rollback restores the data along
 app. Threads created on the newer build are lost by a rollback.
 
 After a restart, Loom opens once someone logs in to the Mac: it registers itself as a login
-item unless General settings has Open at login turned off. Its local server, agents and
+item unless Open at login in Settings > About is turned off. Its local server, agents and
 remote access come back with it. A FileVault Mac stops at the login window until someone
 unlocks it in person; `sudo fdesetup authrestart` restarts past it once. Docker Desktop and
 other apps start only if they are set to open at login themselves. Open at login reports a

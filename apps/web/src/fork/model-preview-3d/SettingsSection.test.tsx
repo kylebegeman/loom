@@ -26,6 +26,7 @@ vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
 vi.mock("~/components/ui/switch", () => ({ Switch: "button" }));
+vi.mock("~/fork/settings/PathField", () => ({ PathField: "path-field" }));
 vi.mock("~/components/ui/select", () => ({
   Select: "div",
   SelectGroup: "div",
@@ -130,4 +131,21 @@ it("retains failed saves for retry and clears the failure when editing resumes",
   await act(async () => button("Save settings").props.onClick());
   expect(state.save).toHaveBeenCalledTimes(2);
   expect(button("Save settings").props.disabled).toBe(true);
+});
+
+it("saves a chosen OpenSCAD executable and returns to automatic detection once it is cleared", async () => {
+  const openscad = () => renderer.root.findByProps({ label: "OpenSCAD executable" });
+  await act(async () => openscad().props.onChange("/opt/openscad/bin/openscad"));
+  await act(async () => button("Save settings").props.onClick());
+  expect(state.save).toHaveBeenLastCalledWith(expect.anything(), {
+    environmentId: "model-env",
+    input: expect.objectContaining({ openscadPath: "/opt/openscad/bin/openscad" }),
+  });
+  await act(async () => openscad().props.onChange(""));
+  expect(openscad().props.value).toBe("");
+  await act(async () => button("Save settings").props.onClick());
+  expect(state.save).toHaveBeenLastCalledWith(expect.anything(), {
+    environmentId: "model-env",
+    input: expect.objectContaining({ openscadPath: null }),
+  });
 });

@@ -115,8 +115,8 @@ history reaches the Library, its header shows **Not saved to Library yet**. **St
 folder** or archiving the project stops saving; adding the folder again resumes it.
 
 If you rename or move a folder yourself, choose **Update folder location** from
-its working files or computer folder settings and enter its current path on that
-computer. Loom keeps the same project and conversations. This updates the saved
+its working files or computer folder settings and choose its current folder on that
+computer. <!-- fork: path-picker --> Loom keeps the same project and conversations. This updates the saved
 location without moving files. Folders managed by Loom use their existing file
 recovery controls instead.
 
@@ -448,15 +448,17 @@ applies when the project and environment are both on **Inherit**.
 New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,
 such as another drive, select **Choose** beside **Settings → Worktrees → Worktree location** and <!-- fork: path-picker -->
 pick a folder in that machine's folder browser, or type a path like `D:\worktrees` or <!-- fork: path-picker -->
-`~/worktrees` in its search. The setting is per machine. Existing worktrees stay where they <!-- fork: path-picker -->
+`~/worktrees` in its search. For a folder that does not exist yet, select **Use new folder**; <!-- fork: path-picker -->
+the first new worktree creates it. The setting is per machine. Existing worktrees stay where they <!-- fork: path-picker -->
 are, and cleanup covers both the default folder and the custom one.
 
 <!-- fork: file-placement -->
 
 New projects and prepared Library files go in **Settings → Threads → Projects folder** on the
 chosen computer, which reuses a checkout of the same repository it already has there. Select
-**Choose** to pick the folder in that computer's folder browser, or type a path in its search.
-When Settings covers several computers, select one first.
+**Choose** to pick the folder in that computer's folder browser, or type a path in its search and
+select **Use new folder** for one that does not exist yet; Loom creates it when it first places
+something there. When Settings covers several computers, select one first.
 
 ## Storage cleanup
 

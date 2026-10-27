@@ -7,19 +7,24 @@ import {
 import { Switch } from "~/components/ui/switch";
 import { hasDesktopNotifications } from "~/threadNotifications";
 
-/** The previews switch under Thread notifications, shown only while they send system alerts. */
+/** The previews switch under Thread notifications, usable only while they send system alerts. */
 export function NotificationPreviewsSettingsRow() {
   const mode = useScopedSettings((settings) => settings.notificationMode);
   const previews = useScopedSettings((settings) => settings.notificationPreviewsEnabled);
   const updateSettings = useUpdateScopedSettings();
-  if (!hasDesktopNotifications(mode)) return null;
+  const sendsSystemAlerts = hasDesktopNotifications(mode);
   return (
     <SettingsRow
       {...searchableSetting("notification-previews")}
-      description="Show thread and pull request titles in system notifications. Turn off to hide them on this device."
+      description={
+        sendsSystemAlerts
+          ? "Show thread and pull request titles in system notifications. Turn off to hide them on this device."
+          : "Set Thread notifications to Notifications only or Notifications with sound to use this."
+      }
       control={
         <Switch
           checked={previews}
+          disabled={!sendsSystemAlerts}
           onCheckedChange={(checked) => updateSettings({ notificationPreviewsEnabled: checked })}
           aria-label="Notification previews"
         />

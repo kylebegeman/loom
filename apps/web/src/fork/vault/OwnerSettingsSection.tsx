@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { VaultItemSummary } from "@t3tools/contracts/fork";
 import {
@@ -21,6 +22,8 @@ import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
 import { randomUUID } from "~/lib/utils";
+import { forkSettingsTarget } from "../settings/navigation";
+import type { ForkSettingsTopicId } from "../settings/registry";
 import { VaultSshDialog } from "./SshDialog";
 import { vault } from "./state";
 import { useVaultTime } from "./useVaultTime";
@@ -294,8 +297,8 @@ function ConnectedItems({
         </p>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No development connections on this page. Create an SSH key below or connect GitHub in
-          GitHub access.
+          No development connections on this page. Create an SSH key below or connect GitHub in{" "}
+          <TopicLink topic="vault-github">GitHub for agents</TopicLink>.
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-border">
@@ -316,12 +319,7 @@ function ConnectedItems({
                       ? "Available to agents through owner access. Check the upstream connection before use."
                       : "Saved connection. Restricted project access applies."}
                   </p>
-                  <a
-                    href="#loom-vault-github"
-                    className="text-primary underline underline-offset-4"
-                  >
-                    Review connection
-                  </a>
+                  <TopicLink topic="vault-github">Review connection</TopicLink>
                 </div>
               )}
             </li>
@@ -389,7 +387,7 @@ function OwnerHealth({ environmentId }: { environmentId: EnvironmentId }) {
     return (
       <p className="text-sm text-muted-foreground">
         {result._tag === "Failure"
-          ? "Connection health is unavailable. Review Vault maintenance and retry."
+          ? "Connection health is unavailable. Review Health & recovery and retry."
           : "Checking reported connection problems…"}
       </p>
     );
@@ -404,12 +402,10 @@ function OwnerHealth({ environmentId }: { environmentId: EnvironmentId }) {
     <div className="flex max-w-prose flex-col gap-2 text-sm">
       <p className="font-medium">{issue.itemLabel} needs attention</p>
       <p>{vaultHealthMessage(issue)}</p>
-      <a href="#loom-vault-health" className="text-primary underline underline-offset-4">
-        Repair in Vault maintenance
-      </a>
+      <TopicLink topic="vault-health">Repair in Health & recovery</TopicLink>
       {issues.length > 1 ? (
         <p className="text-muted-foreground">
-          {issues.length - 1} more reported problems in Vault maintenance.
+          {issues.length - 1} more reported problems in Health & recovery.
         </p>
       ) : null}
     </div>
@@ -428,17 +424,28 @@ function OwnerBrokers({ environmentId }: { environmentId: EnvironmentId }) {
       <p className="text-muted-foreground">
         {!snapshot
           ? result._tag === "Failure"
-            ? "Could not check registered brokers. Refresh Vault brokers and retry."
+            ? "Could not check registered brokers. Refresh Credential brokers and retry."
             : "Checking registered brokers…"
           : online > 0
             ? `${online} registered ${online === 1 ? "broker is" : "brokers are"} online. The Loom server must be configured to use its enrolled broker.`
             : "No registered broker is online. Enroll this Loom server's computer and keep its broker running before using SSH."}
       </p>
       {snapshot && online === 0 ? (
-        <a href="#loom-vault-brokers" className="text-primary underline underline-offset-4">
-          Set up the execution broker
-        </a>
+        <TopicLink topic="vault-brokers">Set up the execution broker</TopicLink>
       ) : null}
     </div>
+  );
+}
+
+/** Hash anchors would replace the desktop app's hash route, so topic links go through the router. */
+function TopicLink({ topic, children }: { topic: ForkSettingsTopicId; children: ReactNode }) {
+  return (
+    <Link
+      {...forkSettingsTarget(topic)}
+      hashScrollIntoView={false}
+      className="text-primary underline underline-offset-4"
+    >
+      {children}
+    </Link>
   );
 }

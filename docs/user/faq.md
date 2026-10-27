@@ -69,7 +69,7 @@ No. Your code and prompts go from your machine to your provider (Anthropic, Open
 
 ## Worktrees are eating my disk. How do I clean them up?
 
-Open **Settings > Worktrees > Cleanup** and turn on automatic worktree cleanup. You can also run it now from there. Worktrees add up fast. One user cleared 500 GB. [Storage cleanup](./project-settings.md#storage-cleanup) <!-- fork: ext-settings -->
+Open **Settings > Worktrees > Cleanup** and turn on the cleanup rules you want. To run them now, use **Delete now** in **Settings > Maintenance**. Worktrees add up fast. One user cleared 500 GB. [Storage cleanup](./project-settings.md#storage-cleanup) <!-- fork: ext-settings -->
 
 ## Is there voice input?
 

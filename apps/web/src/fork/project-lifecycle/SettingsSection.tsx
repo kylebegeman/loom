@@ -179,6 +179,7 @@ function SettingsForm({
               environmentId={environmentId}
               kind="folder"
               label="Lanes folder"
+              newFolder
               value={settings.lanesRoot}
               disabled={hasLanes}
               onChange={(next) => set("lanesRoot", next)}

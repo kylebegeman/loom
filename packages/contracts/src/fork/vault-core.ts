@@ -56,15 +56,15 @@ const messages = {
 // Settings to make it. They are fixed text: never derived from an underlying failure.
 const deniedDetails = {
   "admin-only":
-    "Only the environment owner can make this Vault change, from Loom Settings > Vault (/settings/loom?section=vault). Agents cannot change Vault policy, trust or records.",
+    "Only the environment owner can make this Vault change, from Loom Settings > Vault (/settings/vault). Agents cannot change Vault policy, trust or records.",
   "workload-inactive":
-    "Vault works only while this thread's turn is running. Background work that continues after the turn ends cannot use Vault. Continue in a new turn of this thread. Owner access is in Loom Settings > Vault (/settings/loom?section=vault).",
+    "Vault works only while this thread's turn is running. Background work that continues after the turn ends cannot use Vault. Continue in a new turn of this thread. Owner access is in Loom Settings > Vault (/settings/vault).",
   "caller-permission":
-    "Owner access works only in full access outside plan mode. Switch this thread to full access and leave plan mode, then continue. Owner access is in Loom Settings > Vault (/settings/loom?section=vault).",
+    "Owner access works only in full access outside plan mode. Switch this thread to full access and leave plan mode, then continue. Owner access is in Loom Settings > Vault (/settings/vault).",
   "not-granted":
-    "No current Vault grant covers this record, action and destination for this thread. Ask the environment owner to grant it in Loom Settings > Access & permissions (/settings/loom?section=vault-access).",
+    "No current Vault grant covers this record, action and destination for this thread. Ask the environment owner to grant it in Loom Settings > Vault > Access (/settings/vault#loom-vault-access).",
   "untrusted-host":
-    "This SSH destination has no trusted host key. The environment owner must verify and pin it in Loom Settings > Vault (/settings/loom?section=vault).",
+    "This SSH destination has no trusted host key. The environment owner must verify and pin it in Loom Settings > Vault (/settings/vault).",
 } as const;
 const VaultDeniedDetail = Schema.Literals(
   Object.keys(deniedDetails) as [keyof typeof deniedDetails, ...Array<keyof typeof deniedDetails>],

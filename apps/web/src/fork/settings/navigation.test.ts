@@ -49,13 +49,15 @@ describe("fork settings search", () => {
     });
   });
 
-  it("opens computer topics at any scope and asks for a project only where one is needed", () => {
+  it("opens computer topics at any scope and asks for a checkout only where one is needed", () => {
     for (const id of ["project-lifecycle", "device-qa", "preview-links", "panel-picker"]) {
       const target = getSettingsSearchTargetScope(`loom-${id}`)!;
       expect(isSettingsSearchScopeAvailable(target.scope, "all")).toBe(true);
     }
     const profile = getSettingsSearchTargetScope("loom-project-profiles")!;
     expect(isSettingsSearchScopeAvailable(profile.scope, "all")).toBe(false);
+    // Without a checkout, the Projects page sends a Library project to its Library page.
+    expect(isSettingsSearchScopeAvailable(profile.scope, "project")).toBe(false);
     expect(isSettingsSearchScopeAvailable(profile.scope, "checkout")).toBe(true);
   });
 });
@@ -89,5 +91,18 @@ describe("fork settings links", () => {
     expect(
       legacyLoomSettingsTarget({ search: { section: "mini-offload" }, hash: "loom-unknown" }),
     ).toEqual({ to: "/settings/connections", search: {}, hash: "loom-mini-offload" });
+  });
+
+  it("keeps a retired project topic link's scope so Projects can ask for its checkout", () => {
+    const target = legacyLoomSettingsTarget({
+      search: { section: "project-profiles", project: "loom", machine: "m" },
+      hash: "",
+    });
+    expect(target).toEqual({
+      to: "/settings/projects",
+      search: { project: "loom", machine: "m" },
+      hash: "loom-project-profiles",
+    });
+    expect(getSettingsSearchTargetScope(target.hash)?.scope).toBe("checkout");
   });
 });

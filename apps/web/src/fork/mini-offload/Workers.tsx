@@ -16,6 +16,7 @@ import {
   LoomSettingsNotice,
   LoomSettingsPanel,
 } from "~/fork/settings/parts";
+import { PathField } from "~/fork/settings/PathField";
 import { workerCheckStatus } from "./presentation";
 import { mini, runMini } from "./state";
 
@@ -167,8 +168,8 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                 <LoomSettingsNotice>
                   Use this when the same worker moved or its SSH setup changed. Its earlier jobs use
                   the new connection. Add a different computer as a new worker. This replaces the
-                  saved connection: enter the SSH config path again if the worker uses one, or leave
-                  it blank for the server's default SSH config.
+                  saved connection: choose the SSH config file again if the worker uses one, or
+                  leave it unset for the server's default SSH config.
                 </LoomSettingsNotice>
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                   <LoomSettingsField label="SSH host alias">
@@ -182,13 +183,14 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
                       disabled={action.busy}
                     />
                   </LoomSettingsField>
-                  <LoomSettingsField label="SSH config path on server (optional)">
-                    <Input
-                      id={`${formId}-edit-config`}
-                      aria-label="SSH config path on server (optional)"
+                  <LoomSettingsField label="SSH config file on the server (optional)">
+                    <PathField
+                      environmentId={environmentId}
+                      kind="file"
+                      label="SSH config file"
+                      defaultLabel="Default SSH config"
                       value={newSshConfig}
-                      onChange={(event) => setNewSshConfig(event.target.value)}
-                      placeholder="/absolute/path/to/ssh-config"
+                      onChange={setNewSshConfig}
                       disabled={action.busy}
                     />
                   </LoomSettingsField>
@@ -363,13 +365,14 @@ export function MiniWorkers({ environmentId }: { environmentId: EnvironmentId })
             </div>
             <LoomSettingsDetails title="Advanced connection settings">
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <LoomSettingsField label="SSH config path on server (optional)">
-                  <Input
-                    id={`${formId}-add-config`}
-                    aria-label="SSH config path on server (optional)"
+                <LoomSettingsField label="SSH config file on the server (optional)">
+                  <PathField
+                    environmentId={environmentId}
+                    kind="file"
+                    label="SSH config file"
+                    defaultLabel="Default SSH config"
                     value={sshConfig}
-                    onChange={(event) => setSshConfig(event.target.value)}
-                    placeholder="/absolute/path/to/ssh-config"
+                    onChange={setSshConfig}
                     disabled={action.busy}
                   />
                 </LoomSettingsField>

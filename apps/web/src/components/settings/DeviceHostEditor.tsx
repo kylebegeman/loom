@@ -6,6 +6,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
+import { PathField } from "../../fork/settings/PathField"; // fork: path-picker
 import {
   Dialog,
   DialogPopup,
@@ -145,21 +146,24 @@ function DeviceHostEditorForm({
         >
           <summary className="cursor-pointer text-muted-foreground">SSH options</summary>
           <div className="mt-3 grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-            <label className="block space-y-1.5">
+            {/* fork: path-picker */}
+            <div className="space-y-1.5">
               <span>Identity file</span>
-              <Input
+              <PathField
+                environmentId={targets.length === 1 ? (targets[0]?.environmentId ?? null) : null}
+                kind="file"
+                label="Identity file"
+                defaultLabel="SSH config default"
                 value={draft.identityFile ?? ""}
                 disabled={busy}
-                onChange={(event) => {
-                  const identityFile = event.target.value;
+                onChange={(identityFile) => {
                   setDraft((current) => {
                     const { identityFile: _, ...rest } = current;
                     return identityFile ? { ...rest, identityFile } : rest;
                   });
                 }}
-                placeholder="SSH config default"
               />
-            </label>
+            </div>
             <label className="block space-y-1.5">
               <span>Port</span>
               <Input

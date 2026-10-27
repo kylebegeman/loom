@@ -161,7 +161,8 @@ function Inbox({
       ) : null}
       {data && review.totalCount === 0 ? (
         <Text>
-          No temporary access requests. Recurring project access can be configured in GitHub access.
+          No temporary access requests. Recurring project access can be configured in GitHub for
+          agents.
         </Text>
       ) : null}
       {data &&

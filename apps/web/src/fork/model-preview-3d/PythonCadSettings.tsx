@@ -1,19 +1,22 @@
 import { useState } from "react";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { PythonCadInfo } from "@t3tools/contracts/fork";
 import { SettingsRow } from "~/components/settings/settingsLayout";
-import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import { PathField } from "~/fork/settings/PathField";
 import { OperationStatus } from "./OperationStatus";
 import { LoomSettingsActions, LoomSettingsDetails, LoomSettingsNotice } from "../settings/parts";
 
 /** Host setup is explicit and governed by the environment's terminal permission. */
 export function PythonCadSettings({
+  environmentId,
   info,
   pythonPath,
   canSetup,
   onPathChange,
   onSetup,
 }: {
+  environmentId: EnvironmentId;
   info: PythonCadInfo | undefined;
   pythonPath: string | null;
   canSetup: boolean;
@@ -47,15 +50,16 @@ export function PythonCadSettings({
       <SettingsRow
         className="px-0 sm:px-0"
         title="Python CAD interpreter"
-        description="Leave blank to use Loom's managed environment. Python models use the .b3d.py file extension and a model() function."
+        description="Unset uses Loom's managed environment. Python models use the .b3d.py file extension and a model() function."
       >
         <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-          <Input
-            aria-label="Python CAD interpreter"
-            autoComplete="off"
-            spellCheck={false}
+          <PathField
+            environmentId={environmentId}
+            kind="file"
+            label="Python CAD interpreter"
+            defaultLabel="Loom's managed environment"
             value={pythonPath ?? ""}
-            onChange={(event) => onPathChange(event.target.value || null)}
+            onChange={(next) => onPathChange(next || null)}
           />
           <LoomSettingsNotice>
             {!info

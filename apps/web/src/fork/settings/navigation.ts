@@ -27,8 +27,9 @@ export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
       title: section.title,
       to,
       searchTerms: [section.description, section.keywords],
-      // Computer topics pick their own computer wherever they render; only a project must be chosen.
-      ...(section.scope === "project" ? { scope: "project" as const } : {}),
+      // Computer topics pick their own computer wherever they render. A project topic edits one
+      // checkout; a project scope alone sends a Library project out of Settings to its page.
+      ...(section.scope === "project" ? { scope: "checkout" as const } : {}),
     };
   });
 }

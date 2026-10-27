@@ -10,8 +10,10 @@ import {
 import { VaultApprovalInbox } from "./ApprovalInbox";
 import { useVaultTime } from "./useVaultTime";
 import { vaultAccessTarget } from "./access-navigation";
+import { forkSettingsTarget } from "../settings/navigation";
 import { useEffect, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -160,9 +162,13 @@ function OwnerRestrictedAccess({
             connected Vault access. Your restricted-mode grants and pending requests are kept here.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <a href="#loom-vault" className="text-sm text-primary underline underline-offset-4">
+            <Link
+              {...forkSettingsTarget("vault")}
+              hashScrollIntoView={false}
+              className="text-sm text-primary underline underline-offset-4"
+            >
               Manage owner access
-            </a>
+            </Link>
             <Button size="sm" variant="outline" onClick={() => setShowRestricted(!showRestricted)}>
               {showRestricted
                 ? "Hide restricted access controls"
@@ -249,7 +255,7 @@ function GrantManager({
             cover current and future threads in that project.
           </p>
           <p className="text-sm text-muted-foreground">
-            For GitHub, choose projects and repositories in GitHub access.
+            For GitHub, choose projects and repositories in GitHub for agents.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

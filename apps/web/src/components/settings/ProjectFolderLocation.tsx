@@ -4,12 +4,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { getBrowseParentPath } from "@t3tools/client-runtime/state/projects";
 import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { useContext, useId, useRef, useState } from "react";
 import { PROJECT_CHECKOUT_FEATURE, projectCheckouts } from "~/fork/project-checkout/state";
 import { libraryFolderHolders } from "~/fork/project-library/folderProjectMatches";
 import { projectLibrary, useLibraryAuthority } from "~/fork/project-library/state";
+import { PathField } from "~/fork/settings/PathField";
 import { useEnvironment } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { useEnvironmentQuery } from "~/state/query";
@@ -25,7 +27,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Input } from "../ui/input";
 
 type FolderTarget = {
   readonly environmentId: EnvironmentId;
@@ -84,7 +85,6 @@ function FolderLocationDialog({
 }) {
   const registry = useContext(RegistryContext);
   const formId = useId();
-  const inputId = useId();
   const environment = useEnvironment(project.environmentId);
   const authority = useLibraryAuthority();
   const canRead = useEnvironmentScope(project.environmentId, AuthOrchestrationReadScope);
@@ -144,7 +144,7 @@ function FolderLocationDialog({
                     ? "Loom manages this folder's location and recovery. Use Working files to review or restore it. Its location cannot be changed here."
                     : null;
   const update = useOrchestrationCommand(projectEnvironment.update, { reportFailure: false });
-  const [location, setLocation] = useState(project.workspaceRoot);
+  const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const savingRef = useRef(false);
@@ -178,7 +178,7 @@ function FolderLocationDialog({
         <DialogHeader>
           <DialogTitle>Update folder location</DialogTitle>
           <DialogDescription>
-            If this folder was renamed or moved on {computer}, enter its current location. This
+            If this folder was renamed or moved on {computer}, choose its current location. This
             changes the saved location only. Files stay in place, and your project and conversations
             are kept.
           </DialogDescription>
@@ -201,18 +201,15 @@ function FolderLocationDialog({
               </p>
             ) : (
               <div className="space-y-2">
-                <label htmlFor={inputId} className="text-sm font-medium">
-                  Folder location on {computer}
-                </label>
-                <Input
-                  id={inputId}
-                  autoFocus
-                  autoComplete="off"
-                  spellCheck={false}
-                  font="mono"
+                <p className="text-sm font-medium">Folder location on {computer}</p>
+                <PathField
+                  environmentId={project.environmentId}
+                  kind="folder"
+                  label={`Folder location on ${computer}`}
                   value={location}
+                  startPath={getBrowseParentPath(project.workspaceRoot) ?? undefined}
                   disabled={saving}
-                  onChange={(event) => setLocation(event.currentTarget.value)}
+                  onChange={setLocation}
                 />
                 <p className="text-xs text-muted-foreground">
                   The folder must already exist on {computer}. No folders will be created or moved.

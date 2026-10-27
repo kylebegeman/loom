@@ -1429,8 +1429,8 @@ apps/web/src/components/AddProjectToMachineDialog.browser.test.tsx	file-placemen
 apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
 apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
 packages/provider-fx/src/server/status.ts	brand	2
-apps/server/src/workspace/WorkspaceEntries.test.ts	path-picker	1
-apps/server/src/workspace/WorkspaceEntries.ts	path-picker	4
+apps/server/src/workspace/WorkspaceEntries.test.ts	path-picker	2
+apps/server/src/workspace/WorkspaceEntries.ts	path-picker	7
 apps/web/src/components/settings/AuthorizedClientsSettings.tsx	no-edge-accent	1
 apps/web/src/components/settings/ConnectionsSettings.tsx	ext-settings	3
 apps/web/src/components/settings/IntegrationsSettings.tsx	ext-settings	2
@@ -1445,3 +1445,5 @@ packages/contracts/src/filesystem.ts	path-picker	2
 apps/web/src/routeTree.gen.ts	-	/settings/vault
 apps/web/src/routeTree.gen.ts	-	/settings/tools
 apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	ext-settings	1
+apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
+docs/user/project-settings.md	path-picker	5
