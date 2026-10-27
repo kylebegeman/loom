@@ -405,6 +405,27 @@ describe("ProjectPlacement", () => {
     ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("claims reuse the name of a folder whose copy was unregistered and removed", () =>
+    withPlacement(
+      () => ({}),
+      (placement, { baseDir }) =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const root = path.join(baseDir, "projects");
+          const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
+            Effect.provide(LibraryWorkspaceStore.layer),
+          );
+          const unregistered = receiptFor("unregistered", path.join(root, "app"), "ready");
+          yield* store.put({
+            ...unregistered,
+            copy: { ...unregistered.copy, ownership: "borrowed", registered: false },
+          });
+          assert.equal(yield* placement.previewFolder("App"), path.join(root, "app"));
+          assert.equal(yield* placement.claimFolder("App"), path.join(root, "app"));
+        }),
+    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("refuses a Projects folder setting it would refuse as a claim root", () =>
     Effect.gen(function* () {
       const elsewhere = yield* tempDir("t3-placement-elsewhere-");
