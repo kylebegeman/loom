@@ -1,19 +1,22 @@
-import {
-  parseGoalCommand,
-  type MessageId,
-  type OrchestrationV2ProviderThread,
-  type OrchestrationV2ThreadProjection,
+import type {
+  MessageId,
+  OrchestrationV2ProviderThread,
+  OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 
-type Prompt = Parameters<typeof parseGoalCommand>[0];
+interface Prompt {
+  readonly text: string;
+}
 type Projection = OrchestrationV2ThreadProjection;
 
+const isSlashCommand = (prompt: Prompt) => prompt.text.trimStart().startsWith("/");
+
 /**
- * The binding whose context opens a native thread's first turn, or null. Codex and Claude read
- * /goal only at the start of a prompt, so their goal turns go verbatim and the next turn carries
- * it. The turn-start projection lacks earlier prompts, so they are read oldest first.
+ * The binding whose context opens a native thread's first turn, or null. Slash commands such as
+ * /goal and /compact work only at the start of a prompt, so they go verbatim and the next turn
+ * carries it. The turn-start projection lacks earlier prompts, so they are read oldest first.
  */
 export const libraryTurnContextBinding = Effect.fn("LibraryTurnContext.binding")(function* <
   Binding,
@@ -31,35 +34,28 @@ export const libraryTurnContextBinding = Effect.fn("LibraryTurnContext.binding")
   };
   readonly providerThread: Pick<OrchestrationV2ProviderThread, "id" | "nativeThreadRef">;
   readonly prompt: Prompt;
-  readonly goalDriver: boolean;
   readonly getBinding: Effect.Effect<Binding | null, BindingError>;
   readonly readPrompt: (id: MessageId) => Effect.Effect<Prompt | undefined, ReadError>;
 }) {
-  const isGoal = (prompt: Prompt) => input.goalDriver && parseGoalCommand(prompt) !== null;
-  if (isGoal(input.prompt)) return null;
+  if (isSlashCommand(input.prompt)) return null;
   const native = input.providerThread.nativeThreadRef;
-  const earlierPromptIds =
-    native === null
-      ? []
-      : input.projection.providerTurns.flatMap((turn) => {
-          if (turn.providerThreadId !== input.providerThread.id) return [];
-          const attempt = input.projection.attempts.find((entry) => entry.id === turn.runAttemptId);
-          // Attempts recorded before nativeThreadId existed belong to the current native thread.
-          if (attempt?.nativeThreadId !== undefined && attempt.nativeThreadId !== native.nativeId)
-            return [];
-          return [
-            input.projection.runs.find((entry) => entry.id === attempt?.runId)?.userMessageId,
-          ];
-        });
-  // A turn whose prompt cannot be found counts as having carried the context, as before /goal.
-  if (
-    earlierPromptIds.length > 0 &&
-    (!input.goalDriver || !earlierPromptIds.every(Predicate.isNotUndefined))
-  )
-    return null;
-  for (const id of new Set(earlierPromptIds.filter(Predicate.isNotUndefined))) {
-    const prompt = yield* input.readPrompt(id);
-    if (prompt === undefined || !isGoal(prompt)) return null;
+  if (native !== null) {
+    const attempts = new Map(input.projection.attempts.map((attempt) => [attempt.id, attempt]));
+    const runs = new Map(input.projection.runs.map((run) => [run.id, run]));
+    const earlierPromptIds = input.projection.providerTurns.flatMap((turn) => {
+      if (turn.providerThreadId !== input.providerThread.id) return [];
+      const attempt = turn.runAttemptId === null ? undefined : attempts.get(turn.runAttemptId);
+      // Attempts recorded before nativeThreadId existed belong to the current native thread.
+      if (attempt?.nativeThreadId !== undefined && attempt.nativeThreadId !== native.nativeId)
+        return [];
+      return [attempt === undefined ? undefined : runs.get(attempt.runId)?.userMessageId];
+    });
+    // A turn whose prompt cannot be found counts as having carried the context.
+    if (!earlierPromptIds.every(Predicate.isNotUndefined)) return null;
+    for (const id of new Set(earlierPromptIds)) {
+      const prompt = yield* input.readPrompt(id);
+      if (prompt === undefined || !isSlashCommand(prompt)) return null;
+    }
   }
   return yield* input.getBinding;
 });

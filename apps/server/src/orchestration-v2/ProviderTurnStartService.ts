@@ -1202,13 +1202,12 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
+      // fork: library-projects -- slash commands must open the prompt; see LibraryTurnContext.
       if (Option.isSome(libraryWorkspaces)) {
-        // fork: library-projects -- /goal must open the prompt; see goalCommand below.
         const resolved = yield* libraryTurnContextBinding({
           projection,
-          providerThread,
+          providerThread: runningProviderThread,
           prompt: message,
-          goalDriver: session.driver === "codex" || session.driver === "claudeAgent",
           getBinding: libraryWorkspaces.value.getBinding(projection.thread.id),
           readPrompt: (messageId) =>
             projectionStore

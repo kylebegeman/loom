@@ -22,7 +22,6 @@ interface EarlierTurn {
 
 const decide = Effect.fnUntraced(function* (input: {
   readonly prompt: string;
-  readonly goalDriver?: boolean;
   readonly nativeId?: string | null;
   readonly earlier?: ReadonlyArray<EarlierTurn>;
 }) {
@@ -62,20 +61,24 @@ const decide = Effect.fnUntraced(function* (input: {
           : { driver: ProviderDriverKind.make("codex"), nativeId, strength: "strong" },
     },
     prompt: { text: input.prompt },
-    goalDriver: input.goalDriver ?? true,
     getBinding: Effect.sync(getBinding),
     readPrompt,
   });
   return { result, readPrompt, getBinding };
 });
 
-it.effect("sends a goal command verbatim without reading anything", () =>
-  Effect.gen(function* () {
-    const { result, readPrompt, getBinding } = yield* decide({ prompt: "/goal Ship it" });
-    expect(result).toBeNull();
-    expect(readPrompt).not.toHaveBeenCalled();
-    expect(getBinding).not.toHaveBeenCalled();
-  }),
+it.effect.each(["/goal Ship it", " /compact"])(
+  "sends %j verbatim without reading anything",
+  (prompt) =>
+    Effect.gen(function* () {
+      const { result, readPrompt, getBinding } = yield* decide({
+        prompt,
+        earlier: [{ prompt: "/goal Ship it" }],
+      });
+      expect(result).toBeNull();
+      expect(readPrompt).not.toHaveBeenCalled();
+      expect(getBinding).not.toHaveBeenCalled();
+    }),
 );
 
 it.effect("opens a native thread's first turn without reading earlier prompts", () =>
@@ -91,11 +94,11 @@ it.effect("opens a native thread's first turn without reading earlier prompts", 
   }),
 );
 
-it.effect("carries the context on the first turn after goal turns", () =>
+it.effect("carries the context on the first turn after slash commands", () =>
   Effect.gen(function* () {
     const { result, readPrompt } = yield* decide({
       prompt: "Implement the next step",
-      earlier: [{ prompt: "/goal Ship it" }, { prompt: "/goal Ship it faster" }],
+      earlier: [{ prompt: "/goal Ship it" }, { prompt: "/compact" }],
     });
     expect(result).toBe("binding");
     expect(readPrompt).toHaveBeenCalledTimes(2);
@@ -145,18 +148,5 @@ it.effect("counts a turn whose prompt is unknown as having carried the context",
     });
     expect(result).toBeNull();
     expect(readPrompt).not.toHaveBeenCalled();
-  }),
-);
-
-it.effect("keeps the first-turn rule for drivers that do not read /goal", () =>
-  Effect.gen(function* () {
-    expect((yield* decide({ prompt: "/goal Ship it", goalDriver: false })).result).toBe("binding");
-    const later = yield* decide({
-      prompt: "Implement the next step",
-      goalDriver: false,
-      earlier: [{ prompt: "/goal Ship it" }],
-    });
-    expect(later.result).toBeNull();
-    expect(later.readPrompt).not.toHaveBeenCalled();
   }),
 );

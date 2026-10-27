@@ -983,7 +983,8 @@ function makeLocalCommandHarness(input: {
   const getTurnStartContext = vi.fn(() =>
     Effect.succeed({
       ...projection,
-      hasConversation: projection.messages.some(
+      // fork: library-projects -- the store checks every message, not just the loaded ones.
+      hasConversation: [...earlierPrompts, ...projection.messages].some(
         (m) =>
           m.role === "user" &&
           (m.text.trim().toLowerCase() !== "/compact" || m.attachments.length > 0),
@@ -2069,6 +2070,7 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
 // fork: library-projects
 effectIt.effect.each([
   ["/goal Ship the release", undefined, false],
+  ["/compact", "/goal Ship the release", false],
   ["Implement the next step", "/goal Ship the release", true],
   ["Implement the next step", "Plan the work", false],
 ] as const)("a bound turn %j after %j carries project context: %s", ([text, prompt, carried]) =>
@@ -2097,10 +2099,8 @@ effectIt.effect.each([
       expect(sent).toContain("Project: AspectAvy");
       expect(sent).toContain(`User message:\n${text}`);
     } else {
-      expect(sent).not.toContain("Project: AspectAvy");
-      expect(sent.endsWith(text)).toBe(true);
+      expect(sent).toBe(text);
     }
-    if (prompt === undefined) expect(sent).toBe(text);
   }),
 );
 
