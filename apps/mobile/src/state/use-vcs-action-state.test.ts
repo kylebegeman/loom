@@ -10,6 +10,8 @@ vi.mock("expo-haptics", () => ({
 }));
 
 vi.mock("./vcs", () => ({ vcsActionManager: {} }));
+// fork: source-control-cockpit The host label comes from server config, whose runtime loads Expo.
+vi.mock("./server", () => ({ serverEnvironment: {} }));
 
 import { dismissGitActionResult, showGitActionResult } from "./use-vcs-action-state";
 

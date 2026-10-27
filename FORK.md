@@ -541,8 +541,8 @@ approval wait label. `docs/user/source-control.md` (1) adds "Finish local work",
 Continue and Abort, Cancel, the push limit, Landed and Settle. Tests carry the rest:
 `GitVcsDriverCore.test.ts` (9), `useThreadHeaderOptions.test.tsx` (5), `vcsAction.test.ts` (4),
 `GitActionsControl.logic.test.ts` (3), `GitManager.test.ts` (2), `commandPermissions.test.ts`
-(1), `gitActions.test.ts` (1), `settings.test.ts` (1), `packages/shared/src/git.test.ts` (1)
-and `ThreadRouteScreen.test.tsx` (1). See the
+(1), `gitActions.test.ts` (1), `settings.test.ts` (1), `packages/shared/src/git.test.ts` (1),
+`ThreadRouteScreen.test.tsx` (1) and `use-vcs-action-state.test.ts` (1). See the
 [L06 packet](docs/fork/packets/L06-source-control-cockpit/SEAMS.md).
 
 The `agent-catalog` seams shrink what every agent reads before its first tool call: the MCP

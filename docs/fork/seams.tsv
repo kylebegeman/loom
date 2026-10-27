@@ -946,6 +946,7 @@ apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	checkpoint-capable	2
 apps/mobile/src/features/threads/useThreadHeaderOptions.test.tsx	source-control-cockpit	6
 apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	5
 apps/mobile/src/state/use-vcs-action-state.ts	source-control-cockpit	4
+apps/mobile/src/state/use-vcs-action-state.test.ts	source-control-cockpit	1
 apps/server/src/git/GitManager.test.ts	source-control-cockpit	2
 apps/server/src/git/GitManager.test.ts	project-lifecycle	1
 apps/server/src/git/GitManager.ts	source-control-cockpit	11
