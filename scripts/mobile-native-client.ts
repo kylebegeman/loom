@@ -962,6 +962,7 @@ const installIntoSession = Effect.fn("nativeClient.installIntoSession")(function
   abi: string,
   metro: string | undefined,
 ) {
+  const bundleId = developmentBundleId(platform); // fork: mobile-identity
   const started = yield* Clock.currentTimeMillis;
   const path = yield* Path.Path;
   const node = yield* HostProcess.ExecutablePath;
@@ -1027,7 +1028,8 @@ const installIntoSession = Effect.fn("nativeClient.installIntoSession")(function
         agentDevice,
         "open",
         bundleId,
-        `t3code-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
+        // fork: mobile-identity
+        `${developmentIdentity.scheme}://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
         "--session",
         session,
       ],

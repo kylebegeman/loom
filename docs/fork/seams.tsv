@@ -116,7 +116,7 @@ apps/mobile/src/features/agent-awareness/agentLiveActivity.ios.ts	mobile-identit
 apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts	mobile-identity	1
 apps/mobile/src/widgets/AgentActivity.tsx	mobile-identity	1
 apps/mobile/src/widgets/AgentActivity.test.ts	mobile-identity	1
-scripts/mobile-native-client.ts	mobile-identity	1
+scripts/mobile-native-client.ts	mobile-identity	3
 scripts/mobile-showcase.ts	mobile-identity	1
 apps/mobile/src/components/BrandMark.tsx	brand	1
 apps/mobile/src/components/CompactBrandTitle.tsx	brand	3
