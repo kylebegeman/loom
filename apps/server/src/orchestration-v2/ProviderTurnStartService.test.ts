@@ -723,6 +723,7 @@ function makeLocalCommandHarness(input: {
     };
   }
   const previousTurnId = ProviderTurnId.make("previous-provider-turn");
+  const earlierPrompts: Array<typeof message> = []; // fork: library-projects
   if (input.previousTurn !== undefined) {
     const previousRunId = RunId.make("previous-failed-run");
     const previousAttemptId = RunAttemptId.make("previous-failed-attempt");
@@ -742,7 +743,8 @@ function makeLocalCommandHarness(input: {
           activeAttemptId: previousAttemptId,
           providerThreadId: previousProviderThreadId,
           completedAt: now,
-          ...(input.previousTurn.prompt === undefined ? {} : { userMessageId: previousPromptId }), // fork: library-projects
+          // fork: library-projects
+          ...(input.previousTurn.prompt === undefined ? {} : { userMessageId: previousPromptId }),
         },
         run,
       ],
@@ -769,19 +771,10 @@ function makeLocalCommandHarness(input: {
           completedAt: input.previousTurn.turnStatus === "running" ? null : now,
         },
       ],
-      // fork: library-projects -- the earlier turn's own prompt, attempt and all.
+      // fork: library-projects -- the earlier turn's own attempt; its prompt is read by id.
       ...(input.previousTurn.prompt === undefined
         ? {}
         : {
-            messages: [
-              {
-                ...message,
-                id: previousPromptId,
-                runId: previousRunId,
-                text: input.previousTurn.prompt,
-              },
-              ...projection.messages,
-            ],
             attempts: [
               ...projection.attempts.map((attempt) => ({
                 ...attempt,
@@ -795,6 +788,14 @@ function makeLocalCommandHarness(input: {
             ],
           }),
     };
+    // fork: library-projects -- the turn-start context holds only this run's prompt.
+    if (input.previousTurn.prompt !== undefined)
+      earlierPrompts.push({
+        ...message,
+        id: previousPromptId,
+        runId: previousRunId,
+        text: input.previousTurn.prompt,
+      });
   }
   let providerBusy =
     input.previousTurn?.runStatus === "failed" &&
@@ -976,7 +977,8 @@ function makeLocalCommandHarness(input: {
   );
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
   const getThreadRecords = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getThreadRecords"]>(() =>
-    Effect.succeed(projection),
+    // fork: library-projects
+    Effect.succeed({ ...projection, messages: [...earlierPrompts, ...projection.messages] }),
   );
   const getTurnStartContext = vi.fn(() =>
     Effect.succeed({

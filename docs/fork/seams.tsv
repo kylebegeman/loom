@@ -135,8 +135,8 @@ apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	3
-apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	3
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	5
+apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	2
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	8
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	2
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	2
 apps/server/src/storageCleanup.test.ts	project-lifecycle	13

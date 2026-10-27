@@ -3,6 +3,8 @@ import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
 import type { LibraryError } from "@t3tools/contracts/fork";
 import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+// fork: library-projects
+import { libraryTurnContextBinding } from "../fork/project-library/LibraryTurnContext.ts";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
@@ -1200,25 +1202,21 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
-      // fork: library-projects -- /goal must open the prompt (see goalCommand below), so project
-      // context waits for the conversation's first turn that is not a goal command.
-      const libraryGoalTurn = (prompt: Parameters<typeof parseGoalCommand>[0]) =>
-        (session.driver === "codex" || session.driver === "claudeAgent") &&
-        parseGoalCommand(prompt) !== null;
-      const libraryContextSent = projection.providerTurns.some((turn) => {
-        const attempt = projection.attempts.find((entry) => entry.id === turn.runAttemptId);
-        const source = projection.runs.find((entry) => entry.id === attempt?.runId);
-        const prompt = projection.messages.find((entry) => entry.id === source?.userMessageId);
-        return prompt === undefined || !libraryGoalTurn(prompt);
-      });
-      if (
-        Option.isSome(libraryWorkspaces) &&
-        !libraryGoalTurn(message) && // fork: library-projects
-        (!libraryContextSent || providerThread.nativeThreadRef === null) // fork: library-projects
-      ) {
-        const resolved = yield* libraryWorkspaces.value
-          .getBinding(projection.thread.id)
-          .pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
+      if (Option.isSome(libraryWorkspaces)) {
+        // fork: library-projects -- /goal must open the prompt; see goalCommand below.
+        const resolved = yield* libraryTurnContextBinding({
+          projection,
+          providerThread,
+          prompt: message,
+          goalDriver: session.driver === "codex" || session.driver === "claudeAgent",
+          getBinding: libraryWorkspaces.value.getBinding(projection.thread.id),
+          readPrompt: (messageId) =>
+            projectionStore
+              .getThreadRecords(projection.thread.id, ["messages"], { messageIds: [messageId] })
+              .pipe(
+                Effect.map((records) => records.messages.find((entry) => entry.id === messageId)),
+              ),
+        }).pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
         if (resolved !== null) {
           const receipt = yield* libraryWorkspaces.value
             .get(resolved.binding.workingCopyId)
