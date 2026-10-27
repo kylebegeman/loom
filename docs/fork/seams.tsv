@@ -1351,7 +1351,7 @@ apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx	fleet-connections	
 apps/web/src/components/settings/ConnectionsSettings.logic.test.ts	tailnet-ownership	8
 apps/web/src/components/settings/ConnectionsSettings.logic.ts	tailnet-ownership	9
 apps/web/src/components/settings/LocalEnvironmentSetting.tsx	fleet-connections	4
-apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	project-home	1
+apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	project-home	3
 apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	project-home	2
 apps/web/src/components/settings/ProjectSettingsPanel.logic.ts	project-home	1
 apps/web/src/components/settings/SessionPermissions.tsx	identity-renewal	1
@@ -1400,7 +1400,7 @@ packages/client-runtime/src/state/shellReducer.test.ts	file-placement	1
 packages/client-runtime/src/state/threadSearch.test.ts	fleet-connections	4
 packages/client-runtime/src/state/threadSearch.ts	fleet-connections	5
 packages/client-runtime/src/state/threadSort.ts	bots	2
-packages/contracts/src/auth.ts	library-projects	4
+packages/contracts/src/auth.ts	library-projects	6
 packages/contracts/src/auth.ts	library-sign-in	1
 packages/contracts/src/projectClone.ts	file-placement	2
 packages/contracts/src/server.test.ts	file-placement	2

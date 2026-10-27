@@ -115,10 +115,20 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
   [AuthTerminalReadScope]: AuthTerminalOperateScope,
 };
 
+// fork: library-projects
+// Denial-only stand-ins: an old operate or read grant never implies these, so they stay out of legacyParents.
+const libraryDenialScopes: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>> = {
+  [AuthLibraryPublishScope]: AuthOrchestrationOperateScope,
+  [AuthLibraryRecoveryReadScope]: AuthOrchestrationReadScope,
+};
+
 /** Keep permission denials decodable by clients with the original scope enum. */
 export function authScopeRequiredResponse(requiredPermission: AuthEnvironmentScope) {
   return {
-    requiredScope: legacyParents[requiredPermission] ?? requiredPermission,
+    requiredScope:
+      legacyParents[requiredPermission] ??
+      libraryDenialScopes[requiredPermission] ?? // fork: library-projects
+      requiredPermission,
     requiredPermission,
   };
 }
