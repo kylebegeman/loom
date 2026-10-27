@@ -1,8 +1,9 @@
 import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { act, render } from "../../../test/render";
+import { CommandPalette } from "../../components/CommandPalette";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useCommandPaletteMount, useCommandPaletteStore } from "../../commandPaletteStore";
 import { installCommandPaletteCommands } from "../../shortcuts/commandPaletteCommands";
@@ -56,5 +57,18 @@ describe("Library palette session", () => {
       open: true,
       openIntent: { kind: "submenu", value: "action:loom:library:go-to-project" },
     });
+  });
+
+  it("a submenu request keeps the root list until its submenu exists", async () => {
+    setup();
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ submenu: "action:loom:library:go-to-project" });
+
+    const input = page.getByPlaceholder("Search commands, projects, and threads...");
+    await expect.element(input).toHaveFocus();
+    await expect
+      .element(page.getByText("No matching commands, projects, or threads."))
+      .not.toBeInTheDocument();
   });
 });

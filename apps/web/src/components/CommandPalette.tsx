@@ -264,7 +264,8 @@ const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
 
 // fork: library-palette - A submenu intent opens a fork submenu once its source loads.
-const forkSubmenuGroup = (value: string) => `fork-submenu:${value}`;
+const FORK_SUBMENU_GROUP_PREFIX = "fork-submenu:";
+const forkSubmenuGroup = (value: string) => `${FORK_SUBMENU_GROUP_PREFIX}${value}`;
 
 /** The submenu an open intent starts in; its groups resolve while rendering. */
 function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPaletteView | null {
@@ -564,7 +565,17 @@ function OpenCommandPaletteDialog(props: {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const providersByEnvironment = useEnvironmentProviders();
   const { changeThemeItem, changeAppearanceItem, themeEditorItem } = useCommandPaletteThemeItems();
-  const currentView = viewStack.at(-1)?.view ?? null;
+  const stackedView = viewStack.at(-1)?.view ?? null; // fork: library-palette
+  // fork: library-palette - A submenu request shows the root list until its submenu exists.
+  const forkSubmenu = forkPaletteItems.items.find(
+    (item): item is CommandPaletteSubmenuItem =>
+      item.kind === "submenu" && forkSubmenuGroup(item.value) === stackedView?.groups[0]?.value,
+  );
+  const currentView =
+    forkSubmenu === undefined &&
+    stackedView?.groups[0]?.value.startsWith(FORK_SUBMENU_GROUP_PREFIX) === true
+      ? null
+      : stackedView; // fork: library-palette
   const threadSearchQuery = currentView === null && !isActionsOnly ? deferredQuery : "";
   const [browseGeneration, setBrowseGeneration] = useState(0);
   const [browseNavigation] = useState(createBrowseNavigationCoordinator);
@@ -1964,11 +1975,6 @@ function OpenCommandPaletteDialog(props: {
       });
     },
   }));
-  // fork: library-palette
-  const forkSubmenu = forkPaletteItems.items.find(
-    (item): item is CommandPaletteSubmenuItem =>
-      item.kind === "submenu" && forkSubmenuGroup(item.value) === currentView?.groups[0]?.value,
-  );
   const sourceSelectionViewValue =
     addProjectEnvironmentId === null ? null : `sources:${addProjectEnvironmentId}`;
   const activeGroups =
