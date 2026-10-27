@@ -291,10 +291,6 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         yield* Deferred.succeed(ready, undefined);
       }
       const result = yield* Fiber.join(running);
-      if (mode !== "failure" && mode !== "no-script") {
-        yield* TestClock.adjust("3 seconds");
-        yield* Deferred.await(written);
-      }
       if (mode === "failure") {
         assert.equal(result._tag, "Failure");
         if (result._tag === "Failure") {

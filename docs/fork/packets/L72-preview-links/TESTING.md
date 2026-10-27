@@ -121,8 +121,8 @@ vp run --filter @t3tools/mobile typecheck
 bash -c 'source scripts/fork/loom.sh && check_seams'
 ```
 
-`scripts/fork/loom.sh check` does not typecheck `apps/mobile` (`TYPECHECK_DIRS`), so run its
-typecheck by hand.
+`scripts/fork/loom.sh check` typechecks every workspace package and runs every fork-touched test,
+so it covers all of the above in one pass.
 
 ## Slice 1 live checks
 

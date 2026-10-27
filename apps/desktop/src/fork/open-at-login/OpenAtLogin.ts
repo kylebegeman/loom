@@ -44,19 +44,21 @@ const layerElectronLoginItems = Layer.succeed(
   LoginItems,
   LoginItems.of({
     read: Effect.sync(() => Electron.app.getLoginItemSettings()),
-    write: (openAtLogin) =>
+    write: Effect.fn("LoginItems.write")((openAtLogin: boolean) =>
       Effect.try({
         try: () => Electron.app.setLoginItemSettings({ openAtLogin }),
         catch: () =>
           new OpenAtLoginError({ detail: "The system did not accept the login item change." }),
       }),
-    openSettings: (url) =>
+    ),
+    openSettings: Effect.fn("LoginItems.openSettings")((url: string) =>
       Effect.promise(() =>
         Electron.shell.openExternal(url).then(
           () => true,
           () => false,
         ),
       ),
+    ),
   }),
 );
 

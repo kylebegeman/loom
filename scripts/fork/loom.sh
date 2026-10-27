@@ -524,6 +524,20 @@ quit_app() {
 
 free_bytes() { echo $(($(df -Pk "$1" | awk 'NR == 2 { print $4 }') * 1024)); }
 
+# BSD tools on macOS, GNU coreutils on Linux CI and in Homebrew's gnubin.
+if stat --version >/dev/null 2>&1; then
+  file_size() { stat -c %s "$1"; }
+  file_mtime() { stat -c %.9Y "$1"; }
+else
+  file_size() { stat -f %z "$1"; }
+  file_mtime() { stat -f %Fm "$1"; }
+fi
+if cp --version >/dev/null 2>&1; then
+  clone_file() { cp --reflink=auto "$1" "$2"; }
+else
+  clone_file() { cp -c "$1" "$2"; }
+fi
+
 # Each database with its WAL, which holds committed data a closed app may not
 # have checkpointed. SQLite rebuilds the -shm index on open.
 state_database_files() {
@@ -536,18 +550,18 @@ state_database_files() {
 state_fingerprint() {
   local f
   for f in $(state_database_files); do
-    [ ! -f "$T3_USERDATA/$f" ] || stat -f "$f %z %Fm" "$T3_USERDATA/$f"
+    [ ! -f "$T3_USERDATA/$f" ] || printf '%s %s %s\n' "$f" "$(file_size "$T3_USERDATA/$f")" "$(file_mtime "$T3_USERDATA/$f")"
   done
 }
 
 # Snapshot the T3 database and settings into the record of the build that is
 # installed now, so rolling back to it restores the data it last ran with.
-# The copies are APFS clones: instant and free until the live data diverges,
-# so the disk must have room for a full copy before one is taken.
+# The copies are clones where the filesystem supports them, free until the live
+# data diverges, so the disk must have room for a full copy before one is taken.
 snapshot_state() {
   local into=$1 f size=0 before stage
   for f in $(state_database_files); do
-    [ ! -f "$T3_USERDATA/$f" ] || size=$((size + $(stat -f %z "$T3_USERDATA/$f")))
+    [ ! -f "$T3_USERDATA/$f" ] || size=$((size + $(file_size "$T3_USERDATA/$f")))
   done
   if [ "$(free_bytes "$T3_USERDATA")" -lt $((size + SNAPSHOT_FREE_MARGIN_BYTES)) ]; then
     echo "Not enough free disk space to keep a copy of the T3 data in $into/state" >&2
@@ -557,7 +571,7 @@ snapshot_state() {
   stage=$(mktemp -d "$into/.state.XXXXXX") || return 1
   before=$(state_fingerprint)
   for f in $(state_database_files) settings.json client-settings.json; do
-    [ ! -f "$T3_USERDATA/$f" ] || cp -c "$T3_USERDATA/$f" "$stage/$f" || { rm -rf "$stage"; return 1; }
+    [ ! -f "$T3_USERDATA/$f" ] || clone_file "$T3_USERDATA/$f" "$stage/$f" || { rm -rf "$stage"; return 1; }
   done
   if [ "$(state_fingerprint)" != "$before" ]; then
     rm -rf "$stage"
@@ -582,7 +596,7 @@ snapshot_state() {
 prune_snapshots() {
   local record
   records | while read -r record; do
-    [ ! -d "$record/state" ] || printf '%s\t%s\n' "$(stat -f %Fm "$record/state")" "$record"
+    [ ! -d "$record/state" ] || printf '%s\t%s\n' "$(file_mtime "$record/state")" "$record"
   done | sort -rn | tail -n +$((KEEP_STATE_SNAPSHOTS + 1)) | cut -f2- | while read -r record; do
     rm -rf "$record/state"
   done
@@ -597,7 +611,7 @@ rollback_target() {
   records | while read -r record; do
     [ -d "$record/state" ] && [ "$record" != "$current" ] || continue
     [[ "$(sed -n 's/^built=//p' "$record/build.env" | sed -n 1p)" < "$built" ]] || continue
-    printf '%s\t%s\n' "$(stat -f %Fm "$record/state")" "$record"
+    printf '%s\t%s\n' "$(file_mtime "$record/state")" "$record"
   done | sort -rn | sed -n 1p | cut -f2-
 }
 
@@ -797,7 +811,7 @@ cmd_rollback() (
   # Prepare every incoming file before changing userdata. Original files, including WALs
   # and absent settings, remain recoverable independently of the durable build snapshot.
   for f in $(state_database_files) settings.json client-settings.json; do
-    [ ! -f "$previous/state/$f" ] || cp -c "$previous/state/$f" "$loom_rollback_state_stage/restored/$f"
+    [ ! -f "$previous/state/$f" ] || clone_file "$previous/state/$f" "$loom_rollback_state_stage/restored/$f"
   done
   for f in "${loom_rollback_state_files[@]}"; do
     if [ ! -e "$T3_USERDATA/$f" ] && [ ! -L "$T3_USERDATA/$f" ]; then
