@@ -1,6 +1,8 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, type DesktopBridge } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { HttpClient } from "effect/http";
 
 import { __resetDesktopPrimaryAuthForTests } from "./desktopAuth";
@@ -59,6 +61,46 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
 
       const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
       expect(request.credentials).not.toBe("include");
+      expect(request.headers.get("authorization")).toBe("Bearer desktop-bearer-token");
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
+  });
+
+  it.effect("retries primary discovery after the desktop credential bootstrap fails", () => {
+    const descriptor = {
+      environmentId: EnvironmentId.make("environment-local"),
+      label: "Local environment",
+      platform: { os: "darwin", arch: "arm64" },
+      serverVersion: "0.0.0-test",
+      capabilities: { repositoryIdentity: true },
+    };
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(descriptor), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const readBearer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Local credential bootstrap timed out"))
+      .mockResolvedValue("desktop-bearer-token");
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", {
+      location: { origin: "t3code://app" },
+      desktopBridge: { getLocalEnvironmentBearerToken: readBearer },
+    });
+
+    return Effect.gen(function* () {
+      const discover = fetchRemoteEnvironmentDescriptor({ httpBaseUrl: "http://127.0.0.1:3773" });
+      const first = yield* discover.pipe(Effect.option);
+      expect(Option.isNone(first)).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const recovered = yield* discover;
+      expect(recovered).toEqual(descriptor);
+      expect(readBearer).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
       expect(request.headers.get("authorization")).toBe("Bearer desktop-bearer-token");
     }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
