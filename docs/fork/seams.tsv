@@ -179,6 +179,7 @@ apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	2
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	computer-naming	5
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	fleet-connections	23
+apps/mobile/src/features/connection/ConnectionsNewRouteScreen.test.tsx	fleet-connections	2
 apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/connection/LocalEnvironmentList.tsx	fleet-connections	6
 apps/mobile/src/features/connection/useConnectionController.ts	computer-naming	2

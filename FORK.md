@@ -1175,6 +1175,7 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/cloud/publicConfig.ts`                             | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx`           | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`          | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.test.tsx`     | `fleet-connections` | Cover the pairing form's Connect button and computer wording.              |
 | `apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx`             | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/connection/LocalEnvironmentList.tsx`               | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/connection/useConnectionController.ts`             | `computer-naming`   | Publish and project the canonical computer name.                           |

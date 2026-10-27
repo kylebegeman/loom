@@ -43,6 +43,7 @@ vi.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: "success", Error: "error" },
 }));
 vi.mock("../../components/ui/ListRow", () => ({ ListRow: () => null }));
+vi.mock("../../components/ui/Button", () => ({ Button: () => null })); // fork: fleet-connections
 vi.mock("../../components/ui/Dialog", () => ({ alert: vi.fn() }));
 vi.mock("../../components/ui/ScreenScrollView", () => ({ ScreenScrollView: Children }));
 vi.mock("../../components/ui/AppText", () => ({
@@ -96,7 +97,8 @@ it("does not show another feature's error as a pairing failure", () => {
   act(() => root.render(<ConnectionsNewRouteScreen route={{ params: undefined }} />));
 
   expect(container.textContent).not.toContain("Could not send the message.");
-  expect(container.textContent).toContain("For machines on your local network or tailnet.");
+  // fork: fleet-connections
+  expect(container.textContent).toContain("Use the address and code shown on your computer.");
 
   act(() => root.unmount());
   // Leaving the form must not wipe an error that belongs to another screen.
