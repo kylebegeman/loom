@@ -134,6 +134,9 @@ printf '\\n' >> "$LOOM_TEST_LOG"
 if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = lint ]; then
   exit "$LOOM_TEST_LINT_STATUS"
 fi
+if [ "$1" = install ]; then
+  exit "$LOOM_TEST_INSTALL_STATUS"
+fi
 `,
     { mode: 0o755 },
   );
@@ -141,7 +144,11 @@ fi
   return { root, bin, log };
 }
 
-function runLint(f: ReturnType<typeof lintFixture>, command: string, lintStatus = 0) {
+function runLint(
+  f: ReturnType<typeof lintFixture>,
+  command: string,
+  { lint = 0, install = 0 }: { readonly lint?: number; readonly install?: number } = {},
+) {
   return NodeChildProcess.spawnSync(
     "bash",
     [
@@ -169,7 +176,8 @@ ${command}
         LOOM_TEST_ROOT: f.root,
         LOOM_TEST_BIN: f.bin,
         LOOM_TEST_LOG: f.log,
-        LOOM_TEST_LINT_STATUS: String(lintStatus),
+        LOOM_TEST_LINT_STATUS: String(lint),
+        LOOM_TEST_INSTALL_STATUS: String(install),
       },
     },
   );
@@ -227,7 +235,7 @@ it("skips lint when no fork paths exist instead of linting the repository", () =
 
 it("reports lint failure and exits unsuccessfully", () => {
   const f = lintFixture(["scripts/fork"]);
-  const result = runLint(f, "check_fork_lint", 7);
+  const result = runLint(f, "check_fork_lint", { lint: 7 });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
 });
@@ -266,13 +274,37 @@ it("runs lint after installation, then builds and typechecks, and the tests last
   ]);
 });
 
-it("stops run_checks before discovering or running tests when lint fails", () => {
+it("runs every check after a failing lint and lists the failure at the end", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
-  const result = runLint(f, "run_checks", 1);
+  const result = runLint(f, "run_checks", { lint: 1 });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("loom: fork lint failed");
-  expect(lintCalls(f).map(([first]) => first)).toEqual(["seams", "install", "exec"]);
-  expect(lintCalls(f).at(-1)?.slice(0, 3)).toEqual(["exec", "vp", "lint"]);
+  expect(result.stderr.trimEnd().split("\n").at(-1)).toBe("loom: check failed: Linting fork code");
+  expect(lintCalls(f).map(([first, second]) => second ?? first)).toEqual([
+    "seams",
+    "--frozen-lockfile",
+    "vp",
+    "omarchy-pack",
+    "vp",
+    "vp",
+    "tsc",
+    "discover-tests",
+    "vp",
+    "restore-lockfile",
+  ]);
+});
+
+it("skips every later check when installing dependencies fails", () => {
+  const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
+  const result = runLint(f, "run_checks", { install: 1 });
+  expect(result.status).toBe(1);
+  expect(
+    result.stderr
+      .trimEnd()
+      .split("\n")
+      .filter((line) => line.startsWith("loom: ")),
+  ).toEqual(["loom: check failed: Installing dependencies"]);
+  expect(lintCalls(f)).toEqual([["seams"], ["install", "--frozen-lockfile"], ["restore-lockfile"]]);
 });
 
 function repositoryFixture() {
@@ -937,6 +969,7 @@ it("merges a resolution unattended only when the independent review passes it", 
   NodeFS.writeFileSync(NodePath.join(f.root, "apps/b.ts"), "export const b = 2; // loom change\n");
   f.git("add", "-A");
   f.git("commit", "--quiet", "--no-edit");
+  f.git("update-ref", "refs/remotes/origin/main", "main");
   const reviewer = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-reviewer.sh`);
   roots.push(reviewer);
   NodeFS.writeFileSync(
@@ -959,6 +992,41 @@ printf 'Checked every hunk.\\n\\nVERDICT: %s\\n' "$LOOM_TEST_VERDICT"
   const failed = review("fail");
   expect(failed.status).toBe(1);
   expect(failed.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
+});
+
+it("shows the reviewer every merge and commit the branch adds to main, oldest first", () => {
+  const f = conflictFixture("");
+  f.git("update-ref", "refs/remotes/origin/main", "main");
+  const write = (file: string, text: string) =>
+    NodeFS.writeFileSync(NodePath.join(f.root, file), text);
+  write("apps/a.ts", "export const a = 2; // loom change\n");
+  write("apps/b.ts", "export const b = 2; // loom change\n");
+  f.git("commit", "--quiet", "-am", "integrate upstream one");
+  write("apps/repair.ts", "export const repaired = true;\n");
+  f.git("add", "-A");
+  f.git("commit", "--quiet", "-m", "repair after upstream one");
+  f.git("switch", "--quiet", "upstream");
+  write("apps/b.ts", "export const b = 4;\n");
+  f.git("commit", "--quiet", "-am", "upstream again");
+  f.git("tag", "v1.0.0-nightly.20261015.1");
+  f.git("switch", "--quiet", `integrate/${NIGHTLY}`);
+  const merge = NodeChildProcess.spawnSync("git", ["merge", "v1.0.0-nightly.20261015.1"], {
+    cwd: f.root,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+  });
+  expect(merge.status).not.toBe(0);
+  write("apps/b.ts", "export const b = 4; // loom change\n");
+  f.git("commit", "--quiet", "-am", "integrate upstream two");
+
+  const diff = runSync(f.root, "resolution_diff").stdout;
+
+  const order = ["integrate upstream one", "repair after upstream one", "integrate upstream two"];
+  const at = order.map((subject) => diff.indexOf(subject));
+  expect(at.every((index) => index >= 0)).toBe(true);
+  expect(at).toEqual([...at].sort((a, b) => a - b));
+  expect(diff).toContain("+export const repaired = true;");
+  expect(diff.match(/^-<<<<<<< /gm)?.length).toBe(3);
+  expect(diff).not.toMatch(/^(Commit|Merge) \S+ fork changes$/m);
 });
 
 it("gives a resolution that dropped a seam one more session, told what it lost", () => {
@@ -999,81 +1067,269 @@ function repairFixture(agent: string) {
   const agentPath = agentScript(f.root, "repair", agent);
   const logs = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-logs`);
   roots.push(logs);
-  // Two checks that stop at the first failure, as run_checks does.
+  const calls = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-calls`);
+  roots.push(calls);
+  // Two checks reported through run_check, as run_checks reports its own.
   const checks = `run_checks() {
-    say "Checking that every fork seam survived"
-    grep -q kept apps/seam.ts || { echo "apps/seam.ts lost its seam"; return 1; }
-    say "Running the fork's tests"
-    grep -q passing apps/test.ts || { echo "apps/test.ts failed"; return 1; }
+    FAILED_CHECKS=""
+    run_check "Checking that every fork seam survived" bash -c 'grep -q kept apps/seam.ts || { echo "apps/seam.ts lost its seam"; exit 1; }'
+    run_check "Running the fork's tests" bash -c 'grep -q passing apps/test.ts || { echo "apps/test.ts failed"; exit 1; }'
+    report_failed_checks
   }`;
   const repair = (extraEnv: Record<string, string> = {}) =>
     runSync(f.root, `${checks}; checks_with_repair ${NIGHTLY}`, {
       LOOM_AGENT: agentPath,
       LOOM_RESOLVE_LOGS: logs,
+      LOOM_TEST_CALLS: calls,
       ...extraEnv,
     });
   const report = () => NodeFS.readFileSync(NodePath.join(logs, "repair.md"), "utf8");
-  return { ...f, repair, report };
+  const sessions = () =>
+    NodeFS.existsSync(calls) ? NodeFS.readFileSync(calls, "utf8").split("\n").filter(Boolean) : [];
+  return { ...f, repair, report, sessions };
 }
 
-it("repairs one failing check per round and commits each round", () => {
-  const f = repairFixture(`
-log=$(printf '%s' "$prompt" | grep -o '[^\`]*checks-[0-9]*\\.log' | head -n 1)
-case "$(tail -n 1 "$log")" in
-  *seam*) echo kept > apps/seam.ts; printf 'Reapplied the seam.\\n\\n**REPAIRED**\\n' ;;
-  *test*) echo passing > apps/test.ts; printf 'Fixed the fork test.\\n\\nREPAIRED\\n' ;;
+// Each session sees only its own check's output, so it names the check it was given.
+const SESSION_CHECK = `log=$(printf '%s' "$prompt" | grep -o '[^\`]*repair-[0-9]*-[0-9]*-check\\.log' | head -n 1)
+case "$(cat "$log")" in
+  *"lost its seam"*) check=seam ;;
+  *"test.ts failed"*) check=test ;;
+esac
+echo "$check" >> "$LOOM_TEST_CALLS"`;
+
+it("repairs every failing check in one round, one session and commit each", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+case "$check" in
+  seam) echo kept > apps/seam.ts; printf 'Reapplied the seam.\\n\\n**REPAIRED**\\n' ;;
+  test) echo passing > apps/test.ts; printf 'Fixed the fork test.\\n\\nREPAIRED\\n' ;;
 esac`);
 
   const result = f.repair();
 
   expect(result.status).toBe(0);
+  expect(f.sessions()).toEqual(["seam", "test"]);
   expect(f.git("log", "--format=%s", "-2").split("\n")).toEqual([
-    `fix(fork): repair round 2 after upstream ${NIGHTLY}`,
-    `fix(fork): repair round 1 after upstream ${NIGHTLY}`,
+    `fix(fork): repair round 1 after upstream ${NIGHTLY} (Running the fork's tests)`,
+    `fix(fork): repair round 1 after upstream ${NIGHTLY} (Checking that every fork seam survived)`,
   ]);
-  const second = f.git("log", "-1", "--format=%b");
-  expect(second).toContain("Failing check: Running the fork's tests");
-  expect(second).toContain("Fixed the fork test.");
-  expect(second).not.toContain("REPAIRED");
+  const last = f.git("log", "-1", "--format=%b");
+  expect(last).toContain("Failing check: Running the fork's tests");
+  expect(last).toContain("Fixed the fork test.");
+  expect(last).not.toContain("REPAIRED");
   expect(f.git("status", "--porcelain")).toBe("");
   expect(f.report()).toContain("- Round 1, Checking that every fork seam survived: REPAIRED");
+  expect(f.report()).toContain("- Round 1, Running the fork's tests: REPAIRED");
 });
 
-it("stops repairing when a session gives up, changes nothing or runs out of rounds", () => {
-  const gaveUp = repairFixture(`printf "UNREPAIRABLE: upstream's own test fails\\n"`).repair();
-  expect(gaveUp.status).toBe(1);
-  expect(gaveUp.stderr).toContain(
-    "repair round 1 stopped: UNREPAIRABLE: upstream's own test fails",
-  );
+it("commits a session that stopped partway and gives its check another round", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+case "$check" in
+  seam) if grep -q half apps/seam.ts; then echo kept > apps/seam.ts; printf 'Finished it.\\nREPAIRED\\n'
+    else echo half > apps/seam.ts; printf 'Ran out of turns.\\n'; fi ;;
+  test) echo passing > apps/test.ts; printf 'REPAIRED\\n' ;;
+esac`);
 
-  const partial = repairFixture(
-    `echo kept > apps/seam.ts; printf "Reapplied the seam.\\nUNREPAIRABLE: the rest needs Kyle\\n"`,
-  );
-  const partialResult = partial.repair();
-  expect(partialResult.status).toBe(1);
-  expect(partialResult.stderr).toContain(
-    "repair round 1 stopped: UNREPAIRABLE: the rest needs Kyle",
-  );
-  expect(partial.git("log", "--format=%s", "-1")).toBe(
-    `fix(fork): partial repair round 1 after upstream ${NIGHTLY}`,
-  );
-  expect(partial.git("log", "-1", "--format=%b")).toContain(
-    "Stopped before the check passed: UNREPAIRABLE: the rest needs Kyle",
-  );
-  expect(partial.git("status", "--porcelain")).toBe("");
+  const result = f.repair();
 
-  const idle = repairFixture("printf 'Looks fine.\\nREPAIRED\\n'");
-  const idleResult = idle.repair();
-  expect(idleResult.status).toBe(1);
-  expect(idleResult.stderr).toContain("repair round 1 changed nothing");
-  expect(idle.git("log", "--format=%s", "-1")).toBe(`chore(fork): integrate upstream ${NIGHTLY}`);
+  expect(result.status).toBe(0);
+  expect(f.sessions()).toEqual(["seam", "test", "seam"]);
+  expect(f.git("log", "--reverse", "--format=%s", "-3").split("\n")).toEqual([
+    `fix(fork): partial repair round 1 after upstream ${NIGHTLY} (Checking that every fork seam survived)`,
+    `fix(fork): repair round 1 after upstream ${NIGHTLY} (Running the fork's tests)`,
+    `fix(fork): repair round 2 after upstream ${NIGHTLY} (Checking that every fork seam survived)`,
+  ]);
+  expect(f.git("log", "-1", "--skip=2", "--format=%b")).toContain(
+    "Stopped before the check passed: Ran out of turns.",
+  );
+});
 
-  const busy = repairFixture("echo tried >> apps/notes.txt; printf 'Tried again.\\nREPAIRED\\n'");
-  const busyResult = busy.repair({ LOOM_REPAIR_ROUNDS: "2" });
-  expect(busyResult.status).toBe(1);
-  expect(busyResult.stderr).toContain("the fork's checks still fail after repair");
-  expect(busy.report()).toContain(
-    "- Still failing after 2 repair rounds: Checking that every fork seam survived.",
+it("gives a check no more sessions once one gives up, after the round repairs the rest", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+case "$check" in
+  seam) printf "UNREPAIRABLE: upstream's own seam moved\\n" ;;
+  test) echo passing > apps/test.ts; printf 'REPAIRED\\n' ;;
+esac`);
+
+  const result = f.repair();
+
+  expect(result.status).toBe(1);
+  expect(f.sessions()).toEqual(["seam", "test"]);
+  expect(result.stderr).toContain("loom: the fork's checks still fail after repair");
+  expect(result.stderr).toContain(
+    "- Still failing: Checking that every fork seam survived. Its session gave up.",
+  );
+  expect(f.git("log", "--format=%s", "-1")).toBe(
+    `fix(fork): repair round 1 after upstream ${NIGHTLY} (Running the fork's tests)`,
+  );
+  expect(f.report()).toContain(
+    "- Round 1, Checking that every fork seam survived: UNREPAIRABLE: upstream's own seam moved\n  The session changed nothing.",
+  );
+});
+
+it("stops when a whole round changes nothing", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+printf 'Looks fine.\\nREPAIRED\\n'`);
+
+  const result = f.repair();
+
+  expect(result.status).toBe(1);
+  expect(f.sessions()).toEqual(["seam", "test"]);
+  expect(result.stderr).toContain("loom: repair round 1 changed nothing");
+  expect(f.git("log", "--format=%s", "-1")).toBe(`chore(fork): integrate upstream ${NIGHTLY}`);
+});
+
+it("gives each check at most LOOM_REPAIR_ATTEMPTS sessions", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+echo "$check" >> apps/notes.txt; printf 'Tried again.\\nREPAIRED\\n'`);
+
+  const result = f.repair({ LOOM_REPAIR_ATTEMPTS: "2" });
+
+  expect(result.status).toBe(1);
+  expect(f.sessions()).toEqual(["seam", "test", "seam", "test"]);
+  expect(result.stderr).toContain(
+    "- Still failing: Checking that every fork seam survived, after 2 repair sessions.",
+  );
+  expect(f.git("rev-list", "--count", "HEAD")).toBe("6");
+});
+
+it("starts no session once LOOM_REPAIR_DEADLINE has passed", () => {
+  const f = repairFixture(`${SESSION_CHECK}
+printf 'REPAIRED\\n'`);
+
+  const result = f.repair({ LOOM_REPAIR_DEADLINE: "100", LOOM_NOW: "100" });
+
+  expect(result.status).toBe(1);
+  expect(f.sessions()).toEqual([]);
+  expect(result.stderr).toContain(
+    "- Still failing: Running the fork's tests. No time was left for another session.",
+  );
+});
+
+const NEXT = "v1.0.0-nightly.20261015.1";
+
+// Loom main, upstream's NIGHTLY and NEXT, a bare origin, and an open needs-Kyle draft that merged
+// `draftTag` and committed a repair the day before. main gained a fork commit since.
+function resumeFixture(draftTag: string) {
+  const f = repositoryFixture();
+  const origin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-upstream-origin-"));
+  roots.push(origin);
+  NodeChildProcess.execFileSync("git", ["init", "--quiet", "--bare", origin]);
+  const write = (file: string, text: string) => {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(f.root, file)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(f.root, file), text);
+    f.git("add", "-A");
+  };
+  write("apps/up.ts", "one\n");
+  f.git("commit", "--quiet", "-m", "base");
+  f.git("switch", "--quiet", "-c", "upstream");
+  write("apps/up.ts", "two\n");
+  commitAt(f.root, "2026-10-14T00:00:00Z", "upstream two");
+  f.git("tag", NIGHTLY);
+  write("apps/up.ts", "three\n");
+  commitAt(f.root, "2026-10-15T00:00:00Z", "upstream three");
+  f.git("tag", NEXT);
+  f.git("switch", "--quiet", "main");
+  write("apps/fork.ts", "fork\n");
+  f.git("commit", "--quiet", "-m", "fork change");
+  f.git("switch", "--quiet", "-c", `integrate/${draftTag}`);
+  f.git(
+    "merge",
+    "--quiet",
+    "--no-ff",
+    "-m",
+    `chore(fork): integrate upstream ${draftTag}`,
+    draftTag,
+  );
+  write("apps/repair.ts", "repaired\n");
+  f.git("commit", "--quiet", "-m", `fix(fork): repair round 1 after upstream ${draftTag}`);
+  // A needs-Kyle draft whose merge stopped holds nothing main lacks.
+  f.git("switch", "--quiet", "-c", "integrate/v0.9.0", "main");
+  f.git("commit", "--quiet", "--allow-empty", "-m", "chore(fork): upstream v0.9.0 needs Kyle");
+  f.git("switch", "--quiet", "main");
+  write("apps/later.ts", "later\n");
+  f.git("commit", "--quiet", "-m", "fork change after the draft");
+  f.git("remote", "add", "origin", origin);
+  f.git("remote", "add", "upstream", origin);
+  f.git("push", "--quiet", "origin", "main", `integrate/${draftTag}`, "integrate/v0.9.0", "--tags");
+  f.git("fetch", "--quiet", "origin");
+  f.git("branch", "--quiet", "-D", `integrate/${draftTag}`, "integrate/v0.9.0");
+  f.git("checkout", "--quiet", "--detach", "origin/main");
+
+  const bin = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-bin`);
+  roots.push(bin);
+  NodeFS.mkdirSync(bin);
+  const ghLog = NodePath.join(bin, "gh.log");
+  // Answers each gh query loom.sh makes; --jq filtering is the real gh's job.
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "gh"),
+    `#!/bin/bash
+printf '%s\\n' "$*" >> "$LOOM_TEST_GH_LOG"
+case "$*" in
+  "pr list --head"*) printf '%s' "$LOOM_TEST_HEAD_PR" ;;
+  "pr list --state open --json headRefName,isDraft"*)
+    printf 'integrate/%s\\nintegrate/v0.9.0\\nintegrate/v0.8.0\\n' "$LOOM_TEST_DRAFT_TAG" ;;
+  "pr list --state open --json number,headRefName"*)
+    printf '7 integrate/%s\\n8 integrate/v0.9.0\\n9 integrate/%s\\n' "$LOOM_TEST_DRAFT_TAG" "$LOOM_TEST_NEXT" ;;
+  "pr view"*) echo 9 ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  const integrate = (headPr: string) =>
+    runSync(f.root, `run_checks() { echo checked; }; cmd_integrate ${NEXT} --pr --resolve`, {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      LOOM_TEST_GH_LOG: ghLog,
+      LOOM_TEST_HEAD_PR: headPr,
+      LOOM_TEST_DRAFT_TAG: draftTag,
+      LOOM_TEST_NEXT: NEXT,
+      LOOM_RESOLVE_LOGS: NodePath.join(bin, "logs"),
+    });
+  const gh = () => NodeFS.readFileSync(ghLog, "utf8").split("\n").filter(Boolean);
+  const pushed = () =>
+    NodeChildProcess.execFileSync("git", ["log", "--format=%s", `integrate/${NEXT}`], {
+      cwd: origin,
+      encoding: "utf8",
+    });
+  return { ...f, integrate, gh, pushed };
+}
+
+it("continues yesterday's needs-Kyle draft instead of starting over from main", () => {
+  const f = resumeFixture(NIGHTLY);
+
+  const result = f.integrate("");
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain(`==> Continuing the open integration integrate/${NIGHTLY}`);
+  const pushed = f.pushed();
+  for (const subject of [
+    `chore(fork): integrate upstream ${NEXT}`,
+    `chore(fork): merge main into integrate/${NEXT}`,
+    `fix(fork): repair round 1 after upstream ${NIGHTLY}`,
+    `chore(fork): integrate upstream ${NIGHTLY}`,
+    "fork change after the draft",
+  ]) {
+    expect(pushed).toContain(subject);
+  }
+  const gh = f.gh();
+  expect(gh.some((call) => call.startsWith("pr create --base main --head integrate/"))).toBe(true);
+  expect(gh.find((call) => call.startsWith("pr close 7 "))).toContain("Superseded by #9");
+  expect(gh.some((call) => call.startsWith("pr close 8 "))).toBe(false);
+});
+
+it("finishes its own draft when it reruns at the same upstream tag", () => {
+  const f = resumeFixture(NEXT);
+
+  const result = f.integrate("9");
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout).toContain(`==> Continuing the open integration integrate/${NEXT}`);
+  expect(result.stdout).not.toContain("==> Merging upstream");
+  expect(f.pushed()).toContain(`fix(fork): repair round 1 after upstream ${NEXT}`);
+  const gh = f.gh();
+  expect(gh).toContain("pr ready 9");
+  expect(gh.some((call) => call.startsWith("pr edit 9 --title"))).toBe(true);
+  expect(gh.some((call) => call.startsWith("pr create") || call.startsWith("pr close 9"))).toBe(
+    false,
   );
 });
 
