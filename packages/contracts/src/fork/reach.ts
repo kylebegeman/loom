@@ -19,8 +19,9 @@ export const REACH_IDENTITY_APPLY_FEATURE = "reach-identity-apply";
 /** Advertised by every computer that answers `loom.reach.prepareIdentity`. */
 export const REACH_IDENTITY_PREPARE_FEATURE = "reach-identity-prepare";
 /**
- * Advertised by the Library authority once its directory runs and its reach zone and Cloudflare
- * token file are configured. It answers `loom.reach.library.*` and the two provisioning routes.
+ * Advertised by the Library authority once its directory runs and it can hold reach records: its
+ * reach zone and Cloudflare token file are configured, or Loom Identity and its Pocket ID key file
+ * are. It answers `loom.reach.library.*` and the two provisioning routes.
  */
 export const REACH_LIBRARY_FEATURE = "reach-library";
 
