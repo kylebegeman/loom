@@ -211,7 +211,7 @@ function AboutVersionSection() {
     if (action === "install") {
       if (isUpdateActionPending) return;
       if (updateState?.installWhenIdle !== true) {
-        requestLocalUpdateInstall();
+        requestLocalUpdateInstall(); // fork: machine-updates
         return;
       }
       setIsUpdateActionPending(true);

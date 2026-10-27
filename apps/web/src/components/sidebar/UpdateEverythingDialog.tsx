@@ -34,7 +34,7 @@ const restartImpactAtom = Atom.family((servers: string) =>
         .split("\n")
         .filter((server) => server !== "")
         .map((server) => ({
-          continuesThreads: server.startsWith("+"),
+          continuesThreads: server.startsWith("+"), // fork: machine-updates
           threads: get(
             environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(server.slice(1))),
           ),
@@ -88,7 +88,7 @@ function UpdateEverythingDialogContent({
     restartImpactAtom(
       restarts
         .map((machine) => `${machine.continuesThreads ? "+" : "-"}${machine.environmentId}`)
-        .join("\n"),
+        .join("\n"), // fork: machine-updates
     ),
   );
   const impactLines = describeRestartImpact(impact);
@@ -103,6 +103,7 @@ function UpdateEverythingDialogContent({
             {lines.join("\n")}
           </AlertDialogDescription>
         ) : null}
+        {/* fork: machine-updates */}
         {impactLines.length > 0 ? (
           <p className="whitespace-pre-line pt-2 text-sm">{impactLines.join("\n")}</p>
         ) : null}

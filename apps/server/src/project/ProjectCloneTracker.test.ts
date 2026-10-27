@@ -67,7 +67,7 @@ function makeHarness(options?: {
     options?.clone ??
     ((input) =>
       Effect.succeed({
-        cwd: input.destinationPath ?? "",
+        cwd: input.destinationPath ?? "", // fork: file-placement
         remoteUrl: input.remoteUrl ?? "",
         repository: null,
       }));
@@ -265,7 +265,7 @@ describe("ProjectCloneTracker", () => {
     const layer = trackerLayer({
       prepareClone: (input) =>
         Effect.succeed({
-          destinationPath: input.destinationPath ?? "",
+          destinationPath: input.destinationPath ?? "", // fork: file-placement
           remoteUrl: "https://github.com/octocat/t3code.git",
           cloneUrl: "https://user:s3cret@github.com/octocat/t3code.git",
           repository: null,

@@ -143,7 +143,7 @@ export const layerFromProjectStore: Layer.Layer<
                 .validateThreadCwd({
                   threadId: input.thread.id,
                   localProjectId: input.thread.projectId,
-                  cwd,
+                  cwd, // fork: library-projects
                 })
                 .pipe(
                   Effect.mapError(

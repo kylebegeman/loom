@@ -510,7 +510,7 @@ function EmptyEnvironmentState() {
       {!isLoadingSavedConnection ? (
         <View className="mt-1">
           <Button
-            label={hasSavedComputers ? "Manage computers" : "Add computer"}
+            label={hasSavedComputers ? "Manage computers" : "Add computer"} // fork: fleet-connections
             tone="primary"
             onPress={() =>
               navigation.navigate(hasSavedComputers ? "Connections" : "ConnectionsNew")
@@ -865,7 +865,7 @@ function useCreateProject(
         projectId,
         workspaceRoot,
       }),
-      createWorkspaceRootIfMissing,
+      createWorkspaceRootIfMissing, // fork: fleet-connections
     };
     const result = await createProject({
       environmentId: environment.environmentId,

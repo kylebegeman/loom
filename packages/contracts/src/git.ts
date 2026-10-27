@@ -237,7 +237,7 @@ const VcsStatusLocalShape = {
   headSha: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
   isRepo: Schema.Boolean,
   /** Project parents may support checkpoints through their registered repositories. */
-  checkpointCapable: Schema.optional(Schema.Boolean),
+  checkpointCapable: Schema.optional(Schema.Boolean), // fork: checkpoint-capable
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   hasPrimaryRemote: Schema.Boolean,
   isDefaultRef: Schema.Boolean,

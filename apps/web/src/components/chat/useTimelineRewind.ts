@@ -285,6 +285,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
       );
       return;
     }
+    // fork: project-lifecycle
     if (restoreFiles === undefined) {
       await openCheckedRevert({
         ...input,

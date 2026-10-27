@@ -178,6 +178,7 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
                       ...draft,
                       comments: draft.comments.filter((comment) => comment.id !== saved.id),
                     }),
+                    // fork: everyday-workflows
                     () =>
                       store.update((draft) => ({
                         ...draft,

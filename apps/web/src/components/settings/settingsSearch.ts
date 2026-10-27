@@ -1150,7 +1150,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "computer-name",
     title: "Computer name",
     to: "/settings/connections",
-    targetId: "remote-environments",
+    targetId: "remote-environments", // fork: fleet-connections
     searchTerms: ["rename label nickname friendly name computers machines"],
   },
   {

@@ -316,7 +316,7 @@ export const make = Effect.gen(function* () {
         "CheckpointStore.deleteCheckpointRefs",
         repository.path,
       );
-      yield* checkpoints.deleteCheckpointRefs({ ...input, cwd: repository.path });
+      yield* checkpoints.deleteCheckpointRefs({ ...input, cwd: repository.path }); // fork: library-projects
     }
   });
 

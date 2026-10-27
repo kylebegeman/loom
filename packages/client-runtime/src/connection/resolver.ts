@@ -210,7 +210,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
           expectedEnvironmentId: target.environmentId,
           httpBaseUrl: profile.httpBaseUrl,
           wsBaseUrl: profile.wsBaseUrl,
-          bearerToken,
+          bearerToken, // fork: identity-renewal
           connectionMethod: "direct",
         }),
     );

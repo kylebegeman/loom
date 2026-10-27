@@ -49,7 +49,7 @@ const resolveInstance = (
             detail: `No provider instance registered for id '${instanceId}'.`,
           });
         }
-        const snapshot = yield* instance.snapshot.getSnapshot;
+        const snapshot = yield* instance.snapshot.getSnapshot; // fork: server-weight
         if (snapshot.auth.status === "unauthenticated") {
           return yield* new TextGenerationError({
             operation,

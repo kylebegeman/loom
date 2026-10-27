@@ -5,7 +5,7 @@ import type { NativeStackNavigationOptions } from "@react-navigation/native-stac
 import { useState } from "react";
 import { Platform, View } from "react-native";
 
-import { AppText as Text } from "./ui/AppText";
+import { AppText as Text } from "./ui/AppText"; // fork: brand -- no T3 wordmark
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
 import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
@@ -49,6 +49,7 @@ export function CompactBrandTitle(
         props.fit && { flexShrink: 0 },
       ]}
     >
+      {/* fork: brand */}
       <Text
         allowFontScaling={props.allowFontScaling}
         className="font-t3-medium text-foreground-muted"

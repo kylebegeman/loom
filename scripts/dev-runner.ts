@@ -780,7 +780,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
       const path = yield* Path.Path;
       const shareTarget = {
         webPort: sharedWebPort,
-        claimsPath: path.join(baseDir, TAILSCALE_SERVE_CLAIMS_FILE),
+        claimsPath: path.join(baseDir, TAILSCALE_SERVE_CLAIMS_FILE), // fork: tailnet-ownership
         // The backend binds 127.0.0.1 unless --host changes it. A wildcard
         // still answers there; `--host ::1` binds only the IPv6 loopback.
         ...(input.built

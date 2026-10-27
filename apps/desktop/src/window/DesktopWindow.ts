@@ -904,7 +904,7 @@ export const make = Effect.gen(function* () {
       const none = Option.none<Electron.BrowserWindow>();
       if (yield* Ref.get(desktopState.quitting)) return none;
       const existingSplash = yield* Ref.get(splashWindowRef);
-      if (Option.isSome(existingSplash)) return none;
+      if (Option.isSome(existingSplash)) return none; // fork: restart-compaction
       const existingWindow = yield* electronWindow.currentMainOrFirst;
       if (Option.isSome(existingWindow)) return none;
 

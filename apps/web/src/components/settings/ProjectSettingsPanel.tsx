@@ -125,7 +125,7 @@ export function ProjectSettingsPanel({
     members.length === 0 &&
     lastSelection?.key === projectKey &&
     lastSelection.environmentId === environmentId &&
-    lastSelection.checkoutKey === checkoutKey
+    lastSelection.checkoutKey === checkoutKey // fork: project-home
       ? projectSettingsLocationSuccessor(groups, lastSelection.memberKeys, checkoutKey)
       : undefined;
   if (successor) {
@@ -592,7 +592,7 @@ function ProjectDetail({
               hasOtherMembers
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
-                  ? "Delete folder entries and conversations"
+                  ? "Delete folder entries and conversations" // fork: project-home
                   : "Delete folder entry and conversations"
             }
             description={

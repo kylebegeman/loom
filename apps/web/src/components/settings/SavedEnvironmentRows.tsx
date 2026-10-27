@@ -284,6 +284,7 @@ export function SavedBackendListRow({
           </TooltipPopup>
         </Tooltip>
       }
+      // fork: fleet-connections -- routes and permissions moved into the details panel.
       below={
         <>
           {diagnosis ? (
@@ -319,6 +320,7 @@ export function SavedBackendListRow({
               onAddRoute={relayOnly ? () => onAddRoute(environment) : null}
             />
           ) : null}
+          {/* fork: fleet-connections */}
           <ComputerWorkActions environment={environment} />
           <ComputerConnectionDetails
             label={environment.label}

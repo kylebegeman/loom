@@ -155,14 +155,13 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
             );
           // Subscribe before requesting to catch fast reports.
           const { changes } = yield* receiver.desktopUpdates;
-          // fork: brand: the shorter message lets the formatter join this chain.
           yield* receiver
             .requestDesktopUpdate(requestId)
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not reach the Loom desktop app on this machine.", error),
               ),
-            );
+            ); // fork: brand
           return yield* consumeReports(requestId, changes, reportProgress).pipe(
             Effect.onInterrupt(() => receiver.cancelDesktopUpdate(requestId).pipe(Effect.ignore)),
           );

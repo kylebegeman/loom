@@ -961,7 +961,7 @@ function ThreadNavigationSidebarPane(
             <AnimatedLegendList
               itemLayoutAnimation={THREAD_SIDEBAR_ROW_LAYOUT}
               ref={listRef}
-              data={navigationItems}
+              data={navigationItems} // fork: project-navigation
               drawDistance={500}
               estimatedItemSize={64}
               extraData={listExtraData}

@@ -55,12 +55,11 @@ export async function receiveCodexAuthCallback(
           "content-security-policy",
           "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
         );
-        // fork: brand
         response
           .writeHead(200, { "content-type": "text/html; charset=utf-8" })
           .end(
             '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Loom</title><style>body{font-family:system-ui;display:grid;place-items:center;min-height:90vh;margin:0}main{max-width:360px;padding:32px}h1{font-size:24px}p{line-height:1.6;opacity:.7}</style></head><body><main><h1>Return to Loom</h1><p>Your sign-in response has been received. Loom is finishing the connection. You can close this tab.</p></main></body></html>',
-          );
+          ); // fork: brand
       }
       callback.resolve(url);
     } catch {

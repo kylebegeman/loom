@@ -634,7 +634,7 @@ const make = Effect.gen(function* () {
                 threadId,
                 cause: Cause.pretty(cause),
               }).pipe(Effect.as(false)),
-        ),
+        ), // fork: project-lifecycle
       ),
   );
 

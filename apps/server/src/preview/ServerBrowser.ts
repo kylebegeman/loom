@@ -987,6 +987,7 @@ const make = Effect.gen(function* () {
         ).then(constVoid, (cause: unknown) => {
           throw ServerBrowserPage.toOperationError(cause, NAVIGATION_TIMEOUT_MS);
         });
+
         if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
         else void tab.initialNavigation.catch(constVoid);
       }

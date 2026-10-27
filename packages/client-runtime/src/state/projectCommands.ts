@@ -187,7 +187,7 @@ export function createProjectEnvironmentAtoms<R, E>(
         scheduler: projectScheduler,
         concurrency: projectConcurrency,
       }),
-      permissionAtom: updatePermissionAtom,
+      permissionAtom: updatePermissionAtom, // fork: file-placement
     },
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:delete",

@@ -93,7 +93,7 @@ it.effect("validates IPC, preserves attention on focus, and clears on quit and d
         expect(native.setBadgeCount).toHaveBeenLastCalledWith(2);
         yield* Effect.promise(() => Promise.resolve(handler(event, badge)));
         expect(native.setBadgeCount).toHaveBeenLastCalledWith(2);
-        expect(native.webContents.send).not.toHaveBeenCalled();
+        expect(native.webContents.send).not.toHaveBeenCalled(); // fork: respectful-notifications
         yield* Effect.promise(() => Promise.resolve(handler(event, { count: 0, image: null })));
         expect(native.setBadgeCount).toHaveBeenLastCalledWith(0);
         native.getFocusedWindow.mockReturnValue(null);
