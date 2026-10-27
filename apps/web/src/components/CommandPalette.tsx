@@ -12,6 +12,7 @@ import {
   useLibraryPaletteTakeover,
 } from "~/fork/project-library/LibraryActionHost"; // fork: library-palette
 import { openLibraryAction } from "~/fork/project-library/actions"; // fork: library-palette
+import { LibraryConnectHost } from "~/fork/project-library/LibraryConnectDialog"; // fork: library-palette
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -368,6 +369,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           initialContext={state.restoredSearch}
         />
       </CommandDialog>
+      {/* fork: library-palette Mounted with the listener that hands it requests. */}
+      <LibraryConnectHost />
     </ComposerHandleContext>
   );
 }

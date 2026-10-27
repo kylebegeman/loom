@@ -58,7 +58,12 @@ function startLibraryLocalProject(load: typeof loadCopies) {
     ref: ScopedProjectRef,
     current: () => boolean = () => true,
     defaults?: LibraryConversationDefaults,
+    /** False only reports that the Library holds the folder, for starts nobody asked for. */
+    open = true,
   ) => {
+    const offer = (...args: Parameters<typeof openLibraryAction>) => {
+      if (open) openLibraryAction(...args);
+    };
     // Read connection state at invocation without subscribing every new-thread caller to it.
     const authorityId = readLibraryAuthorityId();
     const host = appAtomRegistry.get(environmentPresentations.presentationAtom(ref.environmentId));
@@ -77,19 +82,19 @@ function startLibraryLocalProject(load: typeof loadCopies) {
       environmentId === ref.environmentId &&
       (host?.connection.phase !== "connected" || !host.entry.enabled)
     ) {
-      if (current()) openLibraryAction("new-conversation");
+      if (current()) offer("new-conversation");
       return true;
     }
     // A missing answer is not evidence that the folder is outside the Library.
     const result = await load({ environmentId, input: {} });
     if (!current()) return true;
     if (result._tag === "Failure") {
-      openLibraryAction("new-conversation");
+      offer("new-conversation");
       return true;
     }
     const start = libraryStartForLocalProject(ref, result.value);
     if (!start) return false;
-    openLibraryAction("new-conversation", start.projectId, { ...defaults, ...start.defaults });
+    offer("new-conversation", start.projectId, { ...defaults, ...start.defaults });
     return true;
   };
 }

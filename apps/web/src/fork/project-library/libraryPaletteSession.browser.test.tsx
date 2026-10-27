@@ -75,12 +75,7 @@ describe("Library palette session", () => {
 
   it("a new conversation offers the Library connection as a way out of the palette and back", async () => {
     setup();
-    await using _screen = await render(
-      <CommandPalette>
-        <LibraryConnectHost />
-      </CommandPalette>,
-      { router: "/" },
-    );
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>, { router: "/" });
 
     await act(() => openLibraryAction("new-conversation"));
     await userEvent.click(page.getByRole("option", { name: /Connect your Library/ }));

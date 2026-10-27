@@ -61,40 +61,56 @@ function IndexDraftLanding() {
   // Read at effect time; this page can stay mounted while the router is already navigating away.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startedAttemptRef = useRef<number | null>(null);
-  const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
+  // fork: library-only A project the Library holds starts when the user asks, not on landing.
+  const [startState, setStartState] = useState({
+    failed: false,
+    libraryHeld: false,
+    retryRequest: 0,
+  });
 
   const mostRecentProject =
     primaryReady && !libraryOnly // fork: library-only
       ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
       : null;
+  const draftProject = startState.libraryHeld ? null : mostRecentProject; // fork: library-only
   const attempt = startState.retryRequest;
 
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
-    if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
+    if (draftProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
       return;
     }
-    const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
+    const projectRef = scopeProjectRef(draftProject.environmentId, draftProject.id); // fork: library-only
     if (readProject(projectRef) === null) {
       return;
     }
     startedAttemptRef.current = attempt;
-    void handleNewThread(projectRef, { replace: true })
+    let libraryHeld = false; // fork: library-only
+    void handleNewThread(projectRef, {
+      replace: true,
+      // fork: library-only
+      onLibraryStart: () => {
+        libraryHeld = true;
+        setStartState((state) => ({ ...state, libraryHeld: true }));
+      },
+    })
       .then((opened) => {
-        if (opened === null) {
+        // fork: library-only
+        if (opened === null && !libraryHeld) {
           setStartState((state) => ({ ...state, retryRequest: state.retryRequest + 1 }));
         }
       })
       .catch(() => {
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [attempt, handleNewThread, mostRecentProject]);
+  }, [attempt, handleNewThread, draftProject]); // fork: library-only
 
-  if (mostRecentProject !== null) {
+  if (draftProject !== null) {
     return startState.failed ? (
       <DraftStartError
         onRetry={() => {
           setStartState((state) => ({
+            ...state, // fork: library-only
             failed: false,
             retryRequest: state.retryRequest + 1,
           }));
@@ -103,12 +119,12 @@ function IndexDraftLanding() {
     ) : null;
   }
   // A pending environment cannot prove the workspace is empty.
-  if (!bootstrapped) return null;
+  if (!bootstrapped && !startState.libraryHeld) return null; // fork: library-only
   // fork: library-only
   return libraryOnly || library.authorityId ? (
     <LibraryThreadHome />
   ) : (
-    <NoProjectsHero savedProjectsUnavailable={projects.length > 0} /> // fork: fleet-connections
+    <NoProjectsHero savedProjectsUnavailable={!startState.libraryHeld && projects.length > 0} /> // fork: fleet-connections
   );
 }
 

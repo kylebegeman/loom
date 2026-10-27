@@ -375,6 +375,25 @@ describe("new-thread Library routing", () => {
     expect(testState.router.navigate).not.toHaveBeenCalled();
   });
 
+  it("tells an automatic start that the Library holds the folder instead of opening it", async () => {
+    testState.reset(null);
+    testState.startLibraryFolder.mockResolvedValue(true);
+    const onLibraryStart = vi.fn();
+    const opened = await useNewThreadHandler()(
+      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+      { onLibraryStart },
+    );
+    expect(opened).toBeNull();
+    expect(onLibraryStart).toHaveBeenCalledOnce();
+    expect(testState.startLibraryFolder).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      undefined,
+      false,
+    );
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+  });
+
   it("opens an ordinary draft only after the Library lookup excludes the folder", async () => {
     testState.reset(null);
     let resolve: (handled: boolean) => void = () => {};

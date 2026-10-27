@@ -16,7 +16,6 @@ import type { ComponentType } from "react";
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
 import { EmptyConversationOffer } from "./project-library/EmptyConversationOffer";
-import { LibraryConnectHost } from "./project-library/LibraryConnectDialog";
 import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 import { LocalUpdateInstallHost } from "./connections/LocalUpdateInstallHost";
 import { ScheduledTaskFailureAlertsHost } from "./scheduled-task-alerts/ScheduledTaskFailureAlertsHost";
@@ -44,7 +43,6 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   { id: "local-update-install", Component: LocalUpdateInstallHost },
   { id: "library-empty-conversations", Component: EmptyConversationOffer },
-  { id: "library-connect", Component: LibraryConnectHost },
   { id: "scheduled-task-alerts", Component: ScheduledTaskFailureAlertsHost },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];

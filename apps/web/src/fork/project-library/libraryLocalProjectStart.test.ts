@@ -110,3 +110,14 @@ it("does not treat a failed lookup as permission to create an unbound conversati
   expect(await useLibraryLocalProjectStart()(ref("root"))).toBe(true);
   expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation");
 });
+
+it("only reports a Library folder, opening nothing, for a start nobody asked for", async () => {
+  state.open.mockClear();
+  state.load.mockResolvedValue({ _tag: "Success", value: [copy] });
+  const start = useLibraryLocalProjectStart();
+  expect(await start(ref("root"), undefined, undefined, false)).toBe(true);
+  expect(await start(ref("plain"), undefined, undefined, false)).toBe(false);
+  state.load.mockResolvedValue({ _tag: "Failure" });
+  expect(await start(ref("root"), undefined, undefined, false)).toBe(true);
+  expect(state.open).not.toHaveBeenCalled();
+});

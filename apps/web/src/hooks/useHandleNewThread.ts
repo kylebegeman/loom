@@ -102,6 +102,9 @@ export function createNewThreadHandler(
         OrchestrationV2ThreadShell,
         "modelSelection" | "runtimeMode" | "interactionMode"
       >;
+      // fork: library-projects - An automatic start learns the Library holds the folder instead
+      // of opening the Library's start over the page.
+      onLibraryStart?: () => void;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     // fork: library-projects - Every local-project entry point waits for its Library identity.
@@ -112,9 +115,12 @@ export function createNewThreadHandler(
         projectRef,
         () => router.state.location.href === startingHref,
         options?.sourceSettings,
+        !options?.onLibraryStart,
       )
-    )
+    ) {
+      options?.onLibraryStart?.();
       return null;
+    }
     if (
       router.state.location.href !== startingHref ||
       (startingProject !== null && readProject(projectRef) === null)
