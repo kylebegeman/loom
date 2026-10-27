@@ -49,7 +49,7 @@ and other phone-only settings ignore the filter.
 ## Projects and files
 
 Shared projects keep their brief, components and saved conversation history independently
-of their execution computers. Configure the Library connection in **Settings → Connections**.
+of their execution computers. Configure the Library connection in **Settings → Environments**.
 If that server has Identity configured, **Sign in with Identity** opens its account sign-in.
 You can enter a Library address on web, desktop, or mobile before saving its connection.
 Sign-in opens your browser and returns to Loom after verification. Each Identity sign-in
@@ -488,7 +488,7 @@ such as `.env` (dependencies and build output excepted), open terminals, or othe
 the folder. The branch stays if it moved since the check, is the default branch, another checkout
 uses it, or a conversation's latest checkpoint is missing or older than the branch. Continuing a
 conversation recreates the branch from its latest checkpoint. Turn the rule off in
-**Settings → Storage**, or for one project with **Off** or **Custom**.
+**Settings → Worktrees → Cleanup**, or for one project with **Off** or **Custom**.
 
 Enable **Release settled project checkouts** or **Release inactive project checkouts**
 to set this computer's defaults for managed primary project folders. Every conversation must
@@ -498,7 +498,7 @@ Loom manage them. Enabling cleanup does not adopt existing folders.
 
 To manage an existing folder, review its working copy in Project home, or select the project
 and open **Settings → Projects → Working files** on web or desktop,
-or **Settings → Projects & threads → Overview** on mobile. Review the folder
+or **Settings → Computer folders** on mobile. Review the folder
 on each computer, choose **Keep files here** or **Free space when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
 Only primary Git repositories with their own Git directory and an origin remote can be adopted;
@@ -526,7 +526,7 @@ more than one computer; each location has its own keep/remove choice. These choi
 working files, while the project and its conversations stay in Loom.
 
 Use **Manage working files** from Projects, or **Settings → Projects → Files on computers**
-on web and desktop and **Settings → Projects & threads → Files on computers** on iPhone, to
+on web and desktop and **Settings → Files on computers** on iPhone, to
 review the working-file locations already registered in Loom. Each project lists its locations
 on your computers. Select the locations you want to change and check their current files.
 Choose **Keep files here**, **Free space when settled**, or **Use computer default** for each

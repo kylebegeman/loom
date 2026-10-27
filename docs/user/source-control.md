@@ -18,7 +18,7 @@ and choose **Rescan**.
 
 ### GitHub
 
-In Loom, open **Settings → Source Control → GitHub access** on the host you want to prepare and
+In Loom, open **Settings → Source control → GitHub access** on the host you want to prepare and
 choose **Set up GitHub**. Setup installs GitHub CLI if needed and reuses saved authorization.
 If approval is needed, copy the displayed code, open GitHub, and approve only if its code matches.
 Loom finishes configuring HTTPS Git access automatically. Closing Settings keeps setup running;

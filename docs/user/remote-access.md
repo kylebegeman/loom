@@ -35,7 +35,7 @@ disconnect an otherwise healthy conversation.
 ## Identity sign-in
 
 An administrator can configure Identity sign-in for a computer you can reach directly
-or over a tailnet. In **Settings → Connections**, add the computer's address and choose
+or over a tailnet. In **Settings → Environments**, add the computer's address and choose
 **Check Identity sign-in** on web or desktop, or **Sign in with Identity** on mobile.
 You can use this without a pairing code once that computer has authorized your account.
 A computer appearing in your Library does not itself grant access.

@@ -9,7 +9,7 @@ of the sidebar and **Settings → Environments** offer to update it.
 The update button at the bottom of the desktop sidebar belongs to the computer
 you are using. It downloads and installs that app and can update providers on
 its local backends, including WSL. Other computers' updates and progress appear
-in **Settings → Computers**.
+in **Settings → Environments**.
 
 Before the app restarts to install, it lists the threads on this computer that
 the restart would interrupt, including threads waiting on a subagent, monitor,
@@ -18,12 +18,12 @@ button then shows **Installs when agents finish**, and the update installs once
 this computer's agents have had nothing to do for 30 seconds. If the button is
 also updating providers, they update right away and only the restart waits.
 Keep a Loom window open while it waits; minimized is fine. Choose **Cancel** on
-the button, or in **Settings → General → About**, to stop waiting. If a newer
+the button, or in **Settings → About**, to stop waiting. If a newer
 version comes out first, the wait ends and the button offers that download.
 
 ## Manage fleet updates
 
-Open **Settings → Computers → Fleet updates** for a snapshot of runtime versions
+Open **Settings → Environments → Fleet updates** for a snapshot of runtime versions
 and provider updates across your connected computers. Offline computers show
 their last known version and must reconnect before their status can be checked.
 
