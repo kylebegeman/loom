@@ -4,7 +4,11 @@
  * area); the panel shows everything with tools. Both read this model, so a value can never
  * differ between them.
  */
-import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type {
+  ThreadRunSummary,
+  ThreadRuntimeSummary,
+  ThreadStructure,
+} from "@t3tools/client-runtime/state/shell";
 import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type {
@@ -12,6 +16,7 @@ import type {
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
 import type {
+  OrchestrationV2PlanStep,
   ProviderDriverKind,
   ProviderInteractionMode,
   ProviderRequestKind,
@@ -28,7 +33,6 @@ import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import {
   derivePhase,
   hasActionableProposedPlan,
-  type ActivePlanState,
   type LatestProposedPlanState,
 } from "~/session-logic";
 
@@ -67,7 +71,7 @@ export interface InspectorInputs {
   readonly supportsPullRequests: boolean;
   readonly git: InspectorGitState;
   readonly lastCheckpoint: ThreadCheckpointSummary | null;
-  readonly activePlan: ActivePlanState | null;
+  readonly activePlan: InspectorTodoList | null;
   readonly proposedPlan: LatestProposedPlanState | null;
   readonly approvals: ReadonlyArray<ThreadPendingApproval>;
   readonly userInputs: ReadonlyArray<ThreadPendingUserInput>;
@@ -170,9 +174,14 @@ export interface InspectorChanges {
   } | null;
 }
 
+export interface InspectorTodoList {
+  readonly runId: RunId | null;
+  readonly steps: ReadonlyArray<Pick<OrchestrationV2PlanStep, "text" | "status">>;
+}
+
 export interface InspectorPlanStep {
   readonly step: string;
-  readonly status: "pending" | "inProgress" | "completed";
+  readonly status: OrchestrationV2PlanStep["status"];
 }
 
 export interface InspectorPlan {
@@ -487,13 +496,25 @@ function deriveChanges(inputs: InspectorInputs): InspectorChanges | null {
   };
 }
 
+/** The agent's latest todo list, preferring the given run's; the timeline shows each update. */
+export function selectActiveTodoList(
+  projection: ThreadStructure | null,
+  runId: RunId | undefined,
+): InspectorTodoList | null {
+  const lists = (projection?.turnItems ?? []).filter(
+    (item) => item.type === "todo_list" && item.steps.length > 0,
+  );
+  const list = lists.findLast((item) => item.runId === runId) ?? lists.at(-1);
+  return list?.type === "todo_list" ? list : null;
+}
+
 function derivePlan(inputs: InspectorInputs): InspectorPlan {
   const steps = inputs.activePlan?.steps ?? [];
   const proposed = inputs.proposedPlan;
   return {
-    steps: steps.map((step) => ({ step: step.step, status: step.status })),
+    steps: steps.map((step) => ({ step: step.text, status: step.status })),
     completed: steps.filter((step) => step.status === "completed").length,
-    current: steps.find((step) => step.status === "inProgress")?.step ?? null,
+    current: steps.find((step) => step.status === "running")?.text ?? null,
     proposed: proposed ? { implemented: proposed.status === "completed" } : null,
   };
 }

@@ -1,4 +1,4 @@
-import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type { ThreadRuntimeSummary, ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ThreadPendingUserInput } from "@t3tools/client-runtime/state/thread-requests";
 import {
@@ -13,7 +13,12 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { deriveInspectorModel, INSPECTOR_AGENT_ROW_LIMIT, type InspectorInputs } from "./model";
+import {
+  deriveInspectorModel,
+  INSPECTOR_AGENT_ROW_LIMIT,
+  selectActiveTodoList,
+  type InspectorInputs,
+} from "./model";
 
 const RUN = RunId.make("run-1");
 
@@ -359,14 +364,38 @@ describe("deriveInspectorModel changes", () => {
 describe("deriveInspectorModel plan", () => {
   it("counts finished steps and names the one in progress", () => {
     const steps = [
-      { step: "Read the code", status: "completed" as const },
-      { step: "Write tests", status: "inProgress" as const },
-      { step: "Ship", status: "pending" as const },
+      { text: "Read the code", status: "completed" as const },
+      { text: "Write tests", status: "running" as const },
+      { text: "Ship", status: "pending" as const },
     ];
-    const model = deriveInspectorModel(
-      inputs({ activePlan: { createdAt: "2026-09-25T10:00:00.000Z", runId: RUN, steps } }),
-    );
-    expect(model.plan).toEqual({ steps, completed: 1, current: "Write tests", proposed: null });
+    const model = deriveInspectorModel(inputs({ activePlan: { runId: RUN, steps } }));
+    expect(model.plan).toEqual({
+      steps: steps.map(({ text, status }) => ({ step: text, status })),
+      completed: 1,
+      current: "Write tests",
+      proposed: null,
+    });
+  });
+
+  it("reads the run's latest todo list, else the thread's latest", () => {
+    const todo = (id: string, runId: RunId, text: string) => ({
+      id,
+      type: "todo_list" as const,
+      runId,
+      steps: [{ id: `${id}-step`, text, status: "pending" as const }],
+    });
+    const otherRun = RunId.make("run-2");
+    const projection = {
+      turnItems: [
+        todo("first", RUN, "Old step"),
+        todo("second", RUN, "Current step"),
+        { id: "empty", type: "todo_list" as const, runId: otherRun, steps: [] },
+        todo("third", otherRun, "Other run"),
+      ],
+    } as unknown as ThreadStructure;
+    expect(selectActiveTodoList(projection, RUN)?.steps[0]?.text).toBe("Current step");
+    expect(selectActiveTodoList(projection, RunId.make("run-3"))?.steps[0]?.text).toBe("Other run");
+    expect(selectActiveTodoList({ turnItems: [] } as unknown as ThreadStructure, RUN)).toBeNull();
   });
 
   it("marks a completed proposed plan as implemented", () => {

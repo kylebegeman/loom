@@ -20,7 +20,6 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
 import { deriveProviderInstanceEntries } from "~/providerInstances";
 import {
-  deriveActivePlanState,
   derivePendingApprovals,
   derivePendingUserInputs,
   findLatestProposedPlan,
@@ -38,7 +37,12 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentProviders } from "~/state/environments";
 import { useKnownTerminalSessions } from "~/state/terminalSessions";
 import { vcsEnvironment } from "~/state/vcs";
-import type { InspectorGitState, InspectorInputs, InspectorProvider } from "./model";
+import {
+  selectActiveTodoList,
+  type InspectorGitState,
+  type InspectorInputs,
+  type InspectorProvider,
+} from "./model";
 
 /**
  * Gathers the inspector inputs from the same atoms and derivations ChatView uses, so the
@@ -99,10 +103,10 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
   const { runtime, latestRun, activityRun } = derived;
   const activityRunSettled = isLatestRunSettled(activityRun, runtime);
   const activePlan = useMemo(
-    () => deriveActivePlanState(projection, activityRun?.runId),
+    () => selectActiveTodoList(projection, activityRun?.runId),
     [activityRun?.runId, projection],
   );
-  // Step progress for the running turn's own plan only, as ChatView's composer shows it.
+  // Step progress for the running turn's own todo list only, counted as its timeline row is.
   const planProgress = useMemo(() => {
     if (activityRunSettled || !activePlan || activePlan.runId !== (activityRun?.runId ?? null)) {
       return null;
@@ -110,9 +114,9 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
     const totalSteps = activePlan.steps.length;
     if (totalSteps === 0) return null;
     const step =
-      activePlan.steps.find((candidate) => candidate.status === "inProgress")?.step ??
-      activePlan.steps.find((candidate) => candidate.status === "pending")?.step ??
-      activePlan.steps.at(-1)!.step;
+      activePlan.steps.find((candidate) => candidate.status === "running")?.text ??
+      activePlan.steps.find((candidate) => candidate.status === "pending")?.text ??
+      activePlan.steps.at(-1)!.text;
     const completedSteps = activePlan.steps.filter((c) => c.status === "completed").length;
     return { step, completedSteps, totalSteps };
   }, [activityRun?.runId, activityRunSettled, activePlan]);
