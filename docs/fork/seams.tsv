@@ -514,6 +514,7 @@ apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3
+apps/desktop/src/app/DesktopStartupRecovery.ts	brand	8
 apps/desktop/src/snapShot/DesktopSnapShot.ts	brand	7
 apps/desktop/src/snapShot/GnomeCaptureSetup.ts	brand	5
 apps/desktop/src/snapShot/HyprlandSnapShot.ts	brand	1
