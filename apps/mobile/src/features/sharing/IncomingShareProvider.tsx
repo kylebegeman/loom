@@ -365,5 +365,6 @@ export function useIncomingShare() {
     isLoading,
     getShare: (shareId: string) => drafts.find((draft) => draft.id === shareId) ?? null,
     releaseShareReservation,
+    consumeShare, // fork: library
   };
 }
