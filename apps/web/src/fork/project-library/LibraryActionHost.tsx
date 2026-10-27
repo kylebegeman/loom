@@ -30,12 +30,14 @@ import {
   FileJsonIcon,
   FolderGit2Icon,
   FolderPlusIcon,
+  LibraryBigIcon,
   MessageSquareDashedIcon,
   PlusIcon,
 } from "lucide-react";
 import {
   LIBRARY_THREAD_INDEX_LIMIT,
   projectLibrary,
+  readLibraryAuthorityId,
   useLibraryProject,
   useLibraryLocalCatalog,
   useLibraryProjects,
@@ -49,6 +51,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import {
   closeLibraryPalette,
   finishLibraryPaletteClose,
+  requestLibraryConnect,
   useLibraryPaletteStore,
   type LibraryPaletteSession,
 } from "./libraryPaletteSession";
@@ -68,7 +71,6 @@ import {
 } from "./NewConversationDialog";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
-import { LibrarySetup } from "./LibrarySetup";
 import { LibraryPaletteView, type LibraryPaletteItem } from "./LibraryPalette";
 import { useNoProjectStart } from "./useNoProjectStart";
 
@@ -86,11 +88,16 @@ function newProjectIcon(target: NewProjectTarget) {
 export function useLibraryPaletteSession() {
   const session = useLibraryPaletteStore((state) => state.session);
   useEffect(() => {
-    const stopListening = onLibraryAction((action, projectId, defaults, suggest) =>
+    const stopListening = onLibraryAction((action, projectId, defaults, suggest) => {
+      // A project cannot exist without a Library, so those actions start by connecting one.
+      if (action !== "new-conversation" && readLibraryAuthorityId() === null) {
+        requestLibraryConnect({ action, projectId, defaults, suggest });
+        return;
+      }
       useLibraryPaletteStore.setState(({ session: previous }) => ({
         session: { id: (previous?.id ?? 0) + 1, open: true, action, projectId, defaults, suggest },
-      })),
-    );
+      }));
+    });
     return () => {
       stopListening();
       // Setup cannot outlive the popup that shows it.
@@ -350,6 +357,23 @@ export function LibraryActionHost({
   const suggested = session.suggest
     ? projectRows.filter((row) => row.id === session.projectId)
     : [];
+  const connectLibrary: LibraryPaletteItem = {
+    id: "connect-library",
+    title: "Connect your Library",
+    summary: "Keep projects and conversations across devices",
+    terms: ["library", "sign in", "connect", "setup"],
+    icon: <LibraryBigIcon className="size-4 text-muted-foreground" />,
+    next: true,
+    select: () => {
+      onClose();
+      requestLibraryConnect({
+        action,
+        projectId: session.projectId,
+        defaults: session.defaults,
+        suggest: session.suggest,
+      });
+    },
+  };
   const gitChoice = gitRepositoryChoice(gitUrl);
   // A conversation clones its files when it starts; a new project from a Git URL clones on save.
   const cloneAfterSave = home === "new" && draft.repository !== "";
@@ -378,15 +402,9 @@ export function LibraryActionHost({
                   next: true,
                   select: () => go(choice.target),
                 }))
-              : []
+              : [connectLibrary]
           }
-        >
-          {!library.authorityId ? (
-            <div className="p-4">
-              <LibrarySetup showConnectionsLink={false} />
-            </div>
-          ) : null}
-        </LibraryPaletteView>
+        />
       ) : null}
       {library.authorityId && step === "git" ? (
         <LibraryPaletteView
@@ -437,104 +455,100 @@ export function LibraryActionHost({
           // A suggested project that no longer loads is only left out, not an error.
           error={catalog.query.error ?? (step === "conversation" ? library.project.error : null)}
           items={
-            !library.authorityId || loadingProject
-              ? noProjectItems
-              : [
-                  ...suggested,
-                  ...noProjectItems,
-                  ...repositoryProjects.map((entry) =>
-                    projectRow(entry, {
-                      id: `repository:${entry.id}`,
-                      title: `Continue ${entry.title}`,
-                      description: "This repository is already part of this project",
-                      terms: [search],
-                      icon: <ProjectTile project={entry} size="sm" />,
+            !library.authorityId
+              ? [...noProjectItems, connectLibrary]
+              : loadingProject
+                ? noProjectItems
+                : [
+                    ...suggested,
+                    ...noProjectItems,
+                    ...repositoryProjects.map((entry) =>
+                      projectRow(entry, {
+                        id: `repository:${entry.id}`,
+                        title: `Continue ${entry.title}`,
+                        description: "This repository is already part of this project",
+                        terms: [search],
+                        icon: <ProjectTile project={entry} size="sm" />,
+                        next: true,
+                      }),
+                    ),
+                    ...(intent.kind !== "search"
+                      ? [
+                          {
+                            id: "resource-intent",
+                            title:
+                              intent.kind === "folder"
+                                ? `Use folder: ${intent.title}`
+                                : repositoryProjects.length
+                                  ? `Create another project from ${intent.title}`
+                                  : `Start from repository: ${intent.title}`,
+                            description: intent.kind === "folder" ? intent.path : intent.url,
+                            terms: [search],
+                            icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
+                            next: true,
+                            select: () => {
+                              if (intent.kind === "folder") {
+                                setInitialFolder(intent.path);
+                                show("import");
+                              } else
+                                startDraft({
+                                  ...BLANK_DRAFT,
+                                  title: intent.title,
+                                  repository: intent.url,
+                                });
+                            },
+                          },
+                        ]
+                      : []),
+                    ...projectRows.filter((row) => !suggested.includes(row)),
+                    ...(intent.kind === "search"
+                      ? [
+                          {
+                            id: "new-project",
+                            title: search.trim()
+                              ? visited.create
+                                ? "Continue new project"
+                                : `New project: ${search.trim()}`
+                              : "New project",
+                            terms: [search],
+                            description: visited.create
+                              ? "Return to your project draft"
+                              : "Start something new",
+                            icon: <PlusIcon className="size-4 text-(--project-green)" />,
+                            next: true,
+                            select: () => {
+                              if (visited.create) show("create");
+                              else startDraft({ ...BLANK_DRAFT, title: search.trim() });
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      id: "import",
+                      title: "Add existing folder",
+                      description: "Browse files on a connected computer",
+                      icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
                       next: true,
-                    }),
-                  ),
-                  ...(intent.kind !== "search"
-                    ? [
-                        {
-                          id: "resource-intent",
-                          title:
-                            intent.kind === "folder"
-                              ? `Use folder: ${intent.title}`
-                              : repositoryProjects.length
-                                ? `Create another project from ${intent.title}`
-                                : `Start from repository: ${intent.title}`,
-                          description: intent.kind === "folder" ? intent.path : intent.url,
-                          terms: [search],
-                          icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
-                          next: true,
-                          select: () => {
-                            if (intent.kind === "folder") {
-                              setInitialFolder(intent.path);
-                              show("import");
-                            } else
-                              startDraft({
-                                ...BLANK_DRAFT,
-                                title: intent.title,
-                                repository: intent.url,
-                              });
-                          },
-                        },
-                      ]
-                    : []),
-                  ...projectRows.filter((row) => !suggested.includes(row)),
-                  ...(intent.kind === "search"
-                    ? [
-                        {
-                          id: "new-project",
-                          title: search.trim()
-                            ? visited.create
-                              ? "Continue new project"
-                              : `New project: ${search.trim()}`
-                            : "New project",
-                          terms: [search],
-                          description: visited.create
-                            ? "Return to your project draft"
-                            : "Start something new",
-                          icon: <PlusIcon className="size-4 text-(--project-green)" />,
-                          next: true,
-                          select: () => {
-                            if (visited.create) show("create");
-                            else startDraft({ ...BLANK_DRAFT, title: search.trim() });
-                          },
-                        },
-                      ]
-                    : []),
-                  {
-                    id: "import",
-                    title: "Add existing folder",
-                    description: "Browse files on a connected computer",
-                    icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
-                    next: true,
-                    select: () => {
-                      setInitialFolder("");
-                      show("import");
+                      select: () => {
+                        setInitialFolder("");
+                        show("import");
+                      },
                     },
-                  },
-                  ...(catalog.query.error
-                    ? [
-                        {
-                          id: "retry",
-                          title: "Try again",
-                          select: () => {
-                            catalog.query.refresh();
-                            library.refresh();
+                    ...(catalog.query.error
+                      ? [
+                          {
+                            id: "retry",
+                            title: "Try again",
+                            select: () => {
+                              catalog.query.refresh();
+                              library.refresh();
+                            },
                           },
-                        },
-                      ]
-                    : []),
-                ]
+                        ]
+                      : []),
+                  ]
           }
-        >
-          {!library.authorityId ? (
-            <div className="p-4">
-              <LibrarySetup showConnectionsLink={false} />
-            </div>
-          ) : null}
-        </LibraryPaletteView>
+        />
       ) : null}
       {library.authorityId && visited.create ? (
         <ProjectEditorDialog

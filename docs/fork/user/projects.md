@@ -17,6 +17,11 @@ To make a project without starting a conversation, open **New project** and choo
 project**, **Existing folder** or **Git repository**, or type a name, folder path or Git URL. A
 project from a Git URL continues into choosing the computer and folder to clone it into.
 
+Projects live in your Library. On a device that is not connected to one yet, **New project**
+opens **Connect your Library** first and continues once you choose it, and **New conversation**
+lists **Connect your Library** after **No project**. For a Library this device has never
+reached, open **Sign in to a Library address** in that dialog and enter its web address.
+
 Continue through the same searchable popup to choose files, computer and conversation
 settings. The final preview explains what will start. The **+** on an existing thread
 keeps its settings as the starting point for the next conversation.

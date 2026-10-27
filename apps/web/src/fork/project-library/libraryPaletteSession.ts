@@ -31,3 +31,15 @@ export function closeLibraryPalette(): void {
 export function finishLibraryPaletteClose(): void {
   useLibraryPaletteStore.setState(({ session }) => ({ session: session?.open ? session : null }));
 }
+
+/** A Library action that needs a Library first. The connect dialog runs it once one is chosen. */
+export type LibraryActionRequest = Omit<LibraryPaletteSession, "id" | "open">;
+
+export const useLibraryConnectStore = create<{ readonly pending: LibraryActionRequest | null }>(
+  () => ({ pending: null }),
+);
+
+export function requestLibraryConnect(request: LibraryActionRequest): void {
+  closeLibraryPalette();
+  useLibraryConnectStore.setState({ pending: request });
+}

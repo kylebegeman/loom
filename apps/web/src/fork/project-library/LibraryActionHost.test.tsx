@@ -68,6 +68,7 @@ vi.mock("./state", async () => {
     );
   return {
     LIBRARY_THREAD_INDEX_LIMIT: 200,
+    readLibraryAuthorityId: () => state.authorityId,
     projectLibrary: {
       threadIndex: (target: object) => ({ kind: "threadIndex", ...target }),
       copies: (target: object) => ({ kind: "copies", ...target }),
@@ -167,7 +168,12 @@ vi.mock("./LibraryPalette", () => ({
     </div>
   ),
 }));
-vi.mock("./LibrarySetup", () => ({ LibrarySetup: () => <p>Connect Library</p> }));
+vi.mock("./LibrarySetup", () => ({
+  LIBRARY_SETUP_DESCRIPTION: "",
+  LibrarySetup: (props: { onSelected?: () => void }) => (
+    <button onClick={props.onSelected}>Use this Library</button>
+  ),
+}));
 vi.mock("./ProjectEditorDialog", () => ({
   ProjectEditorDialog: (
     props: ComponentProps<typeof import("./ProjectEditorDialog").ProjectEditorDialog>,
@@ -252,6 +258,7 @@ function DraftStep({
 }
 
 import { LibraryActionHost, useLibraryPaletteSession } from "./LibraryActionHost";
+import { LibraryConnectHost } from "./LibraryConnectDialog";
 import { openLibraryAction, takeLibraryClone, type LibraryConversationDefaults } from "./actions";
 
 function HostHarness() {
@@ -471,14 +478,23 @@ it.each([
   // Only a project started from a Git URL continues into cloning.
   expect(takeLibraryClone(project.id)).toBeNull();
 });
-it("resumes the requested action after connecting the Library", async () => {
+it("connects a Library in its own dialog before a new project, then resumes the request", async () => {
   state.authorityId = null;
+  await act(() =>
+    root.render(
+      <>
+        <HostHarness />
+        <LibraryConnectHost />
+      </>,
+    ),
+  );
   await act(() => openLibraryAction("create-project"));
-  expect(container.textContent).toContain("Connect Library");
-  await update(() => {
-    state.authorityId = "library";
-    state.offline = false;
-  });
+  expect(button("Empty project")).toBeUndefined();
+  const useLibrary = Array.from(document.querySelectorAll("button")).find(
+    (entry) => entry.textContent === "Use this Library",
+  )!;
+  state.authorityId = "library";
+  await act(() => useLibrary.click());
   expect(button("Empty project")).toBeDefined();
 });
 it("asks how a new project starts and returns there from each step with its draft", async () => {
@@ -585,10 +601,10 @@ it("leads a new conversation with No project and starts it without opening a pro
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(state.select).not.toHaveBeenCalled();
 });
-it("keeps No project during Library setup and leaves it out when no computer can run it", async () => {
+it("keeps No project beside the Library connection and leaves it out when no computer can run it", async () => {
   state.authorityId = null;
   await act(() => openLibraryAction("new-conversation"));
-  expect(container.textContent).toContain("Connect Library");
+  expect(button("Connect your Library")).toBeDefined();
   expect(button("No project")).toBeDefined();
   state.noProject = null;
   state.authorityId = "library";

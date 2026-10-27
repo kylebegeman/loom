@@ -24,13 +24,19 @@ import {
   useSelectedLibraryProject,
 } from "./state";
 
+export const LIBRARY_SETUP_DESCRIPTION =
+  "Your Library keeps projects and saved conversations together across devices. Connect it once. You’ll choose a computer when starting work.";
+
 /** Choose storage once; working-copy and conversation computers are separate choices. */
 export function LibrarySetup({
   onSelected,
   showConnectionsLink = true,
+  heading = true,
 }: {
   readonly onSelected?: () => void;
   readonly showConnectionsLink?: boolean;
+  /** Off when a dialog already names the step. */
+  readonly heading?: boolean;
 }) {
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
@@ -60,13 +66,12 @@ export function LibrarySetup({
   );
   return (
     <div className="max-w-xl space-y-4">
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">Connect your Library</h2>
-        <p className="text-sm text-muted-foreground">
-          Your Library keeps projects and saved conversations together across devices. Connect it
-          once. You’ll choose a computer when starting work.
-        </p>
-      </div>
+      {heading ? (
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">Connect your Library</h2>
+          <p className="text-sm text-muted-foreground">{LIBRARY_SETUP_DESCRIPTION}</p>
+        </div>
+      ) : null}
       {eligible.length === 0 ? (
         <p className="text-sm text-muted-foreground" role="status">
           No Library connection yet. Sign in to your Library or add its address below.
