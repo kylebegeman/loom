@@ -29,6 +29,7 @@ vi.mock("@react-navigation/native", async () => {
     },
   };
   return {
+    NavigationContext: createContext<typeof navigation | undefined>(navigation),
     NavigationRouteContext: createContext<{ readonly key: string } | undefined>(undefined),
     StackActions: { replace: () => ({}) },
     useNavigation: () => navigation,
