@@ -1431,3 +1431,4 @@ apps/server/src/provider/AgentContextBudget.test.ts	file-placement	9
 apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
 apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
 packages/provider-fx/src/server/status.ts	brand	2
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
