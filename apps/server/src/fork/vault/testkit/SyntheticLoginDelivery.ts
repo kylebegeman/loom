@@ -116,44 +116,45 @@ export const syntheticLoginDelivery = Effect.fnUntraced(function* (
       automaticResumption: false as const,
       allowOnceConsumption: false as const,
     },
-    run: (callback: (sessionId: string) => Effect.Effect<void, VaultError>) =>
-      Effect.gen(function* () {
-        const claimed = yield* Ref.modify(state, (current) =>
-          current === "pending" ? [true, "admitting" as const] : [false, current],
-        );
-        if (!claimed) return yield* denied();
-        return yield* Effect.scoped(
-          Effect.gen(function* () {
-            yield* validate;
-            // Register cleanup before the external-start boundary, even when its result is lost or interrupted.
-            yield* Effect.uninterruptible(
-              Effect.gen(function* () {
-                yield* Ref.set(state, "starting");
-                yield* Effect.addFinalizer(() => cleanup);
-              }),
-            );
-            const session = yield* adapter.start({ operationId, admission });
-            if (
-              session.operationId !== operationId ||
-              session.machineId !== expected.machineId ||
-              session.leaseId !== admission.leaseId ||
-              session.origin !== admission.origin
-            )
-              return yield* denied();
-            const activated = yield* Ref.modify(state, (current) =>
-              current === "starting" ? [true, "active" as const] : [false, current],
-            );
-            if (!activated) return yield* denied();
-            yield* validate;
-            yield* callback(session.sessionId);
-            yield* validate;
-          }).pipe(
-            Effect.onExit(() =>
-              Ref.update(state, (current) => (current === "admitting" ? "refused" : current)),
-            ),
+    run: Effect.fn("SyntheticLoginDelivery.run")(function* (
+      callback: (sessionId: string) => Effect.Effect<void, VaultError>,
+    ) {
+      const claimed = yield* Ref.modify(state, (current) =>
+        current === "pending" ? [true, "admitting" as const] : [false, current],
+      );
+      if (!claimed) return yield* denied();
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* validate;
+          // Register cleanup before the external-start boundary, even when its result is lost or interrupted.
+          yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* Ref.set(state, "starting");
+              yield* Effect.addFinalizer(() => cleanup);
+            }),
+          );
+          const session = yield* adapter.start({ operationId, admission });
+          if (
+            session.operationId !== operationId ||
+            session.machineId !== expected.machineId ||
+            session.leaseId !== admission.leaseId ||
+            session.origin !== admission.origin
+          )
+            return yield* denied();
+          const activated = yield* Ref.modify(state, (current) =>
+            current === "starting" ? [true, "active" as const] : [false, current],
+          );
+          if (!activated) return yield* denied();
+          yield* validate;
+          yield* callback(session.sessionId);
+          yield* validate;
+        }).pipe(
+          Effect.onExit(() =>
+            Ref.update(state, (current) => (current === "admitting" ? "refused" : current)),
           ),
-        );
-      }),
+        ),
+      );
+    }),
     // Reconciliation retries cleanup only. It never repeats start or marks a pool account clean.
     reconcile: cleanup,
   };

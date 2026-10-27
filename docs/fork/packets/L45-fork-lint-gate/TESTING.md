@@ -25,7 +25,7 @@ and client-runtime package typechecks passed. Existing Effect suggestions are in
 
 ## Automated tests
 
-`scripts/fork/loom.test.ts` is picked up by `fork_tests` through `*/fork/*.test.ts`.
+`scripts/fork/loom.test.ts` is picked up by `fork_tests` as a test file the fork adds.
 Temporary repository fixtures source the script with `bash -c` and stub `pnpm`,
 `check_seams`, `fork_tests` and `restore_lockfile`, so nothing installs, builds or touches the
 real lockfile. Cases:
@@ -36,7 +36,7 @@ real lockfile. Cases:
 | Empty path list                          | Does not invoke lint, avoiding an accidental repository-wide check.                                                                                                                 |
 | `check_fork_lint` passes flags and paths | A stub `pnpm` records its arguments: `exec vp lint --report-unused-disable-directives --deny-warnings` followed by the paths.                                                       |
 | `check_fork_lint` fails loudly           | A stub `pnpm` returning 1 makes the function exit 1 with `fork lint failed` on stderr.                                                                                              |
-| `run_checks` order                       | With stubs logging each call: install, then lint, then tests; with a failing lint, no test call is logged.                                                                          |
+| `run_checks` order                       | With stubs logging each call: install, then lint, then tests; a failing lint still runs the tests and is listed, and a failed install stops every later check.                      |
 
 The lint fixes themselves are proven by the lint command. The observer swap must keep the
 existing PCB tests green, notably `apps/web/src/fork/pcb-preview/SvgViewport.test.tsx` (it does

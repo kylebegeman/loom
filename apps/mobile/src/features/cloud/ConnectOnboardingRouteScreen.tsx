@@ -5,8 +5,8 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
 import { useAuth } from "@clerk/expo";
-import { StackActions, useNavigation } from "@react-navigation/native";
-import { useEffect, useState } from "react";
+import { useNavigation } from "@react-navigation/native";
+import { useState } from "react";
 import { Platform, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -20,21 +20,9 @@ import { optOutOfConnectOnboarding } from "./connectOnboardingOptOut";
 import { hasCloudPublicConfig } from "./publicConfig";
 
 // fork: fleet-connect - Account onboarding consumes previously linked computers.
+// Only reachable with cloud config: onboarding is requested after a T3 Connect
+// sign-in, and appLinking drops the deep link otherwise.
 export function ConnectOnboardingRouteScreen() {
-  const navigation = useNavigation();
-
-  // Without cloud config, deep links must exit to avoid an empty, undismissable sheet.
-  useEffect(() => {
-    if (hasCloudPublicConfig()) {
-      return;
-    }
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.dispatch(StackActions.replace("Library"));
-    }
-  }, [navigation]);
-
   return hasCloudPublicConfig() ? <ConfiguredConnectOnboardingRouteScreen /> : null;
 }
 

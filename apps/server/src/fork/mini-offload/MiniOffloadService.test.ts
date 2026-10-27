@@ -11,7 +11,6 @@ import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/con
 import { MiniOffloadError, type MiniSubmit, type MiniWorker } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Config from "../../config.ts";
 import * as Projects from "../../orchestration-v2/ProjectStore.ts";
 import * as Threads from "../../orchestration-v2/ProjectionStore.ts";
@@ -190,12 +189,10 @@ const setup = Effect.gen(function* () {
       Projects.ProjectStoreV2,
       partial<Projects.ProjectStoreV2["Service"]>({
         get: () =>
-          Effect.succeed(
-            Option.some({
-              projectId: ProjectId.make("test-project"),
-              workspaceRoot: cwd,
-            } as Projects.ProjectRow),
-          ),
+          Effect.succeedSome({
+            projectId: ProjectId.make("test-project"),
+            workspaceRoot: cwd,
+          } as Projects.ProjectRow),
       }),
     ),
   ).pipe(Layer.provide(NodeServices.layer));

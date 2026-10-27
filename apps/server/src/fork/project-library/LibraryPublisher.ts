@@ -256,30 +256,74 @@ const make = Effect.gen(function* () {
     );
     return LibraryPublisher.of({
       enabled,
-      projects: () => blocked,
-      conversations: () => blocked,
-      lookupThread: () => blocked,
-      history: () => blocked,
-      search: () => blocked,
-      timeline: () => blocked,
-      launchCandidates: () => blocked,
+      projects: Effect.fn("LibraryPublisher.projects")(function () {
+        return blocked;
+      }),
+      conversations: Effect.fn("LibraryPublisher.conversations")(function () {
+        return blocked;
+      }),
+      lookupThread: Effect.fn("LibraryPublisher.lookupThread")(function () {
+        return blocked;
+      }),
+      history: Effect.fn("LibraryPublisher.history")(function () {
+        return blocked;
+      }),
+      search: Effect.fn("LibraryPublisher.search")(function () {
+        return blocked;
+      }),
+      timeline: Effect.fn("LibraryPublisher.timeline")(function () {
+        return blocked;
+      }),
+      launchCandidates: Effect.fn("LibraryPublisher.launchCandidates")(function () {
+        return blocked;
+      }),
       copyRegistrations,
-      publishDocuments: () => blocked,
-      decisions: () => blocked,
+      publishDocuments: Effect.fn("LibraryPublisher.publishDocuments")(function () {
+        return blocked;
+      }),
+      decisions: Effect.fn("LibraryPublisher.decisions")(function () {
+        return blocked;
+      }),
       info: blocked,
-      ingest: () => blocked,
-      registerCopy: () => blocked,
-      publishAttachments: () => blocked,
-      recordActivity: () => blocked,
-      project: () => blocked,
-      proposeBrief: () => blocked,
-      registerPreviews: () => blocked,
-      publishPage: () => noPages,
-      listPages: () => noPages,
-      updatePage: () => noPages,
-      nextReplies: () => noPages,
-      ackReply: () => noPages,
-      signOutPageReaders: () => noPages,
+      ingest: Effect.fn("LibraryPublisher.ingest")(function () {
+        return blocked;
+      }),
+      registerCopy: Effect.fn("LibraryPublisher.registerCopy")(function () {
+        return blocked;
+      }),
+      publishAttachments: Effect.fn("LibraryPublisher.publishAttachments")(function () {
+        return blocked;
+      }),
+      recordActivity: Effect.fn("LibraryPublisher.recordActivity")(function () {
+        return blocked;
+      }),
+      project: Effect.fn("LibraryPublisher.project")(function () {
+        return blocked;
+      }),
+      proposeBrief: Effect.fn("LibraryPublisher.proposeBrief")(function () {
+        return blocked;
+      }),
+      registerPreviews: Effect.fn("LibraryPublisher.registerPreviews")(function () {
+        return blocked;
+      }),
+      publishPage: Effect.fn("LibraryPublisher.publishPage")(function () {
+        return noPages;
+      }),
+      listPages: Effect.fn("LibraryPublisher.listPages")(function () {
+        return noPages;
+      }),
+      updatePage: Effect.fn("LibraryPublisher.updatePage")(function () {
+        return noPages;
+      }),
+      nextReplies: Effect.fn("LibraryPublisher.nextReplies")(function () {
+        return noPages;
+      }),
+      ackReply: Effect.fn("LibraryPublisher.ackReply")(function () {
+        return noPages;
+      }),
+      signOutPageReaders: Effect.fn("LibraryPublisher.signOutPageReaders")(function () {
+        return noPages;
+      }),
     });
   };
   if (connection.kind === "none") return unavailable(false);
@@ -359,8 +403,13 @@ const make = Effect.gen(function* () {
       projects: localLibrary.projects,
       conversations: localLibrary.conversations,
       lookupThread: localLibrary.lookupThread,
-      history: (input) =>
-        localLibrary.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
+      history: Effect.fn("LibraryPublisher.history")(function (input) {
+        return localLibrary.history({
+          ...input,
+          offset: input.offset ?? 0,
+          limit: input.limit ?? 50,
+        });
+      }),
       search: localLibrary.search,
       timeline: localTimeline.page,
       launchCandidates: localLaunch.candidates,
@@ -369,19 +418,24 @@ const make = Effect.gen(function* () {
       decisions: localLibrary.decisions,
       info: localLibrary.info,
       ingest: localLibrary.ingestHistory,
-      registerCopy: (input) => localLibrary.registerCopy(input).pipe(Effect.tap(registered)),
+      registerCopy: Effect.fn("LibraryPublisher.registerCopy")(function (input) {
+        return localLibrary.registerCopy(input).pipe(Effect.tap(registered));
+      }),
       publishAttachments: publishLocalAttachments,
       recordActivity: localLibrary.recordActivity,
-      project: (projectId) => localLibrary.project({ projectId }),
-      proposeBrief: (input, threadId) =>
-        localLibrary.proposeBrief(input, {
+      project: Effect.fn("LibraryPublisher.project")(function (projectId) {
+        return localLibrary.project({ projectId });
+      }),
+      proposeBrief: Effect.fn("LibraryPublisher.proposeBrief")(function (input, threadId) {
+        return localLibrary.proposeBrief(input, {
           kind: "conversation",
           environmentId: sourceEnvironmentId,
           threadId,
-        }),
+        });
+      }),
       // A Library that is its own computer registers in-process, with no session to outlive.
-      registerPreviews: (previews) =>
-        localPreviewAccess
+      registerPreviews: Effect.fn("LibraryPublisher.registerPreviews")(function (previews) {
+        return localPreviewAccess
           .register({ environmentId: sourceEnvironmentId, sessionId: null, previews })
           .pipe(
             // Callers read not-found as "no preview sign-in here", as a remote Library answers it.
@@ -389,15 +443,28 @@ const make = Effect.gen(function* () {
               (error) => error.reason === "not-authority",
               () => Effect.fail(new LibraryError({ reason: "not-found" })),
             ),
-          ),
+          );
+      }),
       // Pages are filed under the publishing computer's Library sign-in, which a Library that is
       // its own computer does not have.
-      publishPage: () => noPages,
-      listPages: () => noPages,
-      updatePage: () => noPages,
-      nextReplies: () => noPages,
-      ackReply: () => noPages,
-      signOutPageReaders: () => noPages,
+      publishPage: Effect.fn("LibraryPublisher.publishPage")(function () {
+        return noPages;
+      }),
+      listPages: Effect.fn("LibraryPublisher.listPages")(function () {
+        return noPages;
+      }),
+      updatePage: Effect.fn("LibraryPublisher.updatePage")(function () {
+        return noPages;
+      }),
+      nextReplies: Effect.fn("LibraryPublisher.nextReplies")(function () {
+        return noPages;
+      }),
+      ackReply: Effect.fn("LibraryPublisher.ackReply")(function () {
+        return noPages;
+      }),
+      signOutPageReaders: Effect.fn("LibraryPublisher.signOutPageReaders")(function () {
+        return noPages;
+      }),
     });
   }
   const endpoint = (route: string) => route;

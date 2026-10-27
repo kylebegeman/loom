@@ -159,11 +159,12 @@ const make = Effect.gen(function* () {
         ),
       );
   const shellFor = (id: ThreadId) =>
-    projections
-      .getThreadShell(id)
-      .pipe(
-        Effect.flatMap((shell) => (shell === null ? fail("unavailable") : Effect.succeed(shell))),
-      );
+    projections.getThreadShell(id).pipe(
+      Effect.filterOrElse(
+        (shell): shell is OrchestrationV2ThreadShell => shell !== null,
+        () => fail("unavailable"),
+      ),
+    );
   const sourceState = (shell: OrchestrationV2ThreadShell, head: string) =>
     stringify({
       head,
@@ -559,12 +560,18 @@ const make = Effect.gen(function* () {
     return input.receipt;
   });
   return WorkspaceHandoffService.of({
-    offer: (input) => wrap(offer(input), "unavailable"),
-    prepare: (input) =>
-      wrap(locks.withLock(input.offer.requestId, prepare(input)), "preparation-failed"),
-    finish: (input) => wrap(finish(input), "source-changed"),
-    resume: (input) =>
-      wrap(locks.withLock(input.offer.requestId, resume(input)), "preparation-failed"),
+    offer: Effect.fn("WorkspaceHandoffService.offer")(function (input) {
+      return wrap(offer(input), "unavailable");
+    }),
+    prepare: Effect.fn("WorkspaceHandoffService.prepare")(function (input) {
+      return wrap(locks.withLock(input.offer.requestId, prepare(input)), "preparation-failed");
+    }),
+    finish: Effect.fn("WorkspaceHandoffService.finish")(function (input) {
+      return wrap(finish(input), "source-changed");
+    }),
+    resume: Effect.fn("WorkspaceHandoffService.resume")(function (input) {
+      return wrap(locks.withLock(input.offer.requestId, resume(input)), "preparation-failed");
+    }),
   });
 });
 export const layer = Layer.effect(WorkspaceHandoffService, make);

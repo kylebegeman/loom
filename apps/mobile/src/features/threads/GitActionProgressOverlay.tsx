@@ -1,4 +1,3 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import * as Haptics from "expo-haptics";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -52,11 +51,6 @@ export function GitActionProgressOverlay(props: {
   if (progress.phase === "idle") {
     return null;
   }
-  const prUrl = progress.prUrl;
-  // A finished action reports only the URL it created.
-  const openLabel = prUrl
-    ? `Open ${(sourceControlClients.findByChangeRequestUrl(prUrl) ?? sourceControlClients.get(undefined)).changeRequest.shortLabel}`
-    : null;
 
   return (
     <Animated.View
@@ -83,8 +77,8 @@ export function GitActionProgressOverlay(props: {
         action={
           progress.onCancel
             ? { label: "Cancel", onPress: progress.onCancel }
-            : openLabel
-              ? { label: openLabel, onPress: handlePress }
+            : progress.prUrl
+              ? { label: "View", onPress: handlePress }
               : undefined
         }
       />

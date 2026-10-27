@@ -135,15 +135,15 @@ it.effect("allows exactly one concurrent replacement of the same version", () =>
   withCore((core) =>
     Effect.gen(function* () {
       yield* core.save(input, "owner");
-      const results = yield* Effect.all(
-        ["c", "d"].map((letter) =>
+      const results = yield* Effect.forEach(
+        ["c", "d"],
+        (letter) =>
           core
             .save(
               { ...input, expectedVersion: 1, operationId: letter.repeat(32), label: letter },
               "owner",
             )
             .pipe(Effect.result),
-        ),
         { concurrency: "unbounded" },
       );
       expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);

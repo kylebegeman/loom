@@ -44,12 +44,14 @@ export const layerHold = <E, R>(
           Effect.withTracerEnabled(false),
         );
       return EffectWorker.OrchestrationEffectExecutorV2.of({
-        execute: (effect, options) =>
-          effect.request.type === "attachment.cleanup"
+        // The wrapped executor owns the execute span.
+        execute: Effect.fnUntraced(function* (effect, options) {
+          return yield* effect.request.type === "attachment.cleanup"
             ? holds(effect.threadId).pipe(
                 Effect.flatMap((held) => (held ? Effect.void : inner.execute(effect, options))),
               )
-            : inner.execute(effect, options),
+            : inner.execute(effect, options);
+        }),
       });
     }),
   ).pipe(Layer.provide(executor));

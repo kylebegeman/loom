@@ -464,10 +464,12 @@ const make = Effect.gen(function* () {
   }, onFileSystem);
   return ProjectCheckoutManagement.of({
     preview,
-    adopt: (input, authorize) =>
-      mutate(input, true, authorize).pipe(Effect.mapError(mapError(input.projectId))),
-    setRetention: (input, authorize) =>
-      mutate(input, false, authorize).pipe(Effect.mapError(mapError(input.projectId))),
+    adopt: Effect.fn("ProjectCheckoutManagement.adopt")(function (input, authorize) {
+      return mutate(input, true, authorize).pipe(Effect.mapError(mapError(input.projectId)));
+    }),
+    setRetention: Effect.fn("ProjectCheckoutManagement.setRetention")(function (input, authorize) {
+      return mutate(input, false, authorize).pipe(Effect.mapError(mapError(input.projectId)));
+    }),
   });
 });
 export const layer = Layer.effect(ProjectCheckoutManagement, make).pipe(

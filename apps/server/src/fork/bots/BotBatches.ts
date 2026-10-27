@@ -339,7 +339,10 @@ export const make = Effect.gen(function* () {
           if (started.waitingForCapacity) {
             if (pausedUntil.delete(batchId)) yield* publishSummary(batchId);
             // Local completions wake immediately. Remote reports may change independently.
-            yield* Effect.raceFirst(PubSub.take(capacity), Effect.sleep(CAPACITY_RECHECK_INTERVAL));
+            yield* Effect.timeoutOrElse(PubSub.take(capacity), {
+              duration: CAPACITY_RECHECK_INTERVAL,
+              orElse: () => Effect.void,
+            });
             continue;
           }
           const retryAt = started.retryAt ?? (yield* nowIso);

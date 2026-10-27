@@ -17,6 +17,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import type { Thread } from "../../types";
+import { focusTerminal } from "../../lib/terminalFocus";
 import { resolveVisibleWorktreeSetup, resolveWorktreeSetupProgress } from "../ChatView.logic";
 import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup";
 
@@ -177,6 +178,7 @@ export function useWorktreeSetup(input: {
   const openSetupTerminal = setupThreadRef
     ? (terminalId: string) => {
         storeEnsureTerminal(setupThreadRef, terminalId, { open: true, active: true });
+        focusTerminal(setupThreadRef, terminalId);
       }
     : null;
 

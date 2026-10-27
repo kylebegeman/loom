@@ -5,6 +5,8 @@ import {
   buildProjectPreparationPlan,
   getProjectPreparationRecovery,
 } from "@t3tools/client-runtime/fork";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { NavigationRow } from "../../components/ui/NavigationRow";
@@ -63,7 +65,6 @@ import {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 import {
-  CommonActions,
   StackActions,
   useNavigation,
   type NavigationState,
@@ -434,20 +435,27 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
 }
 
 // fork: fleet-connections - A computer-specific entry point keeps its destination.
-function useSelectedEnvironment(initialEnvironmentId: EnvironmentId | null = null): {
+function useSelectedEnvironment(requestedEnvironmentId: EnvironmentId | null): {
   readonly environmentOptions: ReadonlyArray<EnvironmentOption>;
   readonly selectedEnvironment: EnvironmentOption | null;
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly setSelectedEnvironmentId: (environmentId: EnvironmentId) => void;
 } {
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
-    initialEnvironmentId,
-  );
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState(requestedEnvironmentId);
+  const [previousRequest, setPreviousRequest] = useState(requestedEnvironmentId);
+  if (previousRequest !== requestedEnvironmentId) {
+    setPreviousRequest(requestedEnvironmentId);
+    setSelectedEnvironmentId(requestedEnvironmentId);
+  }
   const environmentOptions = useEnvironmentOptions();
-  const selectedEnvironment = resolveAddProjectEnvironment(
-    environmentOptions,
-    selectedEnvironmentId,
-  );
+  const selectedEnvironment =
+    environmentOptions.find((environment) => environment.environmentId === selectedEnvironmentId) ??
+    (selectedEnvironmentId === null
+      ? environmentOptions.find((environment) =>
+          canCreateProjectInEnvironment(environment.connectionState),
+        )
+      : undefined) ??
+    null;
   // Freeze the first visible choice so a reconnect cannot redirect creation
   // to a different computer after the user starts this flow.
   if (selectedEnvironmentId === null && selectedEnvironment !== null) {
@@ -583,16 +591,14 @@ function SourceControlRow(props: {
 }
 
 // fork: fleet-connections - Preserve destination from the computer work actions.
-export function AddProjectSourceScreen(
-  props: { readonly initialEnvironmentId?: EnvironmentId } = {},
-) {
+export function AddProjectSourceScreen(props: { readonly environmentId?: string | string[] }) {
   const navigation = useNavigation();
   const {
     environmentOptions,
     selectedEnvironment,
     selectedEnvironmentId,
     setSelectedEnvironmentId,
-  } = useSelectedEnvironment(props.initialEnvironmentId ?? null);
+  } = useSelectedEnvironment(stringParam(props.environmentId) as EnvironmentId | null);
   const canWriteSourceControl = useEnvironmentScope(
     selectedEnvironment?.environmentId ?? null,
     AuthSourceControlWriteScope,
@@ -601,9 +607,10 @@ export function AddProjectSourceScreen(
     selectedEnvironment?.environmentId ?? null,
     AuthOrchestrationOperateScope,
   );
-  const canCloneProject = canWriteSourceControl && canCreateProject;
+  const isConnected = canCreateProjectInEnvironment(selectedEnvironment?.connectionState);
+  const canCloneProject = isConnected && canWriteSourceControl && canCreateProject;
   const discoveryState = useEnvironmentQuery(
-    selectedEnvironment === null
+    selectedEnvironment === null || !isConnected
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: selectedEnvironment.environmentId,
@@ -666,7 +673,7 @@ export function AddProjectSourceScreen(
                     ? "Start a new Git repository from a name"
                     : "This connection cannot add projects."
                 }
-                disabled={!canCreateProject}
+                disabled={!isConnected || !canCreateProject}
                 icon={
                   <SymbolView
                     name="plus"
@@ -701,7 +708,7 @@ export function AddProjectSourceScreen(
                 />
               }
               isFirst={selectedEnvironment.newProjectsRoot === null}
-              disabled={!canCreateProject}
+              disabled={!isConnected || !canCreateProject}
               onPress={() =>
                 navigation.dispatch(
                   StackActions.push("AddProjectLocal", {
@@ -743,27 +750,37 @@ export function AddProjectSourceScreen(
   );
 }
 
-function openNewTaskDraft(
-  navigation: {
-    dispatch: (action: ReturnType<typeof CommonActions.reset>) => void;
-    getState: () => NavigationState<ParamListBase> | undefined;
-  },
-  params: {
-    environmentId: EnvironmentId;
-    projectId: ProjectId;
-    title: string;
-    cloning?: "1";
-    draftId?: string;
-  },
-) {
+function getActiveRoute(navigation: {
+  getState: () => NavigationState<ParamListBase> | undefined;
+}) {
   const state = navigation.getState();
-  if (!state) return;
-  const threadIndex = state.routes.findLastIndex((route) => route.name === "Thread");
-  const routes = [
-    ...state.routes.slice(0, threadIndex < 0 ? state.index : threadIndex),
-    { key: uuidv4(), name: "Thread", params: { draft: params } },
-  ];
-  navigation.dispatch(CommonActions.reset({ ...state, index: routes.length - 1, routes }));
+  return state?.routes[state.index];
+}
+
+function useOpenNewTaskDraft() {
+  const navigation = useNavigation<NativeStackNavigationProp<ReactNavigation.RootParamList>>();
+  const selectDetail = useSelectWorkspaceDetail();
+  return (
+    params: {
+      environmentId: EnvironmentId;
+      projectId: ProjectId;
+      title: string;
+      cloning?: "1";
+      draftId?: string;
+    },
+    originRoute: NavigationState<ParamListBase>["routes"][number] | undefined,
+  ) => {
+    const activeRoute = getActiveRoute(navigation);
+    // A warm link can change the task without replacing its native route key.
+    if (
+      !originRoute ||
+      activeRoute?.key !== originRoute.key ||
+      activeRoute.name !== originRoute.name ||
+      activeRoute.params !== originRoute.params
+    )
+      return;
+    selectDetail({ name: "Thread", params: { draft: params } });
+  };
 }
 
 async function draftWithPrompt(
@@ -781,11 +798,12 @@ function useCreateProject(
   environment: EnvironmentOption | null,
   createWorkspaceRootIfMissing: boolean,
 ) {
+  const openNewTaskDraft = useOpenNewTaskDraft();
   const navigation = useNavigation();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const projects = useProjects();
 
-  return async (workspaceRoot: string) => {
+  return async (workspaceRoot: string, originRoute = getActiveRoute(navigation)) => {
     if (
       !environment ||
       !canCreateProjectInEnvironment(environment.connectionState) ||
@@ -805,11 +823,14 @@ function useCreateProject(
     });
     if (existing) {
       Dialog.alert("Project already exists", existing.title);
-      openNewTaskDraft(navigation, {
-        environmentId: existing.environmentId,
-        projectId: existing.id,
-        title: existing.title,
-      });
+      openNewTaskDraft(
+        {
+          environmentId: existing.environmentId,
+          projectId: existing.id,
+          title: existing.title,
+        },
+        originRoute,
+      );
       return;
     }
 
@@ -829,11 +850,27 @@ function useCreateProject(
     if (AsyncResult.isFailure(result)) {
       return result;
     }
-    openNewTaskDraft(navigation, {
-      environmentId: environment.environmentId,
-      projectId,
-      title: inferProjectTitleFromPath(workspaceRoot),
-    });
+    // A successful command can precede its project in the client store. The
+    // draft treats a missing project as a reason to return to the chooser.
+    const project = await waitForProject(
+      { environmentId: environment.environmentId, projectId },
+      15_000,
+    );
+    if (project === null) {
+      Dialog.alert(
+        "Project added",
+        "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
+      );
+      return result;
+    }
+    openNewTaskDraft(
+      {
+        environmentId: environment.environmentId,
+        projectId,
+        title: inferProjectTitleFromPath(workspaceRoot),
+      },
+      originRoute,
+    );
     return result;
   };
 }
@@ -1044,6 +1081,7 @@ export function FolderBrowser(props: {
 }
 
 export function AddProjectNewScreen(props: { readonly environmentId?: string | string[] }) {
+  const openNewTaskDraft = useOpenNewTaskDraft();
   const navigation = useNavigation();
   const environmentOptions = useEnvironmentOptions().filter(
     (option) => option.newProjectsRoot !== null,
@@ -1135,6 +1173,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   const submittingRef = useRef(false);
   const submit = async () => {
     if (!environment || trimmedName.length === 0 || submittingRef.current) return;
+    const originRoute = getActiveRoute(navigation);
     submittingRef.current = true;
     setError(null);
     if (!readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope)) {
@@ -1209,11 +1248,14 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
       );
       return;
     }
-    openNewTaskDraft(navigation, {
-      environmentId: environment.environmentId,
-      projectId,
-      title: trimmedName,
-    });
+    openNewTaskDraft(
+      {
+        environmentId: environment.environmentId,
+        projectId,
+        title: trimmedName,
+      },
+      originRoute,
+    );
   };
 
   return (
@@ -1450,6 +1492,7 @@ export function AddProjectDestinationScreen(props: {
   readonly preparationDestinationPath?: string | string[];
   readonly prompt?: string | string[];
 }) {
+  const openNewTaskDraft = useOpenNewTaskDraft();
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
   });
@@ -1583,6 +1626,7 @@ export function AddProjectDestinationScreen(props: {
       return;
     }
 
+    const originRoute = getActiveRoute(navigation);
     if (preparationRequested) {
       if (
         !preparation ||
@@ -1625,11 +1669,14 @@ export function AddProjectDestinationScreen(props: {
         return;
       }
       if (plan.kind === "existing") {
-        openNewTaskDraft(navigation, {
-          environmentId: plan.project.environmentId,
-          projectId: plan.project.id,
-          title: preparation.title,
-        });
+        openNewTaskDraft(
+          {
+            environmentId: plan.project.environmentId,
+            projectId: plan.project.id,
+            title: preparation.title,
+          },
+          originRoute,
+        );
         return;
       }
     }
@@ -1705,18 +1752,21 @@ export function AddProjectDestinationScreen(props: {
             "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
           );
         } else {
-          openNewTaskDraft(navigation, {
-            environmentId: environment.environmentId,
-            projectId,
-            title,
-            cloning: "1",
-            ...(prompt
-              ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
-                  (draftId) => ({ draftId }),
-                  () => ({}),
-                )
-              : {}),
-          });
+          openNewTaskDraft(
+            {
+              environmentId: environment.environmentId,
+              projectId,
+              title,
+              cloning: "1",
+              ...(prompt
+                ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
+                    (draftId) => ({ draftId }),
+                    () => ({}),
+                  )
+                : {}),
+            },
+            originRoute,
+          );
         }
       }
       setIsSubmitting(false);
@@ -1732,7 +1782,7 @@ export function AddProjectDestinationScreen(props: {
     if (AsyncResult.isFailure(cloneResult)) {
       setError(errorMessage(Cause.squash(cloneResult.cause)));
     } else {
-      const createResult = await createProject(cloneResult.value.cwd);
+      const createResult = await createProject(cloneResult.value.cwd, originRoute);
       if (createResult && AsyncResult.isFailure(createResult)) {
         setError(errorMessage(Cause.squash(createResult.cause)));
       }
@@ -1806,12 +1856,15 @@ export function AddProjectDestinationScreen(props: {
                   }
                   onPress={() => {
                     if (preparationClone && recovery.state !== "inspect")
-                      openNewTaskDraft(navigation, {
-                        environmentId: preparationProject.environmentId,
-                        projectId: preparationProject.id,
-                        title: preparationProject.title,
-                        cloning: "1",
-                      });
+                      openNewTaskDraft(
+                        {
+                          environmentId: preparationProject.environmentId,
+                          projectId: preparationProject.id,
+                          title: preparationProject.title,
+                          cloning: "1",
+                        },
+                        getActiveRoute(navigation),
+                      );
                     else
                       navigation.navigate("ProjectHome", {
                         environmentId: preparationProject.environmentId,

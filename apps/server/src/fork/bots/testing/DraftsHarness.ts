@@ -146,10 +146,13 @@ export const makeDraftsHarness = Effect.sync(() => {
 
 export type DraftsHarness = Effect.Success<typeof makeDraftsHarness>;
 
-export const withDraftsHarness = <A, E>(
-  use: (harness: DraftsHarness) => Effect.Effect<A, E, SqlClient.SqlClient | Scope.Scope>,
-) =>
-  Effect.gen(function* () {
+export const withDraftsHarness = Effect.fn("withDraftsHarness")(
+  function* <A, E>(
+    use: (harness: DraftsHarness) => Effect.Effect<A, E, SqlClient.SqlClient | Scope.Scope>,
+  ) {
     yield* runForkMigrationSet(BotsMigrations);
     return yield* use(yield* makeDraftsHarness);
-  }).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory));
+  },
+  Effect.scoped,
+  Effect.provide(SqlitePersistenceMemory),
+);

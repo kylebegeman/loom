@@ -47,8 +47,9 @@ it.effect(
           { op: "add-part", id: "case", path: "case.stl" },
         ],
       });
-      const results = yield* Effect.all(
-        ["First", "Second"].map((name) =>
+      const results = yield* Effect.forEach(
+        ["First", "Second"],
+        (name) =>
           Effect.exit(
             service.updateAssembly({
               file,
@@ -56,7 +57,6 @@ it.effect(
               operations: [{ op: "set-name", name }],
             }),
           ),
-        ),
         { concurrency: 2 },
       );
       expect(results.filter((r) => r._tag === "Success")).toHaveLength(1);

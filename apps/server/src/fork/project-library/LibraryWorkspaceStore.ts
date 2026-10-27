@@ -336,8 +336,8 @@ const make = Effect.gen(function* () {
         (row) => !bound.has(row.threadId) && savesHistory(database.receipts, row),
       );
     }),
-    savedBinding: (threadId) =>
-      mapIo(
+    savedBinding: Effect.fn("LibraryWorkspaceStore.savedBinding")(function (threadId) {
+      return mapIo(
         Effect.gen(function* () {
           const database = yield* read;
           if (database.bindings.some((row) => row.threadId === threadId)) return null;
@@ -351,9 +351,10 @@ const make = Effect.gen(function* () {
           if (project === undefined) return yield* new LibraryError({ reason: "invalid" });
           return { localProjectId: entry.localProjectId, binding: entry.binding, project };
         }),
-      ),
-    saveHistory: (input) =>
-      locks.withLock(
+      );
+    }),
+    saveHistory: Effect.fn("LibraryWorkspaceStore.saveHistory")(function (input) {
+      return locks.withLock(
         savedPath,
         mapIo(
           Effect.gen(function* () {
@@ -394,19 +395,21 @@ const make = Effect.gen(function* () {
             );
           }),
         ),
-      ),
+      );
+    }),
     get,
     getBinding,
-    getBoundProject: (threadId) =>
-      mapIo(
+    getBoundProject: Effect.fn("LibraryWorkspaceStore.getBoundProject")(function (threadId) {
+      return mapIo(
         Effect.gen(function* () {
           const saved = (yield* read).bindings.find((row) => row.threadId === threadId);
           if (saved === undefined) return null;
           return saved.project ?? (yield* get(saved.resolved.binding.workingCopyId)).project;
         }),
-      ),
-    importBindings: (input) =>
-      locks.withLock(
+      );
+    }),
+    importBindings: Effect.fn("LibraryWorkspaceStore.importBindings")(function (input) {
+      return locks.withLock(
         databasePath,
         mapIo(
           Effect.gen(function* () {
@@ -480,9 +483,10 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-      ),
-    put: (receipt) =>
-      locks.withLock(
+      );
+    }),
+    put: Effect.fn("LibraryWorkspaceStore.put")(function (receipt) {
+      return locks.withLock(
         databasePath,
         mapIo(
           Effect.gen(function* () {
@@ -496,9 +500,10 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-      ),
-    followArchived: (project) =>
-      locks.withLock(
+      );
+    }),
+    followArchived: Effect.fn("LibraryWorkspaceStore.followArchived")(function (project) {
+      return locks.withLock(
         databasePath,
         mapIo(
           Effect.gen(function* () {
@@ -516,9 +521,10 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-      ),
-    bind: (threadId, resolved, project) =>
-      locks.withLock(
+      );
+    }),
+    bind: Effect.fn("LibraryWorkspaceStore.bind")(function (threadId, resolved, project) {
+      return locks.withLock(
         databasePath,
         mapIo(
           Effect.gen(function* () {
@@ -543,9 +549,10 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-      ),
-    moveBinding: (threadId, resolved) =>
-      locks.withLock(
+      );
+    }),
+    moveBinding: Effect.fn("LibraryWorkspaceStore.moveBinding")(function (threadId, resolved) {
+      return locks.withLock(
         databasePath,
         mapIo(
           Effect.gen(function* () {
@@ -567,50 +574,56 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-      ),
-    repositoriesForRoot: (cwd, threadId) =>
-      mapIo(
-        Effect.gen(function* () {
-          const normalized = path.resolve(cwd);
-          const database = yield* read;
-          const binding =
-            threadId === undefined
-              ? undefined
-              : database.bindings.find((row) => row.threadId === threadId);
-          const candidates = database.receipts.filter(
-            (row) =>
-              path.resolve(row.copy.rootPath) === normalized &&
-              row.copy.state !== "released" &&
-              (binding === undefined || binding.resolved.binding.workingCopyId === row.copy.id),
-          );
-          // A folder taken over by another project keeps its retired receipt for the old bound
-          // conversations, which the binding above selects. Everything else uses the current one.
-          const receipt = candidates.find((row) => row.copy.registered !== false) ?? candidates[0];
-          if (receipt === undefined) return null;
-          if (receipt.copy.repositories.length === 0 && receipt.rootCheckpointRepository)
-            return [{ path: receipt.copy.rootPath, relativePath: "" }];
-          if (
-            binding !== undefined &&
-            (binding.resolved.binding.workingCopyId !== receipt.copy.id ||
-              path.resolve(binding.resolved.cwd) !== normalized)
-          )
-            return yield* new LibraryError({ reason: "invalid" });
-          return receipt.copy.repositories
-            .filter(
-              (repository) =>
-                binding === undefined || binding.resolved.repositoryPaths.includes(repository.path),
+      );
+    }),
+    repositoriesForRoot: Effect.fn("LibraryWorkspaceStore.repositoriesForRoot")(
+      function (cwd, threadId) {
+        return mapIo(
+          Effect.gen(function* () {
+            const normalized = path.resolve(cwd);
+            const database = yield* read;
+            const binding =
+              threadId === undefined
+                ? undefined
+                : database.bindings.find((row) => row.threadId === threadId);
+            const candidates = database.receipts.filter(
+              (row) =>
+                path.resolve(row.copy.rootPath) === normalized &&
+                row.copy.state !== "released" &&
+                (binding === undefined || binding.resolved.binding.workingCopyId === row.copy.id),
+            );
+            // A folder taken over by another project keeps its retired receipt for the old bound
+            // conversations, which the binding above selects. Everything else uses the current one.
+            const receipt =
+              candidates.find((row) => row.copy.registered !== false) ?? candidates[0];
+            if (receipt === undefined) return null;
+            if (receipt.copy.repositories.length === 0 && receipt.rootCheckpointRepository)
+              return [{ path: receipt.copy.rootPath, relativePath: "" }];
+            if (
+              binding !== undefined &&
+              (binding.resolved.binding.workingCopyId !== receipt.copy.id ||
+                path.resolve(binding.resolved.cwd) !== normalized)
             )
-            .map((repository) => ({
-              path: repository.path,
-              relativePath: path
-                .relative(receipt.copy.rootPath, repository.path)
-                .split(path.sep)
-                .join("/"),
-            }));
-        }),
-      ),
-    validateThreadCwd: (input) =>
-      mapIo(
+              return yield* new LibraryError({ reason: "invalid" });
+            return receipt.copy.repositories
+              .filter(
+                (repository) =>
+                  binding === undefined ||
+                  binding.resolved.repositoryPaths.includes(repository.path),
+              )
+              .map((repository) => ({
+                path: repository.path,
+                relativePath: path
+                  .relative(receipt.copy.rootPath, repository.path)
+                  .split(path.sep)
+                  .join("/"),
+              }));
+          }),
+        );
+      },
+    ),
+    validateThreadCwd: Effect.fn("LibraryWorkspaceStore.validateThreadCwd")(function (input) {
+      return mapIo(
         Effect.gen(function* () {
           const resolved = yield* getBinding(input.threadId);
           if (resolved === null) {
@@ -691,7 +704,8 @@ const make = Effect.gen(function* () {
           }
           return resolved.cwd;
         }),
-      ),
+      );
+    }),
   });
 });
 

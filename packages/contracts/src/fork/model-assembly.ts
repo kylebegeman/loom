@@ -61,7 +61,7 @@ export const AssemblyEnclosure = Schema.Struct({
     .check(Schema.isMaxLength(ASSEMBLY_MAX_PARTS))
     .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   requirements: EnclosureRequirements.pipe(
-    Schema.withDecodingDefault(Effect.succeed(Schema.decodeUnknownSync(EnclosureRequirements)({}))),
+    Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(EnclosureRequirements)({}))),
   ),
 });
 export const ModelAssembly = Schema.Struct({

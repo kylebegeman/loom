@@ -180,9 +180,7 @@ function startWithMissingWorktree(
         }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
-            Effect.succeed(
-              Option.some({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
-            ),
+            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => {
@@ -395,9 +393,7 @@ it.each(["projection", "checkout", "setup"] as const)(
           }),
           Layer.mock(ProjectService.ProjectService)({
             getById: () =>
-              Effect.succeed(
-                Option.some({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
-              ),
+              Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
           }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThreadRecords: () => {
@@ -497,6 +493,7 @@ function makeLocalCommandHarness(input: {
     readonly liveSession?: boolean;
     readonly interruptFailure?: boolean;
     readonly interruptCurrentRun?: boolean;
+    readonly prompt?: string; // fork: library-projects
   };
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
@@ -732,9 +729,11 @@ function makeLocalCommandHarness(input: {
     };
   }
   const previousTurnId = ProviderTurnId.make("previous-provider-turn");
+  const earlierPrompts: Array<typeof message> = []; // fork: library-projects
   if (input.previousTurn !== undefined) {
     const previousRunId = RunId.make("previous-failed-run");
     const previousAttemptId = RunAttemptId.make("previous-failed-attempt");
+    const previousPromptId = MessageId.make("previous-prompt"); // fork: library-projects
     const previousProviderThreadId = input.previousTurn.differentThread
       ? oldProviderThreadId
       : providerThreadId;
@@ -750,6 +749,8 @@ function makeLocalCommandHarness(input: {
           activeAttemptId: previousAttemptId,
           providerThreadId: previousProviderThreadId,
           completedAt: now,
+          // fork: library-projects
+          ...(input.previousTurn.prompt === undefined ? {} : { userMessageId: previousPromptId }),
         },
         run,
       ],
@@ -776,7 +777,31 @@ function makeLocalCommandHarness(input: {
           completedAt: input.previousTurn.turnStatus === "running" ? null : now,
         },
       ],
+      // fork: library-projects -- the earlier turn's own attempt; its prompt is read by id.
+      ...(input.previousTurn.prompt === undefined
+        ? {}
+        : {
+            attempts: [
+              ...projection.attempts.map((attempt) => ({
+                ...attempt,
+                id: previousAttemptId,
+                runId: previousRunId,
+                rootNodeId: NodeId.make("previous-root"),
+                providerThreadId: previousProviderThreadId,
+                status: "completed" as const,
+              })),
+              ...projection.attempts,
+            ],
+          }),
     };
+    // fork: library-projects -- the turn-start context holds only this run's prompt.
+    if (input.previousTurn.prompt !== undefined)
+      earlierPrompts.push({
+        ...message,
+        id: previousPromptId,
+        runId: previousRunId,
+        text: input.previousTurn.prompt,
+      });
   }
   let providerBusy =
     input.previousTurn?.runStatus === "failed" &&
@@ -958,12 +983,14 @@ function makeLocalCommandHarness(input: {
   );
   const createWorktree = vi.fn(() => Effect.succeed({} as never));
   const getThreadRecords = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getThreadRecords"]>(() =>
-    Effect.succeed(projection),
+    // fork: library-projects
+    Effect.succeed({ ...projection, messages: [...earlierPrompts, ...projection.messages] }),
   );
   const getTurnStartContext = vi.fn(() =>
     Effect.succeed({
       ...projection,
-      hasConversation: projection.messages.some(
+      // fork: library-projects -- the store checks every message, not just the loaded ones.
+      hasConversation: [...earlierPrompts, ...projection.messages].some(
         (m) =>
           m.role === "user" &&
           (m.text.trim().toLowerCase() !== "/compact" || m.attachments.length > 0),
@@ -1029,15 +1056,13 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
-            Effect.succeed(
-              Option.some({
-                workspaceRoot: input.restoredWorkspace
-                  ? input.restoredWorkspace.primary
-                    ? input.restoredWorkspace.cwd
-                    : input.restoredWorkspace.scratchRoot
-                  : (input.workspaceRoot ?? "/tmp/native-account-project"),
-              } as never),
-            ),
+            Effect.succeedSome({
+              workspaceRoot: input.restoredWorkspace
+                ? input.restoredWorkspace.primary
+                  ? input.restoredWorkspace.cwd
+                  : input.restoredWorkspace.scratchRoot
+                : (input.workspaceRoot ?? "/tmp/native-account-project"),
+            } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords,
@@ -1876,10 +1901,24 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
         }
         let setupCount = 0;
         const order: string[] = [];
-        type Listener = Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
-        const listeners = new Set<Listener>();
-        const emit = (event: Parameters<Listener>[0]) =>
-          Effect.forEach([...listeners], (listener) => listener(event), { discard: true });
+        const listeners = new Set<
+          Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
+        >();
+        const output = (
+          terminal: { readonly threadId: string; readonly terminalId: string },
+          data: string,
+        ) =>
+          Effect.forEach(
+            [...listeners],
+            (listener) =>
+              listener({
+                type: "output",
+                threadId: terminal.threadId,
+                terminalId: terminal.terminalId,
+                data,
+              }),
+            { discard: true },
+          );
         const scripts = [
           {
             id: "setup",
@@ -1896,17 +1935,14 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                 getById: () => Effect.succeedSome({ workspaceRoot: cwd, scripts } as never),
               }),
               Layer.mock(TerminalManager.TerminalManager)({
-                open: (terminal) =>
-                  Effect.gen(function* () {
+                open: (input) =>
+                  Effect.sync(() => {
                     expect(order.at(-1)).toBe("lane-ready");
-                    yield* emit({
-                      type: "output",
-                      threadId: terminal.threadId,
-                      terminalId: terminal.terminalId,
-                      data: "\r\n$ \x1b[?2004h",
-                    });
-                    return {} as never;
-                  }),
+                  }).pipe(
+                    // The shell's line editor starts reading, so the runner types the command.
+                    Effect.andThen(output(input, "\x1b[?2004h")),
+                    Effect.as({} as never),
+                  ),
                 subscribe: (onEvent) =>
                   Effect.sync(() => {
                     listeners.add(onEvent);
@@ -1920,12 +1956,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                     setupCount++;
                     order.push("setup");
                     const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
-                    yield* emit({
-                      type: "output",
-                      threadId: input.threadId,
-                      terminalId: input.terminalId,
-                      data: `\r\n${sentinel}${setupCount === 1 ? 1 : 0}\r\n$ `,
-                    });
+                    yield* output(input, `\r\n${sentinel}${setupCount === 1 ? 1 : 0}\r\n$ `);
                   }).pipe(Effect.orDie),
                 closeIdle: () => Effect.void,
               }),
@@ -2049,6 +2080,43 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
     expect(hint).not.toContain("\n");
     expect(sent.split(hint)).toHaveLength(2);
     expect(sent.split("loom_library_brief_propose")).toHaveLength(2);
+  }),
+);
+
+// fork: library-projects
+effectIt.effect.each([
+  ["/goal Ship the release", undefined, false],
+  ["/compact", "/goal Ship the release", false],
+  ["Implement the next step", "/goal Ship the release", true],
+  ["Implement the next step", "Plan the work", false],
+] as const)("a bound turn %j after %j carries project context: %s", ([text, prompt, carried]) =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text,
+      libraryProject: {
+        id: "aspectavy",
+        title: "AspectAvy",
+        brief: "Coordinate the app and server contract.",
+        revision: 2,
+        resources: [],
+        archived: false,
+        createdAt: "2026-10-15T00:00:00.000Z",
+        updatedAt: "2026-10-15T00:00:00.000Z",
+      },
+      promptCommandHandled: false,
+      failReadsAfterRunning: true,
+      ...(prompt === undefined
+        ? {}
+        : { previousTurn: { runStatus: "completed", turnStatus: "completed", prompt } }),
+    });
+    yield* harness.start;
+    const sent = harness.startRootRun.mock.calls[0]?.[0].message.text ?? "";
+    if (carried) {
+      expect(sent).toContain("Project: AspectAvy");
+      expect(sent).toContain(`User message:\n${text}`);
+    } else {
+      expect(sent).toBe(text);
+    }
   }),
 );
 

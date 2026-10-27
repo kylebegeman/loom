@@ -287,7 +287,7 @@ export const reactor = Layer.effectDiscard(
   Effect.gen(function* () {
     const service = yield* VaultTestAccountWorkloads;
     yield* service.reconcile.pipe(
-      Effect.catch(() => Effect.void),
+      Effect.ignore,
       Effect.repeat(Schedule.spaced("1 minute")),
       Effect.forkScoped,
     );

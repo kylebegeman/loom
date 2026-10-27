@@ -46,7 +46,7 @@ const dependencies = Layer.mergeAll(
   NodeServices.layer,
   storeLayer,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
-  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeed(Option.none()) }),
+  Layer.mock(ProjectStoreV2)({ get: () => Effect.succeedNone }),
   Layer.mock(ThreadManagementService)({
     getThreadShell: () =>
       Effect.succeed({

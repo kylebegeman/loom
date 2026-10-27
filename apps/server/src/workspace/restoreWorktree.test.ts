@@ -185,15 +185,16 @@ it.live("restores checkpoint files before preparing the lane and running worktre
               } as never),
           }),
           Layer.mock(TerminalManager.TerminalManager)({
-            open: (terminal, options) =>
+            open: (input, options) =>
               Effect.gen(function* () {
                 expect(order).toEqual(["files-restored", "lane-ready"]);
                 expect(options?.workspaceLeaseHeld).toBe(true);
+                // The shell's line editor starts reading, so the runner types the command.
                 yield* emit({
                   type: "output",
-                  threadId: terminal.threadId,
-                  terminalId: terminal.terminalId,
-                  data: "\r\n$ \x1b[?2004h",
+                  threadId: input.threadId,
+                  terminalId: input.terminalId,
+                  data: "\x1b[?2004h",
                 });
                 return {} as never;
               }),

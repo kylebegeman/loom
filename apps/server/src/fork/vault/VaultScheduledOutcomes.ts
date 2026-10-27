@@ -72,22 +72,23 @@ export const make = Effect.gen(function* () {
   });
   return VaultScheduledOutcomes.of({
     decorate,
-    track: Effect.fn("VaultScheduledOutcomes.track")(
-      function* (task, startedAt, messageId, prompt) {
-        const parsed = readVaultPrompt(prompt);
-        if (parsed.valid && parsed.attachments.length === 0) {
-          yield* sql`DELETE FROM fork_vault_scheduled_runs WHERE task_id = ${task.id}`.pipe(
-            Effect.mapError(failure),
-          );
-          return;
-        }
-        yield* sql`INSERT INTO fork_vault_scheduled_runs (task_id, task_created_at, started_at, message_id, project_id)
+    track: Effect.fn("VaultScheduledOutcomes.track")(function* (
+      task,
+      startedAt,
+      messageId,
+      prompt,
+    ) {
+      const parsed = readVaultPrompt(prompt);
+      if (parsed.valid && parsed.attachments.length === 0) {
+        yield* sql`DELETE FROM fork_vault_scheduled_runs WHERE task_id = ${task.id}`;
+        return;
+      }
+      yield* sql`INSERT INTO fork_vault_scheduled_runs (task_id, task_created_at, started_at, message_id, project_id)
         VALUES (${task.id}, ${task.createdAt}, ${startedAt}, ${messageId}, ${task.projectId})
         ON CONFLICT(task_id) DO UPDATE SET task_created_at = excluded.task_created_at,
           started_at = excluded.started_at, message_id = excluded.message_id, project_id = excluded.project_id
-      `.pipe(Effect.mapError(failure));
-      },
-    ),
+      `;
+    }, Effect.mapError(failure)),
     // The scheduler polls this every few seconds and the table is almost always empty or
     // current, so it reads on the reader and takes the writer only to remove an orphan.
     changed: Effect.gen(function* () {

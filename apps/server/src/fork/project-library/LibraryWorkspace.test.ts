@@ -290,9 +290,9 @@ const hostDependencies = Layer.mergeAll(
             yield* fs.copyFile(canonicalFor(recovery.sha256), input.archivePath);
           }).pipe(Effect.mapError(() => new LibraryError({ reason: "archive-unverified" }))),
         retrieve: (input) =>
-          Effect.gen(function* () {
-            yield* fs.copyFile(canonicalFor(input.sha256), input.archivePath);
-          }).pipe(Effect.mapError(() => new LibraryError({ reason: "archive-unverified" }))),
+          fs
+            .copyFile(canonicalFor(input.sha256), input.archivePath)
+            .pipe(Effect.mapError(() => new LibraryError({ reason: "archive-unverified" }))),
         publish: (input) =>
           Effect.gen(function* () {
             if (publisherFailures.has(input.manifest.copyId))

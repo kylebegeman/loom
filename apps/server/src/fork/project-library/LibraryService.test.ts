@@ -719,8 +719,9 @@ describe("independent Library catalog and durable history", () => {
       run((service) =>
         Effect.gen(function* () {
           const project = yield* create(service);
-          const results = yield* Effect.all(
-            ["one", "two"].map((requestId) =>
+          const results = yield* Effect.forEach(
+            ["one", "two"],
+            (requestId) =>
               service
                 .updateProject({
                   requestId,
@@ -731,7 +732,6 @@ describe("independent Library catalog and durable history", () => {
                   resources: [],
                 })
                 .pipe(Effect.result),
-            ),
             { concurrency: "unbounded" },
           );
           expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
@@ -1880,8 +1880,9 @@ describe("Library history ingest", () => {
         yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
         const revision = service.subscribeRefreshes.pipe(Stream.runHead);
         const before = Option.getOrThrow(yield* revision);
-        const results = yield* Effect.all(
-          [1, 2].map((sequence) =>
+        const results = yield* Effect.forEach(
+          [1, 2],
+          (sequence) =>
             Effect.gen(function* () {
               return yield* service.ingestHistory({
                 requestId: `concurrent-${sequence}`,
@@ -1891,7 +1892,6 @@ describe("Library history ingest", () => {
                 entries: [{ sequence: 1, thread: yield* archiveFor(project, sequence) }],
               });
             }),
-          ),
           { concurrency: "unbounded" },
         );
         expect(results.map((result) => result.lastSequence)).toEqual([1, 1]);

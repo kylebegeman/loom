@@ -1870,8 +1870,9 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     shareFolder,
     shareContainer,
     signOutBrowsers,
-    listForThread: (threadId) =>
-      Effect.sync(() => links.filter((link) => link.threadId === threadId)),
+    listForThread: Effect.fn("PreviewLinksService.listForThread")(function (threadId) {
+      return Effect.sync(() => links.filter((link) => link.threadId === threadId));
+    }),
   });
 });
 

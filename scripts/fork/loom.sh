@@ -8,6 +8,7 @@
 #   scripts/fork/loom.sh check
 #   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr] [--resolve]
 #   scripts/fork/loom.sh review-integration
+#   scripts/fork/loom.sh close-superseded
 #   scripts/fork/loom.sh merge-integration <integrate/tag branch>
 #   scripts/fork/loom.sh notify <status> [<summary file>]
 #   scripts/fork/loom.sh land [<pr number>] [--no-install]
@@ -31,12 +32,14 @@
 # --resolve gives each conflicted file its own Claude session instead of
 # stopping, so a merge that piled up over several days never exhausts one
 # session, then gives each failing check its own repair session and commit.
-# review-integration has a separate session check that resolution and repair
-# before merge-integration merges it unattended. upstream-status says how far
-# main trails upstream (--check fails once a nightly has waited past the grace
-# period); upstream-overlap lists upstream work, merged or in open pull
-# requests, that touches what a fork change is about to. notify alerts Kyle in
-# Loom through LOOM_ALERT_WEBHOOK_URL.
+# --pr continues an open needs-Kyle draft instead of starting over, so its
+# repairs carry into the next day's merge; close-superseded closes the older
+# attempts a pushed branch contains. review-integration has a separate session
+# check that resolution and repair before merge-integration merges it
+# unattended. upstream-status says how far main trails upstream (--check fails
+# once a nightly has waited past the grace period); upstream-overlap lists
+# upstream work, merged or in open pull requests, that touches what a fork
+# change is about to. notify alerts Kyle in Loom through LOOM_ALERT_WEBHOOK_URL.
 #
 # Only the publisher (scripts/fork/updates.ts) makes installable builds. land and
 # integrate run it, so this Mac, the update feed, the iOS build and remote
@@ -71,15 +74,14 @@ SEAMS_MANIFEST=docs/fork/seams.tsv
 # Visible "T3 Code" text that stays on purpose (identifiers, legacy detection,
 # attribution): path<TAB>trimmed source line. check_brand_copy fails on any other.
 BRAND_COPY_ALLOWLIST=docs/fork/brand-copy-allowlist.tsv
-# Branding tests live next to upstream code; fork_tests also discovers Loom
-# feature tests and the benchmark harness checks.
+# Branding tests check upstream files the fork may not have touched since the last merge;
+# fork_tests also runs every test file the fork adds or changes.
 BRAND_TESTS=(
   packages/shared/src/brand.test.ts
   apps/web/src/branding.test.ts
   apps/desktop/src/app/DesktopAppIdentity.test.ts
   scripts/build-desktop-artifact.test.ts
 )
-TYPECHECK_DIRS=(packages/shared packages/contracts packages/client-runtime apps/server apps/desktop apps/web scripts)
 UPSTREAM_REPO=pingdotgg/t3code
 UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
 # A nightly may wait this long for main: one daily integration plus its run time.
@@ -87,8 +89,8 @@ UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
 UPSTREAM_GRACE_HOURS=30
 # Resolver sessions run this many at a time; each owns one conflicted file.
 LOOM_RESOLVE_JOBS=${LOOM_RESOLVE_JOBS:-4}
-# After a resolved merge, each failing check gets a fresh repair session, at most this many.
-LOOM_REPAIR_ROUNDS=${LOOM_REPAIR_ROUNDS:-4}
+# After a resolved merge, each failing check gets at most this many repair sessions.
+LOOM_REPAIR_ATTEMPTS=${LOOM_REPAIR_ATTEMPTS:-3}
 LOOM_CLAUDE_MODEL=${LOOM_CLAUDE_MODEL:-claude-opus-5-5}
 # Read-only git for the sessions; they edit with Claude's own tools.
 CLAUDE_GIT_TOOLS=('Bash(git show:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git blame:*)')
@@ -184,7 +186,6 @@ seam_shortfall() {
 }
 
 check_seams() {
-  say "Checking that every fork seam survived"
   local missing=0 path marker want short
   while IFS=$'\t' read -r path marker want; do
     case "$path" in '' | '#'*) continue ;; esac
@@ -215,19 +216,52 @@ brand_copy_lines() {
 
 # Upstream merges keep adding "T3 Code" copy; reword it (see FORK.md, Brand source).
 check_brand_copy() {
-  say "Checking for new T3 Code product text"
   local unexpected
   unexpected=$(comm -23 <(brand_copy_lines) <(grep -v '^#' "$BRAND_COPY_ALLOWLIST" | sort -u))
   [ -z "$unexpected" ] || die "new T3 Code text; say Loom or drop the name, marking each line 'fork: brand' (or allowlist an identifier in $BRAND_COPY_ALLOWLIST):
 $unexpected"
 }
 
+# The newest upstream release in HEAD's history, which the fork's changes are measured against.
+upstream_base() {
+  local base
+  base=$(git tag -l 'v[0-9]*' --merged HEAD --sort=-creatordate | sed -n 1p)
+  [ -n "$base" ] || die "no upstream release tag in HEAD's history; run git fetch upstream --tags"
+  printf '%s\n' "$base"
+}
+
+# The branding tests and every test file the fork adds or changes, beside its own code or
+# upstream's. Browser-mode tests need apps/web's headless Chromium project, which the root
+# config used here lacks.
 fork_tests() {
-  printf '%s\n' "${BRAND_TESTS[@]}"
-  # Browser-mode tests need apps/web's headless Chromium project, which the root
-  # config used here lacks; CI's web test job runs them.
-  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts' \
-    ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
+  local base
+  base=$(upstream_base) || return 1
+  {
+    printf '%s\n' "${BRAND_TESTS[@]}"
+    git diff --name-only --diff-filter=d "$base" -- '*.test.ts' '*.test.tsx' \
+      ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
+  } | sort -u
+}
+
+# The package a path belongs to: apps/<name> or packages/<name>, otherwise its top directory.
+test_package() {
+  awk -F/ '$1 == "apps" || $1 == "packages" { print $1 "/" $2; next } { print $1 }'
+}
+
+# Every workspace package with a typecheck task, as a package script or a Vite+ task in its
+# vite.config.ts, so packages upstream adds are typechecked too.
+typecheck_dirs() {
+  local root d found=0
+  root=$(pwd -P)
+  while IFS= read -r d; do
+    d=${d#"$root"/}
+    [ "$d" != "$root" ] || continue
+    if grep -qs '"typecheck":' "$d/package.json" || grep -qsE '^[[:space:]]+typecheck: \{' "$d/vite.config.ts"; then
+      printf '%s\n' "$d"
+      found=1
+    fi
+  done < <(pnpm -r ls --depth -1 --parseable)
+  [ "$found" -eq 1 ]
 }
 
 # Lint only fork-owned source. Skip unmatched globs so future fork directories
@@ -241,7 +275,6 @@ fork_lint_paths() {
 }
 
 check_fork_lint() {
-  say "Linting fork code"
   local path paths=()
   while IFS= read -r path; do paths+=("$path"); done < <(fork_lint_paths)
   # An empty path list would make vp lint the whole repository.
@@ -252,37 +285,77 @@ check_fork_lint() {
 
 # The Omarchy pack's own Node tests and its generated packet views.
 check_omarchy_pack() {
-  say "Running the Omarchy pack's checks"
   node deploy/omarchy/check.mjs
 }
 
-# Cheapest first and the tests last: every repair round reruns the checks from the top, so a
-# round that fixes a type error should not wait out the whole test suite first.
-run_checks() {
-  check_seams
-  check_brand_copy
-  say "Installing dependencies"
-  pnpm install --frozen-lockfile
-  check_fork_lint
-  check_omarchy_pack
-  say "Regenerating web routes and building the web client"
-  (cd apps/web && pnpm exec vp build)
-  local d
-  for d in "${TYPECHECK_DIRS[@]}"; do
-    say "Typechecking $d"
-    # Web and desktop define typecheck as a Vite+ task rather than a package script.
-    (cd "$d" && pnpm exec vp run typecheck)
-  done
-  say "Typechecking Loom benchmarks"
-  pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
-  say "Running the fork's tests"
-  local tests=()
-  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
+run_fork_tests() {
+  local package=$1 tests=() t
+  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests | awk -v p="$package/" 'index($0, p) == 1')
+  # With no test paths vitest would run every test in the repository.
+  [ "${#tests[@]}" -gt 0 ] || die "found no fork tests in $package"
   # Test paths are substring filters, so exclude agent worktrees nested in the
   # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
   # desktop artifact tests assert is absent.
   env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
+}
+
+in_dir() {
+  cd "$1" && shift && "$@"
+}
+
+# Runs one check under its "==> <name>" header and records a failure instead of stopping,
+# so one pass reaches every check. Call it as a plain command: inside if, || or && bash
+# ignores errexit, and a check would run on past its own failures.
+run_check() {
+  local name=$1 code
+  shift
+  say "$name"
+  set +e
+  (set -e; "$@")
+  code=$?
+  set -e
+  [ "$code" -eq 0 ] || FAILED_CHECKS+="$name"$'\n'
+}
+
+# Ends a pass: one "loom: check failed: <name>" line per failure, and fails if there was any.
+report_failed_checks() {
+  [ -n "$FAILED_CHECKS" ] || return 0
+  printf '%s' "$FAILED_CHECKS" | sed 's/^/loom: check failed: /' >&2
+  return 1
+}
+
+# Every check runs even after another fails, so one repair round sees them all; only a failed
+# install stops the rest, which would fail for that reason alone. Cheapest first, tests last.
+run_checks() {
+  FAILED_CHECKS=""
+  run_check "Checking that every fork seam survived" check_seams
+  run_check "Checking for new T3 Code product text" check_brand_copy
+  local before=$FAILED_CHECKS dirs d packages package
+  run_check "Installing dependencies" pnpm install --frozen-lockfile
+  if [ "$FAILED_CHECKS" = "$before" ]; then
+    run_check "Linting fork code" check_fork_lint
+    run_check "Running the Omarchy pack's checks" check_omarchy_pack
+    run_check "Regenerating web routes and building the web client" in_dir apps/web pnpm exec vp build
+    # One check per package, since vp stops typechecking every package after the first failure.
+    # An empty list would skip the checks unseen, so failing to list them is a failure too.
+    if dirs=$(typecheck_dirs); then
+      for d in $dirs; do
+        run_check "Typechecking $d" in_dir "$d" pnpm exec vp run typecheck
+      done
+    else
+      FAILED_CHECKS+="Listing the packages to typecheck"$'\n'
+    fi
+    run_check "Typechecking Loom benchmarks" pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
+    if packages=$(fork_tests | test_package | sort -u) && [ -n "$packages" ]; then
+      for package in $packages; do
+        run_check "Running the fork's tests in $package" run_fork_tests "$package"
+      done
+    else
+      FAILED_CHECKS+="Listing the fork's tests"$'\n'
+    fi
+  fi
   restore_lockfile
+  report_failed_checks
 }
 
 # Build the macOS app from the current checkout to prove it builds. Installable
@@ -765,7 +838,7 @@ cmd_integrate() {
       *) target=$arg ;;
     esac
   done
-  local tag branch start
+  local tag branch start resume=""
   if [ "$cont" -eq 1 ]; then
     branch=$(git rev-parse --abbrev-ref HEAD)
     [[ "$branch" == integrate/* ]] || die "--continue runs on an integrate/<tag> branch"
@@ -796,23 +869,45 @@ cmd_integrate() {
     fi
     start=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
     branch="integrate/$tag"
-    if [ "$pr" -eq 1 ] && [ "$dry" -eq 0 ] && git ls-remote --exit-code -q --heads origin "$branch" >/dev/null; then
-      replace_failed_integration "$branch" || return 0
+    if [ "$pr" -eq 1 ] && [ "$dry" -eq 0 ]; then
+      resume=$(open_integration "$tag") || die "could not list the open integration pull requests"
+      # A rerun at the same tag continues its own draft; only another attempt is replaced.
+      if [ "$resume" != "$branch" ] && git ls-remote --exit-code -q --heads origin "$branch" >/dev/null; then
+        replace_failed_integration "$branch" || return 0
+      fi
     fi
-    git switch -q -c "$branch"
-    say "Merging upstream $tag"
-    if ! git merge --no-ff --no-edit -m "chore(fork): integrate upstream $tag" "$tag"; then
-      if [ "$resolve" -eq 1 ] && resolve_conflicts "$tag"; then
-        git commit -q --no-edit
-      else
-        echo
-        echo "The merge stopped on conflicts in:"
-        git diff --name-only --diff-filter=U | sed 's/^/  /'
-        echo
-        echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
-        echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
-        echo "To give up: git merge --abort && git switch $start && git branch -D $branch"
-        exit 2
+    if [ -n "$resume" ]; then
+      say "Continuing the open integration $resume"
+      git switch -q -c "$branch" "origin/$resume"
+      if ! git merge --no-edit -m "chore(fork): merge main into $branch" origin/main; then
+        git merge --abort 2>/dev/null || true
+        say "main conflicts with $resume; starting over from main"
+        git checkout -q "$start"
+        git branch -q -D "$branch"
+        if [ "$resume" = "$branch" ]; then
+          replace_failed_integration "$branch" || return 0
+        fi
+        resume=""
+      fi
+    fi
+    if [ -z "$resume" ]; then
+      git switch -q -c "$branch"
+    fi
+    if ! git merge-base --is-ancestor "$tag" HEAD; then
+      say "Merging upstream $tag"
+      if ! git merge --no-ff --no-edit -m "chore(fork): integrate upstream $tag" "$tag"; then
+        if [ "$resolve" -eq 1 ] && resolve_conflicts "$tag"; then
+          git commit -q --no-edit
+        else
+          echo
+          echo "The merge stopped on conflicts in:"
+          git diff --name-only --diff-filter=U | sed 's/^/  /'
+          echo
+          echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
+          echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
+          echo "To give up: git merge --abort && git switch $start && git branch -D $branch"
+          exit 2
+        fi
       fi
     fi
   fi
@@ -883,26 +978,32 @@ finish_release() {
   fi
 }
 
-# Push a checked integrate/<tag> branch and open its pull request into main.
+# Push a checked integrate/<tag> branch and open its pull request into main, or finish the
+# needs-Kyle draft this run continued at the same tag.
 open_pr() {
-  local tag=$1 branch=$2 added
+  local tag=$1 branch=$2 added body draft
   added=$(git diff --name-only --diff-filter=A origin/main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
   say "Pushing $branch and opening its pull request"
   git push -q -u origin "$branch"
-  gh pr create --base main --head "$branch" \
-    --title "chore(fork): integrate upstream $tag" \
-    --body "Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests pass, and $(printf '%s, ' "${TYPECHECK_DIRS[@]}" | sed 's/, $//') typecheck.
+  body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, every test file the fork adds or changes passes, and every package typechecks.
 
 Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, publishes the next Loom release and installs it. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
 
 Upstream added these workflows. The loom-upstream workflow disables every non-fork workflow on its next run:
 $added}"
+  draft=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+  if [ -n "$draft" ]; then
+    gh pr edit "$draft" --title "chore(fork): integrate upstream $tag" --body "$body"
+    gh pr ready "$draft"
+  else
+    gh pr create --base main --head "$branch" --title "chore(fork): integrate upstream $tag" --body "$body"
+  fi
   close_superseded "$branch"
 }
 
 # Close open integration pull requests whose upstream tag this merge already contains,
-# including "needs Kyle" drafts. Their fixes are redone against newer upstream code, so
-# they only pile up; any commit the new branch lacks is listed on the closed one.
+# including "needs Kyle" drafts: a branch that continued one carries its commits, and any
+# commit the new branch lacks is listed on the closed one.
 close_superseded() {
   local branch=$1 new number other left
   new=$(gh pr view "$branch" --json number --jq .number)
@@ -917,6 +1018,32 @@ close_superseded() {
 
 $left}"
     done
+}
+
+# The pushed integrate/<tag> branch on HEAD closes the older attempts it contains, as
+# open_pr does, so a needs-Kyle draft supersedes them too.
+cmd_close_superseded() {
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  [[ "$branch" == integrate/* ]] || die "close-superseded runs on an integrate/<tag> branch"
+  close_superseded "$branch"
+}
+
+# The needs-Kyle draft an integration continues instead of starting over, as its branch: the
+# open draft holding the newest upstream tag that origin/main lacks and the target contains.
+# Its resolution and repairs survive; the run merges main and the newer tag into it.
+open_integration() {
+  local tag=$1 branch held
+  gh pr list --state open --json headRefName,isDraft \
+    --jq '.[] | select(.isDraft and (.headRefName | startswith("integrate/"))) | .headRefName' |
+    while IFS= read -r branch; do
+      git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || continue
+      held=$(git tag -l 'v[0-9]*' --merged "origin/$branch" --sort=-creatordate | sed -n 1p)
+      [ -n "$held" ] || continue
+      git merge-base --is-ancestor "$held" origin/main && continue
+      git merge-base --is-ancestor "$held" "$tag" || continue
+      printf '%s %s\n' "$(git log -1 --format=%ct "$held")" "$branch"
+    done | sort -rn | sed -n 1p | cut -d' ' -f2
 }
 
 # --- Upstream sync -------------------------------------------------------------
@@ -1105,14 +1232,26 @@ resolve_conflicts() {
   [ -z "$unresolved" ] || { cat "$summary"; return 1; }
 }
 
-# The fork's checks stop at their first failure. After a merge, each failure gets a fresh
-# repair session (prompt in scripts/fork/upstream-repair.md) whose changes become one commit,
-# up to LOOM_REPAIR_ROUNDS rounds, so a merge that breaks several checks never exhausts one
-# session. Dies when a session gives up (after committing what it changed) or changes nothing,
-# or the rounds run out; repair.md beside the resolve logs records every round. Call it outside if and ||: run_checks relies on
-# errexit, which bash ignores in those contexts even when set again.
+# Whether a newline-terminated list holds a line.
+listed() {
+  case $'\n'"$1" in *$'\n'"$2"$'\n'*) return 0 ;; esac
+  return 1
+}
+
+# LOOM_REPAIR_DEADLINE (epoch seconds) keeps the last session and pass inside the runner's limit.
+repair_time_left() { [ -z "${LOOM_REPAIR_DEADLINE:-}" ] || [ "$(now_epoch)" -lt "$LOOM_REPAIR_DEADLINE" ]; }
+
+# After a merge, every check that fails gets its own fresh repair session (prompt in
+# scripts/fork/upstream-repair.md) whose changes become one commit, then the checks run again.
+# A round repairs every failure of one pass, so a merge that breaks several checks neither
+# waits a round per check nor exhausts one session. A check gets LOOM_REPAIR_ATTEMPTS
+# sessions, none after one gives up, and none starts past LOOM_REPAIR_DEADLINE. Dies, keeping
+# every commit for the needs-Kyle draft, when a round changes nothing or no failing check may
+# have another session; repair.md beside the resolve logs records every session. Call it
+# outside if and ||: run_checks relies on errexit, which bash ignores there even when set again.
 checks_with_repair() {
-  local tag=$1 logs report round=0 code check log reply
+  local tag=$1 logs report round=0 code log failed check checks session reply attempts
+  local tried="" gave_up="" skipped ran changed
   logs=$(resolve_logs)
   report="$logs/repair.md"
   mkdir -p "$logs" && rm -f "$logs"/checks-*.log "$logs"/repair-*.log "$report"
@@ -1123,51 +1262,77 @@ checks_with_repair() {
     code=${PIPESTATUS[0]}
     set -e
     [ "$code" -ne 0 ] || return 0
-    check=$(awk '/^==> / { last = substr($0, 5) } END { print last }' "$log")
-    if [ "$round" -ge "$LOOM_REPAIR_ROUNDS" ]; then
-      echo "- Still failing after $round repair rounds: $check." >>"$report"
-      die "the fork's checks still fail after repair; see $report"
-    fi
-    round=$((round + 1))
-    say "Repair round $round of $LOOM_REPAIR_ROUNDS: $check"
-    sed -e "s|{{tag}}|$tag|g" -e "s|{{log}}|$log|g" "$REPO_ROOT/scripts/fork/upstream-repair.md" |
-      run_agent 150 acceptEdits Bash Read Edit Write Glob Grep >"$logs/repair-$round.log" 2>&1 ||
-      echo "The session exited with status $?." >>"$logs/repair-$round.log"
-    reply=$(final_line "$logs/repair-$round.log")
-    echo "- Round $round, $check: $(printf '%s' "$reply" | cut -c1-300)" >>"$report"
-    restore_lockfile
-    git add -A
-    if git diff --cached --quiet; then
-      [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
-      echo "  The session changed nothing." >>"$report"
-      die "repair round $round changed nothing"
-    fi
-    # A session that stops partway still commits, so the needs-Kyle draft keeps its work.
-    {
-      if [ "$reply" = REPAIRED ]; then
-        echo "fix(fork): repair round $round after upstream $tag"
-      else
-        echo "fix(fork): partial repair round $round after upstream $tag"
+    # A pass that broke outside every check names none; repair the last one it started.
+    failed=$(sed -n 's/^loom: check failed: //p' "$log")
+    [ -n "$failed" ] || failed=$(awk '/^==> / { last = substr($0, 5) } END { print last }' "$log")
+    checks=()
+    while IFS= read -r check; do checks+=("$check"); done <<<"$failed"
+    round=$((round + 1)) ran=0 changed=0 skipped=""
+    for check in "${checks[@]}"; do
+      attempts=$(printf '%s' "$tried" | grep -cxF -- "$check") || true
+      if listed "$gave_up" "$check"; then
+        skipped+="- Still failing: $check. Its session gave up."$'\n'
+        continue
+      elif [ "$attempts" -ge "$LOOM_REPAIR_ATTEMPTS" ]; then
+        skipped+="- Still failing: $check, after $attempts repair sessions."$'\n'
+        continue
+      elif ! repair_time_left; then
+        skipped+="- Still failing: $check. No time was left for another session."$'\n'
+        continue
       fi
-      echo
-      echo "Failing check: $check"
-      [ "$reply" = REPAIRED ] || printf '\nStopped before the check passed: %s\n' "$(printf '%s' "$reply" | cut -c1-300)"
-      echo
-      # The session's reply without its final line, at most 80 lines.
-      awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
-        "$logs/repair-$round.log"
-    } | git commit -q -F -
-    [ "$reply" = REPAIRED ] || die "repair round $round stopped: $reply"
+      ran=$((ran + 1))
+      session="$logs/repair-$round-$ran"
+      awk -v name="$check" '/^==> / { on = (substr($0, 5) == name) } on' "$log" >"$session-check.log"
+      say "Repair round $round: $check"
+      sed -e "s|{{tag}}|$tag|g" -e "s|{{check}}|$check|g" -e "s|{{log}}|$session-check.log|g" -e "s|{{all}}|$log|g" \
+        "$REPO_ROOT/scripts/fork/upstream-repair.md" |
+        run_agent 150 acceptEdits Bash Read Edit Write Glob Grep >"$session.log" 2>&1 ||
+        echo "The session exited with status $?." >>"$session.log"
+      tried+="$check"$'\n'
+      reply=$(final_line "$session.log")
+      echo "- Round $round, $check: $(printf '%s' "$reply" | cut -c1-300)" >>"$report"
+      case "$reply" in UNREPAIRABLE*) gave_up+="$check"$'\n' ;; esac
+      restore_lockfile
+      git add -A
+      if git diff --cached --quiet; then
+        echo "  The session changed nothing." >>"$report"
+        continue
+      fi
+      changed=1
+      # A session that stops partway still commits, so the needs-Kyle draft keeps its work.
+      {
+        if [ "$reply" = REPAIRED ]; then
+          echo "fix(fork): repair round $round after upstream $tag ($check)"
+        else
+          echo "fix(fork): partial repair round $round after upstream $tag ($check)"
+        fi
+        echo
+        echo "Failing check: $check"
+        [ "$reply" = REPAIRED ] || printf '\nStopped before the check passed: %s\n' "$(printf '%s' "$reply" | cut -c1-300)"
+        echo
+        # The session's reply without its final line, at most 80 lines.
+        awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
+          "$session.log"
+      } | git commit -q -F -
+    done
+    printf '%s' "$skipped" >>"$report"
+    [ "$ran" -gt 0 ] || die "the fork's checks still fail after repair; see $report"$'\n'"${skipped%$'\n'}"
+    [ "$changed" -eq 1 ] || die "repair round $round changed nothing; see $report"
   done
 }
 
-# The integration on HEAD, as a reviewer reads it: the merge's conflict resolution
-# (git show --remerge-diff) and every commit after it.
+# The integration on HEAD as a reviewer reads it: everything it adds to origin/main, oldest
+# first, with each merge's conflict resolution (git show --remerge-diff) and each commit's
+# patch. A branch that continued an earlier draft holds several merges, none reviewed yet.
 resolution_diff() {
-  local merge
-  merge=$(git rev-list --first-parent --merges -n 1 HEAD)
-  git show --remerge-diff --format='Merge %h %s' "$merge"
-  git log -p --format='Commit %h %s' "$merge..HEAD"
+  local commit
+  git rev-list --reverse --first-parent origin/main..HEAD | while IFS= read -r commit; do
+    if git rev-parse -q --verify "$commit^2" >/dev/null; then
+      git show --remerge-diff --format='Merge %h %s' "$commit"
+    else
+      git show --format='Commit %h %s' "$commit"
+    fi
+  done
 }
 
 # An independent session checks an unattended resolution before it merges without a
@@ -1280,6 +1445,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     upstream-status) shift; cmd_upstream_status "$@" ;;
     upstream-overlap) shift; cmd_upstream_overlap "$@" ;;
     review-integration) cmd_review_integration ;;
+    close-superseded) cmd_close_superseded ;;
     merge-integration) shift; cmd_merge_integration "$@" ;;
     notify) shift; cmd_notify "$@" ;;
     check) run_checks ;;

@@ -257,20 +257,18 @@ const makeFixture = (options?: { readonly realClone?: boolean }) =>
                 };
               }
               if (setupFails)
-                return yield* Effect.fail(
-                  new ThreadLaunch.ThreadLaunchError({
-                    operation: "run-setup-script",
-                    commandId: input.commandId,
-                    projectId: input.projectId,
-                    cause: "test failure",
-                  }),
-                );
+                return yield* new ThreadLaunch.ThreadLaunchError({
+                  operation: "run-setup-script",
+                  commandId: input.commandId,
+                  projectId: input.projectId,
+                  cause: "test failure",
+                });
               return { threadId: prepared.id } as never;
             }),
         } as unknown as ThreadLaunch.ThreadLaunchService["Service"]),
         Effect.provideService(ProjectService.ProjectService, {
           getById: (id: ProjectId) =>
-            Effect.succeed(Option.some({ id, workspaceRoot: isSource ? source : destination })),
+            Effect.succeedSome({ id, workspaceRoot: isSource ? source : destination }),
         } as unknown as ProjectService.ProjectService["Service"]),
         Effect.provideService(ServerEnvironment.ServerEnvironment, {
           getEnvironmentId: Effect.succeed(

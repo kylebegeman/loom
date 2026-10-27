@@ -317,60 +317,67 @@ const make = Effect.gen(function* () {
           ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
           WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;
   });
+  // Per-query accessors stay untraced; the Library operation that calls them owns the span.
   return LibraryStore.of({
-    transaction: (effect) =>
-      sql
+    transaction: Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
+      return yield* sql
         .withTransaction(effect)
         .pipe(
           Effect.catchIf(isSqlError, (cause) =>
             Effect.fail(new LibraryStoreError({ operation: "transaction", cause })),
           ),
-        ),
+        );
+    }),
     computers: run(
       "computers",
       sql<{
         payload_json: string;
       }>`SELECT payload_json FROM fork_library_computers ORDER BY environment_id`,
     ).pipe(Effect.map(payloads)),
-    putComputer: (environmentId, payload) =>
-      run(
+    putComputer: Effect.fnUntraced(function* (environmentId, payload) {
+      return yield* run(
         "computer",
         sql`INSERT INTO fork_library_computers(environment_id,payload_json) VALUES (${environmentId},${payload}) ON CONFLICT(environment_id) DO UPDATE SET payload_json=excluded.payload_json`,
-      ).pipe(Effect.asVoid),
+      ).pipe(Effect.asVoid);
+    }),
     authority: run(
       "authority",
       sql<{
         value_json: string;
       }>`SELECT value_json FROM fork_library_identity WHERE key = 'authority'`,
     ).pipe(Effect.map((rows) => first(rows)?.value_json ?? null)),
-    putAuthority: (payload) =>
-      run(
+    putAuthority: Effect.fnUntraced(function* (payload) {
+      return yield* run(
         "put-authority",
         sql`INSERT INTO fork_library_identity (key, value_json) VALUES ('authority', ${payload})`,
-      ).pipe(Effect.asVoid),
-    projectRevision: (id, revision) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    projectRevision: Effect.fnUntraced(function* (id, revision) {
+      return yield* run(
         "project-revision",
         sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_project_revisions WHERE project_id = ${id} AND revision = ${revision}`,
-      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
-    project: (id) =>
-      run(
+      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null));
+    }),
+    project: Effect.fnUntraced(function* (id) {
+      return yield* run(
         "project",
         sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_projects WHERE id = ${id}`,
-      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
-    projects: (includeArchived) =>
-      run(
+      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null));
+    }),
+    projects: Effect.fnUntraced(function* (includeArchived) {
+      return yield* run(
         "projects",
         sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_projects WHERE (${includeArchived ? 1 : 0} = 1 OR archived = 0) ORDER BY updated_at DESC, id`,
-      ).pipe(Effect.map(payloads)),
-    putProject: (input) =>
-      run(
+      ).pipe(Effect.map(payloads));
+    }),
+    putProject: Effect.fnUntraced(function* (input) {
+      return yield* run(
         "put-project",
         sql`INSERT INTO fork_library_projects (id, revision, archived, payload_json, created_at, updated_at) VALUES (${input.id}, ${input.revision}, ${input.archived ? 1 : 0}, ${input.payload}, ${input.createdAt}, ${input.updatedAt}) ON CONFLICT(id) DO UPDATE SET revision = excluded.revision, archived = excluded.archived, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
       ).pipe(
@@ -381,28 +388,32 @@ const make = Effect.gen(function* () {
           ),
         ),
         Effect.asVoid,
-      ),
-    copy: (id) =>
-      run(
+      );
+    }),
+    copy: Effect.fnUntraced(function* (id) {
+      return yield* run(
         "copy",
         sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_working_copies WHERE id = ${id}`,
-      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
-    copies: (projectId) =>
-      run(
+      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null));
+    }),
+    copies: Effect.fnUntraced(function* (projectId) {
+      return yield* run(
         "copies",
         sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_working_copies ${projectId ? sql`WHERE project_id = ${projectId}` : sql``} ORDER BY updated_at DESC, id`,
-      ).pipe(Effect.map(payloads)),
-    putCopy: (input) =>
-      run(
+      ).pipe(Effect.map(payloads));
+    }),
+    putCopy: Effect.fnUntraced(function* (input) {
+      return yield* run(
         "put-copy",
         sql`INSERT INTO fork_library_working_copies (id, project_id, environment_id, root_path, state, payload_json, updated_at) VALUES (${input.id}, ${input.projectId}, ${input.environmentId}, ${input.rootPath}, ${input.state}, ${input.payload}, ${input.updatedAt}) ON CONFLICT(id) DO UPDATE SET state = excluded.state, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
-      ).pipe(Effect.asVoid),
-    historyWindow: (id, offset, limit) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    historyWindow: Effect.fnUntraced(function* (id, offset, limit) {
+      return yield* run(
         "history-window",
         Effect.gen(function* () {
           const header = (yield* sql<{
@@ -445,35 +456,40 @@ const make = Effect.gen(function* () {
             itemCount: rows.length,
           };
         }),
-      ),
-    history: (id) =>
-      run("history", packed("fork_library_threads", sql`r.library_id = ${id}`)).pipe(
+      );
+    }),
+    history: Effect.fnUntraced(function* (id) {
+      return yield* run("history", packed("fork_library_threads", sql`r.library_id = ${id}`)).pipe(
         Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)))),
-      ),
-    thread: (environmentId, threadId) =>
-      run(
+      );
+    }),
+    thread: Effect.fnUntraced(function* (environmentId, threadId) {
+      return yield* run(
         "thread",
         packed(
           "fork_library_threads",
           sql`r.source_environment_id = ${environmentId} AND r.source_thread_id = ${threadId}`,
         ),
-      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
-    threads: (projectId, limit, offset, filter = EVERY_CONVERSATION) =>
-      run(
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)))));
+    }),
+    threads: Effect.fnUntraced(function* (projectId, limit, offset, filter = EVERY_CONVERSATION) {
+      return yield* run(
         "threads",
         sql<{
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE ${shownConversations(filter, sql`project_id = ${projectId}`)} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
-      ).pipe(Effect.map(payloads)),
-    threadSummary: (environmentId, threadId) =>
-      run(
+      ).pipe(Effect.map(payloads));
+    }),
+    threadSummary: Effect.fnUntraced(function* (environmentId, threadId) {
+      return yield* run(
         "thread-summary",
         sql<{
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
-      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
-    projectActivity: (omitArchivedProjects) =>
-      run(
+      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null));
+    }),
+    projectActivity: Effect.fnUntraced(function* (omitArchivedProjects) {
+      return yield* run(
         "project-activity",
         sql<NonNullable<LibraryThreadIndex["projectActivity"]>[number]>`
         SELECT project_id AS "projectId", COUNT(*) AS conversations, MAX(updated_at) AS "latestAt"
@@ -482,16 +498,18 @@ const make = Effect.gen(function* () {
           AND COALESCE(json_extract(summary_json, '$.archived'), 0) = 0
           ${omitArchivedProjects ? sql`AND ${outsideArchivedProjects}` : sql``}
         GROUP BY project_id`,
-      ),
-    threadIndex: (limit, offset, filter = EVERY_CONVERSATION) =>
-      run(
+      );
+    }),
+    threadIndex: Effect.fnUntraced(function* (limit, offset, filter = EVERY_CONVERSATION) {
+      return yield* run(
         "thread-index",
         sql<{
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE ${shownConversations(filter)} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
-      ).pipe(Effect.map(payloads)),
-    putThread: (input) =>
-      run(
+      ).pipe(Effect.map(payloads));
+    }),
+    putThread: Effect.fnUntraced(function* (input) {
+      return yield* run(
         "save-history",
         Effect.gen(function* () {
           const packed = yield* pack(input.payload);
@@ -507,34 +525,39 @@ const make = Effect.gen(function* () {
           );
           if (previous !== undefined && previous !== packed) yield* release(previous, input.id);
         }),
-      ),
-    cursor: (environmentId, journalId) =>
-      run(
+      );
+    }),
+    cursor: Effect.fnUntraced(function* (environmentId, journalId) {
+      return yield* run(
         "cursor",
         sql<{
           last_sequence: number;
         }>`SELECT last_sequence FROM fork_library_host_cursors WHERE environment_id = ${environmentId} AND journal_id = ${journalId}`,
-      ).pipe(Effect.map((rows) => first(rows)?.last_sequence ?? 0)),
-    putCursor: (environmentId, journalId, sequence) =>
-      run(
+      ).pipe(Effect.map((rows) => first(rows)?.last_sequence ?? 0));
+    }),
+    putCursor: Effect.fnUntraced(function* (environmentId, journalId, sequence) {
+      return yield* run(
         "put-cursor",
         sql`INSERT INTO fork_library_host_cursors (environment_id, journal_id, last_sequence) VALUES (${environmentId}, ${journalId}, ${sequence}) ON CONFLICT(environment_id, journal_id) DO UPDATE SET last_sequence = excluded.last_sequence`,
-      ).pipe(Effect.asVoid),
-    ingestedDigest: (environmentId, journalId, sequence) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    ingestedDigest: Effect.fnUntraced(function* (environmentId, journalId, sequence) {
+      return yield* run(
         "ingested-digest",
         sql<{
           payload_digest: string;
         }>`SELECT payload_digest FROM fork_library_ingested_entries WHERE environment_id = ${environmentId} AND journal_id = ${journalId} AND sequence = ${sequence}`,
-      ).pipe(Effect.map((rows) => first(rows)?.payload_digest ?? null)),
+      ).pipe(Effect.map((rows) => first(rows)?.payload_digest ?? null));
+    }),
     // Replays are checked against the digest alone, so the archive is never kept for them.
-    putIngestedDigest: (environmentId, journalId, sequence, digest) =>
-      run(
+    putIngestedDigest: Effect.fnUntraced(function* (environmentId, journalId, sequence, digest) {
+      return yield* run(
         "put-ingested-digest",
         sql`INSERT INTO fork_library_ingested_entries (environment_id, journal_id, sequence, payload_digest, payload_json) VALUES (${environmentId}, ${journalId}, ${sequence}, ${digest}, '')`,
-      ).pipe(Effect.asVoid),
-    threadVersion: (id, sourceSequence) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    threadVersion: Effect.fnUntraced(function* (id, sourceSequence) {
+      return yield* run(
         "thread-version",
         packed(
           "fork_library_thread_versions",
@@ -550,14 +573,16 @@ const make = Effect.gen(function* () {
             return { payload: (yield* run("unpack-history", unpack(saved))) ?? saved.payload_json };
           }),
         ),
-      ),
-    putThreadVersion: (id, sourceSequence, digest) =>
-      run(
+      );
+    }),
+    putThreadVersion: Effect.fnUntraced(function* (id, sourceSequence, digest) {
+      return yield* run(
         "put-thread-version",
         sql`INSERT INTO fork_library_thread_versions (library_id, source_sequence, payload_json) VALUES (${id}, ${sourceSequence}, ${VERSION_DIGEST_PREFIX + digest})`,
-      ).pipe(Effect.asVoid),
-    compactThreadVersion: (id, sourceSequence, digest) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    compactThreadVersion: Effect.fnUntraced(function* (id, sourceSequence, digest) {
+      return yield* run(
         "compact-thread-version",
         Effect.gen(function* () {
           const saved = first(
@@ -569,14 +594,16 @@ const make = Effect.gen(function* () {
           yield* sql`UPDATE fork_library_thread_versions SET payload_json = ${VERSION_DIGEST_PREFIX + digest} WHERE library_id = ${id} AND source_sequence = ${sourceSequence}`;
           yield* release(saved, id);
         }),
-      ),
-    importProof: (requestId) =>
-      run(
+      );
+    }),
+    importProof: Effect.fnUntraced(function* (requestId) {
+      return yield* run(
         "import-proof",
         packed("fork_library_import_proofs", sql`r.request_id = ${requestId}`),
-      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows))))),
-    putImportProof: (requestId, payload) =>
-      run(
+      ).pipe(Effect.flatMap((rows) => run("unpack-history", unpack(first(rows)))));
+    }),
+    putImportProof: Effect.fnUntraced(function* (requestId, payload) {
+      return yield* run(
         "save-history",
         Effect.gen(function* () {
           const packed = yield* pack(payload);
@@ -585,31 +612,36 @@ const make = Effect.gen(function* () {
             sql`INSERT INTO fork_library_import_proofs (request_id, payload_json) VALUES (${requestId}, ${packed})`,
           ).pipe(Effect.asVoid);
         }),
-      ),
-    receipt: (requestId) =>
-      run(
+      );
+    }),
+    receipt: Effect.fnUntraced(function* (requestId) {
+      return yield* run(
         "receipt",
         sql<{
           operation: string;
           fingerprint: string;
           result_json: string;
         }>`SELECT operation, fingerprint, result_json FROM fork_library_commands WHERE request_id = ${requestId}`,
-      ).pipe(Effect.map(first)),
-    putReceipt: (requestId, operation, fingerprint, result) =>
-      run(
+      ).pipe(Effect.map(first));
+    }),
+    putReceipt: Effect.fnUntraced(function* (requestId, operation, fingerprint, result) {
+      return yield* run(
         "put-receipt",
         sql`INSERT INTO fork_library_commands (request_id, operation, fingerprint, result_json) VALUES (${requestId}, ${operation}, ${fingerprint}, ${result})`,
-      ).pipe(Effect.asVoid),
-    deleteReceipts: (prefix) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    deleteReceipts: Effect.fnUntraced(function* (prefix) {
+      return yield* run(
         "delete-receipts",
         sql`DELETE FROM fork_library_commands WHERE substr(request_id, 1, ${prefix.length}) = ${prefix}`,
-      ).pipe(Effect.asVoid),
-    appendEvent: (aggregateId, eventType, payload, createdAt) =>
-      run(
+      ).pipe(Effect.asVoid);
+    }),
+    appendEvent: Effect.fnUntraced(function* (aggregateId, eventType, payload, createdAt) {
+      return yield* run(
         "append-event",
         sql`INSERT INTO fork_library_events (aggregate_id, event_type, payload_json, created_at) VALUES (${aggregateId}, ${eventType}, ${payload}, ${createdAt})`,
-      ).pipe(Effect.asVoid),
+      ).pipe(Effect.asVoid);
+    }),
   });
 });
 export const layer = Layer.effect(LibraryStore, make);

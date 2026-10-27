@@ -42,7 +42,9 @@ export const layerSource = Layer.effect(
     const read = yield* makeCopyHealthReader;
     const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     return LibraryCopyHealthSource.of({
-      read: (copy, since) => read(copy, { since }),
+      read: Effect.fn("LibraryCopyHealthSource.read")(function (copy, since) {
+        return read(copy, { since });
+      }),
       changes: (paths) =>
         Stream.mergeAll(
           paths.map((cwd) =>

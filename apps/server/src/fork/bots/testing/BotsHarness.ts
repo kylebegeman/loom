@@ -135,27 +135,29 @@ export const makeHarness = Effect.gen(function* () {
         const shell = shells.get(threadId);
         return shell === undefined ? null : { deletedAt: null, archivedAt: null, ...shell };
       }),
-    waitForThread: (input: ThreadManagement.ThreadManagementWaitInput) =>
-      Effect.gen(function* () {
-        if (state.timeOut && !interrupted.includes(input.threadId))
-          return {
-            threadId: input.threadId,
-            run: threadRun(input.threadId, "running"),
-            timedOut: true,
-          };
-        const outcome = yield* Deferred.await(outcomeFor(input.threadId));
+    waitForThread: Effect.fn("waitForThread")(function* (
+      input: ThreadManagement.ThreadManagementWaitInput,
+    ) {
+      if (state.timeOut && !interrupted.includes(input.threadId))
         return {
           threadId: input.threadId,
-          run: threadRun(input.threadId, outcome.status),
-          timedOut: false,
+          run: threadRun(input.threadId, "running"),
+          timedOut: true,
         };
-      }),
-    interruptThread: (input: ThreadManagement.ThreadManagementInterruptInput) =>
-      Effect.gen(function* () {
-        interrupted.push(input.threadId);
-        yield* end(input.threadId, { status: "interrupted", reply: "Partial notes." });
-        return {};
-      }),
+      const outcome = yield* Deferred.await(outcomeFor(input.threadId));
+      return {
+        threadId: input.threadId,
+        run: threadRun(input.threadId, outcome.status),
+        timedOut: false,
+      };
+    }),
+    interruptThread: Effect.fn("interruptThread")(function* (
+      input: ThreadManagement.ThreadManagementInterruptInput,
+    ) {
+      interrupted.push(input.threadId);
+      yield* end(input.threadId, { status: "interrupted", reply: "Partial notes." });
+      return {};
+    }),
     getProjectThreadRecords: (
       input: { readonly threadId: ThreadId },
       fields: ReadonlyArray<string>,
@@ -171,13 +173,14 @@ export const makeHarness = Effect.gen(function* () {
         });
       }),
     hasReceipt: (commandId: string) => Effect.sync(() => receipts.has(commandId)),
-    sendToThread: (input: ThreadManagement.ThreadManagementSendInput) =>
-      Effect.gen(function* () {
-        if (state.sendError !== null) return yield* Effect.fail(state.sendError);
-        sent.push(input);
-        receipts.add(input.commandId);
-        return {};
-      }),
+    sendToThread: Effect.fn("sendToThread")(function* (
+      input: ThreadManagement.ThreadManagementSendInput,
+    ) {
+      if (state.sendError !== null) return yield* Effect.fail(state.sendError);
+      sent.push(input);
+      receipts.add(input.commandId);
+      return {};
+    }),
     dispatch: (command: OrchestrationV2ServerCommand) =>
       Effect.sync(() => {
         dispatched.push(command);
@@ -186,16 +189,15 @@ export const makeHarness = Effect.gen(function* () {
   } as unknown as ThreadManagement.ThreadManagementService["Service"];
 
   const launchService = {
-    launch: (input: ThreadLaunch.ThreadLaunchInput) =>
-      Effect.gen(function* () {
-        launches.push(input);
-        yield* Queue.offer(launched, input);
-        return {
-          threadId: input.threadId!,
-          projection: { runs: [{ id: `run-${input.threadId}`, ordinal: 1, status: "running" }] },
-          resumed: false,
-        };
-      }),
+    launch: Effect.fn("launch")(function* (input: ThreadLaunch.ThreadLaunchInput) {
+      launches.push(input);
+      yield* Queue.offer(launched, input);
+      return {
+        threadId: input.threadId!,
+        projection: { runs: [{ id: `run-${input.threadId}`, ordinal: 1, status: "running" }] },
+        resumed: false,
+      };
+    }),
     checkWorktreeBase: () => Effect.void,
   } as unknown as ThreadLaunch.ThreadLaunchService["Service"];
 
@@ -233,10 +235,13 @@ export const makeHarness = Effect.gen(function* () {
 
 export type Harness = Effect.Success<typeof makeHarness>;
 
-export const withHarness = <A, E>(
-  use: (harness: Harness) => Effect.Effect<A, E, SqlClient.SqlClient | Scope.Scope>,
-) =>
-  Effect.gen(function* () {
+export const withHarness = Effect.fn("withHarness")(
+  function* <A, E>(
+    use: (harness: Harness) => Effect.Effect<A, E, SqlClient.SqlClient | Scope.Scope>,
+  ) {
     yield* runForkMigrationSet(BotsMigrations);
     return yield* use(yield* makeHarness);
-  }).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory));
+  },
+  Effect.scoped,
+  Effect.provide(SqlitePersistenceMemory),
+);

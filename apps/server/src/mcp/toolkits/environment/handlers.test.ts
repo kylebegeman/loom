@@ -10,7 +10,6 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -199,7 +198,7 @@ it.effect("tells an agent where projects, worktrees, lanes and scratch work go",
         ),
         Layer.provideMerge(
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            scratchRoot: Effect.succeed(Option.some("/home/kyle/.t3/scratch")),
+            scratchRoot: Effect.succeedSome("/home/kyle/.t3/scratch"),
           }),
         ),
       ),

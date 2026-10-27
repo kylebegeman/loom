@@ -36,8 +36,8 @@ export class BackgroundChecks extends Context.Service<
 >()("t3/fork/background-checks/BackgroundChecks") {}
 
 const NOT_RECORDED = BackgroundChecks.of({
-  fail: () => Effect.void,
-  clear: () => Effect.void,
+  fail: Effect.fn("BackgroundChecks.fail")(() => Effect.void),
+  clear: Effect.fn("BackgroundChecks.clear")(() => Effect.void),
   failures: Effect.succeed([]),
 });
 

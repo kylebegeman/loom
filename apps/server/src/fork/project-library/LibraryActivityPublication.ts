@@ -139,10 +139,14 @@ export const layerSource = Layer.effect(
         Effect.orElseSucceed(() => []),
       );
     return LibraryActivitySource.of({
-      completions: (sinceMs) =>
-        Effect.all([scheduled(DateTime.formatIso(DateTime.makeUnsafe(sinceMs))), jobs(sinceMs)], {
-          concurrency: "unbounded",
-        }).pipe(Effect.map(([runs, finished]) => [...runs, ...finished])),
+      completions: Effect.fn("LibraryActivitySource.completions")(function (sinceMs) {
+        return Effect.all(
+          [scheduled(DateTime.formatIso(DateTime.makeUnsafe(sinceMs))), jobs(sinceMs)],
+          {
+            concurrency: "unbounded",
+          },
+        ).pipe(Effect.map(([runs, finished]) => [...runs, ...finished]));
+      }),
     });
   }),
 );

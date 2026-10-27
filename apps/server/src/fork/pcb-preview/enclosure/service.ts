@@ -187,8 +187,9 @@ export const makeEnclosure = Effect.fn("PcbPreview.makeEnclosure")(function* (de
           .writeFileString(destination, encodeAssembly(doc) + "\n", { flag: "wx" })
           .pipe(
             Effect.as(true),
-            Effect.catch((e) =>
-              e.reason._tag === "AlreadyExists" ? Effect.succeed(false) : Effect.fail(e),
+            Effect.catchIf(
+              (e) => e.reason._tag === "AlreadyExists",
+              () => Effect.succeed(false),
             ),
           );
       }

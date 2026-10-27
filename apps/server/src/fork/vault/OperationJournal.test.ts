@@ -181,10 +181,9 @@ it.effect("serializes competing reservations and bounds CAS retries", () =>
       yield* f.journal.prepare(f.input, f.threadId);
       const a = { id: f.input.id, expectedRevision: 1, reservationId: yield* f.id };
       const b = { ...a, reservationId: yield* f.id };
-      const outcomes = yield* Effect.all(
-        [f.journal.reserve(f.input, a, f.threadId), f.journal.reserve(f.input, b, f.threadId)].map(
-          (e) => e.pipe(Effect.result),
-        ),
+      const outcomes = yield* Effect.forEach(
+        [f.journal.reserve(f.input, a, f.threadId), f.journal.reserve(f.input, b, f.threadId)],
+        (e) => e.pipe(Effect.result),
         { concurrency: "unbounded" },
       );
       expect(outcomes.filter((e) => e._tag === "Success")).toHaveLength(1);

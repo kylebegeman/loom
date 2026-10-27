@@ -188,8 +188,8 @@ Mobile changes also run `vp run lint:mobile`.
 A packet is only done if the next upstream merge still applies cleanly.
 
 1. For the complete integration check, run `scripts/fork/loom.sh check`: the seam manifest,
-   fork lint, every fork test (`*/fork/*.test.ts(x)` plus the branding tests), the web build
-   and the typechecks the upstream merge runs. During implementation, use focused checks
+   fork lint, every test file the fork adds or changes since the upstream release `HEAD`
+   holds (plus the branding tests), the web build and a typecheck of every workspace package. During implementation, use focused checks
    appropriate to the changed behavior; do not launch the full check in a shared dirty
    checkout without reviewing its scope. Then preview the merge without touching the worktree:
 
@@ -215,9 +215,11 @@ A packet is only done if the next upstream merge still applies cleanly.
 
 ### Remaining coverage
 
-`TYPECHECK_DIRS` leaves out `apps/mobile`. The first packet with mobile fork code adds it.
-The existing web build regenerates `apps/web/src/routeTree.gen.ts` before the web typecheck
-(EXTENSION-POINTS.md, Settings).
+The fork's copy of upstream's CI workflow is disabled, so `loom.sh check` is the only gate
+an unattended integration passes before it merges. It skips browser-mode tests, which need
+apps/web's Chromium project, and upstream test files the fork has not changed. The web build
+regenerates `apps/web/src/routeTree.gen.ts` before the web typecheck (EXTENSION-POINTS.md,
+Settings).
 
 ## Documentation
 

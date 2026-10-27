@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import { WS_METHODS } from "@t3tools/contracts";
 import { LIBRARY_WS_METHODS, PROJECT_WORKFLOW_WS_METHODS } from "@t3tools/contracts/fork";
 import { Atom } from "effect/reactivity";
@@ -141,6 +140,8 @@ function evictOldestPendingRpcRequestIfNeeded(): void {
   }
 }
 
-export function useSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {
-  return useAtomValue(slowRpcAckRequestsAtom);
+export function subscribeSlowRpcAckRequests(
+  listener: (requests: ReadonlyArray<SlowRpcAckRequest>) => void,
+): () => void {
+  return appAtomRegistry.subscribe(slowRpcAckRequestsAtom, listener);
 }

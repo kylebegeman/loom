@@ -1616,7 +1616,7 @@ describe("storage cleanup reports and local file policies", () => {
                 Effect.die("Existing branches do not need checkpoint recovery"),
             }),
             Layer.mock(ProjectService.ProjectService)({
-              getById: () => Effect.succeed(Option.some({ workspaceRoot: fixture.repo } as never)),
+              getById: () => Effect.succeedSome({ workspaceRoot: fixture.repo } as never),
             }),
             Layer.mock(GitWorkflow.GitWorkflowService)({
               hasCommit: () => Effect.succeed(true),

@@ -138,7 +138,7 @@ const decodeLibrary = Schema.decodeUnknownOption(libraryJson);
 const encodeLibrary = Schema.encodeSync(libraryJson);
 const computerJson = Schema.fromJsonString(BotRunComputer);
 const decodeComputer = (json: string | null | undefined) =>
-  json == null ? null : Option.getOrNull(Schema.decodeUnknownOption(computerJson)(json));
+  json == null ? null : Option.getOrNull(Schema.decodeOption(computerJson)(json));
 const encodeComputer = (computer: BotRunComputer | null | undefined) =>
   computer == null ? null : Schema.encodeSync(computerJson)(computer);
 const remoteSettingsJson = Schema.fromJsonString(BotRemoteSettings);

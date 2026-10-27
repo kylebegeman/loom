@@ -126,10 +126,17 @@ const make = Effect.gen(function* () {
     return value.value;
   });
   return SshAgentClient.of({
-    open: (input) => call("loom_vault_ssh_agent_open", input, VaultSshAgentSession),
-    frame: (input) => call("loom_vault_ssh_agent_frame", input, VaultSshAgentResponse),
-    close: (sessionId) =>
-      call("loom_vault_ssh_agent_close", { sessionId }, VaultSshAgentClosed).pipe(Effect.asVoid),
+    open: Effect.fn("SshAgentClient.open")(function (input) {
+      return call("loom_vault_ssh_agent_open", input, VaultSshAgentSession);
+    }),
+    frame: Effect.fn("SshAgentClient.frame")(function (input) {
+      return call("loom_vault_ssh_agent_frame", input, VaultSshAgentResponse);
+    }),
+    close: Effect.fn("SshAgentClient.close")(function (sessionId) {
+      return call("loom_vault_ssh_agent_close", { sessionId }, VaultSshAgentClosed).pipe(
+        Effect.asVoid,
+      );
+    }),
   });
 });
 export const layer = Layer.effect(SshAgentClient, make);

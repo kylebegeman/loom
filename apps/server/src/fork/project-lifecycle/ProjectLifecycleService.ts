@@ -1714,11 +1714,10 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
               "unsupported",
               `Process ${pid} forwards ports for containers, so a lane cannot own it. Label the container ${DOCKER_LABEL}=${lane.id} instead.`,
             );
-          try {
-            process.kill(pid, 0);
-          } catch {
-            return yield* error("unsupported", `Process ${pid} belongs to another user.`);
-          }
+          yield* Effect.try({
+            try: () => process.kill(pid, 0),
+            catch: () => error("unsupported", `Process ${pid} belongs to another user.`),
+          });
           yield* appendLedger(lane, {
             kind,
             ref: String(pid),

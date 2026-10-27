@@ -14,7 +14,6 @@ import type { AppleContainer, AppleLogChunk, AppleRunRequest } from "@t3tools/co
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
@@ -162,7 +161,7 @@ const setup = (platform: NodeJS.Platform = "darwin") =>
       Effect.provideService(
         ProjectStore.ProjectStoreV2,
         partial<ProjectStore.ProjectStoreV2["Service"]>({
-          get: () => Effect.succeed(Option.some(projectShell as never)),
+          get: () => Effect.succeedSome(projectShell as never),
           listShells: () => Effect.succeed([projectShell]),
         }),
       ),

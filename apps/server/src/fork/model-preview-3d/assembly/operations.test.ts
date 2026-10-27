@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ModelAssembly } from "@t3tools/contracts/fork";
 import { applyOperations } from "./operations.ts";
-const empty = Schema.decodeUnknownSync(ModelAssembly)({
+const empty = Schema.decodeSync(ModelAssembly)({
   format: "loom-assembly",
   version: 1,
   name: "Test",

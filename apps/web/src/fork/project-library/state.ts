@@ -26,7 +26,8 @@ import { isHostedStaticApp } from "~/hostedPairing";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { accessBlock } from "./accessBlock";
 
-export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
+export const projectLibrary: ReturnType<typeof createProjectLibraryAtoms> =
+  createProjectLibraryAtoms(connectionAtomRuntime);
 /** Every surface reads this one page of the thread index, so the client fetches it once. */
 export const LIBRARY_THREAD_INDEX_LIMIT = 200;
 const AUTHORITY_KEY = "loom:project-library:authority:v1";

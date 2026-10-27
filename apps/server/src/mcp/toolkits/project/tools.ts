@@ -20,6 +20,7 @@ import {
   SourceControlCloneRepositoryInput,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
+import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as ThreadLaunchService from "../../../orchestration-v2/ThreadLaunchService.ts";
@@ -157,6 +158,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     FileSystem.FileSystem,
     ServerConfig.ServerConfig,
     ServerSettings.ServerSettingsService,
+    DocumentText.DocumentText,
   ],
 })
   .annotate(Tool.Destructive, true)

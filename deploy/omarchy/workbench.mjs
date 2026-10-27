@@ -7,7 +7,6 @@ import * as NodeFS from "node:fs";
 import { finderChoice, itemReference } from "./loom-os.mjs";
 import { nativeCapture } from "./capture.mjs";
 import { collectPrivateConnections, formatPrivateConnections } from "./health.mjs";
-/* eslint-disable no-control-regex -- Reject input controls and show selected terminal escapes literally. */
 
 export const workbenchLimits = Object.freeze({
   textBytes: 64 * 1024,

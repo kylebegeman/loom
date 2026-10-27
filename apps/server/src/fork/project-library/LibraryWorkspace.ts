@@ -1515,7 +1515,7 @@ const make = Effect.gen(function* () {
           const repositoryPath = repositoryPathOf(resource);
           if (input.strategy === "clone") {
             const failure = downloadFailures.get(resource.id);
-            if (failure !== undefined) return yield* Effect.fail(failure);
+            if (failure !== undefined) return yield* failure;
             yield* cloneResource(resource, rootPath, repositoryPath, report);
           }
           const inspected = yield* inspectRepository(rootPath, repositoryPath);
@@ -1577,7 +1577,7 @@ const make = Effect.gen(function* () {
         ...receipt,
         copy: { ...receipt.copy, state: "failed", updatedAt: yield* now },
       });
-      return yield* Effect.fail(prepared.failure);
+      return yield* prepared.failure;
     }
     return prepared.success;
   });
@@ -4220,14 +4220,22 @@ const make = Effect.gen(function* () {
   }).pipe(Effect.withSpan("LibraryWorkspace.reconcileReceipts"));
   yield* reconcileReceipts.pipe(Effect.ignoreCause({ log: true }));
 
+  // Members wrapping a same-named Effect.fn stay untraced; the inner function owns the span.
   return LibraryWorkspace.of({
     historyFolders: historyFolders(),
-    threadProject: (input) => store.getBoundProject(input.threadId),
-    threadBinding: (input) =>
-      store.getBinding(input.threadId).pipe(Effect.map((resolved) => resolved?.binding ?? null)),
-    inspectFolder: (input) => mapIo(inspectFolder(input)),
-    preparation: (input) =>
-      store.receipts.pipe(
+    threadProject: Effect.fn("LibraryWorkspace.threadProject")(function (input) {
+      return store.getBoundProject(input.threadId);
+    }),
+    threadBinding: Effect.fn("LibraryWorkspace.threadBinding")(function (input) {
+      return store
+        .getBinding(input.threadId)
+        .pipe(Effect.map((resolved) => resolved?.binding ?? null));
+    }),
+    inspectFolder: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(inspectFolder(input));
+    }),
+    preparation: Effect.fn("LibraryWorkspace.preparation")(function (input) {
+      return store.receipts.pipe(
         Effect.map(
           (receipts) =>
             receipts.find(
@@ -4238,22 +4246,23 @@ const make = Effect.gen(function* () {
                 ),
             )?.copy ?? null,
         ),
-      ),
-    prepareCopy: (input) =>
-      reserveCopy(input).pipe(
-        Effect.flatMap((copy) =>
-          copy.state === "preparing" || copy.state === "failed"
-            ? fillCopy({ workingCopyId: copy.id })
-            : Effect.succeed(copy),
+      );
+    }),
+    prepareCopy: Effect.fnUntraced(function* (input) {
+      return yield* reserveCopy(input).pipe(
+        Effect.filterOrElse(
+          (copy) => copy.state !== "preparing" && copy.state !== "failed",
+          (copy) => fillCopy({ workingCopyId: copy.id }),
         ),
-      ),
+      );
+    }),
     reserveCopy,
     fillCopy,
     placement: Effect.fn("LibraryWorkspace.placement")(function* (input) {
       return (yield* mapIo(findPlacement(input))).placement;
     }),
-    restoreCopy: (input) =>
-      locks
+    restoreCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           "prepare",
           mapIo(
@@ -4277,9 +4286,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    readiness: (input) =>
-      mapIo(
+        .pipe(Effect.tap(publishCopy));
+    }),
+    readiness: Effect.fn("LibraryWorkspace.readiness")(function (input) {
+      return mapIo(
         Effect.gen(function* () {
           const recorded =
             input.profile === undefined
@@ -4295,36 +4305,42 @@ const make = Effect.gen(function* () {
             profile: input.profile ?? recorded?.project.profile ?? {},
           });
         }),
-      ),
-    profileSettings: (input) => mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read))),
-    applyProfile: (input) =>
-      locks.withLock(
+      );
+    }),
+    profileSettings: Effect.fn("LibraryWorkspace.profileSettings")(function (input) {
+      return mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read)));
+    }),
+    applyProfile: Effect.fn("LibraryWorkspace.applyProfile")(function (input) {
+      return locks.withLock(
         copyKey(input.workingCopyId),
         mapIo(
           settingsCopy(input).pipe(
             Effect.flatMap((copy) => settings.apply({ ...copy, reviewToken: input.reviewToken })),
           ),
         ),
-      ),
-    status: (input) =>
-      mapIo(
+      );
+    }),
+    status: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(
         Effect.gen(function* () {
           const { contentsDigest: _contentsDigest, ...review } = yield* status(input);
           if (review.copy.state === "released" || review.copy.registered === false) return review;
           return { ...review, health: yield* readHealth(review.copy) };
         }),
-      ),
-    health: (input) =>
-      mapIo(
+      );
+    }),
+    health: Effect.fn("LibraryWorkspace.health")(function (input) {
+      return mapIo(
         Effect.gen(function* () {
           const { copy } = yield* store.get(input.workingCopyId);
           if (copy.state === "released" || copy.registered === false)
             return yield* new LibraryError({ reason: "invalid" });
           return yield* readHealth(copy, { refreshRemote: input.refreshRemote });
         }),
-      ),
-    setCopyRetention: (input) =>
-      Effect.acquireUseRelease(
+      );
+    }),
+    setCopyRetention: Effect.fnUntraced(function* (input) {
+      return yield* Effect.acquireUseRelease(
         // A Keep request can arrive while automatic cleanup uploads its archive under the lock.
         Effect.sync(() => {
           if (input.keepOnComputer)
@@ -4338,9 +4354,10 @@ const make = Effect.gen(function* () {
             if (remaining === 0) pendingKeeps.delete(input.workingCopyId);
             else pendingKeeps.set(input.workingCopyId, remaining);
           }),
-      ).pipe(Effect.tap(publishCopy)),
-    reopenCopy: (input) =>
-      locks
+      ).pipe(Effect.tap(publishCopy));
+    }),
+    reopenCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           copyKey(input.workingCopyId),
           mapIo(
@@ -4350,9 +4367,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    snapshotCopy: (input) =>
-      locks
+        .pipe(Effect.tap(publishCopy));
+    }),
+    snapshotCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           copyKey(input.workingCopyId),
           mapIo(
@@ -4362,13 +4380,19 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    prepareThreadFiles: (input) => mapIo(prepareThreadFiles(input)),
-    cleanupTemporaryCopies: (isHistoryAcknowledged) =>
-      mapIo(cleanupTemporaryCopies(isHistoryAcknowledged)),
-    unregister: (input) => locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input))),
-    release: (input) =>
-      locks.withLock(
+        .pipe(Effect.tap(publishCopy));
+    }),
+    prepareThreadFiles: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(prepareThreadFiles(input));
+    }),
+    cleanupTemporaryCopies: Effect.fnUntraced(function* (isHistoryAcknowledged) {
+      return yield* mapIo(cleanupTemporaryCopies(isHistoryAcknowledged));
+    }),
+    unregister: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input)));
+    }),
+    release: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(
         copyKey(input.workingCopyId),
         mapIo(
           Effect.gen(function* () {
@@ -4376,10 +4400,13 @@ const make = Effect.gen(function* () {
             return yield* withWorkspaceLease(receipt.copy.rootPath, release(input));
           }),
         ),
-      ),
-    resolveBinding: (input) => mapIo(resolveBinding(input)),
-    bindThread: (input) =>
-      locks.withLock(
+      );
+    }),
+    resolveBinding: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(resolveBinding(input));
+    }),
+    bindThread: Effect.fn("LibraryWorkspace.bindThread")(function (input) {
+      return locks.withLock(
         copyKey(input.binding.workingCopyId),
         mapIo(
           Effect.gen(function* () {
@@ -4420,8 +4447,11 @@ const make = Effect.gen(function* () {
             return resolved;
           }),
         ),
-      ),
-    moveThread: (input) => mapIo(moveThread(input)),
+      );
+    }),
+    moveThread: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(moveThread(input));
+    }),
   });
 });
 

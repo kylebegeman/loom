@@ -135,7 +135,7 @@ export const makeHistoryRestore = Effect.fn("ModelHistory.makeRestore")(function
                 previous.mode,
               );
           }
-          return yield* Effect.fail(cause);
+          return yield* cause;
         }),
       ),
       Effect.ensuring(

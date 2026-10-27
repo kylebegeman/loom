@@ -103,16 +103,14 @@ export const makeAssemblies = Effect.fn("Assembly.makeAssemblies")(function* (de
               revision: deps.metadata(resolved.info).revision,
               error: null,
             })),
-            Effect.catch(() =>
-              Effect.succeed({
-                id: part.id,
-                path: relative,
-                format,
-                sizeBytes: null,
-                revision: null,
-                error: "The file was deleted, moved or points outside the workspace.",
-              }),
-            ),
+            Effect.orElseSucceed(() => ({
+              id: part.id,
+              path: relative,
+              format,
+              sizeBytes: null,
+              revision: null,
+              error: "The file was deleted, moved or points outside the workspace.",
+            })),
           );
         }),
       { concurrency: 8 },
@@ -213,7 +211,7 @@ export const makeAssemblies = Effect.fn("Assembly.makeAssemblies")(function* (de
         yield* Effect.acquireUseRelease(
           fs.writeFileString(temporary, text, { flag: "wx" }),
           () => fs.rename(temporary, absolute),
-          () => fs.remove(temporary, { force: true }).pipe(Effect.catch(() => Effect.void)),
+          () => fs.remove(temporary, { force: true }).pipe(Effect.ignore),
         ).pipe(Effect.mapError(() => error("command-failed", "Could not save this assembly.")));
         return yield* read(input.file);
       }),

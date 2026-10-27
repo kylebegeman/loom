@@ -1,10 +1,11 @@
 # Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
 #
-# Once a day, merge the newest upstream nightly on integrate/<tag>. Conflicts are
-# resolved one file per Claude session (loom.sh integrate --resolve), so days that
-# pile up never exhaust one session. Then the fork's checks run, and each failing
-# check gets its own Claude repair session and commit on the same branch. A
-# separate Claude session reviews any resolution or repair. With the repository
+# Once a day, merge the newest upstream nightly on integrate/<tag>, continuing an
+# open "needs Kyle" draft from an earlier day instead of starting over. Conflicts
+# are resolved one file per Claude session (loom.sh integrate --resolve), so days
+# that pile up never exhaust one session. Then the fork's checks run, and every
+# failing check gets its own Claude repair session and commit on the same branch,
+# round after round. A separate Claude session reviews any resolution or repair. With the repository
 # variable LOOM_AUTO_MERGE set to "true", a pull request that passed, and passed
 # review when it needed one, merges and main is tagged loom-<tag>. Anything else
 # alerts Kyle in Loom (LOOM_ALERT_WEBHOOK_URL) from a last step that runs whatever
@@ -43,7 +44,7 @@ jobs:
     runs-on: ubuntu-24.04
     # One day of upstream often conflicts in 60 files; six sessions at a time resolve
     # that in under half an hour. Repair rounds and the review take the rest, inside
-    # GitHub's six-hour limit for hosted runners.
+    # GitHub's six-hour limit for hosted runners (see LOOM_REPAIR_DEADLINE below).
     timeout-minutes: 350
     env:
       # Pushes and pull requests use the fork's own token: the built-in token
@@ -105,17 +106,19 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           LOOM_RESOLVE_JOBS: "6"
-          # Each failing check takes a round; one large merge broke four checks in a row.
-          LOOM_REPAIR_ROUNDS: "8"
         run: |
           set +e
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"
+          # No repair session starts after this, leaving one more session, a final pass of
+          # the checks and the review inside timeout-minutes. What is left continues tomorrow.
+          export LOOM_REPAIR_DEADLINE=$(($(date +%s) + 260 * 60))
           args=("$TARGET" --pr --resolve)
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           scripts/fork/loom.sh integrate "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/integrate.log"
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> "$GITHUB_OUTPUT"
-          if grep -q '^==> Resolving ' "$RUNNER_TEMP/integrate.log"; then
+          # A continued draft carries an earlier day's resolution, which no review has passed.
+          if grep -qE '^==> (Resolving|Continuing) ' "$RUNNER_TEMP/integrate.log"; then
             echo "resolved=true" >> "$GITHUB_OUTPUT"
           fi
           if grep -q '^==> Repair round ' "$RUNNER_TEMP/integrate.log"; then
@@ -167,9 +170,9 @@ jobs:
           retention-days: 14
 
       # Decide the outcome first, so the alert below knows it even if opening the draft
-      # breaks. A merge that stopped leaves no pull request, so open a draft marked "needs
-      # Kyle" with the reports; the next integration that contains its tag closes it
-      # (loom.sh close_superseded).
+      # breaks. A merge that stopped leaves no pull request, so push what it did and open
+      # a draft marked "needs Kyle" with the reports, or update the one this run continued.
+      # The next run continues that draft, and close-superseded closes older ones it holds.
       - name: Result
         id: result
         if: always()
@@ -209,6 +212,8 @@ jobs:
           tag=${BRANCH#integrate/}
           git merge --abort 2>/dev/null || true
           git reset -q
+          # Without a merge the branch holds no work, so the next run starts over from main.
+          held=$(git tag -l 'v[0-9]*' --merged HEAD --no-merged origin/main | sed -n 1p)
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             git commit -q --allow-empty -m "chore(fork): upstream $tag needs Kyle"
           fi
@@ -227,10 +232,20 @@ jobs:
               fi
             done
             echo
-            echo "Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag --resolve\`, or leave it: the next integration that contains this tag closes this draft."
+            if [ -n "$held" ]; then
+              echo "The next daily run continues this draft: it merges main and the newest nightly into it, then repairs what still fails. Push fixes to \`$BRANCH\` and it builds on them, or close this draft to make the next run start over from main."
+            else
+              echo "Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag --resolve\`, or leave it: the next run starts over from main and closes this draft once it holds this tag."
+            fi
           } > "$body"
+          draft=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if ! { git push -q -u origin "$BRANCH" &&
-            gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"; }; then
+            if [ -n "$draft" ]; then
+              gh pr edit "$draft" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"
+            else
+              gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"
+            fi &&
+            scripts/fork/loom.sh close-superseded; }; then
             echo "::error::Could not open the needs-Kyle draft."
           fi
           echo "::error::The upstream integration needs Kyle."

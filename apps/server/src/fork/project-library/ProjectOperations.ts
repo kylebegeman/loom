@@ -780,7 +780,7 @@ const make = Effect.gen(function* () {
         id: string;
       }>`SELECT id FROM fork_library_operations WHERE state IN ('queued','running')`;
       for (const row of rows) yield* start(row.id);
-    }).pipe(Effect.catchCause(() => Effect.void)),
+    }).pipe(Effect.ignoreCause),
   );
   return {
     operationId,

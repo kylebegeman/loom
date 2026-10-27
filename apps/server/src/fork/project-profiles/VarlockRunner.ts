@@ -44,12 +44,10 @@ const make = Effect.gen(function* () {
             ? { _tag: "available", version }
             : { _tag: "missing", installHint: "npm install -g varlock@1.20.0" };
         }),
-        Effect.catch(() =>
-          Effect.succeed<VarlockAvailability>({
-            _tag: "missing",
-            installHint: "npm install -g varlock@1.20.0",
-          }),
-        ),
+        Effect.orElseSucceed((): VarlockAvailability => ({
+          _tag: "missing",
+          installHint: "npm install -g varlock@1.20.0",
+        })),
       );
     cached = { at: now, value };
     return value;

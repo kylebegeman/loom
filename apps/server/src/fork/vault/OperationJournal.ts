@@ -473,40 +473,48 @@ const make = Effect.gen(function* () {
     }),
     prepare,
     acquire,
-    checkAcquisition: (acquisition, requester) =>
-      Effect.suspend(() => {
-        const held = acquisitions.get(acquisition);
-        // Burn before any asynchronous check, including refusal or interruption.
-        acquisitions.delete(acquisition);
-        if (!held || held.requester !== requester)
-          return Effect.fail(new VaultError({ reason: "denied" }));
-        return Effect.gen(function* () {
-          yield* access.approvalStatus(held.input.id, requester);
-          const { value, version } = yield* load();
-          const entry = yield* own(value, held.input.id, requester, yield* Clock.currentTimeMillis);
-          if (
-            entry.state !== "reserved" ||
-            entry.revision !== held.entry.revision ||
-            entry.reservationId !== held.entry.reservationId ||
-            entry.digest !== held.entry.digest ||
-            entry.operationId !== held.entry.operationId ||
-            entry.retireAt !== held.entry.retireAt
-          )
-            return yield* new VaultError({ reason: "conflict" });
-          const report = yield* validated(held.input, requester);
-          if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
-          const current = yield* load();
-          const observed = yield* own(
-            current.value,
-            held.input.id,
-            requester,
-            yield* Clock.currentTimeMillis,
-          );
-          if (current.version !== version) return yield* new VaultError({ reason: "conflict" });
-          // This observation cannot authorize dispatch; all execution gates remain closed.
-          return observe(observed);
-        }).pipe(Effect.onError(() => reconcile(held.input.id, requester).pipe(Effect.ignore)));
-      }),
+    checkAcquisition: Effect.fn("OperationJournal.checkAcquisition")(
+      function (acquisition, requester) {
+        return Effect.suspend(() => {
+          const held = acquisitions.get(acquisition);
+          // Burn before any asynchronous check, including refusal or interruption.
+          acquisitions.delete(acquisition);
+          if (!held || held.requester !== requester)
+            return Effect.fail(new VaultError({ reason: "denied" }));
+          return Effect.gen(function* () {
+            yield* access.approvalStatus(held.input.id, requester);
+            const { value, version } = yield* load();
+            const entry = yield* own(
+              value,
+              held.input.id,
+              requester,
+              yield* Clock.currentTimeMillis,
+            );
+            if (
+              entry.state !== "reserved" ||
+              entry.revision !== held.entry.revision ||
+              entry.reservationId !== held.entry.reservationId ||
+              entry.digest !== held.entry.digest ||
+              entry.operationId !== held.entry.operationId ||
+              entry.retireAt !== held.entry.retireAt
+            )
+              return yield* new VaultError({ reason: "conflict" });
+            const report = yield* validated(held.input, requester);
+            if (!matches(entry, report)) return yield* new VaultError({ reason: "conflict" });
+            const current = yield* load();
+            const observed = yield* own(
+              current.value,
+              held.input.id,
+              requester,
+              yield* Clock.currentTimeMillis,
+            );
+            if (current.version !== version) return yield* new VaultError({ reason: "conflict" });
+            // This observation cannot authorize dispatch; all execution gates remain closed.
+            return observe(observed);
+          }).pipe(Effect.onError(() => reconcile(held.input.id, requester).pipe(Effect.ignore)));
+        });
+      },
+    ),
     reserve: Effect.fn("OperationJournal.reserve")(function* (raw, input, requester) {
       if (!isMutation(input) || input.id !== raw.id)
         return yield* new VaultError({ reason: "invalid-input" });
@@ -534,7 +542,7 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
-    finish: (input, requester) => {
+    finish: Effect.fn("OperationJournal.finish")(function (input, requester) {
       if (!isFinish(input)) return Effect.fail(new VaultError({ reason: "invalid-input" }));
       return update(input.id, requester, (entry, now) => {
         if (entry.reservationId !== input.reservationId)
@@ -551,10 +559,10 @@ const make = Effect.gen(function* () {
           revision: entry.revision + 1,
         });
       });
-    },
+    }),
     reconcile,
-    cancel: (id, expectedRevision, requester) =>
-      update(id, requester, (entry, now) => {
+    cancel: Effect.fn("OperationJournal.cancel")(function (id, expectedRevision, requester) {
+      return update(id, requester, (entry, now) => {
         if (entry.state === "cancelled" && entry.revision === expectedRevision + 1)
           return Effect.succeed(entry);
         if (entry.state !== "prepared" || entry.revision !== expectedRevision)
@@ -565,7 +573,8 @@ const make = Effect.gen(function* () {
           updatedAt: now,
           revision: entry.revision + 1,
         });
-      }),
+      });
+    }),
   });
 });
 export const layer = Layer.effect(OperationJournal, make);

@@ -1,13 +1,15 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import { assert, describe, expect, it, vi } from "@effect/vitest";
+import { assert, describe, expect, it, vi } from "@effect/vitest"; // fork: project-lifecycle
+// fork: project-lifecycle
 import {
   ProjectId,
   ThreadId,
   type TerminalEvent,
   type TerminalSessionSnapshot,
 } from "@t3tools/contracts";
-import { ProjectLifecycleError } from "@t3tools/contracts/fork";
+import { ProjectLifecycleError } from "@t3tools/contracts/fork"; // fork: project-lifecycle
 import * as HostProcess from "@t3tools/shared/HostProcess";
+// fork: project-lifecycle
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -174,6 +176,7 @@ describe("ProjectSetupScriptRunner", () => {
   );
 });
 
+// fork: project-lifecycle
 it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)(
   "prepares the setup directory's lane before opening its shell (%s)",
   (mode) =>
@@ -181,6 +184,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
       const events: string[] = [];
       const entered = yield* Deferred.make<void>();
       const ready = yield* Deferred.make<void>();
+      const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
       const written = yield* Deferred.make<void>();
       const laneFailure = new ProjectLifecycleError({
         reason: "command-failed",
@@ -207,16 +211,35 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
           Layer.mergeAll(
             Layer.mock(ProjectService.ProjectService)({}),
             Layer.mock(TerminalManager.TerminalManager)({
-              open: () =>
+              open: (input) =>
                 Effect.sync(() => {
                   events.push("open");
-                  return {} as never;
+                }).pipe(
+                  // The shell's line editor starts reading, so the runner types the command.
+                  Effect.andThen(
+                    Effect.forEach(
+                      [...listeners],
+                      (listener) =>
+                        listener({
+                          type: "output",
+                          threadId: input.threadId,
+                          terminalId: input.terminalId,
+                          data: "\x1b[?2004h",
+                        }),
+                      { discard: true },
+                    ),
+                  ),
+                  Effect.as({} as never),
+                ),
+              subscribe: (listener) =>
+                Effect.sync(() => {
+                  listeners.add(listener);
+                  return () => listeners.delete(listener);
                 }),
-              subscribe: () => Effect.succeed(() => undefined),
               write: () =>
                 Effect.sync(() => {
                   events.push("setup");
-                }).pipe(Effect.andThen(Deferred.succeed(written, undefined))),
+                }).pipe(Effect.andThen(Deferred.succeed(written, undefined)), Effect.asVoid),
             }),
             ServerSettings.layerTest(),
             NodeCrypto.layer,
@@ -282,6 +305,8 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         assert.deepEqual(events, ["lane-start"]);
       } else {
         assert.equal(result._tag, "Success");
+        // The runner returns the open terminal before it types the command.
+        if (mode !== "no-script") yield* Deferred.await(written);
         assert.deepEqual(
           events,
           mode === "setup"
