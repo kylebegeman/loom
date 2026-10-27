@@ -159,12 +159,12 @@ cd "$LOOM_TEST_ROOT"
 export PATH="$LOOM_TEST_BIN:$PATH"
 check_seams() { printf 'seams\\n' >> "$LOOM_TEST_LOG"; }
 fork_tests() {
-  printf 'discover-tests\\n' >> "$LOOM_TEST_LOG"
-  printf 'apps/web/src/fork/example.test.ts\\n'
+  printf '%s\\n' apps/mobile/src/lib/navigation.test.ts apps/web/src/fork/example.test.ts \\
+    apps/web/src/fork/other.test.ts
 }
 restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
 check_omarchy_pack() { printf 'omarchy-pack\\n' >> "$LOOM_TEST_LOG"; }
-TYPECHECK_DIRS=(packages/contracts)
+typecheck_dirs() { printf '%s\\n' packages/contracts; }
 ${command}
 `,
     ],
@@ -240,7 +240,7 @@ it("reports lint failure and exits unsuccessfully", () => {
   expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
 });
 
-it("runs lint after installation, then builds and typechecks, and the tests last", () => {
+it("runs lint after installation, then builds and typechecks, and each package's tests last", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks");
   expect(result.status).toBe(0);
@@ -260,7 +260,15 @@ it("runs lint after installation, then builds and typechecks, and the tests last
     ["exec", "vp", "build"],
     ["exec", "vp", "run", "typecheck"],
     ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
-    ["discover-tests"],
+    [
+      "exec",
+      "vp",
+      "test",
+      "run",
+      "--exclude",
+      "**/.claude/**",
+      "apps/mobile/src/lib/navigation.test.ts",
+    ],
     [
       "exec",
       "vp",
@@ -269,6 +277,7 @@ it("runs lint after installation, then builds and typechecks, and the tests last
       "--exclude",
       "**/.claude/**",
       "apps/web/src/fork/example.test.ts",
+      "apps/web/src/fork/other.test.ts",
     ],
     ["restore-lockfile"],
   ]);
@@ -288,7 +297,7 @@ it("runs every check after a failing lint and lists the failure at the end", () 
     "vp",
     "vp",
     "tsc",
-    "discover-tests",
+    "vp",
     "vp",
     "restore-lockfile",
   ]);
@@ -305,6 +314,117 @@ it("skips every later check when installing dependencies fails", () => {
       .filter((line) => line.startsWith("loom: ")),
   ).toEqual(["loom: check failed: Installing dependencies"]);
   expect(lintCalls(f)).toEqual([["seams"], ["install", "--frozen-lockfile"], ["restore-lockfile"]]);
+});
+
+it("fails instead of skipping typechecks and tests it cannot list", () => {
+  const f = lintFixture(["apps/web/src/fork"]);
+  const result = runLint(
+    f,
+    "typecheck_dirs() { return 1; }; fork_tests() { return 1; }; run_checks",
+  );
+  expect(result.status).toBe(1);
+  expect(result.stderr.split("\n").filter((line) => line.startsWith("loom: check failed"))).toEqual(
+    [
+      "loom: check failed: Listing the packages to typecheck",
+      "loom: check failed: Listing the fork's tests",
+    ],
+  );
+  expect(lintCalls(f).filter(([, second, third]) => second === "vp" && third !== "lint")).toEqual([
+    ["exec", "vp", "build"],
+  ]);
+});
+
+it("typechecks every workspace package with a typecheck script or Vite+ task", () => {
+  const f = lintFixture();
+  const write = (path: string, contents: string) => {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(f.root, path)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(f.root, path), contents);
+  };
+  write("package.json", '{"scripts":{"typecheck":"vp run -r typecheck"}}');
+  write("apps/web/package.json", '{"scripts":{"build":"vite build"}}');
+  write(
+    "apps/web/vite.config.ts",
+    "export default {\n  run: {\n    tasks: {\n      typecheck: {\n",
+  );
+  write("packages/shared/package.json", '{"scripts":{"typecheck":"tsc --noEmit"}}');
+  write("packages/docs/package.json", '{"scripts":{"build":"astro build"}}');
+  const dirs = runMetadata(
+    f.root,
+    `pnpm() { local r; r=$(pwd -P); printf '%s\\n' "$r" "$r/apps/web" "$r/packages/docs" "$r/packages/shared"; }
+typecheck_dirs`,
+  );
+  expect(dirs.split("\n")).toEqual(["apps/web", "packages/shared"]);
+});
+
+it("runs each test file the fork adds or changes since the upstream release HEAD holds", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-fork-tests-"));
+  roots.push(root);
+  let day = 10;
+  const git = (...args: string[]) => {
+    const date = `2026-10-${day++}T00:00:00Z`;
+    return NodeChildProcess.execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_AUTHOR_DATE: date,
+        GIT_COMMITTER_DATE: date,
+      },
+    });
+  };
+  const write = (path: string, contents: string) => {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(root, path)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(root, path), contents);
+  };
+  git("init", "--quiet", "--initial-branch=upstream");
+  git("config", "user.name", "Loom fixture");
+  git("config", "user.email", "loom@example.test");
+  for (const path of [
+    "apps/web/src/kept.test.ts",
+    "apps/web/src/forked.test.ts",
+    "apps/web/src/dropped.test.ts",
+    "apps/web/src/later.test.ts",
+    "apps/web/src/view.browser.test.tsx",
+    "packages/shared/src/dirty.test.ts",
+  ]) {
+    write(path, "upstream\n");
+  }
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "upstream");
+  git("tag", "-a", "v1.0.0", "-m", "v1.0.0");
+  git("switch", "--quiet", "-c", "main");
+  write("apps/web/src/forked.test.ts", "fork\n");
+  write("apps/web/src/view.browser.test.tsx", "fork\n");
+  write("apps/mobile/src/fork/added.test.ts", "fork\n");
+  NodeFS.rmSync(NodePath.join(root, "apps/web/src/dropped.test.ts"));
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "fork");
+  git("switch", "--quiet", "upstream");
+  write("apps/web/src/later.test.ts", "upstream again\n");
+  git("commit", "--quiet", "-am", "upstream again");
+  git("tag", "-a", "v1.1.0", "-m", "v1.1.0");
+  write("apps/web/src/kept.test.ts", "upstream, unmerged\n");
+  git("commit", "--quiet", "-am", "upstream, unmerged");
+  git("tag", "-a", "v1.2.0", "-m", "v1.2.0");
+  git("switch", "--quiet", "main");
+  git("merge", "--quiet", "--no-edit", "v1.1.0");
+  git("tag", "-a", "loom-v1.1.0", "-m", "Loom built from upstream v1.1.0");
+  git("tag", "-a", "0.0.5-nightly.1", "-m", "Loom release");
+  write("packages/shared/src/dirty.test.ts", "uncommitted fork change\n");
+  const tests = [
+    "apps/mobile/src/fork/added.test.ts",
+    "apps/web/src/forked.test.ts",
+    "packages/shared/src/dirty.test.ts",
+    "scripts/brand.test.ts",
+  ];
+  expect(runMetadata(root, "BRAND_TESTS=(scripts/brand.test.ts); fork_tests")).toBe(
+    tests.join("\n"),
+  );
+  expect(
+    runMetadata(root, "BRAND_TESTS=(scripts/brand.test.ts); fork_tests | test_package | sort -u"),
+  ).toBe(["apps/mobile", "apps/web", "packages/shared", "scripts"].join("\n"));
 });
 
 function repositoryFixture() {

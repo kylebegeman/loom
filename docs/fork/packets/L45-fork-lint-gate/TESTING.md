@@ -25,7 +25,7 @@ and client-runtime package typechecks passed. Existing Effect suggestions are in
 
 ## Automated tests
 
-`scripts/fork/loom.test.ts` is picked up by `fork_tests` through `*/fork/*.test.ts`.
+`scripts/fork/loom.test.ts` is picked up by `fork_tests` as a test file the fork adds.
 Temporary repository fixtures source the script with `bash -c` and stub `pnpm`,
 `check_seams`, `fork_tests` and `restore_lockfile`, so nothing installs, builds or touches the
 real lockfile. Cases:

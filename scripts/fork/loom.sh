@@ -69,15 +69,14 @@ SEAMS_MANIFEST=docs/fork/seams.tsv
 # Visible "T3 Code" text that stays on purpose (identifiers, legacy detection,
 # attribution): path<TAB>trimmed source line. check_brand_copy fails on any other.
 BRAND_COPY_ALLOWLIST=docs/fork/brand-copy-allowlist.tsv
-# Branding tests live next to upstream code; fork_tests also discovers Loom
-# feature tests and the benchmark harness checks.
+# Branding tests check upstream files the fork may not have touched since the last merge;
+# fork_tests also runs every test file the fork adds or changes.
 BRAND_TESTS=(
   packages/shared/src/brand.test.ts
   apps/web/src/branding.test.ts
   apps/desktop/src/app/DesktopAppIdentity.test.ts
   scripts/build-desktop-artifact.test.ts
 )
-TYPECHECK_DIRS=(packages/shared packages/contracts packages/client-runtime apps/server apps/desktop apps/web scripts)
 UPSTREAM_REPO=pingdotgg/t3code
 UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
 # A nightly may wait this long for main: one daily integration plus its run time.
@@ -218,12 +217,46 @@ check_brand_copy() {
 $unexpected"
 }
 
+# The newest upstream release in HEAD's history, which the fork's changes are measured against.
+upstream_base() {
+  local base
+  base=$(git tag -l 'v[0-9]*' --merged HEAD --sort=-creatordate | sed -n 1p)
+  [ -n "$base" ] || die "no upstream release tag in HEAD's history; run git fetch upstream --tags"
+  printf '%s\n' "$base"
+}
+
+# The branding tests and every test file the fork adds or changes, beside its own code or
+# upstream's. Browser-mode tests need apps/web's headless Chromium project, which the root
+# config used here lacks.
 fork_tests() {
-  printf '%s\n' "${BRAND_TESTS[@]}"
-  # Browser-mode tests need apps/web's headless Chromium project, which the root
-  # config used here lacks; CI's web test job runs them.
-  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx' 'benchmarks/loom/*.test.ts' \
-    ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
+  local base
+  base=$(upstream_base) || return 1
+  {
+    printf '%s\n' "${BRAND_TESTS[@]}"
+    git diff --name-only --diff-filter=d "$base" -- '*.test.ts' '*.test.tsx' \
+      ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
+  } | sort -u
+}
+
+# The package a path belongs to: apps/<name> or packages/<name>, otherwise its top directory.
+test_package() {
+  awk -F/ '$1 == "apps" || $1 == "packages" { print $1 "/" $2; next } { print $1 }'
+}
+
+# Every workspace package with a typecheck task, as a package script or a Vite+ task in its
+# vite.config.ts, so packages upstream adds are typechecked too.
+typecheck_dirs() {
+  local root d found=0
+  root=$(pwd -P)
+  while IFS= read -r d; do
+    d=${d#"$root"/}
+    [ "$d" != "$root" ] || continue
+    if grep -qs '"typecheck":' "$d/package.json" || grep -qsE '^[[:space:]]+typecheck: \{' "$d/vite.config.ts"; then
+      printf '%s\n' "$d"
+      found=1
+    fi
+  done < <(pnpm -r ls --depth -1 --parseable)
+  [ "$found" -eq 1 ]
 }
 
 # Lint only fork-owned source. Skip unmatched globs so future fork directories
@@ -251,8 +284,10 @@ check_omarchy_pack() {
 }
 
 run_fork_tests() {
-  local tests=() t
-  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
+  local package=$1 tests=() t
+  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests | awk -v p="$package/" 'index($0, p) == 1')
+  # With no test paths vitest would run every test in the repository.
+  [ "${#tests[@]}" -gt 0 ] || die "found no fork tests in $package"
   # Test paths are substring filters, so exclude agent worktrees nested in the
   # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
   # desktop artifact tests assert is absent.
@@ -290,18 +325,29 @@ run_checks() {
   FAILED_CHECKS=""
   run_check "Checking that every fork seam survived" check_seams
   run_check "Checking for new T3 Code product text" check_brand_copy
-  local before=$FAILED_CHECKS d
+  local before=$FAILED_CHECKS dirs d packages package
   run_check "Installing dependencies" pnpm install --frozen-lockfile
   if [ "$FAILED_CHECKS" = "$before" ]; then
     run_check "Linting fork code" check_fork_lint
     run_check "Running the Omarchy pack's checks" check_omarchy_pack
     run_check "Regenerating web routes and building the web client" in_dir apps/web pnpm exec vp build
-    for d in "${TYPECHECK_DIRS[@]}"; do
-      # Web and desktop define typecheck as a Vite+ task rather than a package script.
-      run_check "Typechecking $d" in_dir "$d" pnpm exec vp run typecheck
-    done
+    # One check per package, since vp stops typechecking every package after the first failure.
+    # An empty list would skip the checks unseen, so failing to list them is a failure too.
+    if dirs=$(typecheck_dirs); then
+      for d in $dirs; do
+        run_check "Typechecking $d" in_dir "$d" pnpm exec vp run typecheck
+      done
+    else
+      FAILED_CHECKS+="Listing the packages to typecheck"$'\n'
+    fi
     run_check "Typechecking Loom benchmarks" pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
-    run_check "Running the fork's tests" run_fork_tests
+    if packages=$(fork_tests | test_package | sort -u) && [ -n "$packages" ]; then
+      for package in $packages; do
+        run_check "Running the fork's tests in $package" run_fork_tests "$package"
+      done
+    else
+      FAILED_CHECKS+="Listing the fork's tests"$'\n'
+    fi
   fi
   restore_lockfile
   report_failed_checks
@@ -874,7 +920,7 @@ open_pr() {
   added=$(git diff --name-only --diff-filter=A origin/main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
   say "Pushing $branch and opening its pull request"
   git push -q -u origin "$branch"
-  body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests pass, and $(printf '%s, ' "${TYPECHECK_DIRS[@]}" | sed 's/, $//') typecheck.
+  body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, every test file the fork adds or changes passes, and every package typechecks.
 
 Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, publishes the next Loom release and installs it. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
 
