@@ -27,6 +27,9 @@ on narrow upstream integrations, so this packet can conflict during an upstream 
   checkpoint `restoreWorktree` would use has the deleted head as its parent.
 - Releasing a managed checkout or Library copy refuses while a linked worktree made from it
   exists outside it. Locked or unreadable entries count; only prunable ones are skipped.
+- Lane shells move TMPDIR, so the CLI and desktop place the desktop control socket with
+  `systemTempDir` (`packages/shared/src/fork/system-temp-dir.ts`). Otherwise `t3 app` run
+  in a lane misses a desktop started outside it, and the lane path overflows the socket limit.
 
 [docs/fork/seams.tsv](../../seams.tsv) is the executable marker manifest. It covers actual
 `project-lifecycle` markers in the recovery helpers and focused integration tests, alongside

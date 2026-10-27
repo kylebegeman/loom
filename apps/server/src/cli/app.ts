@@ -10,6 +10,7 @@ import {
   type DesktopAppActivationRequest,
 } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
+import { systemTempDir } from "@t3tools/shared/fork/system-temp-dir"; // fork: project-lifecycle
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -205,7 +206,7 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
     resolveDesktopAppControlAddress({
       stateDir: path.join(baseDir, stateSubdirectory),
       platform: hostPlatform,
-      tempDir: NodeOS.tmpdir(),
+      tempDir: systemTempDir(process.env, NodeOS.tmpdir()), // fork: project-lifecycle
       userId,
       joinPath: path.join,
     }).address;

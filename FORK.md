@@ -246,6 +246,11 @@ preserves Codex-created `generated_images` directories in account shadow homes.
 Keep it during upstream merges until upstream accepts these directories without
 preventing provider startup. The Pro Max account schema fix comes from upstream.
 
+The `goal-history` seam in `ProjectionStore.ts` and `TurnStartReads.test.ts` loads earlier
+`/goal` prompts into the SQLite turn-start context, as the in-memory store already does, so
+a context handoff that a `/goal` turn deferred still reaches the next turn. Keep it during
+upstream merges until upstream's turn-start query includes them.
+
 The `codex-login-email` seam in `CodexProvider.ts` names a Codex account from its
 home's `auth.json` when a custom `model_provider` makes Codex report no account, so
 usage views do not count a hub-routed subscription twice.

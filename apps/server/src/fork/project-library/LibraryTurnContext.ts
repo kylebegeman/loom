@@ -11,7 +11,9 @@ interface Prompt {
 }
 type Projection = OrchestrationV2ThreadProjection;
 
-const isSlashCommand = (prompt: Prompt) => prompt.text.trimStart().startsWith("/");
+// A command name is one word, so a prompt opening with a path such as /Users/... is not one.
+export const isSlashCommand = (prompt: Prompt) =>
+  /^\/[^\s/]+(?:\s|$)/u.test(prompt.text.trimStart());
 
 /**
  * The binding whose context opens a native thread's first turn, or null. Slash commands such as

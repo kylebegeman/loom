@@ -12,6 +12,7 @@ import {
   type DesktopAppActivationResponse,
 } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
+import { systemTempDir } from "@t3tools/shared/fork/system-temp-dir"; // fork: project-lifecycle
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -303,7 +304,7 @@ export const make = Effect.gen(function* () {
   const address = resolveDesktopAppControlAddress({
     stateDir: path.resolve(desktopEnvironment.stateDir),
     platform: desktopEnvironment.platform,
-    tempDir: NodeOS.tmpdir(),
+    tempDir: systemTempDir(process.env, NodeOS.tmpdir()), // fork: project-lifecycle
     userId,
     joinPath: path.join,
   });

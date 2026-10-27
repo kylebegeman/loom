@@ -351,6 +351,25 @@ it.effect.each(["sqlite", "memory"] as const)(
         (yield* store.getTurnStartContext(threadId, runId)).messages.map((m) => m.id),
         marker.id,
       );
+      // fork: goal-history
+      const goal = {
+        ...message,
+        id: MessageId.make("old-goal"),
+        runId: oldRunId,
+        text: " /goal Ship",
+      };
+      yield* store.apply({
+        id: EventId.make("old-goal-input"),
+        type: "message.updated",
+        threadId,
+        runId: oldRunId,
+        occurredAt: now,
+        payload: goal,
+      });
+      assert.include(
+        (yield* store.getTurnStartContext(threadId, runId)).messages.map((m) => m.id),
+        goal.id,
+      );
       const other = ThreadId.make("other");
       yield* putThread({ ...thread, id: other });
       assert.deepEqual((yield* store.getTurnStartContext(other, runId)).messages, []);

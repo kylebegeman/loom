@@ -81,6 +81,15 @@ it.effect.each(["/goal Ship it", " /compact"])(
     }),
 );
 
+it.effect("treats a prompt that opens with a file path as an ordinary turn", () =>
+  Effect.gen(function* () {
+    const path = "/Users/kyle/app/main.ts crashes on launch";
+    expect((yield* decide({ prompt: path })).result).toBe("binding");
+    const after = yield* decide({ prompt: "Fix it", earlier: [{ prompt: path }] });
+    expect(after.result).toBeNull();
+  }),
+);
+
 it.effect("opens a native thread's first turn without reading earlier prompts", () =>
   Effect.gen(function* () {
     expect((yield* decide({ prompt: "Plan the work" })).result).toBe("binding");
