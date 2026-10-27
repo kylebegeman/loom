@@ -153,7 +153,7 @@ apps/mobile/package.json	-	--scheme loom-dev
 apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	31
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	33
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
@@ -295,7 +295,7 @@ apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
 apps/web/src/components/CommandPalette.logic.test.ts	bots	2
 apps/web/src/components/CommandPalette.logic.test.ts	fleet-connections	2
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
-apps/web/src/components/CommandPalette.tsx	library-palette	55
+apps/web/src/components/CommandPalette.tsx	library-palette	46
 apps/web/src/components/CommandPalette.tsx	sites	9
 scripts/build-cli-archive.ts	library-semantic-search	3
 apps/server/package.json	-	"onnxruntime-web": "1.30.0"
@@ -356,7 +356,7 @@ apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
 apps/web/src/components/chat/useRightPanelActions.ts	checkpoint-capable	4
-apps/web/src/components/CommandPalette.tsx	fleet-connections	37
+apps/web/src/components/CommandPalette.tsx	fleet-connections	32
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
 apps/web/src/components/Sidebar.tsx	library-projects	25
 apps/web/src/routes/_chat.tsx	library-projects	2
@@ -489,7 +489,7 @@ apps/web/src/components/chat/ComposerControlsBar.tsx	ext-composer	4
 apps/web/src/components/chat/ChatComposer.tsx	ext-composer-menu	7
 apps/web/src/components/chat/ComposerCommandMenu.tsx	ext-composer-menu	6
 apps/web/src/components/CommandPalette.logic.ts	bots	2
-apps/web/src/components/CommandPalette.logic.ts	fleet-connections	5
+apps/web/src/components/CommandPalette.logic.ts	fleet-connections	7
 apps/mobile/src/features/cloud/dpop.ts	secure-native-random	1
 apps/mobile/src/features/cloud/dpop.test.ts	secure-native-random	3
 apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts	secure-native-random	1
@@ -951,7 +951,7 @@ apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
 apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	13
 apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
 apps/server/src/ws.ts	source-control-cockpit	1
-apps/web/src/components/CommandPalette.tsx	source-control-cockpit	5
+apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
 apps/web/src/components/GitActionsControl.logic.test.ts	source-control-cockpit	2
 apps/web/src/components/GitActionsControl.logic.ts	source-control-cockpit	8
@@ -1220,7 +1220,6 @@ apps/server/src/orchestration-v2/http.ts	file-placement	2
 apps/server/src/project/ManagedProjectFolders.ts	file-placement	16
 packages/contracts/src/orchestrationProject.ts	file-placement	2
 apps/web/src/hooks/useHandleNewThread.ts	file-placement	1
-apps/mobile/src/features/threads/new-task-flow-provider.tsx	file-placement	2
 # Marked when every fork edit in upstream files gained a marker (upstream base v0.1.3-nightly.20261026.3740)
 .agents/skills/test-t3-mobile/SKILL.md	brand	2
 .agents/skills/test-t3-mobile/SKILL.md	mobile-identity	1
@@ -1337,8 +1336,8 @@ apps/server/src/workspace/WorkspacePaths.test.ts	project-lifecycle	2
 apps/server/src/workspace/WorkspacePaths.ts	project-lifecycle	4
 apps/web/src/closedViewStore.test.ts	ext-panels	1
 apps/web/src/cloud/publicConfig.test.ts	connect-compat	3
-apps/web/src/commandPaletteBus.ts	fleet-connections	1
-apps/web/src/commandPaletteBus.ts	library-palette	1
+apps/web/src/commandPaletteBus.ts	fleet-connections	2
+apps/web/src/commandPaletteBus.ts	library-palette	5
 apps/web/src/components/NoProjectsHero.tsx	fleet-connections	11
 apps/web/src/components/chat/WorktreeSetupCard.browser.test.tsx	project-lifecycle	2
 apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx	fleet-connections	4
@@ -1424,3 +1423,8 @@ apps/mobile/src/features/settings/ThreadSettingsSections.tsx	fleet-connections	1
 apps/mobile/src/state/threadOutboxDelivery.permissions.test.ts	failed-run-retry	7
 apps/mobile/src/state/threadOutboxDelivery.test.ts	failed-run-retry	5
 apps/web/src/components/settings/WorktreesSettings.tsx	file-placement	2
+apps/mobile/src/features/threads/use-new-task-project-defaults.ts	file-placement	1
+apps/web/src/components/AddProjectToMachineDialog.browser.test.tsx	file-placement	8
+apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
+apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
+packages/provider-fx/src/server/status.ts	brand	2

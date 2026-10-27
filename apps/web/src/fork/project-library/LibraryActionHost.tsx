@@ -41,12 +41,17 @@ import {
   useLibraryProjects,
   useSelectedLibraryProject,
 } from "./state";
+import { onLibraryAction, openLibraryAction, requestLibraryClone } from "./actions";
+import { useLibraryNewConversation } from "./useLibraryNewConversation";
+import { claimCommandPaletteRequests, type CommandPaletteOpenDetail } from "~/commandPaletteBus";
+import { dispatchCommandPalette } from "~/commandPaletteStore";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import {
-  onLibraryAction,
-  requestLibraryClone,
-  type LibraryConversationDefaults,
-  type LibraryAction,
-} from "./actions";
+  closeLibraryPalette,
+  finishLibraryPaletteClose,
+  useLibraryPaletteStore,
+  type LibraryPaletteSession,
+} from "./libraryPaletteSession";
 import {
   gitRepositoryChoice,
   holdsGitRemote,
@@ -77,38 +82,59 @@ function newProjectIcon(target: NewProjectTarget) {
   return <PlusIcon className="size-4 text-(--project-green)" />;
 }
 
-export interface LibraryPaletteSession {
-  readonly id: number;
-  readonly open: boolean;
-  readonly action: LibraryAction;
-  readonly projectId?: string | undefined;
-  readonly defaults?: LibraryConversationDefaults | undefined;
-  /** The project only leads the chooser; its settings open once the user picks it. */
-  readonly suggest?: boolean | undefined;
-}
-
 /** Library setup occupies the original command popup, including actions launched inside it. */
 export function useLibraryPaletteSession() {
-  const [session, setSession] = useState<LibraryPaletteSession | null>(null);
+  const session = useLibraryPaletteStore((state) => state.session);
   useEffect(() => {
-    return onLibraryAction((action, projectId, defaults, suggest) =>
-      setSession((previous) => ({
-        id: (previous?.id ?? 0) + 1,
-        open: true,
-        action,
-        projectId,
-        defaults,
-        suggest,
+    const stopListening = onLibraryAction((action, projectId, defaults, suggest) =>
+      useLibraryPaletteStore.setState(({ session: previous }) => ({
+        session: { id: (previous?.id ?? 0) + 1, open: true, action, projectId, defaults, suggest },
       })),
     );
+    return () => {
+      stopListening();
+      // Setup cannot outlive the popup that shows it.
+      useLibraryPaletteStore.setState({ session: null });
+    };
   }, []);
   return {
     session,
     isOpen: session?.open === true,
-    close: () => setSession((previous) => (previous ? { ...previous, open: false } : null)),
-    // Keep the current page through the popup's exit transition.
-    finishClose: () => setSession((previous) => (previous?.open ? previous : null)),
+    close: closeLibraryPalette,
+    finishClose: finishLibraryPaletteClose,
   };
+}
+
+/**
+ * The Library takes over adding projects and starting conversations. Any other palette request
+ * replaces setup in the same popup.
+ */
+export function useLibraryPaletteTakeover() {
+  const tryLibraryConversation = useLibraryNewConversation();
+  const claim = useStableCallback((detail: CommandPaletteOpenDetail) => {
+    if (detail.open === "add-project") {
+      openLibraryAction(
+        "create-project",
+        undefined,
+        detail.environmentId ? { environmentId: detail.environmentId } : undefined,
+      );
+      dispatchCommandPalette({ _tag: "SetOpen", open: false });
+      return true;
+    }
+    if (detail.open === "new-thread-in") {
+      void tryLibraryConversation().then((started) =>
+        dispatchCommandPalette(
+          started ? { _tag: "SetOpen", open: false } : { _tag: "OpenNewThreadIn" },
+        ),
+      );
+      return true;
+    }
+    closeLibraryPalette();
+    finishLibraryPaletteClose();
+    return false;
+  });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Palette requests arrive on a module bus; the mounted palette claims them for the Library.
+  useEffect(() => claimCommandPaletteRequests(claim), [claim]);
 }
 
 /** `new` asks how a project starts and `git` takes the URL to clone; both lead to `create`. */

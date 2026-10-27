@@ -20,6 +20,7 @@ const reactTests = [
   "src/features/threads/UsageLimitRecoveryCard.test.tsx",
   "src/features/threads/thread-command-output.test.tsx", // fork: library
   "src/features/threads/useThreadHeaderOptions.test.tsx", // fork: source-control-cockpit
+  "src/features/threads/NewTaskDraftRouteScreen.test.tsx",
   "src/native/NativeHeaderToolbar.test.tsx",
   "src/native/useRestingTopOffset.test.tsx",
   "src/native/useRetryingImageSource.test.tsx",
