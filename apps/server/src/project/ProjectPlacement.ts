@@ -377,14 +377,19 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ProjectPlacement, make);
 
-/** Every copy not yet released holds its root, including one whose folder is missing or moving. */
+/**
+ * Every registered copy not yet released holds its root, including one whose folder is missing or
+ * moving. An unregistered folder is the user's again; while it exists, its folder holds the name.
+ */
 export const layerLibraryCopyRoots = Layer.effect(
   LibraryCopyRoots,
   Effect.map(LibraryWorkspaceStore.LibraryWorkspaceStore, (store) => ({
     roots: store.receipts.pipe(
       Effect.map((receipts) =>
         receipts.flatMap((receipt) =>
-          receipt.copy.state === "released" ? [] : [receipt.copy.rootPath],
+          receipt.copy.state === "released" || receipt.copy.registered === false
+            ? []
+            : [receipt.copy.rootPath],
         ),
       ),
     ),

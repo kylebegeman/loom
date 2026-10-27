@@ -1,6 +1,8 @@
 # Fork seams in upstream files, checked by scripts/fork/loom.sh after every merge.
 # path<TAB>marker<TAB>minimum marked lines. Rows with marker "-" are files that
 # cannot carry a comment; the third column is text the file must still contain.
+apps/web/src/environments/primary/httpLayer.ts	desktop-primary-recovery	2
+apps/web/src/environments/primary/httpLayer.test.ts	desktop-primary-recovery	4
 apps/desktop/resources/dmg/dmg-background-latest.svg	brand	2
 apps/desktop/resources/dmg/dmg-background-nightly.svg	brand	2
 apps/desktop/src/app/DesktopAppIdentity.test.ts	brand	2

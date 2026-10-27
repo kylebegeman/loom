@@ -86,10 +86,12 @@ export const markerPath = Effect.fnUntraced(function* (cwd: string) {
   );
 });
 
+export const LEGACY_SUFFIX = ".t3-setup-pending";
+
 /** Markers written before markers moved to T3 home. Read and cleared, never written. */
 const legacyPath = Effect.fnUntraced(function* (cwd: string) {
   const path = yield* Path.Path;
-  return `${path.resolve(cwd)}.t3-setup-pending`;
+  return `${path.resolve(cwd)}${LEGACY_SUFFIX}`;
 });
 
 const removeOwnedLegacy = Effect.fnUntraced(function* (cwd: string) {

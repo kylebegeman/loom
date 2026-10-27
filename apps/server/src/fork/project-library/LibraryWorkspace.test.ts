@@ -4885,6 +4885,40 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       }),
   );
 
+  it.effect(
+    "releases a published copy with no archive past setup markers beside its repositories",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const parent = yield* makeTemp;
+        const copy = yield* service.prepareCopy({
+          requestId: "sidecar-release",
+          project: yield* remoteProject(parent, "sidecar-release"),
+          rootPath: path.join(parent, "files"),
+          strategy: "clone",
+        });
+        for (const repository of copy.repositories) {
+          const source = path.join(parent, `${repository.resourceId}-source`);
+          yield* git(repository.path, ["remote", "set-url", "origin", source]);
+          yield* git(repository.path, ["fetch", "origin"]);
+          // Older installs wrote this beside the checkout, which is inside a nested copy's folder.
+          yield* fs.writeFileString(`${repository.path}.t3-setup-pending`, "pending");
+        }
+        const review = yield* service.status({ workingCopyId: copy.id });
+        const released = yield* service.release({
+          requestId: "sidecar-release",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        });
+        expect(released.state).toBe("released");
+        expect((yield* store.get(copy.id)).publishedRelease).toBe(true);
+        expect(yield* fs.exists(copy.rootPath)).toBe(false);
+      }),
+  );
+
   /** A published copy whose release was recorded and set its folder aside, then stopped. */
   const interruptedRelease = Effect.fnUntraced(function* (id: string) {
     const fs = yield* FileSystem.FileSystem;
