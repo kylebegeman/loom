@@ -4,6 +4,7 @@ import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { NonNegativeInt } from "@t3tools/contracts";
 import {
   type ReachBlocked,
+  type ReachEnsureIdentity,
   ReachError,
   ReachPrepared,
   type ReachStatus,
@@ -127,6 +128,11 @@ export class ReachService extends Context.Service<
   ReachService,
   {
     readonly applyIdentity: (input: ReachApplyIdentityInput) => Effect.Effect<void, ReachError>;
+    /**
+     * Asks the Library for Loom sign-in values and keeps them as `prepared`. Reach stays as it
+     * is: this never turns it on or touches a tunnel.
+     */
+    readonly prepareIdentity: () => Effect.Effect<ReachStatus, ReachError>;
     readonly status: Effect.Effect<ReachStatus>;
     readonly changes: Stream.Stream<ReachStatus>;
     /** Answers once the intent is stored; provisioning continues and `changes` shows it. */
@@ -240,6 +246,40 @@ const learnedFrom = (outcome: ReachLibraryOutcome<unknown>): LearnedBlock | null
     return "library-not-ready";
   }
   return outcome.reason === "is-library" ? "is-library" : null;
+};
+
+type ReadyIdentity = Extract<ReachEnsureIdentity, { readonly state: "ready" }>;
+
+const preparedFrom = (identity: ReadyIdentity): ReachPrepared => ({
+  issuer: identity.issuer,
+  resource: identity.resource,
+  nativeClientId: identity.nativeClientId,
+  ...(identity.desktopRedirectUri === undefined
+    ? {}
+    : { desktopRedirectUri: identity.desktopRedirectUri }),
+});
+
+/** Why a Library answer to the Identity request prepared nothing. */
+const identityFailure = (
+  outcome: ReachLibraryOutcome<ReachEnsureIdentity>,
+): ReachError["reason"] => {
+  switch (outcome.kind) {
+    case "ok":
+      return outcome.reply.state === "not-configured"
+        ? "identity-not-configured"
+        : "identity-failed";
+    case "signed-out":
+    case "outdated":
+      return "identity-library";
+    case "refused":
+      if (outcome.reason === "not-authority" || outcome.reason === "is-library")
+        return "identity-library";
+      return outcome.reason === "not-configured" ? "identity-not-configured" : "identity-failed";
+    case "io":
+    case "invalid":
+    case "storage":
+      return "identity-failed";
+  }
 };
 
 interface ConnectorRuntime {
@@ -423,6 +463,14 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
           current === null ? Effect.succeed({ kind: "signed-out" as const }) : current.remove(),
         ),
       ),
+    prepareIdentity: () =>
+      refreshedClient.pipe(
+        Effect.flatMap((current) =>
+          current === null
+            ? Effect.succeed({ kind: "signed-out" as const })
+            : current.prepareIdentity(),
+        ),
+      ),
   };
 
   const stopConnector = Effect.suspend(() => {
@@ -545,14 +593,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
             yield* persistOrRemember((current) => ({
               ...current,
               hostname,
-              prepared:
-                identity.state === "ready"
-                  ? {
-                      issuer: identity.issuer,
-                      resource: identity.resource,
-                      nativeClientId: identity.nativeClientId,
-                    }
-                  : current.prepared,
+              prepared: identity.state === "ready" ? preparedFrom(identity) : current.prepared,
             }));
             learned = null;
             failure = null;
@@ -732,6 +773,23 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     return view();
   }, lock.withPermit);
 
+  // Not under `lock`: it only replaces `prepared`, which no reach change reads.
+  const prepareIdentity = Effect.fn("ReachService.prepareIdentity")(function* () {
+    const outcome = yield* client.prepareIdentity();
+    if (outcome.kind !== "ok" || outcome.reply.state !== "ready") {
+      const reason = identityFailure(outcome);
+      yield* Effect.logWarning("The Library prepared no Loom sign-in for this computer.", {
+        outcome: outcome.kind,
+        reason,
+      });
+      return yield* new ReachError({ reason });
+    }
+    const prepared = preparedFrom(outcome.reply);
+    yield* persist((current) => ({ ...current, prepared }));
+    yield* publish;
+    return view();
+  });
+
   yield* forkParked(
     lock.withPermit(
       Effect.gen(function* () {
@@ -753,6 +811,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
         ),
       );
     }),
+    prepareIdentity,
     status: Effect.gen(function* () {
       connection = yield* libraryConnection.current;
       return view();

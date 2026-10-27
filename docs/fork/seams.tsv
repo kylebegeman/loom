@@ -993,7 +993,6 @@ apps/desktop/src/ipc/methods/updates.ts	machine-updates	1
 apps/desktop/src/preload.ts	machine-updates	1
 apps/desktop/src/updates/DesktopUpdates.test.ts	machine-updates	2
 apps/desktop/src/updates/DesktopUpdates.ts	machine-updates	5
-apps/desktop/src/window/DesktopApplicationMenu.test.ts	brand	1
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	machine-updates	1
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	machine-updates	3
 apps/web/src/components/LegacySidebar.tsx	machine-updates	4
@@ -1453,3 +1452,15 @@ docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
 apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
+apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
+apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
+apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	3
+apps/desktop/src/window/DesktopApplicationMenu.test.ts	client-computer	5
+apps/desktop/src/ipc/methods/localEnvironment.ts	client-computer	1
+apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
+apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
+apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
+apps/web/src/components/CommandPalette.tsx	library-only	1
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	4
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
+apps/web/src/routes/__root.tsx	client-computer	1

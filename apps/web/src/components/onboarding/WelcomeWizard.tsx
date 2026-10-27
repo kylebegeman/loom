@@ -86,6 +86,8 @@ import { presentSavedCloudEnvironmentConnection } from "../cloud/cloudEnvironmen
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 // fork: brand
 import { LoomWordmark } from "../LoomWordmark";
+import { ThisComputerStep } from "~/fork/connections/ClientComputerSetup"; // fork: fleet-connections
+import { canChooseClientComputer } from "~/fork/connections/clientComputer"; // fork: fleet-connections
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { CommandBlock } from "../CommandBlock";
@@ -101,7 +103,7 @@ import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../timestampFormat";
 
-type WizardStep = "connection" | "agents" | "import";
+type WizardStep = "computer" | "connection" | "agents" | "import"; // fork: fleet-connections
 const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
@@ -117,7 +119,13 @@ export function WelcomeWizard({
   readonly resumeEnvironmentId?: EnvironmentId | undefined;
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
 }) {
-  const [step, setStep] = useState<WizardStep>(resumeEnvironmentId ? "agents" : "connection");
+  const [step, setStep] = useState<WizardStep>(
+    resumeEnvironmentId
+      ? "agents"
+      : localAvailable && canChooseClientComputer() // fork: fleet-connections
+        ? "computer"
+        : "connection",
+  );
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
   // Share the registry for the wizard's lifetime so unchecked computers are not auto-selected again.
@@ -252,7 +260,10 @@ export function WelcomeWizard({
         </WizardHeader>
 
         <WizardPanel holdHeight={isLoadingProjects}>
-          {step === "connection" ? (
+          {/* fork: fleet-connections */}
+          {step === "computer" ? (
+            <ThisComputerStep onRunAgents={() => setStep("connection")} />
+          ) : step === "connection" ? (
             <ConnectionStep
               expandPairingInitially={!localAvailable && !hasCloudPublicConfig()}
               selectedIds={selectedIds}

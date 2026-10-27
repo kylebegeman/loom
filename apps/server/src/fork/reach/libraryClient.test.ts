@@ -24,6 +24,7 @@ const LIBRARY = "https://library.example.com";
 const STUDIO = "environment-studio";
 const ORIGIN = "http://127.0.0.1:3773";
 const TOKEN = "connector-token-secret";
+const DESKTOP_REDIRECT = "http://127.0.0.1:47123/loom/identity/callback";
 const decodeBody = Schema.decodeUnknownSync(Schema.fromJsonString(ReachRequestBody));
 const isLibraryError = Schema.is(LibraryError);
 
@@ -35,6 +36,13 @@ const ensureReply = (origin = ORIGIN, hostname = "studio-loom.example.com") => (
   edge: { allowlist: "ready", rateLimit: "ready" },
   identity: { state: "not-configured" },
 });
+
+const identity = {
+  state: "ready",
+  issuer: "https://id.example.com",
+  nativeClientId: "native-client",
+  resource: `${LIBRARY}/computers/${STUDIO}`,
+};
 
 interface Sent {
   readonly path: string;
@@ -50,6 +58,8 @@ const withClient = <A, E>(
   use: (harness: {
     readonly client: ReturnType<typeof makeReachLibraryClient>;
     readonly sent: ReadonlyArray<Sent>;
+    /** Bodies of the requests that carried no signature. */
+    readonly unsigned: ReadonlyArray<{ readonly path: string; readonly body: string }>;
     readonly logs: ReadonlyArray<string>;
     readonly failSave: (fail: boolean) => void;
   }) => Effect.Effect<A, E>,
@@ -59,15 +69,22 @@ const withClient = <A, E>(
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     const queue = [...answers];
     const sent: Array<Sent> = [];
+    const unsigned: Array<{ readonly path: string; readonly body: string }> = [];
     const logs: Array<string> = [];
     let lastSeq = 0;
     let saveFails = false;
     const send = (request: HttpClientRequest.HttpClientRequest) =>
       Effect.gen(function* () {
-        const posted = decodeBody(
-          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "",
-        );
+        const text =
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
         const path = new URL(request.url).pathname;
+        if (path === "/api/loom/reach/identity") {
+          unsigned.push({ path, body: text });
+          const answer = queue.shift() ?? Response.json({ state: "not-configured" });
+          if (isLibraryError(answer)) return yield* answer;
+          return HttpClientResponse.fromWeb(request, answer);
+        }
+        const posted = decodeBody(text);
         const claims = yield* verifyReachRequest({
           publicKey: posted.publicKey,
           token: posted.token,
@@ -106,6 +123,7 @@ const withClient = <A, E>(
     return yield* use({
       client,
       sent,
+      unsigned,
       logs,
       failSave: (fail) => {
         saveFails = fail;
@@ -183,6 +201,47 @@ describe("makeReachLibraryClient", () => {
             retryAfterSeconds: null,
           });
           expect(h.sent).toHaveLength(4);
+        }),
+    ),
+  );
+
+  it.effect("asks for Loom sign-in alone with an empty body, no signature and no seq", () =>
+    withClient(
+      [
+        Response.json({ ...identity, desktopRedirectUri: DESKTOP_REDIRECT }),
+        Response.json({ state: "not-configured" }),
+        Response.json({ reason: "too-many-requests", retryAfterSeconds: 60 }, { status: 429 }),
+        html(404),
+        html(403),
+        new LibraryError({ reason: "io" }),
+        html(200),
+        Response.json({
+          ...identity,
+          desktopRedirectUri: "http://127.0.0.1:0/loom/identity/callback",
+        }),
+      ],
+      (h) =>
+        Effect.gen(function* () {
+          // Nothing it sends is signed, so a computer that cannot save a seq still asks.
+          h.failSave(true);
+          const outcomes = [];
+          for (let index = 0; index < 8; index += 1) {
+            outcomes.push(yield* h.client.prepareIdentity());
+          }
+          expect(outcomes).toEqual([
+            { kind: "ok", reply: { ...identity, desktopRedirectUri: DESKTOP_REDIRECT } },
+            { kind: "ok", reply: { state: "not-configured" } },
+            { kind: "refused", reason: "too-many-requests", retryAfterSeconds: 60 },
+            { kind: "outdated" },
+            { kind: "signed-out" },
+            { kind: "io" },
+            { kind: "io" },
+            { kind: "invalid" },
+          ]);
+          expect(h.unsigned).toEqual(
+            Array.from({ length: 8 }, () => ({ path: "/api/loom/reach/identity", body: "{}" })),
+          );
+          expect(h.sent).toEqual([]);
         }),
     ),
   );

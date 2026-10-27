@@ -40,6 +40,12 @@ const MINUTE = 60_000;
 /** The Library connection's request timeout, which races each request instead of pacing retries. */
 const LIBRARY_TIMEOUT_MS = 3 * MINUTE;
 const decodeBody = Schema.decodeUnknownSync(Schema.fromJsonString(ReachRequestBody));
+const PREPARED = {
+  issuer: "https://id.example.com",
+  nativeClientId: "native-client",
+  resource: `${LIBRARY}/computers/${STUDIO}`,
+  desktopRedirectUri: "http://127.0.0.1:47123/loom/identity/callback",
+};
 
 const ensureReply = (origin: string, connectorToken: string, overrides: object = {}) => ({
   hostname: HOSTNAME,
@@ -64,6 +70,8 @@ type Event =
       readonly origin: string | undefined;
       readonly tokenFileExists: boolean;
     }
+  /** The unsigned request for Loom Identity alone. */
+  | { readonly kind: "identity" }
   | { readonly kind: "start"; readonly token: string; readonly tokenFile: string | undefined }
   | {
       readonly kind: "stop";
@@ -164,6 +172,11 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
 
     const http = HttpClient.make((request) =>
       Effect.gen(function* () {
+        if (request.url === `${LIBRARY}/api/loom/reach/identity`) {
+          yield* Queue.offer(events, { kind: "identity" });
+          const answer = answers.shift() ?? Response.json({ state: "ready", ...PREPARED });
+          return HttpClientResponse.fromWeb(request, answer);
+        }
         const posted = decodeBody(
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "",
         );
@@ -740,6 +753,7 @@ describe("ReachService", () => {
                   issuer: "https://id.example.com",
                   nativeClientId: "native-client",
                   resource: "https://studio-loom.example.com",
+                  desktopRedirectUri: PREPARED.desktopRedirectUri,
                 },
               }),
             ),
@@ -752,6 +766,7 @@ describe("ReachService", () => {
               issuer: "https://id.example.com",
               nativeClientId: "native-client",
               resource: "https://studio-loom.example.com",
+              desktopRedirectUri: PREPARED.desktopRedirectUri,
             };
             expect(yield* h.service.status).toMatchObject({
               prepared,
@@ -760,6 +775,67 @@ describe("ReachService", () => {
             expect(yield* h.sidecar).toMatchObject({ prepared });
           }),
       ),
+  );
+
+  it.effect("prepares Loom sign-in through the Library without turning reach on", () =>
+    withReach({}, (h) =>
+      Effect.gen(function* () {
+        const status = yield* h.service.prepareIdentity();
+        yield* expectEvent(h, { kind: "identity" });
+        expect(status).toMatchObject({
+          state: "off",
+          enabled: false,
+          url: null,
+          prepared: PREPARED,
+        });
+        expect(yield* h.sidecar).toMatchObject({ enabled: false, prepared: PREPARED });
+        expect(h.service.guardState()).toEqual({ hostname: null, serving: false });
+        // No ensure followed and no connector started.
+        expect(yield* h.settled).toBe(true);
+      }),
+    ),
+  );
+
+  it.effect("says why the Library could not prepare sign-in and keeps what it had", () =>
+    Effect.gen(function* () {
+      yield* withReach(
+        {
+          answers: [
+            Response.json({ state: "not-configured" }),
+            Response.json({ state: "failed", reason: "denied" }),
+            page(404),
+            refusal(404, "not-authority"),
+            refusal(429, "too-many-requests", { retryAfterSeconds: 60 }),
+          ],
+        },
+        (h) =>
+          Effect.gen(function* () {
+            const reasons = [];
+            for (let index = 0; index < 5; index += 1) {
+              reasons.push((yield* Effect.flip(h.service.prepareIdentity())).reason);
+              yield* expectEvent(h, { kind: "identity" });
+            }
+            expect(reasons).toEqual([
+              "identity-not-configured",
+              "identity-failed",
+              "identity-library",
+              "identity-library",
+              "identity-failed",
+            ]);
+            expect(yield* h.sidecarText).toBeNull();
+          }),
+      );
+      for (const env of [{ LOOM_LIBRARY_AUTHORITY: "true" }, {}]) {
+        yield* withReach({ env }, (h) =>
+          Effect.gen(function* () {
+            expect((yield* Effect.flip(h.service.prepareIdentity())).reason).toBe(
+              "identity-library",
+            );
+            expect(yield* h.settled).toBe(true);
+          }),
+        );
+      }
+    }),
   );
 
   it.effect("turns off by storing the intent first, then withdrawing the route and connector", () =>

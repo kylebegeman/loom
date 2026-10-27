@@ -77,7 +77,7 @@ export function ImportProjectDialog({
   onBack,
   onSaved,
   onClose,
-  initialHostId,
+  initialHostId: requestedHostId,
   initialRootPath,
   initialTitle,
 }: {
@@ -100,6 +100,14 @@ export function ImportProjectDialog({
   const executionHosts = library.environments.filter(
     (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
   );
+  // An entry point can name the Library itself, which runs no work and so holds no folders.
+  const initialHostId = library.environments.some(
+    (entry) =>
+      entry.environmentId === requestedHostId &&
+      entry.serverConfig?.environment.capabilities.supportsExecution === false,
+  )
+    ? undefined
+    : requestedHostId;
   const connectedHosts = executionHosts.filter(
     (entry) => entry.entry.enabled && entry.connection.phase === "connected",
   );

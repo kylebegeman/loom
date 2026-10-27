@@ -16,6 +16,7 @@ import {
   REACH_FORGET_FEATURE,
   REACH_IDENTITY_APPLY_FEATURE,
   REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS,
+  REACH_IDENTITY_PREPARE_FEATURE,
 } from "@t3tools/contracts/fork";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import * as Option from "effect/Option";
@@ -34,7 +35,7 @@ import { reach } from "./state";
 
 const TITLE = "Reach from anywhere";
 
-type PendingChange = "on" | "off" | "remove" | "forget" | "identity";
+type PendingChange = "on" | "off" | "remove" | "forget" | "identity" | "prepare";
 
 const DAY_SECONDS = 24 * 60 * 60;
 const DEFAULT_SESSION_DAYS = REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS / DAY_SECONDS;
@@ -178,6 +179,11 @@ function ComputerReachBody({
   const identityApplySupported =
     serverConfig !== null &&
     supportsLoomFeature(serverConfig.environment.capabilities, REACH_IDENTITY_APPLY_FEATURE);
+  const canPrepareIdentity = useAtomValue(reach.prepareIdentity.permissionAtom(environmentId));
+  const prepareIdentity = useAtomCommand(reach.prepareIdentity, { reportFailure: false });
+  const identityPrepareSupported =
+    serverConfig !== null &&
+    supportsLoomFeature(serverConfig.environment.capabilities, REACH_IDENTITY_PREPARE_FEATURE);
   const set = useAtomCommand(reach.set, { reportFailure: false });
   const remove = useAtomCommand(reach.remove, { reportFailure: false });
   const forget = useAtomCommand(reach.forget, { reportFailure: false });
@@ -192,6 +198,7 @@ function ComputerReachBody({
     canChange,
     forgetSupported,
     isThisComputer,
+    canPrepareSignIn: identityPrepareSupported && canPrepareIdentity,
     activeRouteUrl,
   });
 
@@ -290,6 +297,18 @@ function ComputerReachBody({
       {view.signIn ? (
         <div className="space-y-1.5">
           <p className="text-xs leading-relaxed text-muted-foreground">{view.signIn.text}</p>
+          {view.signIn.prepare ? (
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={pending !== null}
+              onClick={() =>
+                void run("prepare", () => prepareIdentity({ environmentId, input: {} }))
+              }
+            >
+              {pending === "prepare" ? "Preparing..." : view.signIn.prepare}
+            </Button>
+          ) : null}
           {view.signIn.copyText ? (
             <>
               <pre className="overflow-x-auto rounded-md bg-muted px-2 py-1.5 font-mono text-xs">

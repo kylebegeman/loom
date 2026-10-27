@@ -17,6 +17,7 @@ import { useNowMinute } from "~/hooks/useNowMinute";
 import { cancelLoomBrowserSignIn } from "~/rpc/loomIdentity";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { connectLoomIdentity } from "../identity/connection";
+import { LIBRARY_COMPUTERS_TARGET } from "../project-library/LibraryConnectDialog";
 import { useLibraryAuthority } from "../project-library/state";
 import {
   connectLibraryComputer,
@@ -208,6 +209,7 @@ function LibraryComputersSection({
 
   return (
     <SettingsSection
+      id={LIBRARY_COMPUTERS_TARGET}
       title="Other computers in your Library"
       headerAction={
         view.status === "unsupported" ? null : (

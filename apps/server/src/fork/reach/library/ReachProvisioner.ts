@@ -90,6 +90,8 @@ export interface ReachCallInput {
   readonly request: ReachRequestBody;
 }
 
+export type ReachIdentityCallInput = Omit<ReachCallInput, "request">;
+
 export class ReachProvisioner extends Context.Service<
   ReachProvisioner,
   {
@@ -104,6 +106,13 @@ export class ReachProvisioner extends Context.Service<
     readonly remove: (
       input: ReachCallInput,
     ) => Effect.Effect<ReachRemoveReply, ReachProvisionError>;
+    /**
+     * Loom Identity alone, for a computer with or without reach. It needs no reach zone, never
+     * calls Cloudflare, and only Retire with `endIdentity` ends what it set up.
+     */
+    readonly prepareIdentity: (
+      input: ReachIdentityCallInput,
+    ) => Effect.Effect<ReachEnsureIdentity, ReachProvisionError>;
     readonly list: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
     readonly computers: Effect.Effect<ReachLibraryListing, ReachLibraryError>;
     /**
@@ -186,6 +195,12 @@ const freshComputer = (updatedAt: string): ReachStoredComputer => ({
   identity: null,
   zone: null,
   leftoverZones: [],
+});
+
+/** No ensure ever claimed it, so it holds Loom Identity only and nothing in Cloudflare. */
+const signInOnly = (updatedAt: string): ReachStoredComputer => ({
+  ...freshComputer(updatedAt),
+  state: "removed",
 });
 
 /**
@@ -350,6 +365,31 @@ const make = Effect.gen(function* () {
     return { claims, fingerprint, label: pin.label } satisfies Admitted;
   });
 
+  /** One budget per computer for every call that can reach Cloudflare or Pocket ID. */
+  const throttle = Effect.fnUntraced(function* (environmentId: string) {
+    const now = yield* Clock.currentTimeMillis;
+    const retryAfter = yield* Ref.modify(requests, (byEnvironment) => {
+      const recent = (byEnvironment.get(environmentId) ?? []).filter(
+        (at) => at > now - REQUEST_WINDOW_MS,
+      );
+      const next = new Map(byEnvironment);
+      const [oldest] = recent;
+      if (oldest !== undefined && recent.length >= REQUESTS_PER_WINDOW) {
+        next.set(environmentId, recent);
+        return [Math.max(1, Math.ceil((oldest + REQUEST_WINDOW_MS - now) / 1000)), next] as const;
+      }
+      next.set(environmentId, [...recent, now]);
+      return [null, next] as const;
+    });
+    if (retryAfter !== null) {
+      yield* Effect.logWarning("The Library refused a reach request.", {
+        stage: "limit",
+        reason: "too-many-requests",
+      });
+      return yield* provisionError("too-many-requests", retryAfter);
+    }
+  });
+
   /** F2 and replay checks, then `seq` and the key pin are written before any outside call. */
   const claim = Effect.fnUntraced(function* (environmentId: string, admitted: Admitted) {
     const now = yield* Clock.currentTimeMillis;
@@ -377,26 +417,7 @@ const make = Effect.gen(function* () {
         },
       },
     }));
-    const retryAfter = yield* Ref.modify(requests, (byEnvironment) => {
-      const recent = (byEnvironment.get(environmentId) ?? []).filter(
-        (at) => at > now - REQUEST_WINDOW_MS,
-      );
-      const next = new Map(byEnvironment);
-      const [oldest] = recent;
-      if (oldest !== undefined && recent.length >= REQUESTS_PER_WINDOW) {
-        next.set(environmentId, recent);
-        return [Math.max(1, Math.ceil((oldest + REQUEST_WINDOW_MS - now) / 1000)), next] as const;
-      }
-      next.set(environmentId, [...recent, now]);
-      return [null, next] as const;
-    });
-    if (retryAfter !== null) {
-      yield* Effect.logWarning("The Library refused a reach request.", {
-        stage: "limit",
-        reason: "too-many-requests",
-      });
-      return yield* provisionError("too-many-requests", retryAfter);
-    }
+    yield* throttle(environmentId);
   });
 
   const resolveZone = Effect.gen(function* () {
@@ -580,13 +601,19 @@ const make = Effect.gen(function* () {
     const stored = (yield* read.pipe(Effect.orElseSucceed(() => null)))?.computers[environmentId]
       ?.identity;
     const kept = stored ?? null;
-    const { issuer, nativeClientId } = config.identity;
+    const { issuer, nativeClientId, desktopRedirectUri } = config.identity;
     const resource =
       config.audience === null ? null : reachResource(config.audience, environmentId);
     if (issuer === null || nativeClientId === null || resource === null) {
       return { stored: kept, reply: { state: "not-configured" } };
     }
-    const ready = { state: "ready", issuer, nativeClientId, resource } as const;
+    const ready = {
+      state: "ready",
+      issuer,
+      nativeClientId,
+      resource,
+      ...(desktopRedirectUri === null ? {} : { desktopRedirectUri }),
+    } as const;
     const outcome = yield* pocketId
       .ensureApi({
         apiId: kept?.resource === resource ? kept.apiId : null,
@@ -981,6 +1008,43 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.annotateLogs({ environmentId: input.environmentId }));
   });
 
+  const prepareIdentity = Effect.fn("ReachProvisioner.prepareIdentity")(function* (
+    input: ReachIdentityCallInput,
+  ) {
+    const { environmentId } = input;
+    return yield* Effect.gen(function* () {
+      if (config.audience === null) return yield* refuse("not-authority");
+      if (!isReachEnvironmentId(environmentId)) return yield* refuse("invalid");
+      if (environmentId === ownEnvironmentId) return yield* refuse("is-library");
+      yield* throttle(environmentId);
+      // Only names the Pocket ID resource: the publisher session already proved the computer.
+      const pin = yield* directory.pinned(environmentId).pipe(Effect.orElseSucceed(() => null));
+      return yield* lock.withPermits(1)(
+        Effect.gen(function* () {
+          const identity = yield* provisionIdentity(environmentId, pin?.label ?? null);
+          const stored = identity.stored;
+          if (stored === null) return identity.reply;
+          const updatedAt = yield* nowIso;
+          yield* store
+            .update((state) => ({
+              ...state,
+              computers: {
+                ...state.computers,
+                [environmentId]: {
+                  ...(state.computers[environmentId] ?? signInOnly(updatedAt)),
+                  identity: stored,
+                  publisherSessionId: input.publisherSessionId,
+                  updatedAt,
+                },
+              },
+            }))
+            .pipe(Effect.mapError(() => provisionError("io")));
+          return identity.reply;
+        }),
+      );
+    }).pipe(Effect.annotateLogs({ environmentId }));
+  });
+
   const signInState = Effect.fn("ReachProvisioner.signInState")(
     function* (sessionId: string | null, environmentId: string, now: number) {
       if (sessionId === null) return "unknown" as const;
@@ -1133,7 +1197,6 @@ const make = Effect.gen(function* () {
 
   const retire = Effect.fn("ReachProvisioner.retire")(function* (input: ReachRetireInput) {
     if (config.audience === null) return yield* libraryError("not-authority");
-    if (!configured) return yield* libraryError("not-configured");
     return yield* lock
       .withPermits(1)(
         Effect.gen(function* () {
@@ -1141,6 +1204,9 @@ const make = Effect.gen(function* () {
             input.environmentId
           ];
           if (existing === undefined) return yield* libraryError("not-found");
+          // `seq` is set by the first ensure, so a record without one never reached Cloudflare.
+          const claimed = existing.seq > 0;
+          if (claimed && !configured) return yield* libraryError("not-configured");
           // Pocket ID cannot delete the resource without the key, so a retire that would tear
           // down the tunnel and then fail to end sign-in is refused before either happens.
           if (
@@ -1151,16 +1217,18 @@ const make = Effect.gen(function* () {
           ) {
             return yield* libraryError("identity-key-missing");
           }
-          yield* teardown(input.environmentId).pipe(
-            Effect.catch((error) =>
-              normalize(error).pipe(
-                Effect.tap((failure) =>
-                  recordFailure(input.environmentId, "removing", failure.reason),
+          if (claimed) {
+            yield* teardown(input.environmentId).pipe(
+              Effect.catch((error) =>
+                normalize(error).pipe(
+                  Effect.tap((failure) =>
+                    recordFailure(input.environmentId, "removing", failure.reason),
+                  ),
+                  Effect.flatMap((failure) => Effect.fail(toLibraryError(failure))),
                 ),
-                Effect.flatMap((failure) => Effect.fail(toLibraryError(failure))),
               ),
-            ),
-          );
+            );
+          }
           let identity = existing.identity;
           if (input.endIdentity && identity !== null) {
             const apiId = identity.apiId;
@@ -1180,14 +1248,26 @@ const make = Effect.gen(function* () {
             }
           }
           const updatedAt = yield* nowIso;
-          const state = yield* putComputer(input.environmentId, (current) => ({
-            ...current,
+          // A record that only held sign-in holds nothing once it ended, and no `seq` to keep.
+          const state = yield* (
+            !claimed && identity === null
+              ? store.update((current) => {
+                  const { [input.environmentId]: _ended, ...computers } = current.computers;
+                  return { ...current, computers };
+                })
+              : putComputer(input.environmentId, (current) => ({
+                  ...current,
+                  identity,
+                  // F2: a new key may claim this computer's reach only after an admin retired it.
+                  keyFingerprint: null,
+                  updatedAt,
+                }))
+          ).pipe(Effect.mapError(() => libraryError("io")));
+          const record = state.computers[input.environmentId] ?? {
+            ...existing,
             identity,
-            // F2: a new key may claim this computer's reach only after an admin retired it.
-            keyFingerprint: null,
             updatedAt,
-          })).pipe(Effect.mapError(() => libraryError("io")));
-          const record = state.computers[input.environmentId] ?? existing;
+          };
           // The tunnel was just deleted, so no list call is needed to know it is down.
           return yield* describe(input.environmentId, record, [], null);
         }),
@@ -1198,6 +1278,7 @@ const make = Effect.gen(function* () {
   return ReachProvisioner.of({
     ensure,
     remove,
+    prepareIdentity,
     list,
     retire,
     computers: config.audience === null ? directory.reachComputers : list,

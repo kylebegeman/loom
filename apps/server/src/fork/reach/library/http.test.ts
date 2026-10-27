@@ -9,6 +9,7 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  REACH_IDENTITY_ROUTE,
   REACH_LIST_ROUTE,
   REACH_ENSURE_ROUTE,
   REACH_REMOVE_ROUTE,
@@ -28,7 +29,10 @@ import { ReachHttpRoutes } from "./http.ts";
 import {
   CLOUDFLARE_TOKEN,
   CONNECTOR_TOKEN_PREFIX,
+  ISSUER,
   LIBRARY,
+  LIBRARY_ID,
+  NATIVE_CLIENT_ID,
   POCKET_ID_KEY,
   type ReachKey,
   cloudflareError,
@@ -425,6 +429,40 @@ describe("reach routes", () => {
     ),
   );
 });
+
+it.live(
+  "prepares Loom sign-in for a publisher without a signed request or any Cloudflare call",
+  () =>
+    run((f) =>
+      Effect.gen(function* () {
+        // The reply carries no secret, so a Library reached over plain HTTP answers it too.
+        const prepared = yield* f.post(REACH_IDENTITY_ROUTE, "{}", { "x-forwarded-proto": "http" });
+        expect(prepared.status).toBe(200);
+        expect(prepared.json).toEqual({
+          state: "ready",
+          issuer: ISSUER,
+          nativeClientId: NATIVE_CLIENT_ID,
+          resource: `${LIBRARY}/computers/${STUDIO}`,
+        });
+        expect(f.apis.steps).toEqual(["api.create", "grant.put"]);
+        expect(prepared.text).not.toContain(POCKET_ID_KEY);
+
+        f.setCaller(sessionFor(`loom-host:${LIBRARY_ID}`));
+        const own = yield* f.post(REACH_IDENTITY_ROUTE, "{}");
+        expect(own.status).toBe(403);
+        expect(own.json).toEqual({ reason: "is-library" });
+        for (const caller of [
+          sessionFor("mcp-client"),
+          sessionFor("owner", [AuthOrchestrationReadScope, AuthOrchestrationOperateScope]),
+        ]) {
+          f.setCaller(caller);
+          expect((yield* f.post(REACH_IDENTITY_ROUTE, "{}")).status).toBe(403);
+        }
+        f.setCaller(null);
+        expect((yield* f.post(REACH_IDENTITY_ROUTE, "{}")).status).toBe(401);
+      }),
+    ),
+);
 
 it.live("lists reach diagnostics for a publisher without exposing connector credentials", () =>
   run((f) =>

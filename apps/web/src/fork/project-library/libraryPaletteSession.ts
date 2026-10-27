@@ -35,11 +35,17 @@ export function finishLibraryPaletteClose(): void {
 /** A Library action that needs a Library first. The connect dialog runs it once one is chosen. */
 export type LibraryActionRequest = Omit<LibraryPaletteSession, "id" | "open">;
 
-export const useLibraryConnectStore = create<{ readonly pending: LibraryActionRequest | null }>(
+/**
+ * `computers` connects a Library for its own sake, on a computer that only reaches others, then
+ * lists the computers the Library knows instead of running an action.
+ */
+type LibraryConnectRequest = LibraryActionRequest | "computers";
+
+export const useLibraryConnectStore = create<{ readonly pending: LibraryConnectRequest | null }>(
   () => ({ pending: null }),
 );
 
-export function requestLibraryConnect(request: LibraryActionRequest): void {
+export function requestLibraryConnect(request: LibraryConnectRequest): void {
   closeLibraryPalette();
   useLibraryConnectStore.setState({ pending: request });
 }

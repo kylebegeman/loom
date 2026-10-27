@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 
 import { APP_DISPLAY_NAME, DESKTOP_DOWNLOAD_URL } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { ClientComputerActions } from "~/fork/connections/ClientComputerSetup"; // fork: fleet-connections
 import { isElectron } from "../env";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { useRelayEnvironmentDiscovery } from "../state/environments";
@@ -36,11 +37,12 @@ export function HostedEmptyState() {
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyTitle>
-              {localEnvironmentOff ? "This computer is off" : "No computer connected"}
+              {/* fork: fleet-connections */}
+              {localEnvironmentOff ? "Connect to your computers" : "No computer connected"}
             </EmptyTitle>
             <EmptyDescription>
               {localEnvironmentOff
-                ? "Turn it back on, or connect a different computer."
+                ? "Agents run on your other computers. Connect your Library to reach them, or add a computer." // fork: fleet-connections
                 : cloudEnabled
                   ? "Your agents run on your computer."
                   : // fork: brand
@@ -49,9 +51,7 @@ export function HostedEmptyState() {
           </EmptyHeader>
           <EmptyContent>
             {localEnvironmentOff ? (
-              <Button render={<Link to="/settings/connections" />} size="sm">
-                Open Environments
-              </Button>
+              <ClientComputerActions /> // fork: fleet-connections
             ) : (
               <ol className="w-full space-y-4 text-left">
                 {cloudEnabled ? <T3ConnectSteps /> : <PairingSteps />}

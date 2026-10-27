@@ -26,6 +26,7 @@ import { allReachableShellsLiveAtom } from "../../state/shell";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment"; // fork: client-computer
 
 /** A link handed over by the OS is a plain click: nothing about it asks for the browser. */
 const externalClick = {
@@ -85,10 +86,13 @@ export function DesktopWebLinkCoordinator() {
   const httpBaseUrl = useEnvironmentHttpBaseUrl(primaryEnvironment?.environmentId ?? null);
   const queueRef = useRef(Promise.resolve());
   const webLinks = window.desktopBridge?.webLinks;
+  // fork: client-computer A computer that runs no agents opens links on the computers it reaches.
+  const clientComputer = isLocalEnvironmentDisabled();
   const ready =
     webLinks !== undefined &&
-    primaryEnvironment?.connection.phase === "connected" &&
-    primaryEnvironment.serverConfig !== null;
+    (clientComputer || // fork: client-computer
+      (primaryEnvironment?.connection.phase === "connected" &&
+        primaryEnvironment.serverConfig !== null));
 
   const reportFailure = (url: string, description = url) =>
     toastManager.add(
@@ -157,7 +161,8 @@ export function DesktopWebLinkCoordinator() {
     // delivered at launch would miss its project and fall through to the browser. Hold PR
     // links, and only those, until discovery settles; an ordinary link never waits for it.
     const hold =
-      openPullRequestsInApp && sourceControlClients.parseChangeRequestUrl(url) !== null
+      (openPullRequestsInApp && sourceControlClients.parseChangeRequestUrl(url) !== null) ||
+      (clientComputer && promptLinkAppPath(url) === null) // fork: client-computer
         ? projectsSettled()
         : Promise.resolve();
     void hold.then(() => {

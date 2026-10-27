@@ -144,7 +144,7 @@ const layerElectron = Layer.mergeAll(
 
 const layerDesktopFoundation = Layer.mergeAll(
   DesktopIdentityRenewal.layer, // fork: identity-renewal
-  OpenAtLogin.layer, // fork: open-at-login
+  OpenAtLogin.layer.pipe(Layer.provide(DesktopAppSettings.layer)), // fork: open-at-login
   MacPermissions.layer,
   DesktopState.layer,
   DesktopShutdown.layer,

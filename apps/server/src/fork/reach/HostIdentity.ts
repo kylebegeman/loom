@@ -126,6 +126,9 @@ export const withHostIdentity = Effect.fn("HostIdentity.withHostIdentity")(funct
             LOOM_IDENTITY_NATIVE_CLIENT_ID: saved.prepared.nativeClientId,
             LOOM_IDENTITY_AUDIENCE: saved.prepared.resource,
             LOOM_IDENTITY_RESOURCE: saved.prepared.resource,
+            ...(saved.prepared.desktopRedirectUri === undefined
+              ? {}
+              : { LOOM_IDENTITY_DESKTOP_REDIRECT_URI: saved.prepared.desktopRedirectUri }),
             LOOM_IDENTITY_ALLOWED_SUBJECTS: saved.allowedSubjects,
             LOOM_IDENTITY_MAX_SESSION_AGE: String(saved.maxSessionAgeSeconds),
             ...(saved.requirePasskey ? { LOOM_IDENTITY_REQUIRE_PASSKEY: "true" } : {}),

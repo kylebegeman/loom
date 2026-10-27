@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { DesktopUpdateState } from "@t3tools/contracts"; // fork: client-computer
 import type * as Electron from "electron";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -64,6 +65,61 @@ const runMainContentsCommand = Effect.fn("desktop.menu.runMainContentsCommand")(
   yield* desktopWindow.runMainContentsCommand(command);
 });
 
+// fork: client-computer: the menu finishes an update itself, so updating never waits on the web app.
+const offerUpdateFromMenu = Effect.fn("desktop.menu.offerUpdate")(function* (
+  state: DesktopUpdateState,
+) {
+  const updates = yield* DesktopUpdates.DesktopUpdates;
+  const electronDialog = yield* ElectronDialog.ElectronDialog;
+  const ask = (message: string, detail: string, action: string) =>
+    electronDialog
+      .showMessageBox({
+        type: "info",
+        title: "Update available",
+        message,
+        detail,
+        buttons: [action, "Later"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .pipe(Effect.map(({ response }) => response === 0));
+  const fail = (message: string, detail: string | null) =>
+    electronDialog.showMessageBox({
+      type: "warning",
+      title: "Update failed",
+      message,
+      detail: detail ?? "Please try again later.",
+      buttons: ["OK"],
+    });
+
+  let version = state.downloadedVersion;
+  if (version === null) {
+    if (state.status !== "available" || state.availableVersion === null) return;
+    const download = yield* ask(
+      `Loom ${state.availableVersion} is available.`,
+      "Download it now. You choose when Loom restarts.",
+      "Download",
+    );
+    if (!download) return;
+    const result = yield* updates.download;
+    if (!result.completed) {
+      yield* fail("Could not download the update.", result.state.message);
+      return;
+    }
+    version = result.state.downloadedVersion ?? state.availableVersion;
+  }
+  const install = yield* ask(
+    `Loom ${version} is ready to install.`,
+    "Loom restarts to finish. Agents running on this computer stop while it restarts.",
+    "Restart and Install",
+  );
+  if (!install) return;
+  const result = yield* updates.install;
+  if (!result.accepted || result.state.errorContext === "install") {
+    yield* fail("Could not install the update.", result.state.message);
+  }
+});
+
 const checkForUpdatesFromMenu = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
@@ -86,6 +142,8 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
       detail: updateState.message ?? "An unknown error occurred. Please try again later.",
       buttons: ["OK"],
     });
+  } else {
+    yield* offerUpdateFromMenu(updateState); // fork: client-computer
   }
 }).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
 

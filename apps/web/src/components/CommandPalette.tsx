@@ -632,6 +632,7 @@ function OpenCommandPaletteDialog(props: {
       .filter(
         (environment) =>
           environment.entry.enabled && // fork: fleet-connections
+          environment.serverConfig?.environment.capabilities.supportsExecution !== false && // fork: library-only
           canCreateProjectInEnvironment(environment.connection.phase),
       )
       .map((environment): AddProjectEnvironmentOption => {

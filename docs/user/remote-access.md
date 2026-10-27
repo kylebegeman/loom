@@ -372,13 +372,19 @@ When a T3 Connect connection fails, see
 [T3 Connect troubleshooting](./t3-connect-troubleshooting.md). It explains each
 error, where the problem is, and how to fix it.
 
-## Using the Desktop App as a Remote Only
+## Use a Mac as a client
 
-If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Computers** <!-- fork: fleet-connections --> and switch off **Local
-environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
-backends stay off, and other devices can no longer connect to this computer. Your projects,
-history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
+The desktop app can drive work on your other computers without running agents itself. On a new
+installation, setup first asks how you will use this computer. Choose **Only reach other
+computers** and Loom restarts, then asks you to connect your Library. Once your Library is
+connected, **Settings → Computers** lists the other computers in it so you can connect each one.
 
-Switch **Local environment** back on in the same place to restart with your previous local
-settings.
+To switch an installation you already use, open **Settings → Computers** <!-- fork: fleet-connections -->
+and turn off **Run agents on this computer**. Loom restarts without a local server: no agents or
+terminals run here, WSL backends stay off, and other devices can no longer connect to this
+computer. Your projects, history, and saved connections are kept, and you keep working through
+your Library, pairing, T3 Connect, or SSH. While no computer is connected, the home screen
+offers **Connect your Library** and **Add a computer**.
+
+Turn **Run agents on this computer** back on in the same place to restart with your previous
+local settings.

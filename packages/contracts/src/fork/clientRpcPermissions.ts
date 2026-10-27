@@ -242,6 +242,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [DIR.forget]: AuthSettingsWriteScope,
   // Reach status and the Library's reach list stay unguarded for the same reason.
   [REACH.applyIdentity]: AuthSettingsWriteScope,
+  [REACH.prepareIdentity]: AuthSettingsWriteScope,
   [REACH.set]: AuthRelayWriteScope,
   [REACH.remove]: AuthRelayWriteScope,
   [REACH.forget]: AuthRelayWriteScope,

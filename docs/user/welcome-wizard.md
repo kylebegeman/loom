@@ -12,6 +12,13 @@ Close setup while no import is running to go straight to the app. You can connec
 computers and agents later from Settings, or open `/welcome` to run setup again.
 Direct links, such as Settings, open normally before setup is done.
 
+## Choose how this computer is used
+
+In the desktop app, setup first asks how you will use this computer. **Run agents on this
+computer** continues with the steps below. **Only reach other computers** restarts the app
+without running agents here and asks you to connect your Library. See
+[Use a Mac as a client](./remote-access.md#use-a-mac-as-a-client).
+
 ## Connect your computers
 
 Select one or more computers to set up. If you opened T3 Code directly from a

@@ -1,8 +1,12 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Button } from "~/components/ui/button";
 import { openLibraryAction } from "./actions";
 import { LibraryDialog } from "./LibraryControls";
 import { useLibraryConnectStore } from "./libraryPaletteSession";
 import { LIBRARY_SETUP_DESCRIPTION, LibrarySetup } from "./LibrarySetup";
+
+/** The Library's other computers in Settings > Computers, where a new client connects them. */
+export const LIBRARY_COMPUTERS_TARGET = "library-computers";
 
 /** Connecting a Library is a form of its own: a palette panel clips anything taller than its rows. */
 function LibraryConnectDialog({
@@ -34,6 +38,7 @@ function LibraryConnectDialog({
 /** Shows the connect dialog for a Library action that needs one, then runs that action. */
 export function LibraryConnectHost() {
   const pending = useLibraryConnectStore((state) => state.pending);
+  const navigate = useNavigate();
   if (!pending) return null;
   const close = () => useLibraryConnectStore.setState({ pending: null });
   return (
@@ -41,6 +46,10 @@ export function LibraryConnectHost() {
       onClose={close}
       onConnected={() => {
         close();
+        if (pending === "computers") {
+          void navigate({ to: "/settings/connections", hash: LIBRARY_COMPUTERS_TARGET });
+          return;
+        }
         openLibraryAction(
           pending.action,
           pending.projectId,

@@ -17,6 +17,7 @@ const prepared = {
   issuer: "https://identity.example.test",
   resource: "https://studio-loom.example.test",
   nativeClientId: "native-client",
+  desktopRedirectUri: "http://127.0.0.1:47123/loom/identity/callback",
 };
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "host-identity-" }).pipe(
   Layer.provideMerge(NodeServices.layer),
@@ -54,6 +55,9 @@ it.effect(
           expect(env.LOOM_IDENTITY_RESOURCE).toBe("https://override.example.test");
           expect(env.LOOM_IDENTITY_ALLOWED_SUBJECTS).toBe("owner-id");
           expect(yield* Config.String("LOOM_IDENTITY_ISSUER")).toBe(prepared.issuer);
+          expect(yield* Config.String("LOOM_IDENTITY_DESKTOP_REDIRECT_URI")).toBe(
+            prepared.desktopRedirectUri,
+          );
           expect(yield* Config.Boolean("LOOM_IDENTITY_REQUIRE_PASSKEY")).toBe(true);
         }),
       );
@@ -135,9 +139,15 @@ it.effect("gives an Identity saved before session ages the seven-day refresh lif
     const fs = yield* FileSystem.FileSystem;
     const config = yield* ServerConfig.ServerConfig;
     yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+    const { desktopRedirectUri: _desktopRedirectUri, ...older } = prepared;
     yield* fs.writeFileString(
       `${config.secretsDir}/reach-identity.json`,
-      JSON.stringify({ version: 1, prepared, allowedSubjects: "owner-id", requirePasskey: true }),
+      JSON.stringify({
+        version: 1,
+        prepared: older,
+        allowedSubjects: "owner-id",
+        requirePasskey: true,
+      }),
       { mode: 0o600 },
     );
     yield* withHostIdentity(
@@ -145,6 +155,8 @@ it.effect("gives an Identity saved before session ages the seven-day refresh lif
         expect(yield* Config.String("LOOM_IDENTITY_MAX_SESSION_AGE")).toBe(
           String(7 * 24 * 60 * 60),
         );
+        // Saved before the Library handed out its desktop callback.
+        expect((yield* HostProcess.Environment).LOOM_IDENTITY_DESKTOP_REDIRECT_URI).toBeUndefined();
       }),
     );
   }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),

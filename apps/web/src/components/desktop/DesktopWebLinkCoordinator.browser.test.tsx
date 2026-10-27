@@ -8,6 +8,12 @@ const state = vi.hoisted(() => ({
   projects: [] as never[],
   navigate: vi.fn(async (): Promise<void> => undefined),
   openScratchProject: vi.fn(async () => null),
+  // fork: client-computer A client computer has no primary and starts threads elsewhere.
+  primary: { environmentId: "local", connection: { phase: "connected" }, serverConfig: {} } as {
+    environmentId: string;
+  } | null,
+  scratchEnvironmentId: "local",
+  localEnvironmentEnabled: true,
 }));
 
 // One connected primary environment that can read pull requests. Its project list and
@@ -20,11 +26,7 @@ vi.mock(import("@tanstack/react-router"), async (original) => ({
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   usePrimaryEnvironmentId: () => "local" as EnvironmentId,
-  usePrimaryEnvironment: (() => ({
-    environmentId: "local",
-    connection: { phase: "connected" },
-    serverConfig: {},
-  })) as never,
+  usePrimaryEnvironment: (() => state.primary) as never,
 }));
 vi.mock(import("../../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
@@ -47,7 +49,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
 vi.mock(import("../../hooks/useScratchProject"), async (original) => ({
   ...(await original()),
   useScratchProject: (() => ({
-    scratchEnvironmentId: () => "local",
+    scratchEnvironmentId: () => state.scratchEnvironmentId,
     openScratchProject: state.openScratchProject,
   })) as never,
 }));
@@ -87,9 +89,14 @@ const pullRequestView = {
   },
 };
 
-function setup() {
+function setup(client = false) {
   vi.clearAllMocks();
   state.projects = [];
+  state.primary = client
+    ? null
+    : ({ environmentId: "local", connection: { phase: "connected" }, serverConfig: {} } as never);
+  state.scratchEnvironmentId = client ? "dorothy" : "local";
+  state.localEnvironmentEnabled = !client;
   appAtomRegistry.set(discoverySettled, false);
 }
 
@@ -100,6 +107,7 @@ async function mount(...urls: string[]) {
   stack.use(
     stubGlobal("desktopBridge", {
       getClientSettings: async () => null,
+      getLocalEnvironmentEnabled: () => state.localEnvironmentEnabled,
       webLinks: {
         onOpen: (listener: (url: string) => void) => {
           deliver = listener;
@@ -137,4 +145,26 @@ it("holds a launch PR link until project discovery settles, then opens the PR vi
   });
   expect(state.navigate).toHaveBeenCalledExactlyOnceWith(pullRequestView);
   expect(state.openScratchProject).not.toHaveBeenCalled();
+});
+
+// fork: client-computer
+it("opens a web link on another computer once they connect, when this one runs no agents", async () => {
+  setup(true);
+  await using _coordinator = await mount("https://example.com/");
+  expect(state.openScratchProject).not.toHaveBeenCalled();
+
+  const opened = new Promise<void>((resolve) => {
+    state.openScratchProject.mockImplementationOnce(async () => {
+      resolve();
+      return null;
+    });
+  });
+  await act(async () => {
+    appAtomRegistry.set(discoverySettled, true);
+    await opened;
+  });
+  expect(state.openScratchProject).toHaveBeenCalledExactlyOnceWith(
+    "dorothy",
+    "Could not open the link",
+  );
 });

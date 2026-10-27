@@ -33,6 +33,7 @@ const makeHarness = Effect.fn("ReachMcpTest.makeHarness")(function* (
   let status = CONNECTED;
   const reach = ReachService.of({
     applyIdentity: () => Effect.void,
+    prepareIdentity: () => Effect.die(new Error("No tool prepares Loom sign-in.")),
     status: Effect.sync(() => status),
     changes: Stream.make(status),
     setEnabled: (enabled) =>

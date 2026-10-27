@@ -9,12 +9,15 @@ import {
   NonNegativeInt,
   PositiveInt,
 } from "../baseSchemas.ts";
+import { LoomDesktopRedirectUri } from "./identity.ts";
 
 /** Advertised by every computer that answers `loom.reach.*`. */
 export const REACH_FEATURE = "reach";
 /** Advertised by every computer that also answers `loom.reach.forget`. */
 export const REACH_FORGET_FEATURE = "reach-forget";
 export const REACH_IDENTITY_APPLY_FEATURE = "reach-identity-apply";
+/** Advertised by every computer that answers `loom.reach.prepareIdentity`. */
+export const REACH_IDENTITY_PREPARE_FEATURE = "reach-identity-prepare";
 /**
  * Advertised by the Library authority once its directory runs and its reach zone and Cloudflare
  * token file are configured. It answers `loom.reach.library.*` and the two provisioning routes.
@@ -24,6 +27,7 @@ export const REACH_LIBRARY_FEATURE = "reach-library";
 const ShortText = Schema.String.check(Schema.isMaxLength(500));
 const UrlText = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
 const HostnameText = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(253));
+const NativeClientId = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256));
 
 /**
  * `unavailable` cannot run reach at all (see `blocked`). `provisioning` waits on the Library,
@@ -71,11 +75,13 @@ export type ReachWarning = typeof ReachWarning.Type;
 /**
  * Non-secret Loom Identity values the Library prepared for this computer. The computer adopts them
  * only when its own admin applies them to private host configuration; environment variables take precedence.
+ * `desktopRedirectUri` is absent from Libraries older than it and from Libraries without one.
  */
 export const ReachPrepared = Schema.Struct({
   issuer: UrlText,
   resource: UrlText,
-  nativeClientId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
+  nativeClientId: NativeClientId,
+  desktopRedirectUri: Schema.optionalKey(LoomDesktopRedirectUri),
 });
 export type ReachPrepared = typeof ReachPrepared.Type;
 
@@ -122,12 +128,26 @@ export type ReachSetInput = typeof ReachSetInput.Type;
  * answer once the intent is stored, and the status carries what the Library said.
  */
 export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
-  reason: Schema.Literals(["unavailable", "busy", "storage", "identity-allowlist"]),
+  reason: Schema.Literals([
+    "unavailable",
+    "busy",
+    "storage",
+    "identity-allowlist",
+    "identity-library",
+    "identity-not-configured",
+    "identity-failed",
+  ]),
 }) {
   override get message(): string {
     switch (this.reason) {
       case "identity-allowlist":
         return "Enter the Loom account IDs allowed to sign in to this computer. A wildcard is not allowed.";
+      case "identity-library":
+        return "Preparing sign-in needs a current sign-in to your Library, and a Library on a recent Loom. Check this computer's Library connection, or update Loom on your Library.";
+      case "identity-not-configured":
+        return "Your Library has no Loom sign-in to share yet. Set up Loom Identity on your Library, then try again.";
+      case "identity-failed":
+        return "Your Library could not prepare Loom sign-in right now. Try again in a few minutes.";
       case "unavailable":
         return "Reach cannot run on this computer right now. It needs a Library that supports reach and a current sign-in to it.";
       case "busy":
@@ -141,6 +161,11 @@ export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
 export const REACH_LIST_ROUTE = "/api/loom/reach/list";
 export const REACH_ENSURE_ROUTE = "/api/loom/reach/ensure";
 export const REACH_REMOVE_ROUTE = "/api/loom/reach/remove";
+/**
+ * Prepares Loom Identity alone, without reach. The reply holds no secret, so the request is the
+ * publisher session with an empty body, not a signed request.
+ */
+export const REACH_IDENTITY_ROUTE = "/api/loom/reach/identity";
 /** The Library refuses a larger body before reading it. */
 export const REACH_REQUEST_MAX_BYTES = 8192;
 /** A signed request is a few hundred bytes; this only bounds the text. */
@@ -193,13 +218,17 @@ export type ReachRequestBody = typeof ReachRequestBody.Type;
 export const ReachIdentityFailure = Schema.Literals(["denied", "unavailable", "conflict"]);
 export type ReachIdentityFailure = typeof ReachIdentityFailure.Type;
 
-/** Pocket ID provisioning never fails an ensure; its outcome rides along. */
+/**
+ * Pocket ID provisioning never fails an ensure; its outcome rides along. It is also the whole
+ * reply of `REACH_IDENTITY_ROUTE`.
+ */
 export const ReachEnsureIdentity = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("ready"),
     issuer: UrlText,
-    nativeClientId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
+    nativeClientId: NativeClientId,
     resource: UrlText,
+    desktopRedirectUri: Schema.optionalKey(LoomDesktopRedirectUri),
   }),
   Schema.Struct({ state: Schema.Literal("not-configured") }),
   Schema.Struct({ state: Schema.Literal("failed"), reason: ReachIdentityFailure }),
@@ -422,6 +451,7 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
 
 export const REACH_WS_METHODS = {
   applyIdentity: "loom.reach.applyIdentity",
+  prepareIdentity: "loom.reach.prepareIdentity",
   watch: "loom.reach.watch",
   set: "loom.reach.set",
   remove: "loom.reach.remove",
@@ -443,6 +473,12 @@ export const ReachRpcGroup = RpcGroup.make(
   Rpc.make(REACH_WS_METHODS.applyIdentity, {
     payload: ReachApplyIdentityInput,
     success: Schema.Void,
+    error: computerError,
+  }),
+  // Asks the Library for Loom sign-in values alone; it never turns reach on.
+  Rpc.make(REACH_WS_METHODS.prepareIdentity, {
+    payload: Schema.Struct({}),
+    success: ReachStatus,
     error: computerError,
   }),
   Rpc.make(REACH_WS_METHODS.watch, {

@@ -8,6 +8,7 @@ import * as Electron from "electron";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../../app/DesktopObservability.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 
 const PREFERENCE_FILE = "open-at-login.json";
 const LOGIN_ITEM_SETTINGS_URLS: Partial<Record<NodeJS.Platform, string>> = {
@@ -114,14 +115,19 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fs = yield* FileSystem.FileSystem;
   const loginItems = yield* LoginItems;
+  const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const preferencePath = environment.path.join(environment.stateDir, PREFERENCE_FILE);
   const settingsUrl = LOGIN_ITEM_SETTINGS_URLS[environment.platform];
   const manages = settingsUrl !== undefined && isInstalledApp(environment);
 
+  // Until the user chooses, only a computer that runs agents opens at login. Turning
+  // "Run agents on this computer" either way relaunches, and reconcile follows the new default.
   const readEnabled = fs.readFileString(preferencePath).pipe(
     Effect.flatMap(decodePreference),
     Effect.map((preference) => preference.enabled),
-    Effect.orElseSucceed(() => true),
+    Effect.catch(() =>
+      desktopSettings.get.pipe(Effect.map((settings) => settings.localEnvironmentEnabled)),
+    ),
   );
 
   const state = Effect.gen(function* () {

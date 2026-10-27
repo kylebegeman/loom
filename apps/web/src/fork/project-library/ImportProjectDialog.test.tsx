@@ -54,12 +54,12 @@ vi.mock("./state", () => ({
       isPending: state.projectsRefreshing,
       error: state.projectsError,
     },
-    environments: ["dorothy", "remote"].map((id) => ({
+    environments: ["dorothy", "remote", "library"].map((id) => ({
       environmentId: id,
       label: id,
       entry: { enabled: true },
       connection: { phase: state.online ? "connected" : "disconnected" },
-      serverConfig: { environment: { capabilities: { supportsExecution: true } } },
+      serverConfig: { environment: { capabilities: { supportsExecution: id !== "library" } } },
     })),
   }),
 }));
@@ -359,6 +359,19 @@ it("reports an inspection failure without importing", async () => {
   expect(container.textContent).toContain("Folder is unreadable.");
   expect(button("Create project kyle").disabled).toBe(false);
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("never browses the Library for a folder, even when asked to add one there", async () => {
+  await mount({ initialHostId: EnvironmentId.make("library") });
+  expect(state.browse).not.toHaveBeenCalledWith(
+    expect.objectContaining({ environmentId: "library" }),
+  );
+  expect(state.browse).toHaveBeenLastCalledWith({
+    environmentId: "dorothy",
+    input: { partialPath: "~/" },
+  });
+  await act(async () => button("Back").click());
+  expect(button("library")).toBeUndefined();
 });
 
 it("browses the new computer after returning to the computer list", async () => {

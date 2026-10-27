@@ -11,6 +11,7 @@ import {
   ReachLibraryComputer,
   ReachLibraryError,
   ReachLoopbackOrigin,
+  ReachPrepared,
   ReachRequestClaims,
   ReachStatus,
   hasExtraReachConnector,
@@ -26,6 +27,7 @@ const decodeClaims = Schema.decodeUnknownSync(ReachRequestClaims);
 const decodeFailure = Schema.decodeUnknownSync(ReachFailureReply);
 const decodeLibraryComputer = Schema.decodeUnknownSync(ReachLibraryComputer);
 const isLoopbackOrigin = Schema.is(ReachLoopbackOrigin);
+const decodePrepared = Schema.decodeUnknownSync(ReachPrepared);
 
 const status = {
   state: "connected",
@@ -114,7 +116,15 @@ describe("reach status", () => {
   });
 
   it("writes every error line without an em dash", () => {
-    const reasons = ["unavailable", "busy", "storage"] as const;
+    const reasons = [
+      "unavailable",
+      "busy",
+      "storage",
+      "identity-allowlist",
+      "identity-library",
+      "identity-not-configured",
+      "identity-failed",
+    ] as const;
     for (const reason of reasons) {
       expect(new ReachError({ reason }).message).not.toContain("—");
     }
@@ -175,6 +185,30 @@ describe("Library wire", () => {
       decodeEnsureReply({ ...ensureReply, edge: { allowlist: "failed", rateLimit: "ready" } }),
     ).toThrow();
     expect(() => decodeEnsureReply({ ...ensureReply, origin: "http://10.0.0.2:3773" })).toThrow();
+  });
+
+  it("carries the desktop callback the Library's native client registered", () => {
+    const desktopRedirectUri = "http://127.0.0.1:47123/loom/identity/callback";
+    const ready = { ...ensureReply.identity, desktopRedirectUri };
+    expect(decodeEnsureReply({ ...ensureReply, identity: ready }).identity).toEqual(ready);
+    const { state: _state, ...values } = ready;
+    expect(decodePrepared(values)).toEqual(values);
+    // Saved before the field existed.
+    const { desktopRedirectUri: _uri, ...older } = values;
+    expect(decodePrepared(older)).toEqual(older);
+    for (const uri of [
+      "http://127.0.0.1:0/loom/identity/callback",
+      "http://127.0.0.1:80/loom/identity/callback",
+      "http://127.0.0.1:65536/loom/identity/callback",
+      "http://127.0.0.1/loom/identity/callback",
+      "http://localhost:47123/loom/identity/callback",
+      "http://[::1]:47123/loom/identity/callback",
+      "https://127.0.0.1:47123/loom/identity/callback",
+      "http://127.0.0.1:47123/loom/identity/callback?next=/",
+      "http://127.0.0.1:47123/",
+    ]) {
+      expect(() => decodePrepared({ ...values, desktopRedirectUri: uri })).toThrow();
+    }
   });
 
   it("decodes a failure with and without a retry hint", () => {

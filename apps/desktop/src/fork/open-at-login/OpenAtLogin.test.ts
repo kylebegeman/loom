@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import { describeLoginItem, LoginItems, type LoginItemReading, make } from "./OpenAtLogin.ts";
 
 const mac = (status: LoginItemReading["status"]): LoginItemReading => ({
@@ -52,7 +53,7 @@ const harness = Effect.gen(function* () {
     openSettings: () => Effect.succeed(true),
   });
   // Each call is a fresh launch reading the same saved preference.
-  const launch = (overrides: Record<string, unknown> = {}) =>
+  const launch = (overrides: Record<string, unknown> = {}, localEnvironmentEnabled = true) =>
     make.pipe(
       Effect.provideService(
         DesktopEnvironment.DesktopEnvironment,
@@ -68,6 +69,12 @@ const harness = Effect.gen(function* () {
         } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
       ),
       Effect.provideService(LoginItems, fake),
+      Effect.provide(
+        DesktopAppSettings.layerTest({
+          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+          localEnvironmentEnabled,
+        }),
+      ),
     );
   return { loginItem, launch };
 });
@@ -90,6 +97,42 @@ it.layer(NodeServices.layer)("OpenAtLogin", (it) => {
 
         assert.deepEqual(yield* second.setEnabled(true), { enabled: true, status: "on" });
         assert.deepEqual(h.loginItem.writes, [true, false, true]);
+      }),
+    ),
+  );
+
+  it.effect("leaves a client computer out of login items until the user turns it on", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const h = yield* harness;
+        yield* (yield* h.launch()).reconcile;
+        assert.deepEqual(h.loginItem.writes, [true]);
+
+        // Turning off "Run agents on this computer" relaunches the app as a client.
+        const client = yield* h.launch({}, false);
+        yield* client.reconcile;
+        assert.deepEqual(h.loginItem.writes, [true, false]);
+        assert.deepEqual(yield* client.state, { enabled: false, status: "off" });
+
+        yield* (yield* h.launch()).reconcile;
+        assert.deepEqual(h.loginItem.writes, [true, false, true]);
+      }),
+    ),
+  );
+
+  it.effect("keeps the choice a client computer made itself", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const h = yield* harness;
+        const client = yield* h.launch({}, false);
+        yield* client.reconcile;
+        assert.deepEqual(h.loginItem.writes, []);
+        assert.deepEqual(yield* client.setEnabled(true), { enabled: true, status: "on" });
+
+        const relaunched = yield* h.launch({}, false);
+        yield* relaunched.reconcile;
+        assert.deepEqual(h.loginItem.writes, [true]);
+        assert.deepEqual(yield* relaunched.state, { enabled: true, status: "on" });
       }),
     ),
   );

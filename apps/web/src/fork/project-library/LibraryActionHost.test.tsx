@@ -260,6 +260,7 @@ function DraftStep({
 import { LibraryActionHost, useLibraryPaletteSession } from "./LibraryActionHost";
 import { LibraryConnectHost } from "./LibraryConnectDialog";
 import { openLibraryAction, takeLibraryClone, type LibraryConversationDefaults } from "./actions";
+import { isLibraryPaletteOpen, requestLibraryConnect } from "./libraryPaletteSession";
 
 function HostHarness() {
   const palette = useLibraryPaletteSession();
@@ -496,6 +497,31 @@ it("connects a Library in its own dialog before a new project, then resumes the 
   state.authorityId = "library";
   await act(() => useLibrary.click());
   expect(button("Empty project")).toBeDefined();
+});
+it("connects a Library for a computer that only reaches others, then lists its computers", async () => {
+  state.authorityId = null;
+  await act(() =>
+    root.render(
+      <>
+        <HostHarness />
+        <LibraryConnectHost />
+      </>,
+    ),
+  );
+  await act(() => requestLibraryConnect("computers"));
+  // The dialog renders outside the harness container.
+  const useLibrary = () =>
+    Array.from(document.querySelectorAll("button")).find(
+      (entry) => entry.textContent === "Use this Library",
+    );
+  state.authorityId = "library";
+  await act(() => useLibrary()!.click());
+  expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
+    to: "/settings/connections",
+    hash: "library-computers",
+  });
+  expect(useLibrary()).toBeUndefined();
+  expect(isLibraryPaletteOpen()).toBe(false);
 });
 it("asks how a new project starts and returns there from each step with its draft", async () => {
   state.features = ["project-library", "project-workflows"];

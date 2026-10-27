@@ -1,4 +1,4 @@
-import type { ReachCredentialState } from "@t3tools/contracts/fork";
+import { type ReachCredentialState, isLoomDesktopRedirectUri } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isReachZone } from "@t3tools/shared/fork/reach";
 import * as ByteSize from "effect/ByteSize";
@@ -38,12 +38,15 @@ export interface ReachLibraryConfig {
     /** The Pocket ID issuer, whose origin also serves its admin API. */
     readonly issuer: string | null;
     readonly nativeClientId: string | null;
+    /** The native client's registered desktop callback, or null while it is unset or invalid. */
+    readonly desktopRedirectUri: string | null;
     readonly adminKeyFile: string | null;
   };
 }
 
 export const reachLibraryConfig = (env: Env): ReachLibraryConfig => {
   const issuer = nonEmpty(env.LOOM_IDENTITY_ISSUER);
+  const desktopRedirectUri = nonEmpty(env.LOOM_IDENTITY_DESKTOP_REDIRECT_URI);
   return {
     audience: isLibraryAuthorityEnv(env) ? httpsOrigin(env.LOOM_IDENTITY_REDIRECT_URI ?? "") : null,
     zone: reachZoneFromEnv(env),
@@ -51,6 +54,10 @@ export const reachLibraryConfig = (env: Env): ReachLibraryConfig => {
     identity: {
       issuer: issuer !== null && httpsOrigin(issuer) !== null ? issuer : null,
       nativeClientId: nonEmpty(env.LOOM_IDENTITY_NATIVE_CLIENT_ID),
+      desktopRedirectUri:
+        desktopRedirectUri !== null && isLoomDesktopRedirectUri(desktopRedirectUri)
+          ? desktopRedirectUri
+          : null,
       adminKeyFile: nonEmpty(env.LOOM_IDENTITY_ADMIN_API_KEY_FILE),
     },
   };

@@ -38,6 +38,7 @@ const PREPARED = {
   resource: "https://library.example.com/computers/studio",
   nativeClientId: "loom-native",
 };
+const DESKTOP_REDIRECT = "http://127.0.0.1:47123/loom/identity/callback";
 
 const status = (overrides: Partial<ReachStatus> = {}): ReachStatus => ({
   state: "connected",
@@ -239,6 +240,7 @@ describe("reachView", () => {
       text: "Your Library prepared Loom sign-in for this computer. Open its own Connections settings and choose Use these values.",
       values: null,
       copyText: null,
+      prepare: null,
     });
     expect(reachView(input(differs, { isThisComputer: true })).signIn?.values).toEqual(PREPARED);
     expect(reachView(input(status({ prepared: PREPARED }))).signIn).toBeNull();
@@ -246,7 +248,37 @@ describe("reachView", () => {
       text: "Loom sign-in is off on this computer, so only paired devices can connect.",
       values: null,
       copyText: null,
+      prepare: null,
     });
+  });
+
+  it("offers preparing sign-in on the computer itself without reach on", () => {
+    const here = { isThisComputer: true, canPrepareSignIn: true };
+    const off = status({ state: "off", enabled: false, url: null });
+    expect(reachView(input(off, here)).signIn).toEqual({
+      text: "Your Library can prepare Loom sign-in for this computer. Reach does not need to be on.",
+      values: null,
+      copyText: null,
+      prepare: "Prepare sign-in",
+    });
+    const values = { ...PREPARED, desktopRedirectUri: DESKTOP_REDIRECT };
+    const prepared = reachView(input({ ...off, prepared: values }, here)).signIn;
+    expect(prepared).toMatchObject({ values, prepare: "Prepare again" });
+    expect(prepared?.copyText).toContain(`LOOM_IDENTITY_DESKTOP_REDIRECT_URI=${DESKTOP_REDIRECT}`);
+    expect(reachPreparedEnvironment(PREPARED)).not.toContain("LOOM_IDENTITY_DESKTOP_REDIRECT_URI");
+
+    // A Library without a reach zone can still prepare sign-in.
+    const notReady = status({ state: "unavailable", enabled: false, blocked: "library-not-ready" });
+    expect(reachView(input(notReady, here)).signIn?.prepare).toBe("Prepare sign-in");
+    for (const blocked of ["no-library", "is-library", "library-signed-out"] as const) {
+      const view = reachView(
+        input(status({ state: "unavailable", enabled: false, blocked }), here),
+      );
+      expect(view.signIn).toBeNull();
+    }
+    expect(reachView(input(off, { canPrepareSignIn: true })).signIn).toBeNull();
+    expect(reachView(input(off, { isThisComputer: true })).signIn).toBeNull();
+    expect(allText(reachView(input(off, here)))).not.toContain("—");
   });
 
   it("asks before turning off or removing the address this device is connected through", () => {
@@ -614,6 +646,31 @@ describe("reachLibraryView", () => {
     for (const row of view.computers) expect(row.state.text).not.toContain(".");
     const removed = view.computers.find((row) => row.state.text === "Removed");
     expect(removed?.notes).toEqual(["The address stays reserved for this computer."]);
+  });
+
+  it("names a computer that has Loom sign-in and no reach address", () => {
+    const [row] = library(
+      AsyncResult.success(
+        listingOf([
+          computer({
+            hostname: null,
+            state: "removed",
+            connection: "down",
+            connectors: null,
+            lastEnsuredAt: null,
+            signIn: "active",
+            identity: { resource: PREPARED.resource, state: "ready", lastError: null },
+          }),
+        ]),
+      ),
+    ).computers;
+    expect(row?.state).toEqual({ tone: "neutral", text: "Sign-in only" });
+    expect(row?.notes).toEqual([]);
+    expect(row?.retire?.confirm).toEqual({
+      title: "Retire Studio?",
+      message: "This computer has Loom sign-in only, with no reach address to delete.",
+      action: "Retire",
+    });
   });
 
   it("says when the chosen Library is no longer saved on this device", () => {

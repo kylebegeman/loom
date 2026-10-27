@@ -42,6 +42,13 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
   );
   const action = useAction();
   const [choosingProject, setChoosingProject] = useState(false);
+  if (environment.serverConfig?.environment.capabilities.supportsExecution === false) {
+    return (
+      <p className="py-3 text-xs text-muted-foreground">
+        Keeps your projects and conversations. Work runs on your other computers.
+      </p>
+    );
+  }
   const connected = environment.entry.enabled && environment.connection.phase === "connected";
   // The scratch folder still hides this computer's No project home from its project list, but
   // only a computer that can run work offers to start one.

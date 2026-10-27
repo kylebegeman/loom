@@ -487,6 +487,7 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
       ReachService,
       ReachService.of({
         applyIdentity: () => record("applyIdentity", undefined),
+        prepareIdentity: () => record("prepareIdentity", REACH_OFF),
         status: record("status", REACH_OFF),
         changes: Stream.fromEffect(record("watch", REACH_OFF)),
         setEnabled: (enabled) => record(enabled ? "on" : "off", { ...REACH_OFF, enabled }),
@@ -501,6 +502,8 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
       ReachProvisioner.of({
         ensure: () => Effect.die(new Error("ensure is a computer's HTTP route, not an RPC")),
         remove: () => Effect.die(new Error("remove is a computer's HTTP route, not an RPC")),
+        prepareIdentity: () =>
+          Effect.die(new Error("prepareIdentity is a computer's HTTP route, not an RPC")),
         list: Effect.die("RPC uses the authority-aware read"),
         computers: record("libraryList", {
           setup: { zone: null, cloudflare: "missing", identity: "missing", edge: null },
@@ -560,7 +563,8 @@ it.effect("each reach handler checks its own grant before the service runs", () 
     yield* (yield* admin.handlers)[REACH.set]({ enabled: true });
     yield* (yield* admin.handlers)[REACH.forget]();
     yield* (yield* admin.handlers)[REACH.applyIdentity]({ requirePasskey: true });
-    expect(admin.calls).toEqual(["on", "forget", "applyIdentity"]);
+    yield* (yield* admin.handlers)[REACH.prepareIdentity]();
+    expect(admin.calls).toEqual(["on", "forget", "applyIdentity", "prepareIdentity"]);
 
     const relayOnly = reachHandlers([AuthRelayReadScope, AuthRelayWriteScope]);
     const relay = yield* relayOnly.handlers;
@@ -573,6 +577,9 @@ it.effect("each reach handler checks its own grant before the service runs", () 
       ),
     ).toMatchObject({ requiredScope: AuthSettingsWriteScope });
     expect(yield* Effect.flip(relay[REACH.applyIdentity]({ requirePasskey: true }))).toMatchObject({
+      requiredScope: AuthSettingsWriteScope,
+    });
+    expect(yield* Effect.flip(relay[REACH.prepareIdentity]())).toMatchObject({
       requiredScope: AuthSettingsWriteScope,
     });
     expect(relayOnly.calls).toEqual([]);

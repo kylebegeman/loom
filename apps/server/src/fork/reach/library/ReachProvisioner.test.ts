@@ -39,6 +39,9 @@ const RESOURCE = `${LIBRARY}/computers/${STUDIO}`;
 const STARTED_AT = Date.parse("2026-10-24T12:00:00.000Z");
 const MOVED_ZONE = "moved.example.test";
 const MOVED_HOSTNAME = `studio-loom.${MOVED_ZONE}`;
+const DESKTOP_REDIRECT = "http://127.0.0.1:47123/loom/identity/callback";
+/** A Library with Loom Identity and no reach. */
+const NO_REACH = { LOOM_REACH_ZONE: undefined, LOOM_REACH_CLOUDFLARE_TOKEN_FILE: undefined };
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -125,6 +128,9 @@ const remove = (
       request,
     });
   });
+
+const prepare = (fixture: Pick<Fixture, "provisioner">, environmentId: EnvironmentId = STUDIO) =>
+  fixture.provisioner.prepareIdentity({ environmentId, publisherSessionId: "session-studio" });
 
 const refusal = <A, R>(effect: Effect.Effect<A, { readonly reason: string }, R>) =>
   effect.pipe(
@@ -582,6 +588,124 @@ describe("ReachProvisioner Loom Identity", () => {
   );
 });
 
+describe("ReachProvisioner.prepareIdentity", () => {
+  it.effect("prepares Loom sign-in on a Library without reach and never calls Cloudflare", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        const library = yield* fixture.rebuild({ env: NO_REACH });
+        expect(yield* prepare(library)).toEqual({
+          state: "ready",
+          issuer: ISSUER,
+          nativeClientId: NATIVE_CLIENT_ID,
+          resource: RESOURCE,
+        });
+        expect(fixture.apis.steps).toEqual(["api.create", "grant.put"]);
+        const [api] = fixture.apis.apis.values();
+        expect(yield* recordOf(library.store)).toMatchObject({
+          seq: 0,
+          keyFingerprint: null,
+          hostname: null,
+          tunnelId: null,
+          state: "removed",
+          lastEnsuredAt: null,
+          publisherSessionId: "session-studio",
+          identity: { apiId: api!.id, resource: RESOURCE, state: "ready", lastError: null },
+        });
+
+        fixture.apis.clearCalls();
+        yield* prepare(library);
+        expect(fixture.apis.steps).toEqual(["grant.put"]);
+
+        // Reach set up later claims the same record and keeps its Pocket ID resource.
+        const withZone = yield* fixture.rebuild();
+        const reply = yield* ensure({ ...fixture, ...withZone }, 1);
+        expect(reply.identity).toMatchObject({ state: "ready", resource: RESOURCE });
+        expect(fixture.apis.apis.size).toBe(1);
+        expect(yield* recordOf(withZone.store)).toMatchObject({
+          seq: 1,
+          hostname: HOSTNAME,
+          state: "ready",
+          identity: { apiId: api!.id },
+        });
+      }),
+    ),
+  );
+
+  it.effect("hands out the desktop callback the native client registered", () =>
+    withReach(
+      (fixture) =>
+        Effect.gen(function* () {
+          expect(yield* prepare(fixture)).toMatchObject({ desktopRedirectUri: DESKTOP_REDIRECT });
+          expect((yield* ensure(fixture, 1)).identity).toMatchObject({
+            desktopRedirectUri: DESKTOP_REDIRECT,
+          });
+          const unregistered = yield* fixture.rebuild({
+            env: {
+              LOOM_IDENTITY_DESKTOP_REDIRECT_URI: "http://127.0.0.1:0/loom/identity/callback",
+            },
+          });
+          expect(yield* prepare(unregistered)).not.toHaveProperty("desktopRedirectUri");
+        }),
+      { env: { LOOM_IDENTITY_DESKTOP_REDIRECT_URI: DESKTOP_REDIRECT } },
+    ),
+  );
+
+  it.effect("records nothing while the Library has no Loom Identity to share", () =>
+    withReach(
+      (fixture) =>
+        Effect.gen(function* () {
+          expect(yield* prepare(fixture)).toEqual({ state: "not-configured" });
+          expect(fixture.apis.calls).toEqual([]);
+          expect(yield* recordOf(fixture.store)).toBeUndefined();
+        }),
+      { env: { ...NO_REACH, LOOM_IDENTITY_ISSUER: undefined } },
+    ),
+  );
+
+  it.effect("refuses the Library itself and shares each computer's request budget", () =>
+    withReach(
+      (fixture) =>
+        Effect.gen(function* () {
+          expect(yield* refusal(prepare(fixture, LIBRARY_ID))).toBe("is-library");
+          for (let index = 0; index < 10; index += 1) yield* prepare(fixture);
+          fixture.apis.clearCalls();
+          expect(yield* prepare(fixture).pipe(Effect.flip)).toMatchObject({
+            reason: "too-many-requests",
+            retryAfterSeconds: 600,
+          });
+          expect(fixture.apis.calls).toEqual([]);
+        }),
+      { env: NO_REACH },
+    ),
+  );
+
+  it.effect("retires a sign-in-only computer without reach, and forgets it once sign-in ends", () =>
+    withReach(
+      (fixture) =>
+        Effect.gen(function* () {
+          yield* prepare(fixture);
+          fixture.apis.clearCalls();
+          expect(
+            yield* fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: false }),
+          ).toMatchObject({ state: "removed", identity: { resource: RESOURCE, state: "ready" } });
+          expect(fixture.apis.calls).toEqual([]);
+
+          expect(
+            yield* fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: true }),
+          ).toMatchObject({ state: "removed", identity: null });
+          expect(fixture.apis.steps).toEqual(["api.delete"]);
+          expect(yield* recordOf(fixture.store)).toBeUndefined();
+          expect(
+            yield* refusal(
+              fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: true }),
+            ),
+          ).toBe("not-found");
+        }),
+      { env: NO_REACH },
+    ),
+  );
+});
+
 describe("ReachProvisioner.remove", () => {
   it.effect("rotates, clears and deletes the tunnel before its DNS record", () =>
     withReach((fixture) =>
@@ -1024,6 +1148,7 @@ describe("ReachProvisioner admin", () => {
             ),
           ).toBe("not-authority");
           expect(yield* refusal(ensure(fixture, 1))).toBe("not-authority");
+          expect(yield* refusal(prepare(fixture))).toBe("not-authority");
         }),
       { env: { LOOM_LIBRARY_AUTHORITY: "false" } },
     ),

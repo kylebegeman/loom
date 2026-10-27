@@ -1,5 +1,6 @@
 import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
 import {
+  REACH_IDENTITY_ROUTE,
   REACH_LIST_ROUTE,
   REACH_ENSURE_ROUTE,
   REACH_REMOVE_ROUTE,
@@ -127,6 +128,31 @@ const reachRoute = (action: ReachAction) =>
     Effect.orElseSucceed(() => text("Reach request unavailable", 503)),
   );
 
+/** Its reply holds no secret, so it needs neither a signed request nor HTTPS. The body is unread. */
+const identity = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const session = yield* (yield* EnvironmentAuth.EnvironmentAuth).authenticateHttpRequest(
+      request,
+    );
+    const environmentId = publisherOf(session);
+    if (environmentId === null) return text("Access denied", 403);
+    return json(
+      yield* (yield* ReachProvisioner).prepareIdentity({
+        environmentId,
+        publisherSessionId: session.sessionId,
+      }),
+    );
+  }),
+).pipe(
+  Effect.catchTags({
+    ReachProvisionError: (error) => Effect.succeed(refusal(error.reason, error.retryAfterSeconds)),
+    ServerAuthMissingCredentialError: () => Effect.succeed(text("Authentication required", 401)),
+    ServerAuthInvalidCredentialError: () => Effect.succeed(text("Authentication required", 401)),
+  }),
+  Effect.orElseSucceed(() => text("Reach request unavailable", 503)),
+);
+
 const list = withForkRuntime(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -160,6 +186,7 @@ export const ReachHttpRoutes = Layer.unwrap(
       route(REACH_LIST_ROUTE, list),
       route(REACH_ENSURE_ROUTE, reachRoute("ensure")),
       route(REACH_REMOVE_ROUTE, reachRoute("remove")),
+      route(REACH_IDENTITY_ROUTE, identity),
     );
   }),
 );

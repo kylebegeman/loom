@@ -30,6 +30,7 @@ export function useAddProjectTargets(
         !hasProject.has(environment.environmentId) &&
         canClone.has(environment.environmentId) &&
         canCreateProjectInEnvironment(environment.connection.phase) &&
+        environment.serverConfig?.environment.capabilities.supportsExecution !== false && // fork: library-only
         environment.serverConfig?.environment.capabilities.projectCloneTracking === true,
     )
     .map((environment) => ({

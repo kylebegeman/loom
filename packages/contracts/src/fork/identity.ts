@@ -22,6 +22,23 @@ export const LoomIdentityMetadata = Schema.Struct({
   maxSessionAgeSeconds: Schema.optional(Schema.Number),
 });
 export type LoomIdentityMetadata = typeof LoomIdentityMetadata.Type;
+const DESKTOP_REDIRECT = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/loom\/identity\/callback$/u;
+
+/**
+ * The fixed-port desktop callback a native client registered, in the form
+ * `LOOM_IDENTITY_DESKTOP_REDIRECT_URI` accepts. The desktop app listens on exactly this port.
+ */
+export const LoomDesktopRedirectUri = Schema.String.check(
+  Schema.makeFilter(
+    (value: string) => {
+      const port = Number(DESKTOP_REDIRECT.exec(value)?.[1] ?? 0);
+      return port > 0 && port <= 65_535 && port !== 80;
+    },
+    { expected: "http://127.0.0.1:<port>/loom/identity/callback" },
+  ),
+);
+export const isLoomDesktopRedirectUri = Schema.is(LoomDesktopRedirectUri);
+
 export const LOOM_IDENTITY_METADATA_PATH = "/api/loom/identity";
 export const LOOM_IDENTITY_LOGIN_PATH = "/api/loom/identity/login";
 export const LOOM_IDENTITY_CALLBACK_PATH = "/api/loom/identity/callback";

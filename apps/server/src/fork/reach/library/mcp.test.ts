@@ -48,6 +48,7 @@ it.effect("lists reach to read-only agents and retires only with full access", (
     const provisioner = ReachProvisioner.of({
       ensure: () => Effect.die(new Error("Agents never provision reach.")),
       remove: () => Effect.die(new Error("Agents never call the computer's remove.")),
+      prepareIdentity: () => Effect.die(new Error("Agents never prepare Loom sign-in.")),
       list: Effect.succeed(LISTING),
       computers: Effect.succeed(LISTING),
       retire: (input) =>

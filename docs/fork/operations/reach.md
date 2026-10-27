@@ -109,8 +109,15 @@ The D1 choice is a dedicated admin API key created in Pocket ID with a one-year 
 the key file. It is not Pocket ID's `STATIC_API_KEY`: the identity workload deliberately leaves
 that unbound. With the key in place, every reach setup makes sure the computer's Pocket ID API
 resource, `<Library origin>/computers/<environment id>`, exists and is granted to the native
-client. The Library creates resources at no other time, so for a computer that already had reach
-before the key was installed, turn reach off and on again or restart Loom on it.
+client. **Prepare sign-in** in a computer's Reach section runs the same step with reach off: it
+creates the resource and returns the values without any tunnel, address or Cloudflare call, so a
+computer can use Loom sign-in while reach stays deferred. A computer that had reach before the
+key was installed gets its resource from Prepare sign-in, or by turning reach off and on again.
+
+The prepared values carry the Library's `LOOM_IDENTITY_DESKTOP_REDIRECT_URI`, the loopback
+callback registered on the native client, so the desktop app signs in on that fixed port. A
+computer that saved values before this existed needs Prepare sign-in and **Use these values**
+again to pick it up.
 
 A resource the Library already prepared stays usable without the key. Retiring a computer with
 "Also end Loom sign-in for this computer" needs the key; without it, the resource stays and

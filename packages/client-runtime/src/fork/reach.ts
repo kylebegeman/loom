@@ -67,6 +67,11 @@ export function createReachAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegi
       label: "loom:reach:apply-identity",
       tag: REACH_WS_METHODS.applyIdentity,
     }),
+    /** Send only to a computer that advertises `REACH_IDENTITY_PREPARE_FEATURE`. */
+    prepareIdentity: createEnvironmentRpcCommand(runtime, {
+      label: "loom:reach:prepare-identity",
+      tag: REACH_WS_METHODS.prepareIdentity,
+    }),
     /** Answers once the intent is stored; `status` shows the provisioning that follows. */
     set: createEnvironmentRpcCommand(runtime, {
       label: "loom:reach:set",
@@ -157,6 +162,14 @@ const PREPARED_HERE_TEXT =
   "Your Library prepared Loom sign-in for this computer. Use these values to save them on this computer and restart its backend. Server environment variables still take precedence.";
 const PREPARED_ELSEWHERE_TEXT =
   "Your Library prepared Loom sign-in for this computer. Open its own Connections settings and choose Use these values.";
+const PREPARE_TEXT =
+  "Your Library can prepare Loom sign-in for this computer. Reach does not need to be on.";
+/** Preparing asks the Library over this computer's own sign-in to it. */
+const NO_PREPARE_BLOCKS: ReadonlySet<ReachBlocked> = new Set([
+  "no-library",
+  "is-library",
+  "library-signed-out",
+]);
 
 const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, string>> = {
   "library-unreachable": "Your Library is not reachable right now. Loom keeps trying.",
@@ -189,6 +202,11 @@ export interface ReachViewInput {
    * sign-in values are offered only there, where they get set; elsewhere a line points there.
    */
   readonly isThisComputer: boolean;
+  /**
+   * The computer advertises `REACH_IDENTITY_PREPARE_FEATURE` and the `prepareIdentity` command's
+   * permission atom allows it. Preparing is offered only where `isThisComputer` is also true.
+   */
+  readonly canPrepareSignIn?: boolean;
   /** The address this device is connected through, or null when unknown. */
   readonly activeRouteUrl: string | null;
 }
@@ -238,6 +256,8 @@ export interface ReachView {
     readonly values: ReachPrepared | null;
     /** What a "Copy values" action copies. */
     readonly copyText: string | null;
+    /** The label of an action that sends `prepareIdentity`, or null when it is not offered. */
+    readonly prepare: string | null;
   } | null;
 }
 
@@ -265,6 +285,9 @@ export function reachPreparedEnvironment(prepared: ReachPrepared): string {
     `LOOM_IDENTITY_NATIVE_CLIENT_ID=${prepared.nativeClientId}`,
     `LOOM_IDENTITY_AUDIENCE=${prepared.resource}`,
     `LOOM_IDENTITY_RESOURCE=${prepared.resource}`,
+    ...(prepared.desktopRedirectUri === undefined
+      ? []
+      : [`LOOM_IDENTITY_DESKTOP_REDIRECT_URI=${prepared.desktopRedirectUri}`]),
     // Without a limit sign-ins never renew; this matches what "Use these values" saves.
     `LOOM_IDENTITY_MAX_SESSION_AGE=${String(REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS / 86_400)}d`,
   ].join("\n");
@@ -326,6 +349,7 @@ function stateLine(status: ReachStatus, host: string | null): ReachLine {
 function signInHint(
   status: ReachStatus,
   isThisComputer: boolean,
+  canPrepare: boolean,
   warnings: ReadonlySet<ReachWarning>,
 ): ReachView["signIn"] {
   const off = warnings.has("identity-off");
@@ -336,18 +360,29 @@ function signInHint(
     warnings.has("passkey-not-required")
       ? status.prepared
       : null;
+  const prepare =
+    isThisComputer &&
+    canPrepare &&
+    (status.blocked === null || !NO_PREPARE_BLOCKS.has(status.blocked))
+      ? status.prepared === null
+        ? "Prepare sign-in"
+        : "Prepare again"
+      : null;
   if (prepared !== null && isThisComputer)
     return {
       text: PREPARED_HERE_TEXT,
       values: prepared,
       copyText: reachPreparedEnvironment(prepared),
+      prepare,
     };
   const elsewhere = prepared === null ? null : PREPARED_ELSEWHERE_TEXT;
-  if (!off) return elsewhere === null ? null : { text: elsewhere, values: null, copyText: null };
+  const next = elsewhere ?? (prepare === null ? null : PREPARE_TEXT);
+  if (!off) return next === null ? null : { text: next, values: null, copyText: null, prepare };
   return {
-    text: elsewhere === null ? IDENTITY_OFF_TEXT : `${IDENTITY_OFF_TEXT} ${elsewhere}`,
+    text: next === null ? IDENTITY_OFF_TEXT : `${IDENTITY_OFF_TEXT} ${next}`,
     values: null,
     copyText: null,
+    prepare,
   };
 }
 
@@ -460,7 +495,9 @@ export function reachView(input: ReachViewInput): ReachView {
         }
       : null,
     notes: [...notes],
-    signIn: live ? signInHint(status, input.isThisComputer, warnings) : null,
+    signIn: live
+      ? signInHint(status, input.isThisComputer, input.canPrepareSignIn === true, warnings)
+      : null,
   };
 }
 
@@ -616,7 +653,15 @@ const IDENTITY_END_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> 
     "Pocket ID refused the change, so Loom sign-in for this computer may still work. Retire it and end Loom sign-in to try again.",
 };
 
+/** Prepared Loom sign-in and never reached Cloudflare, or holds nothing there any more. */
+const isSignInOnly = (computer: ReachLibraryComputer) =>
+  computer.state === "removed" &&
+  computer.hostname === null &&
+  computer.lastEnsuredAt === null &&
+  computer.identity !== null;
+
 function computerStateLine(computer: ReachLibraryComputer): ReachLine {
+  if (isSignInOnly(computer)) return { tone: "neutral", text: "Sign-in only" };
   switch (computer.state) {
     case "provisioning":
       return { tone: "active", text: "Setting up" };
@@ -704,9 +749,11 @@ function computerView(
     notes.push(
       (removed ? IDENTITY_END_FAILURE_TEXT : IDENTITY_FAILURE_TEXT)[computer.identity.lastError],
     );
-  if (removed) notes.push("The address stays reserved for this computer.");
+  if (removed && computer.hostname !== null)
+    notes.push("The address stays reserved for this computer.");
+  const signInOnly = isSignInOnly(computer);
   const signedIn =
-    computer.signIn === "active"
+    computer.signIn === "active" && !signInOnly
       ? " This computer is still signed in to your Library and sets reach up again on its next start, so revoke its Library sign-in too."
       : "";
   return {
@@ -719,7 +766,9 @@ function computerView(
       ? {
           confirm: {
             title: `Retire ${computer.hostname ?? title}?`,
-            message: `Loom deletes its tunnel and DNS record and forgets this computer's key.${signedIn}`,
+            message: signInOnly
+              ? "This computer has Loom sign-in only, with no reach address to delete."
+              : `Loom deletes its tunnel and DNS record and forgets this computer's key.${signedIn}`,
             action: "Retire",
           },
           endIdentityLabel: "Also end Loom sign-in for this computer",

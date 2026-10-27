@@ -82,7 +82,9 @@ function idle({
   shells = {},
   connections = {},
   threads = {},
+  clientComputer = false,
 }: {
+  readonly clientComputer?: boolean;
   readonly entries?: ReadonlyArray<readonly [EnvironmentId, ConnectionCatalogEntry]>;
   readonly shells?: Partial<Record<string, EnvironmentShellState>>;
   readonly connections?: Partial<Record<string, SupervisorConnectionState>>;
@@ -91,6 +93,7 @@ function idle({
   return localAgentsIdle({
     catalog: catalog(entries),
     desktop: true,
+    clientComputer,
     shell: (id) => shells[id] ?? live,
     connection: (id) => connections[id] ?? null,
     threads: (id) => threads[id] ?? [settled],
@@ -119,11 +122,18 @@ describe("localAgentsIdle", () => {
       localAgentsIdle({
         catalog: { isReady: false, entries: new Map([primaryEntry]) },
         desktop: true,
+        clientComputer: false,
         shell: () => live,
         connection: () => null,
         threads: () => [],
       }),
     ).toBe(false);
+  });
+
+  it("is idle on a computer that runs no agents of its own", () => {
+    expect(
+      idle({ clientComputer: true, entries: [[remoteId, entry(bearer(remoteId, "remote"))]] }),
+    ).toBe(true);
   });
 
   it("ignores other computers and disabled backends", () => {

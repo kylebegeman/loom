@@ -16,6 +16,7 @@ import type { ReportLocalUpdateError } from "~/components/sidebar/useUpdateEvery
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { environmentCatalog } from "~/connection/catalog";
 import { isElectron } from "~/env";
+import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentShell } from "~/state/shell";
 import { environmentThreadShells } from "~/state/threads";
@@ -45,6 +46,8 @@ export function useLocalUpdateInstallPrompt(): boolean {
 export interface LocalAgentsIdleInput {
   readonly catalog: EnvironmentCatalogState;
   readonly desktop: boolean;
+  /** This app runs no backend of its own, so no primary ever registers. */
+  readonly clientComputer: boolean;
   readonly shell: (environmentId: EnvironmentId) => EnvironmentShellState;
   readonly connection: (environmentId: EnvironmentId) => SupervisorConnectionState | null;
   readonly threads: (environmentId: EnvironmentId) => ReadonlyArray<RestartImpactThread>;
@@ -59,6 +62,7 @@ export interface LocalAgentsIdleInput {
 export function localAgentsIdle({
   catalog,
   desktop,
+  clientComputer,
   shell,
   connection,
   threads,
@@ -66,7 +70,8 @@ export function localAgentsIdle({
   const entries = Array.from(catalog.entries);
   if (
     !catalog.isReady ||
-    !entries.some(([, entry]) => entry.target._tag === "PrimaryConnectionTarget")
+    (!clientComputer &&
+      !entries.some(([, entry]) => entry.target._tag === "PrimaryConnectionTarget"))
   ) {
     return false;
   }
@@ -100,6 +105,7 @@ const localAgentsIdleAtom = Atom.make((get) =>
   localAgentsIdle({
     catalog: get(environmentCatalog.catalogValueAtom),
     desktop: isElectron,
+    clientComputer: isLocalEnvironmentDisabled(),
     shell: (environmentId) => get(environmentShell.stateValueAtom(environmentId)),
     connection: (environmentId) =>
       Option.getOrNull(AsyncResult.value(get(environmentCatalog.stateAtom(environmentId)))),
