@@ -85,6 +85,7 @@ const hostLayer = (input: {
       }),
     );
   });
+  // fork: tailnet-ownership
   return Layer.mergeAll(
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
     Layer.succeed(HostProcess.Platform, "linux"),

@@ -2598,7 +2598,7 @@ export const layerWsRpc = (
               providerInstanceMutation === undefined
                 ? serverSettings.updateSettings(nextPatch)
                 : serverSettings.updateProviderInstance(providerInstanceMutation, nextPatch),
-              ServerSettings.ProjectsFolderGuard,
+              ServerSettings.ProjectsFolderGuard, // fork: file-placement
               placement.assertProjectsFolderAllowed,
             );
             return ServerSettings.redactServerSettingsForClient(settings);

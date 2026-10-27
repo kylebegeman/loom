@@ -172,7 +172,7 @@ export interface DevShareResult {
  * the port is never replaced.
  */
 export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (
-  input: DevShareTarget,
+  input: DevShareTarget, // fork: tailnet-ownership
 ) {
   const status = yield* readTailscaleStatus.pipe(
     Effect.mapError((error) => new TailscaleUnavailableError({ cause: error })),

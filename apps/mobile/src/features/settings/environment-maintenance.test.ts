@@ -71,7 +71,7 @@ describe("environment release checks", () => {
         url === "https://github.com/kylebegeman/loom/releases.atom"
           ? feed(
               "desktop-preview",
-              "1.0.0-preview.20260924.3",
+              "1.0.0-preview.20260924.3", // fork: fleet-connect
               "1.0.0-nightly.20260924.2",
               "1.0.0",
               "1.0.0-nightly.20260923.1",
@@ -102,7 +102,7 @@ describe("environment release checks", () => {
         }
         if (url === "https://api.github.com/repos/kylebegeman/loom/releases?per_page=100&page=2") {
           return Response.json([
-            { tag_name: "1.0.0-preview.20260925.1", draft: true },
+            { tag_name: "1.0.0-preview.20260925.1", draft: true }, // fork: fleet-connect
             { tag_name: "1.0.0-preview.20260924.3" },
           ]);
         }

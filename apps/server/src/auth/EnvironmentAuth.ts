@@ -837,7 +837,7 @@ export const make = Effect.gen(function* () {
           auth: descriptor,
           ...authScopeResponse(session.scopes),
           sessionMethod: session.method,
-          ...(identity ? { identity } : {}),
+          ...(identity ? { identity } : {}), // fork: library-sign-in
           ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
         } satisfies AuthSessionState;
       }),

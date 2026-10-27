@@ -248,7 +248,7 @@ export function ConnectionEnvironmentRow(props: {
             {props.environment.isRelayManaged ? null : (
               <View className="flex-1">
                 <Button
-                  label="Save connection"
+                  label="Save connection" // fork: fleet-connections
                   tone="primary"
                   fullWidth
                   onPress={() => {
@@ -273,6 +273,7 @@ export function ConnectionEnvironmentRow(props: {
               onPress={() => props.onRemove(props.environment.environmentId)}
             />
           </View>
+          {/* fork: fleet-connections */}
         </Animated.View>
       ) : null}
     </Animated.View>

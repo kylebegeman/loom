@@ -342,6 +342,7 @@ export function showBootError(error: unknown) {
     ),
   );
 
+  // fork: brand -- no upstream bug report link.
   const link = (href: string, textContent: string) =>
     element("a", { href, textContent, target: "_blank", rel: "noreferrer" });
   const nightly = environment.channel === "nightly";

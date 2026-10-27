@@ -87,6 +87,8 @@ export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStart
   },
 ) {}
 
+// fork: project-lifecycle -- restoreWorktree replaces upstream's worktree recreation errors.
+
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 
 /**
@@ -169,6 +171,7 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
     const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace); // fork: library-launch-files
     // fork: project-lifecycle
     const projectLifecycle = yield* Effect.serviceOption(ProjectLifecycle.ProjectLifecycleService);
@@ -176,7 +179,6 @@ export const layer: Layer.Layer<
     const libraryWorkspaces = yield* Effect.serviceOption(
       LibraryWorkspaceStore.LibraryWorkspaceStore,
     );
-    const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
     // Build draining callbacks outside startup scope so they cannot retain full thread history.
     const makeRunControls = (input: {
@@ -643,7 +645,7 @@ export const layer: Layer.Layer<
             if (exists || (yield* isManagedWorktreePath(worktreePath)))
               yield* restoreWorktree({
                 threadId: projection.thread.id,
-                projectId: projection.thread.projectId,
+                projectId: projection.thread.projectId, // fork: project-lifecycle
                 worktreePath,
                 branch,
                 workspaceLeaseHeld: true,
@@ -666,6 +668,7 @@ export const layer: Layer.Layer<
                 worktreePath,
                 workspaceLeaseHeld: true,
               });
+              // fork: mini-native-retention
               if (restored || (yield* SetupMarker.exists(worktreePath))) {
                 const setup = yield* setupScripts.runForThread({
                   threadId: projection.thread.id,
@@ -675,6 +678,7 @@ export const layer: Layer.Layer<
                   workspaceLeaseHeld: true,
                   observeCompletion: {},
                 });
+                // fork: mini-native-retention
                 if (setup.status === "started") {
                   if (setup.completion === undefined)
                     return yield* new WorkspacePreparationError({
@@ -693,6 +697,7 @@ export const layer: Layer.Layer<
           }
         }).pipe(
           Effect.provide(restorationServices),
+          // fork: project-lifecycle
           Effect.andThen(
             Option.isNone(projectLifecycle)
               ? Effect.void

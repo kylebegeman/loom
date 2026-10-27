@@ -2639,7 +2639,7 @@ const make = Effect.gen(function* () {
                       .pipe(Effect.mapError(threadManagementFailure))
                   : null;
               if (libraryBinding !== null && committedThread !== null)
-                isRetryOfAcceptedCreation = true;
+                isRetryOfAcceptedCreation = true; // fork: library-projects
               const target = yield* resolveTargetRechecking({
                 parent,
                 target:

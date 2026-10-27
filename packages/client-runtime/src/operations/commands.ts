@@ -218,7 +218,7 @@ export type ForkThreadFromRunInput = CommandMetadata & {
   readonly targetThreadId: ThreadId;
   readonly title?: string;
 } & (
-    | { readonly runId: RunId; readonly checkpointId?: never }
+    | { readonly runId: RunId; readonly checkpointId?: never } // fork: project-lifecycle
     | { readonly checkpointId: string; readonly runId?: never }
   );
 

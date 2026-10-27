@@ -48,7 +48,7 @@ function projectFailure(error: Project.ProjectServiceError) {
       : error._tag === "ProjectConflictError"
         ? "The workspace is already registered to a project."
         : error._tag === "ProjectLocationManagedError"
-          ? error.reason
+          ? error.reason // fork: file-placement
           : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }

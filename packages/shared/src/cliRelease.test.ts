@@ -32,7 +32,7 @@ describe("cliRelease", () => {
       { tag_name: "1.2.4-preview.20260912.8" },
       { tag_name: "1.2.4-nightly.20260912.7" },
       { tag_name: "desktop-preview" },
-      { tag_name: "1.2.3" },
+      { tag_name: "1.2.3" }, // fork: fleet-connect
       { tag_name: "1.2.3-nightly.20260911.2" },
     ];
     expect(newestCliReleaseVersion(releases, "preview")).toBe("1.2.4-preview.20260912.8");

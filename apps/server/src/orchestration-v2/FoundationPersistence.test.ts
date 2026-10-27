@@ -3388,7 +3388,7 @@ it.effect.each(["events", "receipts"] as const)(
           if (pageQuery.test(query)) {
             return Deferred.succeed(discoveryStarted, undefined).pipe(
               Effect.andThen(Deferred.await(readerHeld)),
-              Effect.andThen(Deferred.await(writerHeld)),
+              Effect.andThen(Deferred.await(writerHeld)), // fork: server-weight
               Effect.as(statement),
             );
           }

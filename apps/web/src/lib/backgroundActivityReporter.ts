@@ -196,7 +196,7 @@ export const layer = Layer.effectDiscard(
     const reportEnvironment = Effect.fnUntraced(
       function* (environmentId: EnvironmentId) {
         const state = yield* registry.state(environmentId);
-        if (state.phase !== "connected") return;
+        if (state.phase !== "connected") return; // fork: server-weight
         const observedAtMs = yield* Clock.currentTimeMillis;
         yield* registry.run(
           environmentId,

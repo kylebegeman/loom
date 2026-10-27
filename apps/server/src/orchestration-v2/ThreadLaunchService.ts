@@ -726,7 +726,7 @@ const make = Effect.gen(function* () {
           threadId,
           projectId: input.projectId,
           projectCwd: project.workspaceRoot,
-          worktreePath: setupCwd,
+          worktreePath: setupCwd, // fork: project-lifecycle
           observeCompletion: {
             onOutputLine: (line: string) => setupTracker.appendTail(threadId, "setup-script", line),
           },

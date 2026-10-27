@@ -92,7 +92,7 @@ function Button({ className, variant, size, shape, render, ...props }: ButtonPro
     : "button";
 
   const defaultProps = {
-    className: cn(buttonVariants({ className, shape, size, variant })),
+    className: cn(buttonVariants({ className, shape, size, variant })), // fork: iris-pill
     "data-slot": "button",
     type: typeValue,
   };

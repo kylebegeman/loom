@@ -321,7 +321,7 @@ export function ConnectionsNewRouteScreen({
                 pairing code.
               </Text>
               <Button
-                label="Sign in with Identity"
+                label="Sign in with Identity" // fork: directory-computers
                 tone="text"
                 disabled={isSubmitting}
                 onPress={() =>

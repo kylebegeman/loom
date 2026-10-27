@@ -393,7 +393,7 @@ export function CommandPalette(props: {
         searchTerms: ["new task", "chat", "create"],
         // fork: library
         run: () => {
-          void startInProject(activeProject);
+          void startInProject(activeProject); // fork: library
         },
       });
     }
@@ -423,7 +423,7 @@ export function CommandPalette(props: {
       searchTerms: [project.workspaceRoot, "new thread", "project"],
       // fork: library
       run: () => {
-        void startInProject(project);
+        void startInProject(project); // fork: library
       },
     }));
     const threadItems: CommandPaletteItem[] = threads

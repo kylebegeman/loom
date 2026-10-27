@@ -222,7 +222,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             </Text>
             <SettingsActionRow
               icon="desktopcomputer"
-              label="Manage computers"
+              label="Manage computers" // fork: everyday-workflows
               onPress={() => openSettings(navigation, "SettingsEnvironments")}
             />
           </SettingsSection>

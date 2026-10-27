@@ -358,7 +358,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
       ? Effect.void
       : Deferred.succeed(options.scopeCloseReached, undefined)
     ).pipe(Effect.andThen(options.scopeCloseGate ?? Effect.never)),
-  );
+  ); // fork: mini-native-retention
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: ProviderInstanceId.make("codex"),
     driver: CODEX_DRIVER,

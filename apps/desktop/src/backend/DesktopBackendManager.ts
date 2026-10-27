@@ -381,7 +381,7 @@ export const waitForHttpReady = (
           readinessUrl,
           timeoutMs: Duration.toMillis(options.timeout),
           cause,
-          lastProbe,
+          lastProbe, // fork: restart-continuity
         });
       },
     });

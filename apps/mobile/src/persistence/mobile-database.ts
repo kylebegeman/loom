@@ -305,7 +305,7 @@ const makeAvailable = Effect.gen(function* () {
                      FROM client_cache
                      WHERE environment_id = ? AND kind = ? AND cache_key = ?
                        AND (kind != 'pull-request' OR updated_at >= ?)
-                       AND (kind != 'project-library' OR (updated_at >= ? AND LENGTH(CAST(payload AS BLOB)) <= ?))`,
+                       AND (kind != 'project-library' OR (updated_at >= ? AND LENGTH(CAST(payload AS BLOB)) <= ?))`, // fork: library
             environmentId,
             kind,
             cacheKey,

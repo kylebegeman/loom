@@ -6673,7 +6673,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 routing: switchboardRouting,
                 threadId: nativeThreadId,
                 model: threadInput.modelSelection?.model,
-                fallbackModel: switchboardFallbackModel,
+                fallbackModel: switchboardFallbackModel, // fork: switchboard
                 readThread: ensureInitialized.pipe(
                   Effect.andThen(
                     client.raw.request("thread/read", {
@@ -7492,7 +7492,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                           ? {}
                           : { runtimePolicy: threadInput.runtimePolicy }),
                       },
-                      switchboardRouting,
+                      switchboardRouting, // fork: switchboard
                     ),
                   }),
                 ),
