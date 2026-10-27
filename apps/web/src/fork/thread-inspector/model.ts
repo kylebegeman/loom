@@ -4,7 +4,11 @@
  * area); the panel shows everything with tools. Both read this model, so a value can never
  * differ between them.
  */
-import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type {
+  ThreadRunSummary,
+  ThreadRuntimeSummary,
+  ThreadStructure,
+} from "@t3tools/client-runtime/state/shell";
 import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type {
@@ -12,6 +16,7 @@ import type {
   ThreadPendingUserInput,
 } from "@t3tools/client-runtime/state/thread-requests";
 import type {
+  OrchestrationV2PlanStep,
   ProviderDriverKind,
   ProviderInteractionMode,
   ProviderRequestKind,
@@ -28,7 +33,6 @@ import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import {
   derivePhase,
   hasActionableProposedPlan,
-  type ActivePlanState,
   type LatestProposedPlanState,
 } from "~/session-logic";
 
@@ -67,7 +71,7 @@ export interface InspectorInputs {
   readonly supportsPullRequests: boolean;
   readonly git: InspectorGitState;
   readonly lastCheckpoint: ThreadCheckpointSummary | null;
-  readonly activePlan: ActivePlanState | null;
+  readonly activePlan: InspectorTodoList | null;
   readonly proposedPlan: LatestProposedPlanState | null;
   readonly approvals: ReadonlyArray<ThreadPendingApproval>;
   readonly userInputs: ReadonlyArray<ThreadPendingUserInput>;
@@ -170,9 +174,14 @@ export interface InspectorChanges {
   } | null;
 }
 
+export interface InspectorTodoList {
+  readonly runId: RunId | null;
+  readonly steps: ReadonlyArray<Pick<OrchestrationV2PlanStep, "text" | "status">>;
+}
+
 export interface InspectorPlanStep {
   readonly step: string;
-  readonly status: "pending" | "inProgress" | "completed";
+  readonly status: OrchestrationV2PlanStep["status"];
 }
 
 export interface InspectorPlan {
@@ -487,13 +496,41 @@ function deriveChanges(inputs: InspectorInputs): InspectorChanges | null {
   };
 }
 
+/**
+ * The given run's todo list, else the latest run's; an emptied list clears it. Reads `plans`
+ * because paged projections keep the latest todo list there after trimming its turn item.
+ */
+export function selectActiveTodoList(
+  projection: ThreadStructure | null,
+  runId: RunId | undefined,
+): InspectorTodoList | null {
+  if (projection === null) return null;
+  const lists = projection.plans.filter(
+    (plan) => plan.kind === "todo_list" && plan.status !== "superseded",
+  );
+  const runOrdinals = new Map<RunId | null, number>(
+    projection.runs.map((run) => [run.id, run.ordinal]),
+  );
+  const list =
+    lists.findLast((plan) => plan.runId === runId) ??
+    lists.reduce<(typeof lists)[number] | null>(
+      (latest, plan) =>
+        latest === null ||
+        (runOrdinals.get(plan.runId) ?? -1) >= (runOrdinals.get(latest.runId) ?? -1)
+          ? plan
+          : latest,
+      null,
+    );
+  return list?.kind === "todo_list" && list.steps.length > 0 ? list : null;
+}
+
 function derivePlan(inputs: InspectorInputs): InspectorPlan {
   const steps = inputs.activePlan?.steps ?? [];
   const proposed = inputs.proposedPlan;
   return {
-    steps: steps.map((step) => ({ step: step.step, status: step.status })),
+    steps: steps.map((step) => ({ step: step.text, status: step.status })),
     completed: steps.filter((step) => step.status === "completed").length,
-    current: steps.find((step) => step.status === "inProgress")?.step ?? null,
+    current: steps.find((step) => step.status === "running")?.text ?? null,
     proposed: proposed ? { implemented: proposed.status === "completed" } : null,
   };
 }

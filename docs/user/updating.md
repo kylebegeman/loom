@@ -1,16 +1,15 @@
 # Updating T3 Code
 
 The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, an update notice appears in the
-conversation and **Settings → Connections**. Update the machine named in that
-notice.
+When a server is behind your web or desktop app, the update button at the bottom
+of the sidebar and **Settings → Environments** offer to update it.
 
 ## Update this computer
 
 The update button at the bottom of the desktop sidebar belongs to the computer
 you are using. It downloads and installs that app and can update providers on
 its local backends, including WSL. Other computers' updates and progress appear
-in **Settings → Computers**.
+in **Settings → Environments**.
 
 Before the app restarts to install, it lists the threads on this computer that
 the restart would interrupt, including threads waiting on a subagent, monitor,
@@ -19,12 +18,12 @@ button then shows **Installs when agents finish**, and the update installs once
 this computer's agents have had nothing to do for 30 seconds. If the button is
 also updating providers, they update right away and only the restart waits.
 Keep a Loom window open while it waits; minimized is fine. Choose **Cancel** on
-the button, or in **Settings → General → About**, to stop waiting. If a newer
+the button, or in **Settings → About**, to stop waiting. If a newer
 version comes out first, the wait ends and the button offers that download.
 
 ## Manage fleet updates
 
-Open **Settings → Computers → Fleet updates** for a snapshot of runtime versions
+Open **Settings → Environments → Fleet updates** for a snapshot of runtime versions
 and provider updates across your connected computers. Offline computers show
 their last known version and must reconnect before their status can be checked.
 
@@ -47,7 +46,7 @@ not apply. Use the update button on that machine to retry.
 Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain.
 
-**Settings → General → Continue threads after restarts** is on by default.
+**Settings → Maintenance → Continue threads after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a

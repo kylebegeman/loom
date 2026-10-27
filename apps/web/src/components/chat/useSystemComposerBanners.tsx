@@ -23,29 +23,21 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import { ENVIRONMENT_RECONNECT_WARNING_GRACE_MS } from "../ChatView.logic";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ServerUpdateAction, serverUpdateStageLabel } from "../ServerUpdateAction";
 import { useAutoBalanceUpdateBanner } from "./useAutoBalanceUpdateBanner";
 import { ComposerServerUpdateIcon } from "./ComposerServerUpdateStatus";
 import {
-  buildVersionMismatchDismissalKey,
   dismissServerUpdateFailure,
-  dismissVersionMismatch,
   isServerUpdateFailureDismissed,
-  isVersionMismatchDismissed,
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
-  serverUpdateGuidance,
   supportsDesktopAppUpdate,
   supportsServerUpdateThreadContinuation,
 } from "../../versionSkew";
 // fork: fleet-connections
 import { computerConnectionBanner } from "../../fork/connection-health/ComputerConnectionBanner";
 import { useConnectionStalled } from "../../fork/connection-health/useConnectionStalled";
-import {
-  OS_MANAGED_RUNTIME_NOTE,
-  runtimeManagedByOperatingSystem,
-} from "@t3tools/client-runtime/fork"; // fork: runtime-owner
+import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 
 export type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
@@ -154,18 +146,6 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
   );
   const autoBalanceUpdateBanner = useAutoBalanceUpdateBanner(autoUpdateEnvironments);
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
-  const versionMismatchDismissKey =
-    versionMismatch && activeThreadEnvironmentId !== null
-      ? buildVersionMismatchDismissalKey(activeThreadEnvironmentId, versionMismatch)
-      : null;
-  const [dismissedVersionMismatchKey, setDismissedVersionMismatchKey] = useState<string | null>(
-    null,
-  );
-  const versionMismatchDismissed =
-    versionMismatchDismissKey === dismissedVersionMismatchKey ||
-    isVersionMismatchDismissed(versionMismatchDismissKey);
-  const showVersionMismatchBanner =
-    versionMismatch !== null && versionMismatchDismissKey !== null && !versionMismatchDismissed;
   const versionMismatchServerLabel =
     hasMultipleRegisteredEnvironments && activeThreadEnvironmentId !== null
       ? `${activeEnvironment?.label ?? serverConfig?.environment.label ?? activeThreadEnvironmentId} server`
@@ -197,7 +177,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           size="xs"
           variant="ghost"
           disabled={disconnectingEnvironment}
-          title="Hide this server's threads. Switch it on again in Connections."
+          title="Hide this server's threads. Switch it on again in Environments."
           onClick={() =>
             void handleDisconnectActiveEnvironmentStable(
               activeEnvironmentUnavailableState.environmentId,
@@ -228,16 +208,17 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             disconnectAction,
           })
         : null;
+    const showUnavailableBanner =
+      activeEnvironmentUnavailableState !== null &&
+      unavailableConnection !== null &&
+      !suppressUnavailableBanner;
     if (computerBanner !== null) {
-      items.push(computerBanner);
-    } else if (
-      activeEnvironmentUnavailableState &&
-      unavailableConnection &&
-      !suppressUnavailableBanner
-    ) {
+      items.push({ ...computerBanner, group: "environment" });
+    } else if (showUnavailableBanner) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",
+        group: "environment",
         icon: <WifiOffIcon />,
         title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
         description: activeEnvironment ? (
@@ -263,57 +244,26 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
         ),
       });
     }
+    // An available update is offered by the sidebar's update pill; the composer only shows one
+    // that is running or failed, since either explains what this thread's server is doing.
     if (
       !automaticEnvironment &&
       serverUpdateEnvironmentId &&
-      (serverUpdateState.status === "idle"
-        ? showVersionMismatchBanner
-        : !serverUpdateFailureDismissed)
+      serverUpdateState.status !== "idle" &&
+      !serverUpdateFailureDismissed
     ) {
-      const updateInProgress = serverUpdateState.status === "running";
       const updateFailed = serverUpdateState.status === "failed";
       items.push({
         id: `server-version:${serverUpdateEnvironmentId}`,
         variant: updateFailed ? "error" : "default",
-        priority: updateInProgress ? "urgent" : "notice",
+        group: "environment",
         icon: <ComposerServerUpdateIcon status={serverUpdateState.status} />,
-        title:
-          updateInProgress || updateFailed ? (
-            `${updateFailed ? "Could not update" : "Updating"} ${versionMismatchServerLabel}`
-          ) : versionMismatch ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    className="block max-w-full cursor-help truncate rounded-sm text-left"
-                  >
-                    Server update available
-                  </button>
-                }
-              />
-              <TooltipPopup side="top">
-                {versionMismatchServerLabel} {versionMismatch.serverVersion}{" "}
-                <span aria-hidden="true">→</span> {versionMismatch.clientVersion}
-              </TooltipPopup>
-            </Tooltip>
-          ) : (
-            "Server update available"
-          ),
+        title: `${updateFailed ? "Could not update" : "Updating"} ${versionMismatchServerLabel}`,
         description:
           serverUpdateState.status === "failed"
             ? serverUpdateState.message
-            : serverUpdateState.status === "running"
-              ? serverUpdateStageLabel(serverUpdateState.stage)
-              : versionMismatchSelfUpdate !== null &&
-                  (versionMismatchSelfUpdate !== "desktop-managed" ||
-                    !versionMismatchDesktopAppUpdate)
-                ? serverUpdateGuidance(versionMismatchSelfUpdate)
-                : undefined,
-        ...(versionMismatchOsManaged && !updateInProgress && !updateFailed
-          ? { description: OS_MANAGED_RUNTIME_NOTE }
-          : {}), // fork: runtime-owner
-        actions: updateInProgress ? (
+            : serverUpdateStageLabel(serverUpdateState.stage),
+        actions: !updateFailed ? (
           disconnectAction
         ) : !versionMismatch ||
           versionMismatchOsManaged || // fork: runtime-owner
@@ -327,23 +277,19 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
             threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
-            label={updateFailed ? "Retry" : "Update"}
+            label="Retry"
             variant="ghost"
           />
         ),
-        ...(updateInProgress || (!updateFailed && !versionMismatchDismissKey)
-          ? {}
-          : {
+        ...(updateFailed
+          ? {
               dismissLabel: "Dismiss update notice",
               onDismiss: () => {
-                if (updateFailed) {
-                  dismissServerUpdateFailure(serverUpdateState);
-                  setDismissedServerUpdateState(serverUpdateState);
-                }
-                dismissVersionMismatch(versionMismatchDismissKey);
-                setDismissedVersionMismatchKey(versionMismatchDismissKey);
+                dismissServerUpdateFailure(serverUpdateState);
+                setDismissedServerUpdateState(serverUpdateState);
               },
-            }),
+            }
+          : {}),
       });
     }
     if (autoBalanceUpdateBanner) items.push(autoBalanceUpdateBanner);

@@ -53,7 +53,7 @@ apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	6
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
-apps/web/src/components/settings/settingsSearch.ts	ext-settings	3
+apps/web/src/components/settings/settingsSearch.ts	ext-settings	4
 apps/web/src/components/settings/SettingsSidebarNav.tsx	ext-settings	2
 apps/web/src/routes/_chat.settings.loom.tsx	-	/settings/loom
 apps/web/src/routeTree.gen.ts	-	/settings/loom
@@ -234,7 +234,6 @@ apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
 apps/web/src/components/settings/ProjectsSettings.tsx	project-home	1
-apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	1
 apps/web/src/components/settings/settingsSearch.ts	project-home	1
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	1
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	2
@@ -325,6 +324,7 @@ apps/web/src/components/settings/SourceControlSettings.tsx	github-host-setup	11
 apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	10
 apps/web/src/components/settings/settingsSearch.ts	ext-keybindings	4
 apps/web/src/components/settings/settingsSearch.ts	github-host-setup	1
+apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx	github-host-setup	2
 apps/web/src/components/sidebar/mainAppLocation.ts	fleet-connections	1
 apps/web/src/components/ui/button.tsx	iris-pill	6
 apps/web/src/components/ui/toggle-group.tsx	iris-pill	7
@@ -383,7 +383,7 @@ apps/web/src/components/settings/ConnectionsSettings.tsx	runtime-owner	2
 apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	runtime-owner	8
 apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	6
-apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	4
+apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	3
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	runtime-owner	4
 
 apps/web/src/browser/browserTargetResolver.ts	preview-links	5
@@ -782,6 +782,7 @@ apps/server/src/mcp/botInboxSummary.test.ts	attention-status	1
 apps/server/src/mcp/botInboxSummary.ts	attention-status	1
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	attention-status	1
 apps/server/src/mcp/toolkits/thread/handlers.ts	attention-status	1
+apps/server/src/mcp/toolkits/thread/handlers.ts	bots	1
 apps/server/src/mcp/toolkits/thread/tools.ts	attention-status	2
 apps/server/src/orchestration-v2/ProjectionStore.test.ts	attention-status	1
 apps/server/src/orchestration-v2/ProjectionStore.ts	attention-status	6
@@ -939,6 +940,7 @@ packages/contracts/src/previewAutomation.ts	preview-popups	1
 packages/shared/src/t3McpToolPresentation.ts	attention-status	2
 packages/shared/src/t3McpToolPresentation.ts	mini-native-retention	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	5
+apps/mobile/src/state/threadOutboxDelivery.ts	failed-run-retry	3
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	source-control-cockpit	1
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4

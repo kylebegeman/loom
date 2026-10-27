@@ -17,22 +17,8 @@ import { LibraryPushSection } from "../library-push/LibraryPushSection";
 import { ComputerReachSection } from "../reach/ComputerReach";
 import { LibraryReach } from "../reach/LibraryReach";
 
-const PRIMARY_DETAIL_TARGETS = [
-  "connections-environment",
-  "authorized-clients",
-  "local-environment",
-  "environment-icon",
-  "network-access",
-  "tailscale-https",
-  "wsl-backend",
-  "t3-connect",
-  "publish-agent-activity",
-  "hold-webhooks-while-offline",
-];
-
 export function ComputerConnectionsHome({
   primaryEnvironment,
-  primaryDetails,
   primaryActions,
   computerRows,
   discoveredRows,
@@ -41,7 +27,6 @@ export function ComputerConnectionsHome({
   onPairComputer,
 }: {
   readonly primaryEnvironment: EnvironmentPresentation | null;
-  readonly primaryDetails: ReactNode;
   readonly primaryActions?: ReactNode;
   readonly computerRows: ReactNode;
   readonly discoveredRows: ReactNode;
@@ -78,11 +63,7 @@ export function ComputerConnectionsHome({
             detail={
               <>
                 <ComputerWorkActions environment={primaryEnvironment} />
-                <ComputerConnectionDetails
-                  label={primaryEnvironment.label}
-                  searchTargetIds={PRIMARY_DETAIL_TARGETS}
-                >
-                  {primaryDetails}
+                <ComputerConnectionDetails label={primaryEnvironment.label}>
                   <ComputerReachSection environment={primaryEnvironment} />
                 </ComputerConnectionDetails>
               </>
@@ -90,9 +71,7 @@ export function ComputerConnectionsHome({
           >
             {primaryActions}
           </EnvironmentRow>
-        ) : (
-          primaryDetails
-        )}
+        ) : null}
         {computerRows}
         {discoveredRows}
       </SettingsSection>

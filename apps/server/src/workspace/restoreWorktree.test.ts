@@ -80,9 +80,11 @@ const fixture = Effect.gen(function* () {
   };
   let contextReads = 0;
   let setupCalls = 0;
+  const setupErrors: Array<string | null | undefined> = [];
   const restore = (options?: {
     readonly checkpoints?: ProjectionStore.ProjectionCheckpointContext;
     readonly git?: GitVcsDriver.GitVcsDriver["Service"];
+    readonly createWorktree?: GitWorkflow.GitWorkflowService["Service"]["createWorktree"];
     readonly failSetup?: boolean;
     readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   }) =>
@@ -100,7 +102,7 @@ const fixture = Effect.gen(function* () {
                 })
                 .pipe(Effect.map((result) => result.exitCode === 0)),
             pruneWorktrees: driver.pruneWorktrees,
-            createWorktree: driver.createWorktree,
+            createWorktree: options?.createWorktree ?? driver.createWorktree,
           }),
           Layer.succeed(GitVcsDriver.GitVcsDriver, options?.git ?? driver),
           Layer.mock(ProjectService.ProjectService)({
@@ -137,7 +139,11 @@ const fixture = Effect.gen(function* () {
             begin: () => Effect.void,
             stageStatus: () => Effect.void,
             update: () => Effect.void,
-            finish: () => Effect.succeed(null),
+            finish: (_threadId, _phase, error) =>
+              Effect.sync(() => {
+                setupErrors.push(error);
+                return null;
+              }),
           }),
         ),
       ),
@@ -154,6 +160,7 @@ const fixture = Effect.gen(function* () {
     context,
     restore,
     counts: () => ({ contextReads, setupCalls }),
+    setupErrors: () => setupErrors,
   };
 });
 
@@ -332,5 +339,45 @@ it.live("preserves edits made after restored setup failed", () =>
     expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("edited after setup failure\n");
     expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(false);
     expect(f.counts()).toEqual({ contextReads: 1, setupCalls: 2 });
+  }).pipe(Effect.provide(layer), Effect.scoped),
+);
+
+it.live("keeps Git output out of the run failure and the setup card", () =>
+  Effect.gen(function* () {
+    const privateFailure = (operation: string, cwd: string) =>
+      new GitCommandError({
+        operation,
+        command: "git",
+        cwd,
+        detail: "fatal: private git diagnostic",
+      });
+    const checkout = yield* fixture;
+    const checkoutFailure = yield* checkout
+      .restore({
+        createWorktree: (input) => Effect.fail(privateFailure("worktree-add", input.cwd)),
+      })
+      .pipe(Effect.flip);
+    expect(checkoutFailure.message).toBe(
+      `Could not recreate the worktree for branch '${checkout.input.branch}' at ${checkout.cwd}.`,
+    );
+    const files = yield* fixture;
+    const filesFailure = yield* files
+      .restore({
+        git: {
+          ...files.driver,
+          execute: (input) =>
+            input.operation === "Workspace.restoreWorktree.restoreCheckpoint"
+              ? Effect.fail(privateFailure(input.operation, input.cwd))
+              : files.driver.execute(input),
+        },
+      })
+      .pipe(Effect.flip);
+    expect(filesFailure.message).toBe(
+      `Could not restore the saved files for branch '${files.input.branch}' at ${files.cwd}.`,
+    );
+    for (const errors of [checkout.setupErrors(), files.setupErrors()]) {
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).not.toContain("private git diagnostic");
+    }
   }).pipe(Effect.provide(layer), Effect.scoped),
 );

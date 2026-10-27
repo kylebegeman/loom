@@ -17,8 +17,9 @@ import { withWorkspaceLease } from "./workspaceLease.ts";
 
 export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePreparationError>()(
   "WorkspacePreparationError",
-  { message: Schema.String },
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
 ) {}
+const isWorkspacePreparationError = Schema.is(WorkspacePreparationError);
 
 const RecoveryMarker = Schema.Struct({
   version: Schema.Literal(1),
@@ -82,21 +83,39 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
             { flag: "wx" },
           );
         const root = project.value.workspaceRoot;
-        const branchExists = yield* git.hasCommit({
-          cwd: root,
-          refName: `refs/heads/${input.branch}`,
-        });
-        let refName = input.branch;
-        if (!branchExists) {
+        const checkout = Effect.gen(function* () {
+          if (yield* git.hasCommit({ cwd: root, refName: `refs/heads/${input.branch}` }))
+            return { cwd: root, refName: input.branch, path: cwd };
           const store = yield* ProjectionStore.ProjectionStoreV2;
           const saved = yield* store.getCheckpointContext(input.threadId);
-          const scopes = new Set(
-            saved.checkpointScopes
-              .filter((scope) => scope.kind === "root_run" && path.resolve(scope.cwd) === cwd)
-              .map((scope) => scope.id),
+          const rootScopes = saved.checkpointScopes.filter((scope) => scope.kind === "root_run");
+          const scopesHere = new Set(
+            rootScopes.filter((scope) => path.resolve(scope.cwd) === cwd).map((scope) => scope.id),
           );
-          const checkpoint = saved.checkpoints
-            .filter((checkpoint) => checkpoint.status === "ready" && scopes.has(checkpoint.scopeId))
+          const ready = saved.checkpoints.filter(
+            (checkpoint) =>
+              checkpoint.status === "ready" &&
+              rootScopes.some((scope) => scope.id === checkpoint.scopeId),
+          );
+          // Only a thread with no saved work may start over from the project's current branch.
+          if (ready.length === 0) {
+            // Recovery can follow an external checkout, before the status cache expires.
+            yield* git.invalidateLocalStatus(root);
+            const { refName: baseRef } = yield* git.localStatus({ cwd: root });
+            if (baseRef === null)
+              return yield* new WorkspacePreparationError({
+                message: `Could not recreate branch '${input.branch}' at ${cwd}: the project workspace has no current branch to start it from (detached HEAD?).`,
+              });
+            return {
+              cwd: root,
+              refName: `refs/heads/${baseRef}`,
+              newRefName: input.branch,
+              baseRefName: `refs/heads/${baseRef}`,
+              path: cwd,
+            };
+          }
+          const checkpoint = ready
+            .filter((checkpoint) => scopesHere.has(checkpoint.scopeId))
             .toSorted((left, right) => (right.appRunOrdinal ?? 0) - (left.appRunOrdinal ?? 0))[0];
           if (
             checkpoint === undefined ||
@@ -113,35 +132,51 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
             cwd: root,
             revision: `${snapshot.commitSha}^`,
           });
-          refName = head.commitSha;
           const recoveryMarker = { version: 1 as const, checkpointCommit: snapshot.commitSha };
           recovery = Option.some(recoveryMarker);
           // A retry must restore files before setup even if checkout creation already succeeded.
           yield* fs.writeFileString(marker, yield* encodeRecoveryMarker(recoveryMarker));
-        }
-        yield* git.pruneWorktrees({ cwd: root });
-        yield* git.createWorktree({
-          cwd: root,
-          refName,
-          ...(!branchExists ? { newRefName: input.branch } : {}),
-          path: cwd,
+          return { cwd: root, refName: head.commitSha, newRefName: input.branch, path: cwd };
         });
+        yield* checkout.pipe(
+          Effect.tap(() => git.pruneWorktrees({ cwd: root })),
+          Effect.flatMap((worktree) => git.createWorktree(worktree)),
+          // Git output can carry private paths and remotes; the run only shows this summary.
+          Effect.mapError((error) =>
+            isWorkspacePreparationError(error)
+              ? error
+              : new WorkspacePreparationError({
+                  message: `Could not recreate the worktree for branch '${input.branch}' at ${cwd}.`,
+                  cause: error,
+                }),
+          ),
+        );
       }
       if (Option.isSome(recovery)) {
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        yield* driver.execute({
-          operation: "Workspace.restoreWorktree.restoreCheckpoint",
-          cwd,
-          args: [
-            "restore",
-            "--source",
-            recovery.value.checkpointCommit,
-            "--worktree",
-            "--staged",
-            "--",
-            ".",
-          ],
-        });
+        yield* driver
+          .execute({
+            operation: "Workspace.restoreWorktree.restoreCheckpoint",
+            cwd,
+            args: [
+              "restore",
+              "--source",
+              recovery.value.checkpointCommit,
+              "--worktree",
+              "--staged",
+              "--",
+              ".",
+            ],
+          })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new WorkspacePreparationError({
+                  message: `Could not restore the saved files for branch '${input.branch}' at ${cwd}.`,
+                  cause: error,
+                }),
+            ),
+          );
         // Once files are restored, setup retries must keep any new work in the checkout.
         yield* fs.writeFileString(
           marker,
@@ -187,15 +222,27 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
       yield* fs.remove(marker);
       yield* tracker.finish(input.threadId, "done");
     }).pipe(
-      Effect.onError((cause) =>
-        tracker
-          .finish(
-            input.threadId,
-            Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
-            Cause.pretty(cause),
-          )
-          .pipe(Effect.asVoid),
-      ),
+      Effect.onError((cause) => {
+        if (Cause.hasInterruptsOnly(cause))
+          return tracker.finish(input.threadId, "cancelled", null).pipe(Effect.asVoid);
+        const error = Cause.squash(cause);
+        // The setup card is client-visible; Git output and stacks stay in the server log.
+        return Effect.logWarning("workspace restore failed", {
+          threadId: input.threadId,
+          cause: Cause.pretty(cause),
+        }).pipe(
+          Effect.andThen(
+            tracker.finish(
+              input.threadId,
+              "failed",
+              isWorkspacePreparationError(error)
+                ? error.message
+                : `Workspace preparation failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          ),
+          Effect.asVoid,
+        );
+      }),
     );
   });
   return yield* input.workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);

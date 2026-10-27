@@ -294,7 +294,7 @@ function PlanSection({ plan }: { plan: InspectorPlan }) {
         const Icon =
           step.status === "completed"
             ? CircleCheckIcon
-            : step.status === "inProgress"
+            : step.status === "running"
               ? CircleDotIcon
               : CircleIcon;
         return (
@@ -303,7 +303,7 @@ function PlanSection({ plan }: { plan: InspectorPlan }) {
             icon={
               <Icon
                 className={cn(
-                  step.status === "inProgress" && "text-info-foreground",
+                  step.status === "running" && "text-info-foreground",
                   step.status === "completed" && "text-success-foreground",
                 )}
               />
