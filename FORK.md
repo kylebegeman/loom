@@ -1048,8 +1048,10 @@ starts. The workflows need these repository secrets:
   without echoing it:
   `/usr/bin/security find-generic-password -s switchboard -a ci-api-key -w | gh secret set SWITCHBOARD_CI_KEY -R kylebegeman/loom`.
 - `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`: the Tailscale workload identity federation
-  credential (GitHub OIDC, subject `repo:kylebegeman/loom:*`, Auth Keys write,
-  `tag:servers`).
+  credential (GitHub OIDC, Auth Keys write, `tag:servers`). Its subject is
+  `repo:kylebegeman@1012880/loom@1384372776:*` because the repository issues GitHub's
+  immutable OIDC subjects, which carry the owner and repository IDs. A
+  `repo:kylebegeman/loom:*` subject never matches, and the tailnet join fails with a 403.
 - `LOOM_ALERT_WEBHOOK_URL`: the webhook URL of the `Loom upstream alert` scheduled task in
   the loom project. Rotating the task's webhook token means setting this again.
 - `LOOM_BOT_TOKEN`: a fine-grained personal access token for `kylebegeman/loom` only, with
