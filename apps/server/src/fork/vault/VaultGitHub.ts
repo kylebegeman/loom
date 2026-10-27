@@ -242,7 +242,9 @@ const make = Effect.gen(function* () {
       },
       Effect.catchTags({ VaultConnectionError: () => Effect.fail(fail("denied")) }),
     ),
-    info: (id) => load(id).pipe(Effect.map((r) => r.info)),
+    info: Effect.fn("VaultGitHub.info")(function (id) {
+      return load(id).pipe(Effect.map((r) => r.info));
+    }),
     list: Effect.fn("VaultGitHub.list")(function* (cursor) {
       const page = yield* core.list({ cursor, includeArchived: true });
       const found = yield* Effect.forEach(

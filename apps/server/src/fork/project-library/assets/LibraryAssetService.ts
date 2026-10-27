@@ -120,8 +120,12 @@ const make = Effect.gen(function* () {
     mode: objects.mode,
     put,
     find,
-    read: (asset) => objects.get(asset.digest),
-    url: (asset) => objects.url(asset.digest),
+    read: Effect.fn("LibraryAssetService.read")(function (asset) {
+      return objects.get(asset.digest);
+    }),
+    url: Effect.fn("LibraryAssetService.url")(function (asset) {
+      return objects.url(asset.digest);
+    }),
   });
 });
 export const layer = Layer.effect(LibraryAssetService, make).pipe(Layer.provide(ObjectStore.layer));

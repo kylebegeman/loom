@@ -77,6 +77,7 @@ import { resolveRootCliCommand } from "../cli/invocation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopBrowserChannel from "./DesktopBrowserChannel.ts";
+import * as PreviewAgentActivity from "./PreviewAgentActivity.ts";
 import * as PreviewManager from "./Manager.ts";
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 import * as PreviewBrowser from "./PreviewBrowser.ts";
@@ -463,7 +464,9 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const desktopChannel = yield* DesktopBrowserChannel.DesktopBrowserChannel;
+  const agentTurns = yield* (yield* PreviewAgentActivity.PreviewAgentActivity).changes;
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const launchServices = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner>();
   const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
 
@@ -491,7 +494,7 @@ const make = Effect.gen(function* () {
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
-    executable: () => Effect.runPromise(previewBrowser.executable),
+    executable: () => runPromise(previewBrowser.executable),
     // Playwright's launch error drops Chrome's own output; its sandbox note survives.
     diagnose: (executable, cause) =>
       Effect.runPromiseWith(launchServices)(
@@ -711,7 +714,7 @@ const make = Effect.gen(function* () {
 
   const desktopRenders = (snapshot: PreviewSessionSnapshot) =>
     desktopChannel.available
-      ? Effect.runPromise(
+      ? runPromise(
           desktopChannel.awaitAttached(
             { threadId: snapshot.threadId, tabId: snapshot.tabId },
             DESKTOP_ATTACH_TIMEOUT,
@@ -722,9 +725,9 @@ const make = Effect.gen(function* () {
   const connectDesktop = async (snapshot: PreviewSessionSnapshot) => {
     const key = tabKey(snapshot.threadId, snapshot.tabId);
     await desktopReleases.get(key);
-    const scope = await Effect.runPromise(Scope.make());
+    const scope = await runPromise(Scope.make());
     try {
-      const endpoint = await Effect.runPromise(
+      const endpoint = await runPromise(
         desktopChannel
           .endpoint({ threadId: snapshot.threadId, tabId: snapshot.tabId })
           .pipe(Scope.provide(scope)),
@@ -738,7 +741,7 @@ const make = Effect.gen(function* () {
           closing = connected.browser
             .close()
             .catch(constVoid)
-            .then(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+            .then(() => runPromise(Scope.close(scope, Exit.void)));
           desktopReleases.set(key, closing);
           const release = closing;
           void release
@@ -750,7 +753,7 @@ const make = Effect.gen(function* () {
         },
       };
     } catch (cause) {
-      await Effect.runPromise(Scope.close(scope, Exit.void));
+      await runPromise(Scope.close(scope, Exit.void));
       throw cause;
     }
   };
@@ -1280,7 +1283,7 @@ const make = Effect.gen(function* () {
     const controller = [...opener.viewers].find(
       (viewer) => viewer.id === opener.control.controller,
     );
-    await Effect.runPromise(
+    await runPromise(
       manager.open({
         threadId: opener.threadId,
         ...(/^https?:/i.test(url) ? { url } : {}),
@@ -1578,10 +1581,9 @@ const make = Effect.gen(function* () {
       try {
         await encoder.evaluate(ServerBrowserPage.recordingEncoderScript(recordingFrameRate));
         // Seed idle pages before returning so an immediate stop has a frame to encode.
-        const firstFrame = await ServerBrowserPage.captureViewport(tab.page, tab.cdp, {
+        const firstFrame = await ServerBrowserPage.captureViewport(tab.cdp, {
           format: "jpeg",
           quality: RECORDING_SCREENCAST.quality,
-          scale: 1,
         });
         await encoder.evaluate(
           ([data, width]) =>
@@ -1633,7 +1635,6 @@ const make = Effect.gen(function* () {
     return started;
   };
 
-  // Scaled captures repaint every screencast; pause them to avoid leaking that frame.
   const withScreencastsPaused = <A>(tab: ServerTab, capture: () => Promise<A>): Promise<A> =>
     withCaptureLock(tab, async () => {
       tab.capturing += 1;
@@ -1789,7 +1790,7 @@ const make = Effect.gen(function* () {
     const tab =
       request.tabId === undefined
         ? latestThreadTab(request.threadId, request.agentSessionId)
-        : await Effect.runPromise(
+        : await runPromise(
             findTab(request.threadId, request.tabId).pipe(Effect.orElseSucceed(constVoid)),
           );
     if (!tab) {
@@ -1860,16 +1861,16 @@ const make = Effect.gen(function* () {
 
         const found =
           reuse && request.tabId !== undefined
-            ? await Effect.runPromise(
+            ? await runPromise(
                 findTab(request.threadId, request.tabId).pipe(
                   Effect.catchTags({
-                    ServerBrowserTabNotFoundError: () => Effect.succeed(undefined),
+                    ServerBrowserTabNotFoundError: () => Effect.void,
                   }),
                 ),
               )
             : undefined;
         if (reuse && request.tabIdExplicit && !found) {
-          const { sessions } = await Effect.runPromise(
+          const { sessions } = await runPromise(
             manager.list({ threadId: ThreadId.make(request.threadId) }),
           );
           const desktop = sessions.some(
@@ -1896,7 +1897,7 @@ const make = Effect.gen(function* () {
         const tab =
           existing ??
           (await ensureTab(
-            await Effect.runPromise(
+            await runPromise(
               manager.open({
                 threadId: request.threadId,
                 ...(url ? { url } : {}),
@@ -1927,7 +1928,7 @@ const make = Effect.gen(function* () {
             }
             const reveal = open.open ?? open.show;
             if (reveal !== false) {
-              await Effect.runPromise(
+              await runPromise(
                 manager.requestReveal({
                   threadId: tab.threadId,
                   tabId: tab.tabId,
@@ -1993,7 +1994,7 @@ const make = Effect.gen(function* () {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
       void tab.control.close().catch(constVoid);
-      await Effect.runPromise(manager.close({ threadId: tab.threadId, tabId: tab.tabId }));
+      await runPromise(manager.close({ threadId: tab.threadId, tabId: tab.tabId }));
       dropTab(tab, false);
       return {};
     }
@@ -2077,7 +2078,7 @@ const make = Effect.gen(function* () {
       }
       case "resize": {
         const setting = resolvePreviewViewport(input as PreviewAutomationResizeInput);
-        await Effect.runPromise(
+        await runPromise(
           manager.resize({ threadId: tab.threadId, tabId: tab.tabId, viewport: setting }),
         );
         await applySetting(tab, setting);
@@ -2089,7 +2090,7 @@ const make = Effect.gen(function* () {
       }
       case "setColorScheme": {
         const { colorScheme } = input as PreviewAutomationSetColorSchemeInput;
-        const snapshot = await Effect.runPromise(
+        const snapshot = await runPromise(
           manager.adjust({ threadId: tab.threadId, tabId: tab.tabId, colorScheme }),
         );
         await applyRendering(tab, snapshot);
@@ -2393,7 +2394,7 @@ const make = Effect.gen(function* () {
       }
       case "viewport": {
         const setting = decodeViewportSetting(message.setting);
-        await Effect.runPromise(
+        await runPromise(
           manager.resize({ threadId: tab.threadId, tabId: tab.tabId, viewport: setting }),
         );
         await applySetting(tab, setting);
@@ -2528,14 +2529,9 @@ const make = Effect.gen(function* () {
     }
     broadcastControl(tab);
     pushFileChooser(tab);
-    // Full scale: a scaled capture would flash in every other viewer.
     const pushStill = async () => {
       const data = await withCaptureLock(tab, () =>
-        ServerBrowserPage.captureViewport(tab.page, session, {
-          format: "jpeg",
-          quality,
-          scale: 1,
-        }),
+        ServerBrowserPage.captureViewport(session, { format: "jpeg", quality }),
       ).catch(() => null);
       if (data) viewer.push({ _tag: "frame", data: Buffer.from(data, "base64"), ack: Effect.void });
     };
@@ -2654,6 +2650,11 @@ const make = Effect.gen(function* () {
         if (tab?.desktop) dropTab(tab, false);
       }),
     ),
+    Effect.forkScoped,
+  );
+  // The desktop keeps the tabs an agent uses focused until its turn ends, not just per command.
+  yield* Stream.fromSubscription(agentTurns).pipe(
+    Stream.runForEach((change) => desktopChannel.turn(change.threadId, change.active)),
     Effect.forkScoped,
   );
   // The page came back, or mounted after the headless fallback started. Always

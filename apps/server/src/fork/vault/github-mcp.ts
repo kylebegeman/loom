@@ -112,10 +112,9 @@ export const vaultGitHubHandlers = McpToolAccess.toLayer(
       return scope;
     });
     const admin = caller.pipe(
-      Effect.flatMap((scope) =>
-        scope.thread
-          ? Effect.fail(new VaultError({ reason: "denied", detail: "admin-only" }))
-          : Effect.succeed(scope),
+      Effect.filterOrFail(
+        (scope) => !scope.thread,
+        () => new VaultError({ reason: "denied", detail: "admin-only" }),
       ),
     );
     return {

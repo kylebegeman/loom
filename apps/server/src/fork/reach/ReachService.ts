@@ -744,14 +744,15 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
   );
 
   return ReachService.of({
-    applyIdentity: (input) =>
-      applyHostIdentity(saved.prepared, input).pipe(
+    applyIdentity: Effect.fn("ReachService.applyIdentity")(function (input) {
+      return applyHostIdentity(saved.prepared, input).pipe(
         Effect.provideContext(
           Option.isSome(identityRestart)
             ? Context.add(identityContext, HostIdentityRestart, identityRestart.value)
             : identityContext,
         ),
-      ),
+      );
+    }),
     status: Effect.gen(function* () {
       connection = yield* libraryConnection.current;
       return view();

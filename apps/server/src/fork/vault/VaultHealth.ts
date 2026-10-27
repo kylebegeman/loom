@@ -149,8 +149,8 @@ const make = Effect.gen(function* () {
     );
   return VaultHealth.of({
     snapshot,
-    apply: (input, actor) =>
-      lock.withPermit(
+    apply: Effect.fn("VaultHealth.apply")(function (input, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!isMutation(input)) return yield* invalid();
           const fingerprint = yield* hash(
@@ -213,9 +213,10 @@ const make = Effect.gen(function* () {
           const revision = yield* save(next, version);
           return view(next, revision, now);
         }),
-      ),
-    claim: (itemId, force = false) =>
-      mutate((state, now) =>
+      );
+    }),
+    claim: Effect.fn("VaultHealth.claim")(function (itemId, force = false) {
+      return mutate((state, now) =>
         Effect.gen(function* () {
           const rule = state.rules.find((r) => r.itemId === itemId);
           if (!rule || (!force && (!rule.automatic || rule.nextCheckAt > now)))
@@ -244,9 +245,10 @@ const make = Effect.gen(function* () {
             },
           };
         }),
-      ),
-    report: (input) =>
-      mutate((state, now) =>
+      );
+    }),
+    report: Effect.fn("VaultHealth.report")(function (input) {
+      return mutate((state, now) =>
         Effect.gen(function* () {
           if (input.outageTarget !== undefined && !isOutageTarget(input.outageTarget))
             return yield* invalid();
@@ -301,7 +303,8 @@ const make = Effect.gen(function* () {
             result: undefined,
           };
         }),
-      ),
+      );
+    }),
   });
 });
 export const layer = Layer.effect(VaultHealth, make);

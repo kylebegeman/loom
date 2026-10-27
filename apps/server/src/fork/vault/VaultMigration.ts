@@ -208,8 +208,8 @@ const make = Effect.gen(function* () {
         nextCursor: remaining.length > 25 ? page.at(-1)! : null,
       };
     }),
-    prepare: (input, actor) =>
-      lock.withPermit(
+    prepare: Effect.fn("VaultMigration.prepare")(function (input, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!isPrepare(input) || !actor.trim() || actor.length > 512) return yield* invalid();
           const fingerprint = yield* hash(yield* encodeValue(input).pipe(Effect.mapError(invalid)));
@@ -242,9 +242,10 @@ const make = Effect.gen(function* () {
           yield* save(record, 0);
           return yield* view(record);
         }),
-      ),
-    apply: (input, actor) =>
-      lock.withPermit(
+      );
+    }),
+    apply: Effect.fn("VaultMigration.apply")(function (input, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!isApply(input) || !actor.trim() || actor.length > 512) return yield* invalid();
           let loaded = yield* recover(yield* load(input.id));
@@ -290,9 +291,10 @@ const make = Effect.gen(function* () {
           yield* save(record, loaded.revision);
           return yield* view(record);
         }),
-      ),
-    cancel: (id) =>
-      lock.withPermit(
+      );
+    }),
+    cancel: Effect.fn("VaultMigration.cancel")(function (id) {
+      return lock.withPermit(
         Effect.gen(function* () {
           const loaded = yield* recover(yield* load(id));
           if (loaded.record.plan.state === "cancelled") return yield* view(loaded.record);
@@ -304,9 +306,10 @@ const make = Effect.gen(function* () {
           yield* save(record, loaded.revision);
           return yield* view(record);
         }),
-      ),
-    archive: (id, actor) =>
-      lock.withPermit(
+      );
+    }),
+    archive: Effect.fn("VaultMigration.archive")(function (id, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!actor.trim() || actor.length > 512) return yield* invalid();
           let loaded = yield* recover(yield* load(id));
@@ -339,7 +342,8 @@ const make = Effect.gen(function* () {
           yield* save(record, loaded.revision);
           return yield* view(record);
         }),
-      ),
+      );
+    }),
   });
 });
 export const layer = Layer.effect(VaultMigration, make);

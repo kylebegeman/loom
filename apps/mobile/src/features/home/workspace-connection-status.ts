@@ -3,7 +3,7 @@ import { stalledWorkspaceStatus } from "../../fork/connection-health/workspaceSt
 
 export interface WorkspaceConnectionStatusPresentation {
   readonly label: string;
-  readonly accessibilityLabel?: string;
+  readonly accessibilityLabel?: string; // fork: fleet-connections
   readonly showsProgress: boolean;
 }
 
@@ -45,31 +45,41 @@ export function workspaceConnectionStatusPresentation(
   const stalled =
     options?.now === undefined ? null : stalledWorkspaceStatus(state, options.now, options.compact);
   if (stalled !== null) return stalled;
-  const label = workspaceConnectionStatusLabel(state);
-  const connectingCount = state.connectingEnvironments.length;
+  const label = workspaceConnectionStatusLabel(state); // fork: fleet-connections
+  const connectingCount = state.connectingEnvironments.length; // fork: fleet-connections
+  // fork: fleet-connections - a ready computer's sync outranks secondary retries, as in `label`.
+  const syncingConnected = state.hasReadyEnvironment && state.hasSyncingConnectedEnvironment;
+  // fork: fleet-connections
   const compactLabel =
     state.networkStatus === "offline"
       ? "Offline"
-      : state.connectionError !== null
-        ? "Connection issue"
-        : connectingCount > 0
-          ? state.hasReadyEnvironment || connectingCount > 1
-            ? `${connectingCount} reconnecting`
-            : "Connecting"
-          : state.hasPendingShellSnapshot
-            ? state.hasLoadedShellSnapshot
-              ? "Syncing"
-              : "Loading"
-            : "Not connected";
+      : syncingConnected
+        ? state.hasLoadedShellSnapshot
+          ? "Syncing"
+          : "Loading"
+        : state.connectionError !== null
+          ? "Connection issue"
+          : connectingCount > 0
+            ? connectingCount > 1
+              ? `${connectingCount} reconnecting`
+              : "Connecting"
+            : state.hasPendingShellSnapshot
+              ? state.hasLoadedShellSnapshot
+                ? "Syncing"
+                : "Loading"
+              : "Not connected";
   return {
-    label: options?.compact ? compactLabel : label,
+    label: options?.compact ? compactLabel : label, // fork: fleet-connections
+    // fork: fleet-connections
     ...(options?.compact
       ? {
           accessibilityLabel:
             state.networkStatus === "offline"
               ? "You are offline"
-              : (state.connectionError ??
-                (connectingCount > 1 ? `Reconnecting to ${connectingCount} computers` : label)),
+              : syncingConnected
+                ? label
+                : (state.connectionError ??
+                  (connectingCount > 1 ? `Reconnecting to ${connectingCount} computers` : label)),
         }
       : {}),
     showsProgress:

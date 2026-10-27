@@ -7,7 +7,6 @@ import { relativeTo, SUMMARY_ITEM_CAP } from "./xcresult.ts";
  * xcodebuild runs that failed before writing one.
  */
 
-// oxlint-disable-next-line no-control-regex -- ANSI escapes are control characters.
 const ANSI = /\x1b\[[0-9;]*m/g;
 
 export const stripAnsi = (text: string) => text.replace(ANSI, "");

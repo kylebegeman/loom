@@ -311,8 +311,9 @@ Web Locks so several windows on one origin show one notification. Each environme
 thread state outlives a reconnect and is seeded from the cached snapshot at launch, so the next
 live snapshot announces approvals, questions, failures and limits from the gap, and completions
 only within 10 minutes. Snoozed and settled threads keep completions quiet through
-`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also mounts
-`apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3), which alerts when
+`threadCompletionAlertMuted` (`@t3tools/shared/fork/thread-alerts`). It also lends its
+pending set to `apps/web/src/fork/scheduled-task-alerts` (`fork: scheduled-task-alerts`, 3),
+which `ForkRoot` mounts and which alerts when
 a scheduled task could not start; `ScheduledTasksSettings.tsx` (1) labels a launched run
 "started" and `packages/contracts/src/scheduledTask.ts` (1) says so in the run status
 description. Its two upstream tests mark the mock changes and the added cases.notifications stay and their clicks still
@@ -1097,7 +1098,6 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/connection/useConnectionController.ts`             | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/keyboard/CommandPalette.tsx`                       | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/projects/AddProjectScreen.tsx`                     | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
-| `apps/mobile/src/features/projects/AddProjectSourceRoute.tsx`                | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx`              | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fleet-connections` | Unify computer work, routes and access in Connections.                     |

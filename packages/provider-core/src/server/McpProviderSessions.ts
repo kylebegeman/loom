@@ -108,11 +108,12 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
-    read: (threadId) =>
-      SynchronizedRef.get(sessions).pipe(Effect.map((current) => current.get(threadId))),
+    read: Effect.fn("McpProviderSessions.read")(function (threadId) {
+      return SynchronizedRef.get(sessions).pipe(Effect.map((current) => current.get(threadId)));
+    }),
     // fork: ext-vault-terminal
-    clear: (threadId) =>
-      SynchronizedRef.updateEffect(sessions, (current) =>
+    clear: Effect.fn("McpProviderSessions.clear")(function (threadId) {
+      return SynchronizedRef.updateEffect(sessions, (current) =>
         Effect.gen(function* () {
           const prior = current.get(threadId);
           if (prior?.terminalConnectionFile)
@@ -129,46 +130,53 @@ const make = Effect.gen(function* () {
             return next;
           }),
         ),
-      ),
-    recordHtmlRender: (threadId, input, reference) =>
-      Ref.update(htmlRenders, (current) =>
-        new Map(current).set(
-          threadId,
-          [
-            ...(current.get(threadId) ?? []),
-            {
-              title: input.title,
-              height: input.height,
-              htmlLength: input.html.length,
-              htmlHash: hashHtml(input.html),
-              // Copy the tail so its backing storage cannot retain the entire HTML string.
-              htmlEnd: Buffer.from(input.html.slice(-KEPT_HTML_END_LENGTH), "utf16le").toString(
-                "utf16le",
-              ),
-              reference,
-            },
-          ].slice(-MAX_KEPT_HTML_RENDERS),
-        ),
-      ),
-    takeHtmlRender: (threadId, input, reported) =>
-      Ref.modify(htmlRenders, (current) => {
-        const kept = current.get(threadId) ?? [];
-        const index =
-          reported === undefined
-            ? matchingPageIndex(kept, input)
-            : kept.findIndex((page) => page.reference.attachmentId === reported.attachmentId);
-        if (index === -1) {
-          return [undefined, current];
-        }
-        const rest = kept.filter((_, keptIndex) => keptIndex !== index);
-        const next = new Map(current);
-        if (rest.length === 0) {
-          next.delete(threadId);
-        } else {
-          next.set(threadId, rest);
-        }
-        return [kept[index]!.reference, next];
-      }),
+      );
+    }),
+    recordHtmlRender: Effect.fn("McpProviderSessions.recordHtmlRender")(
+      function (threadId, input, reference) {
+        return Ref.update(htmlRenders, (current) =>
+          new Map(current).set(
+            threadId,
+            [
+              ...(current.get(threadId) ?? []),
+              {
+                title: input.title,
+                height: input.height,
+                htmlLength: input.html.length,
+                htmlHash: hashHtml(input.html),
+                // Copy the tail so its backing storage cannot retain the entire HTML string.
+                htmlEnd: Buffer.from(input.html.slice(-KEPT_HTML_END_LENGTH), "utf16le").toString(
+                  "utf16le",
+                ),
+                reference,
+              },
+            ].slice(-MAX_KEPT_HTML_RENDERS),
+          ),
+        );
+      },
+    ),
+    takeHtmlRender: Effect.fn("McpProviderSessions.takeHtmlRender")(
+      function (threadId, input, reported) {
+        return Ref.modify(htmlRenders, (current) => {
+          const kept = current.get(threadId) ?? [];
+          const index =
+            reported === undefined
+              ? matchingPageIndex(kept, input)
+              : kept.findIndex((page) => page.reference.attachmentId === reported.attachmentId);
+          if (index === -1) {
+            return [undefined, current];
+          }
+          const rest = kept.filter((_, keptIndex) => keptIndex !== index);
+          const next = new Map(current);
+          if (rest.length === 0) {
+            next.delete(threadId);
+          } else {
+            next.set(threadId, rest);
+          }
+          return [kept[index]!.reference, next];
+        });
+      },
+    ),
   });
 });
 

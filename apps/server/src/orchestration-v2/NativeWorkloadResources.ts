@@ -169,7 +169,9 @@ const make = Effect.gen(function* () {
     enabled,
     acquire,
     releaseIdle: release,
-    releaseSession: (id) => release(id, new Set()),
+    releaseSession: Effect.fn("NativeWorkloadResources.releaseSession")(function (id) {
+      return release(id, new Set());
+    }),
   });
 });
 export const layer = Layer.effect(NativeWorkloadResources, make);

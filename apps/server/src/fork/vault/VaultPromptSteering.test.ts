@@ -10,7 +10,6 @@ import {
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Control from "../../orchestration-v2/ProviderTurnControlService.ts";
 import * as Projections from "../../orchestration-v2/ProjectionStore.ts";
 import * as Sessions from "../../orchestration-v2/ProviderSessionManager.ts";
@@ -41,7 +40,7 @@ it.effect(
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(Sessions.ProviderSessionManagerV2)({
-              get: () => Effect.succeed(Option.some(session)),
+              get: () => Effect.succeedSome(session),
             }),
             Layer.mock(Projections.ProjectionStoreV2)({
               getProviderControlContext: () =>

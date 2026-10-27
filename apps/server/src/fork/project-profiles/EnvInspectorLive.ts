@@ -64,14 +64,13 @@ const make = Effect.gen(function* () {
       const source = yield* read(file);
       if (source !== null) envSources.push({ path: file, source });
     }
-    let schema = null;
-    let currentEnv: string | null = null;
-    try {
-      schema = schemaSource === null ? null : parseEnvSource(schemaSource);
-      currentEnv = schema ? currentEnvFor(schema, envSources, process.env) : null;
-    } catch {
-      /* inspectEnv reports a value-free parse location. */
-    }
+    // inspectEnv reports a value-free parse location.
+    const schema = yield* Effect.try(() =>
+      schemaSource === null ? null : parseEnvSource(schemaSource),
+    ).pipe(Effect.orElseSucceed(() => null));
+    const currentEnv: string | null = yield* Effect.try(() =>
+      schema ? currentEnvFor(schema, envSources, process.env) : null,
+    ).pipe(Effect.orElseSucceed(() => null));
     if (currentEnv)
       for (const file of [`.env.${currentEnv}`, `.env.${currentEnv}.local`]) {
         const source = yield* read(file);

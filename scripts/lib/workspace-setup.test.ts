@@ -17,6 +17,7 @@ function fixture() {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-workspace-setup-"));
   roots.push(root);
   for (const folder of [
+    ".pnpm-store",
     "node_modules/.bin",
     "node_modules/.pnpm",
     "node_modules/example",
@@ -28,7 +29,8 @@ function fixture() {
     "apps/test/package.json": JSON.stringify({ devDependencies: { example: "1.0.0" } }),
     "pnpm-lock.yaml": "lockfileVersion: 9.0\n",
     "pnpm-workspace.yaml": "packages:\n  - apps/*\n",
-    "node_modules/.modules.yaml": "storeDir: /shared/store\n",
+    // pnpm writes this file as JSON, and setup stats its storeDir.
+    "node_modules/.modules.yaml": JSON.stringify({ storeDir: NodePath.join(root, ".pnpm-store") }),
     "node_modules/.pnpm/lock.yaml": "lockfileVersion: 9.0\n",
     [`node_modules/.bin/${process.platform === "win32" ? "vp.cmd" : "vp"}`]: "installed",
   }))

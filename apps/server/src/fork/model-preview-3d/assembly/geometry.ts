@@ -259,7 +259,7 @@ export const makeAssemblyGeometry = Effect.fn("Assembly.makeGeometry")(function*
         .digest("hex")
         .slice(0, 24);
     },
-    (effect) => effect.pipe(Effect.catch(() => Effect.succeed(null))),
+    (effect) => effect.pipe(Effect.orElseSucceed(() => null)),
   );
   return { geometry, revisionOf };
 });

@@ -172,7 +172,11 @@ const make = Effect.gen(function* () {
     mode,
     get,
     put,
-    url: (digest) => (mode === "local" ? Effect.succeed(null) : sign("GET", digest)),
+    url: Effect.fn("LibraryObjectStore.url")(function (
+      digest: string,
+    ): Effect.Effect<string | null, LibraryError> {
+      return mode === "local" ? Effect.succeed(null) : sign("GET", digest);
+    }),
   });
 });
 export const layer = Layer.effect(LibraryObjectStore, make);

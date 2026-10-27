@@ -244,10 +244,8 @@ export const makeFabPackages = Effect.fn("PcbPreview.makeFabPackages")(function*
     const directory = yield* packageDirectory(d, id);
     const file = yield* deps.safePath(d.root, `fab/${id}/loom-fab-package.json`);
     if (Number((yield* fs.stat(file)).size) > 256 * 1024) return null;
-    let raw: unknown = null;
-    try {
-      raw = decodeJson(yield* fs.readFileString(file));
-    } catch {}
+    const text = yield* fs.readFileString(file);
+    const raw = yield* Effect.try(() => decodeJson(text)).pipe(Effect.orElseSucceed(() => null));
     if (raw && typeof raw === "object" && "designId" in raw && raw.designId !== d.design.id)
       return null;
     const stem =

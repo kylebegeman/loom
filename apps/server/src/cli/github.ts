@@ -16,11 +16,13 @@ const repository = Flag.String("repository").pipe(
   Flag.optional,
 );
 
-export const setupGitHubHost = (interactive: boolean, repository?: string) =>
-  Effect.gen(function* () {
-    const setup = yield* GitHubHostSetup.GitHubHostSetup;
-    return yield* setup.setup({ interactive, ...(repository === undefined ? {} : { repository }) });
-  }).pipe(Effect.provide(setupLayer));
+export const setupGitHubHost = Effect.fn("setupGitHubHost")(function* (
+  interactive: boolean,
+  repository?: string,
+) {
+  const setup = yield* GitHubHostSetup.GitHubHostSetup;
+  return yield* setup.setup({ interactive, ...(repository === undefined ? {} : { repository }) });
+}, Effect.provide(setupLayer));
 
 const setup = Command.make("setup", {
   repository,

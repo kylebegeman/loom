@@ -20,6 +20,7 @@ import type {
   ProviderOptionSelection,
   RuntimeMode,
   ServerSettings,
+  ThreadId,
 } from "@t3tools/contracts";
 import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
@@ -29,13 +30,19 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
-import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import {
+  useFocusEffect, // fork: library
+  useNavigation,
+  useRoute,
+  type RouteProp,
+  type StaticScreenProps,
+} from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity"; // fork: library
 import {
   createContext,
-  useCallback,
+  useCallback, // fork: library
   use,
   useEffect,
   useEffectEvent,
@@ -73,6 +80,20 @@ import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { ChatGptSharingStatus } from "./ChatGptSharingStatus";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentQuery } from "../../state/query";
+import { scopedThreadKey } from "../../lib/scopedEntities";
+import { useThreadReportedModelSelection } from "../../state/entities";
+import {
+  setComposerDraftText,
+  updateComposerDraftSettings,
+  useComposerDraft,
+  useComposerDraftSettings,
+} from "../../state/use-composer-drafts";
+import { useQuietThreadStructure } from "../../state/use-thread-detail";
+import { activeComposerDraftKey, useQueuedRunEdit } from "../../state/queued-run-edit";
+import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
+import { useThreadSelection } from "../../state/use-thread-selection";
+import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
+import { appAtomRegistry } from "../../state/atom-registry"; // fork: library
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -244,7 +265,7 @@ type ThreadSettingsSubmenuPage =
   | { readonly kind: "runtime" };
 
 type ThreadSettingsSessionProps = {
-  readonly conversationDetails?: (onOpenModel: () => void) => ReactNode;
+  readonly conversationDetails?: (onOpenModel: () => void) => ReactNode; // fork: library
   readonly environmentId: EnvironmentId | null;
   readonly projectId: ProjectId | null;
   readonly providerInstanceId?: ProviderInstanceId;
@@ -264,44 +285,37 @@ type ThreadSettingsSessionProps = {
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
 };
 
+/** The composer draft the sheet edits: the thread's own, or a queued message being edited. */
+export type ExistingThreadSettingsRouteParams = {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly draftKey: string;
+};
+
+// fork: library - Conversation details present their own session instead of a composer draft.
 export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
   readonly ownerId: string;
 };
 
-type ExistingThreadSettingsRouteContextValue = {
-  readonly session: ExistingThreadSettingsRouteSession | null;
-  readonly present: (session: ExistingThreadSettingsRouteSession) => void;
-  readonly clear: (ownerId: string) => void;
-};
+const presentedSettingsSessionAtom = Atom.make<ExistingThreadSettingsRouteSession | null>(
+  null,
+).pipe(Atom.keepAlive, Atom.withLabel("mobile:presented-thread-settings-session"));
 
-const ExistingThreadSettingsRouteContext =
-  createContext<ExistingThreadSettingsRouteContextValue | null>(null);
+function presentExistingThreadSettingsRouteSession(session: ExistingThreadSettingsRouteSession) {
+  appAtomRegistry.set(presentedSettingsSessionAtom, session);
+}
 
-export function ExistingThreadSettingsRouteProvider(props: { readonly children: ReactNode }) {
-  const [session, setSession] = useState<ExistingThreadSettingsRouteSession | null>(null);
-  const present = useCallback((nextSession: ExistingThreadSettingsRouteSession) => {
-    setSession(nextSession);
-  }, []);
-  const clear = useCallback((ownerId: string) => {
-    setSession((current) => (current?.ownerId === ownerId ? null : current));
-  }, []);
-  const value = { session, present, clear };
-
-  return (
-    <ExistingThreadSettingsRouteContext.Provider value={value}>
-      {props.children}
-    </ExistingThreadSettingsRouteContext.Provider>
-  );
+function clearExistingThreadSettingsRouteSession(ownerId: string) {
+  if (appAtomRegistry.get(presentedSettingsSessionAtom)?.ownerId !== ownerId) return;
+  appAtomRegistry.set(presentedSettingsSessionAtom, null);
 }
 
 export function useExistingThreadSettingsRoutePresentation() {
-  const value = use(ExistingThreadSettingsRouteContext);
-  if (!value) {
-    throw new Error(
-      "useExistingThreadSettingsRoutePresentation must be used inside ExistingThreadSettingsRouteProvider.",
-    );
-  }
-  return value;
+  return {
+    session: useAtomValue(presentedSettingsSessionAtom),
+    present: presentExistingThreadSettingsRouteSession,
+    clear: clearExistingThreadSettingsRouteSession,
+  };
 }
 
 type ThreadSettingsSessionValue = {
@@ -316,7 +330,7 @@ type ThreadSettingsSessionValue = {
   readonly manageHidden: boolean;
   readonly setManageHidden: (value: boolean) => void;
   readonly runtimeMode: RuntimeMode;
-  readonly hideRuntimeMode: boolean;
+  readonly hideRuntimeMode: boolean; // fork: bots
   readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
@@ -331,7 +345,7 @@ type ThreadSettingsSessionValue = {
   readonly showLegacy: boolean;
   readonly applyOptionChange: (id: string, value: string | boolean) => void;
   readonly commitPendingModel: () => boolean;
-  readonly discardPendingModel: () => void;
+  readonly discardPendingModel: () => void; // fork: library
   readonly isApplied: (option: ModelOption) => boolean;
   readonly isDisplayed: (option: ModelOption) => boolean;
   readonly pressModel: (option: ModelOption) => void;
@@ -505,6 +519,7 @@ function ThreadSettingsSessionProvider(
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const displayedPrompt = pendingModel ? (pendingPrompt ?? props.prompt) : props.prompt;
   const discardPendingModel = useCallback(() => {
+    // fork: library - Returning to conversation details drops an unsaved model.
     setPendingModel(null);
     setPendingPrompt(null);
   }, []);
@@ -631,7 +646,7 @@ function ThreadSettingsSessionProvider(
     toggleHidden,
     pendingHiddenKeys,
     runtimeMode: compatibleRuntimeMode,
-    hideRuntimeMode: props.hideRuntimeMode ?? false,
+    hideRuntimeMode: props.hideRuntimeMode ?? false, // fork: bots
     runtimeModeChoices,
     onUpdateRuntimeMode: props.onUpdateRuntimeMode,
     displayedDescriptors,
@@ -648,7 +663,7 @@ function ThreadSettingsSessionProvider(
     showLegacy: showLegacyToggle,
     applyOptionChange,
     commitPendingModel,
-    discardPendingModel,
+    discardPendingModel, // fork: library
     isApplied,
     isDisplayed,
     pressModel,
@@ -873,6 +888,7 @@ function ThreadSettingsOptionsItem(props: {
             layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
           >
             {session.displayedDescriptors.map((descriptor, index) => {
+              // fork: bots - Without the runtime row, the last option closes the card.
               const isLast =
                 session.hideRuntimeMode && index === session.displayedDescriptors.length - 1;
               if (descriptor.type === "select") {
@@ -1216,13 +1232,13 @@ function ThreadSettingsChoiceContent(props: {
 }
 
 type ThreadSettingsPickerStackParams = {
-  ThreadSettingsDetails: undefined;
+  ThreadSettingsDetails: undefined; // fork: library
   ThreadSettingsModels: undefined;
   ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
 };
 
 type ThreadSettingsPickerPresentation = {
-  readonly conversationDetails?: ThreadSettingsSessionProps["conversationDetails"];
+  readonly conversationDetails?: ThreadSettingsSessionProps["conversationDetails"]; // fork: library
   readonly onClose: () => void;
 };
 
@@ -1240,6 +1256,7 @@ function useThreadSettingsPickerPresentation() {
   return value;
 }
 
+// fork: library - Conversation details open the picker on their own page.
 function ThreadSettingsDetailsScreen() {
   const { discardPendingModel } = useThreadSettingsSession();
   useFocusEffect(
@@ -1273,6 +1290,7 @@ function ThreadSettingsModelsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const usesNativeMailSearchToolbar = useThreadSettingsMailSearchToolbar();
   const closeModels = () => {
+    // fork: library - From conversation details, closing the models returns to them.
     if (presentation.conversationDetails) navigation.goBack();
     else presentation.onClose();
   };
@@ -1510,7 +1528,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
   const solidSheetBackground = theme["--color-sheet-solid"];
   const foreground = theme["--color-foreground"];
   const presentation = {
-    conversationDetails: props.conversationDetails,
+    conversationDetails: props.conversationDetails, // fork: library
     onClose: props.onClose,
   };
 
@@ -1539,6 +1557,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
             : undefined,
         }}
       >
+        {/* fork: library */}
         <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsDetails"
           component={ThreadSettingsDetailsScreen}
@@ -1572,7 +1591,90 @@ export function ThreadSettingsPickerScreen(
   );
 }
 
-export function ExistingThreadSettingsRouteScreen() {
+export function ExistingThreadSettingsRouteScreen({
+  route,
+}: StaticScreenProps<ExistingThreadSettingsRouteParams>) {
+  const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
+  // Reads the same environmentId/threadId params as the Thread route beneath it.
+  const { selectedThread, selectedThreadDetailRef, selectedEnvironmentRuntime } =
+    useThreadSelection();
+  // Streamed text would otherwise re-render the whole model picker on every delta.
+  const structure = useQuietThreadStructure(selectedThreadDetailRef);
+  const reportedModelSelection = useThreadReportedModelSelection(selectedThreadDetailRef);
+  const threadKey = scopedThreadKey(route.params.environmentId, route.params.threadId);
+  const draftSettings = useComposerDraftSettings(threadKey);
+  const queuedRunEdit = useQueuedRunEdit(threadKey);
+  // A queued edit can end while the sheet is open; the prompt then belongs to the thread's draft.
+  const draftKey = activeComposerDraftKey(threadKey, route.params.draftKey, queuedRunEdit);
+  const prompt = useComposerDraft(draftKey).text;
+
+  if (!selectedThread) {
+    return <View className="flex-1 bg-sheet" />;
+  }
+
+  const serverConfig = selectedEnvironmentRuntime?.serverConfig ?? null;
+  const modelSelection = draftSettings.modelSelection ?? selectedThread.modelSelection;
+  const lockedProviderInstanceId = threadAllowsProviderSwitch({
+    thread: selectedThread,
+    projection: structure?.projection,
+  })
+    ? undefined
+    : modelSelection.instanceId;
+  const modelOptions = buildModelOptions(
+    serverConfig,
+    modelSelection,
+    lockedProviderInstanceId,
+    selectedThread.projectId,
+  );
+  const currentModelOption =
+    modelOptions.find(
+      (option) =>
+        option.selection.instanceId === modelSelection.instanceId &&
+        option.selection.model === modelSelection.model,
+    ) ?? null;
+  const updateModelSelection = (selection: ModelSelection) =>
+    updateThreadDraftModelSelection(threadKey, selection, serverConfig?.providers ?? []);
+
+  return (
+    <ThreadSettingsPickerScreen
+      environmentId={selectedThread.environmentId}
+      projectId={selectedThread.projectId}
+      providerInstanceId={modelSelection.instanceId}
+      {...(lockedProviderInstanceId ? { lockedProviderInstanceId } : {})}
+      providerGroups={groupByProvider(modelOptions)}
+      selectedModel={modelSelection}
+      prompt={prompt}
+      onPromptChange={(text) => setComposerDraftText(draftKey, text)}
+      reportedModelSelection={reportedModelSelection}
+      onSelectModel={(option) => updateModelSelection(withRememberedModelOptions(option.selection))}
+      restoreSelection={withRememberedModelOptions}
+      optionDescriptors={resolveProviderOptionDescriptors({
+        capabilities: currentModelOption?.capabilities,
+        selections: modelSelection.options,
+      })}
+      onUpdateOptionSelections={(options) => {
+        rememberModelOptions(modelSelection.instanceId, modelSelection.model, options ?? []);
+        updateModelSelection({ ...modelSelection, options });
+      }}
+      runtimeMode={draftSettings.runtimeMode ?? selectedThread.runtimeMode}
+      onUpdateRuntimeMode={(runtimeMode) => updateComposerDraftSettings(threadKey, { runtimeMode })}
+      onClose={() => navigation.goBack()}
+    />
+  );
+}
+
+// fork: library - Conversation details push this route without params after presenting their session.
+export function ThreadSettingsSheetRouteScreen({
+  route,
+}: StaticScreenProps<ExistingThreadSettingsRouteParams | undefined>) {
+  return route.params ? (
+    <ExistingThreadSettingsRouteScreen route={{ params: route.params }} />
+  ) : (
+    <PresentedThreadSettingsRouteScreen />
+  );
+}
+
+function PresentedThreadSettingsRouteScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const presentation = useExistingThreadSettingsRoutePresentation();
   const session = presentation.session;

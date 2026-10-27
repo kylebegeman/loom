@@ -7,6 +7,7 @@ import {
   GitCommandError,
   ProjectId,
   RunId,
+  type TerminalEvent,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -160,7 +161,9 @@ it.live("restores checkpoint files before preparing the lane and running worktre
   Effect.gen(function* () {
     const f = yield* fixture;
     const order: string[] = [];
-    let listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+    const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+    const emit = (event: TerminalEvent) =>
+      Effect.forEach([...listeners], (listener) => listener(event), { discard: true });
     const runner = yield* ProjectSetupScriptRunner.make.pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -180,22 +183,29 @@ it.live("restores checkpoint files before preparing the lane and running worktre
               } as never),
           }),
           Layer.mock(TerminalManager.TerminalManager)({
-            open: (_input, options) =>
-              Effect.sync(() => {
+            open: (input, options) =>
+              Effect.gen(function* () {
                 expect(order).toEqual(["files-restored", "lane-ready"]);
                 expect(options?.workspaceLeaseHeld).toBe(true);
+                // The shell's line editor starts reading, so the runner types the command.
+                yield* emit({
+                  type: "output",
+                  threadId: input.threadId,
+                  terminalId: input.terminalId,
+                  data: "\x1b[?2004h",
+                });
                 return {} as never;
               }),
             subscribe: (onEvent) =>
               Effect.sync(() => {
-                listener = onEvent;
-                return () => undefined;
+                listeners.add(onEvent);
+                return () => listeners.delete(onEvent);
               }),
             write: (input) =>
               Effect.gen(function* () {
                 order.push("setup");
                 const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
-                yield* listener({
+                yield* emit({
                   type: "output",
                   threadId: input.threadId,
                   terminalId: input.terminalId,

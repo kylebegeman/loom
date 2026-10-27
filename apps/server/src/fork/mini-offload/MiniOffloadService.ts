@@ -542,18 +542,27 @@ const make = Effect.gen(function* () {
           .slice(0, DIRECTORY_MAX_WORKERS),
       ),
     ),
-    check: (input) => readiness(input),
-    prepare: (input) => readiness(input, true),
+    check: Effect.fn("MiniOffloadService.check")(function (input) {
+      return readiness(input);
+    }),
+    prepare: Effect.fn("MiniOffloadService.prepare")(function (input) {
+      return readiness(input, true);
+    }),
     workers: source.list.pipe(Effect.map((workers) => workers.map(summary))),
-    register: (input) => registryLock.withPermit(source.register(input)).pipe(Effect.map(summary)),
-    setEnabled: (input) =>
-      registryLock.withPermit(source.setEnabled(input)).pipe(Effect.map(summary)),
-    updateWorker: (input) =>
-      registryLock.withPermit(source.update(input)).pipe(Effect.map(summary)),
-    removeWorker: (input) =>
-      registryLock.withPermit(source.remove(input)).pipe(Effect.map(summary)),
-    submit: (input) =>
-      decode(MiniSubmit, input).pipe(
+    register: Effect.fn("MiniOffloadService.register")(function (input) {
+      return registryLock.withPermit(source.register(input)).pipe(Effect.map(summary));
+    }),
+    setEnabled: Effect.fn("MiniOffloadService.setEnabled")(function (input) {
+      return registryLock.withPermit(source.setEnabled(input)).pipe(Effect.map(summary));
+    }),
+    updateWorker: Effect.fn("MiniOffloadService.updateWorker")(function (input) {
+      return registryLock.withPermit(source.update(input)).pipe(Effect.map(summary));
+    }),
+    removeWorker: Effect.fn("MiniOffloadService.removeWorker")(function (input) {
+      return registryLock.withPermit(source.remove(input)).pipe(Effect.map(summary));
+    }),
+    submit: Effect.fn("MiniOffloadService.submit")(function (input) {
+      return decode(MiniSubmit, input).pipe(
         Effect.flatMap((request) =>
           locked(
             request.requestId,
@@ -643,9 +652,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         ),
-      ),
-    recover: (input) =>
-      decode(MiniRef, input).pipe(
+      );
+    }),
+    recover: Effect.fn("MiniOffloadService.recover")(function (input) {
+      return decode(MiniRef, input).pipe(
         Effect.flatMap((ref) =>
           locked(
             ref.requestId,
@@ -657,7 +667,8 @@ const make = Effect.gen(function* () {
             }),
           ),
         ),
-      ),
+      );
+    }),
     list: Effect.fn("MiniOffload.list")(function* (threadId) {
       yield* workspace(threadId);
       const receipts = yield* Effect.forEach(
@@ -707,8 +718,8 @@ const make = Effect.gen(function* () {
       );
       return found.filter((entry) => entry !== null);
     }),
-    inspect: (input) =>
-      decode(MiniRef, input).pipe(
+    inspect: Effect.fn("MiniOffloadService.inspect")(function (input) {
+      return decode(MiniRef, input).pipe(
         Effect.flatMap((ref) =>
           locked(
             ref.requestId,
@@ -723,24 +734,27 @@ const make = Effect.gen(function* () {
             }),
           ),
         ),
-      ),
-    cancel: (input) =>
-      decode(MiniRef, input).pipe(
+      );
+    }),
+    cancel: Effect.fn("MiniOffloadService.cancel")(function (input) {
+      return decode(MiniRef, input).pipe(
         Effect.flatMap((ref) =>
           locked(
             ref.requestId,
             refresh(ref, "cancel").pipe(Effect.map((stored) => stored.receipt)),
           ),
         ),
-      ),
+      );
+    }),
     artifacts,
-    agentArtifacts: (input) =>
-      artifacts(input).pipe(
+    agentArtifacts: Effect.fn("MiniOffloadService.agentArtifacts")(function (input) {
+      return artifacts(input).pipe(
         Effect.map((bundle) => ({
           ...bundle,
           artifactsBase64: input.includeBundle ? bundle.artifactsBase64 : null,
         })),
-      ),
+      );
+    }),
     patch: Effect.fn("MiniOffload.patch")(function* (input) {
       const stored = yield* load(input);
       const response = yield* decode(Patch, yield* rpc(stored, "patch"));

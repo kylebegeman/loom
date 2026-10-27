@@ -185,12 +185,13 @@ describe("DesktopIdentityGrantStore", () => {
         assert.isTrue(yield* store.put(grant));
 
         encryption.current = "locked";
-        const failures = yield* Effect.all(
+        const failures = yield* Effect.forEach(
           [
             store.get(identityGrantKey(grant)),
             store.put(otherGrant),
             store.remove(identityGrantKey(grant)),
-          ].map((operation) => Effect.flip(operation)),
+          ],
+          (operation) => Effect.flip(operation),
         );
         assert.deepStrictEqual(
           failures.map((error) => error.operation),

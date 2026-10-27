@@ -266,7 +266,10 @@ const withReporter = <A, E>(
     );
 
     const nextPost: Effect.Effect<Post> = Queue.take(events).pipe(
-      Effect.flatMap((event) => (event.kind === "post" ? Effect.succeed(event) : nextPost)),
+      Effect.filterOrElse(
+        (event): event is Post => event.kind === "post",
+        () => nextPost,
+      ),
     );
     const nextSleep: Effect.Effect<number> = Queue.take(events).pipe(
       Effect.flatMap((event) => {

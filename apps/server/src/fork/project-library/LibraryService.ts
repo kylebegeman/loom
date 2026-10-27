@@ -667,7 +667,7 @@ const make = Effect.gen(function* () {
               });
             }).pipe(
               Effect.provideService(FileSystem.FileSystem, fs),
-              Effect.catch(() => Effect.succeed(undefined)),
+              Effect.orElseSucceed(() => undefined),
             );
       return {
         ...(destination ? { destination } : {}),
@@ -1004,7 +1004,7 @@ const make = Effect.gen(function* () {
             version:
               entry.delta === undefined
                 ? Effect.exit(Effect.yieldNow.pipe(Effect.andThen(versionDigest(entry.thread))))
-                : Effect.succeed(undefined),
+                : Effect.undefined,
           }),
         ).pipe(Effect.withSpan("LibraryService.prepareEntries"));
     return yield* mutation(
@@ -1211,15 +1211,18 @@ const make = Effect.gen(function* () {
   const catalogRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     isAuthority ? effect : Effect.fail(new LibraryError({ reason: "not-authority" }));
   return LibraryService.of({
-    publishDocuments: (input) =>
-      transact(
+    publishDocuments: Effect.fn("LibraryService.publishDocuments")(function (input) {
+      return transact(
         Effect.gen(function* () {
           if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
           yield* validateAuthority(input);
           return yield* documents.publish(input);
         }),
-      ),
-    decisions: (input) => catalogRead(documents.search(input)),
+      );
+    }),
+    decisions: Effect.fn("LibraryService.decisions")(function (input) {
+      return catalogRead(documents.search(input));
+    }),
     info,
     authorizeRecovery,
     readRecoveryGrant,
@@ -1234,47 +1237,56 @@ const make = Effect.gen(function* () {
     ingestHistory,
     importShadow,
     verifyImport,
-    search: (input) => catalogRead(historySearch.search(input)),
-    proposeBrief: (input, source) =>
-      mutation(
+    search: Effect.fn("LibraryService.search")(function (input) {
+      return catalogRead(historySearch.search(input));
+    }),
+    proposeBrief: Effect.fn("LibraryService.proposeBrief")(function (input, source) {
+      return mutation(
         "propose-brief",
         input.requestId,
         encode(codecs.proposeBrief, { ...input, source }),
         codecs.briefProposal,
         briefs.propose({ ...input, source }),
-      ),
-    briefProposals: (input) => catalogRead(briefs.list(input).pipe(Effect.mapError(io))),
-    acceptBriefProposal: (input) =>
-      mutation(
+      );
+    }),
+    briefProposals: Effect.fn("LibraryService.briefProposals")(function (input) {
+      return catalogRead(briefs.list(input).pipe(Effect.mapError(io)));
+    }),
+    acceptBriefProposal: Effect.fn("LibraryService.acceptBriefProposal")(function (input) {
+      return mutation(
         "accept-brief-proposal",
         input.requestId,
         encode(codecs.acceptBrief, input),
         codecs.acceptedBrief,
         briefs.accept(input),
-      ),
-    dismissBriefProposal: (input) =>
-      mutation(
+      );
+    }),
+    dismissBriefProposal: Effect.fn("LibraryService.dismissBriefProposal")(function (input) {
+      return mutation(
         "dismiss-brief-proposal",
         input.requestId,
         encode(codecs.dismissBrief, input),
         codecs.briefProposal,
         briefs.dismiss(input),
-      ),
-    project: (input) =>
-      !isAuthority && Option.isSome(localCatalog)
+      );
+    }),
+    project: Effect.fn("LibraryService.project")(function (input) {
+      return !isAuthority && Option.isSome(localCatalog)
         ? localCatalog.value.project(input)
-        : catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
-    projects: (input) =>
-      !isAuthority && Option.isSome(localCatalog)
+        : catalogRead(getProject(input.projectId).pipe(Effect.mapError(io)));
+    }),
+    projects: Effect.fn("LibraryService.projects")(function (input) {
+      return !isAuthority && Option.isSome(localCatalog)
         ? localCatalog.value.projects(input)
         : catalogRead(
             store.projects(input.includeArchived ?? false).pipe(
               Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.project, row))),
               Effect.mapError(io),
             ),
-          ),
-    copies: (input) =>
-      !isAuthority && Option.isSome(localCatalog)
+          );
+    }),
+    copies: Effect.fn("LibraryService.copies")(function (input) {
+      return !isAuthority && Option.isSome(localCatalog)
         ? localCatalog.value.copies(input)
         : catalogRead(
             store.copies(input.projectId).pipe(
@@ -1286,24 +1298,27 @@ const make = Effect.gen(function* () {
               ),
               Effect.mapError(io),
             ),
-          ),
-    threads: (input) =>
-      catalogRead(
+          );
+    }),
+    threads: Effect.fn("LibraryService.threads")(function (input) {
+      return catalogRead(
         store.threads(input.projectId, 2147483647, 0).pipe(
           Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
           Effect.mapError(io),
         ),
-      ),
-    lookupThread: (input) =>
-      catalogRead(
+      );
+    }),
+    lookupThread: Effect.fn("LibraryService.lookupThread")(function (input) {
+      return catalogRead(
         store.threadSummary(input.sourceEnvironmentId, input.threadId).pipe(
           Effect.flatMap((row) =>
             row === null ? Effect.succeed(null) : decode(codecs.summary, row),
           ),
           Effect.mapError(io),
         ),
-      ),
-    threadIndex: (input) => {
+      );
+    }),
+    threadIndex: Effect.fn("LibraryService.threadIndex")(function (input) {
       const offset = input.offset ?? 0;
       const limit = input.limit ?? 100;
       if (
@@ -1338,9 +1353,9 @@ const make = Effect.gen(function* () {
           )
           .pipe(Effect.mapError(io)),
       );
-    },
-    history: (input) =>
-      catalogRead(
+    }),
+    history: Effect.fn("LibraryService.history")(function (input) {
+      return catalogRead(
         Effect.gen(function* () {
           if (input.offset !== undefined || input.limit !== undefined) {
             const offset = input.offset ?? 0,
@@ -1371,7 +1386,8 @@ const make = Effect.gen(function* () {
             ? yield* new LibraryError({ reason: "not-found" })
             : yield* decode(codecs.archive, row);
         }).pipe(Effect.mapError(io)),
-      ),
+      );
+    }),
   });
 });
 export const layer = Layer.effect(LibraryService, make).pipe(Layer.provide(LibraryStore.layer));

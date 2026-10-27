@@ -24,5 +24,7 @@ export class ApprovalNotificationTransport extends Context.Service<
 >()("t3/fork/vault/ApprovalNotificationTransport") {}
 
 export const stub = Layer.succeed(ApprovalNotificationTransport, {
-  pending: () => Effect.succeed("stubbed" as const),
+  pending: Effect.fn("ApprovalNotificationTransport.pending")(function () {
+    return Effect.succeed("stubbed" as const);
+  }),
 });

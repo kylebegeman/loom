@@ -3,6 +3,8 @@ import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
 import type { LibraryError } from "@t3tools/contracts/fork";
 import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+// fork: library-projects
+import { libraryTurnContextBinding } from "../fork/project-library/LibraryTurnContext.ts";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
@@ -16,6 +18,8 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
+  isCompactionCommandMessage,
+  parseGoalCommand,
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -233,6 +237,7 @@ export const layer: Layer.Layer<
                 const request = turnItems.find((item) => item.type === "run_interrupt_request");
                 return request?.type === "run_interrupt_request" ? request.message : undefined;
               }),
+              // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
               Effect.catchCause(() => Effect.succeed(undefined)),
             ),
       };
@@ -315,11 +320,12 @@ export const layer: Layer.Layer<
                     source.status === "interrupted" ||
                     (source.status === "completed" &&
                       handoff.delivery === undefined &&
+                      // Compaction and /goal turns defer history to the next turn.
                       projection.messages.some(
                         (message) =>
                           message.id === source.userMessageId &&
-                          message.attachments.length === 0 &&
-                          message.text.trim().toLowerCase() === "/compact",
+                          (isCompactionCommandMessage(message) ||
+                            parseGoalCommand(message) !== null),
                       ))),
               ))),
       );
@@ -657,9 +663,7 @@ export const layer: Layer.Layer<
         );
         if (preparation._tag === "Failure") {
           if (input.willRetry === true)
-            return yield* Effect.fail(
-              new ProviderTurnStartError({ runId, cause: preparation.failure }),
-            );
+            return yield* new ProviderTurnStartError({ runId, cause: preparation.failure });
           yield* settleRunBeforeStart({
             signal: "workspace-preparation-failed",
             status: "failed",
@@ -1198,13 +1202,20 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
-      if (
-        Option.isSome(libraryWorkspaces) &&
-        (projection.providerTurns.length === 0 || providerThread.nativeThreadRef === null)
-      ) {
-        const resolved = yield* libraryWorkspaces.value
-          .getBinding(projection.thread.id)
-          .pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
+      // fork: library-projects -- slash commands must open the prompt; see LibraryTurnContext.
+      if (Option.isSome(libraryWorkspaces)) {
+        const resolved = yield* libraryTurnContextBinding({
+          projection,
+          providerThread: runningProviderThread,
+          prompt: message,
+          getBinding: libraryWorkspaces.value.getBinding(projection.thread.id),
+          readPrompt: (messageId) =>
+            projectionStore
+              .getThreadRecords(projection.thread.id, ["messages"], { messageIds: [messageId] })
+              .pipe(
+                Effect.map((records) => records.messages.find((entry) => entry.id === messageId)),
+              ),
+        }).pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
         if (resolved !== null) {
           const receipt = yield* libraryWorkspaces.value
             .get(resolved.binding.workingCopyId)
@@ -1238,6 +1249,9 @@ export const layer: Layer.Layer<
       // fork: mobile-surface-hint -- a native slash command must stay at the start of the text.
       if (message.creationSource === "mobile" && !message.text.trimStart().startsWith("/"))
         userText = `${PHONE_VIEWER_NOTE}\n\n${userText}`;
+      // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
+      const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
+      const goalCommand = goalDriver && parseGoalCommand(message) !== null;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,
@@ -1252,8 +1266,8 @@ export const layer: Layer.Layer<
           projection.messages
             .filter(
               (candidate) =>
-                candidate.attachments.length === 0 &&
-                candidate.text.trim().toLowerCase() === "/compact",
+                isCompactionCommandMessage(candidate) ||
+                (goalDriver && parseGoalCommand(candidate) !== null),
             )
             .map((candidate) => candidate.id),
         ),
@@ -1401,7 +1415,7 @@ export const layer: Layer.Layer<
                 ];
           const delivery = yield* deliverContextHandoffs({
             handoffs: [...effectiveHandoffs, ...retryHandoff],
-            deferInline: compact,
+            deferInline: compact || goalCommand,
             providerThread: runningProviderThread,
             budget: Effect.gen(function* () {
               return handoffBudget({
@@ -1455,7 +1469,10 @@ export const layer: Layer.Layer<
             ...(noteContinuation ? promptedInput : turnInput),
             message: {
               ...turnInput.message,
-              text: context === "" ? userText : `${context}\n\nUser message:\n${userText}`,
+              text:
+                context === "" || goalCommand
+                  ? userText
+                  : `${context}\n\nUser message:\n${userText}`,
             },
           }).pipe(
             // Clear pending handoff markers for refused prompts so the next turn retains the native session.

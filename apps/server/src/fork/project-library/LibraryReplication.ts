@@ -632,12 +632,12 @@ const make = Effect.gen(function* () {
       yield* registerChangedCopy(current, copy).pipe(
         // The Library cannot record a copy of a project it no longer has. Skipping it keeps one
         // such copy from failing every later copy and the cleanup that follows.
-        Effect.catch((error) =>
-          isLibraryError(error) && error.reason === "not-found"
-            ? Effect.logDebug("The Library no longer has this copy's project.", {
-                copyId: copy.id,
-              })
-            : Effect.fail(error),
+        Effect.catchIf(
+          (error) => isLibraryError(error) && error.reason === "not-found",
+          () =>
+            Effect.logDebug("The Library no longer has this copy's project.", {
+              copyId: copy.id,
+            }),
         ),
       );
     }
