@@ -2109,12 +2109,15 @@ const make = Effect.gen(function* () {
   /** The first file in a copy that sits outside every repository, which only an archive keeps. */
   const strayEntry = Effect.fn("LibraryWorkspace.strayEntry")(function* (copy: LibraryWorkingCopy) {
     const repositories = copy.repositories.map((repository) => repository.path);
+    // Older installs left a repository's setup marker beside it; release clears it with the folder.
+    const markers = repositories.map((repository) => `${repository}${SetupMarker.LEGACY_SUFFIX}`);
     const pending = repositories.includes(copy.rootPath) ? [] : [copy.rootPath];
     while (pending.length > 0) {
       const directory = pending.shift()!;
       for (const name of yield* fs.readDirectory(directory)) {
         const entry = path.join(directory, name);
-        if (name === ".DS_Store" || repositories.includes(entry)) continue;
+        if (name === ".DS_Store" || repositories.includes(entry) || markers.includes(entry))
+          continue;
         if (
           repositories.some((repository) => contained(entry, repository)) &&
           (yield* fs.stat(entry)).type === "Directory"
