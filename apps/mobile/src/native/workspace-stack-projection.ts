@@ -12,12 +12,13 @@ export function projectWorkspaceStack(
 ) {
   const firstOverlay = state.routes.findIndex(isOverlay);
   const workspaceRoutes = state.routes.slice(0, firstOverlay < 0 ? undefined : firstOverlay);
+  // fork: library
   const primary =
     workspaceRoutes.find((route) => route.name === "Home") ??
     workspaceRoutes.find((route) => route.name === "Library");
   // The Settings tab's route only selects what Home shows; its pages are the detail.
   const detail = workspaceRoutes.filter(
-    (route) => route.key !== primary?.key && route.name !== "Settings",
+    (route) => route.key !== primary?.key && route.name !== "Settings", // fork: library
   );
   const overlays = firstOverlay < 0 ? [] : state.routes.slice(firstOverlay);
   return { primary, detail, overlays };

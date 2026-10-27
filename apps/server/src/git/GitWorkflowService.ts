@@ -1,17 +1,17 @@
-import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: checkpoint-capable
 import * as Path from "effect/Path"; // fork: project-root-worktree
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: checkpoint-capable
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
 
 import {
   GitManagerError,
   GitCommandError,
-  type GitResolveOperationInput,
+  type GitResolveOperationInput, // fork: source-control-cockpit
   type GitResolveOperationResult, // fork: source-control-cockpit
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
@@ -143,10 +143,11 @@ export class GitWorkflowService extends Context.Service<
   }
 >()("t3/git/GitWorkflowService") {}
 
+// fork: checkpoint-capable
 function nonRepositoryLocalStatus(checkpointCapable = false): VcsStatusLocalResult {
   return {
     isRepo: false,
-    ...(checkpointCapable ? { checkpointCapable: true } : {}),
+    ...(checkpointCapable ? { checkpointCapable: true } : {}), // fork: checkpoint-capable
     hasPrimaryRemote: false,
     isDefaultRef: false,
     refName: null,
@@ -159,9 +160,10 @@ function nonRepositoryLocalStatus(checkpointCapable = false): VcsStatusLocalResu
   };
 }
 
+// fork: checkpoint-capable
 function nonRepositoryStatus(checkpointCapable = false): VcsStatusResult {
   return {
-    ...nonRepositoryLocalStatus(checkpointCapable),
+    ...nonRepositoryLocalStatus(checkpointCapable), // fork: checkpoint-capable
     hasUpstream: false,
     aheadCount: 0,
     behindCount: 0,
@@ -185,6 +187,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  // fork: checkpoint-capable
   const workspaceStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore);
   const checkpointCapability = Effect.fnUntraced(function* (cwd: string) {
     if (Option.isNone(workspaceStore)) return false;
@@ -201,6 +204,7 @@ export const make = Effect.gen(function* () {
     );
     return repositories !== null && repositories.length > 0;
   });
+  // fork: project-lifecycle
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const fileSystem = yield* FileSystem.FileSystem;
@@ -275,6 +279,7 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
+    // fork: project-lifecycle
     yield* restoreManagedProjectCheckout(cwd).pipe(
       Effect.provide(restorationServices),
       Effect.mapError(
@@ -312,6 +317,7 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
+    // fork: project-lifecycle
     yield* restoreManagedProjectCheckout(cwd).pipe(
       Effect.provide(restorationServices),
       Effect.mapError(
@@ -378,6 +384,7 @@ export const make = Effect.gen(function* () {
   const detectGitRepositoryForCommand = Effect.fn(
     "GitWorkflowService.detectGitRepositoryForCommand",
   )(function* (operation: string, cwd: string) {
+    // fork: project-lifecycle
     yield* restoreManagedProjectCheckout(cwd).pipe(
       Effect.provide(restorationServices),
       Effect.mapError(
@@ -476,6 +483,7 @@ export const make = Effect.gen(function* () {
     status: Effect.fn("GitWorkflowService.status")(function (input) {
       return detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>
+          // fork: checkpoint-capable
           isGitRepository
             ? gitManager.status(input)
             : checkpointCapability(input.cwd).pipe(Effect.map(nonRepositoryStatus)),
@@ -485,6 +493,7 @@ export const make = Effect.gen(function* () {
     localStatus: Effect.fn("GitWorkflowService.localStatus")(function (input) {
       return detectGitRepositoryForStatus("GitWorkflowService.localStatus", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>
+          // fork: checkpoint-capable
           isGitRepository
             ? gitManager.localStatus(input)
             : checkpointCapability(input.cwd).pipe(Effect.map(nonRepositoryLocalStatus)),

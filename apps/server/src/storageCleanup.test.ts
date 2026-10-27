@@ -12,14 +12,14 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as PlatformError from "effect/PlatformError";
+import * as PlatformError from "effect/PlatformError"; // fork: project-lifecycle
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
-import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"; // fork: project-lifecycle
 import * as Stream from "effect/Stream";
-import * as PubSub from "effect/PubSub";
+import * as PubSub from "effect/PubSub"; // fork: project-lifecycle
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -34,6 +34,7 @@ import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Settings from "./serverSettings.ts";
+// fork: project-lifecycle
 import * as ProcessRunner from "./processRunner.ts";
 import {
   markManagedProjectCheckout,
@@ -56,17 +57,14 @@ import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAd
 import { ServerActivation } from "./serverActivation.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
-  EnvironmentId,
+  EnvironmentId, // fork: project-lifecycle
   EventId,
   ProjectId,
-  ProviderDriverKind,
   ProviderInstanceId,
-  ProviderSessionId,
   RunId,
   RuntimeRequestId,
   ThreadId,
   type OrchestrationV2DomainEvent,
-  type OrchestrationV2ProviderSession,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -275,6 +273,7 @@ const cleanupFixture = (
     const fs = yield* FileSystem.FileSystem;
     const config = yield* ServerConfig.ServerConfig;
     const git = yield* GitVcsDriver.GitVcsDriver;
+    // fork: project-lifecycle
     const runner = yield* ProcessRunner.make();
     const repoParent = yield* fs.realPath(
       yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-repo-" }),
@@ -313,15 +312,17 @@ const cleanupFixture = (
     let editBeforeRemoval = false;
     let openSessionCwd: string | null = null;
     let sessionLive = true;
-    let processCwd: string | null = null;
+    let processCwd: string | null = null; // fork: project-lifecycle
     let processInspectionFails = false;
     let fullStatusCalls = 0;
     let snapshotReads = 0;
+    // fork: project-lifecycle -- `events` below now reads published thread events
     let onPublicationFetch: Effect.Effect<void, PlatformError.PlatformError> | undefined;
     let terminalListener:
       | Parameters<TerminalManager.TerminalManager["Service"]["subscribeMetadata"]>[0]
       | undefined;
     const activated = yield* Deferred.make<void>();
+    // fork: project-lifecycle
     const domainSubscribed = yield* Deferred.make<void>();
     const publishedEvents = yield* PubSub.unbounded<{
       event: OrchestrationV2DomainEvent;
@@ -373,6 +374,7 @@ const cleanupFixture = (
               (input.args.includes("remove") || input.args.includes("--porcelain"))
             )
               yield* fs.writeFileString(`${worktree}/tracked.txt`, "late edit\n");
+            // fork: project-lifecycle
             if (onPublicationFetch !== undefined && input.args[0] === "fetch") {
               const change = onPublicationFetch;
               onPublicationFetch = undefined;
@@ -385,7 +387,7 @@ const cleanupFixture = (
           return git.statusDetailsLocal(...args);
         },
       }),
-      Effect.provideService(ProcessRunner.ProcessRunner, processHost),
+      Effect.provideService(ProcessRunner.ProcessRunner, processHost), // fork: project-lifecycle
       Effect.provideService(Settings.ServerSettingsService, {
         getSettings: Effect.sync(() => settings),
         subscribeChanges: Effect.succeed(Stream.empty),
@@ -473,6 +475,7 @@ const cleanupFixture = (
         invalidateStatus: () => Effect.void,
       } as unknown as GitManager.GitManager["Service"]),
       Effect.provideService(TerminalManager.TerminalManager, {
+        // fork: project-lifecycle
         subscribeMetadata: (
           listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribeMetadata"]>[0],
         ) =>
@@ -485,6 +488,7 @@ const cleanupFixture = (
       } as unknown as TerminalManager.TerminalManager["Service"]),
       Effect.provideService(ServerActivation, Deferred.await(activated)),
     );
+    // fork: project-lifecycle
     const built = Context.get(context, StorageCleanup.StorageCleanup);
     // Sweeps inherit this fixture's process runner from the layer build, but manual removal runs
     // in its caller's context, as an RPC does, so it gets the same runner here.
@@ -496,7 +500,8 @@ const cleanupFixture = (
           .pipe(Effect.provideService(ProcessRunner.ProcessRunner, processHost)),
     };
     return {
-      service,
+      service, // fork: project-lifecycle
+      // fork: library-projects
       libraryStore: yield* LibraryWorkspaceStore.LibraryWorkspaceStore.pipe(
         Effect.provide(LibraryWorkspaceStore.layer),
       ),
@@ -504,6 +509,7 @@ const cleanupFixture = (
         librarySql = sql;
       },
       repo,
+      // fork: project-lifecycle
       /** Starts the hourly sweep and the `publishThreadEvent` subscription, then drains. */
       activateEvents: Effect.gen(function* () {
         yield* Deferred.succeed(activated, undefined);
@@ -552,6 +558,7 @@ const cleanupFixture = (
           },
         };
       },
+      // fork: project-lifecycle
       settle: (shared = false) => {
         settings = {
           ...settings,
@@ -632,6 +639,7 @@ const cleanupFixture = (
       setOpenSessionCwd: (cwd: string | null) => {
         openSessionCwd = cwd;
       },
+      // fork: project-lifecycle
       setProcessCwd: (cwd: string) => {
         processCwd = cwd;
       },
@@ -682,38 +690,6 @@ const pausedMeasurementFixture = (storageCleanup?: StorageCleanupSettings) =>
     measuredPath = yield* fs.realPath(fixture.worktree);
     return { ...fixture, measuring, resume };
   });
-const sessionUpdated = (
-  index: number,
-  status: OrchestrationV2ProviderSession["status"],
-): OrchestrationV2DomainEvent => ({
-  id: EventId.make(`event-${index}`),
-  type: "provider-session.updated",
-  threadId: ThreadId.make("thread-1"),
-  occurredAt: at(0),
-  payload: {
-    id: ProviderSessionId.make(`session-${index}`),
-    driver: ProviderDriverKind.make("codex"),
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    status,
-    cwd: "/elsewhere",
-    model: null,
-    capabilities: CodexProviderCapabilitiesV2,
-    createdAt: at(0),
-    updatedAt: at(0),
-    lastError: null,
-  },
-});
-// fork: project-lifecycle. Project and Scratch passes read a fixed number of snapshots per
-// sweep, so count sweeps against the reads of one more manual sweep.
-const sweepsSoFar = (fixture: {
-  readonly service: StorageCleanup.StorageCleanup["Service"];
-  readonly snapshotReads: () => number;
-}) =>
-  Effect.gen(function* () {
-    const reads = fixture.snapshotReads();
-    yield* fixture.service.runNow;
-    return reads / (fixture.snapshotReads() - reads);
-  });
 const cleanupTestLayer = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "storage-cleanup-" })),
   Layer.provideMerge(NodeServices.layer),
@@ -723,7 +699,7 @@ const runCleanupTest = <A, E>(
     A,
     E,
     | FileSystem.FileSystem
-    | ChildProcessSpawner.ChildProcessSpawner
+    | ChildProcessSpawner.ChildProcessSpawner // fork: project-lifecycle
     | ServerConfig.ServerConfig
     | GitVcsDriver.GitVcsDriver
     | Path.Path
@@ -2358,6 +2334,7 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
+  // fork: retention-defaults
   it.live.each(["parent", "root"] as const)(
     "permits a symlinked %s only when it is a parent of the cleanup directory",
     (linked) =>
@@ -2451,6 +2428,7 @@ describe("storage cleanup reports and local file policies", () => {
   );
 });
 
+// fork: mini-native-retention
 describe("native Scratch and pin retention", () => {
   it.live("keeps a pinned worktree and pending checkpoint effects", () =>
     runCleanupTest(
@@ -2484,6 +2462,7 @@ describe("native Scratch and pin retention", () => {
           }),
         );
         cwd = yield* fs.realPath(f.worktree);
+        // fork: mini-native-retention -- the pin lands while cleanup walks the checkout
         pinDuringWalk = () =>
           f.setThreads([shell({ branch: "feature", worktreePath: f.worktree, pinnedAt: at(0) })]);
         expect((yield* f.service.runNow).entries[0]?.reason).toBe("Thread is pinned");
@@ -2491,7 +2470,9 @@ describe("native Scratch and pin retention", () => {
       }),
     ),
   );
+  // fork: mini-native-retention -- Scratch tests continue this describe block
 
+  // fork: mini-native-retention
   const scratchFixture = Effect.gen(function* () {
     const f = yield* cleanupFixture();
     const config = yield* ServerConfig.ServerConfig;

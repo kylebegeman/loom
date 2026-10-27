@@ -248,6 +248,7 @@ export function composerSuggestionOptionId(listId: string, itemId: string): stri
   return `${listId}-${encodeURIComponent(JSON.stringify(itemId))}`;
 }
 
+// fork: ext-composer-menu
 const LISTBOX_LABEL_BY_TRIGGER: Partial<Record<ComposerTriggerKind, string>> = {
   path: "Files and folders",
   "pull-request": "Pull requests",

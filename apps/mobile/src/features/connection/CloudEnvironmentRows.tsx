@@ -140,12 +140,14 @@ function CloudEnvironmentRowsContent(
         <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
           <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
+            {/* fork: fleet-connections */}
             Finding your computers…
           </Text>
         </View>
       ) : controller.relayDiscovery.error ? null : (
         <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
           <Text className="text-sm leading-normal text-foreground-muted">
+            {/* fork: fleet-connections */}
             No additional computers found. Open Connections settings on your computer and sign in to
             the same Loom Connect account.
           </Text>

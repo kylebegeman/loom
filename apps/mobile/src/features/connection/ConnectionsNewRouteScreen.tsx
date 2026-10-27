@@ -1,4 +1,4 @@
-import { Button } from "../../components/ui/Button";
+import { Button } from "../../components/ui/Button"; // fork: fleet-connections
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -19,6 +19,7 @@ import { Linking, Pressable, StyleSheet, View } from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
+// fork: fleet-connections -- the Connect button below replaces the header checkmark and its icon color
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
@@ -69,12 +70,14 @@ export function ConnectionsNewRouteScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const screenFocused = useIsFocused();
+  // fork: fleet-connections
   const scannerLockedRef = useRef(false);
   const [scannerRequested, setScannerRequested] = useState(false);
   // A good scan parks the camera so it can't re-read the code over later edits.
   const [scanComplete, setScanComplete] = useState(false);
   const attemptedAutoConnectRef = useRef<string | null>(null);
 
+  // fork: fleet-connections
   const connectDisabled =
     isSubmitting || hostInput.trim().length === 0 || codeInput.trim().length === 0;
 
@@ -104,6 +107,7 @@ export function ConnectionsNewRouteScreen({
   }, [pairingConnectionError]);
 
   const handleHostChange = (value: string) => {
+    // fork: fleet-connections
     const parsed = parsePairingUrl(value);
     setHostInput(parsed.code ? parsed.host : value);
     if (parsed.code) {
@@ -116,16 +120,17 @@ export function ConnectionsNewRouteScreen({
 
   const handleCodeChange = (value: string) => {
     setCodeInput(value);
-    setScannerRequested(false);
+    setScannerRequested(false); // fork: fleet-connections
     setPendingConnectionError(null);
   };
 
   useEffect(() => () => setPendingConnectionError(null), []);
 
   const handleScanPress = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting) return; // fork: fleet-connections
     const permission = await requestCameraPermission();
     if (permission.granted) {
+      // fork: fleet-connections
       scannerLockedRef.current = false;
       setScannerRequested(true);
       setScanComplete(false);
@@ -143,11 +148,12 @@ export function ConnectionsNewRouteScreen({
   };
 
   const handleQrScan = ({ data }: { readonly data: string }) => {
+    // fork: fleet-connections
     if (scannerLockedRef.current || isSubmitting) {
       return;
     }
 
-    scannerLockedRef.current = true;
+    scannerLockedRef.current = true; // fork: fleet-connections
 
     try {
       const pairingUrl = extractPairingUrlFromQrPayload(data);
@@ -156,14 +162,15 @@ export function ConnectionsNewRouteScreen({
       setCodeInput(code);
       onChangeConnectionPairingUrl(pairingUrl);
       setScanComplete(true);
-      setPendingConnectionError(null);
+      setPendingConnectionError(null); // fork: fleet-connections
     } catch (error) {
-      setScannerRequested(false);
+      setScannerRequested(false); // fork: fleet-connections
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Dialog.alert(
         "Invalid QR code",
         error instanceof Error ? error.message : "Scanned QR code was not recognized.",
       );
+      // fork: fleet-connections -- a parked scanner restarts only from Scan, not on a timer
     }
   };
 
@@ -184,7 +191,7 @@ export function ConnectionsNewRouteScreen({
     if (AsyncResult.isSuccess(result)) {
       // Replacing with Home would nest it inside any sheet below; return to the opener.
       if (!navigation.canGoBack()) {
-        navigation.dispatch(StackActions.replace("Library"));
+        navigation.dispatch(StackActions.replace("Library")); // fork: library
       } else {
         // Added from the Settings list, the new environment shows on Environments.
         leaveSettingsPage(navigation, workspaceHasColumns(), "SettingsEnvironments");
@@ -216,12 +223,12 @@ export function ConnectionsNewRouteScreen({
   return (
     <SettingsScreen
       formSheet={routeName === "ConnectionsNew"}
-      title={params.routeFor ? "Add connection address" : "Connect computer"}
+      title={params.routeFor ? "Add connection address" : "Connect computer"} // fork: fleet-connections
     >
       <ScrollView
         nestedScrollEnabled
         contentInsetAdjustmentBehavior="automatic"
-        automaticallyAdjustKeyboardInsets
+        automaticallyAdjustKeyboardInsets // fork: fleet-connections
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className="flex-1"
@@ -261,6 +268,7 @@ export function ConnectionsNewRouteScreen({
           ) : null}
 
           <View collapsable={false} className="gap-2">
+            {/* fork: fleet-connections */}
             <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
               Or enter the address and pairing code
             </Text>
@@ -276,7 +284,7 @@ export function ConnectionsNewRouteScreen({
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
                 value={hostInput}
-                editable={!isSubmitting}
+                editable={!isSubmitting} // fork: fleet-connections
                 onChangeText={handleHostChange}
               />
               <View className="ml-4 border-t border-border-subtle" />
@@ -285,7 +293,7 @@ export function ConnectionsNewRouteScreen({
                 placeholder="Pairing code"
                 returnKeyType="go"
                 value={codeInput}
-                editable={!isSubmitting}
+                editable={!isSubmitting} // fork: fleet-connections
                 onChangeText={handleCodeChange}
                 onSubmitEditing={() => {
                   if (!connectDisabled) void handleSubmit();
@@ -300,6 +308,7 @@ export function ConnectionsNewRouteScreen({
               )}
             >
               {pairingConnectionError ??
+                // fork: fleet-connections
                 "Use the address and code shown on your computer. You can also paste its full pairing link into Address."}
             </Text>
           </View>
@@ -446,6 +455,7 @@ function T3ConnectSection() {
   return (
     <View collapsable={false} className="gap-2">
       <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
+        {/* fork: fleet-connections */}
         Or find computers with Loom Connect
       </Text>
       {isSignedIn ? (
@@ -474,6 +484,7 @@ function PairingInputRow({
   readonly label: string;
 }) {
   return (
+    // fork: fleet-connections
     <View collapsable={false} className="min-h-13 flex-row items-center gap-3 px-4 py-3">
       <Text
         accessibilityElementsHidden

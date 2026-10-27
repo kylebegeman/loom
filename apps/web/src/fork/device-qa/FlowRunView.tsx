@@ -34,8 +34,7 @@ const RUN_LABEL: Record<DeviceQaRunStatus, string> = {
   interrupted: "Interrupted",
 };
 
-export const flowName = (path: string) =>
-  path.slice(path.lastIndexOf("/") + 1).replace(/\.yaml$/, "");
+const flowName = (path: string) => path.slice(path.lastIndexOf("/") + 1).replace(/\.yaml$/, "");
 
 function StepIcon({ status }: { status: DeviceQaStep["status"] }) {
   if (status === "pass") return <CheckIcon className="size-3.5 shrink-0 text-success-foreground" />;

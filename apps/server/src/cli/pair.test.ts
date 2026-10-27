@@ -132,6 +132,7 @@ describe("t3 pair", () => {
             Effect.gen(function* () {
               if (!ChildProcess.isStandardCommand(command))
                 return yield* Effect.die("Unexpected pipeline");
+              // fork: directory-computers
               if (command.args[0] === "serve" && command.args[1] !== "status") {
                 const target = command.args.at(-1)!;
                 const descriptor = yield* Effect.promise(async () =>
@@ -416,6 +417,7 @@ describe("t3 pair", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  // fork: directory-computers
   it.effect("refuses a Tailscale Serve port another app holds without changing it", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {

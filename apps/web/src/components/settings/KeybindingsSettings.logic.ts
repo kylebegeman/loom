@@ -196,6 +196,7 @@ export function keybindingConflictLabels(
   return [...new Set(conflicts)].toSorted();
 }
 
+// fork: ext-keybindings
 // Keep archived commands valid in saved configurations, but hide them from the UI.
 const isVisibleKeybindingCommand = (command: KeybindingCommand): boolean =>
   command !== "loom.thread-inspector.toggle" && command !== "loom.thread-inspector.card";
@@ -267,6 +268,7 @@ export function buildKeybindingRows(
   }
   const rows = [...rowsById.values()];
 
+  // fork: ext-keybindings
   const visibleRows = rows.filter((row) => isVisibleKeybindingCommand(row.command));
   const rowsWithConflicts = visibleRows.map((row) => {
     const conflicts = keybindingConflictLabels(visibleRows, {
@@ -359,7 +361,7 @@ export function buildKeybindingCommandOptions(
     commands.add(binding.command);
   }
   return [...commands]
-    .filter(isVisibleKeybindingCommand)
+    .filter(isVisibleKeybindingCommand) // fork: ext-keybindings
     .toSorted((left, right) => compareCommands(left, right, commandLabel));
 }
 

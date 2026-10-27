@@ -112,6 +112,7 @@ const ROUTE_KIND_RANK: Record<ConnectionRouteKind, number> = {
   relay: 5,
 };
 
+// fork: reach
 // Within one kind, HTTPS goes before plain HTTP and a DNS name before a raw IP address.
 function sameKindPreference(route: ConnectionRoute): number {
   const httpBaseUrl = routeHttpBaseUrl(route);
@@ -131,6 +132,7 @@ export function insertRoute(
   route: ConnectionRoute,
 ): ReadonlyArray<ConnectionRoute> {
   const rank = ROUTE_KIND_RANK[connectionRouteKind(route)];
+  // fork: reach
   const preference = sameKindPreference(route);
   const index = routes.findIndex((existing) => {
     const existingRank = ROUTE_KIND_RANK[connectionRouteKind(existing)];
@@ -222,6 +224,7 @@ export function mergeLearnedRoutes(input: {
   readonly reported: ReadonlyArray<ReportedEndpoint>;
   /** Plain HTTP routes are unusable from an HTTPS page (mixed content). */
   readonly allowInsecure: boolean;
+  // fork: directory-computers
   /** `reported` is a Library directory listing, not the live server's own report. */
   readonly fromDirectory?: boolean;
 }): ReadonlyArray<ConnectionRoute> | null {
@@ -271,12 +274,13 @@ export function mergeLearnedRoutes(input: {
       return [
         url === null || !reported.has(normalized(url))
           ? route
-          : withMarks(route, tailscaleOrigins.has(normalized(url))),
+          : withMarks(route, tailscaleOrigins.has(normalized(url))), // fork: directory-computers
       ];
     }
     if (url === null || !reported.has(normalized(url)) || known.has(normalized(url))) return [];
     if (sendsTokenInClear(saved, route, tailscaleOrigins.has(normalized(url)))) return [];
     known.add(normalized(url));
+    // fork: directory-computers
     return [
       withMarks(
         route,
@@ -317,10 +321,12 @@ export function mergeLearnedRoutes(input: {
           wsBaseUrl: `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}/`,
           learned: true,
           ...(authorization === undefined ? {} : { authorization }),
+          // fork: identity-renewal
           ...(activeProfile?._tag === "BearerConnectionProfile" && activeProfile.identity
             ? { identity: activeProfile.identity }
             : {}),
           ...(tailscaleOrigins.has(url.origin) ? { network: "tailscale" as const } : {}),
+          // fork: directory-computers
           ...(input.fromDirectory === true ? { learnedFrom: "directory" as const } : {}),
         }),
       ),
@@ -330,6 +336,7 @@ export function mergeLearnedRoutes(input: {
     routes
       .map(
         (route) =>
+          // fork: directory-computers
           `${connectionRouteId(route.target)} ${routeHttpBaseUrl(route) ?? ""} ${connectionRouteKind(route)} ${learnedFromDirectory(route)}`,
       )
       .join("\n");
@@ -386,9 +393,11 @@ export interface ReportedEndpoint {
   readonly kind?: string;
 }
 
+// fork: directory-computers
 function withMarks(route: ConnectionRoute, tailscale: boolean, directory = false): ConnectionRoute {
   const profile = Option.getOrNull(route.profile);
   if (profile?._tag !== "BearerConnectionProfile") return route;
+  // fork: directory-computers
   if (
     (profile.network === "tailscale") === tailscale &&
     learnedFromDirectory(route) === directory
@@ -406,9 +415,9 @@ function withMarks(route: ConnectionRoute, tailscale: boolean, directory = false
         wsBaseUrl: profile.wsBaseUrl,
         ...(profile.learned === undefined ? {} : { learned: profile.learned }),
         ...(profile.authorization === undefined ? {} : { authorization: profile.authorization }),
-        ...(profile.identity === undefined ? {} : { identity: profile.identity }),
+        ...(profile.identity === undefined ? {} : { identity: profile.identity }), // fork: identity-renewal
         ...(tailscale ? { network: "tailscale" as const } : {}),
-        ...(directory ? { learnedFrom: "directory" as const } : {}),
+        ...(directory ? { learnedFrom: "directory" as const } : {}), // fork: directory-computers
       }),
     ),
   };
@@ -436,6 +445,7 @@ export function isLearned(route: ConnectionRoute): boolean {
   return profile?._tag === "BearerConnectionProfile" && profile.learned === true;
 }
 
+// fork: directory-computers
 export function learnedFromDirectory(route: ConnectionRoute): boolean {
   const profile = Option.getOrNull(route.profile);
   return (

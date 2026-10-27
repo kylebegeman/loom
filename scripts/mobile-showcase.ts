@@ -12,7 +12,7 @@ import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
 
-import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
+import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts"; // fork: mobile-identity
 
 import showcaseConfig, {
   type ShowcaseAppearance,
@@ -36,6 +36,7 @@ import {
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
 const ANDROID_PACKAGE = "com.t3tools.t3code";
+// fork: mobile-identity
 const productionIdentity = resolveLoomMobileIdentity({ APP_VARIANT: "production" });
 const APP_SCHEME = productionIdentity.scheme;
 const IOS_PRODUCT_NAME = productionIdentity.appName;
@@ -47,6 +48,7 @@ const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
 const IOS_APP_PATH = NodePath.join(
   MOBILE_ROOT,
+  // fork: mobile-identity
   `.showcase/ios-derived-data/Build/Products/Debug-iphonesimulator/${IOS_PRODUCT_NAME}.app`,
 );
 const ANDROID_APK_PATH = NodePath.join(
@@ -769,9 +771,9 @@ async function buildIos(): Promise<string> {
     "xcodebuild",
     [
       "-workspace",
-      NodePath.join(MOBILE_ROOT, `ios/${IOS_PRODUCT_NAME}.xcworkspace`),
+      NodePath.join(MOBILE_ROOT, `ios/${IOS_PRODUCT_NAME}.xcworkspace`), // fork: mobile-identity
       "-scheme",
-      IOS_PRODUCT_NAME,
+      IOS_PRODUCT_NAME, // fork: mobile-identity
       "-configuration",
       "Debug",
       "-sdk",

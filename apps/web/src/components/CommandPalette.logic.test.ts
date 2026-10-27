@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { botRunThreadId } from "@t3tools/contracts/fork";
+import { botRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
@@ -9,9 +9,9 @@ import {
   buildLinkedThreadActionItems,
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
-  paletteClosedIntoDialog,
+  paletteClosedIntoDialog, // fork: library-palette
   reduceCommandPaletteUiState,
-  resolveAddProjectOpenTarget,
+  resolveAddProjectOpenTarget, // fork: fleet-connections
   createCommandPaletteSearchState,
   reduceCommandPaletteSearchState,
   type CommandPaletteUiState,
@@ -86,6 +86,7 @@ describe("reduceCommandPaletteUiState", () => {
     ).toBeNull();
   });
 
+  // fork: fleet-connections
   it("preserves the explicitly chosen computer for adding a project", () => {
     const environmentId = EnvironmentId.make("remote-computer");
     const state = reduceCommandPaletteUiState(
@@ -151,6 +152,7 @@ describe("buildThreadActionItems", () => {
     expect(runThread).toHaveBeenCalledWith(remote);
   });
 
+  // fork: bots
   it("leaves out bot run threads, which the Bots page lists", () => {
     const items = buildThreadActionItems({
       threads: [

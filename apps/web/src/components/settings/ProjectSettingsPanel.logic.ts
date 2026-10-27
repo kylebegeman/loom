@@ -6,6 +6,7 @@ export function projectGroupTitleNeedsUpdate(
   return wasEdited && memberTitles.some((title) => title !== nextTitle);
 }
 
+// fork: project-home
 export function projectSettingsLocationSuccessor(
   groups: readonly {
     readonly projectKey: string;

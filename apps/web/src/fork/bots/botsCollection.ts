@@ -98,7 +98,7 @@ export function hasFailures({ row, recent }: Pick<BotFacts, "row" | "recent">) {
 }
 
 /** How close a budget-limited bot is to running out; `near` from this share of a limit. */
-export const BUDGET_NEAR_SHARE = 0.8;
+const BUDGET_NEAR_SHARE = 0.8;
 export type BudgetLevel = "at" | "near" | "clear";
 
 /** Null for a bot without a budget. */
@@ -135,7 +135,7 @@ const timeOf = (value: string | null | undefined) => {
 };
 
 /** The bot's latest sign of life: its newest run, or the last change to its definition. */
-export const lastActivityAt = (bot: BotDefinition, recent: readonly BotRun[]) =>
+const lastActivityAt = (bot: BotDefinition, recent: readonly BotRun[]) =>
   Math.max(timeOf(recent[0]?.createdAt), timeOf(bot.updatedAt));
 
 const byName = (left: BotDefinition, right: BotDefinition) =>

@@ -1,3 +1,4 @@
+// fork: library
 import {
   cachedQuery,
   queryCacheRemovals,
@@ -36,7 +37,7 @@ import {
   pullRequestRoutingPermissionFor,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
-import * as Clock from "effect/Clock";
+import * as Clock from "effect/Clock"; // fork: library
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -49,13 +50,13 @@ import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
 const DATABASE_NAME = "t3code:connection-runtime";
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 5; // fork: library
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
 const THREAD_STORE_NAME = "thread";
 const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
-const QUERY_STORE_NAME = "query";
+const QUERY_STORE_NAME = "query"; // fork: library
 const CATALOG_KEY = "document";
 const StoredShellSnapshot = StoredOrchestrationShellSnapshot;
 const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
@@ -131,6 +132,7 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
     try {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       request.addEventListener("upgradeneeded", () => {
+        // fork: library
         if (!request.result.objectStoreNames.contains(QUERY_STORE_NAME)) {
           request.result.createObjectStore(QUERY_STORE_NAME);
         }
@@ -955,6 +957,7 @@ export const layer = Layer.effectContext(
         return Effect.all(
           [
             Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
+            // fork: library
             removeDatabaseValuesInRange(
               database,
               QUERY_STORE_NAME,
@@ -978,6 +981,7 @@ export const layer = Layer.effectContext(
       }),
     });
 
+    // fork: library
     const saveBoundedQuery = (key: string, payload: string) =>
       withDatabase(database, (opened) =>
         Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -1031,7 +1035,7 @@ export const layer = Layer.effectContext(
         ),
     };
     return Context.make(Persistence.ConnectionTargetStore, targetStore).pipe(
-      Context.add(EnvironmentQueryStore, queryStore),
+      Context.add(EnvironmentQueryStore, queryStore), // fork: library
       Context.add(PullRequestRoutingPermissions, pullRequestRoutingPermissions),
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),

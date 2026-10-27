@@ -1,8 +1,8 @@
-import { RunId } from "@t3tools/contracts";
+import { RunId } from "@t3tools/contracts"; // fork: checkpoint-capable
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
-  resolveAvailableDiffPanelSelection,
+  resolveAvailableDiffPanelSelection, // fork: checkpoint-capable
   useDiffPanelSessionStore,
   useDiffPanelStore,
 } from "./diffPanelStore";
@@ -48,6 +48,7 @@ describe("diffPanelStore", () => {
   });
 });
 
+// fork: checkpoint-capable
 describe("diff scope for whole-project conversations", () => {
   const latestTurnId = RunId.make("latest-turn");
   it("opens turn history when the parent folder cannot show a branch diff", () => {

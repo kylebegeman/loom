@@ -89,6 +89,7 @@ export class ServerConfig extends Context.Service<
     readonly privateNetworkOnly?: boolean | undefined;
     readonly cwd: string;
     readonly baseDir: string;
+    // fork: mini-managed-projects
     /** Optional canonical root for newly managed projects, Scratch and worktrees. */
     readonly managedProjectsRoot?: string;
     readonly staticDir: string | undefined;
@@ -162,7 +163,7 @@ export const deriveServerPaths = Effect.fn(function* (
     settingsPath: join(stateDir, "settings.json"),
     environmentThemesDir: join(stateDir, "themes"),
     providerStatusCacheDir,
-    worktreesDir: join(options.managedProjectsRoot ?? baseDir, "worktrees"),
+    worktreesDir: join(options.managedProjectsRoot ?? baseDir, "worktrees"), // fork: mini-managed-projects
     attachmentsDir,
     browserArtifactsDir: join(stateDir, "browser-artifacts"),
     logsDir,

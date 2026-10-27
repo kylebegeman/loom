@@ -44,7 +44,7 @@ import {
   MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
-  PlusIcon,
+  PlusIcon, // fork: library-projects
   ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -546,7 +546,7 @@ type SidebarThreadRowProps = {
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
-  onNewThread: (threadRef: ScopedThreadRef) => void;
+  onNewThread: (threadRef: ScopedThreadRef) => void; // fork: library-projects
   onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
   onRenameTitleChange: (title: string) => void;
   onCommitRename: (threadRef: ScopedThreadRef, title: string, originalTitle: string) => void;
@@ -624,7 +624,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onStartRename,
     onThreadActivate,
     onThreadClick,
-    onNewThread,
+    onNewThread, // fork: library-projects
     onUnsettle,
     onUnsnooze,
     onUnpin,
@@ -858,6 +858,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         addFolders: () => {},
       })
     : null;
+  // fork: library-projects
   const handleNewThreadClick = (event: ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1117,6 +1118,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     )
   ) : null;
 
+  // fork: library-projects
   const newThreadButton =
     canOperateThread && !isRenaming ? (
       <Tooltip>
@@ -1188,6 +1190,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ) : null}
             {/* Shelf rows are one line; the New design gives the title the room a PR number takes. */}
             {prBadge ? <span className="contents redesign:hidden">{prBadge}</span> : null}
+            {/* fork: library-projects */}
             {!sortable?.isDragging && props.sweepAction === null ? (
               <span className="pointer-events-none inline-flex h-6 shrink-0 items-stretch opacity-0 transition-opacity group-focus-within/sidebar-row:pointer-events-auto group-focus-within/sidebar-row:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:opacity-100">
                 {newThreadButton}
@@ -1383,7 +1386,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     className={cn(
                       isWokeStatus
                         ? "pointer-events-auto"
-                        : "pointer-events-none group-focus-visible/sidebar-row:absolute group-focus-visible/sidebar-row:right-0 group-focus-visible/sidebar-row:opacity-0 group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
+                        : "pointer-events-none group-focus-visible/sidebar-row:absolute group-focus-visible/sidebar-row:right-0 group-focus-visible/sidebar-row:opacity-0 group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0", // fork: library-projects
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label",
                       snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
@@ -1456,6 +1459,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
                     )}
                   </span>
+                  {/* fork: library-projects */}
                   {newThreadButton ||
                   props.settlementSupported ||
                   showSnoozeButton ||
@@ -1464,10 +1468,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       className={cn(
                         // Mouse clicks leave Settle focused; focus-within would pin controls over
                         // the status label after the pointer leaves. Use focus-visible instead.
-                        "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 group-focus-visible/sidebar-row:pointer-events-auto group-focus-visible/sidebar-row:static group-focus-visible/sidebar-row:opacity-100 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
+                        "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 group-focus-visible/sidebar-row:pointer-events-auto group-focus-visible/sidebar-row:static group-focus-visible/sidebar-row:opacity-100 has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100", // fork: library-projects
                         snoozeMenuOpen && "pointer-events-auto static opacity-100",
                       )}
                     >
+                      {/* fork: library-projects */}
                       {newThreadButton}
                       {hasUnsentDraft ? (
                         <Tooltip>

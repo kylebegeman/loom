@@ -17,9 +17,9 @@ import * as Stream from "effect/Stream";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
-import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
-import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
-import * as StorageCleanup from "../../../storageCleanup.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
+import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -29,6 +29,7 @@ import { EnvironmentToolkit } from "./tools.ts";
 
 const environmentId = EnvironmentId.make("environment:preferences");
 const threadId = ThreadId.make("thread:preferences");
+// fork: mini-native-retention
 const caller: McpInvocationContext.McpInvocationScope = {
   environmentId,
   requestNamespace: "provider:preferences",
@@ -121,6 +122,7 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
   }),
 );
 
+// fork: mini-native-retention
 it.effect("reads cleanup reports without running cleanup and refuses another environment", () =>
   Effect.gen(function* () {
     const toolkit = yield* EnvironmentToolkit;
@@ -158,6 +160,7 @@ it.effect("reads cleanup reports without running cleanup and refuses another env
   ),
 );
 
+// fork: file-placement
 it.effect("tells an agent where projects, worktrees, lanes and scratch work go", () =>
   Effect.gen(function* () {
     const toolkit = yield* EnvironmentToolkit;

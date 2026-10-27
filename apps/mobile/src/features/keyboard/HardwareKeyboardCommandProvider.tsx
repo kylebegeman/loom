@@ -165,7 +165,7 @@ export function HardwareKeyboardCommandProvider({
         if (navigation.canGoBack()) {
           navigation.goBack();
         } else {
-          navigation.dispatch(StackActions.replace("Library"));
+          navigation.dispatch(StackActions.replace("Library")); // fork: library
         }
         return;
       }

@@ -1,4 +1,4 @@
-import { readHostedPairingRequest, resolveRemotePairingTarget } from "@t3tools/shared/remote";
+import { readHostedPairingRequest, resolveRemotePairingTarget } from "@t3tools/shared/remote"; // fork: fleet-connections
 import * as Schema from "effect/Schema";
 
 const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
@@ -27,6 +27,7 @@ export class PairingQrPayloadEmptyError extends Schema.TaggedError<PairingQrPayl
   }
 }
 
+// fork: fleet-connections
 export class PairingQrPayloadInvalidError extends Schema.TaggedError<PairingQrPayloadInvalidError>()(
   "PairingQrPayloadInvalidError",
   {},
@@ -85,7 +86,7 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
     throw new PairingQrPayloadEmptyError({});
   }
 
-  let pairingUrl = trimmed;
+  let pairingUrl = trimmed; // fork: fleet-connections
   try {
     const url = new URL(trimmed);
     if (["loom:", "loom-dev:", "loom-preview:", "t3code:"].includes(url.protocol)) {
@@ -94,6 +95,7 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
     }
   } catch {}
 
+  // fork: fleet-connections
   try {
     resolveRemotePairingTarget({ pairingUrl });
   } catch {

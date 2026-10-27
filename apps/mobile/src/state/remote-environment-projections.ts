@@ -3,7 +3,7 @@ import type {
   EnvironmentPresentation,
   PreparedConnection,
 } from "@t3tools/client-runtime/connection";
-import { connectionRoutes, connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection";
+import { connectionRoutes, connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection"; // fork: library-sign-in
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -60,6 +60,7 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         ? prepared.target._tag === "RelayConnectionTarget"
         : presentation.entry.target._tag === "RelayConnectionTarget";
 
+      // fork: library-sign-in
       const identityProfiles = connectionRoutes(presentation.entry).flatMap((route) => {
         const profile = Option.getOrNull(route.profile);
         return profile?._tag === "BearerConnectionProfile" && profile.identity ? [profile] : [];
@@ -77,6 +78,7 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         httpBaseUrl,
         wsBaseUrl,
         bearerToken: authorization?._tag === "Bearer" ? authorization.token : null,
+        // fork: library-sign-in
         ...(identityProfile?.identity
           ? { identity: identityProfile.identity, identityHttpBaseUrl: identityProfile.httpBaseUrl }
           : {}),

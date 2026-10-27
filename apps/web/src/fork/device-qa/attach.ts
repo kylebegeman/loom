@@ -13,7 +13,7 @@ import { readPreparedConnection } from "~/state/session";
  * Draft text for evidence that is not attached as an image. Agents run on the environment
  * host, so a host path is something they can open.
  */
-export function evidenceText(item: DeviceQaEvidence): string {
+function evidenceText(item: DeviceQaEvidence): string {
   const on = `${item.deviceName} (${item.target.platform})`;
   switch (item.kind) {
     case "screenshot":

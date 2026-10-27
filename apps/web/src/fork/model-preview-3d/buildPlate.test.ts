@@ -1,7 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import {
-  BUILD_PLATE_PRESETS,
+  BUILT_IN_PRINTERS,
   addCustomBed,
   selectBed,
   BuildPlateSetting,
@@ -54,10 +54,10 @@ it("accepts every listed bed in saved settings and groups custom last", () => {
     ...DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate,
     customMm: [100, 200, 300],
   });
-  for (const id of Object.keys(BUILD_PLATE_PRESETS))
+  for (const id of Object.keys(BUILT_IN_PRINTERS))
     expect(decode({ preset: id, customMm: [100, 200, 300] }).preset).toBe(id);
   expect(groups.flatMap((group) => group.options.map((option) => option.id))).toEqual([
-    ...Object.keys(BUILD_PLATE_PRESETS),
+    ...Object.keys(BUILT_IN_PRINTERS),
     "custom",
   ]);
   expect(groups.at(-1)?.options[0]?.volumeMm).toEqual([100, 200, 300]);
@@ -81,7 +81,7 @@ it("describes fits and per-axis overage using the supplied length format", () =>
 
 it("resolves nozzle zones and keeps fit zone-aware when their tint is off", () => {
   const plate = resolvePlate({ ...DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate, showZones: false });
-  expect(plate.zones).toEqual(BUILD_PLATE_PRESETS["bambu-h2d"].zones);
+  expect(plate.zones).toEqual(BUILT_IN_PRINTERS["bambu-h2d"].zones);
   expect(plate.showZones).toBe(false);
   expect(fitPlate([200, 200, 323], plate).zone).toEqual({ reach: "one-zone", zoneIds: ["right"] });
   expect(

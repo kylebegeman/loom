@@ -12,7 +12,7 @@ import {
   type CustomBed,
   bedFitSummary,
   BedFitSummary,
-  BUILD_PLATE_PRESETS,
+  BUILT_IN_PRINTERS,
   BuildPlateSetting,
   fitOnBed,
   fitBed,
@@ -88,7 +88,7 @@ it.each([
 
 it("lists presets in stable table order and the custom slot last", () => {
   const beds = listBeds(setting);
-  expect(beds.map((bed) => bed.id)).toEqual([...Object.keys(BUILD_PLATE_PRESETS), "custom"]);
+  expect(beds.map((bed) => bed.id)).toEqual([...Object.keys(BUILT_IN_PRINTERS), "custom"]);
   expect(new Set(beds.map((bed) => bed.id)).size).toBe(beds.length);
   expect(beds.at(-1)).toEqual({
     id: "custom",
@@ -173,15 +173,15 @@ it.each([
     withinMm: [300, 320, 320],
   },
 ] as const)("refines H2D fit by nozzle reach and height for $size", ({ size, ...expected }) => {
-  expect(fitBed(size, BUILD_PLATE_PRESETS["bambu-h2d"])).toEqual(expected);
+  expect(fitBed(size, BUILT_IN_PRINTERS["bambu-h2d"])).toEqual(expected);
 });
 
 it("uses the H2C's narrower right nozzle and preserves ordinary bed fit", () => {
-  expect(fitBed([310, 310, 100], BUILD_PLATE_PRESETS["bambu-h2c"]).zone).toEqual({
+  expect(fitBed([310, 310, 100], BUILT_IN_PRINTERS["bambu-h2c"]).zone).toEqual({
     reach: "one-zone",
     zoneIds: ["left"],
   });
-  const bed = BUILD_PLATE_PRESETS["sheet-a4"];
+  const bed = BUILT_IN_PRINTERS["sheet-a4"];
   expect(fitBed([200, 290, 5000], bed)).toEqual({
     fit: { status: "fits-rotated" },
     zone: null,
@@ -203,7 +203,7 @@ it("prefers an unturned single-nozzle fit while reporting every fitting nozzle",
 
 it("derives the shared area and front-left single-nozzle strips", () => {
   for (const preset of ["bambu-h2d", "bambu-h2c"] as const) {
-    const bed = BUILD_PLATE_PRESETS[preset];
+    const bed = BUILT_IN_PRINTERS[preset];
     expect(sharedZone(bed.zones, bed.volumeMm[2])).toEqual({
       offsetMm: [25, 0],
       footprintMm: [300, 320],

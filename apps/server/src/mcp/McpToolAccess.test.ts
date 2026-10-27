@@ -14,7 +14,7 @@ import {
   ServerSettingsError, // fork: mcp-refusals
   ThreadId,
 } from "@t3tools/contracts";
-import { botRunThreadId } from "@t3tools/contracts/fork";
+import { botRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -48,7 +48,7 @@ const backgroundThreadId = ThreadId.make("thread:background");
 const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
-const botRunId = botRunThreadId("run-1");
+const botRunId = botRunThreadId("run-1"); // fork: bots
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -64,7 +64,7 @@ const shells = new Map([
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
-  [botRunId, liveThreadShell(botRunId)],
+  [botRunId, liveThreadShell(botRunId)], // fork: bots
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -239,7 +239,7 @@ const supervised = threadCaller(supervisedThreadId);
 const plan = threadCaller(planThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
 const ended = threadCaller(endedThreadId);
-const botRun = threadCaller(botRunId);
+const botRun = threadCaller(botRunId); // fork: bots
 const background = threadCaller(backgroundThreadId);
 const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);
@@ -315,6 +315,7 @@ it.effect.each([
   ["starts_threads", supervisedClient, {}, "approval-required/default"],
   ["starts_threads", supervisedClient, { runtimeMode: "auto" }, "runtime_mode_escalation_denied"],
   ["starts_threads", fullAccessClient, { runtimeMode: "full-access" }, "full-access/default"],
+  // fork: bots
   ["starts_threads", botRun, {}, "capability_denied"],
   ["writes", botRun, {}, "ran"],
 

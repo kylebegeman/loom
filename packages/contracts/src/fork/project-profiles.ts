@@ -10,7 +10,6 @@ import {
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 
-export const PROJECT_PROFILES_FEATURE = "project-profiles";
 export const PROJECT_PROFILES_WS_METHODS = {
   get: "loom.project-profiles.get",
   update: "loom.project-profiles.update",

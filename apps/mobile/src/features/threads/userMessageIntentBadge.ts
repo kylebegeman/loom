@@ -11,11 +11,13 @@ export function resolveUserMessageIntentBadge(
   switch (intent) {
     case "steer":
       return {
+        // fork: everyday-workflows
         label: "Send now",
         accessibilityLabel: "Requested delivery during the active turn",
       };
     case "promoted_queued_to_steer":
       return {
+        // fork: everyday-workflows
         label: "Send now",
         accessibilityLabel: "Originally queued, then requested delivery during the active turn",
       };

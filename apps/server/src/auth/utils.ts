@@ -3,11 +3,11 @@ import type {
   AuthClientMetadataDeviceType,
   AuthClientPresentationMetadata,
 } from "@t3tools/contracts";
-import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerRequest from "effect/http/HttpServerRequest"; // fork: secure-session-cookies
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac or timingSafeEqual.
 import * as NodeCrypto from "node:crypto";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: secure-session-cookies
 import * as Result from "effect/Result";
 
 const SESSION_COOKIE_NAME = "t3_session";
@@ -53,11 +53,10 @@ export function resolveLegacySessionCookieName(input: {
 
 // fork: secure-session-cookies
 /**
- * The server itself listens on plain HTTP, so a request only counts as HTTPS
- * when a TLS-terminating proxy says so through `X-Forwarded-Proto`, the same
- * signal MCP OAuth uses for its issuer. Session cookies set over HTTPS must be
- * `Secure`, or a proxy that also answers plain HTTP leaks them; cookies set
- * over LAN, tailnet or loopback HTTP must not be, or the browser drops them.
+ * The server listens on plain HTTP, so only a TLS proxy's `X-Forwarded-Proto` marks a
+ * request HTTPS, as for MCP OAuth's issuer. Cookies set over HTTPS must be `Secure` or a
+ * proxy that also answers plain HTTP leaks them; cookies set over LAN, tailnet or
+ * loopback HTTP must not be, or the browser drops them.
  */
 export const isHttpsRequest = (request: HttpServerRequest.HttpServerRequest): boolean =>
   Option.exists(HttpServerRequest.toURL(request), (url) => url.protocol === "https:");

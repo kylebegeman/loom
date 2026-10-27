@@ -172,7 +172,7 @@ supports from the slicer's own output and does not use it.
 
 ### Model formats (created by L41 or L50)
 
-`packages/contracts/src/fork/model-preview-3d.ts` exports `MODEL_EXTENSIONS` and
+`packages/contracts/src/fork/model-preview-3d.ts` exports
 `modelFormatOf(path): ModelFormat | null`, the one place a path becomes a format, as
 [L50's TECHNICAL.md](./L50-model-python-cad/TECHNICAL.md) defines them. Server, web, MCP and
 L41's turn file list call it instead of keeping their own maps. If L41 lands first it creates it

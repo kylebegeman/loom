@@ -25,7 +25,7 @@ export function WorktreeSetupSheet({ children, height, onClose }: WorktreeSetupS
             }}
           >
             <AndroidSheetHeader
-              title="Workspace setup"
+              title="Workspace setup" // fork: project-lifecycle
               actions={[
                 { accessibilityLabel: "Close setup details", icon: "xmark", onPress: onClose },
               ]}

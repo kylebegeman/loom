@@ -79,7 +79,7 @@ function isSuccessfullyResolved<A, E>(cached: Option.Option<Exit.Exit<A, E>>): b
 
 // fork: project-preparation - Pending revisions keep invalidated work in its bounded lane.
 interface EnrichmentWorkLane {
-  readonly pendingRoots: Ref.Ref<ReadonlyMap<string, number>>;
+  readonly pendingRoots: Ref.Ref<ReadonlyMap<string, number>>; // fork: project-preparation
   readonly queue: Queue.Queue<string>;
 }
 
@@ -116,7 +116,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     },
   );
   const makeWorkLane = Effect.gen(function* () {
-    const pendingRoots = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+    const pendingRoots = yield* Ref.make<ReadonlyMap<string, number>>(new Map()); // fork: project-preparation
     const queue = yield* Effect.acquireRelease(Queue.dropping<string>(maxPending), (queue) =>
       Queue.shutdown(queue),
     );
@@ -132,7 +132,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const removePending = (lane: EnrichmentWorkLane, workspaceRoot: string) =>
     Ref.update(lane.pendingRoots, (current) => {
       if (!current.has(workspaceRoot)) return current;
-      const next = new Map(current);
+      const next = new Map(current); // fork: project-preparation
       next.delete(workspaceRoot);
       return next;
     });
@@ -142,6 +142,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       if (current.has(workspaceRoot) || current.size >= maxPending) {
         return [false, current] as const;
       }
+      // fork: project-preparation
       const next = new Map(current);
       next.set(workspaceRoot, 0);
       return [true, next] as const;
@@ -161,6 +162,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       : Effect.void;
 
   const resolveRepositoryIdentity = Effect.fn("ProjectEnrichmentService.resolveRepositoryIdentity")(
+    // fork: project-preparation
     function* (workspaceRoot: string, revision: number) {
       const repositoryIdentity = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
       yield* logFailure(workspaceRoot, "repositoryIdentity", repositoryIdentity);
@@ -198,9 +200,11 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   // fork: project-preparation - Superseded work reruns in its reserved slot without stale publication.
   const startWorkers = (
     lane: EnrichmentWorkLane,
+    // fork: project-preparation
     resolve: (workspaceRoot: string, revision: number) => Effect.Effect<void>,
     invalidateCache: (workspaceRoot: string) => Effect.Effect<void>,
   ) => {
+    // fork: project-preparation
     const resolvePending = Effect.fn("resolvePending")(function* (workspaceRoot: string) {
       while (true) {
         const revision = (yield* Ref.get(lane.pendingRoots)).get(workspaceRoot);
@@ -219,6 +223,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     });
     const worker = Queue.take(lane.queue).pipe(
       Effect.flatMap((workspaceRoot) =>
+        // fork: project-preparation
         resolvePending(workspaceRoot).pipe(
           Effect.onExit((exit) =>
             Exit.isFailure(exit) ? removePending(lane, workspaceRoot) : Effect.void,
@@ -233,6 +238,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   };
   yield* Effect.all(
     [
+      // fork: project-preparation
       startWorkers(repositoryIdentityLane, resolveRepositoryIdentity, (workspaceRoot) =>
         Cache.invalidate(repositoryIdentityCache, workspaceRoot),
       ),
@@ -327,6 +333,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
           ],
           { concurrency: "unbounded", discard: true },
         ).pipe(
+          // fork: project-preparation
           Effect.andThen(
             Effect.all(
               [

@@ -22,6 +22,7 @@ describe("resolveCloudPublicConfig", () => {
       clerk: {
         publishableKey: "pk_test_example",
         jwtTemplate: "t3-relay",
+        // fork: fleet-connect
         nativeAuthDomain: null,
         accountPortalUrl: null,
       },

@@ -41,7 +41,7 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
   readonly getSnapshotAtom: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2ArchivedShellSnapshot, E>>;
-  readonly getIsConnectedAtom?: (environmentId: EnvironmentId) => Atom.Atom<boolean>;
+  readonly getIsConnectedAtom?: (environmentId: EnvironmentId) => Atom.Atom<boolean>; // fork: fleet-connections
   readonly labelPrefix: string;
 }) {
   return Atom.family((environmentKey: string) =>
@@ -49,27 +49,30 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
       const snapshots: ArchivedSnapshotEntry[] = [];
       let error: string | null = null;
       let isLoading = false;
-      let disconnectedCount = 0;
+      let disconnectedCount = 0; // fork: fleet-connections
 
       for (const environmentId of parseArchivedThreadsEnvironmentKey(environmentKey)) {
+        // fork: fleet-connections
         const isConnected =
           options.getIsConnectedAtom === undefined ||
           get(options.getIsConnectedAtom(environmentId));
         if (!isConnected) disconnectedCount += 1;
         // Keep disconnected queries mounted to retain cached data and resume on reconnect.
         const result = get(options.getSnapshotAtom(environmentId));
-        isLoading ||= isConnected && result.waiting;
+        isLoading ||= isConnected && result.waiting; // fork: fleet-connections
 
         const snapshot = Option.getOrNull(AsyncResult.value(result));
         if (snapshot !== null) {
           snapshots.push({ environmentId, snapshot });
         }
 
+        // fork: fleet-connections
         if (error === null && isConnected && result._tag === "Failure") {
           error = "Failed to load archived threads.";
         }
       }
 
+      // fork: fleet-connections
       if (disconnectedCount > 0) {
         const disconnectedError = `${disconnectedCount} ${disconnectedCount === 1 ? "computer is" : "computers are"} not connected. Reconnect in Settings > Computers to see all archived threads.`;
         error = error === null ? disconnectedError : `${error} ${disconnectedError}`;

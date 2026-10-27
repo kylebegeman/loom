@@ -1,7 +1,7 @@
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
-import type { KeybindingCommand } from "@t3tools/contracts";
+import type { KeybindingCommand } from "@t3tools/contracts"; // fork: ext-keybindings
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { buildKeybindingCommandOptions, commandLabel } from "./KeybindingsSettings.logic"; // fork: ext-keybindings
-import type { ResolvedSettingsScope } from "./settingsScope";
+import type { ResolvedSettingsScope } from "./settingsScope"; // fork: project-home
 
 export type SettingsPath =
   | "/settings/loom" // fork: ext-settings
@@ -1202,6 +1202,8 @@ export function isSettingsSearchScopeAvailable(
       );
   }
 }
+
+// fork: project-home -- no isSettingsOverviewVisible; Projects shows at every scope
 
 export function searchableSetting(id: SettingsSearchItemId): {
   readonly id: string;

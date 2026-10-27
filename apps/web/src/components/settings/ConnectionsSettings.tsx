@@ -4,7 +4,7 @@ import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; 
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { useRef, useState } from "react"; // fork: tailnet-ownership
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -16,7 +16,7 @@ import {
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
   type DesktopServerExposureState,
-  type DesktopTailscaleServeStatus,
+  type DesktopTailscaleServeStatus, // fork: tailnet-ownership
   type DesktopWslState,
   type EnvironmentId,
   resolveEnvironmentMachineKind,
@@ -31,11 +31,12 @@ import * as Cause from "effect/Cause";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import {
   applyWslEnableSelection,
-  describeTailscaleServeRow,
+  describeTailscaleServeRow, // fork: tailnet-ownership
   isWslSettingsRowVisible,
-  localBackendPort,
-  parseTailscaleServePort,
+  localBackendPort, // fork: tailnet-ownership
+  parseTailscaleServePort, // fork: tailnet-ownership
   resolveLocalVersionStatusLabel,
+  // fork: tailnet-ownership
   tailscaleServeBaseUrl,
   tailscaleServePortProblem,
   tailscaleServeSetupBlocker,
@@ -110,6 +111,7 @@ import {
 } from "~/state/environments";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useAtomCommand } from "../../state/use-atom-command";
+// fork: machine-updates -- FleetUpdatesSection owns Update all
 import { serverEnvironment } from "~/state/server";
 import { ServerUpdateAction, ServerUpdateProgress } from "../ServerUpdateAction";
 import {
@@ -178,6 +180,7 @@ export function ConnectionsSettings() {
   const listedEnvironments = savedEnvironments.filter(
     (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
   );
+  // fork: machine-updates -- FleetUpdatesSection lists update targets
   const loadBalancingEnvironments = [
     ...(primaryEnvironment ? [primaryEnvironment] : []),
     ...savedEnvironments.filter((environment) => environment.entry.enabled),
@@ -228,6 +231,7 @@ export function ConnectionsSettings() {
     | { readonly kind: "wsl-only"; readonly nextValue: boolean };
   const [pendingWslChange, setPendingWslChange] = useState<PendingWslChange | null>(null);
   const isWslConfirmDialogOpen = pendingWslChange !== null;
+  // fork: tailnet-ownership
   // Null while the setup dialog is closed; `status` stays null until Tailscale answers.
   const [tailscaleSetup, setTailscaleSetup] = useState<{
     readonly checking: boolean;
@@ -306,6 +310,7 @@ export function ConnectionsSettings() {
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
+  // fork: tailnet-ownership
   const tailscaleSetupPort = parseTailscaleServePort(tailscaleServePortInput);
   const tailscaleSetupBlocker = tailscaleServeSetupBlocker(tailscaleSetup?.status ?? null);
   const tailscaleSetupPortProblem = tailscaleServePortProblem({
@@ -366,16 +371,16 @@ export function ConnectionsSettings() {
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
       return;
-    if (!canConfirmTailscaleServeSetup || tailscaleSetupPort === null) return;
+    if (!canConfirmTailscaleServeSetup || tailscaleSetupPort === null) return; // fork: tailnet-ownership
     setIsUpdatingTailscaleServe(true);
     setDesktopServerExposureMutationError(null);
     const settled = await settlePromise(async () => {
       await desktopBridge.setTailscaleServeEnabled({
         enabled: true,
-        port: tailscaleSetupPort,
+        port: tailscaleSetupPort, // fork: tailnet-ownership
       });
       refreshDesktopNetworkAccessState();
-      setTailscaleSetup(null);
+      setTailscaleSetup(null); // fork: tailnet-ownership
     });
     if (settled._tag === "Failure") {
       const error = Cause.squash(settled.cause);
@@ -393,12 +398,14 @@ export function ConnectionsSettings() {
     setIsUpdatingTailscaleServe(false);
   };
 
+  // fork: tailnet-ownership
   // Reading Tailscale can raise a macOS privacy prompt, so it waits for this click.
   const handleStartTailscaleServeSetup = () => {
     if (!desktopBridge) return;
     setTailscaleServePortInput(
       String(desktopServerExposureState?.tailscaleServePort ?? DEFAULT_TAILSCALE_SERVE_PORT),
     );
+    // fork: tailnet-ownership
     const request = ++tailscaleSetupRequest.current;
     const settle = (status: DesktopTailscaleServeStatus | null) => {
       if (request !== tailscaleSetupRequest.current) return;
@@ -443,6 +450,7 @@ export function ConnectionsSettings() {
     setIsUpdatingTailscaleServe(false);
   };
 
+  // fork: tailnet-ownership
   const handleStartTailscaleServeDisable = () => {
     setDisableTailscaleServeDialogOpen(true);
   };
@@ -883,6 +891,7 @@ export function ConnectionsSettings() {
     );
   };
 
+  // fork: tailnet-ownership
   const tailscaleRowStatus = describeTailscaleServeRow({
     state: desktopServerExposureState,
     endpoint: tailscaleHttpsEndpoint,
@@ -890,9 +899,10 @@ export function ConnectionsSettings() {
   const renderTailscaleRow = () => (
     <SettingsRow
       title={searchableSetting("tailscale-https").title}
-      description={tailscaleRowStatus.text}
+      description={tailscaleRowStatus.text} // fork: tailnet-ownership
       control={
         <div className="flex items-center gap-2">
+          {/* fork: tailnet-ownership */}
           {tailscaleRowStatus.needsAttention ? (
             <Button
               size="xs"
@@ -904,17 +914,18 @@ export function ConnectionsSettings() {
             </Button>
           ) : null}
           <Switch
-            checked={desktopServerExposureState?.tailscaleServeEnabled === true}
-            disabled={!desktopServerExposureState || isUpdatingTailscaleServe}
+            checked={desktopServerExposureState?.tailscaleServeEnabled === true} // fork: tailnet-ownership
+            disabled={!desktopServerExposureState || isUpdatingTailscaleServe} // fork: tailnet-ownership
             onCheckedChange={(checked) => {
               if (checked) {
-                handleStartTailscaleServeSetup();
+                handleStartTailscaleServeSetup(); // fork: tailnet-ownership
                 return;
               }
-              handleStartTailscaleServeDisable();
+              handleStartTailscaleServeDisable(); // fork: tailnet-ownership
             }}
             aria-label="Enable Tailscale HTTPS"
           />
+          {/* fork: tailnet-ownership */}
         </div>
       }
     />
@@ -1123,6 +1134,7 @@ export function ConnectionsSettings() {
                 ) : null}
               </>
             ) : null}
+            {/* fork: library-sign-in */}
             <CurrentIdentitySession session={primarySessionState.data} />
             {primaryEnvironment ? (
               <details className="group px-3 sm:px-4">
@@ -1200,8 +1212,10 @@ export function ConnectionsSettings() {
                 <AlertDialogDescription>
                   {/* fork: brand */}
                   {pendingDesktopServerExposureMode === "network-accessible"
-                    ? "Let your other devices connect to Loom over the network. Pair devices to give them access. Loom will restart."
-                    : "Devices connected over your local network will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Loom will restart."}
+                    ? // fork: brand
+                      "Let your other devices connect to Loom over the network. Pair devices to give them access. Loom will restart."
+                    : // fork: connect-off -- T3 Connect is no longer offered as a tunnel
+                      "Devices connected over your local network will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Loom will restart."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1386,10 +1400,10 @@ export function ConnectionsSettings() {
             </AlertDialogPopup>
           </AlertDialog>
           <Dialog
-            open={tailscaleSetup !== null}
+            open={tailscaleSetup !== null} // fork: tailnet-ownership
             onOpenChange={(open) => {
               if (isUpdatingTailscaleServe) return;
-              if (!open) setTailscaleSetup(null);
+              if (!open) setTailscaleSetup(null); // fork: tailnet-ownership
             }}
           >
             <DialogPopup className="max-w-md">
@@ -1416,6 +1430,7 @@ export function ConnectionsSettings() {
                     disabled={isUpdatingTailscaleServe}
                   />
                 </label>
+                {/* fork: tailnet-ownership */}
                 {tailscaleSetup?.checking ? (
                   <p className="mt-2 text-xs text-muted-foreground">Checking Tailscale…</p>
                 ) : null}
@@ -1430,6 +1445,7 @@ export function ConnectionsSettings() {
                     <TooltipTrigger
                       render={
                         <p className="mt-1 truncate text-sm text-foreground">
+                          {/* fork: tailnet-ownership */}
                           {pendingTailscaleServeBaseUrl ?? "Your tailnet's MagicDNS address"}
                         </p>
                       }
@@ -1449,7 +1465,7 @@ export function ConnectionsSettings() {
                 </DialogClose>
                 <Button
                   onClick={() => void handleConfirmTailscaleServeSetup()}
-                  disabled={isUpdatingTailscaleServe || !canConfirmTailscaleServeSetup}
+                  disabled={isUpdatingTailscaleServe || !canConfirmTailscaleServeSetup} // fork: tailnet-ownership
                 >
                   {isUpdatingTailscaleServe ? (
                     <>
@@ -1501,6 +1517,7 @@ export function ConnectionsSettings() {
         isReady={isReady}
         headerActions={
           <div className="flex items-center gap-1">
+            {/* fork: machine-updates -- FleetUpdatesSection owns Update all */}
             <AddEnvironmentDialog
               open={addBackendDialogOpen}
               routeTarget={routeTarget}
@@ -1512,6 +1529,7 @@ export function ConnectionsSettings() {
             />
           </div>
         }
+        // fork: fleet-connections
         computerRows={
           <>
             {listedEnvironments.map((environment) => (
@@ -1535,7 +1553,7 @@ export function ConnectionsSettings() {
             primaryEnvironmentId={primaryEnvironmentId}
             savedEnvironments={savedEnvironments}
           />
-        }
+        } // fork: fleet-connections
       />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog

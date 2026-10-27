@@ -11,7 +11,6 @@ import {
   resourceLink,
 } from "@t3tools/client-runtime/fork";
 import {
-  ArrowRightIcon,
   ArrowUpRightIcon,
   EllipsisIcon,
   FolderGit2Icon,
@@ -23,7 +22,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { cn, randomUUID } from "~/lib/utils";
-import { LibraryField, LibraryPanel, LibrarySection } from "./LibraryControls";
+import { LibraryField, LibrarySection } from "./LibraryControls";
 
 const MAX_RESOURCES = 64;
 
@@ -254,46 +253,8 @@ function ResourceRow({
   );
 }
 
-/** The overview's glance at what the project is made of. */
-export function ResourcesSummary({
-  resources,
-  onShowAll,
-}: {
-  readonly resources: readonly LibraryResource[];
-  readonly onShowAll: () => void;
-}) {
-  return (
-    <LibraryPanel
-      title="Repositories and links"
-      icon={FolderGit2Icon}
-      count={resources.length}
-      action={
-        <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
-          {resources.length ? "Manage" : "Add"}
-          <ArrowRightIcon />
-        </Button>
-      }
-    >
-      {resources.length ? (
-        <ul className="divide-y divide-border border-t border-border">
-          {resources.map((resource) => (
-            <li key={resource.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2">
-              <ResourceIcon resource={resource} />
-              <p className="min-w-0 truncate text-sm">{resource.title}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
-          The repositories this project is made of, plus any links worth keeping close.
-        </p>
-      )}
-    </LibraryPanel>
-  );
-}
-
 /** Works inside another form, so Enter adds the resource rather than submitting the outer form. */
-export function ResourceAdder({
+function ResourceAdder({
   resources,
   busy,
   autoFocus = false,

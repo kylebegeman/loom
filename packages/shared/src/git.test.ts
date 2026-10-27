@@ -28,6 +28,7 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  // fork: project-checkout-management
   it.each([
     "https://user:private-token@github.com/T3Tools/T3Code.git?access_token=secret#secret",
     "https://github.com/T3Tools/T3Code.git#revision",
@@ -258,6 +259,7 @@ describe("applyGitStatusStreamEvent", () => {
     });
   });
 
+  // fork: checkpoint-capable
   it("preserves nongit checkpoint capability through remote status updates", () => {
     for (const checkpointCapable of [true, false]) {
       const current: VcsStatusResult = {

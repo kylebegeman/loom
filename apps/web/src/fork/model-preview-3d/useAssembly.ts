@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
-  relativePartPath,
   resolvePartPath,
   type AssemblyPart,
   type AssemblyOperation,
@@ -14,7 +13,7 @@ import {
 import { randomUUID } from "~/lib/utils";
 import { models, runModelCommand } from "./state";
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
-export const assemblyBasis = (snapshot: AssemblyReadResult) =>
+const assemblyBasis = (snapshot: AssemblyReadResult) =>
   JSON.stringify([
     snapshot.revision,
     snapshot.parts.map((part) => [part.id, part.revision, part.error]),
@@ -286,4 +285,3 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
     loadParameters,
   };
 }
-export const assemblyPartPath = relativePartPath;

@@ -10,11 +10,11 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts"; // fork: directory-computers
 
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
-import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
+import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts"; // fork: directory-computers
 import { resolveBoundEndpoints } from "./DirectEndpoints.ts";
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
@@ -195,6 +195,7 @@ const layerTailscaleUp = Layer.succeed(
   ),
 );
 
+// fork: directory-computers
 const ENVIRONMENT_ID = "env-direct-endpoints";
 
 const layerIdentity = Layer.succeed(ServerEnvironmentIdentity, {
@@ -204,9 +205,11 @@ const layerIdentity = Layer.succeed(ServerEnvironmentIdentity, {
 const layerServeProbe = (answer: () => Response) =>
   Layer.succeed(
     HttpClient.HttpClient,
+    // fork: directory-computers
     HttpClient.make((request) => Effect.succeed(HttpClientResponse.fromWeb(request, answer()))),
   );
 
+// fork: directory-computers
 const describing = (environmentId: string) => () =>
   Response.json({ environmentId, label: "Studio" }, { status: 200 });
 
@@ -223,11 +226,13 @@ const layerServeConfig = Layer.effect(
   Layer.provide(NodeServices.layer),
 );
 
+// fork: directory-computers
 const resolveWithServe = (answer: () => Response) =>
   Effect.flatMap(DirectEndpoints.DirectEndpoints, (service) => service.resolve()).pipe(
     Effect.provide(
       DirectEndpoints.layer.pipe(
         Layer.provide(
+          // fork: directory-computers
           Layer.mergeAll(
             layerServeConfig,
             layerTailscaleUp,
@@ -240,16 +245,20 @@ const resolveWithServe = (answer: () => Response) =>
   );
 
 describe("DirectEndpoints Tailscale Serve", () => {
+  // fork: directory-computers
   effectIt.effect("lists the tailnet name once Serve answers as this server", () =>
     Effect.gen(function* () {
+      // fork: directory-computers
       expect(yield* resolveWithServe(describing(ENVIRONMENT_ID))).toEqual([
         { kind: "tailnet", httpBaseUrl: "https://bb-1.tail1234.ts.net/" },
       ]);
     }),
   );
 
+  // fork: directory-computers
   effectIt.effect("leaves the tailnet name out when the port answers for something else", () =>
     Effect.gen(function* () {
+      // fork: directory-computers
       expect(yield* resolveWithServe(describing("env-another-loom"))).toEqual([]);
       expect(yield* resolveWithServe(() => new Response("<html></html>", { status: 200 }))).toEqual(
         [],

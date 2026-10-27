@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { TestClock } from "effect/testing";
 
-import * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts"; // fork: project-lifecycle
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
@@ -18,6 +18,7 @@ const layerTest = Layer.empty.pipe(
       Layer.provide(T3ProjectFileLoader.layer),
     ),
   ),
+  // fork: project-lifecycle
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3code-project-favicon-" })),
   Layer.provideMerge(NodeServices.layer),
 );

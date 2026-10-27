@@ -2,6 +2,7 @@ import type {
   EnvironmentPresentation,
   PreparedConnection,
 } from "@t3tools/client-runtime/connection";
+// fork: library-sign-in
 import {
   PrimaryConnectionTarget,
   BearerConnectionTarget,
@@ -9,7 +10,7 @@ import {
   RelayConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import type { ServerConfig } from "@t3tools/contracts";
-import { EnvironmentId, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { EnvironmentId, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts"; // fork: computer-naming
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -81,6 +82,7 @@ function makeHarness() {
 }
 
 describe("remote environment projections", () => {
+  // fork: library-sign-in
   it("keeps the saved Identity host and account available after expiry and while another route is in use", () => {
     const harness = makeHarness();
     const identity = { issuer: "https://id.example.test", subject: "owner" };

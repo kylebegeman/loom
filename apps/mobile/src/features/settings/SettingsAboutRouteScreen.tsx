@@ -24,6 +24,7 @@ export function SettingsAboutRouteScreen() {
   const insets = useSafeAreaInsets();
 
   return (
+    // fork: brand
     <SettingsScreen title={`About ${BRAND_NAME}`}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"

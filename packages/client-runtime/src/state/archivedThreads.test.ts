@@ -1,6 +1,6 @@
 import { EnvironmentId, type OrchestrationV2ArchivedShellSnapshot } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: fleet-connections
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it } from "vite-plus/test";
 
@@ -8,7 +8,7 @@ import {
   createArchivedThreadSnapshotsAtomFamily,
   makeArchivedThreadsEnvironmentKey,
 } from "./archivedThreads.ts";
-import { v2Now, v2Project, v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
+import { v2Now, v2Project, v2ThreadShell } from "./orchestrationV2TestFixtures.ts"; // fork: fleet-connections
 
 it("does not expose an archived snapshot failure message", () => {
   const environmentId = EnvironmentId.make("env-sensitive");
@@ -32,6 +32,7 @@ it("does not expose an archived snapshot failure message", () => {
   registry.dispose();
 });
 
+// fork: fleet-connections
 const emptySnapshot: OrchestrationV2ArchivedShellSnapshot = {
   schemaVersion: 1,
   snapshotSequence: 0,

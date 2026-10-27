@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, ScheduledTaskId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ScheduledTaskId } from "@t3tools/contracts"; // fork: project-home
 import {
   createMemoryHistory,
   createRootRoute,
@@ -54,10 +54,11 @@ function createSettingsRouter(initialEntry = "/settings/general") {
     path: "scheduled-tasks",
     validateSearch: validateScheduledTasksSearch,
   });
+  // fork: project-home
   const projectHome = createRoute({
     getParentRoute: () => root,
     path: "projects/$projectKey",
-    validateSearch: validateProjectHomeSearch,
+    validateSearch: validateProjectHomeSearch, // fork: project-home
   });
   return createRouter({
     routeTree: root.addChildren([
@@ -69,7 +70,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
         providers,
         scheduledTasks,
       ]),
-      projectHome,
+      projectHome, // fork: project-home
     ]),
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
@@ -208,12 +209,13 @@ describe("settings scope navigation", () => {
     expect(reloaded.state.location.search).toEqual(checkoutSearch);
   });
 
+  // fork: project-home
   it("opens Project home separately and keeps Settings actions scoped without prior checkout filters", async () => {
     const router = createSettingsRouter();
     await router.navigate({ to: "/settings/general", search: checkoutSearch });
     await router.navigate({
       to: "/projects/$projectKey",
-      params: { projectKey: "home-project" },
+      params: { projectKey: "home-project" }, // fork: project-home
       search: { computer: EnvironmentId.make("pi"), checkoutId: ProjectId.make("pi-checkout") },
     });
     expect(router.state.redirect).toBeUndefined();
@@ -223,8 +225,9 @@ describe("settings scope navigation", () => {
       to: "/settings/projects",
       search: { project: "home-project", machine: undefined, checkout: undefined },
     });
+    // fork: project-home -- Project home renders, so no settings redirect to follow
     expect(router.state.location.pathname).toBe("/settings/projects");
-    expect(router.state.location.search).toEqual({ project: "home-project" });
+    expect(router.state.location.search).toEqual({ project: "home-project" }); // fork: project-home
   });
 
   it("keeps scope through the settings index redirect", async () => {

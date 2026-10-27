@@ -26,8 +26,8 @@ import {
   type DpopFailureReason as DpopFailureReasonType,
 } from "@t3tools/contracts";
 import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { identityAccountFromSession } from "./identityPolicy.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sign-in
+import { identityAccountFromSession } from "./identityPolicy.ts"; // fork: library-sign-in
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -714,7 +714,7 @@ function isBrowserOriginAllowed(
 
 /** @public */
 export const make = Effect.gen(function* () {
-  const identityEnvironment = yield* HostProcess.Environment;
+  const identityEnvironment = yield* HostProcess.Environment; // fork: library-sign-in
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
@@ -829,6 +829,7 @@ export const make = Effect.gen(function* () {
 
   const getSessionState: EnvironmentAuth["Service"]["getSessionState"] = (request) =>
     authenticateRequest(request).pipe(
+      // fork: library-sign-in
       Effect.map((session) => {
         const identity = identityAccountFromSession(session.subject, identityEnvironment);
         return {

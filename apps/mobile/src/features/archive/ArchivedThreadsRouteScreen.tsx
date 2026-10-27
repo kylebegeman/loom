@@ -11,7 +11,7 @@ import {
   type ArchivedThreadsHeaderEnvironment,
 } from "./ArchivedThreadsScreen";
 import {
-  archivedThreadQueryEnvironmentIds,
+  archivedThreadQueryEnvironmentIds, // fork: fleet-connections
   buildArchivedThreadGroups,
   type ArchivedThreadSortOrder,
 } from "./archivedThreadList";
@@ -39,6 +39,7 @@ export function ArchivedThreadsRouteScreen() {
     [savedConnectionsById],
   );
   const environmentIds = useMemo(
+    // fork: fleet-connections
     () =>
       archivedThreadQueryEnvironmentIds(
         environments.map((environment) => environment.environmentId),

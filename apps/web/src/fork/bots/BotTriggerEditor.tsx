@@ -98,7 +98,7 @@ export const TRIGGER_KIND_ICONS: Record<BotTriggerEventKind, LucideIcon> = {
   schedule: ClockIcon,
 };
 
-export const TRIGGER_KIND_HINTS: Record<BotTriggerEventKind, string> = {
+const TRIGGER_KIND_HINTS: Record<BotTriggerEventKind, string> = {
   "pull-request-checks-failing":
     "Fires when a linked pull request's checks turn failing, and again for a new failing commit.",
   "pull-request-opened": "Fires the first time Loom sees a linked pull request open.",

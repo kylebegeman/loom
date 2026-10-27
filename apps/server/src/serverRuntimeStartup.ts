@@ -492,10 +492,11 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
       ).pipe(
         Effect.ensuring(runShutdownPhase("providerSessions.shutdown", providerSessions.shutdown)),
       );
+      // fork: server-weight
       const reconciliation = yield* runShutdownPhase(
         "reconcile",
         providerRuntimeRecovery.reconcile("shutdown"),
-      );
+      ); // fork: server-weight
       yield* Effect.logInfo("V2 orchestration shutdown reconciliation completed", reconciliation);
     }).pipe(
       Effect.catchCause((cause) =>

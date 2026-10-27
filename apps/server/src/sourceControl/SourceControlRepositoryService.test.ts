@@ -16,7 +16,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import * as ProjectPlacement from "../project/ProjectPlacement.ts";
+import * as ProjectPlacement from "../project/ProjectPlacement.ts"; // fork: file-placement
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -64,9 +64,10 @@ function layer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
-  readonly placement?: Partial<ProjectPlacement.ProjectPlacement["Service"]>;
+  readonly placement?: Partial<ProjectPlacement.ProjectPlacement["Service"]>; // fork: file-placement
 }) {
   const layerService = SourceControlRepositoryService.layer.pipe(
+    // fork: file-placement
     Layer.provide(
       Layer.mock(ProjectPlacement.ProjectPlacement)({
         findRepositoryCheckouts: () => Effect.succeed([]),
@@ -179,6 +180,7 @@ it.effect("clones a looked-up repository after creating missing parent directori
         cwd: destinationPath,
         remoteUrl: CLONE_URLS.url,
         repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
+        // fork: file-placement
         destinationPath,
         reused: false,
       });
@@ -205,6 +207,7 @@ it.effect("clones a looked-up repository after creating missing parent directori
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+// fork: file-placement
 it.effect("an omitted destination reuses a checkout of the same origin without running git", () => {
   const gitCalls: Array<ReadonlyArray<string>> = [];
   const asked: Array<string> = [];

@@ -86,9 +86,9 @@ const keywords = new Set(
     .toLowerCase()
     .split(" "),
 );
-export const isGroundNet = (net: string) =>
+const isGroundNet = (net: string) =>
   /^(?:[ADP]?GND\w*|VSS\w*|0V)$/i.test(net.split("/").at(-1) ?? "");
-export const isPowerNet = (net: string) =>
+const isPowerNet = (net: string) =>
   /^(?:[+-]?(?:VCC|VDD|VEE|VBUS|VBAT|VIN|VOUT|\d+V\d*|V\d+V\d*))(?:\b|_)/i.test(
     net.split("/").at(-1) ?? "",
   );

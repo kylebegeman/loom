@@ -11,10 +11,11 @@ import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import {
   buildTailscaleHttpsBaseUrl,
-  claimTailscaleServe,
+  claimTailscaleServe, // fork: directory-computers
   DEFAULT_TAILSCALE_SERVE_PORT,
+  // fork: directory-computers -- claimTailscaleServe replaces ensureTailscaleServe.
   readTailscaleStatus,
-  TAILSCALE_SERVE_CLAIMS_FILE,
+  TAILSCALE_SERVE_CLAIMS_FILE, // fork: directory-computers
 } from "@t3tools/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -23,7 +24,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
+import * as Path from "effect/Path"; // fork: directory-computers
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import { Command, Flag, GlobalFlag } from "effect/cli";
@@ -140,9 +141,10 @@ export class TailscaleServeFailedError extends Schema.TaggedError<TailscaleServe
 
 export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupiedError>()(
   "ServePortOccupiedError",
-  { servePort: Schema.Number, reason: Schema.String },
+  { servePort: Schema.Number, reason: Schema.String }, // fork: directory-computers
 ) {
   override get message(): string {
+    // fork: directory-computers
     return `${this.reason} Pass --tailscale-serve-port to publish this server on another port.`;
   }
 }
@@ -378,6 +380,7 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       servePort: input.servePort,
     });
 
+    // fork: directory-computers
     // Answering as this environment already is enough to pair; nothing needs to change.
     const existing = yield* probeEnvironmentDescriptor(baseUrl);
     if (existing._tag === "descriptor") {
@@ -389,11 +392,13 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
         return { baseUrl, notes };
       }
     }
+    // fork: directory-computers -- claimTailscaleServe refuses a port another app holds.
 
     const localTarget = resolveTailscaleLocalTarget(input.target.state);
     if (isDevServerNotProxiableError(localTarget)) {
       return yield* localTarget;
     }
+    // fork: directory-computers
     const path = yield* Path.Path;
     const { stateDir } = yield* ServerConfig.deriveServerPaths(
       input.target.baseDir,
@@ -410,8 +415,9 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
     const claim = yield* claimTailscaleServe({
       claimsPath: path.join(stateDir, TAILSCALE_SERVE_CLAIMS_FILE),
       servePort: input.servePort,
-      ...localTarget,
+      ...localTarget, // fork: directory-computers
     }).pipe(
+      // fork: directory-computers
       Effect.catchTags({
         TailscaleServeHttpsDisabledError: () => Effect.fail(new TailscaleServeNotEnabledError()),
         TailscaleServePortHeldError: occupied,
@@ -427,6 +433,7 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
         TailscaleServeClaimRecordError: failed,
       }),
     );
+    // fork: directory-computers
     if (claim.changed) {
       notes.push(
         `Tailscale Serve now maps ${baseUrl} to this server and persists across restarts. Remove only this mapping with \`tailscale serve --https=${String(input.servePort)} --set-path=/ off\`.`,

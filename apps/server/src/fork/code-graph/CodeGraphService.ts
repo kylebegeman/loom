@@ -59,7 +59,7 @@ const MODE_STRENGTH: Record<CodeGraphBuildMode, number> = { update: 0, full: 1, 
 const error = (reason: CodeGraphError["reason"], message: string) =>
   new CodeGraphError({ reason, message });
 
-export const invalidGraphMessage = (version: string | null, problem: string) =>
+const invalidGraphMessage = (version: string | null, problem: string) =>
   `This graph was built by Graphify ${version ?? "of an unknown version"} and does not have the ` +
   `shape Loom reads (${problem}). Loom is tested with Graphify ${TESTED_GRAPHIFY_VERSION}: ` +
   graphifyInstallCommands()[0];

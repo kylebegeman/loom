@@ -93,6 +93,7 @@ describe("resolveEnvironmentProjectMatch", () => {
     expect(resolveEnvironmentProjectMatch([fork], selected)).toBeNull(); // fork: fleet-connections
   });
 
+  // fork: fleet-connections
   it("does not retarget an existing draft when the target has no matching repository", () => {
     const selected = makeProject("t3code", "mac", { repositoryKey: "github.com/t3tools/t3code" });
     const target = [makeProject("unrelated", "server"), makeProject("also-unrelated", "server")];
@@ -150,11 +151,12 @@ describe("resolveDraftProjectSelection", () => {
     });
   });
 
+  // fork: fleet-connections
   it("returns to the picker when an explicit project disappears instead of choosing another", () => {
     const project = makeProject("t3code");
     expect(
       resolveDraftProjectSelection("environment:removed", [project], [makeScope([project])]),
-    ).toEqual({ kind: "pick" });
+    ).toEqual({ kind: "pick" }); // fork: fleet-connections
   });
 });
 

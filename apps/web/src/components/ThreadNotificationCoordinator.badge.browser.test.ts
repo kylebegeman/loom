@@ -103,7 +103,7 @@ vi.mock(import("../fork/scheduled-task-alerts/ScheduledTaskFailureAlerts"), () =
 }));
 
 import { startThreadNotifications } from "./ThreadNotificationCoordinator";
-import { threadNotificationTag } from "../threadNotifications";
+import { threadNotificationTag } from "../threadNotifications"; // fork: respectful-notifications
 
 let registry: AtomRegistry.AtomRegistry;
 const shellAtom = Atom.family((_id: string) => Atom.make<unknown>(null));
@@ -176,9 +176,9 @@ function toV2ThreadShell(input: typeof thread): OrchestrationV2ThreadShell {
           : "running",
     // fork: respectful-notifications
     pendingRuntimeRequest: input.hasPendingUserInput
-      ? { id: RuntimeRequestId.make("request-1"), kind: "user_input", createdAt: SHELL_NOW }
+      ? { id: RuntimeRequestId.make("request-1"), kind: "user_input", createdAt: SHELL_NOW } // fork: respectful-notifications
       : input.hasPendingApprovals
-        ? { id: RuntimeRequestId.make("request-1"), kind: "command", createdAt: SHELL_NOW }
+        ? { id: RuntimeRequestId.make("request-1"), kind: "command", createdAt: SHELL_NOW } // fork: respectful-notifications
         : null,
     latestVisibleMessage: null,
     latestUserMessageAt: null,
@@ -266,7 +266,7 @@ function setup() {
 }
 
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
-  "keeps %s badged after focus and when notifications are disabled",
+  "keeps %s badged after focus and when notifications are disabled", // fork: respectful-notifications
   async (flag) => {
     await using app = setup();
     app.start();
@@ -283,7 +283,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     expect(state.badge).toHaveBeenLastCalledWith(1);
     state.mode = "sound";
     app.changeSettings();
-    expect(state.badge).toHaveBeenLastCalledWith(1);
+    expect(state.badge).toHaveBeenLastCalledWith(1); // fork: respectful-notifications
     expect(notification.close).toHaveBeenCalled();
   },
 );

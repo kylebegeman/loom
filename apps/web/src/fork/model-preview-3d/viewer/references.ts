@@ -12,7 +12,7 @@ import {
 } from "three";
 
 export const REFERENCE_GAP_MM = 10;
-export const REFERENCE_SPECS = {
+const REFERENCE_SPECS = {
   card: { label: SCALE_REFERENCE_LABELS.card, size: [53.98, 85.6, 0.76] },
   "coin-us": { label: SCALE_REFERENCE_LABELS["coin-us"], size: [24.26, 24.26, 1.75] },
   "coin-euro": { label: SCALE_REFERENCE_LABELS["coin-euro"], size: [23.25, 23.25, 2.33] },

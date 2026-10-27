@@ -58,24 +58,24 @@ export function landingPath(url: URL): string {
     : `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function portOf(url: URL): number {
+function portOf(url: URL): number {
   return Number(url.port || (url.protocol === "https:" ? 443 : 80));
 }
 
 const isPreviewLinksError = Schema.is(PreviewLinksError);
 const isAuthorizationError = Schema.is(EnvironmentAuthorizationError);
 
-export function previewLinksErrorReason(error: unknown): PreviewLinksErrorReason | null {
+function previewLinksErrorReason(error: unknown): PreviewLinksErrorReason | null {
   return isPreviewLinksError(error) ? error.reason : null;
 }
 
-export const notConfiguredMessage = (label: string, settingsPath: string) =>
+const notConfiguredMessage = (label: string, settingsPath: string) =>
   `Preview links are not set up on ${label}. Set them up in ${settingsPath} to open its ports from here.`;
 
-export const noAccessMessage = (label: string) =>
+const noAccessMessage = (label: string) =>
   `This connection cannot share ports on ${label}. Open the port from that computer, or pair with preview access.`;
 
-export const unreachableMessage = (label: string, settingsPath: string) =>
+const unreachableMessage = (label: string, settingsPath: string) =>
   `Ports on ${label} are not reachable from this device. Set up preview links in ${settingsPath} to open them.`;
 
 /** A URL as typed or posted, including schemeless addresses such as `localhost:5173`. */
@@ -95,7 +95,7 @@ export const isUnreachableLoopback = (
 ) => isLoopbackHost(url.hostname) && !deps.reachesLoopback(environmentId);
 
 /** The thread's environment first: it most likely serves a link its agent posted. */
-export function linkOwnerCandidates(
+function linkOwnerCandidates(
   preferred: EnvironmentId | null,
   environments: ReadonlyArray<EnvironmentId>,
 ): ReadonlyArray<EnvironmentId> {

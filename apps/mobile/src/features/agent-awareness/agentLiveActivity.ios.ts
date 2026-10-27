@@ -10,6 +10,7 @@ export function getAgentLiveActivities() {
 }
 
 export function startAgentLiveActivity(props: AgentActivityProps, staleDate?: Date) {
+  // fork: mobile-identity
   const configuredScheme = Constants.expoConfig?.scheme;
   const appScheme = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
   return AgentActivity.start({ ...props, appScheme: appScheme ?? "loom" }, undefined, staleDate);

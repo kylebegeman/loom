@@ -946,6 +946,7 @@ export const WorktreeCleanupRules = Schema.Struct({
   ),
   worktreeOnMerge: Schema.Boolean,
   worktreeOnDelete: Schema.Boolean,
+  // fork: project-lifecycle
   worktreeOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeUnchanged: Schema.Boolean,
   // fork: project-lifecycle -- landed work cleans up after itself unless a project opts out.
@@ -1125,13 +1126,17 @@ export const StorageCleanupSettings = Schema.Struct({
   ),
   worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // fork: project-lifecycle
   worktreeOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeUnchanged: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   worktreeOnLand: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))), // fork: project-lifecycle
+  // fork: project-lifecycle
   projectAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   projectOnSettle: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // fork: project-lifecycle
   /** Managed Library copies no conversation has used; borrowed checkouts are never removed. */
   unusedCopiesAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(7))),
+  // fork: retention-defaults
   scratchAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(30))),
   browserArtifactsAfterDays: StorageRetentionDays.pipe(
     // fork: retention-defaults: screenshots and recordings otherwise grow without limit.
@@ -1157,6 +1162,7 @@ export const ServerSettings = Schema.Struct({
   previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  // fork: file-placement
   /** Where the server places Library copies and clones; empty means its default Projects folder. */
   projectsDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Server-maintained history keeps copies in earlier Projects folders managed. */
@@ -1505,7 +1511,7 @@ export const ServerSettingsPatch = Schema.Struct({
             worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
             worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
             worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
-            worktreeOnSettle: Schema.optionalKey(Schema.Boolean),
+            worktreeOnSettle: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
             worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
             worktreeOnLand: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
           }),
@@ -1520,19 +1526,19 @@ export const ServerSettingsPatch = Schema.Struct({
       worktreeSettledAfterDays: Schema.optionalKey(SettledWorktreeRetentionDays),
       worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
       worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
-      worktreeOnSettle: Schema.optionalKey(Schema.Boolean),
+      worktreeOnSettle: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
       worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
       worktreeOnLand: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
       projectAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: project-lifecycle
-      projectOnSettle: Schema.optionalKey(Schema.Boolean),
-      unusedCopiesAfterDays: Schema.optionalKey(StorageRetentionDays),
-      scratchAfterDays: Schema.optionalKey(StorageRetentionDays),
+      projectOnSettle: Schema.optionalKey(Schema.Boolean), // fork: project-lifecycle
+      unusedCopiesAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: project-lifecycle
+      scratchAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: mini-native-retention
       browserArtifactsAfterDays: Schema.optionalKey(StorageRetentionDays),
       logsAfterDays: Schema.optionalKey(StorageRetentionDays),
     }),
   ),
   worktreesDirectory: Schema.optionalKey(TrimmedString),
-  projectsDirectory: Schema.optionalKey(TrimmedString),
+  projectsDirectory: Schema.optionalKey(TrimmedString), // fork: file-placement
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),

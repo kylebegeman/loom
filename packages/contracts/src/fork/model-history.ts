@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { CheckpointId, NonNegativeInt, PositiveInt, RunId, ThreadId } from "../baseSchemas.ts";
 import type { ScadRenderResult, SignedFile } from "./model-preview-3d.ts";
 
-export const MODEL_HISTORY_PAGE_MAX = 50;
+const MODEL_HISTORY_PAGE_MAX = 50;
 const FileRef = Schema.Struct({
   threadId: ThreadId,
   path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),

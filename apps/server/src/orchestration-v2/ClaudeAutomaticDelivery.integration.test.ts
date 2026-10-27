@@ -333,6 +333,7 @@ it.effect.each(deliveries)(
                   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
                   Layer.provide(
                     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                      // fork: file-placement -- ProjectPlacement replaces namedProjectsRoot.
                       isScratchProject: () => Effect.succeed(false),
                     }),
                   ),

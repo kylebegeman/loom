@@ -18,7 +18,7 @@ export type VaultGitHubDraft = {
   secret: string;
 };
 const isRepository = Schema.is(VaultGitHubRepository);
-export const parseVaultGitHubRepositories = (input: string): string[] | null => {
+const parseVaultGitHubRepositories = (input: string): string[] | null => {
   const repositories: string[] = [];
   for (const entry of input.split(/[\s,]+/).filter(Boolean)) {
     const url =

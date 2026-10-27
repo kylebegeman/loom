@@ -312,6 +312,7 @@ interface ServerTab {
   zoomFactor: number;
   loading: boolean;
   closing: boolean;
+  // fork: browser-timeout-recovery
   /** A late native attachment retired this headless page; its outstanding actions cannot succeed. */
   replacedByDesktop: boolean;
   recording: Recording | null;
@@ -507,6 +508,7 @@ const make = Effect.gen(function* () {
         }),
       ),
     onContextClose: (context) => {
+      // fork: browser-timeout-recovery
       for (const [key, recovery] of recoveryPages) {
         if (recovery.context === context) recoveryPages.delete(key);
       }
@@ -564,12 +566,12 @@ const make = Effect.gen(function* () {
   };
 
   const report = (tab: ServerTab, navStatus: PreviewNavStatus) => {
-    if (tab.closing) return;
+    if (tab.closing) return; // fork: browser-timeout-recovery
     void tab.cdp
       .send("Page.getNavigationHistory")
       .catch(() => null)
       .then((history) => {
-        if (tab.closing) return;
+        if (tab.closing) return; // fork: browser-timeout-recovery
         const index = history?.currentIndex ?? 0;
         const count = history?.entries.length ?? 0;
         runFork(
@@ -682,6 +684,7 @@ const make = Effect.gen(function* () {
 
   const sessionOpen = (tab: ServerTab) => !closedSessions.has(tabKey(tab.threadId, tab.tabId));
 
+  // fork: browser-timeout-recovery -- a replaced or timed-out tab reconnects; a timed-out one keeps its context.
   const dropTab = (
     tab: ServerTab,
     closeSession: boolean,
@@ -691,10 +694,11 @@ const make = Effect.gen(function* () {
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
-    tab.replacedByDesktop = replacedByDesktop;
+    tab.replacedByDesktop = replacedByDesktop; // fork: browser-timeout-recovery
     tab.closing = true;
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
+    // fork: browser-timeout-recovery -- so does a replaced or recovering headless page.
     const end =
       (tab.desktop || replacedByDesktop || preserveContext) && !closeSession && sessionOpen(tab)
         ? "reconnect"
@@ -703,6 +707,7 @@ const make = Effect.gen(function* () {
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
     else void tab.page.close().catch(constVoid);
+    // fork: browser-timeout-recovery -- a recovering tab's context outlives its page.
     if (tab.isolatedContext && !preserveContext) void tab.page.context().close().catch(constVoid);
     void tab.recording?.encoder.close().catch(constVoid);
     void NodeFSP.rm(downloadDir(tab), { recursive: true, force: true }).catch(constVoid);
@@ -723,6 +728,7 @@ const make = Effect.gen(function* () {
       : Promise.resolve(false);
 
   const connectDesktop = async (snapshot: PreviewSessionSnapshot) => {
+    // fork: browser-timeout-recovery -- a new relay waits until the previous one is released.
     const key = tabKey(snapshot.threadId, snapshot.tabId);
     await desktopReleases.get(key);
     const scope = await runPromise(Scope.make());
@@ -733,9 +739,10 @@ const make = Effect.gen(function* () {
           .pipe(Scope.provide(scope)),
       );
       const connected = await contexts.connectDesktopPage(endpoint);
-      let closing: Promise<void> | undefined;
+      let closing: Promise<void> | undefined; // fork: browser-timeout-recovery
       return {
         page: connected.page,
+        // fork: browser-timeout-recovery -- closing is shared and recorded so a reconnect can await it.
         close: () => {
           if (closing) return closing;
           closing = connected.browser
@@ -765,6 +772,7 @@ const make = Effect.gen(function* () {
       adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
+    // fork: browser-timeout-recovery -- a failed setup releases the native endpoint (catch below).
     try {
       // An agent tab without a profile (no client reported one) keeps throwaway storage.
       const isolatedContext =
@@ -772,6 +780,7 @@ const make = Effect.gen(function* () {
         desktop === null &&
         ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
           snapshot.profileId === INCOGNITO_BROWSER_PROFILE_ID);
+      // fork: browser-timeout-recovery -- a recovering tab reuses its retained context when the profile matches.
       const key = tabKey(snapshot.threadId, snapshot.tabId);
       const recovery = recoveryPages.get(key); // fork: browser-timeout-recovery
       const retainedContext =
@@ -832,10 +841,10 @@ const make = Effect.gen(function* () {
         zoomFactor: 1,
         loading: false,
         closing: false,
-        replacedByDesktop: false,
+        replacedByDesktop: false, // fork: browser-timeout-recovery
         recording: null,
         recordingStart: null,
-        recordingTimeout: null,
+        recordingTimeout: null, // fork: browser-timeout-recovery
         initialNavigation: null,
         navigationGeneration: 0,
         abortedNavigation: null,
@@ -882,6 +891,7 @@ const make = Effect.gen(function* () {
           timestamp: new Date().toISOString(),
         });
         if (!isMainNavigation(request)) return;
+        // fork: browser-timeout-recovery
         // A navigation a newer one replaced leaves the status to the newer one. A
         // popup's first request can predate the listener, so it is untracked and
         // superseded by any tracked one.
@@ -938,6 +948,7 @@ const make = Effect.gen(function* () {
       // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
       page.on("popup", (popup) => void adoptPopup(tab, popup));
       // Playwright cannot reload a crashed page, so it must leave the tab list.
+      // fork: browser-timeout-recovery -- renamed: `key` above already names the recovery lookup.
       const currentKey = tabKey(tab.threadId, tab.tabId);
       if (closedPendingTabs.delete(currentKey)) {
         await control.close().catch(constVoid);
@@ -948,9 +959,10 @@ const make = Effect.gen(function* () {
       }
       page.on("close", () => dropTab(tab, true));
       page.on("crash", () => dropTab(tab, true));
-      tabs.set(currentKey, tab);
+      tabs.set(currentKey, tab); // fork: browser-timeout-recovery
       recoveryPages.delete(currentKey); // fork: browser-timeout-recovery
       reportLiveTabs();
+      // fork: browser-timeout-recovery -- a recovered or late-attached tab restores its page.
       // A late attachment can already be signed in at a different URL than the fallback page.
       if (desktop) void reportLoaded(tab);
       // A popup is already loading its own URL, and the desktop loads its tab's.
@@ -972,7 +984,7 @@ const make = Effect.gen(function* () {
         // Existing desktop and popup PDFs can start loading before interception attaches.
         const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
         tab.initialNavigation = (
-          page.url() === snapshot.navStatus.url
+          page.url() === snapshot.navStatus.url // fork: browser-timeout-recovery
             ? page.reload(options)
             : page.goto(snapshot.navStatus.url, options)
         ).then(constVoid, (cause: unknown) => {
@@ -983,10 +995,12 @@ const make = Effect.gen(function* () {
       }
       return tab;
     } catch (cause) {
+      // fork: browser-timeout-recovery
       // Native pages outlive failed automation setup, but their endpoint does not.
       await desktop?.close().catch(constVoid);
       throw cause;
     }
+    // fork: browser-timeout-recovery -- `return tab` moved inside the try block above.
   };
 
   const downloadsRoot = NodePath.join(config.stateDir, "server-browser", "downloads");
@@ -1279,6 +1293,7 @@ const make = Effect.gen(function* () {
       await popup.close().catch(constVoid);
       return;
     }
+    // fork: preview-popups -- `url` is read before the tab-limit check above.
 
     const controller = [...opener.viewers].find(
       (viewer) => viewer.id === opener.control.controller,
@@ -1346,6 +1361,7 @@ const make = Effect.gen(function* () {
     );
     if (!snapshot) return yield* new ServerBrowserTabNotFoundError({ threadId, tabId });
     return yield* Effect.tryPromise({
+      // fork: browser-timeout-recovery -- a restored tab is usable once its initial navigation lands.
       try: async () => {
         const tab = await ensureTab(snapshot);
         await tab.initialNavigation;
@@ -1359,7 +1375,7 @@ const make = Effect.gen(function* () {
   const atTabLimit = (agentSessionId: string, headroom = 0) =>
     tabs.size + pendingTabs.size >= SERVER_TAB_LIMIT ||
     [...tabs.values()].filter((tab) => tab.control.agentId === agentSessionId).length >=
-      AGENT_TAB_LIMIT + headroom;
+      AGENT_TAB_LIMIT + headroom; // fork: preview-popups
 
   const assertTabCapacity = (agentSessionId: string) => {
     if (atTabLimit(agentSessionId))
@@ -1818,6 +1834,7 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // fork: browser-timeout-recovery -- a late desktop attachment retired this page mid-action.
   const assertTabNotReplaced = (tab: ServerTab) => {
     if (tab.replacedByDesktop)
       throw new BrowserControlInterrupted(
@@ -1913,6 +1930,7 @@ const make = Effect.gen(function* () {
             "A browser dialog is pending. Read preview_status and use preview_dialog first.",
             "dialogPending",
           );
+        // fork: browser-timeout-recovery
         const result = await tab.control.agent(
           request.agentSessionId,
           async () => {
@@ -1945,7 +1963,7 @@ const make = Effect.gen(function* () {
           },
           deadlineMs,
         );
-        assertTabNotReplaced(tab);
+        assertTabNotReplaced(tab); // fork: browser-timeout-recovery
         return result;
       }
       case "recordingStop": {
@@ -2045,11 +2063,13 @@ const make = Effect.gen(function* () {
   };
 
   const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
+    // fork: browser-timeout-recovery
     const result = await executePageOperation(tab, request);
     assertTabNotReplaced(tab);
     return result;
   };
 
+  // fork: browser-timeout-recovery -- inner waits end before the operation deadline.
   const executePageOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
     const rawInput = request.input as Readonly<Record<string, unknown>>;
     const requestedTimeout =
@@ -2154,15 +2174,18 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // fork: browser-timeout-recovery -- a timed-out action releases its stalled tab.
   const handleRequest = (connectionId: string, request: PreviewAutomationRequest) => {
     let operation: Promise<unknown> | undefined;
     return Effect.tryPromise({
       try: () =>
+        // fork: browser-timeout-recovery
         (operation = runOperation(request, performance.now() + request.timeoutMs).finally(() =>
           markUsed(request),
-        )),
+        )), // fork: browser-timeout-recovery
       catch: ServerBrowserPage.toOperationError,
     }).pipe(
+      // fork: browser-timeout-recovery
       // CDP captures and page evaluation can outlive Playwright's locator timeouts.
       // Release a stalled agent tab before the broker evicts the whole host. Keep
       // its manager session/profile and never replay the timed-out action.
@@ -2235,7 +2258,7 @@ const make = Effect.gen(function* () {
       ),
       Effect.ignore,
     );
-  };
+  }; // fork: browser-timeout-recovery
 
   const mirrorManagerEvent = (event: PreviewEvent) =>
     Effect.promise(async () => {
@@ -2245,6 +2268,7 @@ const make = Effect.gen(function* () {
       }
       const key = tabKey(event.threadId, event.tabId);
       const tab = tabs.get(key);
+      // fork: browser-timeout-recovery -- a closed session drops its retained recovery context.
       if (event.type === "closed") {
         const recovery = recoveryPages.get(key);
         recoveryPages.delete(key);
@@ -2657,11 +2681,13 @@ const make = Effect.gen(function* () {
     Stream.runForEach((change) => desktopChannel.turn(change.threadId, change.active)),
     Effect.forkScoped,
   );
+  // fork: browser-timeout-recovery
   // The page came back, or mounted after the headless fallback started. Always
   // adopt the desktop's current page; its URL and storage belong to the user.
   yield* desktopChannel.attached.pipe(
     Stream.runForEach((key) =>
       Effect.gen(function* () {
+        // fork: browser-timeout-recovery -- a late attachment replaces the headless fallback tab.
         const id = tabKey(key.threadId, key.tabId);
         const opening = pendingTabs.get(id);
         if (opening) yield* Effect.promise(() => opening.catch(constVoid));
@@ -2671,6 +2697,7 @@ const make = Effect.gen(function* () {
         const snapshot = sessions.find(
           (session) => session.tabId === key.tabId && session.runtime === "server",
         );
+        // fork: browser-timeout-recovery
         if (!snapshot || !(yield* desktopChannel.isAttached(key))) return;
         if (existing) dropTab(existing, false, true);
         yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));

@@ -5,7 +5,7 @@ import type {
   PcbFabPreviewLayer,
 } from "@t3tools/contracts/fork";
 import { parseSexp, child, children, atom } from "./semantics.ts";
-export const LCSC_FIELDS = [
+const LCSC_FIELDS = [
   "LCSC Part #",
   "LCSC Part",
   "LCSC PN",
@@ -117,7 +117,7 @@ export function bomFromFootprints(parts: readonly FabPart[]) {
   );
 }
 const quote = (v: string | number) => `"${String(v).replaceAll('"', '""')}"`;
-export const csv = (rows: readonly (readonly (string | number)[])[]) =>
+const csv = (rows: readonly (readonly (string | number)[])[]) =>
   rows.map((row) => row.map(quote).join(",")).join("\n") + "\n";
 export const genericBom = (rows: readonly BomRow[]) =>
   csv([
@@ -142,7 +142,7 @@ export const jlcpcbBom = (rows: readonly BomRow[]) =>
     ]),
   ]);
 /** CSV parser accepts quoted commas, doubled quotes, CRLF and quoted newlines. */
-export function parseCsv(source: string) {
+function parseCsv(source: string) {
   const rows: string[][] = [];
   let row: string[] = [],
     value = "",

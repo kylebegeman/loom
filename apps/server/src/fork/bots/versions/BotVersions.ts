@@ -45,7 +45,7 @@ import { compareRuns, sameValue, summarizeItems } from "./compare.ts";
 import { SUGGEST_DOWN_RUNS, SUGGEST_UP_RUNS, suggestEditPrompt } from "./suggestEdit.ts";
 
 /** Replay runs at once, below the bot's own limit, so a replay leaves room for real work. */
-export const REPLAY_MAX_CONCURRENCY = 5;
+const REPLAY_MAX_CONCURRENCY = 5;
 const DAY_MS = 86_400_000;
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });

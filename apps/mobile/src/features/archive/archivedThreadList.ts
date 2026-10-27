@@ -21,6 +21,7 @@ export interface ArchivedThreadGroup {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
 }
 
+// fork: fleet-connections
 export function archivedThreadQueryEnvironmentIds(
   environmentIds: ReadonlyArray<EnvironmentId>,
   selectedEnvironmentId: EnvironmentId | null,

@@ -579,6 +579,7 @@ export const ServerEventLoopStall = Schema.Struct({
 });
 export type ServerEventLoopStall = typeof ServerEventLoopStall.Type;
 
+// fork: file-placement
 export const ServerFolders = Schema.Struct({
   projects: TrimmedNonEmptyString,
   worktrees: TrimmedNonEmptyString,
@@ -621,8 +622,10 @@ export const ServerConfig = Schema.Struct({
   threadFind: Schema.optionalKey(Schema.Boolean),
   threadFindProgressive: Schema.optionalKey(Schema.Boolean),
   scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
+  // fork: file-placement
   /** The resolved Projects folder. */
   newProjectsRoot: Schema.optionalKey(TrimmedNonEmptyString),
+  // fork: file-placement
   /** Resolved folders the server places work in. Older servers omit it. */
   folders: Schema.optionalKey(ServerFolders),
   /**

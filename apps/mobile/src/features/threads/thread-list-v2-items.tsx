@@ -241,7 +241,7 @@ function ThreadListV2Section(props: {
       className={className}
       disabled={props.disclosure.disabled}
       onPress={props.disclosure.onToggle}
-      style={({ pressed }) => ({ minHeight: 44, opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ minHeight: 44, opacity: pressed ? 0.6 : 1 })} // fork: everyday-workflows
     >
       {content}
     </Pressable>
@@ -1025,9 +1025,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       resumeQueue,
       onNewThreadOnBranch,
       thread,
+      // fork: project-home
       navigation,
       canOperateThread,
-      botMenuItems,
+      botMenuItems, // fork: bots
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
@@ -1482,6 +1483,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         {(close) => (
           <Menu
             actions={[
+              // fork: library -- the action is offered even without a branch
               {
                 id: "new-thread-on-branch",
                 title: getThreadListV2NewBranchMenuTitle(thread.branch),

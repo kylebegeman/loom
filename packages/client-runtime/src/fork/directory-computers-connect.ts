@@ -42,7 +42,7 @@ const UNREACHED: DirectoryIdentityRead = { reached: false };
  * Reads the public sign-in settings at one address. Any failure, including an answer that is not
  * metadata, means the address did not answer usefully, so the caller tries the next one.
  */
-export const readDirectoryIdentity = Effect.fn("DirectoryComputers.readIdentity")(function* (
+const readDirectoryIdentity = Effect.fn("DirectoryComputers.readIdentity")(function* (
   httpBaseUrl: string,
 ) {
   const http = yield* HttpClient.HttpClient;
@@ -91,7 +91,7 @@ export function directoryLibraryTrust(entry: ConnectionCatalogEntry): DirectoryL
  * The Library's Identity issuer: the one this device signed in to it with, otherwise the one its
  * own metadata names. Null when neither is known, which keeps every computer on pairing.
  */
-export const directoryLibraryIssuer = Effect.fn("DirectoryComputers.libraryIssuer")(function* (
+const directoryLibraryIssuer = Effect.fn("DirectoryComputers.libraryIssuer")(function* (
   library: DirectoryLibraryTrust,
 ) {
   if (library.account !== null) return library.account.issuer;

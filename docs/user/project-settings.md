@@ -41,10 +41,12 @@ the **Server settings** categories and auto-settle controls in **Thread behavior
 selected environments' defaults. Choosing a project edits its overrides on the selected
 environments. Use **Use defaults** in a page to remove that page's project overrides.
 Open **Settings → Projects & threads → Overview** to rename the project across its selected
-connected checkouts, see where they live, and review each checkout's storage preference.
+connected checkouts, see where they live, and review each checkout's storage preference. <!-- fork: project-checkout-management -->
 Settings that are environment-wide stay read-only while a project is selected. When selected
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
+
+<!-- fork: library-projects -->
 
 ## Projects and files
 
@@ -286,6 +288,8 @@ registered copy on a connected computer; its history syncs when the Library reco
 Creating or registering copies, restoring files, changing retention, and editing projects still
 require the Library connection. Loom never silently switches to another Library server.
 
+<!-- fork: project-home -->
+
 ## Computer folders and earlier work
 
 The thread list keeps existing work on connected computers accessible. Its project filter
@@ -421,7 +425,7 @@ access. Source control contains automatic pull, the default pull request merge m
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
-The Projects category is always available. Browse projects or review their storage there,
+The Projects category is always available. Browse projects or review their storage there, <!-- fork: project-home -->
 or choose a project in the scope picker to manage its name, icon, actions, checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
 `t3.json` actions can be imported there.
@@ -598,6 +602,8 @@ T3 Code only pulls when it can fast-forward and the checkout has no changed file
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
 
+<!-- fork: project-lifecycle -->
+
 ## Repeatable project initialization
 
 A project's setup action can install dependencies, initialize its development database
@@ -610,6 +616,8 @@ as well as for new worktrees, so make the command safe to repeat and preserve ex
 Keep a reset command as an ordinary project action for restoring known test data.
 Choose the isolated development instance explicitly; resetting fixtures should never
 reset an instance that holds real application data.
+
+<!-- fork: sites -->
 
 ## Sites and the personal API
 

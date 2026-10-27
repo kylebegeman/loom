@@ -9,7 +9,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, View } from "react-native"; // fork: fleet-connections
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -104,7 +104,7 @@ export function ConnectionEnvironmentRow(props: {
               ? `Manage ${props.environment.environmentLabel}`
               : `${props.expanded ? "Collapse" : "Expand"} details for ${props.environment.environmentLabel}`
           }
-          accessibilityState={props.opensDetails ? undefined : { expanded: props.expanded }}
+          accessibilityState={props.opensDetails ? undefined : { expanded: props.expanded }} // fork: fleet-connections
           onPress={props.onToggle}
         >
           <View className="flex-row items-center gap-1.5">
@@ -232,17 +232,18 @@ export function ConnectionEnvironmentRow(props: {
               ) : null}
 
               <ConnectionFormField
-                label="Connection address"
+                label="Connection address" // fork: fleet-connections
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
-                placeholder="192.168.1.100:3773"
+                placeholder="192.168.1.100:3773" // fork: fleet-connections
                 value={url}
                 onChangeText={setUrl}
               />
             </>
           )}
 
+          {/* fork: fleet-connections -- one action row on every platform replaces the Android and iOS rows */}
           <View className="flex-row items-center justify-end gap-2">
             {props.environment.isRelayManaged ? null : (
               <View className="flex-1">

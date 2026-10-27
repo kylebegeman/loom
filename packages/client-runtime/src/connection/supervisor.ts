@@ -283,12 +283,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const latest = yield* Ref.get(currentEntry);
     const routes = connectionRoutes(latest);
     const preferred = yield* Ref.getAndSet(preferredRouteId, Option.none());
-    if (Option.isNone(preferred)) return { entry: latest };
+    if (Option.isNone(preferred)) return { entry: latest }; // fork: reach
     const route = routes.find(
       (candidate) => connectionRouteId(candidate.target) === preferred.value,
     );
     return route === undefined
-      ? { entry: latest }
+      ? { entry: latest } // fork: reach
       : {
           entry: entryWithRoutes(latest, [
             route,
@@ -411,6 +411,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     synchronizedRoutes: Ref.Ref<number>,
   ) {
+    // fork: reach
     const { entry: latest, options: connectOptions } = yield* attemptEntry;
     return yield* driver.connect(
       latest,
@@ -622,6 +623,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       Stream.runForEach(() => requestBetterRouteCheck(lease)),
       Effect.forkScoped,
     );
+    // fork: reach
     if (lease.betterRouteAnswered !== undefined) {
       yield* lease.betterRouteAnswered.pipe(
         Effect.andThen(requestBetterRouteCheck(lease)),

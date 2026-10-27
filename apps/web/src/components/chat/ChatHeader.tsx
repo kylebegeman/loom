@@ -28,6 +28,7 @@ import { canShareWithGuestAtom } from "./guestShareAvailability";
 import { useAtomValue } from "@effect/atom-react";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+// fork: fleet-connections
 import { useEnvironmentIdentities, useEnvironmentMachines } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -84,6 +85,7 @@ export const ChatHeader = memo(function ChatHeader({
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
+  // fork: fleet-connections
   const environmentLabel =
     useEnvironmentIdentities().find(
       (environment) => environment.environmentId === activeThreadEnvironmentId,
@@ -155,7 +157,7 @@ export const ChatHeader = memo(function ChatHeader({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Title, font and rename changes resize the breadcrumb text without resizing the list, so it re-measures.
     activeProjectName,
     activeThreadTitle,
-    environmentLabel,
+    environmentLabel, // fork: fleet-connections
     parentThreadLink,
     interfaceFont,
     isRenamingTitle,
@@ -371,8 +373,9 @@ export const ChatHeader = memo(function ChatHeader({
               }}
               onFocus={(event) => event.currentTarget.select()}
               onKeyDown={handleRenameKeyDown}
-            />
+            /> // fork: fleet-connections -- the title shares a wrapper with its computer chip
           ) : (
+            // fork: fleet-connections
             // One wrapper so the parent-collapse measurement sees the title
             // and its computer chip as a single label.
             <span className="inline-flex min-w-0 max-w-full items-center gap-2">

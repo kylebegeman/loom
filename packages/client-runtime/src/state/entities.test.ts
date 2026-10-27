@@ -22,6 +22,7 @@ import { canSnooze, effectiveSnoozed } from "./threadSettled.ts";
 const environmentId = EnvironmentId.make("environment-v2");
 
 describe("V2 client presentation", () => {
+  // fork: bots
   it("keeps the pending request clock stable across unrelated thread updates", () => {
     const requestedAt = DateTime.makeUnsafe("2026-06-20T00:01:00.000Z");
     const shell = presentThreadShell(environmentId, {

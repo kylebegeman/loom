@@ -32,6 +32,7 @@ export function SessionPermissions({
     </div>
   ) : (
     <p className="py-3 text-xs text-muted-foreground">
+      {/* fork: identity-renewal */}
       {!connected
         ? "Permissions not checked. Connect to this computer to view this session’s permissions."
         : session.data?.authenticated === false

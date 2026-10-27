@@ -122,6 +122,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
           <EmptyDescription>
             The project is still available. Try opening the draft again.
           </EmptyDescription>
+          {/* fork: fleet-connections */}
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button size="sm" onClick={onRetry}>
               <RefreshIcon size="md" />

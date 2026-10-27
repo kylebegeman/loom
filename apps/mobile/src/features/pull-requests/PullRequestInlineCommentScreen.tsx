@@ -28,6 +28,7 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   const params = route.params;
   const navigation = useNavigation();
   const store = usePullRequestReviewDraft(params);
+  // fork: everyday-workflows
   const [draftId] = useState(() => params.draftId ?? uuidv4());
   const saved = store.draft.comments.find((draft) => draft.id === draftId);
   const [editedBody, setBody] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
   const stale = detail.data && detail.data.headSha !== params.headSha;
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
+  // fork: everyday-workflows
   const persistDraft = async (
     update: Parameters<typeof store.update>[0],
     onFailure?: () => void,
@@ -70,12 +72,13 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
       !permissions.canInlineComment
     )
       return;
+    // fork: everyday-workflows
     return persistDraft((draft) => ({
       ...draft,
       comments: [
-        ...draft.comments.filter((comment) => comment.id !== draftId),
+        ...draft.comments.filter((comment) => comment.id !== draftId), // fork: everyday-workflows
         {
-          id: draftId,
+          id: draftId, // fork: everyday-workflows
           path: params.path,
           ...(params.oldPath ? { oldPath: params.oldPath } : {}),
           position: params.position,
@@ -85,6 +88,7 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
         },
       ],
     }));
+    // fork: everyday-workflows -- persistDraft flushes, reports failures and closes the screen
   };
   return (
     <PullRequestSheetContent
@@ -136,12 +140,14 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
           The branch changed. Return to the current diff and select the line again.
         </Text>
       ) : null}
+      {/* fork: everyday-workflows */}
       {detail.data && !detail.isPending && !detail.error && !permissions.canInlineComment ? (
         <Text className="text-sm text-foreground-muted">
           This connection cannot add line comments to this pull request.
         </Text>
       ) : null}
       {store.error || detail.error ? (
+        // fork: everyday-workflows
         <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
           {store.error ?? detail.error}
         </Text>
@@ -166,6 +172,7 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
                 text: "Delete",
                 style: "destructive",
                 onPress: () => {
+                  // fork: everyday-workflows
                   void persistDraft(
                     (draft) => ({
                       ...draft,

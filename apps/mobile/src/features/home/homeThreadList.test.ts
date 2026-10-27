@@ -1,10 +1,10 @@
-import { buildProjectNavigationEntries } from "@t3tools/client-runtime/fork";
+import { buildProjectNavigationEntries } from "@t3tools/client-runtime/fork"; // fork: project-navigation
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test"; // fork: project-navigation
 
 import {
   buildHomeProjectScopes,
@@ -230,6 +230,7 @@ describe("home project scopes", () => {
   });
 });
 
+// fork: project-navigation
 describe("project list performance", () => {
   it("classifies 5,120 thread shells once and limits each of 512 project previews to eight rows", () => {
     const environmentId = EnvironmentId.make("performance");

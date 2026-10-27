@@ -22,7 +22,7 @@ import * as Catalog from "./LibraryService.ts";
  * How recently a computer must have reached the Library to count as online. Connected computers
  * report every few seconds while replicating, so this only allows for a slow or briefly lost link.
  */
-export const LIBRARY_COMPUTER_ONLINE_WINDOW = Duration.minutes(2);
+const LIBRARY_COMPUTER_ONLINE_WINDOW = Duration.minutes(2);
 
 /**
  * Where a project's next conversation should start, ranked on the Library with the same rule as

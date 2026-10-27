@@ -1,5 +1,5 @@
 import { SLICE_ROLES, type SliceRole } from "@t3tools/contracts/fork";
-export const LAYER_SEGMENT_LIMIT = 1000000;
+const LAYER_SEGMENT_LIMIT = 1000000;
 export type LayerInfo = { z: number; height: number; first: number };
 export type LayerSegments = {
   readonly data: Uint8Array;

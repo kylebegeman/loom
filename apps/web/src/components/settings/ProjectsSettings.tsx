@@ -1,5 +1,5 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import { FolderProjectSettings } from "../../fork/project-library/FolderProjectSettings";
+import { FolderProjectSettings } from "../../fork/project-library/FolderProjectSettings"; // fork: library-projects
 import { LayersIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -10,7 +10,7 @@ import { SettingsPageContainer } from "./settingsLayout";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
 
 export function ProjectsSettings() {
-  const { search: value, scope, groups, selectScope } = useSettingsScope();
+  const { search: value, scope, groups, selectScope } = useSettingsScope(); // fork: library-projects
   const unavailable =
     scope.kind === "unavailable" ? (
       <SettingsPageContainer>
@@ -38,6 +38,7 @@ export function ProjectsSettings() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {value.project && projectScope ? (
+        // fork: library-projects
         <FolderProjectSettings
           members={
             groups
@@ -63,6 +64,7 @@ export function ProjectsSettings() {
       ) : unavailable ? (
         unavailable
       ) : (
+        // fork: project-home
         <ProjectSettingsLanding />
       )}
     </div>

@@ -6,6 +6,7 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
+// fork: machine-updates -- no ensureLocalApi; installs confirm through requestLocalUpdateInstall
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -15,6 +16,7 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
+  // fork: machine-updates -- no install confirmation message; the in-app install dialog asks
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -189,7 +191,7 @@ export async function installLocalUpdate(
 
 // fork: machine-updates - Only this app's own updates show here; fleet updates live in Computers.
 export function SidebarUpdatePill() {
-  return isElectron ? <SidebarUpdateControl /> : null;
+  return isElectron ? <SidebarUpdateControl /> : null; // fork: machine-updates
 }
 
 function SidebarUpdateControl() {
@@ -298,6 +300,7 @@ function SidebarUpdateControl() {
       return;
     }
 
+    // fork: machine-updates -- install moved above to requestLocalUpdateInstall
     if (!prefersReducedMotion) {
       setIsCheckAnimationLatched(true);
       setCheckAnimationKey((key) => key + 1);
@@ -374,6 +377,7 @@ function SidebarUpdateControl() {
     );
   };
 
+  // fork: machine-updates -- SidebarUpdatePill returns null off Electron
   const statusIcon = (
     <DesktopUpdateStatusIcon
       key={showCheckIcon ? checkAnimationKey : iconStatus}

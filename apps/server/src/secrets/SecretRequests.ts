@@ -229,7 +229,7 @@ const make = Effect.gen(function* () {
       yield* removeLogged(storeName(input.ref));
       return yield* new SecretRequestError({ reason: "ref_expired" });
     }
-    return decoded.value;
+    return decoded.value; // fork: ext-vault
   });
 
   // fork: ext-vault
@@ -246,7 +246,7 @@ const make = Effect.gen(function* () {
     if (!(yield* removeLogged(storeName(input.ref)))) {
       return yield* new SecretRequestError({ reason: "consume_failed" });
     }
-    return stored.value;
+    return stored.value; // fork: ext-vault
   });
 
   const saveToFile: SecretRequests["Service"]["saveToFile"] = Effect.fn(

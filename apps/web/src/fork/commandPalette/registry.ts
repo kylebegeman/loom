@@ -113,7 +113,7 @@ export const forkCommandPaletteItems = (context: ForkCommandPaletteContext) =>
       ),
   );
 
-export const forkCommandPaletteSearchItems = (context: ForkCommandPaletteContext) =>
+const forkCommandPaletteSearchItems = (context: ForkCommandPaletteContext) =>
   FORK_COMMAND_PALETTE_SOURCES.flatMap((source) => source.searchItems?.(context) ?? []);
 
 /** Rebuilt on every render, like the palette's own action items. */

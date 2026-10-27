@@ -15,9 +15,10 @@ import {
   ProjectUpdatePayload,
   ProjectId,
   OrchestratorMcpFailure,
-  ProjectClonePhase,
-  ProjectCloneStartResult,
+  ProjectClonePhase, // fork: file-placement
+  ProjectCloneStartResult, // fork: file-placement
   SourceControlCloneRepositoryInput,
+  // fork: file-placement -- ProjectCloneStartResult replaces SourceControlCloneRepositoryResult.
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as DocumentText from "../../../provider/DocumentText.ts";
@@ -29,10 +30,12 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+// fork: file-placement
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ProjectEnrichmentService from "../../../project/ProjectEnrichmentService.ts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+// fork: file-placement -- ProjectCloneTracker replaces SourceControlRepositoryService.
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -92,6 +95,7 @@ const ProjectDeleteTool = Tool.make("t3_project_delete", {
 const ProjectCloneTool = Tool.make("t3_project_clone", {
   ...shared,
   description:
+    // fork: file-placement
     "Clone a repository and register it as a project. Omit `destinationPath`: an existing checkout is reused (`reused: true`) or Loom picks a folder in the Projects folder. Waits for the clone; `phase` is done, failed or cancelled.",
   parameters: Schema.Struct({
     ...SourceControlCloneRepositoryInput.fields,
@@ -104,6 +108,7 @@ const ProjectCloneTool = Tool.make("t3_project_clone", {
   }),
   dependencies: [
     ...shared.dependencies,
+    // fork: file-placement -- the clone tracker replaces SourceControlRepositoryService.
     ProjectCloneTracker.ProjectCloneTracker,
     RepositoryIdentityResolver.RepositoryIdentityResolver,
     ProjectEnrichmentService.ProjectEnrichmentService,

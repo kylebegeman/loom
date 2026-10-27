@@ -9,14 +9,13 @@ import * as Schema from "effect/Schema";
 import { ModelFormat } from "./model-preview-3d.ts";
 import { ModelPoint } from "./model-workspace.ts";
 
-export const ASSEMBLY_SUFFIX = ".loom-assembly.json";
+const ASSEMBLY_SUFFIX = ".loom-assembly.json";
 export const ASSEMBLY_FILE_VERSION = 2;
 export const ASSEMBLY_CHECK_VERSION = 2;
-export const ASSEMBLY_MAX_PARTS = 32;
+const ASSEMBLY_MAX_PARTS = 32;
 export const ASSEMBLY_MAX_CLEARANCES = 32;
 export const ASSEMBLY_MAX_OPERATIONS = 64;
 export const ASSEMBLY_MAX_BYTES = 256 * 1024;
-export { ASSEMBLY_MAX_REGIONS } from "./model-check-limits.ts";
 
 const finite = Schema.Number.check(Schema.isFinite());
 const mm = finite.check(Schema.isBetween({ minimum: -100_000, maximum: 100_000 }));

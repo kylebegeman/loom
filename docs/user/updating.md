@@ -5,6 +5,8 @@ When a server is behind your web or desktop app, an update notice appears in the
 conversation and **Settings → Connections**. Update the machine named in that
 notice.
 
+<!-- fork: machine-updates -->
+
 ## Update this computer
 
 The update button at the bottom of the desktop sidebar belongs to the computer
@@ -21,6 +23,8 @@ also updating providers, they update right away and only the restart waits.
 Keep a Loom window open while it waits; minimized is fine. Choose **Cancel** on
 the button, or in **Settings → General → About**, to stop waiting. If a newer
 version comes out first, the wait ends and the button offers that download.
+
+<!-- fork: machine-updates -->
 
 ## Manage fleet updates
 
@@ -73,7 +77,7 @@ A client and server must speak the same orchestration protocol. If they do not, 
 refused rather than running half-upgraded:
 
 - An app newer than the server is blocked before connecting, with a notice telling you to update
-  T3 Code on the machine named in the notice, or, for a computer whose operating system ships
+  T3 Code on the machine named in the notice, or, for a computer whose operating system ships <!-- fork: runtime-owner -->
   Loom, to update it through that operating system.
 - A server newer than your app refuses the connection with an update message.
 
@@ -105,6 +109,8 @@ or `--tailscale-serve`.
 If you run the server with `npx` rather than an installed `t3`, there is
 nothing to update on the host: stop the server and relaunch it as
 `npx t3@<client-version>` with the same subcommand and options.
+
+<!-- fork: runtime-owner -->
 
 A computer whose operating system ships its Loom runtime, such as LoomOS, offers none of these
 actions, and `t3 update` refuses there. Current Loom apps show a notice that the server's

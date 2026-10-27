@@ -22,18 +22,11 @@ class LibraryAssetAccessError extends Schema.TaggedError<LibraryAssetAccessError
   }
 }
 
-export function libraryAssetPath(
-  sourceEnvironmentId: EnvironmentId,
-  attachmentId: ChatAttachmentId,
-) {
+function libraryAssetPath(sourceEnvironmentId: EnvironmentId, attachmentId: ChatAttachmentId) {
   return `/api/loom/library/assets/${encodeURIComponent(sourceEnvironmentId)}/${encodeURIComponent(attachmentId)}`;
 }
 
-export function libraryRecoveryPath(
-  sourceEnvironmentId: EnvironmentId,
-  copyId: string,
-  sha256: string,
-) {
+function libraryRecoveryPath(sourceEnvironmentId: EnvironmentId, copyId: string, sha256: string) {
   return `/api/loom/library/recovery/${encodeURIComponent(sourceEnvironmentId)}/${encodeURIComponent(copyId)}/${encodeURIComponent(sha256)}`;
 }
 

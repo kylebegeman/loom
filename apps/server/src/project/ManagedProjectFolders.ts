@@ -5,6 +5,7 @@ import {
   type ThreadId,
   VcsProcessSpawnError,
 } from "@t3tools/contracts";
+// fork: file-placement -- folder naming (newProjectFolderName) moved into ProjectPlacement.
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -24,7 +25,7 @@ import * as NamedProjects from "../fork/file-placement/NamedProjects.ts"; // for
 import * as LanesRoots from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as ProjectPlacement from "./ProjectPlacement.ts";
+import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import * as ProjectService from "./ProjectService.ts";
 
 export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailableError>()(
@@ -99,6 +100,7 @@ export class ManagedProjectFolders extends Context.Service<
       readonly threadId: ThreadId;
       readonly text: string;
     }) => Effect.Effect<Option.Option<string>, ScratchFolderError>;
+    // fork: file-placement -- namedProjectsRoot removed; ProjectPlacement owns the Projects folder.
     /** Removes failed/cancelled creations' folders only while no project owns them. */
     readonly createNamedProject: (input: { readonly name: string }) => Effect.Effect<
       {
@@ -138,6 +140,8 @@ const ICON_BACKGROUNDS = [
   "#db2777",
   "#e11d48",
 ] as const;
+
+// fork: file-placement -- MAX_NAMED_FOLDER_ATTEMPTS moved into ProjectPlacement.
 
 function escapeXml(value: string): string {
   return value
@@ -208,7 +212,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectService.ProjectService;
   const crypto = yield* Crypto.Crypto;
-  const placement = yield* ProjectPlacement.ProjectPlacement;
+  const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
   const namedProjects = yield* NamedProjects.NamedProjects; // fork: file-placement
   const managedRoot = config.managedProjectsRoot ?? config.baseDir; // fork: mini-managed-projects
 
@@ -234,9 +238,11 @@ const make = Effect.gen(function* () {
 
   // Scratch inside a checkout would inherit its git status and checkpoints; require a data dir outside work trees.
   const [probe, invalidate] = yield* Effect.cachedInvalidateWithTTL(
+    // fork: mini-managed-projects
     gitWorkflow.isRepository(managedRoot).pipe(
       Effect.catchIf(isGitMissing, () => Effect.succeed(false)),
       Effect.map((isRepository) =>
+        // fork: mini-managed-projects
         isRepository ? Option.none<string>() : Option.some(path.resolve(managedRoot, "scratch")),
       ),
       Effect.catchCause((cause) =>
@@ -343,14 +349,14 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // fork: file-placement -- ProjectPlacement claims the folder under the chosen Projects root.
   const claimNamedFolder = (name: string) =>
-    placement
-      .claimFolder(name)
-      .pipe(
-        Effect.mapError(
-          (error) => new NamedProjectFolderError({ folder: error.folder, cause: error.cause }),
-        ),
-      );
+    placement.claimFolder(name).pipe(
+      Effect.mapError(
+        // fork: file-placement
+        (error) => new NamedProjectFolderError({ folder: error.folder, cause: error.cause }),
+      ),
+    ); // fork: file-placement -- ProjectPlacement owns the numbered folder-name loop.
 
   const scaffoldRepository = Effect.fn("ManagedProjectFolders.scaffoldRepository")(function* (
     cwd: string,
@@ -441,12 +447,13 @@ const make = Effect.gen(function* () {
     ensureScratchProject,
     isScratchProject,
     folderForThread,
+    // fork: file-placement -- namedProjectsRoot removed with the interface field.
     createNamedProject,
   });
 });
 
 export const layer = Layer.effect(ManagedProjectFolders, make).pipe(
-  Layer.provide(ProjectPlacement.layerWithProjectStore),
+  Layer.provide(ProjectPlacement.layerWithProjectStore), // fork: file-placement
   Layer.provide(LanesRoots.layer), // fork: file-placement
   Layer.provideMerge(NamedProjects.layer), // fork: file-placement
 );

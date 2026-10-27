@@ -49,14 +49,14 @@ export function varlockConfirmed(environmentId: string): boolean {
     return false;
   }
 }
-export function rememberVarlockConfirmation(environmentId: string) {
+function rememberVarlockConfirmation(environmentId: string) {
   try {
     localStorage.setItem(`${CONFIRM_KEY}:${environmentId}`, "yes");
   } catch {
     /* Storage can be unavailable in private browser sessions. */
   }
 }
-export function envStatusText(status: EnvItemStatus): string {
+function envStatusText(status: EnvItemStatus): string {
   switch (status._tag) {
     case "set":
       return `Set in ${status.source}`;

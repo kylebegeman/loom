@@ -59,8 +59,8 @@ export const CORE_CLIENT_GUARDED_RPC_SCOPES = {
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,
 } as const;
-// Keep the upstream server's exhaustive scope map limited to its own RPC group.
-export const CLIENT_GUARDED_RPC_SCOPES = {
+// fork: ext-core -- keep the upstream server's exhaustive scope map limited to its own RPC group.
+const CLIENT_GUARDED_RPC_SCOPES = {
   ...CORE_CLIENT_GUARDED_RPC_SCOPES,
   ...FORK_CLIENT_GUARDED_RPC_SCOPES,
 }; // fork: ext-core

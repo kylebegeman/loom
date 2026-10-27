@@ -5,7 +5,7 @@ import {
   isTailscaleIpv4Address,
   parseTailscaleStatus,
   probeTailscaleHttpsEndpoint,
-  readEnvironmentIdentity,
+  readEnvironmentIdentity, // fork: tailnet-ownership
   readTailscaleStatus,
   type TailscaleStatus,
 } from "@t3tools/tailscale";
@@ -72,6 +72,7 @@ function resolveTailscaleIpAdvertisedEndpoints(input: {
   return endpoints;
 }
 
+// fork: tailnet-ownership
 // Another app can answer on the Serve port; only the backend's own environment ID proves it is this one.
 const probeServesLocalBackend = Effect.fn("probeServesLocalBackend")(function* (input: {
   readonly baseUrl: string;
@@ -89,7 +90,7 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   readonly dnsName: string | null;
   readonly serveEnabled: boolean;
   readonly servePort?: number;
-  readonly localHttpUrl?: string;
+  readonly localHttpUrl?: string; // fork: tailnet-ownership
   readonly probe?: (baseUrl: string) => Effect.Effect<boolean, never, HttpClient.HttpClient>;
 }): Effect.fn.Return<Option.Option<AdvertisedEndpoint>, never, HttpClient.HttpClient> {
   if (!input.dnsName) {
@@ -102,7 +103,7 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   });
   const probe =
     input.probe?.(httpBaseUrl) ??
-    probeServesLocalBackend({ baseUrl: httpBaseUrl, localHttpUrl: input.localHttpUrl });
+    probeServesLocalBackend({ baseUrl: httpBaseUrl, localHttpUrl: input.localHttpUrl }); // fork: tailnet-ownership
   const isReachable = input.serveEnabled ? yield* probe : false;
 
   return Option.some(
@@ -127,6 +128,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     readonly port: number;
     readonly serveEnabled?: boolean;
     readonly servePort?: number;
+    // fork: tailnet-ownership
     /** The backend's own URL, whose environment the Serve URL must report. */
     readonly localHttpUrl?: string;
     /** Tailnet IPs reach the backend only while it listens beyond loopback. */
@@ -152,6 +154,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
         : input.statusJson
           ? yield* parseTailscaleStatus(input.statusJson).pipe(Effect.orElseSucceed(() => null))
           : null;
+    // fork: tailnet-ownership
     const ipEndpoints =
       input.ipEndpoints === false
         ? []
@@ -160,6 +163,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
       dnsName: status?.magicDnsName ?? null,
       serveEnabled: input.serveEnabled === true,
       ...(input.servePort === undefined ? {} : { servePort: input.servePort }),
+      // fork: tailnet-ownership
       ...(input.localHttpUrl === undefined ? {} : { localHttpUrl: input.localHttpUrl }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
     });

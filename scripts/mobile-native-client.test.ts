@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
+// fork: native-dev-client
 import {
   NativeClientError,
   ensureClient,
@@ -12,7 +13,9 @@ import {
   prebuildAndroid,
 } from "./mobile-native-client.ts";
 
+// fork: native-dev-client
 it.layer(NodeServices.layer)("Loom native client identity", (it) => {
+  // fork: mobile-identity
   it.effect("does not accept the upstream T3 development client as Loom", () =>
     Effect.gen(function* () {
       const installed = yield* installedBinary("ios", "test-simulator", () =>

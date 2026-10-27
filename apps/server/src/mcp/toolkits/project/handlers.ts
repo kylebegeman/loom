@@ -1,10 +1,11 @@
+// fork: library-projects
 import {
   CommandId,
   MessageId,
   ThreadId,
   OrchestratorMcpFailure,
   ProjectId,
-} from "@t3tools/contracts"; // fork: library-projects
+} from "@t3tools/contracts";
 // fork: library-projects
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as Crypto from "effect/Crypto";
@@ -13,15 +14,15 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
-import * as DateTime from "effect/DateTime";
-import * as Stream from "effect/Stream";
+import * as DateTime from "effect/DateTime"; // fork: file-placement
+import * as Stream from "effect/Stream"; // fork: file-placement
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
-import { makeProjectCloneHooks } from "../../../project/ProjectCloneCompletion.ts";
-import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import { makeProjectCloneHooks } from "../../../project/ProjectCloneCompletion.ts"; // fork: file-placement
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts"; // fork: file-placement
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
@@ -40,6 +41,7 @@ const isLibraryError = Schema.is(LibraryError);
 
 function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable(error); // fork: mcp-refusals
+  // fork: file-placement
   const message =
     error._tag === "ProjectNotFoundError"
       ? "The project was not found."
@@ -338,8 +340,10 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         .pipe(Effect.mapError(projectFailure));
     }),
   ),
+  // fork: file-placement
   t3_project_clone: McpToolAccess.writesEnvironment(({ title, ...input }) =>
     Effect.gen(function* () {
+      // fork: file-placement
       const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const hooks = yield* makeProjectCloneHooks();
       const commandId = yield* newCommandId();
@@ -371,6 +375,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         Stream.runHead,
         Effect.map(Option.flatMap(Option.fromUndefinedOr)),
       );
+      // fork: file-placement
       if (Option.isNone(settled)) return { ...result, phase: "done" as const };
       return {
         ...result,

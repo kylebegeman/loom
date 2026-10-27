@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import type { AppleContainer } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
-export const WALK_MAX_DEPTH = 4;
+const WALK_MAX_DEPTH = 4;
 export const WALK_MAX_ENTRIES = 5_000;
 
 const SKIPPED_DIRECTORIES = new Set(["node_modules", "DerivedData", "build", "Pods", "Carthage"]);

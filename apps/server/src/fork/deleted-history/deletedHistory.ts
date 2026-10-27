@@ -48,7 +48,7 @@ export const deletionSequence = (sql: SqlClient.SqlClient, threadId: ThreadRef) 
  * between them. Versions otherwise have no gaps, so a conversation that only had creation and
  * deletion still sends its deletion, and compaction always leaves something between the two.
  */
-export const purgedShape = (sql: SqlClient.SqlClient, threadId: ThreadRef) => sql`(
+const purgedShape = (sql: SqlClient.SqlClient, threadId: ThreadRef) => sql`(
   CASE WHEN NOT EXISTS (
     SELECT 1 FROM orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
     WHERE application_event_version = 2 AND aggregate_kind = 'thread' AND stream_id = ${threadId}

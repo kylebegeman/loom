@@ -21,7 +21,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { DeviceQaService } from "./DeviceQaService.ts";
 
 /** The flow tool returns `running` with the run id after this; the run keeps going. */
-export const AGENT_FLOW_WAIT_MS = 20 * 60 * 1000;
+const AGENT_FLOW_WAIT_MS = 20 * 60 * 1000;
 const AGENT_STEPS_PER_FLOW = 50;
 
 const failure = Schema.Union([DeviceQaError, OrchestratorMcpFailure]);
@@ -232,7 +232,7 @@ const pickDevice = Effect.fn("DeviceQaMcp.pickDevice")(function* (
   return yield* orFail(selectDevice(local, watched, deviceId));
 });
 
-export const flowTool = (
+const flowTool = (
   threadId: ThreadId,
   input: typeof DeviceQaToolkit.tools.loom_device_qa_flow.parametersSchema.Type,
 ) =>
@@ -290,7 +290,7 @@ export const flowTool = (
     }),
   );
 
-export const captureTool = (
+const captureTool = (
   threadId: ThreadId,
   input: typeof DeviceQaToolkit.tools.loom_device_qa_capture.parametersSchema.Type,
 ) =>

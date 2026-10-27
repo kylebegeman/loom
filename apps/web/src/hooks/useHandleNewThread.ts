@@ -7,7 +7,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ScopedProjectRef,
   type ThreadId,
-  type OrchestrationV2ThreadShell,
+  type OrchestrationV2ThreadShell, // fork: library-projects
 } from "@t3tools/contracts";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
@@ -97,6 +97,7 @@ export function createNewThreadHandler(
       // fork: project-home keeps explicit computer choices out of automatic routing.
       environmentSelection?: "auto" | "manual";
       replace?: boolean;
+      // fork: library-projects
       sourceSettings?: Pick<
         OrchestrationV2ThreadShell,
         "modelSelection" | "runtimeMode" | "interactionMode"
@@ -138,9 +139,10 @@ export function createNewThreadHandler(
       setDraftThreadContext,
       setLogicalProjectDraftThreadId,
       setModelSelection,
-      setRuntimeMode,
-      setInteractionMode,
+      setRuntimeMode, // fork: library-projects
+      setInteractionMode, // fork: library-projects
     } = useComposerDraftStore.getState();
+    // fork: library-projects
     const applySourceSettings = (draftId: DraftId) => {
       const source = options?.sourceSettings;
       if (!source) return;
@@ -331,13 +333,13 @@ export function createNewThreadHandler(
           emptyStoredDraftThread.draftId,
           {
             threadId: emptyStoredDraftThread.threadId,
-            ...explicitEnvironmentContext,
+            ...explicitEnvironmentContext, // fork: project-home
             ...workspaceContext,
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           },
         );
-        applySourceSettings(emptyStoredDraftThread.draftId);
+        applySourceSettings(emptyStoredDraftThread.draftId); // fork: library-projects
         const opened = {
           draftId: emptyStoredDraftThread.draftId,
           threadId: emptyStoredDraftThread.threadId,
@@ -375,13 +377,13 @@ export function createNewThreadHandler(
       }
       setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
         threadId: latestActiveDraftThread.threadId,
-        ...explicitEnvironmentContext,
+        ...explicitEnvironmentContext, // fork: project-home
         createdAt: latestActiveDraftThread.createdAt,
         runtimeMode: latestActiveDraftThread.runtimeMode,
         interactionMode: latestActiveDraftThread.interactionMode,
         ...pickExplicitWorkspaceOptions(options),
       });
-      applySourceSettings(currentRouteTarget.draftId);
+      applySourceSettings(currentRouteTarget.draftId); // fork: library-projects
       return Promise.resolve({
         draftId: currentRouteTarget.draftId,
         threadId: latestActiveDraftThread.threadId,
@@ -405,13 +407,13 @@ export function createNewThreadHandler(
       ) {
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, racedDraft.draftId, {
           threadId: racedDraft.threadId,
-          ...explicitEnvironmentContext,
+          ...explicitEnvironmentContext, // fork: project-home
           createdAt: racedDraft.createdAt,
           runtimeMode: racedDraft.runtimeMode,
           interactionMode: racedDraft.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
-        applySourceSettings(racedDraft.draftId);
+        applySourceSettings(racedDraft.draftId); // fork: library-projects
         await router.navigate({
           to: "/draft/$draftId",
           params: { draftId: racedDraft.draftId },
@@ -421,7 +423,7 @@ export function createNewThreadHandler(
       }
       setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
         threadId,
-        ...explicitEnvironmentContext,
+        ...explicitEnvironmentContext, // fork: project-home
         createdAt,
         branch: options?.branch ?? null,
         worktreePath: options?.worktreePath ?? null,
@@ -440,7 +442,7 @@ export function createNewThreadHandler(
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
-      applySourceSettings(draftId);
+      applySourceSettings(draftId); // fork: library-projects
       await router.navigate({
         to: "/draft/$draftId",
         params: { draftId },

@@ -16,7 +16,7 @@ import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { Trash2Icon } from "lucide-react";
+import { Trash2Icon } from "lucide-react"; // fork: project-home
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -47,7 +47,7 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-import { ProjectFolderLocation } from "./ProjectFolderLocation";
+import { ProjectFolderLocation } from "./ProjectFolderLocation"; // fork: project-home
 import {
   projectGroupTitleNeedsUpdate,
   projectSettingsLocationSuccessor,
@@ -62,6 +62,7 @@ const ProjectIconPickerDialog = lazy(() =>
   })),
 );
 
+// fork: project-home
 function memberKey(member: { environmentId: string; id: string }): string {
   return `${member.environmentId}:${member.id}`;
 }
@@ -91,10 +92,10 @@ export function ProjectSettingsPanel({
   environmentId = null,
   checkoutKey = null,
   unavailable,
-  showFileControls = true,
+  showFileControls = true, // fork: project-home
 }: {
   projectKey: string;
-  showFileControls?: boolean;
+  showFileControls?: boolean; // fork: project-home
   environmentId?: EnvironmentId | null;
   checkoutKey?: string | null;
   unavailable?: ReactNode;
@@ -110,6 +111,7 @@ export function ProjectSettingsPanel({
         (checkoutKey === null || member.physicalProjectKey === checkoutKey),
     ) ?? [];
 
+  // fork: project-home
   // Project IDs survive folder moves and grouping changes; path-based keys do not.
   const [lastSelection, setLastSelection] = useState<ProjectSelection | null>(null);
   if (selected && members.length > 0) {
@@ -117,7 +119,7 @@ export function ProjectSettingsPanel({
       key: selected.projectKey,
       environmentId,
       checkoutKey,
-      memberKeys: members.map(memberKey),
+      memberKeys: members.map(memberKey), // fork: project-home
     };
     if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
   }
@@ -128,14 +130,15 @@ export function ProjectSettingsPanel({
     lastSelection.environmentId === environmentId &&
     lastSelection.checkoutKey === checkoutKey
       ? projectSettingsLocationSuccessor(groups, lastSelection.memberKeys, checkoutKey)
-      : null;
+      : null; // fork: project-home
   if (successor) {
     return (
       <Navigate
         to={pathname}
         search={{
-          ...successor,
+          ...successor, // fork: project-home
           machine: environmentId ?? undefined,
+          // fork: project-home -- the successor carries the checkout
         }}
         replace
         hashScrollIntoView={false}
@@ -171,7 +174,7 @@ export function ProjectSettingsPanel({
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
       hasOtherMembers={members.length < selected.memberProjects.length}
-      showFileControls={showFileControls}
+      showFileControls={showFileControls} // fork: project-home
     />
   );
 }
@@ -179,10 +182,10 @@ export function ProjectSettingsPanel({
 function ProjectDetail({
   group,
   hasOtherMembers,
-  showFileControls,
+  showFileControls, // fork: project-home
 }: {
   group: SidebarProjectSnapshot;
-  showFileControls: boolean;
+  showFileControls: boolean; // fork: project-home
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
@@ -494,7 +497,7 @@ function ProjectDetail({
             </p>
           ) : null}
           <SettingsRow
-            title="Folder label"
+            title="Folder label" // fork: project-home
             description="The label for these computer folders in the sidebar. Edit the shared project name from Projects."
             control={
               <Input
@@ -588,7 +591,7 @@ function ProjectDetail({
               hasOtherMembers
                 ? "Remove checkout"
                 : group.memberProjects.length > 1
-                  ? "Delete folder entries and conversations"
+                  ? "Delete folder entries and conversations" // fork: project-home
                   : "Delete folder entry and conversations"
             }
             description={
@@ -596,7 +599,7 @@ function ProjectDetail({
                 ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
                 : group.memberProjects.length > 1
                   ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
-                  : "Deletes this computer folder entry and its conversations. To free space while keeping conversations, use Files in the project instead. Files on disk are not touched."
+                  : "Deletes this computer folder entry and its conversations. To free space while keeping conversations, use Files in the project instead. Files on disk are not touched." // fork: project-home
             }
             control={
               <Button
@@ -610,7 +613,8 @@ function ProjectDetail({
                   ? "Remove checkout"
                   : group.memberProjects.length > 1
                     ? "Remove all entries"
-                    : "Delete folder entry and conversations"}
+                    : // fork: project-home
+                      "Delete folder entry and conversations"}
               </Button>
             }
           />

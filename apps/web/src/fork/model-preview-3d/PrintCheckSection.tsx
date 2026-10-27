@@ -7,7 +7,7 @@ import { OperationStatus } from "./OperationStatus";
 import { useDisplayUnits, formatLength } from "./units";
 import styles from "./workspace.module.css";
 
-export const PRINT_CHECK_LABELS = {
+const PRINT_CHECK_LABELS = {
   mesh: "Mesh",
   shells: "Bodies",
   "bed-fit": "Bed fit",

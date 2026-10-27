@@ -57,14 +57,14 @@ export function WorkspaceConnectionStatusProvider(props: { readonly children: Re
   }, [hasStatus]);
 
   const label = presentation?.label;
-  const accessibilityLabel = presentation?.accessibilityLabel;
+  const accessibilityLabel = presentation?.accessibilityLabel; // fork: fleet-connections
   const showsProgress = presentation?.showsProgress ?? false;
   const status = useMemo(
     () =>
       label === undefined || phase === "waiting"
         ? null
-        : { label, accessibilityLabel, showsProgress, fadeIn: phase === "fading" },
-    [label, accessibilityLabel, showsProgress, phase],
+        : { label, accessibilityLabel, showsProgress, fadeIn: phase === "fading" }, // fork: fleet-connections
+    [label, accessibilityLabel, showsProgress, phase], // fork: fleet-connections
   );
   return <ConnectionStatusContext value={status}>{props.children}</ConnectionStatusContext>;
 }
@@ -96,7 +96,7 @@ function StatusFadeIn(props: {
         {
           alignItems: "center",
           flexDirection: "row",
-          flexShrink: 1,
+          flexShrink: 1, // fork: fleet-connections
           maxWidth: props.maxWidth,
           // A hidden tab never runs the fade, so its value would still be 0 when the tab returns.
           opacity: animate ? opacity : 1,
@@ -131,6 +131,7 @@ export function WorkspaceConnectionTitle(props: {
     );
   }
 
+  // fork: fleet-connections -- iOS shows the status beside the brand; Android keeps the fade-in title
   const statusButton = (
     <Pressable
       accessibilityHint={
@@ -185,10 +186,12 @@ export function WorkspaceConnectionTitle(props: {
     return (
       <View
         style={[
+          // fork: fleet-connections
           { alignItems: "center", flexDirection: "row", gap: 10, maxWidth: props.maxWidth },
           props.grow ? { flex: 1, minWidth: 0 } : null,
         ]}
       >
+        {/* fork: fleet-connections */}
         {props.brand}
         <StatusFadeIn animate={status.fadeIn}>{statusButton}</StatusFadeIn>
       </View>

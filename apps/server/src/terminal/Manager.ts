@@ -73,7 +73,7 @@ import {
 } from "../observability/Metrics.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProcessRunner from "../processRunner.ts";
-import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -164,6 +164,7 @@ export class TerminalManager extends Context.Service<
   {
     readonly open: (
       input: TerminalOpenInput,
+      // fork: project-lifecycle
       /** Internal scripts may already hold this exact checkout's lease. Never supplied by RPC. */
       options?: { readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
@@ -1497,6 +1498,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // fork: project-lifecycle
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const context = yield* Effect.context<never>();
@@ -1991,6 +1993,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const assertValidCwd = Effect.fn("terminal.assertValidCwd")(function* (cwd: string) {
     const stats = yield* fileSystem.stat(cwd).pipe(
+      // fork: project-lifecycle -- a released managed checkout is restored before the terminal opens
       Effect.catchIf(
         (cause) => cause.reason._tag === "NotFound",
         () =>
@@ -2849,9 +2852,11 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       openWithWorkspaceLease(input),
     );
 
+  // fork: project-lifecycle -- options carries the internal held-lease flag
   const open: TerminalManager["Service"]["open"] = (input, options) =>
     withThreadLock(
       input.threadId,
+      // fork: project-lifecycle
       resolveLaunchInputEnvironment(input).pipe(
         Effect.flatMap((resolvedInput) =>
           options?.workspaceLeaseHeld

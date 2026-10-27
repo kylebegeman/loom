@@ -16,7 +16,7 @@ export function innerCopperLayers(header: string) {
     ...new Set(Array.from(header.matchAll(/\(\s*\d+\s+"(In\d+\.Cu)"/g), (m) => m[1]!)),
   ].toSorted((a, b) => Number(a.slice(2, -3)) - Number(b.slice(2, -3)));
 }
-export function referencedSheets(source: string) {
+function referencedSheets(source: string) {
   return Array.from(source.matchAll(/\(property\s+"Sheetfile"\s+"([^"\n]+)"/gi), (m) => m[1]!);
 }
 export function groupDesigns(

@@ -60,7 +60,7 @@ import { BotTriggers } from "./triggers/BotTriggers.ts";
 import { BotVersions } from "./versions/BotVersions.ts";
 
 /** A waiting run call returns the run as it stands after this, even if it is still going. */
-export const AGENT_RUN_WAIT_MAX_MS = 10 * 60 * 1000;
+const AGENT_RUN_WAIT_MAX_MS = 10 * 60 * 1000;
 
 const failure = Schema.Union([BotsError, OrchestratorMcpFailure]);
 const callerDependencies = [McpInvocationContext, ThreadManagementService];

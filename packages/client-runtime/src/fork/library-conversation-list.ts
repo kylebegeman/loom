@@ -3,7 +3,7 @@ import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fo
 import type { ProjectNavigationThreadActivity } from "./project-navigation.ts";
 import type { ProjectSort } from "./library-project-list.ts";
 
-export const UNTITLED_CONVERSATION = "Untitled conversation";
+const UNTITLED_CONVERSATION = "Untitled conversation";
 
 /** Active is everything still in play, the same split the sidebar makes. */
 export const CONVERSATION_LANES = ["active", "settled", "archived"] as const;

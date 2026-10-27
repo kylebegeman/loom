@@ -38,6 +38,7 @@ describe("cliRelease", () => {
     expect(newestCliReleaseVersion(releases, "preview")).toBe("1.2.4-preview.20260912.8");
     expect(newestCliReleaseVersion(releases, "nightly")).toBe("1.2.4-nightly.20260912.7");
     expect(newestCliReleaseVersion(releases, "stable")).toBe("1.2.3");
+    // fork: fleet-connect
     expect(newestCliReleaseVersion([{ tag_name: "1.2.3" }], "preview")).toBeUndefined();
   });
 });

@@ -24,7 +24,7 @@ function groupByFolder(flows: ReadonlyArray<DeviceQaFlow>) {
 }
 
 /** A folder runs its e2e flows and those of nested folders, like the agent tool. */
-export const folderPaths = (flows: ReadonlyArray<DeviceQaFlow>, folder: string) =>
+const folderPaths = (flows: ReadonlyArray<DeviceQaFlow>, folder: string) =>
   flows
     .filter(
       (flow) =>

@@ -20,7 +20,7 @@ import {
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
-import { use, useMemo, type ComponentProps, type ReactNode } from "react";
+import { use, useMemo, type ComponentProps, type ReactNode } from "react"; // fork: fleet-connections
 import { Platform, View } from "react-native";
 import { useWorkspaceSurface } from "../workspace/useWorkspaceSurface";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: fleet-connections
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection, SettingsSidebarContext } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -128,7 +128,7 @@ function ConfiguredSettingsRouteScreen() {
         {
           id: "account",
           icon: "person.crop.circle",
-          label: "Loom account",
+          label: "Loom account", // fork: brand
           value: accountLabel,
           disabled: !isLoaded,
           onPress: () => navigation.navigate("SettingsAuth"),
@@ -218,6 +218,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
       >
         {sections.length ? (
           sections.map((section) => (
+            // fork: fleet-connections
             <SettingsSection
               key={section.title ?? "tabs"}
               title={section.title}
@@ -242,7 +243,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
 }
 
 function useSettingsIndexSections(): SettingsListSection[] {
-  const navigation = useNavigation();
+  const navigation = useNavigation(); // fork: project-home
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -267,6 +268,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
   ): SettingsListRow => ({ id: target, icon, label, target, ...extra });
   const serverPage = (target: SettingsPageTarget, icon: SettingsListRow["icon"], label: string) =>
     page(target, icon, label, { disabled: noServerTargets });
+  // fork: library
   const route = (
     id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory",
     icon: SettingsListRow["icon"],
@@ -274,7 +276,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
   ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
   return [
     {
-      title: "App preferences",
+      title: "App preferences", // fork: everyday-workflows
       rows: [
         page("SettingsAppearance", "paintbrush", "Appearance"),
         ...(navigationCustomizationAvailable()
@@ -296,11 +298,12 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ],
     },
     {
-      title: "Projects & conversations",
+      title: "Projects & conversations", // fork: everyday-workflows
       rows: [
-        route("Library", "folder", "Projects"),
+        route("Library", "folder", "Projects"), // fork: library
         ...(selectedProjectKey !== null
           ? [
+              // fork: everyday-workflows
               page("SettingsProjectOverview", "folder", "Computer folders", {
                 value: projectLabel,
               }),
@@ -309,12 +312,13 @@ function useSettingsIndexSections(): SettingsListSection[] {
         // fork: project-home - Storage review is reachable without a project filter.
         route("ProjectStorageInventory", "internaldrive", "Files on computers"),
         page("SettingsOrganization", "folder", "Organization"),
-        page("SettingsThreads", "text.bubble", "Conversation behavior"),
+        page("SettingsThreads", "text.bubble", "Conversation behavior"), // fork: everyday-workflows
         page("SettingsFollowUp", "arrow.turn.left.up", "Follow-ups"),
-        page("SettingsArchive", "archivebox", "Archived conversations"),
+        page("SettingsArchive", "archivebox", "Archived conversations"), // fork: everyday-workflows
       ],
     },
     {
+      // fork: fleet-connections
       title: "Computer settings",
       ...(noServerTargets
         ? { notice: <SettingsComputerNotice /> }
@@ -323,6 +327,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
               "Applies to the selected computers. Use the filter above to choose computers or a project.",
           }),
       rows: [
+        // fork: everyday-workflows
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Agent accounts"),
         serverPage("SettingsEnvironmentNewThreads", "text.bubble", "New conversations"),
         serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
@@ -333,7 +338,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
     },
     {
       title: "App",
-      rows: [page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`)],
+      rows: [page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`)], // fork: brand
     },
   ];
 }

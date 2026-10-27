@@ -7,7 +7,7 @@ import type {
   PcbPoint,
 } from "@t3tools/contracts/fork";
 import type { BoardParts } from "./board3dParts";
-export const HEIGHT_PARTS_LIMIT = 100;
+const HEIGHT_PARTS_LIMIT = 100;
 export function partHeights(parts: BoardParts): Pcb3dHeights | null {
   if (parts.top === null || parts.bottom === null) return null;
   const top = parts.top,

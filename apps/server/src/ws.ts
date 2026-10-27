@@ -218,13 +218,14 @@ import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
+// fork: project-home
 import {
   projectMutationFailureMessage,
   projectMutationOperation,
 } from "./project/ProjectMutation.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
-import { makeProjectCloneHooks } from "./project/ProjectCloneCompletion.ts";
-import * as ProjectPlacement from "./project/ProjectPlacement.ts";
+import { makeProjectCloneHooks } from "./project/ProjectCloneCompletion.ts"; // fork: file-placement
+import * as ProjectPlacement from "./project/ProjectPlacement.ts"; // fork: file-placement
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -1325,9 +1326,10 @@ export const layerWsRpc = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
-      const placement = yield* ProjectPlacement.ProjectPlacement;
+      const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      // fork: file-placement -- clone completion hooks own project enrichment now
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
@@ -1771,7 +1773,7 @@ export const layerWsRpc = (
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
-        const folders = yield* placement.folders;
+        const folders = yield* placement.folders; // fork: file-placement
         const lastEventLoopStall = yield* eventLoopMonitor.latestNoticeableStall;
         const editorConfig = yield* resolveEditorConfig(
           yield* resolveAvailableEditorsForConfig(externalLauncher.resolveAvailableEditors()),
@@ -2754,6 +2756,7 @@ export const layerWsRpc = (
           sourceControlRepositories.lookupRepository(input),
         [WS_METHODS.sourceControlCloneRepository]: (input) =>
           sourceControlRepositories.cloneRepository(input),
+        // fork: file-placement -- makeProjectCloneHooks replaces the inline clone hooks
         [WS_METHODS.projectCloneStart]: (input) => projectCloneTracker.start(input, cloneHooks),
         [WS_METHODS.projectsEnsureScratch]: () =>
           managedFolders.ensureScratchProject.pipe(
@@ -2773,7 +2776,7 @@ export const layerWsRpc = (
           projectCloneTracker.cancel(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.projectCloneRetry]: (input) =>
           projectCloneTracker
-            .retry(input.projectId, cloneHooks)
+            .retry(input.projectId, cloneHooks) // fork: file-placement
             .pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
@@ -2859,6 +2862,7 @@ export const layerWsRpc = (
                 new ProjectMutationError({
                   commandId: mutation.commandId,
                   message:
+                    // fork: project-home
                     cause._tag === "ServerRuntimeStartupError"
                       ? "Failed to mutate project."
                       : projectMutationFailureMessage(cause),

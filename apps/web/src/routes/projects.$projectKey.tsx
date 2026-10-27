@@ -6,6 +6,7 @@ import {
 } from "~/fork/project-home/routeSearch";
 
 export const Route = createFileRoute("/projects/$projectKey")({
+  // fork: project-home
   beforeLoad: async ({ context }) => {
     if (
       context.authGateState.status !== "authenticated" &&
@@ -13,11 +14,14 @@ export const Route = createFileRoute("/projects/$projectKey")({
     ) {
       throw redirect({ to: "/pair", replace: true });
     }
+    // fork: project-home -- the route renders ProjectHomePage, not a settings redirect
   },
+  // fork: project-home
   validateSearch: validateProjectHomeSearch,
   component: ProjectHomeRoute,
 });
 
+// fork: project-home
 function ProjectHomeRoute() {
   const { projectKey } = Route.useParams();
   const search = Route.useSearch();

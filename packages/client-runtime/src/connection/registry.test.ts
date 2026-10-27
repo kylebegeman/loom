@@ -7,9 +7,9 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import * as Clock from "effect/Clock";
+import * as HttpClient from "effect/http/HttpClient"; // fork: identity-renewal
+import * as HttpClientResponse from "effect/http/HttpClientResponse"; // fork: identity-renewal
+import * as Clock from "effect/Clock"; // fork: identity-renewal
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -26,8 +26,8 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as TokenStore from "../authorization/tokenStore.ts";
-import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
-import * as ConnectionResolver from "./resolver.ts";
+import * as RemoteEnvironmentAuthorization from "../authorization/service.ts"; // fork: identity-renewal
+import * as ConnectionResolver from "./resolver.ts"; // fork: identity-renewal
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -46,6 +46,7 @@ import * as Connectivity from "./connectivity.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
 import * as ConnectionDriver from "./driver.ts";
 import type { RouteCheck } from "./driver.ts";
+// fork: identity-renewal
 import { connectionRouteId, connectionRouteKind, connectionRoutes, routeEntry } from "./routes.ts";
 import {
   ConnectionTransientError,
@@ -156,7 +157,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialProfiles: ReadonlyArray<ConnectionProfile> = [],
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
-    readonly identityLogoutStatus?: number;
+    readonly identityLogoutStatus?: number; // fork: identity-renewal
     readonly prepareError?: ConnectionBlockedError;
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly beforeRegistrationRegister?: (
@@ -429,6 +430,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       return { prepared, session };
     });
   const driver = ConnectionDriver.ConnectionDriver.of({
+    // fork: reach
     connect: (entry, reportProgress, connectOptions) =>
       reportProgress({ stage: "preparing" }).pipe(
         Effect.andThen(
@@ -436,7 +438,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
             entry,
             checkRoute,
             (route) => connectRoute(entry, route),
-            connectOptions,
+            connectOptions, // fork: reach
           ),
         ),
       ),
@@ -445,6 +447,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       checkRoute(route).pipe(Effect.map((check) => check === "answered")),
   });
 
+  // fork: identity-renewal
   const identityRevocations: string[] = [];
   const identityHttp = HttpClient.make((request) =>
     Effect.sync(() => {
@@ -459,7 +462,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const layer = EnvironmentRegistry.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.succeed(HttpClient.HttpClient, identityHttp),
+        Layer.succeed(HttpClient.HttpClient, identityHttp), // fork: identity-renewal
         Layer.succeed(Persistence.ConnectionTargetStore, targetStore),
         Layer.succeed(Persistence.ConnectionRegistrationStore, registrationStore),
         Layer.succeed(ConnectionProfileStore.ConnectionProfileStore, profileStore),
@@ -481,7 +484,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   return {
     layer,
     storedTargets,
-    identityRevocations,
+    identityRevocations, // fork: identity-renewal
     shellCache,
     cacheClears,
     ownedDataClears,
@@ -490,6 +493,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedProfiles,
     profileReadCount,
     storedCredentials,
+    // fork: identity-renewal
     credentialStore,
     profileStore,
     sshGateway,
@@ -2342,6 +2346,7 @@ describe("EnvironmentRegistry routes", () => {
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
+  // fork: identity-renewal
   it.effect(
     "relearns a usable fallback after upgrading a paired credential to Identity and restarting",
     () =>

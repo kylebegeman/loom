@@ -22,7 +22,7 @@ type Threads = Pick<
 >;
 
 /** Matches one stored event against every trigger; pull request state is shared by all of them. */
-export const handleStoredEvent = Effect.fnUntraced(function* (
+const handleStoredEvent = Effect.fnUntraced(function* (
   triggers: Pick<BotTriggers["Service"], "handleEvent" | "store">,
   threads: Threads,
   stored: OrchestrationV2StoredEvent,

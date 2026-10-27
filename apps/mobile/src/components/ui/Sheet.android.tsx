@@ -14,7 +14,7 @@ export function Sheet(props: SheetProps) {
   return (
     <FormSheet
       isOpen={isOpen}
-      preventNativeDismiss={!dismissible}
+      preventNativeDismiss={!dismissible} // fork: sites-editor-dismiss
       detents={[0.5, 0.9]}
       prefersGrabberVisible
       nativeContainerStyle={containerStyle}
@@ -26,7 +26,7 @@ export function Sheet(props: SheetProps) {
         <View className="flex-1">{props.children}</View>
         <AndroidSheetHeader
           title={props.title}
-          onBack={dismissible ? () => setIsOpen(false) : undefined}
+          onBack={dismissible ? () => setIsOpen(false) : undefined} // fork: sites-editor-dismiss
         />
       </View>
     </FormSheet>

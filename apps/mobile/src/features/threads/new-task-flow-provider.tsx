@@ -268,6 +268,7 @@ export function NewTaskFlowProvider(
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
+  // fork: fleet-connections
   const selectedEnvironmentId = selectedEnvironmentIdOverride ?? projects[0]?.environmentId ?? null;
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   const [activeDraftKey, setActiveDraftKey] = useState<string | null>(null);
@@ -331,7 +332,7 @@ export function NewTaskFlowProvider(
       ? editingPendingProject
       : selectedProjectKey === null
         ? (projectsForEnvironment[0] ?? null)
-        : null);
+        : null); // fork: fleet-connections
 
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
     selectedProject?.environmentId ?? null,
@@ -344,6 +345,7 @@ export function NewTaskFlowProvider(
   const scratchEnvironments = connectedEnvironments.filter(
     // fork: no-project-first - A Library advertises a scratch folder but cannot run work.
     (environment) =>
+      // fork: no-project-first
       noProjectWorkspaceRoot(
         environment.connectionState,
         serverConfigs.get(environment.environmentId),
@@ -410,7 +412,7 @@ export function NewTaskFlowProvider(
   useEffect(() => {
     if (
       props.active === false ||
-      selectedProjectKey === null ||
+      selectedProjectKey === null || // fork: project-home
       activeDraftKey !== null ||
       editingPendingTask !== null ||
       selectedProject === null
@@ -424,7 +426,7 @@ export function NewTaskFlowProvider(
         projectId: selectedProject.id,
       }),
     );
-  }, [activeDraftKey, editingPendingTask, selectedProject, selectedProjectKey, props.active]);
+  }, [activeDraftKey, editingPendingTask, selectedProject, selectedProjectKey, props.active]); // fork: project-home
   const activePendingKey =
     props.active === false
       ? null
@@ -720,6 +722,7 @@ export function NewTaskFlowProvider(
 
   // fork: fleet-connections - Switching computers keeps the draft unless the same project exists there.
   const selectEnvironment = (environmentId: EnvironmentId) => {
+    // fork: fleet-connections
     if (selectedProjectKey !== null && selectedProject === null) {
       Dialog.alert(
         "Project unavailable",
@@ -731,6 +734,7 @@ export function NewTaskFlowProvider(
       projects.filter((project) => project.environmentId === environmentId),
       selectedProject,
     );
+    // fork: fleet-connections
     if (!match) {
       Dialog.alert(
         "Project unavailable on this computer",
@@ -738,8 +742,9 @@ export function NewTaskFlowProvider(
       );
       return false;
     }
-    carryDraftContentTo(match);
+    carryDraftContentTo(match); // fork: fleet-connections
     setSelectedEnvironmentId(environmentId);
+    // fork: fleet-connections
     setSelectedProjectKey(scopedProjectKey(match.environmentId, match.id));
     return true;
   };
@@ -756,7 +761,7 @@ export function NewTaskFlowProvider(
       return true;
     }
     if (!isScratchDraft) {
-      return selectEnvironment(environmentId);
+      return selectEnvironment(environmentId); // fork: fleet-connections
     }
     const request = {};
     latestSwitchRef.current = request;

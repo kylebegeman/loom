@@ -16,7 +16,7 @@ import { readSelection, requestFor, type AppleAction } from "./selection";
 export const apple = createAppleBuildToolingAtoms(connectionAtomRuntime);
 
 export const FEATURE = "apple-build-tooling";
-export const PANEL_ID = "apple-build-tooling";
+const PANEL_ID = "apple-build-tooling";
 
 export async function runAppleCommand<W, A, E>(
   command: AtomCommand<W, A, E>,
@@ -38,7 +38,7 @@ export const isActiveRun = (run: Pick<AppleRunRecord, "status">) =>
   run.status === "queued" || run.status === "running";
 
 /** The project a thread belongs to, read once without subscribing. */
-export function projectIdOf(threadRef: ScopedThreadRef): string | null {
+function projectIdOf(threadRef: ScopedThreadRef): string | null {
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(threadRef))?.projectId ?? null;
 }
 

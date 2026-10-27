@@ -76,7 +76,7 @@ function PreviewLink({ siteId, name }: { readonly siteId: string; readonly name:
 }
 
 /** The sites a local project serves, as small links beside its other ways in. */
-export function ProjectSites({
+function ProjectSites({
   projectId,
   environmentId,
 }: {

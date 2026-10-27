@@ -1,8 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult } from "effect/reactivity"; // fork: machine-updates
 
 import { APP_VERSION } from "~/branding";
+// fork: machine-updates
 import {
   isLocalUpdateEnvironment,
   updateEnvironmentInScope,
@@ -10,6 +11,7 @@ import {
 } from "~/fork/connections/updateScope";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
+// fork: machine-updates
 import {
   isRuntimeArchivePublished,
   useRuntimeReleaseAssets,
@@ -47,6 +49,7 @@ export type ReportLocalUpdateError = (title: string, description: string) => voi
 // fork: machine-updates - The footer owns local updates; Computers owns fleet updates.
 export function useUpdateEverything(localUpdateVersion: string | null, scope: UpdateScope) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
+  // fork: machine-updates
   const { environments: allEnvironments } = useEnvironments();
   const environments = allEnvironments.filter((environment) =>
     updateEnvironmentInScope(environment.entry.target, scope, isElectron),
@@ -61,6 +64,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     environmentId: environment.environmentId,
     label: environment.label,
     serverConfig: environment.serverConfig,
+    // fork: machine-updates
     connected: environment.entry.enabled && environment.connection.phase === "connected",
     hostedByThisApp: isLocalUpdateEnvironment(environment.entry.target, isElectron),
     canMaintain: canUpdateServer(sessionStates[index]!),
@@ -70,6 +74,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     machines,
     targetVersion,
   );
+  // fork: machine-updates -- published runtime archives replace the npm publication check
   const needsArchive = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
   const release = useRuntimeReleaseAssets(needsArchive ? targetVersion : null);
   const assets = AsyncResult.getOrElse(release, () => []);
@@ -86,6 +91,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
+        // fork: machine-updates
         reason: AsyncResult.isFailure(release)
           ? "could not verify runtime release"
           : AsyncResult.isInitial(release)
@@ -93,6 +99,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
             : "runtime archive is not published for this computer",
       })),
   ];
+  // fork: machine-updates
   const restarts = collectRestartingMachines(
     machines,
     servers,
@@ -102,7 +109,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
   const updateServer = useServerUpdate();
 
   const { summary, lines } = describeUpdateEverything({
-    localVersion: scope === "local" ? localUpdateVersion : null,
+    localVersion: scope === "local" ? localUpdateVersion : null, // fork: machine-updates
     servers,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
@@ -114,6 +121,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
   });
 
   return {
+    // fork: machine-updates
     machines,
     environments,
     targetVersion,
@@ -226,10 +234,10 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
                 serverOutcome.status === "failed"
                   ? serverOutcome.message
                   : serverOutcome.status === "skipped"
-                    ? "Could not start the update"
+                    ? "Could not start the update" // fork: machine-updates
                     : (providerFailures.get(server.environmentId) ?? null),
                 {
-                  serverUpdated: serverOutcome.status === "updated",
+                  serverUpdated: serverOutcome.status === "updated", // fork: machine-updates
                   providerFailure: providerFailures.get(server.environmentId) ?? null,
                 },
               );

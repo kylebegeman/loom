@@ -7,7 +7,7 @@ import type {
 /** How long typing pauses before the Library is asked, so a search is not sent per keystroke. */
 export const LIBRARY_SEARCH_DEBOUNCE_MS = 300;
 /** Hits per request. Enough to scan at a glance; more arrive on request. */
-export const LIBRARY_SEARCH_PAGE = 20;
+const LIBRARY_SEARCH_PAGE = 20;
 const MAX_QUERY_CHARS = 500;
 
 export const LIBRARY_SEARCH_ROLE_LABELS: Record<LibrarySearchHit["role"], string> = {

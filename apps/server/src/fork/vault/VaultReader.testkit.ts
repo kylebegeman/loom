@@ -52,7 +52,7 @@ export const projectionThreads = Layer.unwrap(
 
 export const readerThreadId = ThreadId.make("vault-reader-thread");
 export const readerRunId = RunId.make("vault-reader-run");
-export const readerProjectId = ProjectId.make("vault-reader-project");
+const readerProjectId = ProjectId.make("vault-reader-project");
 const providerInstanceId = ProviderInstanceId.make("codex");
 const at = DateTime.makeUnsafe(Date.UTC(2026, 9, 24));
 

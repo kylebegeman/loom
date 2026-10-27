@@ -4,7 +4,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
+import * as Queue from "effect/Queue"; // fork: reach
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -205,14 +205,14 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   const connect = Effect.fn("TestConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriver.ConnectionDriverProgress) => Effect.Effect<void>,
-    connectOptions?: ConnectionDriver.ConnectOptions,
+    connectOptions?: ConnectionDriver.ConnectOptions, // fork: reach
   ) {
     yield* reportProgress({ stage: "preparing" });
     return yield* ConnectionDriver.connectOverRoutes(
       entry,
       checkRoute,
       (route) => connectRoute(route.target, reportProgress),
-      connectOptions,
+      connectOptions, // fork: reach
     );
   });
 
@@ -1215,6 +1215,7 @@ describe("EnvironmentSupervisor routes", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  // fork: reach
   it.effect("upgrades at once to a route that answers just after the head start", () =>
     Effect.gen(function* () {
       const lanChecks = yield* Queue.unbounded<void>();

@@ -23,6 +23,7 @@ const failProjectMutation = Effect.fn("environment.projects.failMutation")(funct
   if (
     cause._tag === "ProjectNotFoundError" ||
     cause._tag === "ProjectConflictError" ||
+    // fork: file-placement
     cause._tag === "ProjectNotEmptyError" ||
     cause._tag === "ProjectLocationManagedError"
   ) {

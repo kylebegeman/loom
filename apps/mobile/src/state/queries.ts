@@ -55,7 +55,7 @@ const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> =
 const EMPTY_THREAD_SEARCH_ATOM = Atom.make<ThreadSearchResultsState>({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
-  failedEnvironmentIds: [] as ReadonlyArray<EnvironmentId>,
+  failedEnvironmentIds: [] as ReadonlyArray<EnvironmentId>, // fork: everyday-workflows
   rows: [],
 }).pipe(Atom.withLabel("mobile:thread-search:empty"));
 
@@ -195,6 +195,7 @@ export function useThreadSearch(
   /** The query `matches` are for, which lags the typed one while a search runs. */
   readonly query: string;
   readonly isPending: boolean;
+  // fork: everyday-workflows
   readonly failedEnvironmentIds: ReadonlyArray<EnvironmentId>;
   readonly retry: () => void;
 } {
@@ -249,6 +250,7 @@ export function useThreadSearch(
     matches: visible.matches,
     query: visible.query,
     isPending,
+    // fork: everyday-workflows
     failedEnvironmentIds: result.failedEnvironmentIds,
     retry: () => {
       if (settledQuery === null) return;

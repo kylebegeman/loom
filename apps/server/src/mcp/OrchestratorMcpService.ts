@@ -2707,6 +2707,7 @@ const make = Effect.gen(function* () {
                     ),
                   );
               } else
+                // fork: library-projects
                 yield* threadManagement
                   .dispatch({
                     type: "thread.create",
@@ -2834,6 +2835,7 @@ const make = Effect.gen(function* () {
         const snapshots = yield* Effect.forEach(locations, (location) =>
           threadManagement.getShellSnapshot({ location }),
         );
+        // fork: attention-status
         return snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]);
       }).pipe(
         Effect.mapError((error) =>
@@ -2841,6 +2843,7 @@ const make = Effect.gen(function* () {
         ),
       );
       const nowMs = yield* Clock.currentTimeMillis;
+      // fork: attention-status
       const projectThreads = (
         input.attention
           ? selectAttentionThreadShells(allThreads, nowMs)

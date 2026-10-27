@@ -49,7 +49,7 @@ interface ScannerTestInput {
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
-  readonly worktreesDirectory?: string;
+  readonly worktreesDirectory?: string; // fork: file-placement
 }
 
 const layerScannerTest = (input: ScannerTestInput) =>
@@ -68,6 +68,7 @@ const layerScannerTest = (input: ScannerTestInput) =>
             },
             ...input.providerInstances,
           },
+          // fork: file-placement
           ...(input.worktreesDirectory === undefined
             ? {}
             : { worktreesDirectory: input.worktreesDirectory }),
@@ -698,6 +699,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    // fork: file-placement
     it.effect("lists projects in the default Projects folder but not Loom's own folders", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;

@@ -237,6 +237,7 @@ describe("DesktopBackendConfiguration", () => {
           "--require",
           environment.compileCachePath,
           environment.backendEntryPath,
+          // fork: restart-continuity
           "--bootstrap-fd",
           "3",
         ]);

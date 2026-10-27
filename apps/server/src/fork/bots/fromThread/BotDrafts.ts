@@ -45,7 +45,7 @@ export const UNUSABLE_REFINEMENT = "The model's draft was not usable; showing th
 const PROMOTED_RUN_THREAD_PREFIX = "bot-open-";
 const DRAFT_THREAD_PREFIX = "bot-run-draft-";
 
-export const REFINE_DRAFT_REQUEST = `You are helping turn a one-off request into a reusable bot: a fixed brief that runs again and again with different inputs.
+const REFINE_DRAFT_REQUEST = `You are helping turn a one-off request into a reusable bot: a fixed brief that runs again and again with different inputs.
 
 Below are a draft bot as JSON and the original request it came from. Improve only these four fields:
 
@@ -62,7 +62,7 @@ const errorMessage = (error: unknown) =>
   error instanceof Error && error.message !== "" ? error.message : String(error);
 
 /** The request a thread opened with: its first user message that a person or agent wrote. */
-export const briefMessage = (messages: ReadonlyArray<OrchestrationV2ConversationMessage>) =>
+const briefMessage = (messages: ReadonlyArray<OrchestrationV2ConversationMessage>) =>
   messages.find(
     (message) =>
       message.role === "user" &&

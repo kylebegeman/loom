@@ -20,6 +20,8 @@ raw provider events, or child-agent output. Child-agent token use is excluded fr
 
 Loom builds carry no relay or mobile tracing credentials, so they send no diagnostic traces to T3.
 
+<!-- fork: telemetry-off -->
+
 To turn product events off again, remove `T3CODE_TELEMETRY_ENABLED` from the server's environment
 or set it to `false`, then restart the server. The web app in a browser, including one the `t3`
 CLI opens, does not read this variable.

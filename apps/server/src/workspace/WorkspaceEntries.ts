@@ -154,13 +154,15 @@ export const make = Effect.gen(function* () {
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
-    restoreManagedCheckout = true,
+    restoreManagedCheckout = true, // fork: project-lifecycle
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
+    // fork: project-lifecycle
     return yield* workspacePaths.normalizeWorkspaceRoot(cwd, { restoreManagedCheckout });
   });
 
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(
     function* (cwd) {
+      // fork: project-lifecycle
       const normalizedCwd = yield* normalizeWorkspaceRoot(cwd, false).pipe(
         Effect.orElseSucceed(() => cwd),
       );

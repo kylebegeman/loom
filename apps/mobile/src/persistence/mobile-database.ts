@@ -8,6 +8,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 
 const DATABASE_NAME = "t3code-client.db";
 const DATABASE_SCHEMA_VERSION = 1;
+// fork: library
 const LIBRARY_CACHE_ENTRY_MAX_BYTES = 8 * 1024 * 1024;
 const LIBRARY_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 const LIBRARY_CACHE_MAX_ENTRIES = 200;
@@ -26,9 +27,9 @@ export const ClientCacheKind = Schema.Literals([
   "server-config",
   "vcs-refs",
   "project-favicon",
-  "workspace-handoff",
+  "workspace-handoff", // fork: project-home
   "pull-request",
-  "project-library",
+  "project-library", // fork: library
 ]);
 export type ClientCacheKind = typeof ClientCacheKind.Type;
 
@@ -299,6 +300,7 @@ const makeAvailable = Effect.gen(function* () {
       Effect.tryPromise({
         try: () =>
           database.getFirstAsync<{ readonly payload: string }>(
+            // fork: library -- the query also bounds project-library rows
             `SELECT payload
                      FROM client_cache
                      WHERE environment_id = ? AND kind = ? AND cache_key = ?
@@ -308,6 +310,7 @@ const makeAvailable = Effect.gen(function* () {
             kind,
             cacheKey,
             Date.now() - 30 * 24 * 60 * 60_000,
+            // fork: library
             Date.now() - LIBRARY_CACHE_RETENTION_MS,
             LIBRARY_CACHE_ENTRY_MAX_BYTES,
           ),
@@ -334,6 +337,7 @@ const makeAvailable = Effect.gen(function* () {
               new TextEncoder().encode(payload).length > 4 * 1024 * 1024
             )
               return;
+            // fork: library
             if (
               kind === "project-library" &&
               new TextEncoder().encode(payload).length > LIBRARY_CACHE_ENTRY_MAX_BYTES
@@ -355,6 +359,7 @@ const makeAvailable = Effect.gen(function* () {
                 payload,
                 Date.now(),
               );
+              // fork: library
               if (kind === "project-library") {
                 await transaction.runAsync(
                   `DELETE FROM client_cache WHERE kind = 'project-library' AND (environment_id, cache_key) IN (

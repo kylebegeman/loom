@@ -21,6 +21,7 @@ export const selectedThreadRowColors = {
   mutedIconTintClassName: "accent-thread-selected-foreground-muted",
 };
 
+// fork: library
 export function getThreadListV2NewBranchMenuTitle(branch: string | null) {
   return branch ? "New thread on branch" : "New conversation from settings";
 }

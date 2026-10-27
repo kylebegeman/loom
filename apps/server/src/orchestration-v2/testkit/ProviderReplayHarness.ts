@@ -1,4 +1,4 @@
-import * as ProviderTurnStartTestkit from "../ProviderTurnStartService.testkit.ts";
+import * as ProviderTurnStartTestkit from "../ProviderTurnStartService.testkit.ts"; // fork: project-lifecycle
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -395,7 +395,7 @@ export function layerWithRegistry<Error>(
   const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        ProviderTurnStartTestkit.layerWorkspacePreparation,
+        ProviderTurnStartTestkit.layerWorkspacePreparation, // fork: project-lifecycle
         layerContextHandoffServiceProvided,
         layerEventSinkProvided,
         IdAllocator.layer,

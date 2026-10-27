@@ -1,5 +1,5 @@
 import { SessionPermissions } from "./SessionPermissions";
-import { ChevronsLeftRightEllipsisIcon, EllipsisIcon, RouteIcon } from "lucide-react";
+import { ChevronsLeftRightEllipsisIcon, EllipsisIcon, RouteIcon } from "lucide-react"; // fork: fleet-connections
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useEffectEvent, useState } from "react";
 import {
@@ -10,6 +10,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import {
+  // fork: fleet-connections -- no route count; routes list in ComputerConnectionDetails
   hasSavedBearerRoute,
   connectionStatusText,
   environmentMcpUrl,
@@ -62,6 +63,7 @@ import {
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 
+// fork: identity-renewal
 import {
   ExpiredComputerIdentity,
   SavedComputerIdentity,
@@ -220,6 +222,7 @@ export function SavedBackendListRow({
     environment.serverConfig ??
       (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
   );
+  // fork: fleet-connections -- no route count; routes list in ComputerConnectionDetails
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
@@ -252,8 +255,8 @@ export function SavedBackendListRow({
       kind={machineKind}
       label={environment.label}
       dimmed={!enabled}
-      // fork: fleet-connections
       subtitle={
+        // fork: fleet-connections
         <Tooltip>
           <TooltipTrigger
             payload={statusTooltip}
@@ -270,6 +273,7 @@ export function SavedBackendListRow({
               />
             }
           >
+            {/* fork: fleet-connections */}
             {subtitleText}
           </TooltipTrigger>
           <TooltipPopup side="top" className="whitespace-pre-wrap">
@@ -288,6 +292,7 @@ export function SavedBackendListRow({
               onToggle={() => setDiagnosisOpen((open) => !open)}
             />
           ) : null}
+          {/* fork: identity-renewal */}
           <ExpiredComputerIdentity
             entry={environment.entry}
             label={environment.label}
@@ -326,7 +331,9 @@ export function SavedBackendListRow({
             </section>
             {/* fork: reach */}
             <ComputerReachDetails environment={environment} />
+            {/* fork: identity-renewal */}
             <SavedComputerIdentity entry={environment.entry} phase={environment.connection.phase} />
+            {/* fork: fleet-connections */}
             <RemoteComputerAccess environmentId={environmentId} connected={isConnected} />
             <section aria-label="Connection permissions">
               <h3 className="text-xs font-medium">This device's permissions</h3>
@@ -335,6 +342,7 @@ export function SavedBackendListRow({
                 connected={isConnected}
                 routeContext
               />
+              {/* fork: fleet-connections */}
             </section>
           </ComputerConnectionDetails>
         </>
@@ -405,6 +413,7 @@ export function SavedBackendListRow({
           {/* fork: fleet-connections */}
           <MenuItem onClick={() => setDetailsOpen((open) => !open)}>
             <RouteIcon />
+            {/* fork: fleet-connections */}
             {detailsOpen ? "Hide connection details" : "Connection details"}
           </MenuItem>
           {mcpUrl ? (
@@ -590,18 +599,18 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           // fork: fleet-connections
           description={
             signedOut
-              ? "Sign in to make this computer available to your other devices through T3 Connect."
+              ? "Sign in to make this computer available to your other devices through T3 Connect." // fork: fleet-connections
               : linkRevoked
-                ? "This computer was removed from T3 Connect. Turn it on to link it again."
+                ? "This computer was removed from T3 Connect. Turn it on to link it again." // fork: fleet-connections
                 : managedTunnelActive
                   ? reachability?.status === "unreachable"
-                    ? "T3 Connect is on, but other devices cannot reach this computer."
+                    ? "T3 Connect is on, but other devices cannot reach this computer." // fork: fleet-connections
                     : reachability?.status === "reachable"
-                      ? "This computer is available to your other devices through T3 Connect."
+                      ? "This computer is available to your other devices through T3 Connect." // fork: fleet-connections
                       : "T3 Connect is on. Reachability has not been checked yet."
                   : managedTunnelOutOfSync
-                    ? "T3 Connect is out of sync. This computer is linked only to publish agent activity, so other devices cannot connect. Turn T3 Connect on to repair it."
-                    : "Make this computer available to your other devices through T3 Connect."
+                    ? "T3 Connect is out of sync. This computer is linked only to publish agent activity, so other devices cannot connect. Turn T3 Connect on to repair it." // fork: fleet-connections
+                    : "Make this computer available to your other devices through T3 Connect." // fork: fleet-connections
           }
           status={operationError ?? primaryCloudLinkState.error ?? reachabilityStatus}
           control={
@@ -686,18 +695,19 @@ export function CloudLinkRow({
   return <ConfiguredCloudLinkRow canManageRelay={canManageRelay} />;
 }
 
-// fork: fleet-connections
 function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
   return (
+    // fork: fleet-connections
     <Empty className="min-h-32">
       <EmptyMedia variant="icon">
         <ChevronsLeftRightEllipsisIcon />
       </EmptyMedia>
       <EmptyHeader>
+        {/* fork: fleet-connections */}
         <EmptyTitle>Connect another computer</EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? "Use Connect computer for a pairing link or SSH, or sign in to discover computers linked to your account."
+            ? "Use Connect computer for a pairing link or SSH, or sign in to discover computers linked to your account." // fork: fleet-connections
             : "Use Connect computer to add a computer with a pairing link or SSH."}
         </EmptyDescription>
       </EmptyHeader>

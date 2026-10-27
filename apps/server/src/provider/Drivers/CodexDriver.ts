@@ -42,6 +42,7 @@ import {
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
+  // fork: switchboard -- the switchboard source replaces makeProviderSnapshotSettingsSource
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 import { makeSwitchboardSnapshotSettingsSource } from "../../fork/switchboard/providerProbes.ts"; // fork: switchboard
@@ -220,6 +221,7 @@ export const CodexDriver: ProviderDriver<
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, pathService),
     );
+    // fork: switchboard -- snapshotSettings is created above, before the provider check
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({
       resolveMaintenance,
       getSettings: snapshotSettings.getSettings,

@@ -20,9 +20,9 @@ import {
 import { ConvexHull, type Face } from "three/addons/math/ConvexHull.js";
 import { weld, type Welded } from "./weld";
 
-export const FLAT_TOLERANCE_DEGREES = 2;
-export const HULL_GROUP_DEGREES = 1;
-export const FLOATING_FACE_MM = 0.1;
+const FLAT_TOLERANCE_DEGREES = 2;
+const HULL_GROUP_DEGREES = 1;
+const FLOATING_FACE_MM = 0.1;
 const DOWN = new Vector3(0, 0, -1);
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
 const asTuple = (q: Quaternion): ModelQuaternion => normalizeQuaternion([q.x, q.y, q.z, q.w]);

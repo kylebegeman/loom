@@ -28,7 +28,7 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
@@ -84,7 +84,7 @@ export function paletteClosedIntoDialog(activeElement: Pick<Element, "closest"> 
 }
 
 export type CommandPaletteOpenIntent =
-  | { readonly kind: "add-project"; readonly environmentId?: EnvironmentId }
+  | { readonly kind: "add-project"; readonly environmentId?: EnvironmentId } // fork: fleet-connections
   | { readonly kind: "new-thread-in" | "change-theme" }
   | { readonly kind: "submenu"; readonly value: string } // fork: library-palette
   | {
@@ -94,6 +94,7 @@ export type CommandPaletteOpenIntent =
     };
 
 /** Explicit computer requests never fall back to a different connected computer. */
+// fork: fleet-connections
 export function resolveAddProjectOpenTarget(
   connectedEnvironmentIds: readonly EnvironmentId[],
   requestedEnvironmentId?: EnvironmentId,
@@ -128,7 +129,7 @@ export type CommandPaletteUiAction =
       readonly query: string;
       readonly linkedThreads?: CommandPaletteLinkedThreads;
     }
-  | { readonly _tag: "OpenAddProject"; readonly environmentId?: EnvironmentId }
+  | { readonly _tag: "OpenAddProject"; readonly environmentId?: EnvironmentId } // fork: fleet-connections
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
   | { readonly _tag: "OpenSubmenu"; readonly value: string } // fork: library-palette
@@ -175,6 +176,7 @@ export function reduceCommandPaletteUiState(
         },
       };
     case "OpenAddProject":
+      // fork: fleet-connections
       return {
         open: true,
         mode: "command",
@@ -242,7 +244,7 @@ export interface CommandPaletteGroup {
 }
 
 export interface CommandPaletteView {
-  readonly existingFolderOnly?: boolean;
+  readonly existingFolderOnly?: boolean; // fork: fleet-connections
   readonly addonIcon: ReactNode;
   readonly groups: ReadonlyArray<CommandPaletteGroup>;
   readonly initialQuery?: string;

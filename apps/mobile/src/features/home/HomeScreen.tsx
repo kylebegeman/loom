@@ -22,7 +22,7 @@ import {
   type ProjectLibraryItem,
 } from "../../fork/project-navigation/useProjectLibrary";
 import { useActiveNewTask } from "../../state/active-new-task";
-import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+// fork: project-navigation -- empty states render in the list, without the early-return spinner
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import type { LegendListRef } from "@legendapp/list/react-native";
@@ -58,7 +58,7 @@ import {
   deriveCenteredContentHorizontalPadding,
 } from "../../lib/layout";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { ThreadSearchNotice } from "../threads/ThreadSearchNotice";
+import { ThreadSearchNotice } from "../threads/ThreadSearchNotice"; // fork: everyday-workflows
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
 import type { SavedRemoteConnection } from "../../lib/connection";
@@ -69,6 +69,7 @@ import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
+// fork: project-navigation -- the early-return empty state and its glass inset are gone
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
@@ -97,6 +98,7 @@ import {
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
+// fork: library
 import type {
   HomeListFilterMenuEnvironment,
   HomeListFilterMenuProject,
@@ -180,6 +182,7 @@ function deriveEmptyState(props: {
   const { catalogState } = props;
   if (catalogState.isLoadingConnections) {
     return {
+      // fork: fleet-connections
       title: "Loading computers",
       detail: "Checking saved computers on this device.",
       loading: true,
@@ -188,6 +191,7 @@ function deriveEmptyState(props: {
 
   if (!catalogState.hasConnections) {
     return {
+      // fork: fleet-connections
       title: "Connect a computer",
       detail: "Connect a computer to open projects and start tasks there.",
       loading: false,
@@ -199,15 +203,16 @@ function deriveEmptyState(props: {
       catalogState.connectionState === "offline" ||
       catalogState.connectionState === "error" ||
       catalogState.connectionState === "unsupported") &&
-    !catalogState.hasReadyEnvironment
+    !catalogState.hasReadyEnvironment // fork: fleet-connections
   ) {
     return {
       title:
         catalogState.connectionState === "unsupported"
           ? "Client not supported"
-          : "Computer unavailable",
+          : "Computer unavailable", // fork: fleet-connections
       detail:
         catalogState.connectionError ??
+        // fork: fleet-connections
         "The saved computer is offline. Reconnect it or choose another computer to start working.",
       loading: false,
     };
@@ -215,10 +220,11 @@ function deriveEmptyState(props: {
 
   if (
     catalogState.hasConnectingEnvironment &&
-    !catalogState.hasReadyEnvironment &&
+    !catalogState.hasReadyEnvironment && // fork: fleet-connections
     catalogState.connectionError === null
   ) {
     return {
+      // fork: fleet-connections
       title: "Connecting to computer",
       detail: "Loading projects and conversations from the saved computer.",
       loading: true,
@@ -227,6 +233,7 @@ function deriveEmptyState(props: {
 
   if (props.projectCount === 0 && catalogState.hasLoadedShellSnapshot) {
     return {
+      // fork: fleet-connections
       title: "Start your first task",
       detail: "Choose a project or start without one. Your work runs on the connected computer.",
       loading: false,
@@ -235,7 +242,7 @@ function deriveEmptyState(props: {
 
   return {
     title: "No threads yet",
-    detail: "Start a task in a project, or work without one.",
+    detail: "Start a task in a project, or work without one.", // fork: fleet-connections
     loading: false,
   };
 }
@@ -828,7 +835,8 @@ export function HomeScreen(props: HomeScreenProps) {
     props.selectedEnvironmentId === null
       ? null
       : (props.savedConnectionsById[props.selectedEnvironmentId]?.environmentLabel ??
-        "this computer");
+        "this computer"); // fork: fleet-connections
+  // fork: everyday-workflows
   const clearListFilters = () => {
     props.onSearchQueryChange("");
     props.onEnvironmentChange(null);
@@ -892,6 +900,7 @@ export function HomeScreen(props: HomeScreenProps) {
           onProjectChange={props.onProjectChange}
         />
       ) : null}
+      {/* fork: everyday-workflows */}
       {hasSearchQuery && threadSearch.failedEnvironmentIds.length > 0 ? (
         <ThreadSearchNotice pending={threadSearch.isPending} onRetry={threadSearch.retry} />
       ) : null}
@@ -905,6 +914,7 @@ export function HomeScreen(props: HomeScreenProps) {
     // fork: project-navigation
     navigationView === "projects" ? (
       <EmptyState
+        // fork: project-navigation
         title={
           hasSearchQuery
             ? "No projects found"
@@ -964,6 +974,7 @@ export function HomeScreen(props: HomeScreenProps) {
       <EmptyState
         title={`No threads in ${v2ScopedProjectGroup.title}`}
         detail="Choose another project or create a new task."
+        // fork: everyday-workflows
         actionLabel="Show all threads"
         onAction={clearListFilters}
         variant={Platform.OS === "android" ? "plain" : undefined}
@@ -971,7 +982,8 @@ export function HomeScreen(props: HomeScreenProps) {
     ) : selectedEnvironmentLabel ? (
       <EmptyState
         title={`No threads in ${selectedEnvironmentLabel}`}
-        detail="Choose another computer or create a new task."
+        detail="Choose another computer or create a new task." // fork: fleet-connections
+        // fork: everyday-workflows
         actionLabel="Show all threads"
         onAction={clearListFilters}
         variant={Platform.OS === "android" ? "plain" : undefined}
@@ -984,6 +996,7 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
 
+  // fork: project-navigation -- Android keeps the list and its view switch when empty
   return (
     <View className={containerClassName}>
       <View
@@ -1038,7 +1051,7 @@ export function HomeScreen(props: HomeScreenProps) {
                     environmentId={props.selectedEnvironmentId}
                     search={props.searchQuery}
                   />
-                </>
+                </> // fork: library
               }
               ListEmptyComponent={sharedAuthority.environmentId ? null : v2ListEmpty} // fork: library
               style={{ flex: 1 }}

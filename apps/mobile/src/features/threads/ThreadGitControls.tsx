@@ -142,7 +142,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   const currentBranchLabel = gitStatus?.refName ?? props.currentBranch ?? "Detached HEAD";
   const busy = gitOperationLabel !== null;
   const isRepo = gitStatus?.isRepo ?? true;
-  const canReviewChanges = gitStatus?.checkpointCapable ?? isRepo;
+  const canReviewChanges = gitStatus?.checkpointCapable ?? isRepo; // fork: checkpoint-capable
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus?.isDefaultRef ?? false;
 
@@ -286,7 +286,7 @@ function useThreadGitControlModel(props: ThreadGitMenuProps) {
   return {
     currentBranchLabel,
     isRepo,
-    canReviewChanges,
+    canReviewChanges, // fork: checkpoint-capable
     openFiles,
     openGitInspector,
     openReview,
@@ -401,7 +401,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
               props.hasThread === false
                 ? "Available after the first message"
                 : "Turn diffs and worktree changes",
-            disabled: !model.canReviewChanges || props.hasThread === false,
+            disabled: !model.canReviewChanges || props.hasThread === false, // fork: checkpoint-capable
             icon: { name: "text.bubble", type: "sfSymbol" },
             label: "Review changes",
             onPress: model.openReview,
@@ -569,7 +569,7 @@ function threadGitMenuDefinition(
         id: "git-review",
         title: "Review changes",
         icon: "text.bubble",
-        disabled: !model.canReviewChanges || props.hasThread === false,
+        disabled: !model.canReviewChanges || props.hasThread === false, // fork: checkpoint-capable
         subtitle:
           props.hasThread === false
             ? "Available after the first message"

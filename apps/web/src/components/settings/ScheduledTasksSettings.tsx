@@ -109,7 +109,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
+import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig"; // fork: scheduled-task-access
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -1181,7 +1181,7 @@ function ScheduledTaskEditorForm({
 
   const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
-  const AccessIcon = runtimeModeConfig[draft.runtimeMode].icon;
+  const AccessIcon = runtimeModeConfig[draft.runtimeMode].icon; // fork: scheduled-task-access
   const activeSelection =
     draftSelection &&
     instanceEntries.some((entry) => entry.instanceId === draftSelection.instanceId && entry.enabled)
@@ -1515,6 +1515,7 @@ function ScheduledTaskEditorForm({
             </div>
           </Field>
 
+          {/* fork: scheduled-task-access */}
           <Field label="Access" htmlFor="scheduled-task-access">
             <Select
               value={draft.runtimeMode}

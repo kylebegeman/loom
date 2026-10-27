@@ -1,4 +1,4 @@
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import {
   type ClientSettings,
   type EnvironmentId,
@@ -89,7 +89,7 @@ export function useSortedProjectGroups(environmentLabelById: ReadonlyMap<Environ
   // fork: bots - Ordered as the sidebar orders them, which leaves bot runs out.
   return sortLogicalProjectsForSidebar(
     unsortedProjectGroups,
-    threads.filter((thread) => !isBotRunThreadId(thread.id)),
+    threads.filter((thread) => !isBotRunThreadId(thread.id)), // fork: bots
     clientSettings.sidebarProjectSortOrder,
   );
 }

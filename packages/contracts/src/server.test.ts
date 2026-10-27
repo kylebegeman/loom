@@ -5,7 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   OtlpEndpointCheckInput,
   resolveEnvironmentMachineKind,
-  ServerConfig,
+  ServerConfig, // fork: file-placement
   ServerObservability,
   ServerProvider,
   ServerProviders,
@@ -134,6 +134,7 @@ describe("OtlpEndpointCheckInput", () => {
   });
 });
 
+// fork: file-placement
 describe("server-chosen folders", () => {
   const { folders, newProjectsRoot, serverChosenFolders } = ServerConfig.fields;
   const decode = Schema.decodeUnknownSync(

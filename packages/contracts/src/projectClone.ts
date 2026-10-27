@@ -53,6 +53,7 @@ export const ProjectCloneStartInput = Schema.Struct({
   provider: Schema.optional(SourceControlProviderKind),
   repository: Schema.optional(TrimmedNonEmptyString),
   remoteUrl: Schema.optional(TrimmedNonEmptyString),
+  // fork: file-placement
   /** Absent lets a server with `serverChosenFolders` pick the folder. */
   destinationPath: Schema.optional(TrimmedNonEmptyString),
   protocol: Schema.optional(SourceControlCloneProtocol),
@@ -64,6 +65,7 @@ export const ProjectCloneStartResult = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   remoteUrl: TrimmedNonEmptyString,
   repository: Schema.NullOr(SourceControlRepositoryInfo),
+  // fork: file-placement
   /** Older servers omit these; they always cloned into the requested folder. */
   destinationPath: Schema.optionalKey(TrimmedNonEmptyString),
   /** An existing checkout of the repository was used instead of a new clone. */

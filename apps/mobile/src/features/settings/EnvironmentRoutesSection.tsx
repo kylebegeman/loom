@@ -128,6 +128,7 @@ export function EnvironmentRoutesSection({
 
   return (
     <SettingsSection
+      // fork: everyday-workflows
       title="Connection addresses"
       footer="Loom tries these addresses in order and uses the first one it can reach."
       trailing={
@@ -153,6 +154,7 @@ export function EnvironmentRoutesSection({
           session?.authenticated ? (
             <>
               <Text className="text-sm text-foreground-muted">
+                {/* fork: everyday-workflows */}
                 Applies to the address marked In use. Other addresses may have different permissions
                 and have not been checked.
               </Text>
@@ -164,6 +166,7 @@ export function EnvironmentRoutesSection({
             </>
           ) : (
             <Text className="text-sm text-foreground-muted">
+              {/* fork: everyday-workflows */}
               Permissions not checked. Connect this computer to view this connection’s permissions.
             </Text>
           )}
@@ -210,6 +213,7 @@ export function EnvironmentRoutesSection({
           />
         );
       })}
+      {/* fork: everyday-workflows */}
       <SettingsActionRow icon="plus" label="Add connection address" onPress={onAddRoute} />
     </SettingsSection>
   );
@@ -252,7 +256,7 @@ function RouteRow(props: {
       {props.editing && props.onRemove ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Remove ${label} connection address`}
+          accessibilityLabel={`Remove ${label} connection address`} // fork: everyday-workflows
           hitSlop={8}
           onPress={props.onRemove}
           className="active:opacity-70"
@@ -274,7 +278,7 @@ function RouteRow(props: {
           address,
           isLearned(route) ? "Found automatically" : null,
           props.inUse ? "In use" : null,
-          `Connection address ${props.position} of ${props.count}`,
+          `Connection address ${props.position} of ${props.count}`, // fork: everyday-workflows
         ]
           .filter((part) => part !== null)
           .join(", ")}

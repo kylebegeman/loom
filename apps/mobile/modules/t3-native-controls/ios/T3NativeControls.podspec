@@ -1,7 +1,3 @@
-# Swift 6.4 also ships with iOS 27.0 SDKs, which do not declare the 27.1 hinge APIs.
-sdk_version = `xcrun --sdk iphoneos --show-sdk-version 2>/dev/null`.strip
-has_hinge_api = !sdk_version.empty? && Gem::Version.new(sdk_version) >= Gem::Version.new('27.1')
-
 Pod::Spec.new do |s|
   s.name           = 'T3NativeControls'
   s.version        = '1.0.0'
@@ -18,7 +14,6 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited)' + (has_hinge_api ? ' T3_HAS_UIKIT_HINGE_LAYOUT' : ''),
   }
   s.resource_bundles = { 'T3NativeControlIcons' => ['Resources/Icons/pull-request*.png'] }
   s.source_files = '**/*.{h,m,mm,swift,hpp,cpp}'

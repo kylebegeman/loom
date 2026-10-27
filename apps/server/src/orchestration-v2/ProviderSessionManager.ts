@@ -56,7 +56,7 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import * as NativeResources from "./NativeWorkloadResources.ts";
+import * as NativeResources from "./NativeWorkloadResources.ts"; // fork: mini-native-retention
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -193,6 +193,7 @@ export class ProviderSessionManagerV2 extends Context.Service<
 >()("t3/orchestration-v2/ProviderSessionManager/ProviderSessionManagerV2") {}
 
 interface LiveSessionEntry {
+  // fork: detached-session-recovery
   /** Anchors lifecycle events after the final app thread detaches. Updates do not reattach it. */
   readonly lifecycleThreadId: ThreadId;
   readonly attachedThreadIds: ReadonlySet<ThreadId>;
@@ -313,6 +314,7 @@ export const layerWithOptions = (
   Layer.effect(
     ProviderSessionManagerV2,
     Effect.gen(function* () {
+      // fork: mini-native-retention
       const nativeResources = yield* Effect.serviceOption(NativeResources.NativeWorkloadResources);
       const resourceGroups = new WeakMap<ProviderAdapter.ProviderAdapterV2SessionRuntime, string>();
       let resourceGeneration = 0;
@@ -406,6 +408,7 @@ export const layerWithOptions = (
         readonly providerSessionId: ProviderSessionId;
         readonly threadId: ThreadId;
       }) => `${input.providerSessionId}\u0000${input.threadId}`;
+      // fork: mini-native-retention
       const idleTimeoutMs = Math.max(
         1,
         options.idleTimeoutMs ??
@@ -628,6 +631,7 @@ export const layerWithOptions = (
         };
         yield* writeProviderSessionEvents({
           runtime: input.entry.runtime,
+          // fork: detached-session-recovery
           threadIds:
             input.entry.attachedThreadIds.size > 0
               ? input.entry.attachedThreadIds
@@ -963,10 +967,10 @@ export const layerWithOptions = (
       const closeScopeWithin = Effect.fn("ProviderSessionManager.closeScopeWithin")(function* (
         scope: Scope.Closeable,
         annotations: { readonly providerSessionId?: ProviderSessionId; readonly reason: string },
-        onClosed: Effect.Effect<void> = Effect.void,
+        onClosed: Effect.Effect<void> = Effect.void, // fork: mini-native-retention
       ) {
         const closeFiber = yield* Scope.close(scope, Exit.void).pipe(
-          Effect.andThen(onClosed),
+          Effect.andThen(onClosed), // fork: mini-native-retention
           Effect.exit,
           Effect.forkDetach({ startImmediately: true }),
         );
@@ -1032,6 +1036,7 @@ export const layerWithOptions = (
                       input.detail ?? `Provider session released: ${input.reason}.`,
                     );
                   }
+                  // fork: mini-native-retention
                   const closeExit = yield* closeScopeWithin(
                     entry.scope,
                     { providerSessionId: input.providerSessionId, reason: input.reason },
@@ -1462,6 +1467,7 @@ export const layerWithOptions = (
         providerSessionId: ProviderSessionId,
         providerThreadId: ProviderThreadId,
         runOrdinal: number,
+        // fork: mini-native-retention
         expectedRuntime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
       ) =>
         withActivityError(
@@ -1471,6 +1477,7 @@ export const layerWithOptions = (
             const now = yield* Clock.currentTimeMillis;
             yield* Ref.update(sessions, (current) => {
               const entry = current.get(key);
+              // fork: mini-native-retention
               if (entry === undefined || entry.runtime !== expectedRuntime) {
                 return current;
               }
@@ -1484,6 +1491,7 @@ export const layerWithOptions = (
               });
               return updated;
             });
+            // fork: mini-native-retention
             if (Option.isSome(nativeResources)) {
               const entry = (yield* Ref.get(sessions)).get(key);
               if (entry?.runtime === expectedRuntime) {
@@ -1866,6 +1874,7 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
+                    // fork: mini-native-retention
                     (Option.isSome(nativeResources)
                       ? nativeResources.value
                           .acquire(
@@ -1894,6 +1903,7 @@ export const layerWithOptions = (
                     Exit.isFailure(exit)
                       ? observeActivity(
                           providerSessionId,
+                          // fork: mini-native-retention
                           markIdle(
                             providerSessionId,
                             input.providerThread.id,
@@ -1989,7 +1999,7 @@ export const layerWithOptions = (
                     entry.runtime.providerSessionId,
                     event.providerThreadId,
                     event.runOrdinal,
-                    entry.runtime,
+                    entry.runtime, // fork: mini-native-retention
                   )
                 : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
             ).pipe(
@@ -2270,7 +2280,7 @@ export const layerWithOptions = (
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
               const now = yield* Clock.currentTimeMillis;
               const entry: LiveSessionEntry = {
-                lifecycleThreadId: input.threadId,
+                lifecycleThreadId: input.threadId, // fork: detached-session-recovery
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
                 mcpCredentialIdByThread:

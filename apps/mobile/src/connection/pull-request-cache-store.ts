@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 
 import { MobileDatabase } from "../persistence/mobile-database";
 
+// fork: library
 /** Library history has its own cache kind; PR retention and existing keys stay compatible. */
 export function persistedQueryCacheKind(key: string) {
   try {
@@ -27,10 +28,12 @@ export const layer = Layer.effect(
     return {
       load: (environmentId, key) =>
         database
+          // fork: library
           .loadCache(environmentId, persistedQueryCacheKind(key), `v1:${key}`)
           .pipe(Effect.catch(() => Effect.succeedNone)),
       save: (environmentId, key, payload) =>
         database
+          // fork: library
           .saveCache(environmentId, persistedQueryCacheKind(key), `v1:${key}`, 1, payload)
           .pipe(Effect.catch(() => Effect.logWarning("Offline query database save failed"))),
     } satisfies NonNullable<typeof EnvironmentQueryStore.Service>;

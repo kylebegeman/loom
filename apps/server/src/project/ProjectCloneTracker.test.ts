@@ -6,16 +6,16 @@ import {
   projectCloneProgressSummary,
   SourceControlRepositoryError,
 } from "@t3tools/contracts";
-import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeServices from "@effect/platform-node/NodeServices"; // fork: file-placement
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: file-placement
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
@@ -31,6 +31,7 @@ const startInput = {
   destinationPath: "/workspace/t3code",
 };
 
+// fork: file-placement -- the tracker places clone folders, so it needs Git and the server config.
 const trackerLayer = (
   repositories: Partial<SourceControlRepositoryService.SourceControlRepositoryService["Service"]>,
   baseDir: string | { readonly prefix: string } = { prefix: "t3-clone-tracker-" },
@@ -46,10 +47,11 @@ const trackerLayer = (
 
 function makeHarness(options?: {
   readonly clone?: SourceControlRepositoryService.SourceControlRepositoryService["Service"]["cloneRepository"];
+  // fork: file-placement
   readonly prepare?: SourceControlRepositoryService.SourceControlRepositoryService["Service"]["prepareClone"];
   readonly baseDir?: string;
 }) {
-  const cloneCalls: Array<string> = [];
+  const cloneCalls: Array<string> = []; // fork: file-placement
   const created: Array<{ projectId: ProjectId; workspaceRoot: string }> = [];
   const cloned: Array<ProjectId> = [];
   const discarded: Array<string> = [];
@@ -60,6 +62,7 @@ function makeHarness(options?: {
       }),
     onCloned: (input) => Effect.sync(() => void cloned.push(input.projectId)),
   };
+  // fork: file-placement -- clones are counted so reuse can assert none ran.
   const clone: SourceControlRepositoryService.SourceControlRepositoryService["Service"]["cloneRepository"] =
     options?.clone ??
     ((input) =>
@@ -74,11 +77,12 @@ function makeHarness(options?: {
         options?.prepare ??
         ((input) =>
           Effect.succeed({
-            destinationPath: input.destinationPath ?? "",
+            destinationPath: input.destinationPath ?? "", // fork: file-placement
             remoteUrl: input.remoteUrl ?? "",
             cloneUrl: input.remoteUrl ?? "",
             repository: null,
           })),
+      // fork: file-placement
       cloneRepository: (input, cloneOptions) =>
         Effect.sync(() => void cloneCalls.push(input.destinationPath ?? "")).pipe(
           Effect.andThen(clone(input, cloneOptions)),
@@ -87,7 +91,7 @@ function makeHarness(options?: {
     },
     options?.baseDir,
   );
-  return { layer, hooks, created, cloned, discarded, cloneCalls };
+  return { layer, hooks, created, cloned, discarded, cloneCalls }; // fork: file-placement
 }
 
 describe("ProjectCloneTracker", () => {
@@ -102,7 +106,7 @@ describe("ProjectCloneTracker", () => {
           );
           yield* Deferred.await(release);
           return {
-            cwd: input.destinationPath ?? "",
+            cwd: input.destinationPath ?? "", // fork: file-placement
             remoteUrl: input.remoteUrl ?? "",
             repository: null,
           };
@@ -148,7 +152,7 @@ describe("ProjectCloneTracker", () => {
           yield* report({ stage: "receiving", percent: 25, detail: "170.00 MiB | 1.00 MiB/s" });
           yield* Deferred.await(release);
           return {
-            cwd: input.destinationPath ?? "",
+            cwd: input.destinationPath ?? "", // fork: file-placement
             remoteUrl: input.remoteUrl ?? "",
             repository: null,
           };
@@ -194,7 +198,7 @@ describe("ProjectCloneTracker", () => {
                 }),
               )
             : Effect.succeed({
-                cwd: input.destinationPath ?? "",
+                cwd: input.destinationPath ?? "", // fork: file-placement
                 remoteUrl: input.remoteUrl ?? "",
                 repository: null,
               });
@@ -254,9 +258,10 @@ describe("ProjectCloneTracker", () => {
       clone: (input) =>
         Effect.sync(() => {
           cloneUrls.push(input.remoteUrl ?? "");
-          return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null };
+          return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null }; // fork: file-placement
         }),
     });
+    // fork: file-placement
     const layer = trackerLayer({
       prepareClone: (input) =>
         Effect.succeed({
@@ -268,7 +273,7 @@ describe("ProjectCloneTracker", () => {
       cloneRepository: (input) =>
         Effect.sync(() => {
           cloneUrls.push(input.remoteUrl ?? "");
-          return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null };
+          return { cwd: input.destinationPath ?? "", remoteUrl: "", repository: null }; // fork: file-placement
         }),
       discardClone: () => Effect.void,
     });
@@ -313,6 +318,7 @@ describe("ProjectCloneTracker", () => {
 
   it.effect("does not create a project when the clone cannot be prepared", () => {
     const harness = makeHarness();
+    // fork: file-placement
     const layer = trackerLayer({
       prepareClone: () =>
         Effect.fail(
@@ -332,6 +338,7 @@ describe("ProjectCloneTracker", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  // fork: file-placement -- server-chosen destinations, reuse, restart recovery and the guard.
   it.effect("an omitted destination registers a matching checkout without cloning", () => {
     const harness = makeHarness({
       prepare: (input) =>

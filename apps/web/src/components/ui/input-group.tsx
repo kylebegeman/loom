@@ -10,13 +10,14 @@ const inputGroupVariants = cva(
     defaultVariants: {
       variant: "default",
       size: "default",
-      shape: "default",
+      shape: "default", // fork: iris-pill
     },
     variants: {
       size: {
         default: null,
         lg: "h-9",
       },
+      // fork: iris-pill
       shape: {
         default: null,
         pill: "rounded-full before:rounded-full",
@@ -37,12 +38,12 @@ function InputGroup({
   className,
   variant,
   size,
-  shape,
+  shape, // fork: iris-pill
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupVariants>) {
   return (
     <div
-      className={cn(inputGroupVariants({ variant, size, shape }), className)}
+      className={cn(inputGroupVariants({ variant, size, shape }), className)} // fork: iris-pill
       data-slot="input-group"
       role="group"
       {...props}

@@ -1,6 +1,6 @@
 import type { ComposerTrigger } from "~/composer-logic";
 import { projectNotesTrigger } from "../project-profiles/composerTrigger";
-export const FORK_COMPOSER_TRIGGERS: readonly {
+const FORK_COMPOSER_TRIGGERS: readonly {
   readonly id: string;
   readonly kind: `loom:${string}`;
   readonly label: string;

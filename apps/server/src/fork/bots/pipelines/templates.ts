@@ -24,7 +24,7 @@ export interface StepOutput {
 
 export const OUTPUT_RESULT_MAX = 20_000;
 
-export const STEP_FIELDS = ["result", "verdict", "summary", "findings"] as const;
+const STEP_FIELDS = ["result", "verdict", "summary", "findings"] as const;
 export type StepField = (typeof STEP_FIELDS)[number];
 const ITEM_FIELDS = ["title", "detail", "path", "line"] as const;
 type ItemField = (typeof ITEM_FIELDS)[number];

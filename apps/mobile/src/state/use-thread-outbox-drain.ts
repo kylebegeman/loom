@@ -37,7 +37,7 @@ import {
   forgetAcknowledgedThreadMessage,
 } from "./acknowledged-thread-messages";
 import { appAtomRegistry } from "./atom-registry";
-import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery";
+import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery"; // fork: failed-run-retry
 import { restoredNewTaskDraftKey } from "./new-task-draft-key";
 import { useProjects, useServerConfigs, useThreadShells } from "./entities";
 import {
@@ -160,6 +160,7 @@ function beginDispatchingQueuedMessage(queuedMessageId: MessageId): void {
 }
 
 function finishDispatchingQueuedMessage(queuedMessageId: MessageId): void {
+  // fork: failed-run-retry
   if (appAtomRegistry.get(threadOutboxDeliveryAtom)?.messageId === queuedMessageId) {
     appAtomRegistry.set(threadOutboxDeliveryAtom, null);
   }
@@ -254,6 +255,7 @@ function isQueuedMessagePayloadCurrent(
   );
 }
 
+// fork: failed-run-retry
 export async function markQueuedMessageDeliveryAttempted(
   message: QueuedThreadMessage,
   revision: number,
@@ -862,6 +864,7 @@ export function useThreadOutboxDrain(): void {
         currentConfig.providers,
       );
       if (!hasAccess()) return true;
+      // fork: failed-run-retry
       try {
         const attempted = await markQueuedMessageDeliveryAttempted(
           persistedMessage,
@@ -1063,6 +1066,7 @@ export function useThreadOutboxDrain(): void {
           startFromOrigin: false,
         };
       }
+      // fork: failed-run-retry
       try {
         const attempted = await markQueuedMessageDeliveryAttempted(
           persistedMessage,

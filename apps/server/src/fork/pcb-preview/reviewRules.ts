@@ -447,7 +447,7 @@ function regulators(m: ReviewModel): RawFinding[] {
   }
   return out;
 }
-export const REVIEW_RULES: readonly Rule[] = [
+const REVIEW_RULES: readonly Rule[] = [
   {
     id: "i2c-pullup",
     title: "I2C pull-ups",

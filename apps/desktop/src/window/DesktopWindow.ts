@@ -230,7 +230,7 @@ function concealPendingQuitWindow(
 
 // fork: restart-continuity: a closed macOS main window stays alive while hidden,
 // so its renderer keeps raising notifications and the Dock reopens it at once.
-export function hideClosingMacosWindow(
+function hideClosingMacosWindow(
   window: Pick<Electron.BrowserWindow, "isFullScreen" | "setFullScreen" | "once" | "hide">,
 ): void {
   if (window.isFullScreen()) {
@@ -687,6 +687,7 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
+    // fork: restart-continuity
     window.on("close", (event) => {
       runFork(flushBoundsPersist);
       // fork: restart-continuity: Cmd+Q, signals, relaunches and update installs

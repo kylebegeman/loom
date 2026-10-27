@@ -4,7 +4,6 @@ import { isLibraryAuthorityEnv } from "../project-library/authority.ts";
 import {
   LIBRARY_PUSH_TTL_SECONDS,
   libraryPushActivityAdvertised,
-  libraryPushAdvertised,
   libraryPushAlertRecipients,
   libraryPushConfig,
   libraryPushEffective,
@@ -46,17 +45,6 @@ describe("library push config", () => {
       return libraryPushEffective(env);
     });
     expect(unset).toEqual([]);
-  });
-
-  it("advertises exactly when push is effective", () => {
-    const cases = [
-      FULL,
-      {},
-      { ...FULL, LOOM_LIBRARY_PUSH_ENABLED: "false" },
-      { ...FULL, LOOM_LIBRARY_AUTHORITY: "0" },
-      { ...FULL, LOOM_LIBRARY_PUSH_APNS_KEY_FILE: "" },
-    ];
-    expect(cases.map(libraryPushAdvertised)).toEqual(cases.map(libraryPushEffective));
   });
 
   it("reads the switch with the authority's literals", () => {

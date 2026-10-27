@@ -2,9 +2,6 @@ import * as Schema from "effect/Schema";
 import { EnvironmentId, IsoDateTime } from "../baseSchemas.ts";
 import { LibraryId, LibraryPlacement } from "./project-library.ts";
 
-/** Advertised in `loomFeatures` by a Library that ranks where a project's conversation should start. */
-export const LIBRARY_LAUNCH_CANDIDATES_FEATURE = "library-launch-candidates";
-
 export const LibraryLaunchCandidatesRequest = Schema.Struct({
   projectId: LibraryId,
   /** The components the conversation needs. Omitted means the whole project. */

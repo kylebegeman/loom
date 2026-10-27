@@ -58,7 +58,7 @@ import {
   STATUS_PAGE_CONTENT_SECURITY_POLICY,
 } from "./shell.ts";
 
-export const PAGES_HOST_DEFAULT_PORT = 3774;
+const PAGES_HOST_DEFAULT_PORT = 3774;
 const COOKIE_KEY_SECRET = "loom-preview-pages-cookie-key";
 /** The access key class the preview gateway also gives browsers that signed in via the Library. */
 const LIBRARY_KEY_PREFIX = "library:";

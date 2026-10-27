@@ -318,6 +318,7 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
       span(options) {
         const span = new Tracer.NativeSpan(options);
         if (span.name === "ProjectionMaintenance.compactEventStore") compactionSpans.push(span);
+        // fork: server-weight -- countPages replaces the span.end page counter.
         return span;
       },
     });
@@ -3379,6 +3380,7 @@ it.effect.each(["events", "receipts"] as const)(
           const [query] = statement.compile();
           const pageQuery =
             kind === "events" ? /^\s*SELECT\s+event\.sequence/ : /^\s*SELECT\s+receipt\.rowid/;
+          // fork: server-weight
           const deleteQuery =
             kind === "events"
               ? /^\s*DELETE FROM orchestration_events/
@@ -3398,6 +3400,7 @@ it.effect.each(["events", "receipts"] as const)(
         const compacted = yield* Deferred.make<void>();
         const compaction = yield* maintenance.compactEventStore().pipe(
           Effect.provideService(Statement.CurrentTransformer, observeDiscovery),
+          // fork: server-weight -- page statements run untraced, so no span propagation.
           Effect.tap(() => Deferred.succeed(compacted, undefined)),
           Effect.forkChild,
         );
@@ -3443,6 +3446,7 @@ it.effect.each(["events", "receipts"] as const)(
           }),
         );
         const result = yield* Fiber.join(compaction);
+        // fork: server-weight -- the held writer replaces the db.connection check.
         assert.equal(result.deletedEventCount, kind === "events" ? 1 : 0);
         assert.equal(result.deletedReceiptCount, kind === "receipts" ? 1 : 0);
         const retained =

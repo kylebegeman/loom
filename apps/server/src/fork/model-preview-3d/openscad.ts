@@ -37,7 +37,7 @@ export const parseLog = (text: string): ScadRenderResult["log"] =>
     });
 export const View = Schema.Literals(["iso", "front", "top", "right", "bottom"]);
 export type ModelView = typeof View.Type;
-export const viewCamera: Record<ModelView, string> = {
+const viewCamera: Record<ModelView, string> = {
   iso: "0,0,0,55,0,25,200",
   front: "0,0,0,90,0,0,200",
   top: "0,0,0,0,0,0,200",

@@ -5,8 +5,8 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Clock from "effect/Clock";
-import { TestClock } from "effect/testing";
+import * as Clock from "effect/Clock"; // fork: identity-renewal
+import { TestClock } from "effect/testing"; // fork: identity-renewal
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -16,7 +16,7 @@ import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import {
   BearerConnectionCredential,
-  BearerConnectionProfile,
+  BearerConnectionProfile, // fork: identity-renewal
   type ConnectionCatalogEntry,
   SshConnectionProfile,
   type ConnectionCredential,
@@ -221,6 +221,7 @@ describe("ConnectionResolver", () => {
     }),
   );
 
+  // fork: identity-renewal
   it.effect(
     "binds Identity credentials to the saved computer and account, and requires interactive renewal after expiry",
     () =>

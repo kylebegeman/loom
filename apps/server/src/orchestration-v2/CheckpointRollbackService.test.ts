@@ -33,7 +33,7 @@ import * as Layer from "effect/Layer";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
-import * as SetupMarker from "../workspace/setupMarker.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: project-lifecycle
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -196,6 +196,7 @@ it.effect.each([
       yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-rollback-" }),
     );
     const worktreesDir = path.join(workspaceRoot, "worktrees");
+    // fork: project-lifecycle
     const config = {
       worktreesDir,
       stateDir: path.join(workspaceRoot, "state"),

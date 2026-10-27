@@ -11,7 +11,7 @@ import {
 import {
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
-  resolveProactiveTurnDiffAction,
+  resolveProactiveTurnDiffAction, // fork: checkpoint-capable
 } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import { deriveProviderInstanceEntries } from "../providerInstances";
@@ -744,6 +744,7 @@ describe("worktree setup visibility", () => {
     expect(resolve(other, other)).toEqual({ snapshot: null, isPreparingWorktree: false });
   });
 
+  // fork: library-launch-files
   it("shows project files downloading without treating the conversation as preparing", () => {
     const resolve = (
       latest: WorktreeSetupSnapshot,

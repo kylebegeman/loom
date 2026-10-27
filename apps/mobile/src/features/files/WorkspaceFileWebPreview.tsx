@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
+import { useRef, useState } from "react"; // fork: everyday-workflows
 import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
+import { Button } from "../../components/ui/Button"; // fork: everyday-workflows
 import { FilePreviewLoading } from "./FilePreviewFeedback";
 import { LoadingStrip } from "../../components/ui/LoadingStrip";
 import { PdfPreview } from "../../components/PdfPreview";
@@ -14,6 +14,7 @@ import { useHardwareBack } from "../../lib/backHandler";
 import { isPdfPreviewUri } from "../../lib/pdfPreview";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 
+// fork: everyday-workflows
 export function WorkspaceFileWebPreview(props: {
   readonly uri: string | null;
   readonly onRetry?: () => void;
@@ -21,9 +22,10 @@ export function WorkspaceFileWebPreview(props: {
   if (props.uri === null) {
     return <FilePreviewLoading message="Preparing preview..." background="card" />;
   }
-  return <DocumentWebPreview key={props.uri} uri={props.uri} onRetry={props.onRetry} />;
+  return <DocumentWebPreview key={props.uri} uri={props.uri} onRetry={props.onRetry} />; // fork: everyday-workflows
 }
 
+// fork: everyday-workflows
 function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: () => void }) {
   const webViewRef = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
@@ -65,6 +67,7 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
         {loadError ? (
           <View className="border-b border-border bg-card px-4 py-2">
             <Text className="text-xs font-t3-bold text-foreground">Preview failed</Text>
+            {/* fork: everyday-workflows */}
             <Text
               accessibilityRole="alert"
               className="mt-0.5 text-xs leading-snug text-foreground-muted"
@@ -83,7 +86,7 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
           </View>
         ) : null}
         <WebView
-          ref={webViewRef}
+          ref={webViewRef} // fork: everyday-workflows
           source={{ uri: props.uri }}
           originWhitelist={["*"]}
           allowsBackForwardNavigationGestures

@@ -24,7 +24,7 @@ const failure = (cause: unknown) => (cause instanceof Error ? cause.message : St
 export type AssemblyPartStats = Readonly<
   Record<string, { triangles: number | null; loading: boolean }>
 >;
-export function assemblyDisplayVariant(path: string, id: string) {
+function assemblyDisplayVariant(path: string, id: string) {
   const digest = sha256(new TextEncoder().encode(path));
   return `asm-${Array.from(digest.subarray(0, 4), (value) => value.toString(16).padStart(2, "0")).join("")}-${id}`;
 }

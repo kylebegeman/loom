@@ -212,7 +212,7 @@ export function threadTimeline(
 }
 
 /** A brief revision when a new revision changes the project's title, brief or resources. */
-export function projectTimeline(
+function projectTimeline(
   previous: LibraryProject | null,
   next: LibraryProject,
 ): LibraryTimelineDraft[] {

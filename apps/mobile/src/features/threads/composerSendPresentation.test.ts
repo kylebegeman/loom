@@ -13,7 +13,7 @@ const idle = {
 describe("resolveComposerSendPresentation", () => {
   it("shows the outbox action when delivery is deferred", () => {
     const presentation = resolveComposerSendPresentation({ ...idle, deliveryDeferred: true });
-    expect(presentation.label).toBe("Send later");
+    expect(presentation.label).toBe("Send later"); // fork: everyday-workflows
     expect(presentation.icon).toBe("tray.and.arrow.up");
     expect(resolveComposerSendPresentation(idle).icon).toBe("arrow.up");
   });
@@ -26,7 +26,7 @@ describe("resolveComposerSendPresentation", () => {
       followUpBehavior: "steer",
     });
 
-    expect(presentation.label).toBe("Send next");
+    expect(presentation.label).toBe("Send next"); // fork: everyday-workflows
     expect(presentation.action).toBe("queue");
     expect(presentation.alternate).toBeNull();
     expect(presentation.offersFollowUpChoice).toBe(false);

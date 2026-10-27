@@ -34,10 +34,10 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
-import * as ProjectPlacement from "../project/ProjectPlacement.ts";
-import { parseGitRemoteRepository } from "@t3tools/shared/git";
-import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
+import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
+import * as ProjectPlacement from "../project/ProjectPlacement.ts"; // fork: file-placement
+import { parseGitRemoteRepository } from "@t3tools/shared/git"; // fork: file-placement
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts"; // fork: project-lifecycle
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
@@ -52,7 +52,7 @@ export class SourceControlRepositoryService extends Context.Service<
     ) => Effect.Effect<SourceControlRepositoryInfo, SourceControlRepositoryError>;
     readonly prepareClone: (
       input: SourceControlCloneRepositoryInput,
-      options?: SourceControlPrepareOptions,
+      options?: SourceControlPrepareOptions, // fork: file-placement
     ) => Effect.Effect<SourceControlPreparedClone, SourceControlRepositoryError>;
     readonly cloneRepository: (
       input: SourceControlCloneRepositoryInput,
@@ -72,12 +72,14 @@ export interface SourceControlPreparedClone {
   readonly remoteUrl: string;
   readonly cloneUrl: string;
   readonly repository: SourceControlRepositoryInfo | null;
+  // fork: file-placement
   /** An existing checkout of the same origin, used instead of cloning. */
   readonly reuse?: ProjectPlacement.RepositoryCheckout;
   /** The server claimed this empty folder because the request named none. */
   readonly claimed?: true;
 }
 
+// fork: file-placement
 export interface SourceControlPrepareOptions {
   /** Names a server-claimed folder; the repository name is used otherwise. */
   readonly title?: string;
@@ -92,6 +94,7 @@ export interface SourceControlCloneOptions extends SourceControlPrepareOptions {
   readonly timeoutMs?: number | null;
 }
 
+// fork: file-placement
 export function repositoryFolderTitle(
   remoteUrl: string,
   repository: SourceControlRepositoryInfo | null,
@@ -227,7 +230,7 @@ export const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const path = yield* Path.Path;
   const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-  const placement = yield* ProjectPlacement.ProjectPlacement;
+  const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
 
   const ensureConcreteProvider = (input: {
     readonly operation: string;
@@ -336,10 +339,12 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // fork: file-placement
   const resolveRemote = Effect.fn("SourceControlRepositoryService.resolveRemote")(function* (
     input: SourceControlCloneRepositoryInput,
-    lookupCwd: string,
+    lookupCwd: string, // fork: file-placement
   ) {
+    // fork: file-placement -- prepareClone below prepares the destination before resolving the remote
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
     let provider: SourceControlProviderKind =
@@ -349,7 +354,7 @@ export const make = Effect.gen(function* () {
       repository = yield* lookupRepository({
         provider: input.provider,
         repository: input.repository,
-        cwd: lookupCwd,
+        cwd: lookupCwd, // fork: file-placement
       });
       remoteUrl = selectRemoteUrl(repository, input.protocol);
       provider = input.provider;
@@ -362,6 +367,7 @@ export const make = Effect.gen(function* () {
         detail: "Enter a repository path or clone URL before cloning.",
       });
     }
+    // fork: file-placement
     return { repository, remoteUrl };
   });
 
@@ -384,6 +390,7 @@ export const make = Effect.gen(function* () {
       } satisfies SourceControlPreparedClone;
     }
 
+    // fork: file-placement
     const { repository, remoteUrl } = yield* resolveRemote(input, config.cwd);
     const redacted = redactRemoteUrl(remoteUrl);
     // fork: file-placement: registering an unregistered folder is a placement, so it passes the guard first.
@@ -423,11 +430,11 @@ export const make = Effect.gen(function* () {
         ),
       );
     return {
-      destinationPath: claimed,
-      remoteUrl: redacted,
+      destinationPath: claimed, // fork: file-placement
+      remoteUrl: redacted, // fork: file-placement
       cloneUrl: remoteUrl,
       repository,
-      claimed: true,
+      claimed: true, // fork: file-placement
     } satisfies SourceControlPreparedClone;
   });
 
@@ -484,6 +491,7 @@ export const make = Effect.gen(function* () {
     input: SourceControlCloneRepositoryInput,
     options?: SourceControlCloneOptions,
   ) {
+    // fork: file-placement
     const prepared = yield* prepareClone(input, options);
     if (prepared.reuse !== undefined) {
       return {
@@ -519,6 +527,7 @@ export const make = Effect.gen(function* () {
               ),
             ),
       ),
+      // fork: file-placement
       // A folder claimed for this clone holds nothing but git's partial output.
       Effect.tapError(() =>
         prepared.claimed === true
@@ -527,6 +536,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+    // fork: project-lifecycle
     // A failed ownership receipt keeps the completed clone permanently ineligible for release.
     yield* markManagedProjectCheckout(
       prepared.destinationPath,
@@ -546,6 +556,7 @@ export const make = Effect.gen(function* () {
       cwd: prepared.destinationPath,
       remoteUrl,
       repository: prepared.repository,
+      // fork: file-placement
       destinationPath: prepared.destinationPath,
       reused: false,
     };
@@ -671,6 +682,7 @@ export const make = Effect.gen(function* () {
         mapRepositoryError("lookupRepository", input.provider),
       );
     }),
+    // fork: file-placement
     prepareClone: Effect.fnUntraced(function* (input, options) {
       return yield* prepareClone(input, options).pipe(
         mapRepositoryError(

@@ -365,6 +365,7 @@ function patchedIdleCompaction(
   return globalIdleCompaction(current) === "off" ? "off" : "onReturn";
 }
 
+// fork: file-placement
 /** Empty is the server's default folder, which it always treats as managed. */
 function rememberPreviousDirectory(
   previous: ReadonlyArray<string>,
@@ -511,7 +512,7 @@ export function applyServerSettingsPatch(
                     worktreeSettledAfterDays: next.storageCleanup.worktreeSettledAfterDays,
                     worktreeOnMerge: next.storageCleanup.worktreeOnMerge,
                     worktreeOnDelete: next.storageCleanup.worktreeOnDelete,
-                    worktreeOnSettle: next.storageCleanup.worktreeOnSettle,
+                    worktreeOnSettle: next.storageCleanup.worktreeOnSettle, // fork: project-lifecycle
                     worktreeUnchanged: next.storageCleanup.worktreeUnchanged,
                     worktreeOnLand: next.storageCleanup.worktreeOnLand, // fork: project-lifecycle
                     ...(current.worktreeCleanup?.mode === "custom"
@@ -541,6 +542,7 @@ export function applyServerSettingsPatch(
     ...(patch.worktreesDirectory !== undefined &&
     patch.worktreesDirectory !== current.worktreesDirectory
       ? {
+          // fork: file-placement
           previousWorktreesDirectories: rememberPreviousDirectory(
             current.previousWorktreesDirectories,
             current.worktreesDirectory,

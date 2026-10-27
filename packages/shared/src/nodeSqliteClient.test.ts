@@ -4,9 +4,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Cause from "effect/Cause";
-import * as Schema from "effect/Schema";
-import { SqlError } from "effect/sql/SqlError";
+import * as Cause from "effect/Cause"; // fork: library-projects
+import * as Schema from "effect/Schema"; // fork: library-projects
+import { SqlError } from "effect/sql/SqlError"; // fork: library-projects
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -17,7 +17,7 @@ import { vi } from "vite-plus/test";
 
 import * as SqliteClient from "./nodeSqliteClient.ts";
 
-const isSqlError = Schema.is(SqlError);
+const isSqlError = Schema.is(SqlError); // fork: library-projects
 const startedWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 const silentWorkers = vi.hoisted(() => ({ on: false, readyOnTerminate: false }));
 const failingWorkers = vi.hoisted(() => ({ message: undefined as string | undefined }));
@@ -70,6 +70,7 @@ const countEntries = (sql: SqlClient.SqlClient) =>
 const layer = it.layer(SqliteClient.layer({ filename: ":memory:" }));
 
 layer("NodeSqliteClient", (it) => {
+  // fork: library-projects
   it.effect("rolls back a failed deferred constraint commit before reusing the connection", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

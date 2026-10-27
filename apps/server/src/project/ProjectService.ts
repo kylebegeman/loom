@@ -13,10 +13,10 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: file-placement
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
+import * as Path from "effect/Path"; // fork: file-placement
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -45,7 +45,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import * as LanesRoots from "../fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
-import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts";
+import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts"; // fork: file-placement
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: file-placement
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -90,6 +90,7 @@ export class ProjectConflictError extends Schema.TaggedError<ProjectConflictErro
   }
 }
 
+// fork: file-placement
 export class ProjectLocationManagedError extends Schema.TaggedError<ProjectLocationManagedError>()(
   "ProjectLocationManagedError",
   { projectId: ProjectId, workspaceRoot: Schema.String, reason: Schema.String },
@@ -133,19 +134,20 @@ export type ProjectServiceError =
   | ProjectNotFoundError
   | ProjectConflictError
   | ProjectNotEmptyError
-  | ProjectLocationManagedError
+  | ProjectLocationManagedError // fork: file-placement
   | ProjectOperationError;
 
 export class ProjectService extends Context.Service<
   ProjectService,
   {
+    // fork: library-projects
     readonly create: (
       input: ProjectCreateInput,
       options?: { readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<Project, ProjectServiceError>;
     readonly bootstrap: (
       input: ProjectBootstrapInput,
-      options?: { readonly workspaceLeaseHeld?: boolean },
+      options?: { readonly workspaceLeaseHeld?: boolean }, // fork: library-projects
     ) => Effect.Effect<
       { readonly project: Project; readonly created: boolean },
       ProjectServiceError
@@ -158,6 +160,7 @@ export class ProjectService extends Context.Service<
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly getByWorkspaceRoot: (
       workspaceRoot: string,
+      // fork: library-projects
       options?: { readonly includeDeleted?: boolean; readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
@@ -182,6 +185,7 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
+  // fork: file-placement
   const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -240,12 +244,13 @@ export const make = Effect.gen(function* () {
     readonly projectId?: ProjectId;
     readonly workspaceRoot: string;
     readonly createIfMissing?: boolean;
-    readonly workspaceLeaseHeld?: boolean;
+    readonly workspaceLeaseHeld?: boolean; // fork: library-projects
   }) =>
     workspacePaths
       .normalizeWorkspaceRoot(input.workspaceRoot, {
         createIfMissing: input.createIfMissing ?? false,
-        restoreManagedCheckout: true,
+        restoreManagedCheckout: true, // fork: project-lifecycle
+        // fork: library-projects
         ...(input.workspaceLeaseHeld === undefined
           ? {}
           : { workspaceLeaseHeld: input.workspaceLeaseHeld }),
@@ -274,7 +279,7 @@ export const make = Effect.gen(function* () {
         workspaceRoot === undefined
           ? undefined
           : yield* findWorkspaceOwner(workspaceRoot, projectId).pipe(
-              Effect.mapError(dispatchError),
+              Effect.mapError(dispatchError), // fork: file-placement
             );
       const now = yield* DateTime.now;
       const eventId = yield* idAllocator.allocate
@@ -359,6 +364,7 @@ export const make = Effect.gen(function* () {
   const getByWorkspaceRoot: ProjectService["Service"]["getByWorkspaceRoot"] = Effect.fn(
     "ProjectService.getByWorkspaceRoot",
   )(function* (workspaceRoot, options) {
+    // fork: library-projects
     const normalized = yield* normalizeWorkspaceRoot({
       workspaceRoot,
       ...(options?.workspaceLeaseHeld === undefined
@@ -393,6 +399,7 @@ export const make = Effect.gen(function* () {
       );
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
+    // fork: library-projects
     function* (input, options) {
       // fork: file-placement: creating the folder is a placement.
       if (input.createWorkspaceRootIfMissing === true)
@@ -401,6 +408,7 @@ export const make = Effect.gen(function* () {
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
+        // fork: library-projects
         ...(options?.workspaceLeaseHeld === undefined
           ? {}
           : { workspaceLeaseHeld: options.workspaceLeaseHeld }),
@@ -418,6 +426,7 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // fork: file-placement
   // Moving the record would orphan the receipt that recovery and cleanup rely on.
   const assertLocationMovable = Effect.fn("ProjectService.assertLocationMovable")(function* (
     projectId: ProjectId,
@@ -460,6 +469,7 @@ export const make = Effect.gen(function* () {
               projectId: input.projectId,
               workspaceRoot: input.workspaceRoot,
             });
+      // fork: file-placement
       if (workspaceRoot !== previousRoot) {
         yield* assertLocationMovable(input.projectId, previousRoot);
         yield* assertPlacementAllowed(input.projectId, workspaceRoot); // fork: file-placement
@@ -498,10 +508,11 @@ export const make = Effect.gen(function* () {
   );
 
   const bootstrap: ProjectService["Service"]["bootstrap"] = Effect.fn("ProjectService.bootstrap")(
+    // fork: library-projects
     function* (input, options) {
       const existing = yield* getByWorkspaceRoot(input.workspaceRoot, options);
       if (Option.isSome(existing)) return { project: existing.value, created: false };
-      return { project: yield* create(input, options), created: true };
+      return { project: yield* create(input, options), created: true }; // fork: library-projects
     },
   );
 
@@ -686,6 +697,7 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(ProjectService, make).pipe(
   Layer.provide(ThreadCommandExecutor.layer),
+  // fork: file-placement
   Layer.provide(
     ProjectPlacement.layer.pipe(
       Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))),

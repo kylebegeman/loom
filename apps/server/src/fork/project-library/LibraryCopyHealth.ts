@@ -32,7 +32,7 @@ export const remoteCheckFailed = (
   (fetchedAt === null || Date.parse(checkedAt) - Date.parse(fetchedAt) > FRESH_FETCH_MS);
 
 /** A repository whose health could not be read, with honest zero counts. */
-export const unreadableRepositoryHealth = (
+const unreadableRepositoryHealth = (
   resourceId: string,
   error: LibraryRepositoryHealthError,
   checkedAt: string,

@@ -8,7 +8,7 @@ import {
 import { resolveShortcutCommand } from "../../keybindings";
 
 import {
-  buildKeybindingCommandOptions,
+  buildKeybindingCommandOptions, // fork: ext-keybindings
   buildKeybindingRows,
   commandLabel, // fork: ext-keybindings
   filterKeybindingRows,

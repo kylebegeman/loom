@@ -22,12 +22,12 @@ import {
 import { readLocalApi } from "../../localApi";
 import { findRevertCheckpoint } from "../../session-logic";
 import { type ChatMessage } from "../../types";
-import { newThreadId, randomUUID } from "~/lib/utils";
+import { newThreadId, randomUUID } from "~/lib/utils"; // fork: project-lifecycle
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { threadEnvironment } from "../../state/threads";
 import { waitForThreadShell } from "../../state/entities";
-import { openRevertConfirm, type PendingRevert } from "./ChatOverlayHosts";
+import { openRevertConfirm, type PendingRevert } from "./ChatOverlayHosts"; // fork: project-lifecycle
 import { assetEnvironment } from "../../state/assets";
 import { readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -249,6 +249,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     }
   };
   const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);
+  // fork: project-lifecycle -- onConfirmRevert moved below, where it can roll back checkpoints too
 
   // fork: project-lifecycle
   const onRollbackCheckpoint = async (

@@ -3,7 +3,7 @@ import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
-import { ScrollArea } from "~/components/ui/scroll-area";
+import { ScrollArea } from "~/components/ui/scroll-area"; // fork: bots
 import { ControlledOpenContext, renderRetainedPopup } from "~/components/ui/dialog";
 
 function Sheet<Payload>(props: SheetPrimitive.Root.Props<Payload>) {
@@ -63,7 +63,7 @@ function SheetPopup({
   transitionDurationMs,
   side = "right",
   variant = "default",
-  size = "default",
+  size = "default", // fork: bots
   style,
   ...props
 }: SheetPrimitive.Popup.Props & {
@@ -72,6 +72,7 @@ function SheetPopup({
   transitionDurationMs?: number;
   side?: "right" | "left" | "top" | "bottom";
   variant?: "default" | "inset";
+  // fork: bots
   /** `wide` gives a side sheet room for a detail view, such as a run with its findings. */
   size?: "default" | "wide";
 }) {
@@ -100,10 +101,10 @@ function SheetPopup({
             side === "top" &&
               "data-ending-style:-translate-y-8 data-starting-style:-translate-y-8 border-b",
             side === "left" &&
-              "data-ending-style:-translate-x-8 data-starting-style:-translate-x-8 w-[calc(100%-(--spacing(12)))] border-e",
+              "data-ending-style:-translate-x-8 data-starting-style:-translate-x-8 w-[calc(100%-(--spacing(12)))] border-e", // fork: bots
             side === "right" &&
-              "col-start-2 w-[calc(100%-(--spacing(12)))] border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
-            (side === "left" || side === "right") && (size === "wide" ? "max-w-2xl" : "max-w-md"),
+              "col-start-2 w-[calc(100%-(--spacing(12)))] border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8", // fork: bots
+            (side === "left" || side === "right") && (size === "wide" ? "max-w-2xl" : "max-w-md"), // fork: bots
             variant === "inset" &&
               "before:hidden sm:rounded-2xl sm:border sm:before:rounded-[calc(var(--radius-2xl)-1px)] sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-2xl)-1px)]",
             instant &&
@@ -144,6 +145,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+// fork: bots
 /** The sheet's scrolling body, between its header and footer. */
 function SheetPanel({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -160,6 +162,7 @@ function SheetPanel({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+// fork: bots
 /** Actions pinned under the sheet's body, on a hairline. */
 function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -202,8 +205,8 @@ export {
   SheetPopup,
   SheetPopup as SheetContent,
   SheetHeader,
-  SheetPanel,
-  SheetFooter,
+  SheetPanel, // fork: bots
+  SheetFooter, // fork: bots
   SheetTitle,
   SheetDescription,
 };

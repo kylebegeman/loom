@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as YAML from "yaml";
 
 /** Flow discovery stops after this many files and reports `truncated`. */
-export const FLOW_WALK_LIMIT = 1_000;
+const FLOW_WALK_LIMIT = 1_000;
 const BASELINES_DIR = "__baselines__";
 
 export const INVALID_NAME_MESSAGE =

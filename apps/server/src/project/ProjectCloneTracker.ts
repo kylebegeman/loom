@@ -1,15 +1,17 @@
+// fork: file-placement -- the clone receipt decodes SourceControlRepositoryInfo at runtime
 import { SourceControlProviderKind, SourceControlRepositoryInfo } from "@t3tools/contracts";
 import type {
   ProjectCloneSnapshot,
   ProjectCloneStage,
   ProjectCloneStartInput,
   ProjectCloneStartResult,
+  // fork: file-placement -- ProjectId and SourceControlRepositoryInfo are value imports
 } from "@t3tools/contracts";
 import {
-  IsoDateTime,
+  IsoDateTime, // fork: file-placement
   OrchestrationDispatchCommandError,
   PROJECT_CLONE_DETAIL_MAX_LENGTH,
-  ProjectId,
+  ProjectId, // fork: file-placement
   PROJECT_CLONE_ERROR_MAX_LENGTH,
   SourceControlRepositoryError,
 } from "@t3tools/contracts";
@@ -19,10 +21,10 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: file-placement
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
+import * as Path from "effect/Path"; // fork: file-placement
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -31,7 +33,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 
@@ -47,6 +49,7 @@ export class ProjectCloneTracker extends Context.Service<
     >;
     /** Interrupts a running clone and deletes the partial checkout. */
     readonly cancel: (projectId: ProjectId) => Effect.Effect<boolean>;
+    // fork: file-placement
     /** Clones restored after a restart have no hooks until a retry brings them. */
     readonly retry: (
       projectId: ProjectId,
@@ -84,6 +87,7 @@ function clampText(text: string, maxLength: number): string {
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
+// fork: file-placement
 const INTERRUPTED_ERROR =
   "The clone was interrupted when Loom stopped. Retry it or remove the project.";
 
@@ -101,7 +105,7 @@ const encodeCloneReceipt = Schema.encodeSync(Schema.fromJsonString(CloneReceipt)
 interface TrackedClone {
   readonly snapshot: ProjectCloneSnapshot;
   readonly fiber: Fiber.Fiber<unknown, unknown> | null;
-  readonly hooks: ProjectCloneHooks | null;
+  readonly hooks: ProjectCloneHooks | null; // fork: file-placement
   readonly input: {
     /** What git is given; may carry credentials and never leaves the server. */
     readonly cloneUrl: string;
@@ -114,6 +118,7 @@ interface TrackedClone {
 export const make = Effect.gen(function* () {
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
   const git = yield* GitVcsDriver.GitVcsDriver; // fork: file-placement
+  // fork: file-placement
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const receiptsDir = path.join((yield* ServerConfig.ServerConfig).stateDir, "project-clones");
@@ -285,8 +290,10 @@ export const make = Effect.gen(function* () {
             ? finish(projectId, "cancelled", null)
             : finish(projectId, "failed", describeCloneFailure(exit.cause)),
       ),
+      // fork: file-placement
       // A slow post-clone hook must not leave a finished clone looking interrupted after a restart.
       Effect.flatMap(() =>
+        // fork: file-placement
         Effect.all(
           [
             (
@@ -319,6 +326,7 @@ export const make = Effect.gen(function* () {
 
   const start: ProjectCloneTracker["Service"]["start"] = Effect.fn("ProjectCloneTracker.start")(
     function* (input, hooks) {
+      // fork: file-placement
       const prepared = yield* repositories.prepareClone(input, { title: input.title });
       if (prepared.reuse !== undefined) {
         const reused = {
@@ -377,13 +385,14 @@ export const make = Effect.gen(function* () {
         });
         return [true, next] as const;
       });
+      // fork: file-placement
       // A folder the server claimed for this request is empty and nobody else knows it.
       const releaseClaimedFolder =
         prepared.claimed === true
           ? fileSystem.remove(prepared.destinationPath, { recursive: true }).pipe(Effect.ignore)
           : Effect.void;
       if (!claimed) {
-        yield* releaseClaimedFolder;
+        yield* releaseClaimedFolder; // fork: file-placement
         return yield* new SourceControlRepositoryError({
           operation: "cloneRepository",
           provider: input.provider ?? SourceControlProviderKind.make("unknown"),
@@ -401,6 +410,7 @@ export const make = Effect.gen(function* () {
             workspaceRoot: prepared.destinationPath,
             createdAt: input.createdAt,
           });
+          // fork: file-placement
           yield* writeReceipt({
             projectId: input.projectId,
             remoteUrl: prepared.remoteUrl,
@@ -411,6 +421,7 @@ export const make = Effect.gen(function* () {
           yield* publish;
           yield* launch(input.projectId);
         }).pipe(
+          // fork: file-placement
           Effect.tapError(() => remove(input.projectId).pipe(Effect.andThen(releaseClaimedFolder))),
         ),
       );
@@ -419,6 +430,7 @@ export const make = Effect.gen(function* () {
         cwd: prepared.destinationPath,
         remoteUrl: prepared.remoteUrl,
         repository: prepared.repository,
+        // fork: file-placement
         destinationPath: prepared.destinationPath,
         reused: false,
       };
@@ -448,6 +460,7 @@ export const make = Effect.gen(function* () {
   );
 
   const retry: ProjectCloneTracker["Service"]["retry"] = Effect.fn("ProjectCloneTracker.retry")(
+    // fork: file-placement
     function* (projectId, hooks) {
       const current = yield* Ref.get(clones);
       const tracked = current.get(projectId);
@@ -461,7 +474,7 @@ export const make = Effect.gen(function* () {
       const startedAt = yield* nowIso;
       yield* modify(projectId, (entry) => ({
         ...entry,
-        hooks: hooks ?? entry.hooks,
+        hooks: hooks ?? entry.hooks, // fork: file-placement
         snapshot: {
           ...entry.snapshot,
           phase: "running",
@@ -492,7 +505,7 @@ export const make = Effect.gen(function* () {
     if (after?.phase !== "done") {
       yield* repositories.discardClone(tracked.input.destinationPath).pipe(Effect.ignore);
     }
-    yield* removeReceipt(projectId);
+    yield* removeReceipt(projectId); // fork: file-placement
     yield* clearRetention(projectId);
     yield* remove(projectId);
   });
@@ -587,6 +600,7 @@ export const make = Effect.gen(function* () {
     cancel: Effect.fnUntraced(function* (projectId) {
       return yield* locked(cancel(projectId));
     }),
+    // fork: file-placement
     retry: Effect.fnUntraced(function* (projectId, hooks) {
       return yield* locked(retry(projectId, hooks));
     }),

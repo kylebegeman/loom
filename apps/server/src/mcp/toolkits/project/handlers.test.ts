@@ -4,7 +4,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   type Project as ProjectRecord,
-  type ProjectCloneStartInput,
+  type ProjectCloneStartInput, // fork: file-placement
   type ModelSelection,
   type RuntimeMode,
 } from "@t3tools/contracts";
@@ -24,6 +24,7 @@ import * as ServerConfig from "../../../config.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+// fork: file-placement
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ProjectEnrichmentService from "../../../project/ProjectEnrichmentService.ts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
@@ -107,7 +108,7 @@ const clientLaunchHarness = (input: {
             : Option.none(),
         ),
     }),
-    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}), // fork: file-placement
     DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer)),
   ).pipe(
     Layer.provideMerge(GitVcsDriver.layer),
@@ -343,6 +344,7 @@ it.effect("launch retries keep the same command, thread and first-message identi
   }),
 );
 
+// fork: file-placement
 it.effect("an agent clone without a folder registers the project and waits for the clone", () =>
   Effect.gen(function* () {
     const started: Array<ProjectCloneStartInput> = [];

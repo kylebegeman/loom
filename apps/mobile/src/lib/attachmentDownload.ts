@@ -1,5 +1,5 @@
 import type { ChatFileAttachment } from "@t3tools/contracts";
-import type { Directory, File } from "expo-file-system";
+import type { Directory, File } from "expo-file-system"; // fork: library
 import type { SharingOptions } from "expo-sharing";
 
 import { beginForegroundHandoff } from "./foreground-handoff";
@@ -203,6 +203,7 @@ export async function openAttachmentInViewer(input: {
 /** The caller owns this cached file until disposal, unless it has been shared with another app. */
 export async function downloadAttachmentForPreview(input: {
   readonly url: string;
+  // fork: library
   /** Authenticated sources can stream bytes without exposing credentials to native viewers. */
   readonly download?: (file: File) => Promise<void>;
   readonly attachment: AttachmentFileMetadata;
@@ -216,6 +217,7 @@ export async function downloadAttachmentForPreview(input: {
       cached.preview.dispose();
       return null;
     }
+    // fork: library
     if (input.download) await input.download(cached.file);
     else await File.downloadFileAsync(input.url, cached.file, { signal: input.signal });
     if (input.signal.aborted) {
@@ -227,7 +229,7 @@ export async function downloadAttachmentForPreview(input: {
     // Android may leave a partial file after a failed or interrupted request.
     cached.preview.dispose();
     if (input.signal.aborted) return null;
-    if (input.download && cause instanceof Error) throw cause;
+    if (input.download && cause instanceof Error) throw cause; // fork: library
     throw new Error("Could not download the attachment. Check the connection and try again.", {
       cause,
     });

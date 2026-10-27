@@ -16,10 +16,10 @@ const reactTests = [
   "src/features/settings/SettingsServerControlsRouteScreen.test.tsx",
   "src/features/settings/components/BranchNamingSettings.test.tsx",
   "src/features/threads/ThreadMarkdownImage.test.tsx",
-  "src/features/threads/ThreadRecoveryNotice.test.tsx",
+  "src/features/threads/ThreadRecoveryNotice.test.tsx", // fork: failed-run-retry
   "src/features/threads/UsageLimitRecoveryCard.test.tsx",
-  "src/features/threads/thread-command-output.test.tsx",
-  "src/features/threads/useThreadHeaderOptions.test.tsx",
+  "src/features/threads/thread-command-output.test.tsx", // fork: library
+  "src/features/threads/useThreadHeaderOptions.test.tsx", // fork: source-control-cockpit
   "src/native/NativeHeaderToolbar.test.tsx",
   "src/native/useRestingTopOffset.test.tsx",
   "src/native/useRetryingImageSource.test.tsx",

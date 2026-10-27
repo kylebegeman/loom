@@ -19,7 +19,7 @@ export const DIRECTORY_MAX_ROUTES = 8;
 export const DIRECTORY_MAX_PROVIDERS = 16;
 export const DIRECTORY_MAX_WORKERS = 8;
 export const DIRECTORY_ROUTE_URL_MAX_LENGTH = 2048;
-export const LOOM_OS_IDENTITY_PAYLOAD_MAX_LENGTH = 8192;
+const LOOM_OS_IDENTITY_PAYLOAD_MAX_LENGTH = 8192;
 /** Fits every bounded report field at its limit, escaped and base64url encoded, with room to spare. */
 export const DIRECTORY_REPORT_TOKEN_MAX_LENGTH = 1_048_576;
 

@@ -40,7 +40,7 @@ import { ToolButton } from "./ToolButton";
 import styles from "./workspace.module.css";
 
 /** Tab names are also the agent-facing `open-tools` names, so keep them stable. */
-export const INSPECTOR_TABS = [
+const INSPECTOR_TABS = [
   "Inspect",
   "Layers",
   "Checks",

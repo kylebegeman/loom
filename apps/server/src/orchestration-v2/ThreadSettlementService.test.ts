@@ -27,7 +27,7 @@ import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Fiber from "effect/Fiber";
+import * as Fiber from "effect/Fiber"; // fork: project-lifecycle
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
@@ -711,6 +711,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
           Effect.andThen(options.onScriptRun?.(input) ?? Effect.void),
+          // fork: project-lifecycle
           Effect.as(options.scriptResult?.(input) ?? ({ status: "no-script" } as const)),
         ),
     }),

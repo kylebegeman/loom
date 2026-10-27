@@ -1,3 +1,4 @@
+// fork: library-sign-in
 import type { LoomDesktopSignInRequest, LoomDesktopSignInResult } from "./fork/identity.ts";
 // fork: identity-renewal
 import type {
@@ -493,6 +494,7 @@ export const DesktopServerExposureModeSchema = Schema.Literals([
   "network-accessible",
 ]);
 
+// fork: tailnet-ownership
 /** Whether Loom holds its Tailscale Serve port, or what stops it. */
 export const DesktopTailscaleServeStateSchema = Schema.Literals([
   "configured",
@@ -523,6 +525,7 @@ export interface DesktopServerExposureState {
   advertisedHost: string | null;
   tailscaleServeEnabled: boolean;
   tailscaleServePort: number;
+  // fork: tailnet-ownership
   /** Read from Tailscale only while Serve is on or when requested, never otherwise. */
   tailscaleServe: DesktopTailscaleServeStatus | null;
 }
@@ -533,9 +536,10 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   advertisedHost: Schema.NullOr(Schema.String),
   tailscaleServeEnabled: Schema.Boolean,
   tailscaleServePort: Schema.Number,
-  tailscaleServe: Schema.NullOr(DesktopTailscaleServeStatusSchema),
+  tailscaleServe: Schema.NullOr(DesktopTailscaleServeStatusSchema), // fork: tailnet-ownership
 });
 
+// fork: tailnet-ownership
 export const DesktopServerExposureStateRequestSchema = Schema.UndefinedOr(
   Schema.Struct({ inspectTailscale: Schema.optionalKey(Schema.Boolean) }),
 );
@@ -1046,6 +1050,7 @@ export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
+  // fork: library-sign-in
   cancelLoomSignIn?: (input: LoomDesktopSignInRequest) => Promise<void>;
   signInToLoom?: (input: LoomDesktopSignInRequest) => Promise<LoomDesktopSignInResult>;
   // fork: identity-renewal: a rejected promise is a transient failure, so the caller retries.
@@ -1116,6 +1121,7 @@ export interface DesktopBridge {
   ) => Promise<AuthWebSocketTicketResult>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
+  // fork: tailnet-ownership
   getServerExposureState: (
     request?: DesktopServerExposureStateRequest,
   ) => Promise<DesktopServerExposureState>;

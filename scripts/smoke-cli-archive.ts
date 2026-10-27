@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+// fork: smoke-port-race -- the server binds port 0, so no NetService
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
@@ -210,6 +211,7 @@ if (import.meta.main) {
       Layer.mergeAll(
         Logger.layer([Logger.consolePretty()]),
         NodeServices.layer,
+        // fork: smoke-port-race -- no NetService layer
         FetchHttpClient.layer,
       ),
     ),

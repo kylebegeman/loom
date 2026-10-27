@@ -15,7 +15,7 @@ import {
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
 import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import type { AsyncResult } from "effect/reactivity";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
@@ -583,7 +583,7 @@ export function resolveSidebarRowThreadId(
 
 export function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "lineage"> & {
-    id: string;
+    id: string; // fork: bots
     environmentId: string;
     projectId: string;
   },

@@ -161,6 +161,7 @@ export function selectThreadDiffPanelSelection(
   return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_SELECTION;
 }
 
+// fork: checkpoint-capable
 /** Select completed-turn history when the project parent has no single Git repository. */
 export function resolveAvailableDiffPanelSelection(
   selection: DiffPanelSelection,

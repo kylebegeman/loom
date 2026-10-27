@@ -34,7 +34,7 @@ interface FirstRunWorkspaceInput {
 }
 
 interface FirstRunDecisionInput {
-  readonly executionAvailable?: boolean;
+  readonly executionAvailable?: boolean; // fork: library-only
   readonly enabled: boolean;
   readonly hydrated: boolean;
   readonly completed: boolean;
@@ -141,7 +141,7 @@ export function resolveFirstRunDecision(input: FirstRunDecisionInput): {
     return { decision: "pending", persistCompletion: false };
   }
 
-  // A history authority has no agents or local folders to set up.
+  // fork: library-only: a history authority has no agents or local folders to set up.
   if (input.executionAvailable === false) return { decision: "app", persistCompletion: true };
 
   return input.workspaceFresh

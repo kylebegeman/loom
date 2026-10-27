@@ -209,7 +209,7 @@ export const PREVIEW_PAGES_UNAVAILABLE_TEXT = "Your Library does not publish pag
 export const PREVIEW_PAGES_EMPTY_TEXT =
   "No pages yet. An agent can publish a page it rendered, or a Dossier, from its thread.";
 
-export const PREVIEW_PAGE_KIND_LABELS: Record<PreviewPageKind, string> = {
+const PREVIEW_PAGE_KIND_LABELS: Record<PreviewPageKind, string> = {
   html: "HTML",
   dossier: "Dossier",
 };

@@ -631,6 +631,7 @@ describe("rightPanelStore", () => {
     });
   });
 
+  // fork: ext-panels
   it("removes archived inspector tabs and selects a surviving panel", () => {
     const inspector = {
       id: "fork:thread-inspector",

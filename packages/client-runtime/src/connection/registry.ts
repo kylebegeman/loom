@@ -1,8 +1,8 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Clock from "effect/Clock";
-import * as HttpClient from "effect/http/HttpClient";
-import { revokeIdentitySession } from "./identity.ts";
+import * as Clock from "effect/Clock"; // fork: identity-renewal
+import * as HttpClient from "effect/http/HttpClient"; // fork: identity-renewal
+import { revokeIdentitySession } from "./identity.ts"; // fork: identity-renewal
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
@@ -233,7 +233,7 @@ export const make = Effect.gen(function* () {
   const ownedDataCleanup = yield* Persistence.EnvironmentOwnedDataCleanup;
   const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
-  const identityHttp = yield* HttpClient.HttpClient;
+  const identityHttp = yield* HttpClient.HttpClient; // fork: identity-renewal
   const pullRequestRoutingPermissions = yield* PullRequestRoutingPermissions;
   const connectivity = yield* Connectivity.Connectivity;
   const driver = yield* ConnectionDriver.ConnectionDriver;
@@ -573,6 +573,7 @@ export const make = Effect.gen(function* () {
           return false;
         }
         const previous = (yield* SubscriptionRef.get(entries)).get(environmentId);
+        // fork: identity-renewal
         if (registration._tag === "BearerConnectionRegistration") {
           const identity = registration.profile.identity;
           const binding = registration.credential.identity;
@@ -610,6 +611,7 @@ export const make = Effect.gen(function* () {
           const route: ConnectionRoute = { target: registered.target, profile: registered.profile };
           const existing = connectionRoutes(previous);
           const sameAddress = findRouteToSameAddress(existing, route);
+          // fork: identity-renewal
           const routeId = connectionRouteId(route.target);
           const sameAddressId = sameAddress && connectionRouteId(sameAddress.target);
           const profile = Option.getOrNull(route.profile);
@@ -921,6 +923,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.forEach(platformRegistrations, installPlatformRegistration, { discard: true });
   });
 
+  // fork: identity-renewal
   const revokeIdentityRoutes = Effect.fn("EnvironmentRegistry.revokeIdentityRoutes")(function* (
     environmentId: EnvironmentId,
     routes: ReadonlyArray<ConnectionRoute>,
@@ -1016,7 +1019,7 @@ export const make = Effect.gen(function* () {
     }
     const entry = yield* getEntry(environmentId);
 
-    yield* revokeIdentityRoutes(environmentId, connectionRoutes(entry));
+    yield* revokeIdentityRoutes(environmentId, connectionRoutes(entry)); // fork: identity-renewal
     yield* pullRequestRoutingPermissions.forget(environmentId);
     yield* registrations.remove(environmentId);
     yield* Ref.update(persistedEnvironmentIds, (current) => {
@@ -1217,7 +1220,7 @@ export const make = Effect.gen(function* () {
         if (route === undefined) return;
         const remaining = routesAfterRemoving(routes, routeId);
         if (remaining.length === 0) return yield* removeLocked(environmentId);
-        yield* revokeIdentityRoutes(environmentId, routes, remaining);
+        yield* revokeIdentityRoutes(environmentId, routes, remaining); // fork: identity-renewal
         yield* replaceRoutesLocked(entry, remaining);
         const profile = Option.getOrNull(route.profile);
         if (profile !== null && isSshConnectionProfile(profile)) {

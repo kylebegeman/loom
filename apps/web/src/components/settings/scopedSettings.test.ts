@@ -153,7 +153,7 @@ describe("scoped settings writes", () => {
             worktreeAfterDays: 12,
             worktreeSettledAfterDays: null,
             worktreeOnDelete: true,
-            worktreeOnSettle: false,
+            worktreeOnSettle: false, // fork: project-lifecycle
             worktreeOnMerge: true,
             worktreeUnchanged: false,
             worktreeOnLand: false, // fork: project-lifecycle
@@ -180,7 +180,7 @@ describe("scoped settings writes", () => {
         worktreeAfterDays: 12,
         worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
-        worktreeOnSettle: false,
+        worktreeOnSettle: false, // fork: project-lifecycle
         worktreeOnMerge: true,
         worktreeUnchanged: false,
         worktreeOnLand: false, // fork: project-lifecycle
@@ -190,7 +190,7 @@ describe("scoped settings writes", () => {
         worktreeAfterDays: null,
         worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
-        worktreeOnSettle: false,
+        worktreeOnSettle: false, // fork: project-lifecycle
         worktreeOnMerge: false,
         worktreeUnchanged: false,
         worktreeOnLand: false, // fork: project-lifecycle
@@ -387,7 +387,7 @@ describe("scoped settings writes", () => {
                 worktreeAfterDays: 8,
                 worktreeSettledAfterDays: null,
                 worktreeOnDelete: false,
-                worktreeOnSettle: false,
+                worktreeOnSettle: false, // fork: project-lifecycle
                 worktreeOnMerge: true,
                 worktreeUnchanged: false,
                 worktreeOnLand: false, // fork: project-lifecycle
@@ -420,7 +420,7 @@ describe("scoped settings writes", () => {
               worktreeAfterDays: 8,
               worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
-              worktreeOnSettle: false,
+              worktreeOnSettle: false, // fork: project-lifecycle
               worktreeOnMerge: true,
               worktreeUnchanged: false,
               worktreeOnLand: false, // fork: project-lifecycle
@@ -437,7 +437,7 @@ describe("scoped settings writes", () => {
               worktreeAfterDays: 30,
               worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
-              worktreeOnSettle: false,
+              worktreeOnSettle: false, // fork: project-lifecycle
               worktreeOnMerge: false,
               worktreeUnchanged: false,
               worktreeOnLand: true, // fork: project-lifecycle

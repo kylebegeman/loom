@@ -2819,6 +2819,7 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.settle"),
     commandId: CommandId,
     threadId: ThreadId,
+    // fork: workspace-handoff
     /** Conditional settlement for a destination-first workspace handoff. */
     snapshotAt: Schema.optional(Schema.DateTimeUtc),
     settledAt: Schema.optional(Schema.DateTimeUtc),

@@ -10,7 +10,7 @@ import { HttpClient } from "effect/http";
 
 import * as MobileStorage from "../../persistence/mobile-storage";
 
-import { linkEnvironmentToCloudWithPreference, linkEnvironmentToCloud } from "./linkEnvironment";
+import { linkEnvironmentToCloudWithPreference, linkEnvironmentToCloud } from "./linkEnvironment"; // fork: fleet-connect
 
 vi.mock("expo-constants", () => ({
   default: {

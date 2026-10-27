@@ -14,11 +14,10 @@ import { toastManager } from "~/components/ui/toast";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { models, runModelCommand } from "./state";
 
-export const MM_PER_INCH = 25.4;
+const MM_PER_INCH = 25.4;
 export const fromMm = (mm: number, units: DisplayUnits) => (units === "in" ? mm / MM_PER_INCH : mm);
 export const toMm = (value: number, units: DisplayUnits) =>
   units === "in" ? value * MM_PER_INCH : value;
-export const unitSuffix = (units: DisplayUnits) => units;
 export const unitName = (units: DisplayUnits) => (units === "in" ? "inches" : "millimetres");
 export type LengthOptions = {
   /** Millimetre precision for "auto"; inches get one more decimal. */

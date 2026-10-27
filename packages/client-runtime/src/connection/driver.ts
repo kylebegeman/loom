@@ -15,7 +15,7 @@ import type {
 import { ConnectionTransientError } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import {
-  connectionRouteId,
+  connectionRouteId, // fork: reach
   connectionRoutes,
   routeEntry,
   routeHttpBaseUrl,
@@ -37,6 +37,7 @@ export type ConnectionDriverProgress =
 export interface EnvironmentConnectionLease {
   readonly prepared: PreparedConnection;
   readonly session: RpcSession.RpcSession;
+  // fork: reach
   /**
    * Completes if a route tried before this one missed the head start but then answered its
    * reachability check, while the lease's scope is open. Absent when no such check is pending.
@@ -55,7 +56,7 @@ const ROUTE_CHECK_TIMEOUT_MS = 2_500;
 // Preferred direct routes share one head start, so a relay connection does not
 // wait the full probe timeout for a LAN the device has already left. A route
 // that misses it but answers later reports that on the lease, so the
-// supervisor can upgrade with a second reconnect.
+// supervisor can upgrade with a second reconnect. // fork: reach
 const ROUTE_CHECK_HEAD_START_MS = 500;
 
 export class ConnectionDriver extends Context.Service<
@@ -64,7 +65,7 @@ export class ConnectionDriver extends Context.Service<
     readonly connect: (
       entry: ConnectionCatalogEntry,
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
-      options?: ConnectOptions,
+      options?: ConnectOptions, // fork: reach
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
     readonly checkRoute: (
       entry: ConnectionCatalogEntry,
@@ -83,17 +84,19 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
   connectRoute: (
     route: ConnectionRoute,
   ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, R | Scope.Scope>,
-  options?: ConnectOptions,
+  options?: ConnectOptions, // fork: reach
 ) {
   const routes = usableRoutes(entry);
+  // fork: reach
   const attemptScope = yield* Scope.Scope;
   // Checks live in the attempt's scope: one that misses the head start may still answer after
   // a lower route connected, and that answer outlives this call.
   const checks =
     routes.length === 1
       ? []
-      : yield* Effect.forEach(routes, (route) => Effect.forkIn(checkRoute(route), attemptScope));
+      : yield* Effect.forEach(routes, (route) => Effect.forkIn(checkRoute(route), attemptScope)); // fork: reach
   const headStart = yield* Effect.forkChild(Effect.sleep(ROUTE_CHECK_HEAD_START_MS));
+  // fork: reach -- attemptScope is taken above, before the checks fork into it
   let transient: ConnectionAttemptError | undefined;
   let blocked: ConnectionAttemptError | undefined;
   // Each route gets its own scope so a half-open session closes before the next try.
@@ -115,7 +118,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     const check =
       checks.length === 0
         ? "unchecked"
-        : options?.preferredRouteId === connectionRouteId(route.target)
+        : options?.preferredRouteId === connectionRouteId(route.target) // fork: reach
           ? yield* Fiber.join(checks[index]!)
           : yield* Effect.raceFirst(
               Fiber.join(checks[index]!),
@@ -126,6 +129,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
       continue;
     }
     const result = yield* attempt(route);
+    // fork: reach
     if (result._tag === "Success") {
       yield* Fiber.interruptAll(checks.slice(index + 1));
       if (silent.length === 0) return result.success;
@@ -194,7 +198,7 @@ export const make = Effect.gen(function* () {
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
-    options?: ConnectOptions,
+    options?: ConnectOptions, // fork: reach
   ) {
     const target = entry.target;
     yield* Effect.annotateCurrentSpan({
@@ -214,7 +218,7 @@ export const make = Effect.gen(function* () {
         yield* session.ready;
         return { prepared, session } satisfies EnvironmentConnectionLease;
       }),
-      options,
+      options, // fork: reach
     );
   });
 

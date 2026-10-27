@@ -16,7 +16,7 @@ export function useWorkspaceListNavigation(tab: WorkspaceTab) {
       dispatch?.({ type: "select", tab });
       resetAndroidWorkspace(navigation);
     } else if (navigation.canGoBack()) navigation.goBack();
-    else navigation.dispatch(StackActions.replace("Library"));
+    else navigation.dispatch(StackActions.replace("Library")); // fork: library
   }, [navigation, dispatch, tab]);
 }
 

@@ -6,7 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 import { resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as Console from "effect/Console";
-import * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime"; // fork: dev-db
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -501,7 +501,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
-  yield* ensureDevDbNotInUse(databasePath);
+  yield* ensureDevDbNotInUse(databasePath); // fork: dev-db
 
   const wrapPhase =
     (phase: MigrateDevDbPhaseError["phase"], phaseDatabasePath: string) =>
@@ -557,7 +557,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     yield* Console.log(`Compacting into ${databasePath}...`);
     // Re-check right before the swap: a dev server started while the
     // snapshot was migrating and pruning must not lose its database.
-    yield* ensureDevDbNotInUse(databasePath);
+    yield* ensureDevDbNotInUse(databasePath); // fork: dev-db
     yield* removeDatabaseFiles(databasePath);
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

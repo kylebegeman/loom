@@ -351,7 +351,7 @@ function OptionControl({
   }
 }
 
-export function ResultView({ result }: { readonly result: UtilityResult }) {
+function ResultView({ result }: { readonly result: UtilityResult }) {
   if (result.kind === "error")
     return (
       <p role="alert" className="text-destructive text-sm">

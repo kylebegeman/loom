@@ -1,5 +1,7 @@
 import {
   BOT_TRIGGER_EVENT_FIELDS,
+  BOTS_TRIGGER_DEFAULT_COOLDOWN_MINUTES,
+  BOTS_TRIGGER_DEFAULT_DAILY_LIMIT,
   BOTS_TRIGGER_MIN_INTERVAL_MS,
   checkTriggerMapping,
   type BotDefinition,
@@ -64,7 +66,7 @@ export type TriggerTarget = Pick<BotDefinition, "name" | "parameters">;
 /** Which version a run starts: the one saved with the trigger, the latest, or the stable one. */
 export type TriggerFollow = "pinned" | "latest" | "stable";
 
-export const followOf = (trigger: Pick<BotTrigger, "followLatest" | "followStable">) =>
+const followOf = (trigger: Pick<BotTrigger, "followLatest" | "followStable">) =>
   trigger.followLatest ? "latest" : trigger.followStable === true ? "stable" : "pinned";
 
 const EMPTY_MAPPING: MappingDraft = { mode: "none", field: "", value: "" };
@@ -116,8 +118,8 @@ export const emptyTriggerDraft = (bot: BotDefinition): TriggerDraft => ({
   secret: "",
   mapping: guessMapping(bot, "pull-request-checks-failing"),
   enabled: true,
-  cooldownMinutes: "10",
-  dailyLimit: "20",
+  cooldownMinutes: String(BOTS_TRIGGER_DEFAULT_COOLDOWN_MINUTES),
+  dailyLimit: String(BOTS_TRIGGER_DEFAULT_DAILY_LIMIT),
   follow: "pinned",
   pipelineId: "",
 });

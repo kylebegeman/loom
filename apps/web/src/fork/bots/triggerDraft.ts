@@ -38,7 +38,7 @@ const MAX_NAME = 120;
 const wholeNumber = (raw: string) => (/^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null);
 
 export type IntervalUnit = "minutes" | "hours" | "days";
-export const INTERVAL_UNIT_MINUTES: Record<IntervalUnit, number> = {
+const INTERVAL_UNIT_MINUTES: Record<IntervalUnit, number> = {
   minutes: 1,
   hours: 60,
   days: 1440,
@@ -69,7 +69,7 @@ export function everyMinutesFrom(amount: string, unit: IntervalUnit): string {
 }
 
 /** "15 minutes", "hour", "6 hours", "day": the words after "every". */
-export function intervalPhrase(minutes: number): string {
+function intervalPhrase(minutes: number): string {
   const { amount, unit } = intervalParts(String(minutes));
   const count = Number(amount);
   const noun = unit === "days" ? "day" : unit === "hours" ? "hour" : "minute";
@@ -98,7 +98,7 @@ const sameDays = (left: readonly number[], right: readonly number[]) => {
 };
 
 /** No days chosen means every day, as the server reads it. */
-export function daysPhrase(weekdays: readonly number[]): string {
+function daysPhrase(weekdays: readonly number[]): string {
   const unique = [...new Set(weekdays)];
   if (unique.length === 0 || unique.length === 7) return "every day";
   if (sameDays(unique, [1, 2, 3, 4, 5])) return "weekdays";

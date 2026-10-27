@@ -578,10 +578,10 @@ describe("vcsActionState", () => {
         yield* Effect.promise(() =>
           manager.cancelStackedAction.run(registry, {
             target: targetKey,
-            actionId: interruptedActionId,
+            actionId: interruptedActionId, // fork: source-control-cockpit
           }),
         );
-        const interruptedResult = yield* Effect.promise(() => interruptedPromise);
+        const interruptedResult = yield* Effect.promise(() => interruptedPromise); // fork: source-control-cockpit
         expect(yield* Deferred.isDone(finalized)).toBe(true);
 
         expect(AsyncResult.isFailure(interruptedResult)).toBe(true);

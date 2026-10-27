@@ -116,6 +116,7 @@ export function FirstRunGate({
     ? resolveHostedFirstRunDecision(hydrated)
     : resolveFirstRunDecision({
         enabled,
+        // fork: library-only
         executionAvailable: serverConfig?.environment.capabilities.supportsExecution !== false,
         hydrated,
         completed: onboardingCompletedAt !== null,

@@ -22,13 +22,13 @@ export type BoardFeatures = {
   connectors: { reference: string; box: Box; facing: Facing; edgeMm: number }[];
   warnings: string[];
 };
-export function unionBoxes(boxes: readonly Box[]): Box {
+function unionBoxes(boxes: readonly Box[]): Box {
   return {
     min: [0, 1, 2].map((a) => Math.min(...boxes.map((b) => b.min[a]!))) as Box["min"],
     max: [0, 1, 2].map((a) => Math.max(...boxes.map((b) => b.max[a]!))) as Box["max"],
   };
 }
-export function nearestEdge(loop: readonly [number, number][], p: readonly [number, number]) {
+function nearestEdge(loop: readonly [number, number][], p: readonly [number, number]) {
   let best = { distance: Infinity, facing: "+x" as Facing, normal: [1, 0] as [number, number] };
   for (let i = 0; i < loop.length; i++) {
     const a = loop[i]!,

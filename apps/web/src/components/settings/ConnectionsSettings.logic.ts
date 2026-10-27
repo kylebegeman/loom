@@ -17,7 +17,7 @@ import {
   type DesktopBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
-  type DesktopTailscaleServeStatus,
+  type DesktopTailscaleServeStatus, // fork: tailnet-ownership
   type DesktopUpdateState,
   type DesktopWslState,
 } from "@t3tools/contracts";
@@ -58,6 +58,7 @@ export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
 }
 
+// fork: tailnet-ownership -- Tailscale Serve row helpers replace missingTailscaleEndpointDescription
 const DEFAULT_HTTPS_PORT = 443;
 
 export function parseTailscaleServePort(input: string): number | null {

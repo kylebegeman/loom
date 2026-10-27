@@ -58,7 +58,7 @@ import {
   AuthSourceControlWriteScope,
   AuthFilesystemReadScope,
   CommandId,
-  EnvironmentId,
+  EnvironmentId, // fork: project-home
   type EnvironmentMachineKind,
   ProjectId,
   resolveEnvironmentMachineKind,
@@ -84,6 +84,7 @@ import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
+// fork: project-home
 import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -221,6 +222,7 @@ function ListRow(props: {
         trailing={props.right}
         disabled={props.disabled}
         onPress={props.onPress}
+        // fork: fleet-connections
         accessibilityRole={
           props.selected !== undefined ? "radio" : props.onPress ? "button" : "text"
         }
@@ -233,6 +235,7 @@ function ListRow(props: {
   }
   return (
     <Pressable
+      // fork: fleet-connections
       accessibilityLabel={[props.title, props.subtitle].filter(Boolean).join(", ")}
       accessibilityRole={props.selected !== undefined ? "radio" : props.onPress ? "button" : "text"}
       accessibilityState={{
@@ -317,6 +320,7 @@ export function useBrowsePathInput(
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
   const clonePathCaseSensitive = !isWindowsPlatform(environment?.platform ?? "");
+  // fork: project-home
   const [pathInput, commitPathInput] = useState(
     () =>
       reviewedDestinationPath ??
@@ -380,6 +384,7 @@ export function useBrowsePathInput(
     if (environmentId !== null && environmentId !== previousEnvironmentIdRef.current) {
       previousEnvironmentIdRef.current = environmentId;
       setPathInput(
+        // fork: project-home
         reviewedDestinationPath ??
           getCloneDestinationPath(
             getAddProjectInitialQuery(environmentBaseDirectory),
@@ -391,7 +396,7 @@ export function useBrowsePathInput(
     environmentBaseDirectory,
     environmentId,
     pinnedDirectoryName,
-    reviewedDestinationPath,
+    reviewedDestinationPath, // fork: project-home
     setPathInput,
   ]);
 
@@ -405,6 +410,7 @@ export function useBrowsePathInput(
   return { isBrowseNavigating, pathInput, setPathInput, navigateToBrowsePath };
 }
 
+// fork: fleet-connections -- every saved computer is listed; unusable ones render disabled
 function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
   const serverConfigByEnvironmentId = useServerConfigs();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -430,7 +436,7 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
         supportsCloneTracking: config?.environment.capabilities.projectCloneTracking === true,
       };
     });
-    return Arr.sort(options, environmentOptionOrder);
+    return Arr.sort(options, environmentOptionOrder); // fork: fleet-connections
   })();
 }
 
@@ -438,7 +444,7 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
 function useSelectedEnvironment(requestedEnvironmentId: EnvironmentId | null): {
   readonly environmentOptions: ReadonlyArray<EnvironmentOption>;
   readonly selectedEnvironment: EnvironmentOption | null;
-  readonly selectedEnvironmentId: EnvironmentId | null;
+  readonly selectedEnvironmentId: EnvironmentId | null; // fork: fleet-connections
   readonly setSelectedEnvironmentId: (environmentId: EnvironmentId) => void;
 } {
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState(requestedEnvironmentId);
@@ -447,15 +453,17 @@ function useSelectedEnvironment(requestedEnvironmentId: EnvironmentId | null): {
     setPreviousRequest(requestedEnvironmentId);
     setSelectedEnvironmentId(requestedEnvironmentId);
   }
-  const environmentOptions = useEnvironmentOptions();
+  const environmentOptions = useEnvironmentOptions(); // fork: fleet-connections
   const selectedEnvironment =
     environmentOptions.find((environment) => environment.environmentId === selectedEnvironmentId) ??
+    // fork: fleet-connections -- an explicit choice that drops out is not replaced
     (selectedEnvironmentId === null
       ? environmentOptions.find((environment) =>
           canCreateProjectInEnvironment(environment.connectionState),
         )
       : undefined) ??
     null;
+  // fork: fleet-connections
   // Freeze the first visible choice so a reconnect cannot redirect creation
   // to a different computer after the user starts this flow.
   if (selectedEnvironmentId === null && selectedEnvironment !== null) {
@@ -465,6 +473,7 @@ function useSelectedEnvironment(requestedEnvironmentId: EnvironmentId | null): {
   return {
     environmentOptions,
     selectedEnvironment,
+    // fork: fleet-connections
     selectedEnvironmentId: selectedEnvironmentId ?? selectedEnvironment?.environmentId ?? null,
     setSelectedEnvironmentId,
   };
@@ -472,11 +481,13 @@ function useSelectedEnvironment(requestedEnvironmentId: EnvironmentId | null): {
 
 function EmptyEnvironmentState() {
   const navigation = useNavigation();
+  // fork: fleet-connections
   const { isLoadingSavedConnection, savedConnectionsById } = useSavedRemoteConnections();
   const hasSavedComputers = Object.keys(savedConnectionsById).length > 0;
 
   return (
     <View className="items-center gap-3 rounded-2xl bg-grouped-card px-5 py-8">
+      {/* fork: fleet-connections */}
       {isLoadingSavedConnection ? (
         <AppActivityIndicator colorClassName="accent-icon-muted" />
       ) : null}
@@ -488,12 +499,14 @@ function EmptyEnvironmentState() {
             : "Connect a computer"}
       </Text>
       <Text className="text-center text-sm leading-normal text-foreground-muted">
+        {/* fork: fleet-connections */}
         {isLoadingSavedConnection
           ? "Checking saved computers on this device."
           : hasSavedComputers
             ? "Reconnect the selected computer or choose another before adding a project."
             : "Connect a computer to create a project, open a folder, or clone a repository there."}
       </Text>
+      {/* fork: fleet-connections */}
       {!isLoadingSavedConnection ? (
         <View className="mt-1">
           <Button
@@ -509,6 +522,7 @@ function EmptyEnvironmentState() {
   );
 }
 
+// fork: fleet-connections
 function ComputerSummary(props: { readonly environment: EnvironmentOption }) {
   return (
     <>
@@ -593,6 +607,7 @@ function SourceControlRow(props: {
 // fork: fleet-connections - Preserve destination from the computer work actions.
 export function AddProjectSourceScreen(props: { readonly environmentId?: string | string[] }) {
   const navigation = useNavigation();
+  // fork: fleet-connections
   const {
     environmentOptions,
     selectedEnvironment,
@@ -621,14 +636,17 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
 
   return (
     <AddProjectShell title="Add project">
+      {/* fork: fleet-connections -- the computer list always shows, followed by its empty state */}
       {environmentOptions.length > 0 ? (
         <>
+          {/* fork: fleet-connections */}
           <SectionTitle>Computer</SectionTitle>
           <ListSection>
             {environmentOptions.map((environment, index) => (
               <ListRow
                 key={environment.environmentId}
                 title={environment.label}
+                // fork: fleet-connections
                 subtitle={connectionStatusText({
                   phase: environment.connectionState,
                   error: environment.connectionError,
@@ -641,10 +659,11 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
                     tintColorClassName="accent-icon"
                   />
                 }
-                selected={environment.environmentId === selectedEnvironmentId}
+                selected={environment.environmentId === selectedEnvironmentId} // fork: fleet-connections
                 disabled={!canCreateProjectInEnvironment(environment.connectionState)}
                 isFirst={index === 0}
                 right={
+                  // fork: fleet-connections
                   environment.environmentId === selectedEnvironmentId ? (
                     <SymbolView
                       name="checkmark"
@@ -661,6 +680,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
         </>
       ) : null}
 
+      {/* fork: fleet-connections */}
       {selectedEnvironment === null ? <EmptyEnvironmentState /> : null}
       {selectedEnvironment ? (
         <>
@@ -668,6 +688,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
             {selectedEnvironment.newProjectsRoot !== null ? (
               <ListRow
                 title="New project"
+                // fork: fleet-connections
                 subtitle={
                   canCreateProject
                     ? "Start a new Git repository from a name"
@@ -693,10 +714,10 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
               />
             ) : null}
             <ListRow
-              title="Existing folder"
+              title="Existing folder" // fork: fleet-connections
               subtitle={
                 canCreateProject
-                  ? `Browse folders on ${selectedEnvironment.label}`
+                  ? `Browse folders on ${selectedEnvironment.label}` // fork: fleet-connections
                   : "This connection cannot add projects."
               }
               icon={
@@ -739,6 +760,7 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
           {discoveryState.isPending ? (
             <AppActivityIndicator colorClassName="accent-icon-muted" />
           ) : null}
+          {/* fork: fleet-connections */}
           <Button
             label="Manage computers"
             tone="text"
@@ -794,6 +816,7 @@ async function draftWithPrompt(
   return draftId;
 }
 
+// fork: fleet-connections
 function useCreateProject(
   environment: EnvironmentOption | null,
   createWorkspaceRootIfMissing: boolean,
@@ -835,6 +858,7 @@ function useCreateProject(
     }
 
     const projectId = ProjectId.make(uuidv4());
+    // fork: fleet-connections
     const command = {
       ...buildProjectCreateCommand({
         commandId: CommandId.make(uuidv4()),
@@ -946,6 +970,7 @@ export function AddProjectRepositoryScreen(props: {
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          {/* fork: fleet-connections */}
           <ComputerSummary environment={environment} />
           <TextInput
             className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
@@ -1090,6 +1115,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
     () => stringParam(props.environmentId) as EnvironmentId | null,
   );
   const environment = resolveAddProjectEnvironment(environmentOptions, selectedEnvironmentId);
+  // fork: fleet-connections
   const canCreateProject = useEnvironmentScope(
     environment?.environmentId ?? null,
     AuthOrchestrationOperateScope,
@@ -1131,12 +1157,14 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   const machineRows = showMachines ? (
     <ListSection>
       {environmentOptions.map((option, index) => {
+        // fork: fleet-connections
         const selected =
           option.environmentId === (selectedEnvironmentId ?? environment?.environmentId);
         return (
           <ListRow
             key={option.environmentId}
             title={option.label}
+            // fork: fleet-connections
             subtitle={connectionStatusText({
               phase: option.connectionState,
               error: option.connectionError,
@@ -1176,6 +1204,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
     const originRoute = getActiveRoute(navigation);
     submittingRef.current = true;
     setError(null);
+    // fork: fleet-connections
     if (!readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope)) {
       submittingRef.current = false;
       setError("This connection cannot add projects.");
@@ -1263,6 +1292,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          {/* fork: fleet-connections */}
           {!canCreateProject ? (
             <ErrorBanner message="This connection cannot add projects." />
           ) : null}
@@ -1286,18 +1316,20 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
               {showMachines ? ` on ${environment.label}` : null}
             </Text>
           ) : null}
+          {/* fork: fleet-connections -- the computer rows moved above the name field */}
           {publishTarget !== null ? (
             <ListSection>
               <ListRow
                 title={`Create private repository on ${publishTarget.definition.label}`}
                 subtitle={
+                  // fork: fleet-connections
                   !canPublishRepository
                     ? "This connection cannot publish repositories."
                     : trimmedName.length > 0 && pathPreview !== null
                       ? getNewProjectRepository(publishTarget, pathPreview)
                       : publishTarget.owner
                 }
-                disabled={isSubmitting || (!canPublishRepository && !publishes)}
+                disabled={isSubmitting || (!canPublishRepository && !publishes)} // fork: fleet-connections
                 icon={
                   <SourceControlIcon
                     icon={publishTarget.definition.icon}
@@ -1310,7 +1342,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                   <ThemedSwitch
                     accessibilityLabel={`Create private repository on ${publishTarget.definition.label}`}
                     value={publishes}
-                    disabled={isSubmitting || (!canPublishRepository && !publishes)}
+                    disabled={isSubmitting || (!canPublishRepository && !publishes)} // fork: fleet-connections
                     onValueChange={setPublishes}
                   />
                 }
@@ -1350,6 +1382,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
             </ListSection>
           ) : publishes ? (
             <ListSection>
+              {/* fork: fleet-connections */}
               <ListRow
                 title="Create private repository"
                 subtitle="Publishing is unavailable. Turn this off to create the project here."
@@ -1368,6 +1401,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
           ) : null}
           <PrimaryActionButton
             label="Create project"
+            // fork: fleet-connections
             disabled={
               isSubmitting ||
               trimmedName.length === 0 ||
@@ -1397,9 +1431,10 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
               }
             />
           </ListSection>
-        </>
+        </> // fork: fleet-connections -- the computer rows also lead the empty state below
       ) : (
         <>
+          {/* fork: fleet-connections */}
           {environmentOptions.length > 0 ? <SectionTitle>Computer</SectionTitle> : null}
           {machineRows}
           <EmptyEnvironmentState />
@@ -1415,7 +1450,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     environment?.environmentId ?? null,
     AuthOrchestrationOperateScope,
   );
-  const createProject = useCreateProject(environment, false);
+  const createProject = useCreateProject(environment, false); // fork: fleet-connections
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1437,6 +1472,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     setIsSubmitting(true);
     const result = await createProject(resolved.path);
     if (result && AsyncResult.isFailure(result)) {
+      // fork: fleet-connections
       const detail = errorMessage(Cause.squash(result.cause));
       const meaningfulDetail =
         detail === "Failed to mutate project." || detail === "An error occurred."
@@ -1450,17 +1486,19 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   };
 
   return (
+    // fork: fleet-connections
     <AddProjectShell title="Existing folder">
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          {/* fork: fleet-connections */}
           <ComputerSummary environment={environment} />
           {!canCreateProject ? (
             <ErrorBanner message="This connection cannot add projects." />
           ) : null}
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
           <PrimaryActionButton
-            label="Open folder"
+            label="Open folder" // fork: fleet-connections
             disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
             onPress={submitPath}
             loading={isSubmitting}
@@ -1484,6 +1522,7 @@ export function AddProjectDestinationScreen(props: {
   readonly remoteUrl?: string | string[];
   readonly repositoryTitle?: string | string[];
   readonly repositoryName?: string | string[];
+  // fork: project-home
   readonly preparationSourceEnvironmentId?: string | string[];
   readonly preparationSourceProjectId?: string | string[];
   readonly preparationProjectId?: string | string[];
@@ -1510,7 +1549,8 @@ export function AddProjectDestinationScreen(props: {
     AuthOrchestrationOperateScope,
   );
   const canCloneProject = canWriteSourceControl && canCreateProject;
-  const createProject = useCreateProject(environment, true);
+  const createProject = useCreateProject(environment, true); // fork: fleet-connections
+  // fork: project-home
   const sourceEnvironmentId = stringParam(props.preparationSourceEnvironmentId);
   const sourceProjectId = stringParam(props.preparationSourceProjectId);
   const preparationRequested =
@@ -1589,7 +1629,7 @@ export function AddProjectDestinationScreen(props: {
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
     environment,
     repositoryName,
-    preparationRequested ? stringParam(props.preparationDestinationPath) : null,
+    preparationRequested ? stringParam(props.preparationDestinationPath) : null, // fork: project-home
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1605,6 +1645,7 @@ export function AddProjectDestinationScreen(props: {
     ) {
       return;
     }
+    // fork: project-home
     const preparationHostConnected = () => {
       const current = appAtomRegistry.get(
         environmentPresentations.presentationAtom(environment.environmentId),
@@ -1617,7 +1658,7 @@ export function AddProjectDestinationScreen(props: {
     }
     setError(null);
     const resolved = resolveAddProjectPath({
-      rawPath: savedReceipt?.destinationPath ?? pathInput,
+      rawPath: savedReceipt?.destinationPath ?? pathInput, // fork: project-home
       currentProjectCwd: null,
       platform: environment.platform,
     });
@@ -1627,6 +1668,7 @@ export function AddProjectDestinationScreen(props: {
     }
 
     const originRoute = getActiveRoute(navigation);
+    // fork: project-home
     if (preparationRequested) {
       if (
         !preparation ||
@@ -1734,7 +1776,7 @@ export function AddProjectDestinationScreen(props: {
         input: {
           projectId,
           title,
-          createdAt: preparation?.createdAt ?? new Date().toISOString(),
+          createdAt: preparation?.createdAt ?? new Date().toISOString(), // fork: project-home
           remoteUrl,
           destinationPath: resolved.path,
         },
@@ -1793,6 +1835,7 @@ export function AddProjectDestinationScreen(props: {
   return (
     <AddProjectShell title="Clone destination">
       {error ? <ErrorBanner message={error} /> : null}
+      {/* fork: project-home */}
       {receiptState.invalid ? (
         <ErrorBanner message="The saved preparation receipt could not be read. Review the existing destination project before retrying." />
       ) : null}
@@ -1806,7 +1849,9 @@ export function AddProjectDestinationScreen(props: {
       ) : null}
       {environment ? (
         <>
+          {/* fork: fleet-connections */}
           <ComputerSummary environment={environment} />
+          {/* fork: project-home */}
           {savedReceipt ? (
             <View className="gap-2 p-3">
               <Text selectable className="text-sm">
@@ -1822,6 +1867,7 @@ export function AddProjectDestinationScreen(props: {
           )}
           <PrimaryActionButton
             label="Clone project"
+            // fork: project-home
             disabled={
               !canCloneProject ||
               isBrowseNavigating ||
@@ -1840,6 +1886,7 @@ export function AddProjectDestinationScreen(props: {
             onPress={submitPath}
             loading={isSubmitting}
           />
+          {/* fork: project-home */}
           {preparationRequested &&
           recovery &&
           (savedReceipt !== null ||
@@ -1880,6 +1927,7 @@ export function AddProjectDestinationScreen(props: {
               This connection cannot clone projects.
             </Text>
           ) : null}
+          {/* fork: project-home */}
           {!savedReceipt ? (
             <FolderBrowser
               environment={environment}

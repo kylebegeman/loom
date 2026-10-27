@@ -19,6 +19,7 @@ export interface ComposerSendPresentation {
 }
 
 const ACTION_LABEL: Record<ActiveTurnComposerAction, string> = {
+  // fork: everyday-workflows
   queue: "Send next",
   steer: "Send now",
   restart: "Restart turn",
@@ -42,7 +43,7 @@ export function resolveComposerSendPresentation(input: {
   }
   if (!input.running) {
     return {
-      label: input.deliveryDeferred ? "Send later" : "Send",
+      label: input.deliveryDeferred ? "Send later" : "Send", // fork: everyday-workflows
       icon: input.deliveryDeferred ? "tray.and.arrow.up" : "arrow.up",
       action: null,
       alternate: null,

@@ -1,3 +1,4 @@
+// fork: compaction-recovery
 import { contextCompactionLabel } from "@t3tools/client-runtime/work-log/presentation";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
@@ -53,7 +54,7 @@ import { formatShortTimestamp } from "../../timestampFormat";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 import { ProviderInstanceIcon, providerTextColor } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
-import { SubagentReceipt } from "~/fork/agent-receipts/SubagentReceipt";
+import { SubagentReceipt } from "~/fork/agent-receipts/SubagentReceipt"; // fork: agent-receipts
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 import { subagentResumedSince } from "./V2LifecycleRow.logic";
 import { Button, InlineButton } from "../ui/button";
@@ -122,6 +123,7 @@ export function V2LifecycleRow(props: {
     // fork: compaction-recovery: all clients describe failed and stopped compaction consistently.
     const label = contextCompactionLabel({ status: item.status });
     return (
+      // fork: compaction-recovery
       <TimelineSystemDivider
         label={label}
         detail={item.summary ?? tokenDetail}
@@ -477,6 +479,7 @@ function SubagentTimelineLink(props: {
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
   const row = (
+    // fork: agent-receipts
     <Tooltip>
       <TooltipTrigger
         delay={200}
@@ -515,6 +518,7 @@ function SubagentTimelineLink(props: {
       </ThreadHoverCardPopup>
     </Tooltip>
   );
+  // fork: agent-receipts
   if (!SETTLED_SUBAGENT_STATUSES.has(liveStatus) || timing.completedAt === null) return row;
   return (
     <div className="min-w-0">

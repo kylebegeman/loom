@@ -19,7 +19,7 @@ export interface XcodebuildPaths {
 }
 
 /** `-workspace W` or `-project P`; XcodeGen specs build their generated project. */
-export const containerArgs = (container: AppleContainer): ReadonlyArray<string> | null => {
+const containerArgs = (container: AppleContainer): ReadonlyArray<string> | null => {
   switch (container.kind) {
     case "workspace":
       return ["-workspace", container.path];

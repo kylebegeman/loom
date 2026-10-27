@@ -19,7 +19,7 @@ export interface LibraryPushTopic {
  * The runbook's key is a Production, topic-specific key for the App Store app, so only that pair
  * is accepted unless the Library says otherwise.
  */
-export const DEFAULT_LIBRARY_PUSH_TOPICS: ReadonlyArray<LibraryPushTopic> = [
+const DEFAULT_LIBRARY_PUSH_TOPICS: ReadonlyArray<LibraryPushTopic> = [
   { bundleId: "com.kylebegeman.loom", apsEnvironment: "production" },
 ];
 
@@ -38,7 +38,8 @@ const trimmed = (value: string | undefined) => value?.trim() || null;
 /**
  * Push runs only on a Library authority with Identity, the switch on and every key setting
  * present. Whether the key file is readable is a runtime question the service answers with
- * `misconfigured`, since checking it here would mean a synchronous read at module load.
+ * `misconfigured`, since checking it here would mean a synchronous read at module load. It also
+ * gates the advertised slug: phones use that to decide whether to register at all.
  */
 export const libraryPushEffective = (env: Env) =>
   isLibraryAuthorityEnv(env) &&
@@ -47,9 +48,6 @@ export const libraryPushEffective = (env: Env) =>
   trimmed(env.LOOM_LIBRARY_PUSH_APNS_TEAM_ID) !== null &&
   trimmed(env.LOOM_LIBRARY_PUSH_APNS_KEY_ID) !== null &&
   trimmed(env.LOOM_LIBRARY_PUSH_APNS_KEY_FILE) !== null;
-
-/** Phones use the slug to decide whether to register at all, so it must mean "push runs here". */
-export const libraryPushAdvertised = libraryPushEffective;
 
 /** Agent alerts (C04-10) have a switch of their own, read with the same literals. */
 export const libraryPushActivitySwitchOn = (env: Env) =>

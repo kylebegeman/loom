@@ -6,12 +6,8 @@ import { EnvironmentId, IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from 
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const PREVIEW_LINKS_FEATURE = "preview-links";
-/** The Library signs cold-browser sign-in tickets and records each computer's preview hosts. */
-export const PREVIEW_TICKETS_FEATURE = "preview-tickets";
 /** Published pages: on a Library, storing and serving them; on a computer, the RPCs below. */
 export const PREVIEW_PAGES_FEATURE = "preview-pages";
-/** Folder and container links behind ordinary port links. */
-export const PREVIEW_BACKINGS_FEATURE = "preview-backings";
 
 export const PREVIEW_LINKS_WS_METHODS = {
   watch: "loom.preview-links.watch",

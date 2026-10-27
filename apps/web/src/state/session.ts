@@ -95,6 +95,7 @@ export function readPreparedConnection(environmentId: EnvironmentId) {
  * meaningful before the first resolve.
  */
 export function useEnvironmentSessionState(environmentId: EnvironmentId | null) {
+  // fork: library-projects
   const result = useAtomValue(
     environmentId === null
       ? EMPTY_SESSION_STATE_ATOM

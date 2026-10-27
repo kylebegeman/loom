@@ -284,7 +284,7 @@ export function useBotLifecycle() {
 }
 
 /** The quick moves on a bot that don't need its page. */
-export function BotActionsMenu({ bot }: { readonly bot: BotDefinition }) {
+function BotActionsMenu({ bot }: { readonly bot: BotDefinition }) {
   return (
     <Menu>
       <MenuTrigger

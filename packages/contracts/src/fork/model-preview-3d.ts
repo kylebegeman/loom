@@ -89,7 +89,7 @@ export const ModelFormat = Schema.Literals([
   "build123d",
 ]);
 
-export const MODEL_EXTENSIONS = {
+const MODEL_EXTENSIONS = {
   ".b3d.py": "build123d",
   ".stl": "stl",
   ".3mf": "3mf",

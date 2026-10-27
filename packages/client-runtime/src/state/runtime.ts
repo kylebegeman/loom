@@ -924,8 +924,9 @@ export function createEnvironmentRpcCommand<
     label: options.label,
     ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
-    execute,
+    execute, // fork: ext-core
   });
+  // fork: ext-core
   const resultAtom = createEnvironmentQueryAtomFamily(runtime, {
     label: options.label,
     idleTtlMs: 0,
@@ -938,7 +939,7 @@ export function createEnvironmentRpcCommand<
   });
   return {
     ...command,
-    resultAtom,
+    resultAtom, // fork: ext-core
     requiredScopes: permissions.requiredScopes,
     permissionAtom: permissions.permissionAtom,
   };

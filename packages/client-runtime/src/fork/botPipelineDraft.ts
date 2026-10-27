@@ -4,7 +4,6 @@ import {
   BotPipelineInput,
   type BotDefinition,
   type BotPipelineGate,
-  type BotPipelineProblem,
   type BotPipelineStep,
   type BotTarget,
 } from "@t3tools/contracts/fork";
@@ -208,12 +207,6 @@ const describeProblem = (draft: PipelineDraft): string => {
   }
   return "Check the fields and lengths, then save again.";
 };
-
-/** Problems of one step, or of the pipeline as a whole for a null step. */
-export const problemsOf = (
-  problems: ReadonlyArray<BotPipelineProblem>,
-  stepId: string | null,
-): ReadonlyArray<BotPipelineProblem> => problems.filter((problem) => problem.stepId === stepId);
 
 /** References a step can use in its templates, for the editor's hint. */
 export const stepReferences = (draft: PipelineDraft, index: number): ReadonlyArray<string> => [

@@ -209,7 +209,9 @@ export const layer = Layer.effectDiscard(
       (effect) => effect.pipe(Effect.ignoreCause),
     );
     const report = Effect.gen(function* () {
+      // fork: server-weight -- reportEnvironment reads the time per connected environment
       const entries = yield* SubscriptionRef.get(registry.entries);
+      // fork: server-weight
       yield* Effect.forEach(entries.keys(), reportEnvironment, {
         concurrency: "unbounded",
         discard: true,

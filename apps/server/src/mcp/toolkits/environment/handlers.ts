@@ -1,12 +1,12 @@
 // fork: mini-native-retention
 import { OrchestratorMcpFailure, type ServerSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: file-placement
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
-import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
-import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
-import * as StorageCleanup from "../../../storageCleanup.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
+import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -46,6 +46,7 @@ const access = Effect.gen(function* () {
   return { ...context, descriptor, settings: yield* Settings.ServerSettingsService };
 });
 export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
+  // fork: mini-native-retention
   loom_storage_cleanup_report: McpToolAccess.reads(() =>
     access.pipe(
       Effect.andThen(
@@ -57,6 +58,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     Effect.gen(function* () {
       const { descriptor, settings } = yield* access;
       const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
+      // fork: file-placement
       const folders = yield* Effect.flatMap(
         ProjectPlacement.ProjectPlacement,
         (placement) => placement.folders,
@@ -71,6 +73,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
         serverVersion: descriptor.serverVersion,
         platform: descriptor.platform,
         preferences: preferences(current),
+        // fork: file-placement
         folders: Option.match(scratch, {
           onNone: () => folders,
           onSome: (root) => ({ ...folders, scratch: root }),

@@ -10,7 +10,7 @@ import {
   supportsServerUpdateThreadContinuation,
 } from "~/versionSkew";
 import type { ServerUpdateOutcome, ServerUpdateTarget } from "../ServerUpdateAction";
-import type { UpdateScope } from "~/fork/connections/updateScope";
+import type { UpdateScope } from "~/fork/connections/updateScope"; // fork: machine-updates
 
 export interface UpdateEverythingMachine {
   readonly environmentId: EnvironmentId;

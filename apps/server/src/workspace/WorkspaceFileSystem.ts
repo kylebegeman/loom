@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema";
 import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
-import { withWorkspaceLease } from "./workspaceLease.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts"; // fork: project-lifecycle
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
@@ -339,6 +339,7 @@ export const make = Effect.gen(function* () {
     "WorkspaceFileSystem.readFile",
   )(
     function* (input) {
+      // fork: project-lifecycle
       // Host paths read in place, so only workspace-relative reads restore the checkout.
       const requestedPath = input.relativePath.trim();
       if (!path.isAbsolute(requestedPath) && !requestedPath.startsWith("~/"))
@@ -467,6 +468,7 @@ export const make = Effect.gen(function* () {
               }),
       );
     },
+    // fork: project-lifecycle
     (effect, input) => withWorkspaceLease(path.resolve(input.cwd), effect),
   );
 
@@ -557,6 +559,7 @@ export const make = Effect.gen(function* () {
   )(
     function* (input) {
       yield* knownWorkspaces.assertContains(input.cwd);
+      // fork: project-lifecycle
       yield* workspacePaths
         .normalizeWorkspaceRoot(input.cwd, {
           restoreManagedCheckout: true,
@@ -614,6 +617,7 @@ export const make = Effect.gen(function* () {
       yield* workspaceEntries.refresh(input.cwd);
       return { relativePath: target.relativePath };
     },
+    // fork: project-lifecycle
     (effect, input) => withWorkspaceLease(path.resolve(input.cwd), effect),
   );
 

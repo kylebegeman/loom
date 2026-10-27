@@ -195,6 +195,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
         }}
       />
       {Platform.OS === "android" ? (
+        // fork: fleet-connections
         <AndroidScreenHeader title="Computer" hideBottomBorder onBack={() => navigation.goBack()} />
       ) : null}
       <ScreenContent>
@@ -217,7 +218,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                 onPress={() => {
                   void Haptics.selectionAsync();
                   void flow.switchEnvironment(environment.environmentId).then((switched) => {
-                    if (switched && navigation.isFocused()) navigation.goBack();
+                    if (switched && navigation.isFocused()) navigation.goBack(); // fork: fleet-connections
                   });
                 }}
                 selected={flow.selectedEnvironmentId === environment.environmentId}

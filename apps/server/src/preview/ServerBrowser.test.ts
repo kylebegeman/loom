@@ -24,7 +24,7 @@ import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
+import * as TestClock from "effect/testing/TestClock"; // fork: browser-timeout-recovery
 import type { BrowserContext, Page } from "playwright-core";
 import { beforeEach, expect, vi } from "vite-plus/test";
 
@@ -35,6 +35,7 @@ import * as DesktopChannel from "./DesktopBrowserChannel.ts";
 import * as Manager from "./Manager.ts";
 import * as PreviewAgentActivity from "./PreviewAgentActivity.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
+// fork: browser-timeout-recovery
 import * as ServerBrowserContexts from "./ServerBrowserContexts.ts";
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 import * as PreviewBrowser from "./PreviewBrowser.ts";
@@ -49,7 +50,7 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async contextFor(profileId: string, isolationKey?: string) {
       contextRequests.push({ profileId, isolated: isolationKey !== undefined });
       if (contextFailure) throw contextFailure;
-      contextRequested?.resolve();
+      contextRequested?.resolve(); // fork: browser-timeout-recovery
       await contextGate?.promise;
       const context = makeContext(this.onClose);
       contexts.push(context);
@@ -59,8 +60,9 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
       return makeEncoderPage() as unknown as Page;
     }
     async connectDesktopPage(endpoint: string) {
-      const context = makeContext(undefined, desktopPageInitialUrl);
+      const context = makeContext(undefined, desktopPageInitialUrl); // fork: browser-timeout-recovery
       desktopConnections.push({ endpoint, context });
+      // fork: browser-timeout-recovery -- relay release and failed initialization are observable.
       const failure = desktopInitializationFailure;
       desktopInitializationFailure = null;
       if (failure) {
@@ -143,12 +145,13 @@ function makeSession(frame?: ReturnType<typeof makeFrame>) {
   };
 }
 
+// fork: browser-timeout-recovery -- a desktop page can start at a URL; a restored context opens more pages.
 function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "about:blank") {
   const events = new NodeEvents.EventEmitter();
   const nativeFileChooser = vi.fn();
   const setChooserFiles = vi.fn(async (_files: unknown) => {});
   const sessions: ReturnType<typeof makeSession>[] = [];
-  let url = initialUrl;
+  let url = initialUrl; // fork: browser-timeout-recovery
   let viewport = { width: 1280, height: 800 };
   let closed = false;
   let contextClosed = false;
@@ -214,12 +217,14 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
       }
     }),
   };
+  // fork: browser-timeout-recovery
   const pages = [page];
   let pageRequests = 0;
   const context = {
     page,
-    pages,
+    pages, // fork: browser-timeout-recovery
     sessions,
+    // fork: browser-timeout-recovery
     newPage: async () => {
       if (pageRequests++ === 0) return page as unknown as Page;
       const replacement = makeContext().page;
@@ -229,9 +234,10 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
     },
     grantPermissions: vi.fn(async () => {}),
     newCDPSession: async (target: unknown) => {
+      // fork: browser-timeout-recovery
       // Pages, including ones a restored context opens later, use the page's process.
       const session = makeSession(
-        pages.includes(target as typeof page)
+        pages.includes(target as typeof page) // fork: browser-timeout-recovery
           ? undefined
           : (target as ReturnType<typeof makeFrame>),
       );
@@ -241,7 +247,7 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
     close: vi.fn(async () => {
       if (contextClosed) return;
       contextClosed = true;
-      await Promise.all(pages.map((candidate) => candidate.close()));
+      await Promise.all(pages.map((candidate) => candidate.close())); // fork: browser-timeout-recovery
       onClose?.(context as unknown as BrowserContext);
     }),
   };
@@ -313,6 +319,7 @@ const desktopRenders = (tabId: string) => {
 const releasedDesktopTabs: Array<string> = [];
 const desktopTurns = new NodeEvents.EventEmitter();
 const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof makeContext> }> = [];
+// fork: browser-timeout-recovery
 let desktopPageInitialUrl = "about:blank";
 let desktopDetachListening = Promise.withResolvers<void>();
 let desktopCloseGate: PromiseWithResolvers<void> | null = null;
@@ -350,6 +357,7 @@ const dependencies = Layer.mergeAll(
   }),
   Layer.succeed(DesktopChannel.DesktopBrowserChannel, {
     available: true,
+    // fork: browser-timeout-recovery
     awaitAttached: (key) =>
       Effect.sync(() => {
         desktopAttachChecked?.resolve();
@@ -361,7 +369,7 @@ const dependencies = Layer.mergeAll(
           const onDetach = (key: { threadId: string; tabId: string }) =>
             Queue.offerUnsafe(queue, key);
           desktopDetaches.on("detach", onDetach);
-          desktopDetachListening.resolve();
+          desktopDetachListening.resolve(); // fork: browser-timeout-recovery
           return onDetach;
         }),
         (onDetach) => Effect.sync(() => desktopDetaches.off("detach", onDetach)),
@@ -404,6 +412,7 @@ const ready = Effect.gen(function* () {
   const tabId = PreviewTabId.make(opened.tabId!);
   return { browser, broker, tabId };
 });
+// fork: browser-timeout-recovery
 /** A following event's real manager read proves the preceding attachment handler finished. */
 const attachDesktop = (manager: Manager.PreviewManager["Service"], tabId: string) =>
   Effect.gen(function* () {
@@ -436,7 +445,7 @@ beforeEach(() => {
   encoderStreams.length = 0;
   contextRequests.length = 0;
   contextGate = null;
-  contextRequested = null;
+  contextRequested = null; // fork: browser-timeout-recovery
   contextFailure = null;
   initialNavigation = null;
   pageCopy = "";
@@ -446,6 +455,7 @@ beforeEach(() => {
   desktopRendersNext = false;
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
+  // fork: browser-timeout-recovery
   desktopPageInitialUrl = "about:blank";
   desktopDetachListening = Promise.withResolvers<void>();
   desktopCloseGate = null;
@@ -622,6 +632,7 @@ it.live.each([
     ).pipe(Effect.provide(layer)),
 );
 
+// fork: browser-timeout-recovery
 it.effect("a recording tab whose snapshot never settles recovers on the next timeout", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1475,6 +1486,7 @@ it.live("a popup the tab limit closes is reported once in the agent's status", (
   ).pipe(Effect.provide(layer)),
 );
 
+// fork: browser-timeout-recovery -- late desktop attachments replace the headless fallback.
 it.live(
   "a late desktop attachment replaces the headless fallback without navigating the user's page",
   () =>
@@ -1649,6 +1661,7 @@ it.live("failed desktop initialization releases its relay without closing the na
   ).pipe(Effect.provide(layer)),
 );
 
+// fork: browser-timeout-recovery -- a stalled tab recovers without replaying its action.
 it.effect("a stalled snapshot recreates its page with the same profile and committed URL", () =>
   Effect.scoped(
     Effect.gen(function* () {

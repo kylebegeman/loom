@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
+import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts"; // fork: project-lifecycle
 
 export class WorkspaceRootNotExistsError extends Schema.TaggedError<WorkspaceRootNotExistsError>()(
   "WorkspaceRootNotExistsError",
@@ -86,6 +86,7 @@ export class WorkspacePaths extends Context.Service<
   {
     readonly normalizeWorkspaceRoot: (
       workspaceRoot: string,
+      // fork: project-lifecycle
       options?: {
         readonly createIfMissing?: boolean;
         readonly restoreManagedCheckout?: boolean;
@@ -115,6 +116,7 @@ function toPosixRelativePath(input: string): string {
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // fork: project-lifecycle
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
 
@@ -147,6 +149,7 @@ const make = Effect.gen(function* () {
     const normalizedWorkspaceRoot = path.resolve(
       expandHomePath(workspaceRoot.trim(), yield* HostProcess.HomeDirectory),
     );
+    // fork: project-lifecycle
     if (options?.restoreManagedCheckout)
       yield* restoreManagedProjectCheckout(
         normalizedWorkspaceRoot,

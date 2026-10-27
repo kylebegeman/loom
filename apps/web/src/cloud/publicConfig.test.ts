@@ -8,6 +8,7 @@ afterEach(() => {
 });
 
 describe("hasCloudPublicConfig", () => {
+  // fork: connect-compat
   it("requires complete public Connect configuration", () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
@@ -38,6 +39,7 @@ describe("hasCloudPublicConfig", () => {
   });
 
   it("rejects an insecure relay URL", () => {
+    // fork: connect-compat
     vi.stubEnv(
       "VITE_CLERK_PUBLISHABLE_KEY",
       "pk_test_ZGV2LWluc3RhbmNlLmNsZXJrLmFjY291bnRzLmRldiQ=",

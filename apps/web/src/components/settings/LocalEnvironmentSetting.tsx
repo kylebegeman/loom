@@ -42,7 +42,7 @@ export function LocalEnvironmentSetting() {
         {...searchableSetting("local-environment")}
         description={
           enabled
-            ? "Run agents on this computer. Turn off to use Loom with your other computers."
+            ? "Run agents on this computer. Turn off to use Loom with your other computers." // fork: fleet-connections
             : "Turned off. Agents only run on your other computers."
         }
         control={
@@ -50,7 +50,7 @@ export function LocalEnvironmentSetting() {
             checked={enabled}
             disabled={isUpdating}
             onCheckedChange={() => setConfirmOpen(true)}
-            aria-label="Run agents on this computer"
+            aria-label="Run agents on this computer" // fork: fleet-connections
           />
         }
       />
@@ -65,11 +65,12 @@ export function LocalEnvironmentSetting() {
         <AlertDialogPopup>
           <AlertDialogHeader>
             <AlertDialogTitle>
+              {/* fork: fleet-connections */}
               {enabled ? "Stop running agents on this computer?" : "Run agents on this computer?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {enabled
-                ? "Loom will restart without running a server on this computer. Any agents and terminals running here will stop, and other devices will no longer be able to connect to this computer. Your projects, history, and other computers are unaffected."
+                ? "Loom will restart without running a server on this computer. Any agents and terminals running here will stop, and other devices will no longer be able to connect to this computer. Your projects, history, and other computers are unaffected." // fork: fleet-connections
                 : "Loom will restart and start running a server on this computer again."}
             </AlertDialogDescription>
           </AlertDialogHeader>

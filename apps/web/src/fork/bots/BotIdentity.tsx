@@ -102,7 +102,7 @@ const STARTER_LABELS: Record<Exclude<BotStarterState, "removed">, string> = {
   outdated: "Newer starter available",
 };
 
-export function starterLabel(status: BotStarterStatus | undefined) {
+function starterLabel(status: BotStarterStatus | undefined) {
   return status === undefined || status.state === "removed" ? null : STARTER_LABELS[status.state];
 }
 

@@ -23,7 +23,7 @@ export const LIBRARY_PUSH_ACTIVITY_FEATURE = "library-push-activity";
 export const LIBRARY_PUSH_ACTIVITY_ROUTE = "/api/loom/library/push/activity";
 export const LIBRARY_PUSH_ACTIVITY_MAX_BYTES = 4 * 1024;
 /** Keeps the APNs payload, which carries the id three times, far below Apple's 4 KB. */
-export const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
+const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
 
 /**
  * `limited` is a run that failed on a usage limit. `vault-approval` is a Vault access request from
@@ -81,7 +81,7 @@ export const LIBRARY_PUSH_WS_METHODS = {
   test: "loom.library-push.test",
 } as const;
 
-export const LIBRARY_PUSH_DEVICE_ID_MAX_LENGTH = 128;
+const LIBRARY_PUSH_DEVICE_ID_MAX_LENGTH = 128;
 export const LIBRARY_PUSH_LABEL_MAX_LENGTH = 80;
 /** Length of a row id: base64url SHA-256 of (issuer, subject, deviceId), truncated. */
 export const LIBRARY_PUSH_DEVICE_ROW_ID_LENGTH = 22;

@@ -9,7 +9,7 @@ import {
 } from "./catalog.ts";
 import {
   BearerConnectionTarget,
-  ConnectionBlockedError,
+  ConnectionBlockedError, // fork: fleet-connections
   ConnectionTransientError,
   RelayConnectionTarget,
   type SupervisorConnectionState,

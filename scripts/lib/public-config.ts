@@ -26,11 +26,11 @@ const REPO_ROOT = NodePath.dirname(
 export function loadRepoEnv({
   baseEnv = process.env,
   repoRoot = REPO_ROOT,
-  readFiles = true,
+  readFiles = true, // fork: mobile-identity
 }: {
   readonly baseEnv?: Environment;
   readonly repoRoot?: string;
-  readonly readFiles?: boolean;
+  readonly readFiles?: boolean; // fork: mobile-identity
 } = {}): Record<string, string | undefined> {
   // fork: fleet-connect - Prepared releases consume only their frozen public configuration.
   const includeFiles = readFiles && baseEnv.T3CODE_RELEASE_PUBLIC_CONFIG !== "1";

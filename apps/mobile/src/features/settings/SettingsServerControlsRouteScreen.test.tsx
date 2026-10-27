@@ -13,6 +13,7 @@ const { Children, mocks } = vi.hoisted(() => ({
     alert: vi.fn(),
     targets: [] as ReturnType<typeof environment>[],
     projectSelected: false,
+    // fork: provider-auth-retry
     providerAuth: {
       data: null as { phase: string; methods: never[] } | null,
       error: null as string | null,
@@ -42,6 +43,7 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("@effect/atom-react", () => ({
+  // fork: provider-auth-retry
   useAtomValue: (atom: unknown) =>
     atom === "providers"
       ? new Map([
@@ -73,6 +75,7 @@ vi.mock("../../state/session", () => ({
   readEnvironmentScope: () => true,
   useEnvironmentsWithScope: () => new Set(mocks.targets.map((target) => target.environmentId)),
 }));
+// fork: provider-auth-retry
 vi.mock("../../state/server", () => ({
   serverEnvironment: { updateSettings: {}, providerAuthState: () => "auth" },
 }));
@@ -106,6 +109,7 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
   AndroidSettingsEnvironmentFilter: () => null,
   SettingsEnvironmentFilterHeader: () => null,
 }));
+// fork: github-host-setup
 vi.mock("./components/GitHubHostSetupSettings", () => ({ GitHubHostSetupSettings: () => null }));
 vi.mock("./components/DatabaseStorageNotice", () => ({ DatabaseStorageNotice: () => null }));
 vi.mock("./components/SettingsSection", () => ({ SettingsSection: Children }));
@@ -133,6 +137,7 @@ vi.mock("./components/SettingsSwitchRow", () => ({
   ),
 }));
 vi.mock("./components/SettingsRow", () => ({ SettingsRow: () => null }));
+// fork: provider-auth-retry
 vi.mock("./components/SettingsActionRow", () => ({
   SettingsActionRow: ({
     label,
@@ -171,7 +176,7 @@ vi.mock("./settings-environment-filter", () => ({
 }));
 
 import { SettingsEnvironmentSourceControlRouteScreen } from "./SettingsServerControlsRouteScreen";
-import { SettingsProviderAccountsRouteScreen } from "./SettingsProviderAccountsRouteScreen";
+import { SettingsProviderAccountsRouteScreen } from "./SettingsProviderAccountsRouteScreen"; // fork: provider-auth-retry
 
 function environment(environmentId: string, label: string) {
   return {
@@ -209,6 +214,7 @@ beforeEach(() => {
   root = createRoot(container);
   mocks.targets = [environment("local", "Local")];
   mocks.projectSelected = false;
+  // fork: provider-auth-retry
   mocks.providerAuth.data = null;
   mocks.providerAuth.error = null;
   mocks.providerAuth.isPending = false;
@@ -244,6 +250,7 @@ describe("SettingsServerControlsRouteScreen", () => {
   });
 });
 
+// fork: provider-auth-retry
 it("recovers a failed agent account-status request without leaving Settings", async () => {
   mocks.providerAuth.error = "Could not read sign-in status.";
   act(() => root.render(<SettingsProviderAccountsRouteScreen />));

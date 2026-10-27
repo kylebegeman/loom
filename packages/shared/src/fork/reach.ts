@@ -8,7 +8,7 @@ import { decodeEd25519PublicKey, isDirectoryRouteUrl } from "./directory.ts";
 /** Distinct from the directory report and every relay typ, so no proof replays as another. */
 export const REACH_REQUEST_TYP = "loom-reach-request+jwt";
 /** Short because `seq` already orders requests; this only bounds a captured token's use. */
-export const REACH_REQUEST_LIFETIME_SECONDS = 60;
+const REACH_REQUEST_LIFETIME_SECONDS = 60;
 
 const reachIssuer = (environmentId: string) => `loom-env:${environmentId}`;
 
@@ -235,9 +235,9 @@ export function reachAllowsRequest(method: string, target: string): boolean {
 }
 
 /** Hostnames are `<slug>-loom.<zone>`, or `<slug>-<n>-loom.<zone>` after a collision. */
-export const REACH_HOST_SUFFIX = "-loom";
-export const REACH_SLUG_MAX_LENGTH = 40;
-export const REACH_SLUG_FALLBACK = "computer";
+const REACH_HOST_SUFFIX = "-loom";
+const REACH_SLUG_MAX_LENGTH = 40;
+const REACH_SLUG_FALLBACK = "computer";
 /** Attempt 1 is the bare slug; 2 to 99 add a numeric suffix. */
 export const REACH_HOSTNAME_MAX_ATTEMPTS = 99;
 /** Bare slugs that read like the Library's or Identity's own hosts. They start at attempt 2. */
@@ -358,8 +358,7 @@ export function reachResource(libraryOrigin: string, environmentId: string): str
 /** Rules the Library owns carry this prefix; it never edits or deletes any other rule. */
 export const REACH_EDGE_RULE_PREFIX = "loom-reach:";
 export const REACH_WAF_RULE_DESCRIPTION = "loom-reach:allowlist v1 (managed by the Loom Library)";
-export const REACH_RATE_LIMIT_RULE_DESCRIPTION =
-  "loom-reach:ratelimit v1 (managed by the Loom Library)";
+const REACH_RATE_LIMIT_RULE_DESCRIPTION = "loom-reach:ratelimit v1 (managed by the Loom Library)";
 
 const quoted = (values: ReadonlyArray<string>) => values.map((value) => `"${value}"`).join(" ");
 

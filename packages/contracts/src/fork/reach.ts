@@ -144,7 +144,7 @@ export const REACH_REMOVE_ROUTE = "/api/loom/reach/remove";
 /** The Library refuses a larger body before reading it. */
 export const REACH_REQUEST_MAX_BYTES = 8192;
 /** A signed request is a few hundred bytes; this only bounds the text. */
-export const REACH_REQUEST_TOKEN_MAX_LENGTH = 4096;
+const REACH_REQUEST_TOKEN_MAX_LENGTH = 4096;
 const REACH_CONNECTOR_TOKEN_MAX_LENGTH = 4096;
 
 export const ReachAction = Schema.Literals(["ensure", "remove"]);

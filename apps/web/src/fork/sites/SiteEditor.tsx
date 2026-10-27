@@ -48,7 +48,7 @@ type Service = SitesSnapshot["services"][number];
 type Check = SitesSnapshot["checks"][number];
 type ServiceKind = Service["kind"];
 
-export const SITE_WIZARD_STEPS = ["address", "serves", "monitoring"] as const;
+const SITE_WIZARD_STEPS = ["address", "serves", "monitoring"] as const;
 export type SiteWizardStep = (typeof SITE_WIZARD_STEPS)[number];
 const STEP_LABELS: Record<SiteWizardStep, string> = {
   address: "Address",
@@ -84,7 +84,12 @@ const SERVICE_KIND_ORDER = ["website", "api", "redirect"] as const;
 const COMMON_STATUSES = ["200", "204", "301", "302", "304"] as const;
 const OTHER_STATUS = "other";
 
-/** The ID a new entry would get from its name; the person can still change it before saving. */
+// @public marks helpers SitesPage.test.tsx reads through vi.importActual, which knip cannot trace.
+
+/**
+ * The ID a new entry would get from its name; the person can still change it before saving.
+ * @public
+ */
 export function idFromName(name: string) {
   return name
     .toLowerCase()
@@ -95,7 +100,10 @@ export function idFromName(name: string) {
     .replace(/-+$/, "");
 }
 
-/** `base`, or `base-2`, `base-3`... when an entry already holds it, kept within the ID limit. */
+/**
+ * `base`, or `base-2`, `base-3`... when an entry already holds it, kept within the ID limit.
+ * @public
+ */
 export function uniqueId(base: string, taken: ReadonlySet<string>) {
   const root = base || "site";
   if (!taken.has(root)) return root;
@@ -118,6 +126,7 @@ export type AddressReading =
 /**
  * What a typed address means as a site or service origin. People type hosts, paste page URLs and
  * forget the scheme, so this accepts all three and says plainly what it will not take.
+ * @public
  */
 export function readSiteAddress(input: string): AddressReading {
   const trimmed = input.trim();
@@ -146,7 +155,7 @@ export function readSiteAddress(input: string): AddressReading {
 }
 
 /** A name to start from: the host, without the `www.` nobody says aloud. */
-export function suggestedName(origin: string) {
+function suggestedName(origin: string) {
   try {
     return new URL(origin).hostname.replace(/^www\./, "");
   } catch {
@@ -154,7 +163,10 @@ export function suggestedName(origin: string) {
   }
 }
 
-/** A check's name from the page it requests: "/" is the home page, others take their last part. */
+/**
+ * A check's name from the page it requests: "/" is the home page, others take their last part.
+ * @public
+ */
 export function checkNameFromPath(path: string) {
   const segment = (path.split(/[?#]/)[0] ?? "").split("/").findLast(Boolean);
   if (!segment) return "Home";
@@ -175,6 +187,7 @@ export type CheckPathReading =
 /**
  * The URL a check requests: a path on its service's origin. A pasted full URL is fine when it is on
  * that origin, since a check may only ever request its own service.
+ * @public
  */
 export function readCheckPath(input: string, serviceOrigin: string): CheckPathReading {
   const trimmed = input.trim();
@@ -224,7 +237,7 @@ export type SiteAddressIssues = {
   readonly id: string | null;
 };
 
-export function siteAddressIssues(
+function siteAddressIssues(
   draft: Pick<SiteDraft, "address" | "name" | "id">,
   /** IDs already used by other sites; null when editing, where the ID is fixed. */
   takenIds: ReadonlySet<string> | null,
@@ -251,7 +264,10 @@ function idIssue(id: string, takenIds: ReadonlySet<string> | null, noun: string)
   return takenIds?.has(id) ? `Another ${noun} already uses the ID ${id}.` : null;
 }
 
-/** The first thing each wizard step still needs, or null once the step is complete. */
+/**
+ * The first thing each wizard step still needs, or null once the step is complete.
+ * @public
+ */
 export function siteDraftIssues(
   draft: SiteDraft,
   takenIds: ReadonlySet<string> | null,
@@ -279,7 +295,10 @@ function siteOrigins(origin: string, extras: readonly string[]) {
   return [...new Set([origin, ...extras])];
 }
 
-/** The save request for a draft: its own origin always first among the analytics origins. */
+/**
+ * The save request for a draft: its own origin always first among the analytics origins.
+ * @public
+ */
 export function siteSaveRequest(
   draft: SiteDraft,
   origin: string,
@@ -297,7 +316,10 @@ export function siteSaveRequest(
   };
 }
 
-/** Archived projects stay out unless the site serves them, so they can be seen and removed. */
+/**
+ * Archived projects stay out unless the site serves them, so they can be seen and removed.
+ * @public
+ */
 export function siteProjectChoices(projects: readonly LibraryProject[], served: readonly string[]) {
   return projects
     .filter((project) => !project.archived || served.includes(project.id))
@@ -305,13 +327,14 @@ export function siteProjectChoices(projects: readonly LibraryProject[], served: 
 }
 
 /** Services already serving an origin, which a new site on it most likely runs on. */
-export function servicesForOrigin(services: readonly Service[], origin: string) {
+function servicesForOrigin(services: readonly Service[], origin: string) {
   return services.filter((service) => originOf(service.url) === origin);
 }
 
 /**
  * A request's identity for a save that may be retried, and the request itself unless that exact
  * one already went through. A retry after an edit sends the edited entry rather than skipping it.
+ * @public
  */
 export function unsentRequest<T>(request: T, sent: string | null | undefined) {
   const key = JSON.stringify(request);
@@ -1861,7 +1884,10 @@ function Choice({
   );
 }
 
-/** The save request that replays an entry exactly as it is, apart from whether it is watched. */
+/**
+ * The save request that replays an entry exactly as it is, apart from whether it is watched.
+ * @public
+ */
 export function activeToggleRequest(target: ActiveToggleTarget, active: boolean) {
   switch (target.kind) {
     case "site": {

@@ -3,7 +3,7 @@ import type {
   ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
-import * as Clock from "effect/Clock";
+import * as Clock from "effect/Clock"; // fork: identity-renewal
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -180,6 +180,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
     if (!isBearerCredential(credential)) {
       return yield* credentialMissingError(target.connectionId);
     }
+    // fork: identity-renewal
     if (credential.identity) {
       if (
         credential.identity.environmentId !== target.environmentId ||

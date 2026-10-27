@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema";
 
 import { succeeded, type Exec } from "./process.ts";
 
-export const DIFF_LIMIT_BYTES = 200 * 1024;
+const DIFF_LIMIT_BYTES = 200 * 1024;
 /** A spec folder with more entries than this is not mirrored. */
 const MIRROR_MAX_ENTRIES = 20_000;
 const MIRROR_SKIPPED = new Set([".git", "node_modules", "DerivedData", ".build"]);

@@ -29,7 +29,7 @@ const KNOWN_SHARED_DIRECTORIES = [
 ] as const;
 
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
-// Codex can create these in an active shadow home before they exist in the shared home.
+// fork: codex-shadow-images -- Codex may create these in a shadow home before the shared one.
 // Keep their contents (and any existing links) when preparing the overlay again.
 // Finder maintains metadata separately for each directory, including shadow homes.
 // fork: codex-shadow-images

@@ -28,6 +28,7 @@ vi.mock("electron", () => ({
 
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
+// fork: respectful-notifications
 import { applyNotificationBadge, installNotificationBadge } from "./notificationBadge.ts";
 
 const badge = { count: 2, image: "data:image/png;base64,aGVsbG8=" };

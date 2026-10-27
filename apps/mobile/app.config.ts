@@ -4,10 +4,11 @@ import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import { resolveLoomMobileIdentity } from "../../scripts/fork/mobileIdentity.ts"; // fork: mobile-identity
 
-// Release archives consume only the publisher's sanitized environment.
+// fork: mobile-identity -- release archives consume only the publisher's sanitized environment.
 const repoEnv = loadRepoEnv({ readFiles: process.env.LOOM_IOS_RELEASE_BUILD !== "1" });
 Object.assign(process.env, repoEnv);
 
+// fork: mobile-identity -- variant, personal team and bundle ID come from the identity
 const identity = resolveLoomMobileIdentity(repoEnv);
 const APP_VARIANT = identity.appVariant;
 const isIosPersonalTeamBuild = identity.personalTeam;
@@ -15,8 +16,11 @@ const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
 
+// fork: mobile-identity -- resolveLoomMobileIdentity reads the personal-team bundle ID
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
+
+// fork: mobile-identity -- resolveLoomMobileIdentity rejects an invalid personal-team bundle ID
 
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
@@ -59,21 +63,22 @@ const RELEASE_ASSETS = {
 
 const VARIANT_CONFIG = {
   development: {
-    androidPackage: "com.t3tools.t3code.dev",
+    androidPackage: "com.t3tools.t3code.dev", // fork: mobile-identity -- iOS names and domains come from the identity
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    androidPackage: "com.t3tools.t3code.preview",
+    androidPackage: "com.t3tools.t3code.preview", // fork: mobile-identity
     assets: PREVIEW_ASSETS,
   },
   production: {
-    androidPackage: "com.t3tools.t3code",
+    androidPackage: "com.t3tools.t3code", // fork: mobile-identity
     assets: RELEASE_ASSETS,
   },
 } as const;
 
+// fork: mobile-identity -- resolveLoomMobileIdentity resolves the app variant
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const iosBundleIdentifier = identity.iosBundleIdentifier;
+const iosBundleIdentifier = identity.iosBundleIdentifier; // fork: mobile-identity
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -86,7 +91,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: identity.pushEnabled,
+    enablePushNotifications: identity.pushEnabled, // fork: mobile-identity
     // Agent activity can update many times an hour; without the
     // frequent-updates entitlement iOS throttles the update budget sooner.
     frequentUpdates: true,
@@ -95,7 +100,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "SubscriptionUsage",
         displayName: "Subscription usage",
-        description: "Subscription quotas from your connected Loom environments.",
+        description: "Subscription quotas from your connected Loom environments.", // fork: brand
         ios: {
           configuration: {
             title: "Subscription usage",
@@ -180,8 +185,8 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // Match iOS PostScript names on Android so RN and the native composer share fonts before runtime loading.
 
 const config: ExpoConfig = {
-  name: identity.appName,
-  slug: "loom",
+  name: identity.appName, // fork: mobile-identity
+  slug: "loom", // fork: mobile-identity
   platforms: ["ios", "android"],
   scheme: identity.scheme, // fork: mobile-identity
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.1.0",
@@ -193,6 +198,7 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
+    // fork: mobile-identity
     enabled: identity.updatesEnabled,
     ...(identity.updatesEnabled ? { url: `https://u.expo.dev/${identity.expoProjectId}` } : {}),
     checkAutomatically: "ON_LOAD",
@@ -203,11 +209,12 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
+    // fork: mobile-identity
     ...(identity.iosBuildNumber ? { buildNumber: identity.iosBuildNumber } : {}),
     ...(identity.teamId ? { appleTeamId: identity.teamId } : {}),
     ...(identity.associatedDomains.length ? { associatedDomains: identity.associatedDomains } : {}),
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`], // fork: mobile-identity
     },
     infoPlist: {
       UISupportedInterfaceOrientations: [
@@ -219,18 +226,15 @@ const config: ExpoConfig = {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow Loom to connect to coding servers on your local network or tailnet.",
-      NSPhotoLibraryAddUsageDescription: "Allow Loom to save images to your photo library.",
+        "Allow Loom to connect to coding servers on your local network or tailnet.", // fork: brand
+      NSPhotoLibraryAddUsageDescription: "Allow Loom to save images to your photo library.", // fork: brand
       // "Audio, AirPlay, and Picture in Picture": the browser screen's system
       // picture in picture needs it to start and to stay up outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
+      // fork: mobile-identity
       ...(identity.sourceCommit ? { LoomSourceCommit: identity.sourceCommit } : {}),
-      // The App Store screenshot harness rotates the iPad interface from
-      // inside the app (CI denies osascript the Accessibility access that
-      // Simulator menu scripting needs), and iPadOS ignores programmatic
-      // orientation requests for multitasking-capable apps — so the capture
-      // build opts out of multitasking and declares landscape support.
+      // Capture builds disable multitasking because iPadOS otherwise ignores orientation requests.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
@@ -266,7 +270,7 @@ const config: ExpoConfig = {
     favicon: variant.assets.appIcon,
   },
   plugins: [
-    // Runs after native plugins' entitlement mods while keeping local widgets and sharing.
+    // fork: mobile-identity -- runs after native plugins' entitlement mods, keeping local widgets and sharing.
     [
       "./plugins/withLoomIosCloudCapabilities.cjs",
       {
@@ -315,6 +319,7 @@ const config: ExpoConfig = {
     ],
     // appleSignIn must be gated here: withoutIosPersonalTeamCapabilities.cjs runs before
     // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
+    // fork: mobile-identity
     ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: identity.appleSignInEnabled }],
     "expo-web-browser",
     [
@@ -334,7 +339,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow Loom to use your microphone for voice input.",
+        microphonePermission: "Allow Loom to use your microphone for voice input.", // fork: brand
         recordAudioAndroid: false,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -343,6 +348,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
+        // fork: brand
         cameraPermission: "Allow Loom to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
@@ -407,13 +413,14 @@ const config: ExpoConfig = {
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
-    iosPushEnabled: identity.pushEnabled,
+    iosPushEnabled: identity.pushEnabled, // fork: mobile-identity
     loomLibraryPush: identity.libraryPushEnabled, // fork: library-push
     // fork: fleet-connect - Expo public serialization turns null into objects, so omit unset values.
     relay: {
-      url: identity.relayUrl,
+      url: identity.relayUrl, // fork: fleet-connect
     },
     clerk: {
+      // fork: fleet-connect
       publishableKey: identity.clerkPublishableKey,
       jwtTemplate: identity.clerkJwtTemplate,
       // Native SSO/passkeys require this app's qualified auth domain.
@@ -422,11 +429,8 @@ const config: ExpoConfig = {
         : undefined,
       accountPortalUrl: identity.accountPortalUrl,
     },
-    // @clerk/expo reads these from `extra`
-    // under their exact env-var names (not nested), and its config plugin reads
-    // the iOS URL scheme at prebuild to register it in Info.plist.
-    // Unset values must be omitted (not null): the public manifest serializes
-    // null to {}, which is truthy and would defeat Clerk's fallback checks.
+    // Clerk reads these exact names at prebuild. Omit unset values: manifest null becomes truthy {}.
+    // fork: mobile-identity
     EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: identity.connectEnabled
       ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID
       : undefined,
@@ -440,10 +444,12 @@ const config: ExpoConfig = {
       ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME
       : undefined,
     observability: {
+      // fork: fleet-connect
       tracesUrl: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL : undefined,
       tracesDataset: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET : undefined,
       tracesToken: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN : undefined,
     },
+    // fork: mobile-identity
     ...(identity.expoProjectId ? { eas: { projectId: identity.expoProjectId } } : {}),
   },
   ...(identity.expoOwner ? { owner: identity.expoOwner } : {}), // fork: mobile-identity

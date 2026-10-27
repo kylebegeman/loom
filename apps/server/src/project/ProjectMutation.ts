@@ -1,7 +1,8 @@
 import { type ProjectMutation } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as Schema from "effect/Schema"; // fork: project-home
 
+// fork: project-home
 import { type ProjectService, type ProjectServiceError } from "./ProjectService.ts";
 import {
   WorkspaceRootNotDirectoryError,
@@ -9,6 +10,7 @@ import {
 } from "../workspace/WorkspacePaths.ts";
 
 type ProjectMutations = Pick<ProjectService["Service"], "create" | "delete" | "update">;
+// fork: project-home
 const isMissingWorkspaceRoot = Schema.is(WorkspaceRootNotExistsError);
 const isFileWorkspaceRoot = Schema.is(WorkspaceRootNotDirectoryError);
 
@@ -16,6 +18,7 @@ export function projectMutationFailureMessage(error: ProjectServiceError): strin
   if (
     error._tag === "ProjectNotEmptyError" ||
     error._tag === "ProjectConflictError" ||
+    // fork: file-placement
     error._tag === "ProjectLocationManagedError"
   )
     return error.message;

@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react"; // fork: library
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import { TERMINAL_PALETTES, terminalOutputSpans } from "@t3tools/shared/terminalOutput";
 import type React from "react";
@@ -6,14 +6,15 @@ import { useMemo, useRef } from "react";
 import { ScrollView, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
-import { serverEnvironment } from "../../state/server";
+import { Button } from "../../components/ui/Button"; // fork: everyday-workflows
+import { serverEnvironment } from "../../state/server"; // fork: library
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
 
 const FOLLOW_SLACK = 8;
 
 export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean {
+  // fork: library
   return useAtomValue(
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.environment.capabilities.commandOutputStreaming === true,
@@ -28,6 +29,7 @@ export function ThreadCommandOutput(props: {
   readonly themeAppearance: "light" | "dark";
 }) {
   const { data, error, refresh } = useEnvironmentQuery(
+    // fork: everyday-workflows
     orchestrationEnvironment.v2.commandOutput({
       environmentId: props.environmentId,
       input: { threadId: props.threadId, itemId: props.itemId },
@@ -40,6 +42,7 @@ export function ThreadCommandOutput(props: {
     () => terminalOutputSpans(text, TERMINAL_PALETTES[props.themeAppearance]),
     [text, props.themeAppearance],
   );
+  // fork: everyday-workflows
   const errorNotice = error ? (
     <View className="gap-1 pt-1.5">
       <Text accessibilityRole="alert" className="text-xs leading-normal text-foreground-muted">
@@ -49,6 +52,7 @@ export function ThreadCommandOutput(props: {
     </View>
   ) : null;
   if (text.length === 0) {
+    // fork: everyday-workflows
     if (errorNotice) return errorNotice;
     const message = data === null ? "Loading output…" : data.running ? null : "No output.";
     return message === null ? null : (
@@ -59,6 +63,7 @@ export function ThreadCommandOutput(props: {
   }
   return (
     <View className="pt-1.5">
+      {/* fork: everyday-workflows */}
       {errorNotice}
       {data?.output.truncated ? (
         <Text className="pb-0.5 text-3xs text-foreground-subtle">Earlier output not shown</Text>

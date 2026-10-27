@@ -39,7 +39,7 @@ const DATABASE_FILE = "statev2.sqlite";
 /** The version this desktop last launched, so the first launch of an update can compact. */
 const VERSION_FILE = "restart-compaction-version";
 /** VACUUM cannot report progress; a repair still running after this is stopped. */
-export const COMPACTION_TIMEOUT = Duration.minutes(30);
+const COMPACTION_TIMEOUT = Duration.minutes(30);
 /** SQLite rolls back an unfinished VACUUM, so a repair that ignores SIGTERM is killed soon after. */
 const DOCTOR_TERMINATE_GRACE = Duration.seconds(2);
 /** Head-room on top of the two copies VACUUM writes. */
@@ -310,9 +310,10 @@ export const compactBeforeBackendStart = Effect.gen(function* () {
   const versionChanged = lastVersion !== environment.appVersion;
   if (!requested && !versionChanged) return;
 
-  const lastAttempt = yield* fs
-    .readFileString(resultPath)
-    .pipe(Effect.flatMap(decodeResult), Effect.orElseSucceed(() => null));
+  const lastAttempt = yield* fs.readFileString(resultPath).pipe(
+    Effect.flatMap(decodeResult),
+    Effect.orElseSucceed(() => null),
+  );
   const header = yield* readSqliteHeader(stateFile(DATABASE_FILE));
   const plan = planRestartCompaction({
     requested,

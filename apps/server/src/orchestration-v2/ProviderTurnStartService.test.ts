@@ -1,19 +1,20 @@
+// fork: project-lifecycle
 import { LibraryError, type LibraryProject, ProjectLifecycleError } from "@t3tools/contracts/fork";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
-import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts"; // fork: library-launch-files
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 // fork: mini-native-retention
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as TerminalManager from "../terminal/Manager.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"; // fork: project-lifecycle
+import * as TerminalManager from "../terminal/Manager.ts"; // fork: project-lifecycle
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
-  EnvironmentId,
-  GitCommandError,
+  EnvironmentId, // fork: library-projects
+  GitCommandError, // fork: project-lifecycle
   CheckpointScopeId,
-  CheckpointId,
-  CheckpointRef,
+  CheckpointId, // fork: mini-native-retention
+  CheckpointRef, // fork: mini-native-retention
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -42,20 +43,21 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
-import * as SetupMarker from "../workspace/setupMarker.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: project-lifecycle
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: mini-native-retention
+// fork: project-lifecycle
 import {
   markManagedProjectCheckout,
   readManagedProjectCheckout,
   archiveManagedProjectCheckout,
   releaseManagedProjectCheckout,
 } from "../workspace/ManagedProjectCheckout.ts";
-import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
-import { archiveScratchCheckout } from "../workspace/ScratchCheckout.ts";
-import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts"; // fork: project-lifecycle
+import { archiveScratchCheckout } from "../workspace/ScratchCheckout.ts"; // fork: mini-native-retention
+import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts"; // fork: project-lifecycle
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts"; // fork: project-lifecycle
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -82,12 +84,13 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
+// fork: project-lifecycle
 const layerWorktreeLocation = (worktreesDir = managedWorktreesDir, stateDir = "/t3-state") =>
   Layer.mergeAll(
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({
       worktreesDir,
-      stateDir,
+      stateDir, // fork: project-lifecycle
     } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
   );
@@ -157,6 +160,7 @@ function startWithMissingWorktree(
         ProviderTurnStartTestkit.layerWorkspacePreparation,
         Layer.succeed(FileSystem.FileSystem, {
           exists: () => Effect.succeed(false),
+          // fork: project-lifecycle
           makeDirectory: () => Effect.void,
           writeFileString: () => Effect.void,
           remove: () => Effect.void,
@@ -288,6 +292,7 @@ it.each([
   expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
 });
 
+// fork: project-lifecycle
 it.each(["projection", "checkout", "setup"] as const)(
   "does not start the provider when %s preparation fails",
   async (failurePoint) => {
@@ -452,13 +457,14 @@ it.each(["projection", "checkout", "setup"] as const)(
 );
 
 function makeLocalCommandHarness(input: {
-  readonly libraryProject?: LibraryProject;
+  readonly libraryProject?: LibraryProject; // fork: library-projects
+  // fork: library-launch-files
   readonly prepareLibraryFiles?: LibraryWorkspace.LibraryWorkspace["Service"]["prepareThreadFiles"];
-  readonly prepareLane?: Effect.Effect<void, ProjectLifecycleError>;
-  readonly lanesEnabled?: boolean;
+  readonly prepareLane?: Effect.Effect<void, ProjectLifecycleError>; // fork: project-lifecycle
+  readonly lanesEnabled?: boolean; // fork: project-lifecycle
   readonly text: string;
   readonly worktreePath?: string;
-  readonly workspaceRoot?: string;
+  readonly workspaceRoot?: string; // fork: project-lifecycle
   readonly worktreesDir?: string;
   readonly fileSystem?: FileSystem.FileSystem;
   readonly previousNativeSession?: boolean;
@@ -474,16 +480,19 @@ function makeLocalCommandHarness(input: {
   // fork: mobile-surface-hint
   readonly creationSource?: OrchestrationV2ThreadProjection["messages"][number]["creationSource"];
   readonly promptCommandHandled?: boolean;
+  // fork: project-lifecycle
   /** T3 home for setup markers and ownership receipts when the harness uses a real filesystem. */
   readonly stateDir?: string;
+  // fork: mini-native-retention
   readonly restoredWorkspace?: {
     readonly cwd: string;
     readonly scratchRoot: string;
     readonly fs: FileSystem.FileSystem;
     readonly git: GitVcsDriver.GitVcsDriver["Service"];
     readonly beforeOpen: Effect.Effect<void>;
-    readonly primary?: boolean;
-    readonly fresh?: boolean;
+    readonly primary?: boolean; // fork: project-lifecycle
+    readonly fresh?: boolean; // fork: project-lifecycle
+    // fork: project-lifecycle
     readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   };
   readonly previousTurn?: {
@@ -532,6 +541,7 @@ function makeLocalCommandHarness(input: {
     providerSessionId,
     appThreadId: threadId,
     ownerNodeId: null,
+    // fork: mini-native-retention
     nativeThreadRef:
       input.restoredWorkspace && !input.restoredWorkspace.fresh
         ? {
@@ -567,9 +577,11 @@ function makeLocalCommandHarness(input: {
     thread: {
       id: threadId,
       activeProviderThreadId: providerThreadId,
+      // fork: mini-native-retention
       // Fork Scratch and managed-project recovery archives are keyed by this project id.
       projectId: ProjectId.make("scratch-resume-project"),
       branch: input.worktreePath === undefined ? null : "feature/restore",
+      // fork: mini-native-retention
       worktreePath: input.restoredWorkspace
         ? input.restoredWorkspace.primary
           ? null
@@ -585,6 +597,7 @@ function makeLocalCommandHarness(input: {
               ordinal: 1,
               status: "completed" as const,
               providerInstanceId: oldInstanceId,
+              // fork: mini-native-retention
               providerThreadId: input.restoredWorkspace ? providerThreadId : oldProviderThreadId,
               checkpointId: input.restoredWorkspace
                 ? CheckpointId.make("retained-scratch-checkpoint")
@@ -670,6 +683,7 @@ function makeLocalCommandHarness(input: {
         createdAt: now,
       },
     ],
+    // fork: mini-native-retention
     providerSessions:
       input.restoredWorkspace && !input.restoredWorkspace.fresh
         ? [
@@ -695,6 +709,7 @@ function makeLocalCommandHarness(input: {
     runtimeRequests: [],
     subagents: [],
     plans: [],
+    // fork: mini-native-retention
     checkpoints: input.restoredWorkspace
       ? [
           {
@@ -863,6 +878,7 @@ function makeLocalCommandHarness(input: {
     ensureThread: () => Effect.succeed(providerThread),
   };
   const open = vi.fn(() =>
+    // fork: mini-native-retention
     input.restoredWorkspace
       ? input.restoredWorkspace.beforeOpen.pipe(
           Effect.as({
@@ -928,7 +944,7 @@ function makeLocalCommandHarness(input: {
   >(() =>
     input.failReadsAfterRunning === true ||
     input.previousTurn !== undefined ||
-    input.restoredWorkspace !== undefined
+    input.restoredWorkspace !== undefined // fork: mini-native-retention
       ? Effect.suspend(() =>
           providerBusy ? Effect.die("The previous provider turn is still running.") : Effect.void,
         )
@@ -1000,18 +1016,21 @@ function makeLocalCommandHarness(input: {
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        ProviderTurnStartTestkit.layer,
+        ProviderTurnStartTestkit.layer, // fork: project-lifecycle
+        // fork: project-lifecycle
         input.prepareLane === undefined
           ? Layer.empty
           : Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
               getSettings: Effect.succeed({ enabled: input.lanesEnabled ?? true } as never),
               ensureForThread: () => Effect.as(input.prepareLane!, {} as never),
             }),
+        // fork: library-launch-files
         input.prepareLibraryFiles
           ? Layer.mock(LibraryWorkspace.LibraryWorkspace)({
               prepareThreadFiles: input.prepareLibraryFiles,
             })
           : Layer.empty,
+        // fork: library-projects
         input.libraryProject
           ? Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
               getBinding: () =>
@@ -1039,7 +1058,8 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        layerWorktreeLocation(input.worktreesDir, input.stateDir),
+        layerWorktreeLocation(input.worktreesDir, input.stateDir), // fork: project-lifecycle
+        // fork: mini-native-retention
         input.restoredWorkspace
           ? Layer.succeed(FileSystem.FileSystem, input.restoredWorkspace.fs)
           : input.fileSystem === undefined
@@ -1048,14 +1068,15 @@ function makeLocalCommandHarness(input: {
                 exists: (path) => Effect.succeed(path === input.worktreePath),
               })
             : Layer.succeed(FileSystem.FileSystem, input.fileSystem),
-        Layer.mock(GitVcsDriver.GitVcsDriver)(input.restoredWorkspace?.git ?? {}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)(input.restoredWorkspace?.git ?? {}), // fork: mini-native-retention
         Layer.mock(GitWorkflow.GitWorkflowService)({
-          hasCommit: () => Effect.succeed(true),
+          hasCommit: () => Effect.succeed(true), // fork: library-projects
           pruneWorktrees: () => Effect.void,
           createWorktree,
         }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
+            // fork: mini-native-retention
             Effect.succeedSome({
               workspaceRoot: input.restoredWorkspace
                 ? input.restoredWorkspace.primary
@@ -1084,6 +1105,7 @@ function makeLocalCommandHarness(input: {
               }),
             ),
         }),
+        // fork: project-lifecycle
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           runForThread:
             input.restoredWorkspace?.runSetup ?? (() => Effect.succeed({ status: "no-script" })),
@@ -1140,6 +1162,7 @@ function makeLocalCommandHarness(input: {
   };
 }
 
+// fork: library-launch-files
 effectIt.effect(
   "restores Library files before acquiring the startup lease and opening a native session",
   () =>
@@ -1184,6 +1207,7 @@ effectIt.effect(
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
+// fork: project-lifecycle
 effectIt.effect.each([
   { resume: false, worktree: false },
   { resume: true, worktree: false },
@@ -1240,6 +1264,7 @@ effectIt.effect.each([
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
+// fork: project-lifecycle
 effectIt.effect.each([false, true])(
   "blocks provider startup when enabled lane preparation fails (retry: %s)",
   (retry) =>
@@ -1258,6 +1283,7 @@ effectIt.effect.each([false, true])(
     }),
 );
 
+// fork: project-lifecycle
 effectIt.effect("starts with lanes disabled without preparing a lane", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({
@@ -1272,6 +1298,7 @@ effectIt.effect("starts with lanes disabled without preparing a lane", () =>
   }),
 );
 
+// fork: library-launch-files
 effectIt.effect.each([false, true])(
   "blocks provider startup when Library recovery fails (retry: %s)",
   (retry) =>
@@ -1413,7 +1440,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         text: "Continue",
         worktreePath,
         worktreesDir: workspaceRoot,
-        stateDir: path.join(workspaceRoot, "state"),
+        stateDir: path.join(workspaceRoot, "state"), // fork: project-lifecycle
         fileSystem,
         failReadsAfterRunning: true,
       });
@@ -1769,6 +1796,7 @@ for (const previousMessages of [[], ["/compact", " /COMPACT "]]) {
   );
 }
 
+// fork: mini-native-retention
 effectIt.effect(
   "restores released Scratch before reopening a retained native provider session",
   () =>
@@ -2017,6 +2045,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
   );
 }
 
+// fork: library-projects
 effectIt.effect(
   "sends pinned project context to the provider while preserving the user's stored message",
   () =>
@@ -2057,6 +2086,7 @@ effectIt.effect(
     }),
 );
 
+// fork: library-projects
 effectIt.effect("tells a bound conversation's agent once that it can propose brief updates", () =>
   Effect.gen(function* () {
     const project: LibraryProject = {
@@ -2125,6 +2155,7 @@ effectIt.effect.each([
   ["mobile", "Show me the new settings screen", true],
   ["web", "Show me the new settings screen", false],
   ["mobile", "/review", false],
+  ["mobile", "/Users/kyle/app/main.ts crashes on launch", true],
 ] as const)("a %s message %j carries the phone note: %s", ([creationSource, text, noted]) =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({

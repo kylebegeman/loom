@@ -34,7 +34,7 @@ const result = ({ attempt, output }: ReportAttempt): string | null => {
 };
 
 /** "Review, Fix, Verify (fail), Fix, Verify (pass)". */
-export const pathLine = (attempts: ReadonlyArray<ReportAttempt>) =>
+const pathLine = (attempts: ReadonlyArray<ReportAttempt>) =>
   attempts
     .map((entry) => {
       const outcome = result(entry);

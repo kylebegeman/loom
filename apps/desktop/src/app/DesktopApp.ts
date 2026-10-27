@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+// fork: restart-continuity -- BACKEND_STOP_TIMEOUT replaced the Duration import
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";

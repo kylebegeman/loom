@@ -38,8 +38,7 @@ const roles: Readonly<Record<string, SliceRole>> = {
   brim: "skirt",
   "skirt/brim": "skirt",
 };
-export const extrusionRole = (name: string): SliceRole =>
-  roles[name.toLowerCase().trim()] ?? "other";
+const extrusionRole = (name: string): SliceRole => roles[name.toLowerCase().trim()] ?? "other";
 const numericList = (value: string): number[] =>
   value
     .split(",")

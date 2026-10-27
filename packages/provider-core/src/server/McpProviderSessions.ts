@@ -7,7 +7,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
-import * as SynchronizedRef from "effect/SynchronizedRef";
+import * as SynchronizedRef from "effect/SynchronizedRef"; // fork: ext-vault-terminal
 
 import type { McpProviderSessionConfig } from "./mcpSession.ts";
 
@@ -86,7 +86,7 @@ const make = Effect.gen(function* () {
   return McpProviderSessions.of({
     // fork: ext-vault-terminal
     set: Effect.fn("McpProviderSessions.set")(function* (config) {
-      const current = yield* SynchronizedRef.get(sessions);
+      const current = yield* SynchronizedRef.get(sessions); // fork: ext-vault-terminal
       if (current.get(config.threadId)?.providerSessionId !== config.providerSessionId) {
         yield* Ref.update(htmlRenders, (kept) => {
           const next = new Map(kept);
@@ -94,6 +94,7 @@ const make = Effect.gen(function* () {
           return next;
         });
       }
+      // fork: ext-vault-terminal
       yield* SynchronizedRef.updateEffect(sessions, (current) =>
         Effect.gen(function* () {
           const prior = current.get(config.threadId);
@@ -109,10 +110,12 @@ const make = Effect.gen(function* () {
       );
     }),
     read: Effect.fn("McpProviderSessions.read")(function (threadId) {
+      // fork: ext-vault-terminal
       return SynchronizedRef.get(sessions).pipe(Effect.map((current) => current.get(threadId)));
     }),
     // fork: ext-vault-terminal
     clear: Effect.fn("McpProviderSessions.clear")(function (threadId) {
+      // fork: ext-vault-terminal
       return SynchronizedRef.updateEffect(sessions, (current) =>
         Effect.gen(function* () {
           const prior = current.get(threadId);

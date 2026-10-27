@@ -1,3 +1,5 @@
+<!-- fork: brand -->
+
 > **Loom** is Kyle Begeman's personal fork of [T3 Code](https://github.com/pingdotgg/t3code).
 > It tracks upstream closely and adds a few features on top; everything below is
 > upstream's README. For T3 Code itself, use [the original project](https://github.com/pingdotgg/t3code).

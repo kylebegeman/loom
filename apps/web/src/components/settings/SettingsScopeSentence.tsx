@@ -56,6 +56,7 @@ interface SettingsScopeMenuProps {
   readonly onChange: (next: SettingsScopeSearch) => void;
 }
 
+// fork: ext-settings
 export function SettingsScopeSentence({ environmentOnly = false }: { environmentOnly?: boolean }) {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -68,6 +69,7 @@ export function SettingsScopeSentence({ environmentOnly = false }: { environment
     environments,
     onChange: scope.selectScope,
   };
+  // fork: ext-settings
   if (environmentOnly) {
     return (
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">

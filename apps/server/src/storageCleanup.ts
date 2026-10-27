@@ -32,6 +32,7 @@ import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+// fork: project-checkout-management -- the sweep worker replaced the Ref import
 import type { PlatformError } from "effect/PlatformError";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
@@ -39,16 +40,16 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { parse as parseYaml } from "yaml";
 
 import * as ServerConfig from "./config.ts";
-import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as LibraryGitFetch from "./fork/project-library/LibraryGitFetch.ts"; // fork: library-launch-files
 import { ServerEnvironmentIdentity } from "./environment/ServerEnvironment.ts"; // fork: library-launch-files
-import { makeLibraryCheckoutOwners } from "./project/libraryCheckoutOwnership.ts";
+import { makeLibraryCheckoutOwners } from "./project/libraryCheckoutOwnership.ts"; // fork: library-projects
 import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
-import { threadWorkspaceIdle } from "./orchestration-v2/queuedTurnStart.ts";
+import { threadWorkspaceIdle } from "./orchestration-v2/queuedTurnStart.ts"; // fork: project-lifecycle
 import { forkParked } from "./serverActivation.ts";
 import * as Settings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -56,8 +57,9 @@ import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirect
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
-import { proveGitPublication } from "./workspace/gitPublication.ts";
-import * as SetupMarker from "./workspace/setupMarker.ts";
+import { proveGitPublication } from "./workspace/gitPublication.ts"; // fork: project-lifecycle
+import * as SetupMarker from "./workspace/setupMarker.ts"; // fork: project-lifecycle
+// fork: mini-native-retention
 import {
   archiveScratchCheckout,
   scratchArchiveMatches,
@@ -67,15 +69,16 @@ import {
 } from "./workspace/ScratchCheckout.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+// fork: project-lifecycle
 import {
   readManagedProjectCheckout,
   assertManagedProjectOwned,
   archiveManagedProjectCheckout,
   releaseManagedProjectCheckout,
   managedProjectProcessReason,
-  resolveManagedProjectRetention,
+  resolveManagedProjectRetention, // fork: project-checkout-management
 } from "./workspace/ManagedProjectCheckout.ts";
-import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git"; // fork: project-lifecycle
 import { isNetworkPath } from "@t3tools/shared/path";
 
 const decodeCleanupThread = Schema.decodeUnknownEffect(
@@ -345,7 +348,7 @@ export function storageCleanupPullRequestMerged(
 export class StorageCleanup extends Context.Service<
   StorageCleanup,
   {
-    readonly requestSweep: Effect.Effect<void>;
+    readonly requestSweep: Effect.Effect<void>; // fork: project-checkout-management
     readonly runNow: Effect.Effect<StorageCleanupReport, ServerSettingsError>;
     // fork: project-lifecycle
     readonly removeOrphan: (
@@ -357,6 +360,7 @@ export class StorageCleanup extends Context.Service<
   }
 >()("t3/storageCleanup") {}
 
+// fork: project-checkout-management
 /** Coalesces automatic sweeps while preserving every manual result and drain barrier. */
 export const makeStorageCleanupWorker = Effect.fn("StorageCleanup.makeWorker")(function* <A, E, R>(
   sweep: (trigger: StorageCleanupReport["trigger"]) => Effect.Effect<A, E, R>,
@@ -412,7 +416,7 @@ export const makeStorageCleanupWorker = Effect.fn("StorageCleanup.makeWorker")(f
 });
 
 const make = Effect.gen(function* () {
-  const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
+  const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners; // fork: library-projects
   const config = yield* ServerConfig.ServerConfig;
   const libraryWorkspaces = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const gitMirrorCache = yield* Effect.serviceOption(LibraryGitFetch.LibraryGitFetch); // fork: library-launch-files
@@ -547,6 +551,7 @@ const make = Effect.gen(function* () {
     return { projects, threads: [...snapshot.threads, ...snapshot.archivedThreads] };
   });
 
+  // fork: library-projects
   const libraryCleanupBlocker = Effect.fn("StorageCleanup.libraryCleanupBlocker")(function* (
     cwd: string,
     now: number,
@@ -1113,13 +1118,14 @@ const make = Effect.gen(function* () {
       timeoutMs: 300_000,
     });
     if (result.exitCode !== 0 || result.stdoutTruncated)
+      // fork: project-lifecycle
       return yield* new GitCommandError({
         operation: "StorageCleanup.cleanupGit",
         command,
         cwd,
         detail: result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
       });
-    return result;
+    return result; // fork: project-lifecycle
   });
 
   // fork: project-lifecycle -- compare-and-delete at the verified head, so a branch that moved or
@@ -1427,6 +1433,7 @@ const make = Effect.gen(function* () {
         if (members.length > 1 && !settled && !landing && worktreeOwner(members) === undefined)
           // fork: project-lifecycle -- landed shared worktrees are released once every holder is done.
           return keep(`shared by ${members.length} threads`);
+        // fork: project-lifecycle
         if (yield* SetupMarker.exists(worktreePath))
           return keep("workspace preparation is pending");
         if (project === undefined) return keep("project is unavailable");
@@ -1443,6 +1450,7 @@ const make = Effect.gen(function* () {
         const realParent = yield* fs.realPath(path.dirname(worktreePath));
         if (realPath !== path.join(realParent, path.basename(worktreePath)))
           return keep("worktree is a symbolic link");
+        // fork: mini-native-retention
         const owner = yield* HostProcess.UserId;
         if (owner !== undefined && Option.getOrNull((yield* fs.stat(realPath)).uid) !== owner)
           return keep("worktree is owned by another user");
@@ -1497,6 +1505,7 @@ const make = Effect.gen(function* () {
           )
         )
           return keep("settled moments ago");
+        // fork: project-lifecycle -- HEAD is resolved before the landing check
         const old =
           !deleted &&
           settings.worktreeAfterDays !== null &&
@@ -1533,7 +1542,7 @@ const make = Effect.gen(function* () {
             ? null
             : now - Math.max(DateTime.toEpochMillis(thread.settledAt), activityAt);
         const settledDays = settledFor === null ? null : Math.floor(settledFor / DAY_MS);
-        const settledElapsed =
+        const settledElapsed = // fork: project-lifecycle
           settledFor !== null &&
           settings.worktreeSettledAfterDays !== null &&
           settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
@@ -1595,6 +1604,7 @@ const make = Effect.gen(function* () {
           );
         // Re-read this path's threads and sessions so new activity cancels removal; full per-worktree snapshots take seconds.
         const blockedSinceCheck = Effect.fnUntraced(function* () {
+          // fork: library-projects
           const libraryReason = yield* libraryCleanupBlocker(worktreePath, now);
           if (libraryReason !== null) return libraryReason;
           const latestProjects = yield* projectStore.listShells();
@@ -1691,7 +1701,7 @@ const make = Effect.gen(function* () {
           head.commitSha
         )
           return keep("commit changed since check");
-        const finalChanges = yield* localChangesReason(worktreePath, fileRules);
+        const finalChanges = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
         if (finalChanges !== null) return keep(finalChanges);
         const current = resolveWorktreeCleanup(
           yield* settingsService.getSettings,
@@ -1706,11 +1716,12 @@ const make = Effect.gen(function* () {
           return keep("settings changed since check");
         // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
         if (fileRules.worktreeKeepWhen === "tracked-changes")
+          // fork: project-lifecycle
           yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
-        const submodules = yield* submoduleRemoval(worktreePath, fileRules);
+        const submodules = yield* submoduleRemoval(worktreePath, fileRules); // fork: project-lifecycle
         if (submodules.reason !== null) return keep(submodules.reason);
         if (submodules.force) {
-          const changes = yield* localChangesReason(worktreePath, fileRules);
+          const changes = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
           if (changes !== null) return keep(changes);
         }
         // fork: project-lifecycle -- the default-on landing rule also waits for programs (dev
@@ -1776,8 +1787,9 @@ const make = Effect.gen(function* () {
     );
   });
 
-  let hasExplicitProjectSettlementPolicy = false;
+  let hasExplicitProjectSettlementPolicy = false; // fork: project-checkout-management
 
+  // fork: project-lifecycle
   const cleanProjects = Effect.fn("StorageCleanup.cleanProjects")(function* (
     settings: ServerSettings["storageCleanup"],
     now: number,
@@ -1976,6 +1988,7 @@ const make = Effect.gen(function* () {
     hasExplicitProjectSettlementPolicy = foundExplicitSettlementPolicy;
   });
 
+  // fork: mini-native-retention
   const cleanScratch = Effect.fn("StorageCleanup.cleanScratch")(function* (
     retention: number | null,
     now: number,
@@ -2145,6 +2158,7 @@ const make = Effect.gen(function* () {
   ) {
     if (days === null || !(yield* fs.exists(root))) return removed;
     const realRoot = yield* fs.realPath(root);
+    // fork: retention-defaults
     const realParent = yield* fs.realPath(path.dirname(path.resolve(root)));
     // Parent aliases such as macOS /var are valid; the cleanup directory itself must not be a link.
     if (realRoot !== path.join(realParent, path.basename(root))) return removed;
@@ -2270,9 +2284,11 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+    // fork: project-lifecycle
     yield* cleanProjects(settings, now, entries).pipe(
       Effect.catch((error) => Effect.logWarning("Project cleanup failed", { error })),
     );
+    // fork: mini-native-retention
     yield* cleanScratch(settings.scratchAfterDays, now, entries).pipe(
       Effect.catch((error) => Effect.logWarning("Scratch cleanup failed", { error })),
     );
@@ -2362,6 +2378,7 @@ const make = Effect.gen(function* () {
   const worker = yield* makeStorageCleanupWorker(sweep); // fork: project-checkout-management
 
   const start = Effect.fn("StorageCleanup.start")(function* () {
+    // fork: project-checkout-management
     let lastSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
     const settlementCleanupEnabled = () =>
       hasExplicitProjectSettlementPolicy ||
@@ -2380,6 +2397,7 @@ const make = Effect.gen(function* () {
           if (threadTerminals?.size === 0) liveTerminals.delete(event.threadId);
         }
       }).pipe(
+        // fork: project-lifecycle
         Effect.andThen(
           event.type !== "snapshot" &&
             (event.type !== "upsert" ||
@@ -2393,8 +2411,10 @@ const make = Effect.gen(function* () {
     yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
     const changes = yield* settingsService.subscribeChanges;
     const events = engine.streamDomainEvents;
+    // fork: project-checkout-management -- lastSettings is read at the top of start
     yield* forkParked(
       worker.requestSweep.pipe(
+        // fork: project-checkout-management
         Effect.andThen(worker.drain),
         Effect.repeat(Schedule.spaced("1 hour")),
         Effect.asVoid,
@@ -2409,12 +2429,13 @@ const make = Effect.gen(function* () {
         )
           return Effect.void;
         lastSettings = settings;
-        return worker.requestSweep;
+        return worker.requestSweep; // fork: project-checkout-management
       }),
     );
     yield* forkParked(
       Stream.runForEach(events, (event) =>
         (event.type === "thread.deleted" ||
+          // fork: project-lifecycle
           event.type === "thread.archived" ||
           event.type === "thread.unpinned" ||
           // Worktree settlement requests cleanup after its settle hook finishes.
@@ -2539,6 +2560,7 @@ const make = Effect.gen(function* () {
   });
 });
 
+// fork: library-projects
 export const layer = Layer.effect(StorageCleanup, make).pipe(
   Layer.provide(LibraryWorkspaceStore.layer),
 );

@@ -7,11 +7,11 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import * as Option from "effect/Option"; // fork: library-projects
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid"; // fork: library-projects
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
-import { parseTurnDiffFilesFromNumstat } from "./Diffs.ts";
-import { threadIdFromCheckpointRef } from "./Utils.ts";
+import { parseTurnDiffFilesFromNumstat } from "./Diffs.ts"; // fork: library-projects
+import { threadIdFromCheckpointRef } from "./Utils.ts"; // fork: library-projects
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
@@ -157,8 +157,9 @@ export const make = Effect.gen(function* () {
   });
 
   const captureCheckpoint: CheckpointStore["Service"]["captureCheckpoint"] = Effect.fn(
-    "CheckpointStore.captureCheckpoint",
+    "CheckpointStore.captureCheckpoint", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     for (const repository of yield* targets(input.cwd, input.checkpointRef)) {
       const checkpoints = yield* resolveCheckpoints(
         "CheckpointStore.captureCheckpoint",
@@ -169,8 +170,9 @@ export const make = Effect.gen(function* () {
   });
 
   const hasCheckpointRef: CheckpointStore["Service"]["hasCheckpointRef"] = Effect.fn(
-    "CheckpointStore.hasCheckpointRef",
+    "CheckpointStore.hasCheckpointRef", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     const repositories = yield* targets(input.cwd, input.checkpointRef);
     if (repositories.length === 0) return false;
     for (const repository of repositories) {
@@ -184,8 +186,9 @@ export const make = Effect.gen(function* () {
   });
 
   const restoreCheckpoint: CheckpointStore["Service"]["restoreCheckpoint"] = Effect.fn(
-    "CheckpointStore.restoreCheckpoint",
+    "CheckpointStore.restoreCheckpoint", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     const repositories = yield* targets(input.cwd, input.checkpointRef);
     if (repositories.length === 0) return false;
     const resolved: Array<{ readonly cwd: string; readonly checkpoints: VcsCheckpointOps }> = [];
@@ -249,8 +252,9 @@ export const make = Effect.gen(function* () {
   });
 
   const diffCheckpoints: CheckpointStore["Service"]["diffCheckpoints"] = Effect.fn(
-    "CheckpointStore.diffCheckpoints",
+    "CheckpointStore.diffCheckpoints", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     const diffs: string[] = [];
     for (const repository of yield* targets(input.cwd, input.toCheckpointRef)) {
       const checkpoints = yield* resolveCheckpoints(
@@ -274,8 +278,9 @@ export const make = Effect.gen(function* () {
   });
 
   const listAuthoredPaths: CheckpointStore["Service"]["listAuthoredPaths"] = Effect.fn(
-    "CheckpointStore.listAuthoredPaths",
+    "CheckpointStore.listAuthoredPaths", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     const repositories = yield* targets(input.cwd, input.toCheckpointRef);
     const authored = new Set<string>();
     for (const repository of repositories) {
@@ -303,8 +308,9 @@ export const make = Effect.gen(function* () {
   });
 
   const deleteCheckpointRefs: CheckpointStore["Service"]["deleteCheckpointRefs"] = Effect.fn(
-    "CheckpointStore.deleteCheckpointRefs",
+    "CheckpointStore.deleteCheckpointRefs", // fork: library-projects
   )(function* (input) {
+    // fork: library-projects
     for (const repository of yield* targets(input.cwd)) {
       const checkpoints = yield* resolveCheckpoints(
         "CheckpointStore.deleteCheckpointRefs",

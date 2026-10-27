@@ -99,7 +99,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
       const command = yield* commandIn({ home });
-      const link = path.join(home, ".local", "bin", "loom");
+      const link = path.join(home, ".local", "bin", "loom"); // fork: brand
 
       expect(yield* command.state).toEqual({
         supported: true,
@@ -109,12 +109,14 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       });
       const installed = yield* command.install;
       expect(installed.installedPath).toBe(link);
+      // fork: brand
       expect(installed.launcherPath).toBe(path.join(home, ".t3", "bin", "loom"));
       expect(yield* fs.readLink(link)).toBe(path.join(home, ".t3", "bin", "loom"));
       expect((yield* command.install).installedPath).toBe(link);
 
       expect((yield* command.uninstall).installedPath).toBeNull();
       expect(yield* fs.exists(link)).toBe(false);
+      // fork: brand
       expect(yield* fs.exists(path.join(home, ".t3", "bin", "loom"))).toBe(true);
     }).pipe(Effect.scoped),
   );
@@ -125,16 +127,19 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
       const command = yield* commandIn({ home });
-      const theirs = path.join(home, ".local", "bin", "loom");
+      const theirs = path.join(home, ".local", "bin", "loom"); // fork: brand
       yield* fs.makeDirectory(path.dirname(theirs), { recursive: true });
       yield* fs.writeFileString(theirs, "npm's t3\n");
       yield* fs.makeDirectory(path.join(home, "bin"), { recursive: true });
+      // fork: brand
       yield* fs.symlink(path.join(home, "gone"), path.join(home, "bin", "loom"));
 
       const error = yield* Effect.flip(command.install);
+      // fork: brand
       expect(error.message).toContain("Another loom command is already installed");
       yield* command.uninstall;
       expect(yield* fs.readFileString(theirs)).toBe("npm's t3\n");
+      // fork: brand
       expect(yield* fs.readLink(path.join(home, "bin", "loom"))).toBe(path.join(home, "gone"));
     }).pipe(Effect.scoped),
   );
@@ -150,8 +155,10 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const after = yield* commandIn({ home, baseDir: path.join(home, "new-t3") });
       expect((yield* after.state).installedPath).toBe(link);
       expect((yield* after.install).installedPath).toBe(link);
+      // fork: brand
       expect(yield* fs.readLink(link!)).toBe(path.join(home, "new-t3", "bin", "loom"));
       yield* after.uninstall;
+      // fork: brand
       expect(yield* fs.exists(path.join(home, ".local", "bin", "loom"))).toBe(false);
       expect(yield* fs.exists(path.join(home, "bin", "loom"))).toBe(false);
     }).pipe(Effect.scoped),
@@ -164,21 +171,23 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const home = yield* fs.makeTempDirectoryScoped();
       const shadow = path.join(home, "shadow");
       yield* fs.makeDirectory(shadow);
+      // fork: brand
       yield* fs.writeFileString(path.join(shadow, "loom"), "#!/bin/sh\n", { mode: 0o755 });
       process.env.PATH = [shadow, path.join(home, ".local", "bin")].join(":");
 
       const command = yield* commandIn({ home });
-      const theirs = path.join(shadow, "loom");
+      const theirs = path.join(shadow, "loom"); // fork: brand
       expect((yield* command.state).shadowedBy).toBe(theirs);
       const error = yield* Effect.flip(command.install);
       expect(error.message).toContain(theirs);
+      // fork: brand
       expect(yield* fs.exists(path.join(home, ".local", "bin", "loom"))).toBe(false);
 
       yield* fs.remove(theirs);
       const installed = yield* command.install;
       expect(installed).toMatchObject({
         onPath: true,
-        installedPath: path.join(home, ".local", "bin", "loom"),
+        installedPath: path.join(home, ".local", "bin", "loom"), // fork: brand
       });
       expect(installed.shadowedBy).toBeUndefined();
     }).pipe(Effect.scoped),
@@ -200,7 +209,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       registry.failReads = false;
       const launcherDir = DesktopCliShim.launcherPath(
         environmentFor(yield* Path.Path, { home, baseDir: `${home}/.t3`, platform: "win32" }),
-      ).replace(/[\\/]loom\.cmd$/, "");
+      ).replace(/[\\/]loom\.cmd$/, ""); // fork: brand
       yield* command.install;
       expect(registry.path).toBe(`${userPath};${launcherDir}`);
       yield* command.uninstall;

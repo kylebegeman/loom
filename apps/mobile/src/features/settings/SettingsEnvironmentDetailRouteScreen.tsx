@@ -71,7 +71,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const connections = useRemoteConnections();
-  const savedConnection = useSavedRemoteConnection(environmentId);
+  const savedConnection = useSavedRemoteConnection(environmentId); // fork: library-sign-in
   const environment = connections.connectedEnvironments.find(
     (entry) => entry.environmentId === environmentId,
   );
@@ -85,6 +85,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
+  // fork: everyday-workflows
   const [connectionExpanded, setConnectionExpanded] = useState(
     environment?.isEnabled !== true || environment.connectionState !== "connected",
   );
@@ -202,6 +203,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   }
 
   return (
+    // fork: fleet-connections
     <SettingsScreen title={environment?.environmentLabel ?? "Computer"}>
       <ScreenScrollView
         contentInsetAdjustmentBehavior="automatic"
@@ -213,6 +215,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         {!environment ? (
+          // fork: everyday-workflows
           <SettingsSection>
             <Text className="p-4 text-base text-foreground-muted">
               This computer is no longer saved on this device.
@@ -285,6 +288,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               />
             ) : !connected ? (
               <Text className="px-2 text-sm text-foreground-muted">
+                {/* fork: fleet-connections */}
                 Connect this computer to manage it.
               </Text>
             ) : !allowed ? (
@@ -293,7 +297,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   ? "Could not verify your permissions. Reconnect to try again."
                   : session === null
                     ? "Checking permissions…"
-                    : "This connection does not have permission to manage this computer."}
+                    : // fork: fleet-connections
+                      "This connection does not have permission to manage this computer."}
               </Text>
             ) : null}
             {error ? (
@@ -304,6 +309,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             {notice ? <Text className="px-2 text-sm text-foreground-muted">{notice}</Text> : null}
             {config && !outdated ? (
               <>
+                {/* fork: brand */}
                 <SettingsSection title="Server">
                   <View className="gap-1 p-4">
                     <Text className="text-base text-foreground">Version {version}</Text>
@@ -334,7 +340,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       <Text className="text-sm text-foreground-muted">
                         {capabilities?.serverSelfUpdate === "desktop-managed"
                           ? "Update the desktop app on this machine."
-                          : "Update and restart the server on this machine."}
+                          : // fork: brand
+                            "Update and restart the server on this machine."}
                       </Text>
                     ) : null}
                   </View>
@@ -372,10 +379,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   ) : null}
                 </SettingsSection>
+                {/* fork: everyday-workflows */}
                 <SettingsSection title="Agents">
                   <SettingsActionRow
                     icon="arrow.clockwise"
-                    label="Refresh agents"
+                    label="Refresh agents" // fork: everyday-workflows
                     disabled={busy || !canRead}
                     loading={pending === "refresh"}
                     onPress={() => {
@@ -385,7 +393,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           return;
                         const result = await refreshProviders({ environmentId, input: {} });
                         if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-                        setNotice("Agent status refreshed.");
+                        setNotice("Agent status refreshed."); // fork: everyday-workflows
                       });
                     }}
                   />
@@ -434,6 +442,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                           {provider.versionAdvisory?.status === "behind_latest" &&
                           !provider.versionAdvisory.canUpdate ? (
                             <Text className="text-sm text-foreground-muted">
+                              {/* fork: everyday-workflows */}
                               Update this agent on the computer.
                             </Text>
                           ) : null}

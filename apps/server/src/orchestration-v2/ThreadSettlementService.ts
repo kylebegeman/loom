@@ -17,7 +17,6 @@ import * as Path from "effect/Path";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import { threadHasQueuedTurnStart } from "./queuedTurnStart.ts";
-export { threadHasQueuedTurnStart, QUEUED_TURN_START_GRACE_MS } from "./queuedTurnStart.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -48,6 +47,7 @@ export interface SettlementPullRequest {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
+// fork: project-lifecycle -- the queued turn start grace period moved to queuedTurnStart.ts.
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
@@ -98,6 +98,8 @@ function settlementPullRequestLinks(
     return Number.isNaN(linkedAtMs) || linkTerminalAtMs(link) >= linkedAtMs;
   });
 }
+
+// fork: project-lifecycle -- threadHasQueuedTurnStart moved to queuedTurnStart.ts.
 
 function pullRequestSettles(
   thread: Pick<
@@ -228,7 +230,7 @@ export class ThreadSettlementServiceV2 extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
     /** Await settle actions before releasing their working resources. False preserves them for retry. */
-    readonly prepareForCleanup: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly prepareForCleanup: (threadId: ThreadId) => Effect.Effect<boolean>; // fork: project-lifecycle
   }
 >()("t3/orchestration-v2/ThreadSettlementService/ThreadSettlementServiceV2") {}
 
@@ -270,7 +272,8 @@ export function autoSettlementSettingsKey(
   ]);
 }
 
-export const make = Effect.gen(function* () {
+// fork: project-lifecycle -- server.ts starts the worker from layer, so make is not exported.
+const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -575,7 +578,7 @@ export const make = Effect.gen(function* () {
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
-      if (settled.settledOverride !== "settled") return true;
+      if (settled.settledOverride !== "settled") return true; // fork: project-lifecycle
       yield* terminals.closeIdle({ threadId });
       const worktreePath = settled.worktreePath;
       if (worktreePath === null) return true; // fork: server-weight

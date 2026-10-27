@@ -1,12 +1,14 @@
+// fork: tailnet-ownership
 import type { DesktopTailscaleServeStatus, DesktopWslState } from "@t3tools/contracts";
 import { createAdvertisedEndpoint } from "@t3tools/shared/advertisedEndpoint";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
+  // fork: tailnet-ownership
   describeTailscaleServeRow,
   localBackendPort,
   selectQrEndpointOption,
-  tailscaleServePortProblem,
+  tailscaleServePortProblem, // fork: tailnet-ownership
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
 
@@ -128,6 +130,7 @@ describe("selectQrEndpointOption", () => {
   });
 });
 
+// fork: tailnet-ownership
 const TAILSCALE_PROVIDER = {
   id: "tailscale",
   label: "Tailscale",

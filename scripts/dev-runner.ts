@@ -8,7 +8,7 @@ import * as NetService from "@t3tools/shared/Net";
 import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@t3tools/shared/devHome";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { TAILSCALE_SERVE_CLAIMS_FILE } from "@t3tools/tailscale";
+import { TAILSCALE_SERVE_CLAIMS_FILE } from "@t3tools/tailscale"; // fork: tailnet-ownership
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -758,6 +758,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
   );
 
+  // fork: tailnet-ownership
   // Before the share block: --dry-run only resolves and prints. Sharing would
   // map the port on the tailnet, then tear the mapping down — a surprising
   // side effect from a command documented as inert.
@@ -775,6 +776,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
         "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
       );
     } else {
+      // fork: tailnet-ownership
       const path = yield* Path.Path;
       const shareTarget = {
         webPort: sharedWebPort,
@@ -798,6 +800,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
       // process (and reboots), so the cleanup has to be registered atomically
       // with creating it. An interrupt landing in between would otherwise
       // leave a mapping pointing at a port nothing is listening on.
+      /* fork: tailnet-ownership */
       const shared = yield* Effect.acquireRelease(shareDevServer(shareTarget), () =>
         unshareDevServer(shareTarget).pipe(
           Effect.flatMap((result) =>

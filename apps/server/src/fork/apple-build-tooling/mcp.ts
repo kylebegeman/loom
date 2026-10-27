@@ -20,7 +20,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { AppleBuildService } from "./AppleBuildService.ts";
 
 /** The run tool returns `running` with the run id after this; the run keeps going. */
-export const AGENT_WAIT_MS = 45 * 60 * 1000;
+const AGENT_WAIT_MS = 45 * 60 * 1000;
 const LOG_TAIL_LINES = 60;
 const RECENT_RUNS = 5;
 
@@ -222,7 +222,7 @@ const orFail = <A>(value: A | AppleBuildError) =>
 
 const lastLines = (text: string, count: number) => text.split("\n").slice(-count).join("\n");
 
-export const runTool = (threadId: ThreadId, input: typeof RunParams.Type) =>
+const runTool = (threadId: ThreadId, input: typeof RunParams.Type) =>
   withForkRuntime(
     Effect.gen(function* () {
       const service = yield* AppleBuildService;
@@ -271,7 +271,7 @@ export const runTool = (threadId: ThreadId, input: typeof RunParams.Type) =>
     }),
   );
 
-export const statusTool = (threadId: ThreadId, includeDestinations: boolean) =>
+const statusTool = (threadId: ThreadId, includeDestinations: boolean) =>
   withForkRuntime(
     Effect.gen(function* () {
       const service = yield* AppleBuildService;

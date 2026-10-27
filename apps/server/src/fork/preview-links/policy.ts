@@ -18,7 +18,7 @@ import { PREVIEW_ENTRY_PATH, PREVIEW_RESERVED_PATH, type PreviewLibraryAccess } 
  * SSH, databases, debuggers, Loom's own default ports and Switchboard's (8317-8318 local, 8321-8322
  * network gateways). Ports below 1024 are denied too.
  */
-export const DENIED_PREVIEW_PORTS: ReadonlySet<number> = new Set([
+const DENIED_PREVIEW_PORTS: ReadonlySet<number> = new Set([
   22, 3306, 3773, 3779, 5432, 6379, 8317, 8318, 8321, 8322, 9222, 9229, 27017,
 ]);
 

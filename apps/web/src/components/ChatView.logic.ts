@@ -44,6 +44,7 @@ import {
   type RunId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
+// fork: library-launch-files
 import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup";
 import * as DateTime from "effect/DateTime";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -221,13 +222,14 @@ export function shouldOpenProactiveTurnDiff(input: {
 export function resolveProactiveTurnDiffAction(input: {
   checkpoint: Pick<TurnDiffSummary, "status" | "files"> | undefined;
   isGitRepo: boolean | undefined;
-  checkpointCapable?: boolean | undefined;
+  checkpointCapable?: boolean | undefined; // fork: checkpoint-capable
 }): "defer" | "ignore" | "open" {
   if (input.checkpoint === undefined || input.checkpoint.status === "missing") return "defer";
+  // fork: checkpoint-capable
   const checkpointCapable = input.checkpointCapable ?? input.isGitRepo;
   if (checkpointCapable === undefined) return "defer";
   if (
-    !checkpointCapable ||
+    !checkpointCapable || // fork: checkpoint-capable
     input.checkpoint.status !== "ready" ||
     input.checkpoint.files.length === 0
   ) {
@@ -1116,7 +1118,7 @@ export async function waitForRevertedMessage(
       }
       if (
         accepted &&
-        witness !== undefined &&
+        witness !== undefined && // fork: project-lifecycle
         thread.providerThreads.some(
           (providerThread) =>
             (providerThread.id === providerThreadId ||

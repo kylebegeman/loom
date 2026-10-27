@@ -944,16 +944,19 @@ function ThreadSettingsOptionsItem(props: {
             {session.hideRuntimeMode ? null : (
               <Animated.View layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}>
                 <DisclosureRow
+                  // fork: bots
                   isLast
                   label="Runtime"
                   value={
+                    // fork: bots
                     session.runtimeModeChoices.find((choice) => choice.mode === session.runtimeMode)
                       ?.label
                   }
-                  onPress={() => props.onOpenSubmenu({ kind: "runtime" })}
+                  onPress={() => props.onOpenSubmenu({ kind: "runtime" })} // fork: bots
                 />
               </Animated.View>
             )}
+            {/* fork: bots */}
           </Animated.View>
         </>
       ) : null}
@@ -1297,7 +1300,7 @@ function ThreadSettingsModelsScreen() {
   const hasCustomCatalogFilter = session.providerFilter !== null || session.showLegacy;
   const commitAndClose = useEffectEvent(() => {
     if (!session.commitPendingModel()) return;
-    closeModels();
+    closeModels(); // fork: library
   });
   const providerFilters = [
     { id: "all-providers", title: "All providers", value: null },
@@ -1382,7 +1385,7 @@ function ThreadSettingsModelsScreen() {
               </AndroidAnchoredMenu>
             </View>
           }
-          onCancel={closeModels}
+          onCancel={closeModels} // fork: library
           title="Thread settings"
           confirm={session.pendingModel ? { label: "Save", onPress: commitAndClose } : undefined}
         />
@@ -1440,7 +1443,7 @@ function ThreadSettingsModelsScreen() {
       {Platform.OS === "ios" ? (
         <SheetHeader
           title="Thread settings"
-          onCancel={closeModels}
+          onCancel={closeModels} // fork: library
           accessibilityLabel="Cancel thread settings"
           confirm={{
             label: session.pendingModel ? "Save thread settings" : "Done",
@@ -1535,6 +1538,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
   return (
     <ThreadSettingsPickerPresentationContext.Provider value={presentation}>
       <ThreadSettingsPickerStack.Navigator
+        // fork: library
         initialRouteName={
           props.conversationDetails ? "ThreadSettingsDetails" : "ThreadSettingsModels"
         }
@@ -1583,6 +1587,7 @@ export function ThreadSettingsPickerScreen(
 ) {
   return (
     <ThreadSettingsSessionProvider {...props}>
+      {/* fork: library */}
       <ThreadSettingsPickerNavigator
         onClose={props.onClose}
         conversationDetails={props.conversationDetails}

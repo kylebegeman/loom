@@ -1,6 +1,7 @@
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+// fork: github-host-setup
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -14,6 +15,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 export const layer = Layer.effect(
   SourceControlHost.SourceControlHost,
   Effect.gen(function* () {
+    // fork: github-host-setup
     const environment = yield* HostProcess.Environment;
     const delimiter = (yield* HostProcess.Platform) === "win32" ? ";" : ":";
     const fs = yield* FileSystem.FileSystem;
@@ -24,6 +26,7 @@ export const layer = Layer.effect(
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     return SourceControlHost.SourceControlHost.of({
       settings: { get: serverSettings.getSettings },
+      // fork: github-host-setup -- gh runs from the executable host setup finds
       process: {
         run: (input) =>
           input.command === "gh"

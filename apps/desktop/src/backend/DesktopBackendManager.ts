@@ -42,7 +42,7 @@ const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 // leaves its agents running. Three of four measured install stops hit the old
 // 5 s cap (5001, 5002 and 5001 ms; the fourth took 4725 ms), so busy backends
 // were cut off while still stopping provider sessions.
-export const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
+const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
 // fork: restart-continuity: the grace, then SIGKILL and the spawner's
 // one-second wait for the process group, so a stop that returns has really
 // ended the backend instead of leaving it to outlive a quitting app. A killed
@@ -384,7 +384,7 @@ export const waitForHttpReady = (
         });
       },
     });
-  });
+  }); // fork: restart-continuity
 
 function drainBackendOutput(
   context: BackendProcessContext & { readonly pid: number },
@@ -991,7 +991,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                 lastProbe,
               });
               yield* backendOutputLog.persistFailureSnapshot({
-                details: `Backend not ready within the last ${error.timeoutMs}ms; still waiting while the process runs. Last probe: ${lastProbe}.`,
+                details: `Backend not ready within the last ${error.timeoutMs}ms; still waiting while the process runs. Last probe: ${lastProbe}.`, // fork: restart-continuity
               });
             },
           ),

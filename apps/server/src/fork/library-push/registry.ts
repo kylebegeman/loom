@@ -93,7 +93,7 @@ export const servesTopic = (
     (topic) => topic.bundleId === device.bundleId && topic.apsEnvironment === device.apsEnvironment,
   );
 
-export const ownsRow = (account: LibraryPushAccount, row: StoredLibraryPushDevice) =>
+const ownsRow = (account: LibraryPushAccount, row: StoredLibraryPushDevice) =>
   row.issuer === account.issuer && row.subject === account.subject;
 
 export const visibleTo = (scope: LibraryPushScope, row: StoredLibraryPushDevice) =>
@@ -103,7 +103,7 @@ export const visibleTo = (scope: LibraryPushScope, row: StoredLibraryPushDevice)
  * Expired rows, rows from another issuer, rows whose subject left the allowlist and rows for a
  * topic the key no longer serves are never sent to, so they are never shown either.
  */
-export const isLive = (policy: LibraryPushPolicy, row: StoredLibraryPushDevice) =>
+const isLive = (policy: LibraryPushPolicy, row: StoredLibraryPushDevice) =>
   millisOf(row.expiresAt) > policy.nowMs &&
   row.issuer === policy.issuer &&
   policy.allowedSubjects.includes(row.subject) &&
@@ -122,7 +122,7 @@ export const liveDevicesFor = (
   policy: LibraryPushPolicy,
 ) => registry.devices.filter((row) => isLive(policy, row) && visibleTo(scope, row));
 
-export const sameToken = (a: StoredLibraryPushDevice, b: StoredLibraryPushDevice) =>
+const sameToken = (a: StoredLibraryPushDevice, b: StoredLibraryPushDevice) =>
   Redacted.value(a.token) === Redacted.value(b.token);
 
 export const deviceView = (

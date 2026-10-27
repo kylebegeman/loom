@@ -2,7 +2,7 @@ import { Button } from "../../components/ui/Button";
 import type {
   ProviderApprovalDecision,
   ProviderApprovalOption,
-  ProviderRequestKind,
+  ProviderRequestKind, // fork: everyday-workflows
   RuntimeRequestId,
 } from "@t3tools/contracts";
 import {
@@ -27,10 +27,11 @@ export interface PendingApprovalCardProps {
 
 const DEFAULT_APPROVAL_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
   { decision: "accept", label: "Allow once" },
-  { decision: "acceptForSession", label: "Allow for this session" },
+  { decision: "acceptForSession", label: "Allow for this session" }, // fork: everyday-workflows
   { decision: "decline", label: "Decline" },
 ];
 
+// fork: everyday-workflows
 const APPROVAL_TITLES: Record<ProviderRequestKind, string> = {
   command: "Run a command",
   "file-read": "Read a file",
@@ -52,9 +53,11 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
         Approval needed
       </Text>
       <Text className="font-t3-bold text-lg text-foreground">
+        {/* fork: everyday-workflows */}
         {props.approval.appName ?? APPROVAL_TITLES[props.approval.requestKind]}
       </Text>
       {props.approval.detail ? (
+        // fork: everyday-workflows
         <Text selectable className="font-sans text-sm leading-normal text-foreground-secondary">
           {props.approval.detail}
         </Text>

@@ -16,6 +16,7 @@ build/
 release/
 release-mock/
 .t3
+# fork: dev-fixtures
 .t3-fixtures
 .idea/
 apps/web/.playwright

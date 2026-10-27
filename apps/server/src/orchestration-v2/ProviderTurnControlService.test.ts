@@ -261,6 +261,7 @@ it.effect(
           isNodeStored: () => Effect.die("not used"),
           canStartQueuedRun: () => Effect.die("not used"),
           getRecoveryThreadIds: () => Effect.die("unused getRecoveryThreadIds"),
+          // fork: detached-session-recovery
           getProviderSessionsForRecovery: () => Effect.die("unused getProviderSessionsForRecovery"),
           getUnreadableThreadIds: () => Effect.die("unused getUnreadableThreadIds"),
           getThreadSnapshot: () => Effect.die("unused getThreadSnapshot"),

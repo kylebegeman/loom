@@ -9,7 +9,7 @@ import type {
 } from "@t3tools/contracts/fork";
 
 /** Graphify's DEFAULT_AFFECTED_RELATIONS (graphify/affected.py, 0.9.83). */
-export const IMPACT_RELATIONS: ReadonlySet<string> = new Set([
+const IMPACT_RELATIONS: ReadonlySet<string> = new Set([
   "calls",
   "indirect_call",
   "references",
@@ -30,8 +30,8 @@ export const IMPACT_RELATIONS: ReadonlySet<string> = new Set([
 const MEMBER_RELATIONS: ReadonlySet<string> = new Set(["method", "contains"]);
 
 export const MAX_SEARCH_RESULTS = 50;
-export const MAX_NEIGHBORHOOD_NODES = 80;
-export const MAX_IMPACT_HITS = 300;
+const MAX_NEIGHBORHOOD_NODES = 80;
+const MAX_IMPACT_HITS = 300;
 export const MAX_PATH_HOPS = 8;
 const SUMMARY_COMMUNITIES = 30;
 const SUMMARY_HUBS = 20;

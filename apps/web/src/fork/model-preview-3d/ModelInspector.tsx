@@ -86,7 +86,7 @@ const TAB_ALIASES: Record<string, InspectorTab> = {
   tools: "markup",
   review: "markup",
 };
-export const inspectorTabs = (scad: boolean) =>
+const inspectorTabs = (scad: boolean) =>
   TABS.filter((tab) => scad || !tab.scad).map((tab) => tab.id);
 export const defaultInspectorTab = (scad: boolean): InspectorTab => (scad ? "customize" : "part");
 /** Maps a current or legacy tab name to a tab this file has, or null when it has none. */
@@ -370,7 +370,7 @@ function PrinterMenu({
   );
 }
 
-export const DIMENSION_DELTA_MM = 0.05;
+const DIMENSION_DELTA_MM = 0.05;
 
 /**
  * A signed size change, excluding float noise smaller than the displayed precision. A chosen

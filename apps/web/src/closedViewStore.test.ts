@@ -122,6 +122,7 @@ describe("closedViewStore", () => {
   });
 });
 
+// fork: ext-panels
 it("retains valid model documents across restarts and discards the archived inspector", async () => {
   const surface = {
     id: "fork:model-preview-3d:parts/bracket.scad",

@@ -4,7 +4,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import {
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
-  type EnvironmentId,
+  type EnvironmentId, // fork: directory-computers
 } from "@t3tools/contracts";
 import {
   RelayConnectionRegistration,
@@ -77,7 +77,7 @@ const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 export function AddEnvironmentDialog({
   open,
   routeTarget,
-  libraryPairing,
+  libraryPairing, // fork: directory-computers
   error,
   savedEnvironments,
   onOpenChange,
@@ -639,6 +639,7 @@ export function AddEnvironmentDialog({
                 // fork: fleet-connections
                 <Button size="xs" variant="ghost-muted" aria-label="Connect computer">
                   <PlusIcon className="size-3" />
+                  {/* fork: fleet-connections */}
                   <span>Connect computer</span>
                 </Button>
               }
@@ -652,6 +653,7 @@ export function AddEnvironmentDialog({
         <DialogHeader>
           {/* fork: fleet-connections */}
           <DialogTitle>
+            {/* fork: fleet-connections */}
             {routeTarget ? `Add a route to ${routeTarget.label}` : "Connect computer"}
           </DialogTitle>
           <DialogDescription>

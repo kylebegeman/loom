@@ -19,7 +19,7 @@ const CAPABILITY_TOOLS: ReadonlyArray<readonly [McpCapability, ReadonlyArray<str
   ["device", [...Object.keys(DeviceToolkit.tools), ...Object.keys(DeviceQaToolkit.tools)]],
 ];
 
-export const unusableToolNames = (scope: McpInvocationScope): ReadonlySet<string> =>
+const unusableToolNames = (scope: McpInvocationScope): ReadonlySet<string> =>
   new Set(
     CAPABILITY_TOOLS.flatMap(([capability, names]) =>
       scope.thread !== undefined && scope.capabilities.has(capability) ? [] : names,

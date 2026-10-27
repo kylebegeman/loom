@@ -327,6 +327,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
     Dialog.alert(
       "Disable notifications",
+      // fork: brand
       `Open system Settings to disable notifications for ${BRAND_NAME}.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -460,6 +461,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(
                     "Couldn't open Settings",
+                    // fork: brand
                     `Open Android Settings, select ${BRAND_NAME}, then enable Live Updates in Notifications.`,
                   );
                 });

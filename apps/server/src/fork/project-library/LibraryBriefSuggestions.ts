@@ -54,7 +54,7 @@ const encodeStored = Schema.encodeEffect(Schema.fromJsonString(StoredSuggestion)
 const decodeStored = Schema.decodeEffect(Schema.fromJsonString(StoredSuggestion));
 
 /** The background conversation's only message: read, propose once or not at all, stop. */
-export const briefSuggestionRunPrompt = (input: {
+const briefSuggestionRunPrompt = (input: {
   readonly threadId: ThreadId;
   readonly project: LibraryProject;
 }) =>

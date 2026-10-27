@@ -17,7 +17,7 @@ import { DOCKER_LABEL, dockerCandidates, makeDockerLocator } from "../project-li
 import { PreviewFolderListenError, type ServePreviewFolder } from "./types.ts";
 
 /** Marks the container of a link, so one whose id Loom never learned can still be removed. */
-export const PREVIEW_LINK_LABEL = "loom.preview-link";
+const PREVIEW_LINK_LABEL = "loom.preview-link";
 
 const FOLDER_HEADERS = {
   "X-Content-Type-Options": "nosniff",

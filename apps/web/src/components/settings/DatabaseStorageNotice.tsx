@@ -59,6 +59,7 @@ export function DatabaseStorageNotice({
   );
   return (
     <SettingsSection id="storage-database" title="Database">
+      {/* fork: restart-compaction */}
       {visible.map(({ environmentId, status }) =>
         status.restartCompaction === undefined ? null : (
           <RestartCompactionRow
@@ -80,7 +81,7 @@ export function DatabaseStorageNotice({
       {commandRecommendations.map(({ environmentId, status }) => (
         <SettingsRow
           key={environmentId}
-          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${labelOf(environmentId)}`}
+          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${labelOf(environmentId)}`} // fork: restart-compaction
           description={<code className="select-text break-all">{status.compactCommand}</code>}
           control={
             <div className="flex flex-wrap items-center gap-1.5">
@@ -91,6 +92,7 @@ export function DatabaseStorageNotice({
               >
                 Copy command
               </Button>
+              {/* fork: restart-compaction */}
               <Button variant="ghost" size="xs" onClick={() => dismiss(environmentId)}>
                 Dismiss
               </Button>

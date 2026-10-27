@@ -7,7 +7,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@t3tools/contracts";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 

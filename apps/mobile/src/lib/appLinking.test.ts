@@ -1,7 +1,9 @@
+// fork: library
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
+// fork: library -- cold links keep Threads home beneath the destination
 import {
   APP_LINKING_CONFIG,
   findLinkedRoute,
@@ -56,6 +58,7 @@ describe("shouldHandleAppLink", () => {
   });
 
   it.each([
+    // fork: mobile-identity
     "loom://threads/env-1/thread-1",
     "loom-dev://settings/usage?tab=limits",
     "loom-preview://pair?pairingUrl=x",
@@ -66,6 +69,7 @@ describe("shouldHandleAppLink", () => {
     expect(shouldHandleAppLink(url, true)).toBe(true);
   });
 
+  // fork: mobile-identity
   it.each([
     "loom-dev://expo-development-client/?url=x",
     "loom://expo-sharing/anything",

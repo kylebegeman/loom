@@ -9,8 +9,8 @@ import { PREVIEW_LINK_GATEWAY_PATH } from "@t3tools/contracts/fork";
  * other browser.
  */
 export const PREVIEW_TICKET_PATH = `${PREVIEW_LINK_GATEWAY_PATH}ticket`;
-export const PREVIEW_TICKET_TYPE = "loom-preview-ticket+jwt";
-export const PREVIEW_TICKET_TTL_SECONDS = 60;
+const PREVIEW_TICKET_TYPE = "loom-preview-ticket+jwt";
+const PREVIEW_TICKET_TTL_SECONDS = 60;
 export const PREVIEW_NONCE_COOKIE_NAME = "__Host-loom_pv_n";
 /** Long enough to finish a Pocket ID sign-in on the Library before the nonce lapses. */
 export const PREVIEW_NONCE_MAX_AGE_SECONDS = 10 * 60;

@@ -186,6 +186,7 @@ describe("planNextReopen", () => {
   });
 });
 
+// fork: ext-panels
 it("reopens a model tab with its exact document and title", async () => {
   const surface = {
     id: "fork:model-preview-3d:parts/bracket.scad",

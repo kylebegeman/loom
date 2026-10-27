@@ -38,6 +38,7 @@ child.on("error", error => { console.error(error.message); process.exitCode = 1;
 child.on("exit", code => { process.exitCode = code ?? 1; });
 `,
   );
+  // fork: device-qa
   // Desktop hosts resolve to Electron, and provider terminals clear its Node-mode flag.
   if (platform === "win32") {
     const script = `@echo off\r\nsetlocal EnableExtensions DisableDelayedExpansion\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${node}" "${launcherPath}" %*\r\n`;

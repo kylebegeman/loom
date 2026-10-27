@@ -67,6 +67,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
 } {
   if (catalogState.isLoadingConnections) {
     return {
+      // fork: fleet-connections
       title: "Loading computers",
       detail: "Checking saved computers on this device.",
       loading: true,
@@ -75,6 +76,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
 
   if (!catalogState.hasConnections) {
     return {
+      // fork: fleet-connections
       title: "Connect a computer",
       detail: "Connect a computer before starting a task.",
       loading: false,
@@ -86,26 +88,27 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
       catalogState.connectionState === "offline" ||
       catalogState.connectionState === "error" ||
       catalogState.connectionState === "unsupported") &&
-    !catalogState.hasReadyEnvironment
+    !catalogState.hasReadyEnvironment // fork: fleet-connections
   ) {
     return {
       title:
         catalogState.connectionState === "unsupported"
           ? "Client not supported"
-          : "Computer unavailable",
+          : "Computer unavailable", // fork: fleet-connections
       detail:
         catalogState.connectionError ??
-        "The saved computer is offline. Reconnect it or choose another computer to start working.",
+        "The saved computer is offline. Reconnect it or choose another computer to start working.", // fork: fleet-connections
       loading: false,
     };
   }
 
   if (
     catalogState.hasConnectingEnvironment &&
-    !catalogState.hasReadyEnvironment &&
+    !catalogState.hasReadyEnvironment && // fork: fleet-connections
     catalogState.connectionError === null
   ) {
     return {
+      // fork: fleet-connections
       title: "Connecting to computer",
       detail: "Loading projects from the saved computer.",
       loading: true,
@@ -113,6 +116,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
   }
 
   return {
+    // fork: fleet-connections
     title: "Start your first task",
     detail: "Add a project or start without one on the connected computer.",
     loading: false,
@@ -427,6 +431,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 <>
                   {/* fork: fleet-connections */}
                   <Button
+                    // fork: fleet-connections
                     label={
                       catalogState.hasReadyEnvironment
                         ? "Add project"
@@ -451,7 +456,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     />
                   ) : null}
                 </>
-              ) : null}
+              ) : // fork: fleet-connections -- the buttons above cover every ready state
+              null}
             </View>
           ) : visibleScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View className="items-center gap-2 px-6 py-8">

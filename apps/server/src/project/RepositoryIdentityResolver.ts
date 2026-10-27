@@ -9,7 +9,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -103,6 +103,7 @@ function buildRepositoryOrigin(
   return { canonicalKey: originKey, remoteUrl: originUrl, ...(displayName ? { displayName } : {}) };
 }
 
+// fork: project-lifecycle -- exported for tests that build ownership receipts
 export function buildRepositoryIdentity(input: {
   readonly remoteName: string;
   readonly remoteUrl: string;
@@ -226,6 +227,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
 ) {
+  // fork: project-lifecycle
   const ownershipServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof readManagedProjectCheckout>>>();
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -267,6 +269,7 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     function* (cwd, options) {
       if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
+      // fork: project-lifecycle
       if (cacheKey === null)
         return (
           (yield* readManagedProjectCheckout(cwd).pipe(

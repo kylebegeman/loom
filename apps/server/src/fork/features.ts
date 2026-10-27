@@ -16,7 +16,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
-import { libraryPushActivityAdvertised, libraryPushAdvertised } from "./library-push/config.ts";
+import { libraryPushActivityAdvertised, libraryPushEffective } from "./library-push/config.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
@@ -148,7 +148,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   // Only that Library once its reach zone and Cloudflare token file are named.
   ...(reachLibraryAdvertised(process.env) ? [REACH_LIBRARY_FEATURE] : []),
   // Only a Library whose push switch, Identity and APNs key settings are all set (K1).
-  ...(libraryPushAdvertised(process.env) ? [LIBRARY_PUSH_FEATURE] : []),
+  ...(libraryPushEffective(process.env) ? [LIBRARY_PUSH_FEATURE] : []),
   // Only that Library once its alert switch is on and someone can receive alerts (C04-10).
   ...(libraryPushActivityAdvertised(process.env) ? [LIBRARY_PUSH_ACTIVITY_FEATURE] : []),
 ];

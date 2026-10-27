@@ -1,6 +1,6 @@
 import { useWorkspaceSidebarHeaderItem } from "../layout/useWorkspaceSidebarHeaderItem";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react"; // fork: library
 import { threadHeaderAppearance } from "./thread-header-appearance";
 import { isDuoDevice } from "../../lib/device-type";
 import type { AppNativeStackNavigationOptions } from "../../native/StackHeader";
@@ -23,7 +23,7 @@ export function useThreadHeaderOptions(props: {
   readonly usesNativeHeaderGlass: boolean;
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
-  readonly onOpenDetails?: () => void;
+  readonly onOpenDetails?: () => void; // fork: library
   readonly draft?: boolean;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
@@ -86,6 +86,7 @@ export function useThreadHeaderOptions(props: {
     [navigation],
   );
 
+  // fork: library -- the header offers conversation details beside upstream's right items
   const openDetails = useRef(props.onOpenDetails);
   useLayoutEffect(() => {
     openDetails.current = props.onOpenDetails;
@@ -133,7 +134,7 @@ export function useThreadHeaderOptions(props: {
       : canGoBack
         ? undefined
         : () => compactHomeHeaderItems,
-    unstable_headerRightItems: () => rightHeaderItems,
+    unstable_headerRightItems: () => rightHeaderItems, // fork: library
     unstable_headerToolbarItems: () => [],
     unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
     contentStyle: undefined,
@@ -144,7 +145,7 @@ export function useThreadHeaderOptions(props: {
     // Factories re-read only on version changes; include displayed items and hidden callback state such as default refs.
     optionsVersion: [
       splitLeftHeaderItems,
-      rightHeaderItems,
+      rightHeaderItems, // fork: library
       threadCenterHeaderItems,
       compactRightHeaderItems,
       usesDuoHeader,

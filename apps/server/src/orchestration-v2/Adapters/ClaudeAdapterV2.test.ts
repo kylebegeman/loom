@@ -5510,6 +5510,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  // fork: switchboard
   it.effect.each([
     { name: "pooled cooldown", seconds: "1133", expected: 1133 },
     { name: "no provider or upstream summary", seconds: "1133", expected: 1133, bare: true },

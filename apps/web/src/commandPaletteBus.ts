@@ -9,11 +9,11 @@ const COMMAND_PALETTE_OPEN_EVENT = "t3code:open-command-palette";
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
-  readonly environmentId?: EnvironmentId;
+  readonly environmentId?: EnvironmentId; // fork: fleet-connections
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
-  /** Opens the root action submenu with this value. fork: library-palette */
-  readonly submenu?: string;
+  /** Opens the root action submenu with this value. */
+  readonly submenu?: string; // fork: library-palette
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {

@@ -32,6 +32,8 @@ connection. Pull request diffs and provider settings keep working after the
 previous credential expires. A failed renewal affects that request; it does not
 disconnect an otherwise healthy conversation.
 
+<!-- fork: identity-renewal -->
+
 ## Identity sign-in
 
 An administrator can configure Identity sign-in for a computer you can reach directly
@@ -144,9 +146,11 @@ Mobile keeps its manual environment selection.
 ### Tailscale HTTPS
 
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
-HTTPS** in **Settings → Connections**. It works with **Network access** off, since
+HTTPS** in **Settings → Connections**. It works with **Network access** off, since <!-- fork: tailnet-ownership -->
 Tailscale forwards to the app's local-only address. Turn it off there to remove
 only the app's route.
+
+<!-- fork: tailnet-ownership -->
 
 The app never replaces another app's Tailscale Serve mapping. If the port you
 choose is taken, setup names what holds it; pick another port. When the route
@@ -165,14 +169,16 @@ t3 pair --tailscale
 ```
 
 The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
-The mapping created by `pair --tailscale` persists across restarts. Remove only
+The mapping created by `pair --tailscale` persists across restarts. Remove only <!-- fork: tailnet-ownership -->
 that mapping, leaving anything else on the port alone, with:
+
+<!-- fork: tailnet-ownership -->
 
 ```bash
 tailscale serve --https=443 --set-path=/ off
 ```
 
-If another app already serves that port, pairing stops and names it instead of
+If another app already serves that port, pairing stops and names it instead of <!-- fork: tailnet-ownership -->
 replacing it. Choose another port with `--tailscale-serve-port`. See
 `t3 pair --help` for other pairing options.
 

@@ -304,7 +304,7 @@ function accessTokenExpiresAt(token: string): number | null {
  * Pocket ID revokes the whole grant when a rotated token is replayed after a minute, so callers
  * must run this single-flight per grant and persist the returned grant before using it.
  */
-export async function refreshIdentityGrant(
+async function refreshIdentityGrant(
   grant: IdentityGrant,
   options: { readonly fetch: IdentityGrantFetch; readonly now: () => number },
 ): Promise<IdentityGrantRefreshResult> {
@@ -356,7 +356,7 @@ export async function refreshIdentityGrant(
 }
 
 /** Trades fresh Identity tokens for a computer session at that computer's native endpoint. */
-export async function exchangeNativeIdentitySession(input: {
+async function exchangeNativeIdentitySession(input: {
   readonly httpBaseUrl: string;
   readonly environmentId: EnvironmentId;
   readonly accessToken: string;

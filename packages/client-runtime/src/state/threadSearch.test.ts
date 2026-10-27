@@ -64,6 +64,7 @@ it("ignores invalid search keys", () => {
     const state = registry.get(searchAtom(makeThreadSearchKey([envA], "a".repeat(201))));
     const malformedState = registry.get(searchAtom("not json{{"));
 
+    // fork: fleet-connections
     expect(state).toEqual({ matches: [], isLoading: false, failedEnvironmentIds: [], rows: [] });
     expect(malformedState).toEqual({
       matches: [],
@@ -77,6 +78,7 @@ it("ignores invalid search keys", () => {
   }
 });
 
+// fork: fleet-connections
 it("preserves successful matches and identifies computers whose search failed", () => {
   const result: OrchestrationSearchThreadsResult = {
     matches: [
@@ -106,7 +108,7 @@ it("preserves successful matches and identifies computers whose search failed", 
   expect(state).toEqual({
     matches: [{ ...result.matches[0], environmentId: envA }],
     isLoading: false,
-    failedEnvironmentIds: [envB],
+    failedEnvironmentIds: [envB], // fork: fleet-connections
     rows: [],
   });
   expect(threadSearchMatchKey(state.matches[0]!)).toBe('["env-a","thread-a"]');
@@ -114,6 +116,7 @@ it("preserves successful matches and identifies computers whose search failed", 
   registry.dispose();
 });
 
+// fork: fleet-connections
 it("distinguishes a failed search from no matches and clears the failure after recovery", () => {
   const failed = Atom.make<AsyncResult.AsyncResult<OrchestrationSearchThreadsResult, Error>>(
     AsyncResult.failure<OrchestrationSearchThreadsResult, Error>(

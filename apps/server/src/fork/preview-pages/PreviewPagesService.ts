@@ -114,7 +114,7 @@ export const replyRetryDelay = (
       );
 
 /** The reply is untrusted text from a browser, so it enters the thread only as message text. */
-export const pageReplyMessage = (reply: LibraryPageReply) =>
+const pageReplyMessage = (reply: LibraryPageReply) =>
   `A reply came in on your published page "${reply.pageTitle}":\n\n${reply.text}`;
 
 type ReplyOutcome = Omit<LibraryPageReplyAckRequest, "replyId">;

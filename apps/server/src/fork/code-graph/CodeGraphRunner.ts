@@ -75,7 +75,7 @@ export const isTestedVersion = (version: string) => version === TESTED_GRAPHIFY_
 export const isShrinkRefusal = (lines: ReadonlyArray<string>) =>
   lines.some((line) => line.includes("Refusing to overwrite"));
 
-export const KEPT_OUTPUT_LINES = 200;
+const KEPT_OUTPUT_LINES = 200;
 
 export interface GraphifyProcess {
   /** Exit code; null when it was killed, timed out or could not start. */

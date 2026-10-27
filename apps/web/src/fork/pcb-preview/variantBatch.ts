@@ -1,5 +1,5 @@
 import type { PcbVariant, PcbRenderVariantResult } from "@t3tools/contracts/fork";
-export const sourceConflict = (e: unknown) =>
+const sourceConflict = (e: unknown) =>
   (e !== null && typeof e === "object" && "reason" in e && e.reason === "conflict") ||
   (e instanceof Error && /circuit source changed/i.test(e.message));
 /** One candidate at a time; every awaited stage checks whether the panel still owns the batch. */

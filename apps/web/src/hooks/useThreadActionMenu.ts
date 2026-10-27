@@ -1,8 +1,8 @@
-import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state";
+import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
-import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { environmentServerConfigsAtom } from "~/state/server";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
+import { appAtomRegistry } from "~/rpc/atomRegistry"; // fork: workspace-handoff
+import { environmentServerConfigsAtom } from "~/state/server"; // fork: workspace-handoff
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
@@ -128,6 +128,7 @@ export function useThreadActionMenu(input: {
       const now = new Date();
       const supports = {
         saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
+        // fork: workspace-handoff
         workspaceHandoff: supportsLoomFeature(
           appAtomRegistry.get(environmentServerConfigsAtom).get(threadRef.environmentId)
             ?.environment.capabilities,
@@ -191,6 +192,7 @@ export function useThreadActionMenu(input: {
         }
       };
       switch (action) {
+        // fork: workspace-handoff
         case "workspace-handoff":
           openWorkspaceHandoff(threadRef);
           return;
@@ -213,15 +215,15 @@ export function useThreadActionMenu(input: {
           return;
         }
         case "new-thread-on-branch": {
-          // The Library form chooses files afresh and cannot preserve an explicit branch.
+          // fork: library-projects: the Library form chooses files afresh and cannot preserve an explicit branch.
           const result = await settlePromise(() =>
             handleNewThread(scopeProjectRef(threadRef.environmentId, thread.projectId), {
               branch: thread.branch,
               worktreePath: thread.worktreePath,
               envMode: thread.worktreePath ? "worktree" : "local",
               startFromOrigin: false,
-              environmentSelection: "manual",
-              sourceSettings: thread,
+              environmentSelection: "manual", // fork: project-home
+              sourceSettings: thread, // fork: library-projects
             }),
           );
           if (result._tag === "Failure") {

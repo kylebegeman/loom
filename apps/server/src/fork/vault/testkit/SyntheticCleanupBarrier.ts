@@ -12,7 +12,7 @@ import {
   type CleanupState,
   type CleanupStore,
 } from "../CleanupLedger.ts";
-export { cleanupResourceKey, cleanupScopeKey } from "../CleanupLedger.ts";
+export { cleanupScopeKey } from "../CleanupLedger.ts";
 export type {
   CleanupScope,
   CleanupTicket,

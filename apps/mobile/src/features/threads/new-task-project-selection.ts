@@ -89,7 +89,7 @@ export function resolveDraftProjectSelection(
   selectedProjectKey: string | null,
   projects: ReadonlyArray<EnvironmentProject>,
   projectScopes: ReadonlyArray<HomeProjectScope>,
-  requestedProject?: EnvironmentProject,
+  requestedProject?: EnvironmentProject, // fork: project-home
 ): DraftProjectSelectionResolution {
   // fork: project-home - A route pins its checkout even when it matches the displayed fallback.
   if (requestedProject !== undefined) {
@@ -106,6 +106,7 @@ export function resolveDraftProjectSelection(
   if (hasExplicitProjectSelection) {
     return { kind: "preserve" };
   }
+  // fork: fleet-connections -- an explicit pick that left the catalog returns to the picker
   if (selectedProjectKey !== null) {
     return { kind: "pick" };
   }

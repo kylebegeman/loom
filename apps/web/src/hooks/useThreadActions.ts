@@ -443,6 +443,7 @@ export function useThreadActions() {
     const environmentConfig = appAtomRegistry
       .get(environmentServerConfigsAtom)
       .get(threadRef.environmentId);
+    // fork: project-root-worktree
     const linkedWorktreePath = getOrphanedWorktreePathForThread(
       survivingThreads,
       threadRef.threadId,

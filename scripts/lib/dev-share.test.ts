@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: tailnet-ownership
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: tailnet-ownership
 import * as Layer from "effect/Layer";
-import * as PlatformError from "effect/PlatformError";
+import * as PlatformError from "effect/PlatformError"; // fork: tailnet-ownership
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
@@ -15,6 +15,7 @@ import {
   unshareDevServer,
 } from "./dev-share.ts";
 
+// fork: tailnet-ownership
 const TAILNET_STATUS = JSON.stringify({
   BackendState: "Running",
   Self: { DNSName: "host.example.ts.net.", CapMap: { https: null } },
@@ -28,6 +29,7 @@ interface CallResult {
   readonly stderr?: string;
 }
 
+// fork: tailnet-ownership
 const serveStatusWithRoot = (proxy: string) =>
   JSON.stringify({
     TCP: { "5788": { HTTPS: true } },
@@ -36,6 +38,7 @@ const serveStatusWithRoot = (proxy: string) =>
 
 const encode = (value: string) => Stream.make(new TextEncoder().encode(value));
 
+// fork: tailnet-ownership
 /** A tailnet host with a serve config, a claims file, and a log of every CLI call. */
 const hostLayer = (input: {
   readonly serveStatus?: string;
@@ -44,6 +47,7 @@ const hostLayer = (input: {
   readonly serve?: CallResult;
   readonly calls?: Array<ReadonlyArray<string>>;
 }) => {
+  // fork: tailnet-ownership
   const files = new Map<string, string>();
   if (input.claims) {
     files.set(CLAIMS_PATH, JSON.stringify({ version: 1, claims: input.claims }));
@@ -60,10 +64,11 @@ const hostLayer = (input: {
     const result: CallResult =
       stdout !== undefined
         ? { exitCode: 0 }
-        : args.at(-1) === "off"
+        : args.at(-1) === "off" // fork: tailnet-ownership
           ? (input.off ?? { exitCode: 0 })
           : (input.serve ?? { exitCode: 0 });
 
+    // fork: tailnet-ownership
     return Effect.succeed(
       ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(1),
@@ -108,10 +113,12 @@ const hostLayer = (input: {
   );
 };
 
+// fork: tailnet-ownership
 const mutations = (calls: ReadonlyArray<ReadonlyArray<string>>) =>
   calls.filter((args) => args[0] === "serve" && args[1] !== "status");
 
 describe("unshareDevServer", () => {
+  // fork: tailnet-ownership
   it.effect("removes only the root mapping while it still proxies here", () =>
     Effect.gen(function* () {
       const calls: Array<ReadonlyArray<string>> = [];
@@ -125,6 +132,7 @@ describe("unshareDevServer", () => {
     }),
   );
 
+  // fork: tailnet-ownership
   // Another app took the port after this run shared it; its mapping stays.
   it.effect("leaves a mapping that no longer proxies here", () =>
     Effect.gen(function* () {
@@ -139,6 +147,7 @@ describe("unshareDevServer", () => {
     }),
   );
 
+  // fork: tailnet-ownership
   it.effect("treats a mapping that vanished meanwhile as cleared", () =>
     Effect.gen(function* () {
       const result = yield* unshareDevServer(TARGET).pipe(
@@ -155,6 +164,7 @@ describe("unshareDevServer", () => {
 
   it.effect("reports a genuine removal failure as not cleared", () =>
     Effect.gen(function* () {
+      // fork: tailnet-ownership
       const result = yield* unshareDevServer(TARGET).pipe(
         Effect.provide(
           hostLayer({
@@ -165,6 +175,7 @@ describe("unshareDevServer", () => {
       );
       assert.isFalse(result.cleared);
       assert.include(result.explanation, "permission denied");
+      // fork: tailnet-ownership -- a claim record error can be the cause too
     }),
   );
 });
@@ -175,8 +186,10 @@ describe("shareDevServer", () => {
   it.effect("proxies to the localhost name Vite binds, not 127.0.0.1", () =>
     Effect.gen(function* () {
       const calls: Array<ReadonlyArray<string>> = [];
+      // fork: tailnet-ownership
       const shared = yield* shareDevServer(TARGET).pipe(Effect.provide(hostLayer({ calls })));
 
+      // fork: tailnet-ownership
       assert.deepEqual(mutations(calls), [
         ["serve", "--bg", "--https=5788", "http://localhost:5788"],
       ]);
@@ -184,6 +197,7 @@ describe("shareDevServer", () => {
     }),
   );
 
+  // fork: tailnet-ownership
   it.effect("refuses a port another app serves, without touching its mapping", () =>
     Effect.gen(function* () {
       const calls: Array<ReadonlyArray<string>> = [];
@@ -202,6 +216,7 @@ describe("shareDevServer", () => {
     }),
   );
 
+  // fork: tailnet-ownership
   // A `--built` run killed before its finalizer proxied to the backend; this run serves Vite.
   it.effect("takes back the mapping a crashed run of this checkout recorded", () =>
     Effect.gen(function* () {
@@ -216,6 +231,7 @@ describe("shareDevServer", () => {
         ),
       );
 
+      // fork: tailnet-ownership
       assert.deepEqual(mutations(calls), [
         ["serve", "--bg", "--https=5788", "http://localhost:5788"],
       ]);
@@ -224,6 +240,7 @@ describe("shareDevServer", () => {
 
   it.effect("explains a recognized serve failure without quoting stderr", () =>
     Effect.gen(function* () {
+      // fork: tailnet-ownership
       const error: DevShareError = yield* shareDevServer(TARGET).pipe(
         Effect.provide(
           hostLayer({
@@ -243,4 +260,5 @@ describe("shareDevServer", () => {
       assert.notInclude(error.message, "tskey-auth-secret-token-value");
     }),
   );
+  // fork: tailnet-ownership -- the clear-existing stage is gone
 });

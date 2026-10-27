@@ -43,6 +43,8 @@ activity when usage telemetry is unavailable. Known smaller windows still constr
 These are fallback estimates, not exact token counts. Image resolution, custom models, and hidden
 native context can differ, so the provider may still reject an input.
 
+<!-- fork: workspace-handoff -->
+
 ## Continue on another machine
 
 In Loom, use **Move work** from a thread's menu or the command palette.

@@ -60,6 +60,7 @@ it.layer(NodeServices.layer)("EnvironmentAuthPolicy.layer", (it) => {
     ),
   );
 
+  // fork: directory-computers
   it.effect("offers one-time tokens when Tailscale Serve exposes a loopback desktop server", () =>
     Effect.gen(function* () {
       const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;

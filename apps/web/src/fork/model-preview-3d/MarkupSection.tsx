@@ -44,7 +44,7 @@ type Mutation = (
 export type AnnotationStatus = "draft" | "requested" | "changed" | "accepted";
 
 /** Where a change request stands relative to the geometry on screen. */
-export function annotationStatus(annotation: ModelAnnotation, sourceRevision: string) {
+function annotationStatus(annotation: ModelAnnotation, sourceRevision: string) {
   if (annotation.status === "accepted") return "accepted";
   if (annotation.sourceRevision !== sourceRevision) return "changed";
   return annotation.status === "review" ? "requested" : "draft";

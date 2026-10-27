@@ -199,7 +199,7 @@ import { useOpenLinkedThread } from "./useOpenLinkedThread";
 import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 export interface ThreadDetailScreenProps {
-  readonly onOpenConversationDetails?: () => void;
+  readonly onOpenConversationDetails?: () => void; // fork: library
   readonly header?: React.ReactNode;
   readonly draftMode?: {
     readonly content: (
@@ -656,6 +656,7 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
     if (props.isCompacting && contentPresentationKind === "ready") {
       return { kind: "compacting" };
     }
+    // fork: library
     const workStatus = props.activityRun?.status ?? props.selectedThread.runtime?.status;
     if (workStatus === "preparing" || workStatus === "starting") {
       return {
@@ -1499,7 +1500,7 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
                     >
                       <ComposerErrorNotice
                         message={composerError}
-                        onReviewContext={props.onOpenConversationDetails}
+                        onReviewContext={props.onOpenConversationDetails} // fork: library
                         onDismiss={() => clearThreadComposerError(selectedThreadKey)}
                       />
                     </Animated.View>

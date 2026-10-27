@@ -97,7 +97,7 @@ const DAY_MS = 24 * HOUR_MS;
  * A report this recent counts as now, matching the Library's `LIBRARY_COMPUTER_ONLINE_WINDOW`.
  * Recent never means online: only a connection from this device says that.
  */
-export const DIRECTORY_REPORT_RECENT_MS = 2 * MINUTE_MS;
+const DIRECTORY_REPORT_RECENT_MS = 2 * MINUTE_MS;
 
 /** "just now", "2 min ago", "3 hours ago" or "2 days ago". */
 export function directoryAgeText(ageMs: number): string {

@@ -1205,6 +1205,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
     transactionAcquirer,
     // BEGIN IMMEDIATE avoids read-then-write SQLITE_BUSY_SNAPSHOT, which busy_timeout cannot resolve.
     beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+    // fork: library-projects
     // SQLite leaves deferred constraint and busy COMMIT failures open until an explicit rollback.
     onCommitFailure: (conn) =>
       conn.executeUnprepared("ROLLBACK", [], undefined).pipe(Effect.asVoid),

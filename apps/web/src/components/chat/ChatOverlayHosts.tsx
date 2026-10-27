@@ -182,6 +182,7 @@ export function BranchRestoreConfirmHost(props: {
 // fork: project-lifecycle -- the server checks the selected checkpoint before offering file restore.
 export interface PendingRevert {
   readonly turnCount: number;
+  // fork: project-lifecycle
   readonly messageId: MessageId | null;
   readonly checkpointId: string | null;
   readonly scopeId: string | null;
@@ -198,6 +199,7 @@ export function openRevertConfirm(threadKey: string, pending: PendingRevert): vo
 // fork: project-lifecycle
 export function RevertConfirmHost(props: {
   readonly threadKey: string;
+  // fork: project-lifecycle
   readonly canOperate: boolean;
   readonly onConfirm: (pending: PendingRevert, restoreFiles: boolean) => void;
   readonly onFork: (checkpointId: string) => void;
@@ -206,7 +208,7 @@ export function RevertConfirmHost(props: {
   const confirm = (restoreFiles: boolean) => {
     if (pending === null) return;
     closeThreadOverlay(revertConfirmAtom);
-    props.onConfirm(pending, restoreFiles);
+    props.onConfirm(pending, restoreFiles); // fork: project-lifecycle
   };
   return (
     <AlertDialog
@@ -222,6 +224,7 @@ export function RevertConfirmHost(props: {
             {pending?.messageId ? "Edit from here?" : "Roll back to here?"}
           </AlertDialogTitle>
           <AlertDialogDescription>
+            {/* fork: project-lifecycle */}
             {pending?.messageId
               ? "Rewind chat to before this message. Your prompt and attachments return to the composer."
               : "Rewind this conversation to the selected checkpoint."}
@@ -229,12 +232,14 @@ export function RevertConfirmHost(props: {
               " Revert files too also undoes your own edits. You can undo the file restore while the files remain unchanged."
             }
           </AlertDialogDescription>
+          {/* fork: project-lifecycle */}
           {pending?.reason ? (
             <p className="text-sm text-muted-foreground">{pending.reason}</p>
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          {/* fork: project-lifecycle */}
           {pending?.checkpointId ? (
             <Button
               variant="outline"
@@ -254,6 +259,7 @@ export function RevertConfirmHost(props: {
           >
             Revert files too
           </Button>
+          {/* fork: project-lifecycle */}
           <Button disabled={!props.canOperate} onClick={() => confirm(false)}>
             Revert and keep changes
           </Button>

@@ -13,7 +13,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "../config.ts";
-import * as NamedProjects from "../fork/file-placement/NamedProjects.ts";
+import * as NamedProjects from "../fork/file-placement/NamedProjects.ts"; // fork: file-placement
 import { runForkMigrationSet } from "../fork/persistence/migrations.ts"; // fork: file-placement
 import { receiptFor } from "../fork/project-library/Library.testkit.ts"; // fork: file-placement
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: file-placement
@@ -84,6 +84,7 @@ const layer = (baseDir: string, options?: HarnessOptions) =>
     Layer.provideMerge(options?.git ?? layerRealGit),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
+    // fork: mini-managed-projects -- a test can move managed folders to another root.
     Layer.provideMerge(
       Layer.effect(
         ServerConfig.ServerConfig,
@@ -110,7 +111,7 @@ const withScratch = <A, E>(
     E,
     | ManagedProjectFolders.ManagedProjectFolders
     | ProjectService.ProjectService
-    | ServerSettings.ServerSettingsService
+    | ServerSettings.ServerSettingsService /* fork: file-placement */
     | NodeServices.NodeServices
     | Scope.Scope
   >,
@@ -371,6 +372,7 @@ it.effect("starts a named project as a committed repository, and suffixes a take
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const root = path.resolve(baseDir, "projects");
+        // fork: file-placement -- namedProjectsRoot left the service.
 
         const first = yield* folders.createNamedProject({ name: "Pinball Stats" });
         const second = yield* folders.createNamedProject({ name: "pinball stats" });
@@ -456,20 +458,22 @@ it.effect("keeps a named project and reports why when Git cannot commit", () =>
   ),
 );
 
+// fork: file-placement -- replaces the conflict test, which moved below with a racing owner.
 it.effect("starts a named project in the Projects folder chosen in settings", () =>
   withScratch(({ baseDir }) =>
     withGitEnv(
       TEST_IDENTITY,
       Effect.gen(function* () {
         const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-        const settings = yield* ServerSettings.ServerSettingsService;
+        const settings = yield* ServerSettings.ServerSettingsService; // fork: file-placement
         const path = yield* Path.Path;
+        // fork: file-placement
         const chosen = path.join(baseDir, "Developer", "active");
         yield* settings.updateSettings({ projectsDirectory: chosen });
 
-        const created = yield* folders.createNamedProject({ name: "Pinball Stats" });
+        const created = yield* folders.createNamedProject({ name: "Pinball Stats" }); // fork: file-placement
 
-        assert.equal(created.workspaceRoot, path.join(chosen, "pinball-stats"));
+        assert.equal(created.workspaceRoot, path.join(chosen, "pinball-stats")); // fork: file-placement
       }),
     ),
   ),

@@ -74,11 +74,11 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
-  GlobeIcon,
+  GlobeIcon, // fork: sites
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
-  MonitorIcon,
+  MonitorIcon, // fork: fleet-connections
   PaletteIcon,
   RotateCcwIcon,
   SettingsIcon,
@@ -247,7 +247,7 @@ import {
   scrollCommandPaletteRowIntoView,
 } from "./CommandPaletteResults";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { COMMAND_PALETTE_META_ICON_CLASS } from "./ThreadCommandSubtitle";
+import { COMMAND_PALETTE_META_ICON_CLASS } from "./ThreadCommandSubtitle"; // fork: no-project-first
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
@@ -490,7 +490,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
             !open &&
             eventDetails.reason === "escape-key" &&
             state.mode !== "command" &&
-            !libraryPalette.isOpen
+            !libraryPalette.isOpen // fork: library-palette
           ) {
             eventDetails.cancel();
             dispatch({ _tag: "BackToCommand" });
@@ -986,7 +986,7 @@ function OpenCommandPaletteDialog(props: {
           threads.filter(
             (thread) =>
               thread.archivedAt === null &&
-              !isBotRunThreadId(thread.id) &&
+              !isBotRunThreadId(thread.id) && // fork: bots
               groupedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`),
           ),
           clientSettings.sidebarThreadSortOrder,
@@ -1049,9 +1049,11 @@ function OpenCommandPaletteDialog(props: {
     // fork: no-project-first: No project leads the picker and names the computer it starts on.
     const noProjectLocation = projectEnvironmentLocationById.get(scratchTargetEnvironmentId);
     return [
+      // fork: no-project-first -- No project always leads instead of following the first project
       {
         kind: "action" as const,
         value: "new-thread-in:no-project",
+        // fork: no-project-first
         searchTerms: [
           "no project",
           "without project",
@@ -1059,6 +1061,7 @@ function OpenCommandPaletteDialog(props: {
           ...(noProjectLocation ? [noProjectLocation.label] : []),
         ],
         title: "No project",
+        // fork: no-project-first
         description: noProjectLocation ? (
           <span className="inline-flex min-w-0 items-center gap-1">
             {noProjectLocation.kind === "remote" ? (
@@ -1075,7 +1078,7 @@ function OpenCommandPaletteDialog(props: {
         shortcutCommand: "chat.newWithoutProject" as const,
         run: () => startScratchThread(scratchTargetEnvironmentId),
       },
-      ...projectItems,
+      ...projectItems, // fork: no-project-first
     ];
   })();
 
@@ -1169,6 +1172,7 @@ function OpenCommandPaletteDialog(props: {
     environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
       ?.newProjectsRoot ?? null;
 
+  // fork: library-palette -- New project opens the Library, which replaced startNewProject
   const openSourceControlSettings = () => {
     setOpen(false);
     void navigate({ to: "/settings/source-control" });
@@ -1362,8 +1366,10 @@ function OpenCommandPaletteDialog(props: {
       )
     ) {
       setOpen(false);
+      // fork: fleet-connections -- with no computer connected, the "connect" target opens Connections
       return;
     }
+    // fork: fleet-connections
     const target = resolveAddProjectOpenTarget(
       addProjectEnvironmentOptions.map((option) => option.environmentId),
       requestedEnvironmentId,
@@ -1381,6 +1387,7 @@ function OpenCommandPaletteDialog(props: {
         (candidate) => candidate.environmentId === target.environmentId,
       );
       pushPaletteView({
+        // fork: fleet-connections
         addonIcon: <MonitorIcon className={ADDON_ICON_CLASS} />,
         groups: [
           {
@@ -1420,19 +1427,20 @@ function OpenCommandPaletteDialog(props: {
       });
       return;
     }
+    // fork: fleet-connections
     if (target.kind === "connect") {
       setOpen(false);
       void navigate({ to: "/settings/connections" });
       return;
     }
 
-    pushPaletteView(computerSelectionView);
+    pushPaletteView(computerSelectionView); // fork: fleet-connections
   };
 
   // fork: library-palette - New projects start in the Library.
   const openNewProjectFlow = () => {
     setOpen(false);
-    openLibraryAction("create-project");
+    openLibraryAction("create-project"); // fork: library-palette
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
@@ -1776,7 +1784,8 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
-      // New project offers every way in, so cloning terms find it rather than the folder shortcut.
+      // fork: library-palette - New project offers every way in, so cloning terms find it
+      // rather than the folder shortcut.
       searchTerms: [
         "new project",
         "create project",
@@ -1815,9 +1824,11 @@ function OpenCommandPaletteDialog(props: {
       "folder",
       "directory",
       "browse",
+      // fork: library-palette -- clone and remote terms moved to New project
       "repository",
       "repo",
       "git",
+      // fork: library-palette -- source control and url terms moved to New project
       "environment",
     ],
     title: "Add existing folder", // fork: fleet-connections
@@ -1872,7 +1883,7 @@ function OpenCommandPaletteDialog(props: {
         if (submenu?.kind !== "submenu") return;
         pushPaletteView(submenu);
         return;
-      }
+      } // fork: library-palette
       case "new-thread-in":
         pushPaletteView({
           addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
@@ -1899,7 +1910,7 @@ function OpenCommandPaletteDialog(props: {
     if (openIntent.kind === "submenu" && !forkSubmenuReady) return; // fork: library-palette
     // oxlint-disable-next-line react/set-state-in-effect -- applying the intent dispatches to the parent reducer and can navigate, neither of which may run during render.
     applyOpenIntent(openIntent);
-  }, [openIntent, projectThreadItemCount, forkSubmenuReady]);
+  }, [openIntent, projectThreadItemCount, forkSubmenuReady]); // fork: library-palette
 
   actionItems.push(themeEditorItem);
 
@@ -2043,7 +2054,7 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         // fork: project-home
         await navigate({
-          to: "/settings/projects",
+          to: "/settings/projects", // fork: project-home
           search: {
             project: projectHomeContext?.settingsProjectKey ?? contextualProjectGroup.projectKey,
             machine: undefined,
@@ -2269,6 +2280,7 @@ function OpenCommandPaletteDialog(props: {
         toastManager.add(
           stackedThreadToast({
             type: "error",
+            // fork: fleet-connections
             title: input.createWorkspaceRootIfMissing
               ? "Failed to add project"
               : "Could not open folder",

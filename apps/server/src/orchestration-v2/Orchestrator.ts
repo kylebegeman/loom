@@ -1,4 +1,4 @@
-import { threadWorkspaceIdle } from "./queuedTurnStart.ts";
+import { threadWorkspaceIdle } from "./queuedTurnStart.ts"; // fork: workspace-handoff
 import type {
   GuestShareId,
   OrchestrationV2SearchThreadInput,
@@ -2848,6 +2848,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }),
       ),
     );
+    // fork: workspace-handoff
     if (command.type === "thread.settle" && command.snapshotAt !== undefined) {
       const candidate = yield* projectionStore
         .getThreadShell(thread.id)

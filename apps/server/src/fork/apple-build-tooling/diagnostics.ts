@@ -9,7 +9,7 @@ import { relativeTo, SUMMARY_ITEM_CAP } from "./xcresult.ts";
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 
-export const stripAnsi = (text: string) => text.replace(ANSI, "");
+const stripAnsi = (text: string) => text.replace(ANSI, "");
 
 const DIAGNOSTIC = /^(\/[^:]+):(\d+):(\d+): (error|warning): (.+)$/;
 

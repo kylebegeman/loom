@@ -26,8 +26,7 @@ const plural = (count: number, noun: string, many = `${noun}s`) =>
 export type BatchStatusFilter = "all" | "running" | "retry";
 
 /** Items the plain retry reruns: failed and timed-out runs, and `fail` verdicts. */
-export const failedCount = (counts: BotBatchCounts) =>
-  counts.failed + counts.timedOut + counts.fail;
+const failedCount = (counts: BotBatchCounts) => counts.failed + counts.timedOut + counts.fail;
 
 /**
  * A settled batch with items a retry would run again. Items past the attempt cap still count,
@@ -36,7 +35,7 @@ export const failedCount = (counts: BotBatchCounts) =>
 export const batchNeedsRetry = (batch: BotBatch) =>
   batch.status !== "running" && failedCount(batch.counts) + batch.counts.needsAttention > 0;
 
-export const matchesBatchStatus = (batch: BotBatch, filter: BatchStatusFilter) =>
+const matchesBatchStatus = (batch: BotBatch, filter: BatchStatusFilter) =>
   filter === "all"
     ? true
     : filter === "running"
@@ -44,7 +43,7 @@ export const matchesBatchStatus = (batch: BotBatch, filter: BatchStatusFilter) =
       : batchNeedsRetry(batch);
 
 /** Finds batches by their source or their bot, the two things a person remembers about one. */
-export const matchesBatchSearch = (batch: BotBatch, query: string) => {
+const matchesBatchSearch = (batch: BotBatch, query: string) => {
   const needle = query.trim().toLowerCase();
   if (needle === "") return true;
   return [batch.sourceSummary, batch.botName, BATCH_SOURCE_LABELS[batch.sourceType]].some((text) =>
@@ -289,14 +288,11 @@ export const itemTries = (item: Pick<BotBatchItem, "previousRunIds" | "runId">) 
   item.previousRunIds.length + (item.runId === null ? 0 : 1);
 
 /** An item the server refuses to run again; it allows {@link BOTS_BATCH_MAX_ATTEMPTS} in all. */
-export const isExhausted = (item: Pick<BotBatchItem, "previousRunIds">) =>
+const isExhausted = (item: Pick<BotBatchItem, "previousRunIds">) =>
   item.previousRunIds.length + 1 >= BOTS_BATCH_MAX_ATTEMPTS;
 
 /** Mirrors the server's choice of items to retry, so the button's count is the count it reruns. */
-export const isRetryableItem = (
-  item: Pick<BotBatchItem, "state" | "run">,
-  includeAttention: boolean,
-) => {
+const isRetryableItem = (item: Pick<BotBatchItem, "state" | "run">, includeAttention: boolean) => {
   const run = item.run;
   if (item.state !== "started" || run === null) return false;
   if (run.status === "failed" || run.status === "timed_out") return true;

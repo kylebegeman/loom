@@ -186,7 +186,7 @@ export const linkEnvironmentToCloud = Effect.fn("linkEnvironment.linkEnvironment
       Effect.mapError(cloudEnvironmentLinkError("Could not load the mobile device id.")),
     );
     const liveActivitiesEnabled = input.liveActivitiesEnabled;
-    yield* requireCurrentAccess();
+    yield* requireCurrentAccess(); // fork: fleet-connect
     const challenge = yield* relayClient
       .createEnvironmentLinkChallenge({
         clerkToken: input.clerkToken,

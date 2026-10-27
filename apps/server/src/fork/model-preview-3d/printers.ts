@@ -23,7 +23,7 @@ import { makeStore } from "./store.ts";
 import { parseBambuProfile, parsePrusaIni } from "./printerProfiles.ts";
 import { flattenProfile, slicerProfileRoots } from "./slicer/profiles.ts";
 
-export const migratedPrinterLibrary = (settings: ModelPreviewSettings): PrinterLibrary => ({
+const migratedPrinterLibrary = (settings: ModelPreviewSettings): PrinterLibrary => ({
   version: 1,
   printers: settings.buildPlate.customBeds.map((bed) => ({
     id: bed.id,

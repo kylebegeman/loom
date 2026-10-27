@@ -16,7 +16,7 @@ import {
 } from "../cliAuthFormat.ts";
 import * as ServerConfig from "../config.ts";
 import { authScopesFlag } from "./authScopes.ts";
-import { libraryPublisherCommand } from "./libraryPublisher.ts";
+import { libraryPublisherCommand } from "./libraryPublisher.ts"; // fork: library-projects
 import {
   authLocationFlags,
   type CliAuthLocationFlags,
@@ -241,5 +241,5 @@ const sessionCommand = Command.make("session").pipe(
 
 export const authCommand = Command.make("auth").pipe(
   Command.withDescription("Manage the local auth control plane for headless deployments."),
-  Command.withSubcommands([pairingCommand, sessionCommand, libraryPublisherCommand]),
+  Command.withSubcommands([pairingCommand, sessionCommand, libraryPublisherCommand]), // fork: library-projects
 );

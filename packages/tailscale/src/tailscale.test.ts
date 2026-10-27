@@ -2,21 +2,21 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as PlatformError from "effect/PlatformError";
+import * as PlatformError from "effect/PlatformError"; // fork: tailnet-ownership
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
-  disableTailscaleServe,
+  disableTailscaleServe, // fork: tailnet-ownership
   ensureTailscaleServe,
   parseTailscaleExitNode,
   parseTailscaleSshEnabled,
   parseTailscaleStatus,
   readTailscaleSshEnabled,
   readTailscaleStatus,
-  TailscaleCliUnavailableError,
+  TailscaleCliUnavailableError, // fork: tailnet-ownership
   TailscaleCommandExitError,
   TailscaleCommandSpawnError,
   TailscaleStatusParseError,
@@ -104,8 +104,9 @@ describe("tailscale", () => {
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.100.100.100"],
         httpsServeEnabled: null,
-        loggedIn: null,
+        loggedIn: null, // fork: tailnet-ownership
       });
+      // fork: tailnet-ownership
       const loggedOut = yield* parseTailscaleStatus(`{"BackendState":"NeedsLogin"}`);
       assert.isFalse(loggedOut.loggedIn);
       const running = yield* parseTailscaleStatus(`{"BackendState":"Running"}`);
@@ -113,6 +114,7 @@ describe("tailscale", () => {
     }),
   );
 
+  // fork: tailnet-ownership
   it.effect("falls back to the app bundle's CLI on macOS when PATH lookup fails", () => {
     const spawned: Array<string> = [];
     const lookupFailure = (code: "ENOENT" | "EACCES") =>
@@ -152,6 +154,7 @@ describe("tailscale", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  // fork: tailnet-ownership
   it.effect("reports a missing CLI distinctly, without the home directory", () => {
     const layer = Layer.mergeAll(
       Layer.succeed(
@@ -184,6 +187,7 @@ describe("tailscale", () => {
     });
   });
 
+  // fork: tailnet-ownership
   it.effect("removes only the root mount when disabling serve", () => {
     const calls: Array<ReadonlyArray<string>> = [];
     const layer = layerMockSpawner((_command, args) => {

@@ -1,10 +1,10 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { identitySessionPrefix } from "./identityPolicy.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sign-in
+import { identitySessionPrefix } from "./identityPolicy.ts"; // fork: library-sign-in
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
-import * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime"; // fork: library-projects
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref"; // fork: identity-renewal
-import * as Stream from "effect/Stream";
+import * as Stream from "effect/Stream"; // fork: identity-renewal
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -209,6 +209,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
     }).pipe(Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 
+  // fork: library-projects
   it.effect("binds an explicit credential deadline within its allowed lifetime", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
@@ -673,6 +674,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.3.0" });
     }).pipe(Effect.provide(Layer.mergeAll(layerSessionStore(), SqlitePersistence.layerMemory))),
   );
+  // fork: library-sign-in
   it.effect(
     "invalidates Identity sessions and websocket tickets when host enrollment changes",
     () =>

@@ -30,6 +30,7 @@ describe("resolveFirstRunDecision", () => {
     });
   });
 
+  // fork: library-only
   it("opens saved history without execution setup on a Library-only server", () => {
     expect(
       resolveFirstRunDecision({
@@ -41,6 +42,7 @@ describe("resolveFirstRunDecision", () => {
     ).toEqual({ decision: "app", persistCompletion: true });
   });
 
+  // fork: library-only
   it("waits for a live server before skipping execution setup", () => {
     expect(
       resolveFirstRunDecision({

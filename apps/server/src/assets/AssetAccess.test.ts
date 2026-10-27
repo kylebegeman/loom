@@ -112,9 +112,9 @@ const layerTest = Layer.mergeAll(
       ),
   }),
   layerConfig,
-  WorkspacePaths.layer.pipe(Layer.provide(layerConfig)),
+  WorkspacePaths.layer.pipe(Layer.provide(layerConfig)), // fork: project-lifecycle
   ProjectFaviconResolver.layer.pipe(
-    Layer.provide(WorkspacePaths.layer.pipe(Layer.provide(layerConfig))),
+    Layer.provide(WorkspacePaths.layer.pipe(Layer.provide(layerConfig))), // fork: project-lifecycle
     Layer.provide(T3ProjectFileLoader.layer),
   ),
   NativeAppIconResolver.layer.pipe(Layer.provide(layerConfig)),

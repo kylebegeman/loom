@@ -143,7 +143,7 @@ export const renameReferences = (draft: PipelineDraft, from: string, to: string)
 };
 
 /** Whether a step still carries the id the builder made up for it, rather than one a person chose. */
-export const isAutoStepId = (id: string, botId: string) => {
+const isAutoStepId = (id: string, botId: string) => {
   const bases = botId === "" ? ["step"] : ["step", botId];
   return bases.some((base) => id === base || new RegExp(`^${escapeRegExp(base)}-\\d+$`).test(id));
 };
@@ -228,7 +228,7 @@ export const changeStepBot = (
 export type LoopRange = { readonly start: number; readonly end: number };
 
 /** Loops by step index, as the server reads them; a loop to a later or unknown step is left out. */
-export const draftLoops = (draft: PipelineDraft): ReadonlyArray<LoopRange> =>
+const draftLoops = (draft: PipelineDraft): ReadonlyArray<LoopRange> =>
   draft.steps.flatMap((step, end) => {
     if (step.onFail !== "loop") return [];
     const start = draft.steps.findIndex((candidate) => candidate.id.trim() === step.goTo);

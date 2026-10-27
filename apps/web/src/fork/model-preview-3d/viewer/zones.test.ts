@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vite-plus/test";
 import { Mesh, MeshBasicMaterial } from "three";
-import { BUILD_PLATE_PRESETS, singleZoneStrips } from "@t3tools/contracts/fork";
+import { BUILT_IN_PRINTERS, singleZoneStrips } from "@t3tools/contracts/fork";
 import { createZoneStrips, stripPlacement, ZONE_TINT } from "./zones";
 
 it("places nozzle strips from the plate's front-left corner", () => {
-  const strips = singleZoneStrips(BUILD_PLATE_PRESETS["bambu-h2d"].zones);
+  const strips = singleZoneStrips(BUILT_IN_PRINTERS["bambu-h2d"].zones);
   expect(strips.map((strip) => stripPlacement([350, 320], strip))).toEqual([
     { x: -162.5, y: 0 },
     { x: 162.5, y: 0 },
@@ -16,7 +16,7 @@ it("places nozzle strips from the plate's front-left corner", () => {
 });
 
 it("draws flat planes under the grid, themes them and disposes their resources", () => {
-  const strips = singleZoneStrips(BUILD_PLATE_PRESETS["bambu-h2c"].zones);
+  const strips = singleZoneStrips(BUILT_IN_PRINTERS["bambu-h2c"].zones);
   const zones = createZoneStrips([330, 320], strips);
   const meshes = zones.object.children.filter((object) => object instanceof Mesh);
   expect(meshes).toHaveLength(2);

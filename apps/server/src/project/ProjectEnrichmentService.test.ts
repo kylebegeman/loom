@@ -77,6 +77,7 @@ it.effect("publishes repository completion while favicon enrichment is still pen
   }),
 );
 
+// fork: project-preparation
 it.effect("reruns invalidated pending identity work without publishing its superseded null", () =>
   Effect.gen(function* () {
     const oldLookupStarted = yield* Deferred.make<void>();

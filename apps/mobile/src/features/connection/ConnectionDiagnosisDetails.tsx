@@ -12,7 +12,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import Constants from "expo-constants";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useState } from "react"; // fork: fleet-connections
 import { Linking, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -54,9 +54,10 @@ export function ConnectionDiagnosisDetails(props: {
 }) {
   const { diagnosis } = props;
   const { moreInfoUrl } = diagnosis;
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false); // fork: fleet-connections
   return (
     <View className="gap-3">
+      {/* fork: fleet-connections -- hops and facts moved under the technical details toggle below */}
       <View className="gap-0.5">
         <Text className="text-sm font-t3-bold text-foreground">What to try</Text>
         {diagnosis.steps.map((step, index) => (
@@ -65,6 +66,7 @@ export function ConnectionDiagnosisDetails(props: {
           </Text>
         ))}
       </View>
+      {/* fork: fleet-connections */}
       <Button
         label={detailsOpen ? "Hide technical details" : "Show technical details"}
         tone="text"

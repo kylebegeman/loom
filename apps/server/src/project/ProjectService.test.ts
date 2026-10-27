@@ -14,7 +14,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: file-placement
 
 import * as ServerConfig from "../config.ts";
 // fork: file-placement
@@ -22,7 +22,8 @@ import { lifecycleDefaults } from "../fork/project-lifecycle/lanesRoots.ts"; // 
 import { ProjectLifecycleMigrations } from "../fork/project-lifecycle/migrations.ts"; // fork: file-placement
 import { makeStore as makeLifecycleStore } from "../fork/project-lifecycle/store.ts"; // fork: file-placement
 import { runForkMigrationSet } from "../fork/persistence/migrations.ts"; // fork: file-placement
-import { copyFor } from "../fork/project-library/Library.testkit.ts";
+import { copyFor } from "../fork/project-library/Library.testkit.ts"; // fork: file-placement
+// fork: file-placement
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 import {
   orchestrationCommandDuration,
@@ -37,6 +38,7 @@ import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
+// fork: file-placement
 import {
   markManagedProjectCheckout,
   readManagedProjectCheckout, // fork: file-placement
@@ -47,7 +49,7 @@ import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
 import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placement
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
-import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
+import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts"; // fork: file-placement
 
 const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot.replace(/\/$/, "")),

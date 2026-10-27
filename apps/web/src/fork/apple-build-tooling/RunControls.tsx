@@ -130,7 +130,7 @@ export function destinationOptions(destinations: ReadonlyArray<AppleDestination>
   return options;
 }
 
-export function destinationFromKey(
+function destinationFromKey(
   key: string,
   destinations: ReadonlyArray<AppleDestination>,
 ): AppleDestination | undefined {

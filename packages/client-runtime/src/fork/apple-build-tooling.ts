@@ -12,7 +12,7 @@ import {
 } from "../state/runtime.ts";
 
 /** The log view keeps this many trailing lines; the full log stays on the server. */
-export const APPLE_LOG_VIEW_LINES = 2_000;
+const APPLE_LOG_VIEW_LINES = 2_000;
 
 export interface AppleLogView {
   readonly text: string;

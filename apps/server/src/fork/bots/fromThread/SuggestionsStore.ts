@@ -12,15 +12,15 @@ import { isoAt } from "../BotBudgets.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Threads count toward a suggestion when they opened within this long of the newest one. */
-export const SUGGESTION_WINDOW_MS = 14 * DAY_MS;
+const SUGGESTION_WINDOW_MS = 14 * DAY_MS;
 /** Threads with the same shape in the window before Loom suggests a bot. */
-export const SUGGESTION_THRESHOLD = 3;
+const SUGGESTION_THRESHOLD = 3;
 /** New threads after a dismissal that bring a suggestion back, once. */
-export const REOPEN_AFTER = 5;
+const REOPEN_AFTER = 5;
 /** A shape with no new thread for this long is forgotten. */
 export const SHAPE_IDLE_MS = 30 * DAY_MS;
 export const SHAPES_KEPT = 2_000;
-export const SUGGESTIONS_KEPT = 200;
+const SUGGESTIONS_KEPT = 200;
 const ENTRIES_KEPT = 50;
 const PRUNE_BATCH = 100;
 

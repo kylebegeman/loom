@@ -6,7 +6,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { forkParked } from "../../serverActivation.ts";
 import { DeviceQaService } from "./DeviceQaService.ts";
 
-export const EXPIRY_SWEEP_INTERVAL = "6 hours";
+const EXPIRY_SWEEP_INTERVAL = "6 hours";
 
 /** Every thread the projection still knows, active or archived. */
 const knownThreads = (threads: ThreadManagementService["Service"]) =>

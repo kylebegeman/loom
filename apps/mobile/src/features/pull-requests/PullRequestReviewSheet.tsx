@@ -246,6 +246,7 @@ export function PullRequestReviewSheet({
           kept here.
         </Text>
       ) : null}
+      {/* fork: everyday-workflows */}
       {result.data &&
       !result.isPending &&
       !result.error &&
@@ -257,10 +258,12 @@ export function PullRequestReviewSheet({
         </Text>
       ) : null}
       {submission.error || result.error || store.error ? (
+        // fork: everyday-workflows
         <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">
           {submission.error ?? result.error ?? store.error}
         </Text>
       ) : null}
+      {/* fork: everyday-workflows */}
       {(!store.ready && store.error) || result.error ? (
         <Button
           label="Try again"

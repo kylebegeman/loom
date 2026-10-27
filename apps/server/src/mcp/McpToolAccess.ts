@@ -24,7 +24,7 @@ import {
   type Caller,
   loadCaller,
   readCaller,
-  refuseBotRunSpawn,
+  refuseBotRunSpawn, // fork: bots
   unavailable,
 } from "./threadAccess.ts";
 
@@ -170,8 +170,8 @@ export const startsThreads = <P, A, E, R>(
 ) =>
   declare((params: P) =>
     Effect.gen(function* () {
-      const { limits, scope } = yield* writingCaller;
-      yield* refuseBotRunSpawn(scope);
+      const { limits, scope } = yield* writingCaller; // fork: bots
+      yield* refuseBotRunSpawn(scope); // fork: bots
       const requested = modes(params);
       const started: StartedModes = {
         runtimeMode: yield* resolveRuntimeMode(limits.runtimeMode, requested.runtimeMode),

@@ -58,7 +58,7 @@ export function sweepValues(parameter: PcbParameter, input: SweepInput): Value[]
   return values;
 }
 export type Axis = { parameter: PcbParameter; values: readonly Value[] };
-export function candidateName(axes: readonly Axis[], values: Record<string, Value>) {
+function candidateName(axes: readonly Axis[], values: Record<string, Value>) {
   return axes
     .map((a) => `${a.parameter.key} ${String(values[a.parameter.key])}`)
     .join(" / ")

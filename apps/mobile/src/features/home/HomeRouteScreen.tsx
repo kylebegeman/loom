@@ -1,4 +1,4 @@
-import { useNewTaskFromSource } from "../../fork/library/NewTaskLibraryProjects";
+import { useNewTaskFromSource } from "../../fork/library/NewTaskLibraryProjects"; // fork: library
 import { uuidv4 } from "../../lib/uuid";
 import { ThreadUndoNotice } from "./ThreadUndoNotice";
 import { Toolbar } from "../../components/ui/Toolbar";
@@ -78,6 +78,7 @@ export function HomeRouteScreen() {
     else if (workspace) workspace.dispatch({ type: "query", query, tab: "threads" });
     else setLocalSearchQuery(query);
   };
+  // fork: library -- live threads open here; Library history falls back below
   const selectLiveThread = useCallback(
     (thread: EnvironmentThreadShell) =>
       selectDetail({
@@ -156,13 +157,14 @@ export function HomeRouteScreen() {
       setSelectedProjectKey(resolvedProjectKey);
     }
   }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
+  // fork: library -- scopes feed the Library project filter below
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
         projects,
         environmentId: selectedEnvironmentId,
         projectGroupingMode: listOptions.projectGroupingMode,
-      }),
+      }), // fork: library
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
   const projectFilter = useLibraryProjectFilter(projectScopes, resolvedProjectKey); // fork: library
@@ -198,7 +200,7 @@ export function HomeRouteScreen() {
             <Toolbar.Button
               accessibilityLabel="New task"
               icon="square.and.pencil"
-              onPress={startConversation}
+              onPress={startConversation} // fork: library
             />
           </Toolbar>
         ) : null}

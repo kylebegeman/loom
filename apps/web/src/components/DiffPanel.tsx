@@ -30,7 +30,7 @@ import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
 import {
-  resolveAvailableDiffPanelSelection,
+  resolveAvailableDiffPanelSelection, // fork: checkpoint-capable
   selectThreadDiffPanelSelection,
   useDiffPanelSessionStore,
   useDiffPanelStore,
@@ -256,11 +256,12 @@ export default function DiffPanel({
         })
       : null,
   );
+  // fork: checkpoint-capable
   const storedDiffSelection = useDiffPanelStore((state) =>
     selectThreadDiffPanelSelection(state.byThreadKey, routeThreadRef),
   );
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
-  const checkpointCapable = gitStatusQuery.data?.checkpointCapable ?? isGitRepo;
+  const checkpointCapable = gitStatusQuery.data?.checkpointCapable ?? isGitRepo; // fork: checkpoint-capable
   const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadRef);
   const orderedTurnDiffSummaries = turnDiffSummaries.toSorted((left, right) => {
     if (left.checkpointTurnCount !== right.checkpointTurnCount) {
@@ -269,6 +270,7 @@ export default function DiffPanel({
     return right.completedAt.localeCompare(left.completedAt);
   });
 
+  // fork: checkpoint-capable
   const latestRunId = orderedTurnDiffSummaries[0]?.runId;
   const diffSelection = resolveAvailableDiffPanelSelection(
     storedDiffSelection,
@@ -299,7 +301,7 @@ export default function DiffPanel({
   const latestTurn = orderedTurnDiffSummaries[0];
   const selectedScopeLabel =
     selectedRunId === null
-      ? !isGitRepo
+      ? !isGitRepo // fork: checkpoint-capable
         ? "Latest turn"
         : selectedGitScope === "unstaged"
           ? "Uncommitted"
@@ -333,9 +335,10 @@ export default function DiffPanel({
       ignoreWhitespace: diffIgnoreWhitespace,
       cacheScope: selectedTurn ? `turn:${selectedTurn.runId}` : null,
     },
-    { enabled: checkpointCapable && selectedTurn !== undefined },
+    { enabled: checkpointCapable && selectedTurn !== undefined }, // fork: checkpoint-capable
   );
   const branchDiffPreview = useEnvironmentQuery(
+    // fork: checkpoint-capable
     isGitRepo && canReadFiles && selectedRunId === null && activeThread && activeCwd
       ? reviewEnvironment.diffPreview({
           environmentId: activeThread.environmentId,
@@ -407,7 +410,7 @@ export default function DiffPanel({
     return currentLoadDiffFiles(fileDiff);
   });
   const localBranchRefs = useEnvironmentQuery(
-    isGitRepo &&
+    isGitRepo && // fork: checkpoint-capable
       selectedRunId === null &&
       selectedGitScope === "branch" &&
       activeThread &&
@@ -425,7 +428,7 @@ export default function DiffPanel({
       : null,
   );
   const remoteBranchRefs = useEnvironmentQuery(
-    isGitRepo &&
+    isGitRepo && // fork: checkpoint-capable
       selectedRunId === null &&
       selectedGitScope === "branch" &&
       activeThread &&
@@ -690,6 +693,7 @@ export default function DiffPanel({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuRadioGroup value={selectedScopeValue} onValueChange={selectScopeValue}>
+              {/* fork: checkpoint-capable */}
               {isGitRepo ? (
                 <>
                   <DropdownMenuRadioItem value="branch" closeOnClick>
@@ -1014,11 +1018,12 @@ export default function DiffPanel({
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           Select a thread to inspect turn diffs.
         </div>
-      ) : !checkpointCapable ? (
+      ) : !checkpointCapable ? ( // fork: checkpoint-capable
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
+          {/* fork: checkpoint-capable */}
           Turn diffs are unavailable for this working copy.
         </div>
-      ) : (!isGitRepo || selectedRunId !== null) && orderedTurnDiffSummaries.length === 0 ? (
+      ) : (!isGitRepo || selectedRunId !== null) && orderedTurnDiffSummaries.length === 0 ? ( // fork: checkpoint-capable
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           No completed turns yet.
         </div>

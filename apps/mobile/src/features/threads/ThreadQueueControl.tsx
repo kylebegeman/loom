@@ -350,7 +350,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                         ? [
                             {
                               id: "steer",
-                              title: "Send now",
+                              title: "Send now", // fork: everyday-workflows
                               attributes: { disabled: !controls.canSend },
                               image: Platform.OS === "ios" ? "arrow.turn.left.up" : "arrow_upward",
                             },
@@ -420,7 +420,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     // Outside the edit row and full row height, so a near miss never opens the editor.
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`Send queued message ${index + 1} now`}
+                      accessibilityLabel={`Send queued message ${index + 1} now`} // fork: everyday-workflows
                       disabled={!controls.canSend}
                       onPress={() => void act(run.id, "steer")}
                       className="shrink-0 justify-center self-stretch pl-4 active:opacity-70 disabled:opacity-40"
@@ -432,6 +432,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                           tintColorClassName="accent-primary-foreground"
                         />
                         <Text className="font-t3-medium text-sm text-primary-foreground">
+                          {/* fork: everyday-workflows */}
                           Send now
                         </Text>
                       </View>

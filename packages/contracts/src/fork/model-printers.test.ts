@@ -7,7 +7,7 @@ import {
   libraryProblems,
 } from "./model-printers.ts";
 import { DEFAULT_MODEL_PREVIEW_SETTINGS } from "./model-preview-3d.ts";
-import { activeBed, listBeds, selectBed, fitBed, BUILD_PLATE_PRESETS } from "./model-beds.ts";
+import { activeBed, listBeds, selectBed, fitBed, BUILT_IN_PRINTERS } from "./model-beds.ts";
 const decodeLibrary = Schema.decodeUnknownSync(PrinterLibrary);
 const decodeExport = Schema.decodeUnknownSync(Schema.fromJsonString(PrinterExport));
 const printer = {
@@ -73,7 +73,7 @@ describe("printer library", () => {
     const beds = listBeds(settings, { library });
     expect(beds.some((b) => b.id === "prusa-mini")).toBe(false);
     expect(beds.find((b) => b.id === printer.id)?.nozzlesMm).toEqual([0.6]);
-    expect(Object.keys(BUILD_PLATE_PRESETS)).toEqual(
+    expect(Object.keys(BUILT_IN_PRINTERS)).toEqual(
       listBeds(settings)
         .slice(0, 14)
         .map((b) => b.id),

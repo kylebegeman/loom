@@ -77,14 +77,15 @@ describe("serverSettings helpers", () => {
       worktreeSettledAfterDays: null,
       worktreeOnMerge: true,
       worktreeOnDelete: false,
-      worktreeOnSettle: false,
+      worktreeOnSettle: false, // fork: project-lifecycle
       worktreeUnchanged: false,
       worktreeOnLand: true, // fork: project-lifecycle
       worktreeKeepWhen: "uncommitted-changes",
+      // fork: project-lifecycle
       projectAfterDays: null,
       projectOnSettle: false,
       unusedCopiesAfterDays: 7,
-      scratchAfterDays: 30,
+      scratchAfterDays: 30, // fork: retention-defaults
       browserArtifactsAfterDays: 14, // fork: retention-defaults
       logsAfterDays: 30,
     });
@@ -776,6 +777,7 @@ describe("worktreesDirectory", () => {
   });
 });
 
+// fork: file-placement
 describe("projectsDirectory", () => {
   it("remembers previous Projects folders once each so their copies stay managed", () => {
     const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { projectsDirectory: "/a" });

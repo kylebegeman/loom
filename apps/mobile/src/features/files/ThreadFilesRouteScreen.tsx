@@ -282,25 +282,26 @@ function FileContent(props: {
 
   if (props.activeMode === "preview" && isImageFile) {
     if (isSvgImagePreviewFile(props.relativePath)) {
-      return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />;
+      return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />; // fork: everyday-workflows
     }
     return (
       <WorkspaceFileImagePreview
         accessibilityLabel={basename(props.relativePath)}
         uri={props.previewUri}
         actionsSource={props.mediaSource}
-        onRetry={props.onRetryPreview}
+        onRetry={props.onRetryPreview} // fork: everyday-workflows
       />
     );
   }
 
   if (props.activeMode === "preview" && isBrowserFile) {
-    return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />;
+    return <WorkspaceFileWebPreview uri={props.previewUri} onRetry={props.onRetryPreview} />; // fork: everyday-workflows
   }
 
   if (props.fileError && props.fileContents === null) {
     return (
       <View className="flex-1 items-center justify-center bg-sheet px-6">
+        {/* fork: everyday-workflows */}
         <EmptyState
           title="File unavailable"
           detail={props.fileError}

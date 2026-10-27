@@ -23,6 +23,7 @@ export interface WorktreeSetupCardProps {
   working: boolean;
   onCancel: () => void;
   onWorkLocally: (() => void) | null;
+  // fork: library-launch-files
   /** The computer Library project files are prepared on. */
   computerLabel: string | null;
   /** Resumes a failed Library file preparation. */
@@ -53,14 +54,16 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
   const now = useVisibleSecondClock(running || working);
   const failed =
     snapshot.phase === "failed" || snapshot.stages.some((stage) => stage.status === "failed");
+  // fork: library-launch-files
   const projectFiles = snapshot.kind === "project-files";
   const computer = props.computerLabel ?? "this computer";
   const label =
+    // fork: library-launch-files -- Library project files get their own labels
     projectFiles && !(handedOff && working)
       ? running
         ? `Preparing files on ${computer}…`
         : snapshot.phase === "cancelled"
-          ? "File preparation cancelled"
+          ? "File preparation cancelled" // fork: library-launch-files
           : failed
             ? `Couldn't prepare files on ${computer}`
             : "Files ready"
@@ -69,16 +72,17 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
         : running
           ? handedOff
             ? "Setup continues…"
-            : "Preparing workspace…"
+            : "Preparing workspace…" // fork: project-lifecycle
           : snapshot.phase === "cancelled"
-            ? "Workspace setup cancelled"
+            ? "Workspace setup cancelled" // fork: project-lifecycle
             : snapshot.phase === "failed"
-              ? "Workspace setup failed"
+              ? "Workspace setup failed" // fork: project-lifecycle
               : failed
                 ? "Setup script failed"
-                : "Workspace ready";
+                : "Workspace ready"; // fork: project-lifecycle
 
   return (
+    // fork: project-lifecycle
     <View accessibilityLabel="Workspace setup" className="py-1">
       <View className="min-h-11 flex-row items-center gap-2 border-b border-border px-1">
         <HeaderLabel
@@ -99,7 +103,7 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
           accessibilityLabel={
             backgroundSetup
               ? `Background setup is still running: ${scriptName}. Show setup progress.`
-              : "Workspace setup details"
+              : "Workspace setup details" // fork: project-lifecycle
           }
           accessibilityState={{ expanded: detailsOpen }}
           onPress={() => setDetailsOpen(true)}
@@ -152,6 +156,7 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
                 animate={!detailsOpen}
               />
             ))}
+          {/* fork: library-launch-files */}
           {projectFiles && snapshot.phase === "failed" ? (
             <>
               {snapshot.error ? (
@@ -217,6 +222,7 @@ function HeaderLabel({
   );
 }
 
+// fork: library-launch-files
 function FilesActions({
   onRetry,
   onCancel,
@@ -252,12 +258,13 @@ function SetupDetailsSheet({
   turnStarted,
   onCancel,
   onWorkLocally,
-  onRetry,
+  onRetry, // fork: library-launch-files
   onClose,
   now,
 }: WorktreeSetupCardProps & { onClose: () => void; now: number }) {
   const insets = useSafeAreaInsets();
   const [bodyHeight, setBodyHeight] = useState(0);
+  // fork: library-launch-files
   const projectFiles = snapshot.kind === "project-files";
   const canCancel = snapshot.phase === "running" && (projectFiles || !turnStarted);
   return (
@@ -288,14 +295,16 @@ function SetupDetailsSheet({
             {snapshot.error}
           </Text>
         ) : null}
+        {/* fork: library-launch-files */}
         {projectFiles && snapshot.phase === "failed" ? (
           <FilesActions onRetry={onRetry} onCancel={onCancel} onClose={onClose} />
         ) : null}
         {canCancel ? (
           <View className="mt-3 flex-row items-center justify-end gap-4 border-t border-border pt-1">
             <Button
-              label={projectFiles ? "Cancel" : "Cancel setup"}
+              label={projectFiles ? "Cancel" : "Cancel setup"} // fork: library-launch-files
               tone="danger"
+              // fork: library-launch-files
               accessibilityLabel={
                 projectFiles ? "Cancel preparing project files" : "Cancel worktree setup"
               }
@@ -304,6 +313,7 @@ function SetupDetailsSheet({
                 onCancel();
               }}
             />
+            {/* fork: library-launch-files */}
             {onWorkLocally && !projectFiles ? (
               <Button
                 label="Work locally"
@@ -343,7 +353,7 @@ function StageRow({
       ? null
       : stage.status === "skipped"
         ? (stage.detail ?? "skipped")
-        : stage.status === "running" && stage.percent !== null
+        : stage.status === "running" && stage.percent !== null // fork: library-launch-files
           ? `${stage.percent}%`
           : stage.detail;
   return (

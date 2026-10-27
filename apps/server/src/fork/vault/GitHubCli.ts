@@ -27,7 +27,7 @@ export class GitHubCli extends Context.Service<
     >;
   }
 >()("t3/fork/vault/GitHubCli") {}
-export const githubArgs = (repository: string, op: VaultGitHubOperation): string[] => {
+const githubArgs = (repository: string, op: VaultGitHubOperation): string[] => {
   const repo = ["--repo", repository];
   switch (op.action) {
     case "repo-view":

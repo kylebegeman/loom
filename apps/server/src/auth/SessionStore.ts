@@ -10,8 +10,8 @@ import {
   RuntimeMode,
   type ServerAuthSessionMethod,
 } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { identitySessionPrefix, isCurrentIdentitySession } from "./identityPolicy.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sign-in
+import { identitySessionPrefix, isCurrentIdentitySession } from "./identityPolicy.ts"; // fork: library-sign-in
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -398,7 +398,7 @@ export class SessionStore extends Context.Service<
     readonly legacyCookieName: string | undefined;
     readonly issue: (input?: {
       readonly ttl?: Duration.Duration;
-      readonly expiresAt?: DateTime.DateTime;
+      readonly expiresAt?: DateTime.DateTime; // fork: library-projects
       readonly subject?: string;
       readonly method?: ServerAuthSessionMethod;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -517,7 +517,7 @@ function toAuthClientSession(input: Omit<AuthClientSession, "current">): AuthCli
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  const identityPrefix = identitySessionPrefix(yield* HostProcess.Environment);
+  const identityPrefix = identitySessionPrefix(yield* HostProcess.Environment); // fork: library-sign-in
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -692,6 +692,7 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ cause }))),
       );
       const issuedAt = yield* DateTime.now;
+      // fork: library-projects
       if (
         input?.expiresAt !== undefined &&
         (input.expiresAt.epochMilliseconds <= issuedAt.epochMilliseconds ||
@@ -855,6 +856,7 @@ const make = Effect.gen(function* () {
         Effect.mapError((cause) => new InvalidSessionTokenPayloadError({ cause })),
       );
 
+      // fork: library-sign-in
       if (!isCurrentIdentitySession(claims.sub, identityPrefix))
         return yield* new UnknownSessionTokenError({ sessionId: claims.sid });
       const observedAt = yield* DateTime.now;
@@ -988,6 +990,7 @@ const make = Effect.gen(function* () {
     if (Option.isNone(row)) {
       return yield* new UnknownWebSocketSessionError({ sessionId: claims.sid });
     }
+    // fork: library-sign-in
     if (!isCurrentIdentitySession(row.value.subject, identityPrefix))
       return yield* new UnknownWebSocketSessionError({ sessionId: claims.sid });
     if (row.value.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {

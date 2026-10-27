@@ -19,7 +19,7 @@ import { Argument, Command, Flag } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
+import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts"; // fork: mobile-identity
 
 export type NativePlatform = "ios" | "android";
 const NativeClientRecord = Schema.Struct({ fingerprint: Schema.String, binary: Schema.String });
@@ -137,6 +137,7 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
+// fork: mobile-identity
 const developmentIdentity = resolveLoomMobileIdentity({ APP_VARIANT: "development" });
 const developmentBundleId = (platform: NativePlatform) =>
   platform === "ios" ? developmentIdentity.iosBundleIdentifier : "com.t3tools.t3code.dev";
@@ -184,6 +185,7 @@ const command = Effect.fn("nativeClient.command")(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const environment = yield* HostProcess.Environment;
   const log = inherit ? yield* BuildLog : null;
+  // fork: native-dev-client
   const path = yield* Path.Path;
   const executable =
     program === "vp"
@@ -360,10 +362,11 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
   device: string,
   run: typeof command = command,
 ) {
-  const bundleId = developmentBundleId(platform);
+  const bundleId = developmentBundleId(platform); // fork: mobile-identity
   if (platform === "ios") {
     const apps = yield* run("xcrun", ["simctl", "listapps", device]);
     if (!apps.includes(`"${bundleId}"`)) return null;
+    // fork: native-dev-client
     const app = yield* run("xcrun", ["simctl", "get_app_container", device, bundleId, "app"]);
     // Simulator entitlements live in Mach-O sections, not necessarily in the signature.
     // Full bundle signing distinguishes Xcode's usable build from the earlier linker-only binary.
@@ -371,7 +374,7 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
       Effect.as(true),
       Effect.catchTags({ NativeClientError: () => Effect.succeed(false) }),
     );
-    if (!verified) return null;
+    if (!verified) return null; // fork: native-dev-client
     return yield* hashBundle(app);
   }
   const installed = yield* run("adb", ["-s", device, "shell", "pm", "list", "packages", bundleId]);
@@ -428,6 +431,7 @@ export const prebuildAndroid = Effect.fn("nativeClient.prebuildAndroid")(functio
   );
 });
 
+// fork: mobile-identity
 const artifactNames = { ios: `${iosProductName}.app`, android: "app-debug.apk" } as const;
 // R2 requires equal-sized parts and Workers cap request bodies at 100 MB.
 const partSize = 64 * 1024 * 1024;
@@ -740,9 +744,9 @@ const build = Effect.fn("nativeClient.build")(function* (
         [
           "xcodebuild",
           "-workspace",
-          path.join(mobile, `ios/${iosProductName}.xcworkspace`),
+          path.join(mobile, `ios/${iosProductName}.xcworkspace`), // fork: mobile-identity
           "-scheme",
-          iosProductName,
+          iosProductName, // fork: mobile-identity
           "-configuration",
           "Debug",
           "-destination",
@@ -751,6 +755,7 @@ const build = Effect.fn("nativeClient.build")(function* (
           output,
           "ARCHS=arm64",
           "ONLY_ACTIVE_ARCH=NO",
+          // fork: native-dev-client
           // Preserve entitlements with local ad-hoc signing, without an Apple account.
           "CODE_SIGNING_ALLOWED=YES",
           "CODE_SIGN_IDENTITY=-",
@@ -897,6 +902,7 @@ const install = Effect.fn("nativeClient.install")(function* (
         Effect.fail(
           error.message.includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
             ? new NativeClientError({
+                // fork: mobile-identity
                 message: `The installed client has a different signature. Remove it with adb -s ${device} uninstall ${developmentBundleId(platform)} (this clears its pairings), then run ensure again.`,
               })
             : error,

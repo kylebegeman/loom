@@ -8,7 +8,7 @@ import {
   type ThreadId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 
@@ -17,6 +17,7 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as OrchestrationMcp from "./OrchestratorMcpService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
+// fork: bots
 /**
  * A bot run works within its bot's limits, and a thread it started or scheduled would outlive
  * them and could start bots or arm triggers the run itself may not.
@@ -96,6 +97,7 @@ const UNAVAILABLE_REPAIRS = new Map<string, string>([
 export const unavailable = (error?: { readonly _tag: string }) =>
   new OrchestratorMcpFailure({
     code: "orchestration_error",
+    // fork: mcp-refusals
     message:
       (error === undefined ? undefined : UNAVAILABLE_REPAIRS.get(error._tag)) ??
       `The operation could not be completed. ${TRY_AGAIN}`,

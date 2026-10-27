@@ -4,14 +4,16 @@ import {
 } from "@t3tools/shared/advertisedEndpoint";
 import {
   DesktopServerExposureModeSchema,
-  DesktopTailscaleServeStateSchema,
+  DesktopTailscaleServeStateSchema, // fork: tailnet-ownership
   type AdvertisedEndpoint,
   type AdvertisedEndpointProvider,
   type DesktopServerExposureMode,
   type DesktopServerExposureState,
+  // fork: tailnet-ownership
   type DesktopTailscaleServeState,
   type DesktopTailscaleServeStatus,
 } from "@t3tools/contracts";
+// fork: tailnet-ownership
 import {
   inspectTailscaleServe,
   isTailscaleIpv4Address,
@@ -22,7 +24,7 @@ import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
+import * as FileSystem from "effect/FileSystem"; // fork: tailnet-ownership
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -33,7 +35,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
-import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts"; // fork: tailnet-ownership
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
 
@@ -254,11 +256,13 @@ export class DesktopTailscaleServePersistenceError extends Schema.TaggedError<De
   }
 }
 
+// fork: tailnet-ownership
 const DesktopTailscaleServeRefusalReason = Schema.Literals([
   "backend-port",
   ...DesktopTailscaleServeStateSchema.literals,
 ]);
 
+// fork: tailnet-ownership
 /** Enabling Serve where the backend could never claim the port. */
 export class DesktopTailscaleServeRefusedError extends Schema.TaggedError<DesktopTailscaleServeRefusedError>()(
   "DesktopTailscaleServeRefusedError",
@@ -291,6 +295,7 @@ export class DesktopTailscaleServeRefusedError extends Schema.TaggedError<Deskto
   }
 }
 
+// fork: tailnet-ownership
 const REFUSED_TAILSCALE_SERVE_STATES: ReadonlySet<DesktopTailscaleServeState> = new Set([
   "port-held",
   "tcp-forward",
@@ -306,6 +311,7 @@ export const DesktopServerExposureSetModeError = Schema.Union([
 ]);
 export type DesktopServerExposureSetModeError = typeof DesktopServerExposureSetModeError.Type;
 
+// fork: tailnet-ownership
 export const DesktopTailscaleServeChangeError = Schema.Union([
   DesktopTailscaleServePersistenceError,
   DesktopTailscaleServeRefusedError,
@@ -316,7 +322,7 @@ export const DesktopServerExposureError = Schema.Union([
   DesktopServerExposureNoNetworkAddressError,
   DesktopServerExposureModePersistenceError,
   DesktopTailscaleServePersistenceError,
-  DesktopTailscaleServeRefusedError,
+  DesktopTailscaleServeRefusedError, // fork: tailnet-ownership
 ]);
 export type DesktopServerExposureError = typeof DesktopServerExposureError.Type;
 
@@ -347,7 +353,7 @@ export class DesktopServerExposure extends Context.Service<
     readonly setTailscaleServeEnabled: (input: {
       readonly enabled: boolean;
       readonly port?: number;
-    }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServeChangeError>;
+    }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServeChangeError>; // fork: tailnet-ownership
     readonly getAdvertisedEndpoints: Effect.Effect<readonly AdvertisedEndpoint[]>;
   }
 >()("@t3tools/desktop/backend/DesktopServerExposure") {}
@@ -383,6 +389,7 @@ const initialRuntimeState = (): RuntimeState =>
     port: 0,
   });
 
+// fork: tailnet-ownership
 const toContractState = (
   state: RuntimeState,
   tailscaleServe: DesktopTailscaleServeStatus | null = null,
@@ -392,9 +399,10 @@ const toContractState = (
   advertisedHost: Option.getOrNull(state.advertisedHost),
   tailscaleServeEnabled: state.tailscaleServeEnabled,
   tailscaleServePort: state.tailscaleServePort,
-  tailscaleServe,
+  tailscaleServe, // fork: tailnet-ownership
 });
 
+// fork: tailnet-ownership
 /**
  * Whether the backend on `port` holds `servePort`, read the way it claims the
  * port on start. Spawning Tailscale can raise a macOS TCC prompt, so callers
@@ -521,6 +529,7 @@ const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): bo
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
+  // fork: tailnet-ownership
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const networkInterfaces = yield* DesktopNetworkInterfaces.DesktopNetworkInterfaces;
@@ -545,6 +554,7 @@ export const make = Effect.gen(function* () {
 
   const readNetworkInterfaces = networkInterfaces.read;
 
+  // fork: tailnet-ownership
   const inspectServe = (input: { readonly port: number; readonly servePort: number }) =>
     inspectDesktopTailscaleServe(input).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
@@ -552,6 +562,7 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
     );
 
+  // fork: tailnet-ownership
   const getState = Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
     return toContractState(
@@ -626,6 +637,7 @@ export const make = Effect.gen(function* () {
         enabled: input.enabled,
         ...(input.port === undefined ? {} : { port: input.port }),
       });
+      // fork: tailnet-ownership
       const current = yield* Ref.get(stateRef);
       const servePort = input.port ?? current.tailscaleServePort;
       if (input.enabled && servePort === current.port) {
@@ -668,6 +680,7 @@ export const make = Effect.gen(function* () {
         tailscaleServePort: result.settings.tailscaleServePort,
       }));
 
+      // fork: tailnet-ownership
       // Enabling again retries a claim that did not take, so it relaunches even when nothing changed.
       return {
         state: toContractState(nextState, inspection),
@@ -696,6 +709,7 @@ export const make = Effect.gen(function* () {
       port: state.port,
       serveEnabled: state.tailscaleServeEnabled,
       servePort: state.tailscaleServePort,
+      // fork: tailnet-ownership
       localHttpUrl: state.localHttpUrl,
       ipEndpoints: state.mode === "network-accessible",
       networkInterfaces: currentNetworkInterfaces,

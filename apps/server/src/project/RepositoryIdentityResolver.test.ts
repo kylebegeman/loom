@@ -4,10 +4,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
+import * as Layer from "effect/Layer"; // fork: project-lifecycle
 import * as Path from "effect/Path";
 
-import * as ServerConfig from "../config.ts";
+import * as ServerConfig from "../config.ts"; // fork: project-lifecycle
 import * as ProcessRunner from "../processRunner.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 
@@ -23,6 +23,7 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
+// fork: project-lifecycle
 it.layer(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-repository-identity-state-" }).pipe(
     Layer.provideMerge(NodeServices.layer),

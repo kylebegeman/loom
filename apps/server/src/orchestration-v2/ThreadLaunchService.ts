@@ -1,5 +1,5 @@
-import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
-import * as SetupMarker from "../workspace/setupMarker.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: project-lifecycle
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -113,7 +113,7 @@ export interface ThreadLaunchInput {
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
   /** Returns only after workspace setup succeeds; used before releasing another host. */
-  readonly waitForPreparation?: boolean;
+  readonly waitForPreparation?: boolean; // fork: workspace-handoff
   readonly initialMessage?: ThreadLaunchInitialMessage;
   readonly importedNativeThread?: {
     readonly ref: {
@@ -129,6 +129,7 @@ export interface ThreadLaunchInput {
 
 type PreparationInput = Pick<
   ThreadLaunchInput,
+  // fork: workspace-handoff
   "commandId" | "projectId" | "workspaceStrategy" | "initialMessage" | "waitForPreparation"
 > & {
   readonly reusedWorktree?: { readonly baseRef: string };
@@ -236,6 +237,7 @@ function failureDetail(error: unknown): string {
 }
 
 const make = Effect.gen(function* () {
+  // fork: project-lifecycle
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const projects = yield* ProjectService.ProjectService;
@@ -435,7 +437,7 @@ const make = Effect.gen(function* () {
     );
 
     const reused = input.reusedWorktree;
-    const createdWorktree = input.workspaceStrategy.type === "worktree";
+    const createdWorktree = input.workspaceStrategy.type === "worktree"; // fork: project-lifecycle
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
@@ -451,15 +453,17 @@ const make = Effect.gen(function* () {
         fiber: yield* Effect.fiber,
       });
     } else {
+      // fork: project-lifecycle -- every workspace tracks its setup, not only reused worktrees.
       yield* setupTracker.begin({
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
-        baseRef: reused?.baseRef ?? null,
+        baseRef: reused?.baseRef ?? null, // fork: project-lifecycle
         stages: ["setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
     }
     yield* Effect.gen(function* () {
+      // fork: project-lifecycle
       yield* restoreManagedProjectCheckout(project.workspaceRoot).pipe(
         Effect.provide(restorationServices),
         Effect.mapError(mapError(input, "resolve-project", threadId)),
@@ -752,6 +756,7 @@ const make = Effect.gen(function* () {
               status: completion.exitCode === 0 ? "done" : "failed",
               detail: `exited with ${completion.exitCode ?? "no exit code"}`,
             });
+            // fork: workspace-handoff -- awaited and pending-root setup fail the launch.
             if (
               completion.exitCode !== 0 &&
               (!setup.async || input.waitForPreparation === true || rootSetupPending)
@@ -762,6 +767,7 @@ const make = Effect.gen(function* () {
                 threadId,
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
+          // fork: workspace-handoff
           if (setup.async && input.waitForPreparation !== true && !rootSetupPending) {
             awaitAsyncSetup = awaitCompletion.pipe(
               Effect.catchCause((cause) =>
@@ -775,6 +781,7 @@ const make = Effect.gen(function* () {
             yield* awaitCompletion;
           }
         } else {
+          // fork: workspace-handoff
           if (input.waitForPreparation === true || rootSetupPending)
             return yield* mapError(
               input,
@@ -786,6 +793,7 @@ const make = Effect.gen(function* () {
       } else {
         yield* setupTracker.stageStatus(threadId, "setup-script", "skipped");
       }
+      // fork: project-lifecycle
       if (rootSetupPending)
         yield* SetupMarker.clear(project.workspaceRoot).pipe(
           Effect.provide(restorationServices),
@@ -828,7 +836,7 @@ const make = Effect.gen(function* () {
               .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
               .pipe(Effect.ignore);
           if (
-            createdWorktree &&
+            createdWorktree && // fork: project-lifecycle
             createdWorktreePath &&
             ((cancelled && !runReleased) || !workspaceRecorded)
           ) {
@@ -928,6 +936,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* prepare;
       }
+      // fork: workspace-handoff
       // A foreground launch surfaces these reads, so they share the setup error.
       const watchError = mapError(input, "run-setup-script", threadId);
       const afterSequence = yield* threads
@@ -948,11 +957,12 @@ const make = Effect.gen(function* () {
                 stored.event.payload.status === "cancelled"),
           ),
           Stream.runHead,
-          Effect.mapError(watchError),
+          Effect.mapError(watchError), // fork: workspace-handoff
           Effect.flatMap((event) => (Option.isSome(event) ? Effect.interrupt : Effect.never)),
         );
       yield* Effect.raceFirst(prepare, interruption);
     }).pipe(
+      // fork: workspace-handoff -- an awaited launch yields this; only background ones fork it.
       Effect.onError((cause) =>
         failPreparedRun(
           input,
@@ -961,8 +971,11 @@ const make = Effect.gen(function* () {
           Cause.hasInterruptsOnly(cause) ? "Worktree setup cancelled." : Cause.squash(cause),
         ),
       ),
+      // fork: workspace-handoff -- Effect.ignoreCause moved to the background branch below.
       Effect.ensuring(releasePreparation(input.commandId)),
+      // fork: workspace-handoff -- Effect.forkIn moved to the background branch below.
     );
+    // fork: workspace-handoff
     if (input.waitForPreparation === true) yield* preparation;
     else yield* preparation.pipe(Effect.ignoreCause, Effect.forkIn(preparationScope));
   });
@@ -1166,6 +1179,7 @@ const make = Effect.gen(function* () {
                 ),
               );
         const threadId =
+          // fork: library-projects -- a Library launch claims through its operation, so claimed is null.
           claimed?.storedEvents.find((stored) => stored.event.type.startsWith("thread."))?.event
             .threadId ?? candidateThreadId;
         if (project.id !== input.projectId) {
@@ -1238,12 +1252,12 @@ const make = Effect.gen(function* () {
         const boundWorktreePath = projection.thread.worktreePath;
         const preparationStrategy: ThreadLaunchWorkspaceStrategy =
           Option.isSome(launchReceipt) &&
-          (workspaceStrategy.type === "root" || retryEmptyPreparation) &&
+          (workspaceStrategy.type === "root" || retryEmptyPreparation) && // fork: workspace-handoff
           boundWorktreePath !== null
             ? {
                 type: "existing_worktree",
                 worktreePath: boundWorktreePath,
-                branch: projection.thread.branch ?? undefined,
+                branch: projection.thread.branch ?? undefined, // fork: workspace-handoff
               }
             : workspaceStrategy;
         if (shouldSchedule) {
@@ -1264,6 +1278,7 @@ const make = Effect.gen(function* () {
                   {
                     ...input,
                     workspaceStrategy: preparationStrategy,
+                    // fork: workspace-handoff -- a retried worktree keeps its recorded base.
                     ...(retryEmptyPreparation &&
                     Option.isSome(launchReceipt) &&
                     workspaceStrategy.type === "worktree" &&
@@ -1278,6 +1293,7 @@ const make = Effect.gen(function* () {
                 yield* releasePreparation(input.commandId);
               }
             }).pipe(Effect.onError(() => releasePreparation(input.commandId)));
+            // fork: workspace-handoff
           } else if (input.waitForPreparation === true) {
             return yield* mapError(
               input,
@@ -1294,7 +1310,7 @@ const make = Effect.gen(function* () {
           // only a repeat of the final write counts as resumed.
           resumed:
             input.initialMessage === undefined
-              ? Option.isSome(launchReceipt) || claimed?.replayed === true
+              ? Option.isSome(launchReceipt) || claimed?.replayed === true // fork: library-projects
               : messageWasAlreadyAccepted,
         };
       });

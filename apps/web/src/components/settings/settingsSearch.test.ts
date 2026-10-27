@@ -51,6 +51,7 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  // fork: fleet-connections
   it.each(["rename computer", "friendly name", "nickname"])(
     "finds shared computer naming from %s",
     (query) => {
@@ -147,6 +148,7 @@ describe("searchSettings", () => {
     });
   });
 
+  // fork: ext-keybindings
   it("does not offer archived inspector shortcuts in settings search", () => {
     expect(searchSettings("loom.thread-inspector")).toEqual([]);
   });

@@ -20,11 +20,13 @@ const FOLLOW_UP_OPTIONS: ReadonlyArray<{
 }> = [
   {
     behavior: "queue",
+    // fork: everyday-workflows
     label: "Send next",
     description: "Run after the current turn finishes.",
   },
   {
     behavior: "steer",
+    // fork: everyday-workflows
     label: "Send now",
     description: "Guide the agent during the current turn.",
   },
@@ -69,6 +71,7 @@ export function SettingsFollowUpRouteScreen() {
           ))}
         </SettingsSection>
         <Text className="px-2 text-sm text-foreground-muted">
+          {/* fork: everyday-workflows */}
           Long-press Send to choose an action for one message, including Restart turn. With a
           hardware keyboard, hold Command while sending to switch between Send next and Send now.
         </Text>

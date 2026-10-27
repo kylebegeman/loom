@@ -41,7 +41,7 @@ function load() {
     } catch {
       appAtomRegistry.set(state, {
         ...appAtomRegistry.get(state),
-        error: "Could not restore review drafts. Try again.",
+        error: "Could not restore review drafts. Try again.", // fork: everyday-workflows
       });
       loading = null;
     }
@@ -51,8 +51,10 @@ function load() {
 async function persist() {
   if (timer) clearTimeout(timer);
   timer = null;
+  // fork: everyday-workflows
   return queue.run(async () => {
     const current = appAtomRegistry.get(state);
+    // fork: everyday-workflows
     if (!current.ready) return false;
     if (current.drafts === savedDrafts) return true;
     try {
@@ -65,13 +67,13 @@ async function persist() {
       savedDrafts = current.drafts;
       if (appAtomRegistry.get(state).error)
         appAtomRegistry.set(state, { ...appAtomRegistry.get(state), error: null });
-      return true;
+      return true; // fork: everyday-workflows
     } catch {
       appAtomRegistry.set(state, {
         ...appAtomRegistry.get(state),
         error: "Drafts are kept in this session, but could not be saved on this device.",
       });
-      return false;
+      return false; // fork: everyday-workflows
     }
   });
 }
@@ -104,6 +106,6 @@ export function usePullRequestReviewDraft(params: PullRequestParams) {
     error: snapshot.error,
     update,
     flush: persist,
-    retry: load,
+    retry: load, // fork: everyday-workflows
   };
 }

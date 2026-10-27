@@ -1,7 +1,7 @@
 import {
   authScopeRequiredResponse,
   AuthAccessReadScope,
-  AuthAccessTokenType,
+  AuthAccessTokenType, // fork: library-sign-in
   AuthAccessWriteScope,
   AuthStandardClientScopes,
   AuthGrantScope,
@@ -25,7 +25,7 @@ import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: library-sign-in
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import * as Cookies from "effect/http/Cookies";
@@ -35,7 +35,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
-import * as PocketId from "./PocketId.ts";
+import * as PocketId from "./PocketId.ts"; // fork: library-sign-in
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
 import { deriveAuthClientMetadata, isHttpsRequest, sessionCookieOptions } from "./utils.ts"; // fork: secure-session-cookies
 import { verifyRequestDpopProof } from "./dpop.ts";
@@ -205,12 +205,13 @@ const appendSessionCookie = (
   cookieName: string,
   token: string,
   expiresAt: DateTime.DateTime,
-  secure: boolean,
+  secure: boolean, // fork: secure-session-cookies
 ) =>
   Effect.fromResult(
     Cookies.set(Cookies.empty, cookieName, token, {
       ...sessionCookieOptions(secure), // fork: secure-session-cookies
       expires: DateTime.toDate(expiresAt),
+      // fork: secure-session-cookies -- sessionCookieOptions sets httpOnly, path and sameSite.
     }),
   ).pipe(
     Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")),
@@ -270,7 +271,7 @@ export const layer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const sessions = yield* SessionStore.SessionStore;
-    const pocketId = yield* Effect.serviceOption(PocketId.PocketId);
+    const pocketId = yield* Effect.serviceOption(PocketId.PocketId); // fork: library-sign-in
 
     return handlers
       .handle(
@@ -331,6 +332,7 @@ export const layer = HttpApiBuilder.group(
               Cookies.set(Cookies.empty, cookieName, result.sessionToken, {
                 ...cookieOptions, // fork: secure-session-cookies
                 expires: DateTime.toDate(result.response.expiresAt),
+                // fork: secure-session-cookies -- cookieOptions sets httpOnly, path and sameSite.
               }),
             ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")));
             const sessionCookies = result.expireNormalCookie
@@ -387,6 +389,7 @@ export const layer = HttpApiBuilder.group(
                 )
               : undefined;
             yield* appendCredentialResponseHeaders;
+            // fork: library-sign-in
             if (args.payload.subject_token_type === AuthAccessTokenType) {
               if (Option.isNone(pocketId))
                 return yield* failEnvironmentAuthInvalid("invalid_credential");

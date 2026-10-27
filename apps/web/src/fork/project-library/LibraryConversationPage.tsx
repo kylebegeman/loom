@@ -34,7 +34,7 @@ import { BriefSuggestionOffer } from "./BriefSuggestionOffer";
 import { SuggestBriefUpdates } from "./SuggestBriefUpdates";
 
 /** Anchors each saved item, so a link can name the one to open at. */
-export const libraryItemAnchor = (itemId: string) => `item-${itemId}`;
+const libraryItemAnchor = (itemId: string) => `item-${itemId}`;
 
 export function LibraryConversationPage({
   conversationId,

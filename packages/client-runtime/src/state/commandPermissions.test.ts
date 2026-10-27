@@ -1,4 +1,5 @@
-import { createWorkspaceHandoffAtoms } from "../fork/workspace-handoff.ts";
+import { createWorkspaceHandoffAtoms } from "../fork/workspace-handoff.ts"; // fork: workspace-handoff
+// fork: workspace-handoff
 import {
   WORKSPACE_HANDOFF_WS_METHODS,
   FORK_CLIENT_GUARDED_RPC_SCOPES,
@@ -26,8 +27,8 @@ import {
   type AuthSessionState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Deferred from "effect/Deferred";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import * as Deferred from "effect/Deferred"; // fork: ext-core
+import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts"; // fork: ext-core
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -137,6 +138,7 @@ describe("command permissions", () => {
     ),
   );
 
+  // fork: workspace-handoff
   it.effect.each(["offer", "prepare", "finish", "resume"] as const)(
     "handoff %s follows the selected host's grant",
     (method) =>
@@ -430,6 +432,7 @@ it.effect("rejects protected unary and streamed RPCs outside a guarded command",
   }),
 );
 
+// fork: ext-core
 it.effect("checks the destination grant for document-lived command results", () =>
   Effect.scoped(
     Effect.gen(function* () {

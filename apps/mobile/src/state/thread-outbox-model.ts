@@ -60,7 +60,7 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   interactionMode: Schema.optional(ProviderInteractionMode),
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
-  deliveryAttempted: Schema.optional(Schema.Boolean),
+  deliveryAttempted: Schema.optional(Schema.Boolean), // fork: failed-run-retry
 });
 
 const decodeStoredQueuedThreadMessage = Schema.decodeUnknownSync(QueuedThreadMessageSchema);
@@ -82,6 +82,7 @@ export interface QueuedThreadMessage {
   readonly threadId: ThreadId;
   readonly messageId: MessageId;
   readonly commandId: CommandId;
+  // fork: failed-run-retry
   /** Persisted before dispatch so an interrupted acknowledgement stays visible after restart. */
   readonly deliveryAttempted?: boolean;
   readonly text: string;

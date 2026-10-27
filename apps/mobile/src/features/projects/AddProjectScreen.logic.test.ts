@@ -20,6 +20,7 @@ describe("resolveAddProjectEnvironment", () => {
       ),
     ).toBeNull();
   });
+  // fork: fleet-connections -- a selected computer that drops out or goes offline is not replaced
   it("does not substitute another computer when an explicitly selected computer is removed", () => {
     expect(
       resolveAddProjectEnvironment([environment(ENVIRONMENT_B, "connected")], ENVIRONMENT_A),

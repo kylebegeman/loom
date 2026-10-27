@@ -52,6 +52,7 @@ const PullRequestListPreferences = Schema.Struct({
 });
 export type PullRequestListPreferences = typeof PullRequestListPreferences.Type;
 
+// fork: library
 const isLibraryLaunches = Schema.is(
   Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(256 * 1024))),
 );
@@ -344,9 +345,11 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
   }
+  // fork: project-navigation
   if (parsed.loomNavigationView === "threads" || parsed.loomNavigationView === "projects") {
     preferences.loomNavigationView = parsed.loomNavigationView;
   }
+  // fork: library
   const libraryAuthority = parsed["loom.library.authorityEnvironmentId"];
   if (
     libraryAuthority === null ||
@@ -360,6 +363,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.loomLibraryLaunches = parsed.loomLibraryLaunches;
   if (isLibraryLaunches(parsed.loomLibraryFileChanges))
     preferences.loomLibraryFileChanges = parsed.loomLibraryFileChanges;
+  // fork: project-home
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
   if (isThreadListFilters(parsed.threadListFilters)) {

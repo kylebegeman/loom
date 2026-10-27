@@ -61,7 +61,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
-import * as ProjectPlacement from "./project/ProjectPlacement.ts";
+import * as ProjectPlacement from "./project/ProjectPlacement.ts"; // fork: file-placement
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
@@ -523,6 +523,7 @@ it.effect(
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           scratchRoot: Effect.succeedNone,
         }),
+        // fork: file-placement -- ProjectPlacement supplies the folders namedProjectsRoot did
         Layer.mock(ProjectPlacement.ProjectPlacement)({
           folders: Effect.succeed({ projects: "/projects", worktrees: "/worktrees" }),
         }),
@@ -703,6 +704,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         scratchRoot: Effect.succeedNone,
       }),
+      // fork: file-placement -- ProjectPlacement supplies the folders namedProjectsRoot did
       Layer.mock(ProjectPlacement.ProjectPlacement)({
         folders: Effect.succeed({ projects: "/projects", worktrees: "/worktrees" }),
       }),

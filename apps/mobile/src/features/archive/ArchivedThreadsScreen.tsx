@@ -16,13 +16,13 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
-import { Platform, Pressable, RefreshControl, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, RefreshControl, useWindowDimensions, View } from "react-native"; // fork: everyday-workflows
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Menu } from "../../components/ui/Menu";
+import { Menu } from "../../components/ui/Menu"; // fork: everyday-workflows
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { relativeTime } from "../../lib/time";
@@ -32,7 +32,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import type { ArchivedThreadGroup, ArchivedThreadSortOrder } from "./archivedThreadList";
 import { SettingsScreenContent } from "../settings/components/SettingsScreen";
-import { openSettings } from "../settings/settings-navigation";
+import { openSettings } from "../settings/settings-navigation"; // fork: fleet-connections
 
 export interface ArchivedThreadsHeaderEnvironment {
   readonly environmentId: EnvironmentId;
@@ -74,11 +74,11 @@ function ArchivedThreadsHeader(props: {
           items: [
             {
               id: "environment",
-              title: "Computer",
+              title: "Computer", // fork: fleet-connections
               items: [
                 {
                   id: "environment:all",
-                  title: "All computers",
+                  title: "All computers", // fork: fleet-connections
                   selected: props.selectedEnvironmentId === null,
                   onPress: () => props.onEnvironmentChange(null),
                 },
@@ -196,6 +196,7 @@ function ArchivedThreadRow(props: {
     AuthOrchestrationOperateScope,
   );
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
+  // fork: everyday-workflows
   const subtitle = [
     Platform.OS === "ios" ? null : props.environmentLabel,
     props.thread.branch,
@@ -242,6 +243,7 @@ function ArchivedThreadRow(props: {
           </View>
         ) : null}
       </View>
+      {/* fork: everyday-workflows */}
       {Platform.OS === "ios" && canOperateThread ? (
         <Menu
           title={props.thread.title}
@@ -281,14 +283,14 @@ function ArchivedThreadRow(props: {
       backgroundColor={cardColor}
       containerStyle={containerStyle}
       fullSwipeWidth={windowWidth - 32}
-      fullSwipeAction="primary"
+      fullSwipeAction="primary" // fork: everyday-workflows
       onDelete={props.onDelete}
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: `Restore ${props.thread.title} to threads`,
+        accessibilityLabel: `Restore ${props.thread.title} to threads`, // fork: everyday-workflows
         icon: "arrow.uturn.backward",
-        label: "Restore",
+        label: "Restore", // fork: everyday-workflows
         onPress: props.onUnarchive,
       }}
       simultaneousWith={props.simultaneousSwipeGesture}
@@ -300,13 +302,16 @@ function ArchivedThreadRow(props: {
 }
 
 function ArchiveError(props: { readonly message: string; readonly onRetry: () => void }) {
-  const navigation = useNavigation();
+  const navigation = useNavigation(); // fork: fleet-connections
   return (
     <View className="rounded-[20px] border border-danger-border bg-danger p-4">
+      {/* fork: everyday-workflows */}
       <Text className="text-base font-t3-bold text-danger-foreground">Archive incomplete</Text>
       <Text className="mt-1 text-sm text-foreground-muted">{props.message}</Text>
+      {/* fork: everyday-workflows */}
       <View className="mt-3 gap-2">
         <Button label="Try again" tone="secondary" onPress={props.onRetry} />
+        {/* fork: fleet-connections */}
         <Button
           label="Manage computers"
           tone="text"
@@ -332,6 +337,7 @@ export function ArchivedThreadsScreen(props: {
   readonly onSortOrderChange: (sortOrder: ArchivedThreadSortOrder) => void;
   readonly onUnarchiveThread: (thread: EnvironmentThreadShell) => void;
 }) {
+  // fork: everyday-workflows
   const { onDeleteThread, onUnarchiveThread, onEnvironmentChange, onSearchQueryChange, error } =
     props;
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -430,16 +436,17 @@ export function ArchivedThreadsScreen(props: {
       );
     }
 
-    if (error !== null) return null;
+    if (error !== null) return null; // fork: everyday-workflows
 
     return (
       <EmptyState
         detail={
           isFiltered
-            ? "Try another search or show all computers."
+            ? "Try another search or show all computers." // fork: fleet-connections
             : "Threads you archive will appear here."
         }
         title={isFiltered ? "No matching threads" : "No archived threads"}
+        // fork: everyday-workflows
         actionLabel={isFiltered ? "Clear filters" : undefined}
         onAction={
           isFiltered
@@ -451,7 +458,7 @@ export function ArchivedThreadsScreen(props: {
         }
       />
     );
-  }, [isFiltered, isInitialLoad, error, onEnvironmentChange, onSearchQueryChange]);
+  }, [isFiltered, isInitialLoad, error, onEnvironmentChange, onSearchQueryChange]); // fork: everyday-workflows
 
   return (
     // Without this native container, formSheet resizing mistakes the background for a header and collapses the list.

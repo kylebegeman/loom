@@ -12,9 +12,9 @@ import type {
   PcbCheckKind,
 } from "@t3tools/contracts/fork";
 
-export const AUTO_CHECK_DEBOUNCE = "2 seconds";
+const AUTO_CHECK_DEBOUNCE = "2 seconds";
 export const AUTO_CHECK_TIMEOUT = "120 seconds";
-export const AUTO_CHECK_MAX_MS = 60_000;
+const AUTO_CHECK_MAX_MS = 60_000;
 
 /** One host-owned worker avoids duplicate client runs. New saves cancel obsolete work; closing
  * the last watcher releases its process. Slow checks pause and failures wait for another save. */

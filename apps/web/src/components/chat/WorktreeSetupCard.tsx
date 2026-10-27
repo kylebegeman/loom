@@ -10,7 +10,7 @@ import {
   CircleIcon,
   LaptopIcon,
   MinusIcon,
-  RotateCcwIcon,
+  RotateCcwIcon, // fork: library-launch-files
   TerminalIcon,
   XIcon,
 } from "lucide-react";
@@ -37,6 +37,7 @@ interface WorktreeSetupCardProps {
   onRetry?: (() => void) | null;
 }
 
+// fork: library-launch-files
 const isProjectFiles = (snapshot: WorktreeSetupSnapshot) => snapshot.kind === "project-files";
 
 function elapsedMs(startedAt: string | null, endMs: number): number | null {
@@ -116,6 +117,7 @@ function ShimmerOverlay({ children }: { children: ReactNode }) {
   );
 }
 
+// fork: library-launch-files
 function headerLabel(snapshot: WorktreeSetupSnapshot, computerLabel: string | null): string {
   if (isProjectFiles(snapshot)) {
     const computer = computerLabel ?? "this computer";
@@ -132,18 +134,19 @@ function headerLabel(snapshot: WorktreeSetupSnapshot, computerLabel: string | nu
   }
   switch (snapshot.phase) {
     case "running":
-      return "Preparing workspace…";
+      return "Preparing workspace…"; // fork: project-lifecycle
     case "done":
       return snapshot.stages.some((stage) => stage.status === "failed")
-        ? "Workspace ready, setup script failed"
-        : "Workspace ready";
+        ? "Workspace ready, setup script failed" // fork: project-lifecycle
+        : "Workspace ready"; // fork: project-lifecycle
     case "failed":
-      return "Workspace setup failed";
+      return "Workspace setup failed"; // fork: project-lifecycle
     case "cancelled":
-      return "Workspace setup cancelled";
+      return "Workspace setup cancelled"; // fork: project-lifecycle
   }
 }
 
+// fork: library-launch-files
 function SetupHeaderRow({
   snapshot,
   computerLabel,
@@ -155,7 +158,7 @@ function SetupHeaderRow({
   const failed = snapshot.phase === "failed";
   const finishedWithFailedStage =
     snapshot.phase === "done" && snapshot.stages.some((stage) => stage.status === "failed");
-  const text = headerLabel(snapshot, computerLabel);
+  const text = headerLabel(snapshot, computerLabel); // fork: library-launch-files
   const tone = failed
     ? "text-destructive-foreground"
     : finishedWithFailedStage
@@ -189,15 +192,16 @@ function StageRow({
   setupRunning,
   setupEndedAt,
   scriptName,
-  projectFiles,
+  projectFiles, // fork: library-launch-files
 }: {
   stage: WorktreeSetupStage;
   setupRunning: boolean;
   setupEndedAt: string | null;
   scriptName: string | null;
-  projectFiles: boolean;
+  projectFiles: boolean; // fork: library-launch-files
 }) {
   const label =
+    // fork: library-launch-files
     stage.id === "setup-script" && scriptName
       ? scriptName
       : projectFiles && stage.id === "fetch"
@@ -210,7 +214,7 @@ function StageRow({
       : stage.status === "skipped"
         ? (stage.detail ?? "skipped")
         : (stage.id === "checkout" || (projectFiles && stage.id === "fetch")) &&
-            running &&
+            running && // fork: library-launch-files
             stage.percent !== null
           ? `${stage.percent}%`
           : stage.detail;
@@ -318,6 +322,7 @@ function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
   );
 }
 
+// fork: library-launch-files
 function CollapsedSummaryRow({
   snapshot,
   computerLabel,
@@ -331,7 +336,7 @@ function CollapsedSummaryRow({
       : snapshot.stages.some((stage) => stage.id === "setup-script" && stage.status === "failed")
         ? "failed"
         : "done";
-  const label = headerLabel(snapshot, computerLabel);
+  const label = headerLabel(snapshot, computerLabel); // fork: library-launch-files
   return (
     <WorkLogRow
       data-worktree-setup-stage="summary"
@@ -356,6 +361,7 @@ export function WorktreeSetupCard({
   onCancel,
   onWorkLocally,
   onOpenTerminal,
+  // fork: library-launch-files
   computerLabel = null,
   onRetry = null,
   embedded = false,
@@ -367,6 +373,7 @@ export function WorktreeSetupCard({
   const setupStage = snapshot.stages.find((stage) => stage.id === "setup-script");
   const showTerminal = onOpenTerminal && setupStage && setupStage.status !== "pending";
   const collapsed = embedded && !running;
+  // fork: library-launch-files
   const projectFiles = isProjectFiles(snapshot);
   // Project files own no working row while they download, so their card names itself.
   const showHeader = !embedded && (projectFiles || (!running && snapshot.phase !== "done"));
@@ -377,9 +384,12 @@ export function WorktreeSetupCard({
       (setupStage.status === "running" && setupStage.tail.length > 0));
 
   return (
+    // fork: project-lifecycle
     <section aria-label="Workspace setup" data-worktree-setup-phase={snapshot.phase}>
+      {/* fork: library-launch-files */}
       {showHeader ? <SetupHeaderRow snapshot={snapshot} computerLabel={computerLabel} /> : null}
       {collapsed ? (
+        // fork: library-launch-files
         <CollapsedSummaryRow snapshot={snapshot} computerLabel={computerLabel} />
       ) : (
         <div className={showHeader ? "pt-1.5" : undefined}>
@@ -390,7 +400,7 @@ export function WorktreeSetupCard({
                 setupRunning={running}
                 setupEndedAt={snapshot.endedAt}
                 scriptName={snapshot.setupScript?.name ?? null}
-                projectFiles={projectFiles}
+                projectFiles={projectFiles} // fork: library-launch-files
               />
               {stage.id === "setup-script" && showTail ? (
                 <OutputTail lines={stage.tail} failed={stage.status === "failed"} />
@@ -400,6 +410,7 @@ export function WorktreeSetupCard({
         </div>
       )}
 
+      {/* fork: library-launch-files */}
       {failed && snapshot.error ? (
         <p className="mt-1 ml-8 text-xs text-muted-foreground">{snapshot.error}</p>
       ) : null}
@@ -427,6 +438,7 @@ export function WorktreeSetupCard({
             Work locally
           </Button>
         ) : null}
+        {/* fork: library-launch-files */}
         {onRetry && projectFiles && failed ? (
           <Button type="button" size="xs" variant="ghost-muted" onClick={onRetry}>
             <RotateCcwIcon aria-hidden />

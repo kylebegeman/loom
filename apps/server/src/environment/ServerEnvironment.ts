@@ -6,11 +6,12 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Config from "effect/Config";
+import * as Config from "effect/Config"; // fork: library-projects
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+// fork: computer-naming -- ComputerNaming replaces the cwd-derived label, so Path is unused.
 import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -18,13 +19,15 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveServerInstallation } from "../cli/invocation.ts";
 import { readAgentActivityPublishingActive } from "../cloud/config.ts";
 import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
+// fork: runtime-owner
 import {
   OS_RUNTIME_OWNER,
   serverSelfUpdateEnabled,
-} from "../fork/runtime-owner/selfUpdateSwitch.ts"; // fork: runtime-owner
+} from "../fork/runtime-owner/selfUpdateSwitch.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
+// fork: computer-naming -- ComputerNaming replaces resolveServerEnvironmentLabel.
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
 import * as ComputerNaming from "../fork/computer-naming/ComputerNaming.ts"; // fork: computer-naming
 import { LOOM_SERVER_FEATURES } from "../fork/features.ts"; // fork: ext-core
@@ -187,6 +190,7 @@ const makeIdentity = Effect.gen(function* () {
 
 /** @public */
 export const make = Effect.gen(function* () {
+  // fork: computer-naming -- ComputerNaming replaces the cwd basename.
   const serverConfig = yield* ServerConfig.ServerConfig;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;
@@ -212,6 +216,7 @@ export const make = Effect.gen(function* () {
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
+  // fork: library-projects
   const libraryAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
     Config.withDefault(false),
   );
@@ -229,8 +234,8 @@ export const make = Effect.gen(function* () {
     serverVersion: packageJson.version,
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
-      supportsExecution,
-      libraryAuthority,
+      supportsExecution, // fork: library-projects
+      libraryAuthority, // fork: library-projects
       loomFeatures: LOOM_SERVER_FEATURES, // fork: ext-core
       repositoryIdentity: true,
       connectionProbe: true,
@@ -299,7 +304,7 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.map(({ agentActivityPublishing, naming }) => ({
         ...descriptor,
-        label: naming.label,
+        label: naming.label, // fork: computer-naming
         capabilities: { ...descriptor.capabilities, agentActivityPublishing },
       })),
     ),

@@ -1,10 +1,11 @@
 /** Vite proxies the backend, so only the web port needs a share mapping. */
 
 import {
-  claimTailscaleServe,
+  claimTailscaleServe, // fork: tailnet-ownership
   readTailscaleStatus,
-  releaseTailscaleServe,
+  releaseTailscaleServe, // fork: tailnet-ownership
   type TailscaleCommandError,
+  // fork: tailnet-ownership
   type TailscaleServeClaimError,
   type TailscaleServeTarget,
   type TailscaleStatusParseError,
@@ -12,6 +13,7 @@ import {
 } from "@t3tools/tailscale";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+// fork: tailnet-ownership -- unshareDevServer's type is inferred, so no spawner import
 
 /** Log fixed diagnostics; tailscale stderr can contain auth keys and node names. */
 const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefined> = {
@@ -21,6 +23,7 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   unknown: undefined,
 };
 
+// fork: tailnet-ownership
 const explainCommandFailure = (
   error: TailscaleCommandError | TailscaleStatusParseError,
 ): string | undefined =>
@@ -57,7 +60,7 @@ export class TailnetNameMissingError extends Schema.TaggedError<TailnetNameMissi
 export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>()(
   "DevServeFailedError",
   {
-    stage: Schema.Literals(["claim", "serve"]),
+    stage: Schema.Literals(["claim", "serve"]), // fork: tailnet-ownership
     webPort: Schema.Number,
     explanation: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
@@ -65,6 +68,7 @@ export class DevServeFailedError extends Schema.TaggedError<DevServeFailedError>
 ) {
   override get message(): string {
     const port = String(this.webPort);
+    // fork: tailnet-ownership
     const base =
       this.stage === "claim"
         ? `did not share port ${port} on the tailnet`
@@ -82,6 +86,7 @@ export type DevShareError =
   | TailnetNameMissingError
   | DevServeFailedError;
 
+// fork: tailnet-ownership
 export interface DevShareTarget {
   readonly webPort: number;
   /** Records the mapping this checkout owns, so the next run recognizes one a crash left behind. */
@@ -89,6 +94,7 @@ export interface DevShareTarget {
   readonly localTarget?: { readonly port: number; readonly host: string };
 }
 
+// fork: tailnet-ownership
 const serveTarget = (input: DevShareTarget): TailscaleServeTarget => ({
   claimsPath: input.claimsPath,
   servePort: input.webPort,
@@ -97,6 +103,7 @@ const serveTarget = (input: DevShareTarget): TailscaleServeTarget => ({
   localHost: input.localTarget?.host ?? "localhost",
 });
 
+// fork: tailnet-ownership
 const toServeFailure = (webPort: number, error: TailscaleServeClaimError): DevServeFailedError => {
   switch (error._tag) {
     case "TailscaleServeNotLoggedInError":
@@ -123,12 +130,14 @@ const toServeFailure = (webPort: number, error: TailscaleServeClaimError): DevSe
   }
 };
 
+// fork: tailnet-ownership
 export interface DevUnshareResult {
   readonly cleared: boolean;
   readonly explanation?: string | undefined;
   readonly cause?: unknown;
 }
 
+// fork: tailnet-ownership
 /**
  * Removes the `/` mapping only while it still proxies to this dev server.
  * Finalizer cleanup must be uninterruptible or cancellation can leave stale mappings.
@@ -155,6 +164,7 @@ export interface DevShareResult {
   readonly host: string;
 }
 
+// fork: tailnet-ownership
 /**
  * Publishes `webPort` on the tailnet. The tailnet port always matches the web
  * port so the URL is stable; `localTarget` points it at the backend instead
@@ -171,9 +181,11 @@ export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (
     return yield* new TailnetNameMissingError();
   }
 
+  // fork: tailnet-ownership
   const claim = yield* claimTailscaleServe(serveTarget(input)).pipe(
     Effect.mapError((error) => toServeFailure(input.webPort, error)),
   );
 
+  // fork: tailnet-ownership
   return { url: claim.baseUrl, host: status.magicDnsName } satisfies DevShareResult;
 });

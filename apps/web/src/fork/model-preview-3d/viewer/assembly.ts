@@ -1,7 +1,7 @@
 import { Box3, Color, Group, Mesh, Vector3, type Material, type Object3D } from "three";
 import type { AssemblyPart } from "@t3tools/contracts/fork";
 import { disposeModel, meshStats } from "./load";
-export const ASSEMBLY_DISPLAY_TRIANGLE_LIMIT = 5_000_000;
+const ASSEMBLY_DISPLAY_TRIANGLE_LIMIT = 5_000_000;
 type ColorMaterial = Material & { color?: Color; emissive?: Color; emissiveIntensity?: number };
 /** The scene owns each loaded part. Placement wraps the source's authored transform. */
 export function createAssemblyScene() {

@@ -19,12 +19,13 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import type { LegendListRef } from "@legendapp/list/react-native";
+import type { LegendListRef } from "@legendapp/list/react-native"; // fork: project-navigation
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import { THREAD_SIDEBAR_ROW_LAYOUT } from "./threadListAnimations";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+// fork: project-navigation
 import type {
   LayoutChangeEvent,
   TextInputInstance,
@@ -38,7 +39,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SearchBarCommands } from "react-native-screens";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { ThreadSearchNotice } from "./ThreadSearchNotice";
+import { ThreadSearchNotice } from "./ThreadSearchNotice"; // fork: everyday-workflows
 import { CompactBrandTitle } from "../../components/CompactBrandTitle";
 import { Menu } from "../../components/ui/Menu";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -428,6 +429,7 @@ function ThreadNavigationSidebarPane(
         {
           id: "environment:all",
           title: "All environments",
+          // fork: project-navigation
           subtitle:
             navigationView === "projects"
               ? "Show projects from every environment"
@@ -444,6 +446,7 @@ function ThreadNavigationSidebarPane(
         })),
       ],
     },
+    // fork: project-navigation
     ...(navigationView === "projects" || projectFilterOptions.length === 0
       ? []
       : ([
@@ -556,7 +559,7 @@ function ThreadNavigationSidebarPane(
   });
   // Recycle equality needs project/search data for titles and favicons; keep the minute clock on items to limit updates.
   const listExtraData = {
-    operableEnvironmentIds,
+    operableEnvironmentIds, // fork: project-navigation
     activeNewTask,
     selectedThreadKey: props.selectedThreadKey ?? "",
     projectByKey,
@@ -802,11 +805,11 @@ function ThreadNavigationSidebarPane(
     ? "line.3.horizontal.decrease.circle.fill"
     : "line.3.horizontal.decrease.circle";
   const filterMenu = buildHomeListFilterMenu({
-    navigationView,
+    navigationView, // fork: project-navigation
     environments,
-    projects: navigationView === "threads" ? projectFilterOptions : [],
+    projects: navigationView === "threads" ? projectFilterOptions : [], // fork: project-navigation
     selectedEnvironmentId: options.selectedEnvironmentId,
-    selectedProjectKey: navigationView === "threads" ? selectedProjectKey : null,
+    selectedProjectKey: navigationView === "threads" ? selectedProjectKey : null, // fork: project-navigation
     onEnvironmentChange: setSelectedEnvironmentId,
     onProjectChange: setSelectedProjectKey,
   });
@@ -823,6 +826,7 @@ function ThreadNavigationSidebarPane(
           : "px-2 py-4 text-sm text-drawer-foreground-muted"
       }
     >
+      {/* fork: project-navigation */}
       {navigationView === "projects"
         ? catalogState.isLoadingConnections ||
           (catalogState.hasConnectingEnvironment && !catalogState.hasLoadedShellSnapshot)
@@ -852,7 +856,7 @@ function ThreadNavigationSidebarPane(
     return (
       <>
         <NativeStackScreenOptions
-          optionsVersion={[nativeHeaderItems, props.width, navigationTitle]}
+          optionsVersion={[nativeHeaderItems, props.width, navigationTitle]} // fork: project-navigation
           options={{
             ...getConnectionAwareBrandHeaderOptions({
               headerWidth: props.width,
@@ -885,15 +889,16 @@ function ThreadNavigationSidebarPane(
               <AnimatedLegendList
                 renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
                 itemLayoutAnimation={THREAD_SIDEBAR_ROW_LAYOUT}
+                // fork: project-navigation
                 ref={listRef}
                 data={navigationItems}
                 drawDistance={500}
                 estimatedItemSize={64}
                 extraData={listExtraData}
                 getItemType={(item) => item.type}
-                itemsAreEqual={navigationItemsAreEqual}
+                itemsAreEqual={navigationItemsAreEqual} // fork: project-navigation
                 keyExtractor={(item) => item.key}
-                renderItem={renderNavigationItem}
+                renderItem={renderNavigationItem} // fork: project-navigation
                 automaticallyAdjustsScrollIndicatorInsets={NATIVE_LIQUID_GLASS_SUPPORTED}
                 contentInsetAdjustmentBehavior={
                   NATIVE_LIQUID_GLASS_SUPPORTED ? "automatic" : "never"
@@ -949,6 +954,7 @@ function ThreadNavigationSidebarPane(
             : { paddingBottom: insets.bottom }
         }
       >
+        {/* fork: project-navigation -- the list keeps its Projects/Threads header when empty */}
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <GestureDetector gesture={sidebarScrollGesture}>
             {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Only the non-native workspace layout (Android and the fallback) renders this sidebar, which has no native header to register with. */}
@@ -1039,12 +1045,12 @@ function ThreadNavigationSidebarPane(
             />
             <TextInput
               ref={searchInputRef}
-              accessibilityLabel={searchLabel}
+              accessibilityLabel={searchLabel} // fork: project-navigation
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
               onChangeText={props.onSearchQueryChange}
-              placeholder={searchPlaceholder}
+              placeholder={searchPlaceholder} // fork: project-navigation
               placeholderTextColorClassName="accent-placeholder"
               selectionColorClassName={undefined}
               cursorColorClassName={undefined}

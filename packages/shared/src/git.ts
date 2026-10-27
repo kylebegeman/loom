@@ -135,11 +135,14 @@ function lowerCaseRemote(value: string): string {
 export function parseGitRemoteRepository(
   value: string,
 ): { readonly host: string; readonly path: string } | null {
+  // fork: project-checkout-management
   const trimmed = value.trim().toLowerCase();
   const normalized = lowerCaseRemote(value);
 
+  // fork: project-checkout-management
   if (/^(?:ssh|https?|git):\/\//i.test(trimmed)) {
     try {
+      // fork: project-checkout-management
       const url = new URL(trimmed);
       // Query and fragment metadata must not prevent trimming the repository's suffix.
       const repositoryPath = url.pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
@@ -335,6 +338,7 @@ function toLocalStatusPart(status: VcsStatusResult): VcsStatusLocalResult {
     ...(status.unmergedPaths === undefined ? {} : { unmergedPaths: status.unmergedPaths }),
     ...(status.headSha === undefined ? {} : { headSha: status.headSha }),
     isRepo: status.isRepo,
+    // fork: checkpoint-capable
     ...(status.checkpointCapable === undefined
       ? {}
       : { checkpointCapable: status.checkpointCapable }),

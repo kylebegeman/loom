@@ -32,6 +32,7 @@ const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.optional,
 );
 const portFlag = Flag.Int("port").pipe(
+  // fork: smoke-port-race
   Flag.withSchema(Schema.Union([Schema.Literal(0), PortSchema])),
   Flag.withDescription(
     "Port for the HTTP/WebSocket server. Use 0 for an automatically assigned port.",
@@ -133,8 +134,8 @@ const EnvServerConfig = Config.all({
   port: Config.Port("T3CODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
   host: Config.String("T3CODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
   t3Home: Config.String("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  // fork: mini-managed-projects
   managedProjectsRoot: Config.String("T3CODE_MANAGED_PROJECTS_ROOT").pipe(
-    // fork: mini-managed-projects
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
@@ -334,6 +335,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const rawCwd = Option.getOrElse(normalizedFlags.cwd, () => process.cwd());
   const cwd = path.resolve(yield* expandHomePath(rawCwd.trim()));
+  // fork: mini-managed-projects
   let managedProjectsRoot: string | undefined;
   if (env.managedProjectsRoot !== undefined) {
     const folder = env.managedProjectsRoot.trim();
@@ -353,7 +355,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   }
   const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
     baseDirIsExplicit: Option.isSome(explicitBaseDir),
-    ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }),
+    ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }), // fork: mini-managed-projects
   });
   // An interactive CLI must not start over a discovered server. Lifetime locking
   // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
@@ -511,7 +513,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     port,
     cwd,
     baseDir,
-    ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }),
+    ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }), // fork: mini-managed-projects
     ...derivedPaths,
     serverTracePath,
     host,

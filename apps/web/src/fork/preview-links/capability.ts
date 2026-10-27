@@ -5,15 +5,8 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "~/state/server";
 import { readPreparedConnection } from "~/state/session";
 
-// Read outside React, like readEnvironmentSupportsServerBrowser, so navigation helpers and the
-// browser target resolver can ask without a hook.
-
-export function readEnvironmentSupportsPreviewLinks(environmentId: EnvironmentId): boolean {
-  return supportsLoomFeature(
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities,
-    PREVIEW_LINKS_FEATURE,
-  );
-}
+// Read outside React, like readEnvironmentSupportsServerBrowser, so navigation helpers can ask
+// without a hook.
 
 /** Connected environments whose server can share and open preview links. */
 export function readPreviewLinkEnvironments(): ReadonlyArray<EnvironmentId> {

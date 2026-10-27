@@ -80,8 +80,6 @@ const WINDOW_TEXT: Record<
   90: { label: "90 days", short: "90d", phrase: "in 90 days" },
 };
 
-export const BOT_USAGE_WINDOWS = BOT_USAGE_DAYS.map((days) => ({ days, ...WINDOW_TEXT[days] }));
-
 export const DEFAULT_BOT_USAGE_DAYS: BotUsageDays = 7;
 
 /** The window as a menu offers it, such as "7 days". */

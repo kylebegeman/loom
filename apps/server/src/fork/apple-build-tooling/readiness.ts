@@ -216,7 +216,7 @@ export const parseBuildSettings = (json: string): Array<BuildSettingsEntry> => {
   });
 };
 
-export const APPLICATION_PRODUCT_TYPE = "com.apple.product-type.application";
+const APPLICATION_PRODUCT_TYPE = "com.apple.product-type.application";
 
 /** Never the first `.app` on disk: the scheme must build exactly one application. */
 export const applicationProduct = (entries: ReadonlyArray<BuildSettingsEntry>) => {

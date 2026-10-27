@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   resolveSshPasswordPrompt: (requestId, password) =>
     ipcRenderer.invoke(IpcChannels.RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL, { requestId, password }),
+  // fork: tailnet-ownership
   getServerExposureState: (request) =>
     ipcRenderer.invoke(IpcChannels.GET_SERVER_EXPOSURE_STATE_CHANNEL, request),
   setServerExposureMode: (mode) =>
@@ -201,6 +202,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL, url),
   cancelProviderAuthCallback: (url: string) =>
     ipcRenderer.invoke(IpcChannels.CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL, url),
+  // fork: library-sign-in
   signInToLoom: (input) => ipcRenderer.invoke(IpcChannels.LOOM_SIGN_IN_CHANNEL, input),
   cancelLoomSignIn: (input) => ipcRenderer.invoke(IpcChannels.LOOM_CANCEL_SIGN_IN_CHANNEL, input),
   // fork: identity-renewal

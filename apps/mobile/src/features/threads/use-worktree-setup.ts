@@ -11,6 +11,7 @@ export function useWorktreeSetup(input: {
   preparing: boolean;
   turnStarted: boolean;
   followUpSent: boolean;
+  // fork: library-launch-files
   /** Watches again after a settled setup was resumed, until its next snapshot arrives. */
   resumedAfter?: number | null;
 }) {
@@ -20,6 +21,7 @@ export function useWorktreeSetup(input: {
   const query = useEnvironmentQuery(
     input.environmentId &&
       input.threadId &&
+      // fork: library-launch-files
       (live?.phase === "running" ||
         (!live && input.preparing) ||
         (live !== null && input.resumedAfter != null && live.sequence <= input.resumedAfter))

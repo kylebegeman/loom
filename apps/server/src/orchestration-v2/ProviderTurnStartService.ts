@@ -1,11 +1,14 @@
 // fork: ext-vault-preflight
 import { applyVaultPromptContext } from "../fork/vault/VaultPromptContext.ts";
-import type { LibraryError } from "@t3tools/contracts/fork";
-import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import type { LibraryError } from "@t3tools/contracts/fork"; // fork: library-launch-files
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts"; // fork: library-launch-files
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 // fork: library-projects
-import { libraryTurnContextBinding } from "../fork/project-library/LibraryTurnContext.ts";
-import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
+import {
+  isSlashCommand,
+  libraryTurnContextBinding,
+} from "../fork/project-library/LibraryTurnContext.ts";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts"; // fork: project-lifecycle
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -24,6 +27,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+// fork: project-lifecycle -- no Cause: restoreWorktree replaced the inline worktree recreation.
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -35,13 +39,13 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
-import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
-import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
-import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts";
-import * as SetupMarker from "../workspace/setupMarker.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
-import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
+import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts"; // fork: mini-native-retention
+import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts"; // fork: mini-native-retention
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: project-lifecycle
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: mini-native-retention
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts"; // fork: project-lifecycle
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts"; // fork: project-lifecycle
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -128,14 +132,14 @@ export const layer: Layer.Layer<
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
-  | Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>
+  | Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>> // fork: project-lifecycle
   | Path.Path
-  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
-  | WorktreeSetupTracker.WorktreeSetupTracker
+  | ProjectSetupScriptRunner.ProjectSetupScriptRunner // fork: project-lifecycle
+  | WorktreeSetupTracker.WorktreeSetupTracker // fork: project-lifecycle
   | ServerConfig.ServerConfig
   | ServerSettings.ServerSettingsService
   | GitWorkflowService.GitWorkflowService
-  | GitVcsDriver.GitVcsDriver
+  | GitVcsDriver.GitVcsDriver // fork: mini-native-retention
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
   | ProjectionStore.ProjectionStoreV2
@@ -145,6 +149,7 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
+    // fork: mini-native-retention
     const restorationServices = yield* Effect.context<
       | Effect.Services<ReturnType<typeof restoreWorktree>>
       | Effect.Services<ReturnType<typeof restoreScratchCheckout>>
@@ -156,14 +161,18 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    // fork: mini-native-retention -- fileSystem moved above for workspace restoration.
     const path = yield* Path.Path;
+    // fork: project-lifecycle -- restoreWorktree replaced gitWorkflow; projects moved above.
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
-    const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace);
+    const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace); // fork: library-launch-files
+    // fork: project-lifecycle
     const projectLifecycle = yield* Effect.serviceOption(ProjectLifecycle.ProjectLifecycleService);
+    // fork: library-projects
     const libraryWorkspaces = yield* Effect.serviceOption(
       LibraryWorkspaceStore.LibraryWorkspaceStore,
     );
@@ -279,6 +288,7 @@ export const layer: Layer.Layer<
       };
     };
 
+    // fork: library-launch-files -- the service wrapper restores Library files before the lease.
     const start = Effect.fn("orchestrationV2.providerTurnStart.start")(function* (
       input: { readonly threadId: ThreadId; readonly runId: RunId; readonly willRetry?: boolean },
       libraryPreparation: Effect.Effect<void, LibraryError> = Effect.void,
@@ -548,6 +558,7 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
+      // fork: project-lifecycle -- replaces upstream's inline missing-worktree recreation.
       {
         // The service `start` wrapper holds the non-reentrant lease for the worktree,
         // so restoration and setup inside it must not take that lease again.
@@ -605,6 +616,7 @@ export const layer: Layer.Layer<
                 workspaceLeaseHeld: true,
               });
           } else {
+            // fork: mini-native-retention -- an archived Scratch checkout comes back before setup.
             const project = yield* projects
               .getById(projection.thread.projectId)
               .pipe(
@@ -661,6 +673,7 @@ export const layer: Layer.Layer<
           ),
           Effect.result,
         );
+        // fork: project-lifecycle
         if (preparation._tag === "Failure") {
           if (input.willRetry === true)
             return yield* new ProviderTurnStartError({ runId, cause: preparation.failure });
@@ -710,7 +723,7 @@ export const layer: Layer.Layer<
       const resolvedRuntimePolicy = yield* runtimePolicy.resolve({
         thread: projection.thread,
         modelSelection: run.modelSelection,
-        libraryFilesPrepared: true,
+        libraryFilesPrepared: true, // fork: library-launch-files
       });
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
@@ -1198,6 +1211,7 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
+      // fork: library-projects -- let: Library context and the phone note prefix the text.
       let userText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
@@ -1247,7 +1261,7 @@ export const layer: Layer.Layer<
         }
       }
       // fork: mobile-surface-hint -- a native slash command must stay at the start of the text.
-      if (message.creationSource === "mobile" && !message.text.trimStart().startsWith("/"))
+      if (message.creationSource === "mobile" && !isSlashCommand(message))
         userText = `${PHONE_VIEWER_NOTE}\n\n${userText}`;
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
@@ -1575,6 +1589,7 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          // fork: library-launch-files
           // Library operations take their preparation lock before the copy's root lease.
           // Restore before taking a worktree lease, including when it equals that root.
           const preparation = yield* (
@@ -1585,7 +1600,7 @@ export const layer: Layer.Layer<
           const startup = start(input, Effect.fromResult(preparation));
           const providerTurn = yield* thread.worktreePath === null
             ? startup
-            : withWorkspaceLease(path.resolve(thread.worktreePath), startup);
+            : withWorkspaceLease(path.resolve(thread.worktreePath), startup); // fork: library-launch-files
           if (providerTurn !== undefined) yield* providerTurn;
         },
         (effect, input) =>

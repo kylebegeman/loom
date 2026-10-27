@@ -98,7 +98,7 @@ const icon = (Icon: typeof FolderGit2Icon, className = ITEM_ICON_CLASS): ReactNo
 );
 
 /** Live projects, most recent activity first. */
-export function libraryPaletteProjects(library: LibraryPaletteContext) {
+function libraryPaletteProjects(library: LibraryPaletteContext) {
   return sortProjectEntries(
     projectEntries(
       library.projects.filter((project) => !project.archived),

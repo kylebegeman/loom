@@ -49,7 +49,7 @@ export type TriageReason =
 export type TriageGroup = "waiting" | "failed" | "undecided" | "pipeline" | "handled";
 
 /** Most urgent first: a run paused on a person blocks work that is otherwise going. */
-export const TRIAGE_GROUPS: readonly TriageGroup[] = [
+const TRIAGE_GROUPS: readonly TriageGroup[] = [
   "waiting",
   "failed",
   "undecided",
@@ -59,7 +59,7 @@ export const TRIAGE_GROUPS: readonly TriageGroup[] = [
 
 type RunReason = Exclude<TriageReason, "approval" | "question">;
 
-export const triageRunReason = (run: BotRun): RunReason =>
+const triageRunReason = (run: BotRun): RunReason =>
   run.pipelineRunId != null
     ? "pipeline"
     : run.status === "failed"
@@ -100,7 +100,7 @@ export type TriageItem =
   | (TriageBase & { readonly kind: "run"; readonly reason: RunReason; readonly run: BotRun });
 
 /** The run a bot run thread belongs to; its id is the thread id after the run prefix. */
-export const runIdOfThread = (threadId: string): string | null =>
+const runIdOfThread = (threadId: string): string | null =>
   isBotRunThreadId(threadId) ? threadId.slice(BOT_RUN_THREAD_PREFIX.length) : null;
 
 /** The run behind any item; a waiting thread names its run even before the run is loaded. */

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import * as NodeCrypto from "node:crypto";
-import * as ExpoCrypto from "expo-crypto";
+import * as ExpoCrypto from "expo-crypto"; // fork: secure-native-random
 
 import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";

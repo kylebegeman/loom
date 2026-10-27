@@ -30,7 +30,7 @@ const ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
-export const decodeEntities = (text: string) =>
+const decodeEntities = (text: string) =>
   text.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (entity, name: string) => {
     if (name.startsWith("#x")) return String.fromCodePoint(Number.parseInt(name.slice(2), 16));
     if (name.startsWith("#")) return String.fromCodePoint(Number(name.slice(1)));
@@ -79,7 +79,7 @@ export const readXunit = (xml: string): XunitReport => {
 };
 
 /** The identifier `swift test --filter` and `swift test list` use. */
-export const swiftTestIdentifier = (testCase: XunitCase, swiftTesting: boolean) =>
+const swiftTestIdentifier = (testCase: XunitCase, swiftTesting: boolean) =>
   swiftTesting && !testCase.classname.includes(".")
     ? `${testCase.classname}.${testCase.name}`
     : `${testCase.classname}/${testCase.name}`;

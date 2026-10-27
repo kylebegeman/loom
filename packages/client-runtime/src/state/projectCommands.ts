@@ -1,6 +1,6 @@
 import {
-  AuthOrchestrationOperateScope,
-  sessionGrantsScope,
+  AuthOrchestrationOperateScope, // fork: file-placement
+  sessionGrantsScope, // fork: file-placement
   type EnvironmentId,
   ProjectId,
   type ProjectReadFileResult,
@@ -13,7 +13,7 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity"; // fork: file-placement
 
 import {
   type EnvironmentRpcInput,
@@ -22,7 +22,7 @@ import {
   requestGuarded,
 } from "../rpc/client.ts";
 import type { EnvironmentProject } from "./models.ts";
-import { createEnvironmentSessionAtoms } from "./session.ts";
+import { createEnvironmentSessionAtoms } from "./session.ts"; // fork: file-placement
 import {
   createAtomCommandScheduler,
   createEnvironmentCommand,
@@ -89,6 +89,7 @@ export function createProjectEnvironmentAtoms<R, E>(
   },
 ) {
   const fileMetadata = createFileMetadataAtoms(runtime);
+  // fork: file-placement
   const sessions = createEnvironmentSessionAtoms(runtime);
   const updatePermissionAtom = Atom.family((environmentId: EnvironmentId | null) =>
     Atom.make((get) => {
@@ -178,6 +179,7 @@ export function createProjectEnvironmentAtoms<R, E>(
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
+    // fork: file-placement
     update: {
       ...createEnvironmentCommand(runtime, {
         label: "environment-data:commands:project:update",

@@ -223,6 +223,7 @@ export function resolveQuickAction(
     };
   }
 
+  // fork: source-control-cockpit -- a diverged branch asks the agent to sync, handled above
   if (isBehind) {
     return {
       label: "Pull",

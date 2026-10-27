@@ -22,7 +22,7 @@ const at = (value: unknown, ...path: ReadonlyArray<string>): unknown =>
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
 
 /** `com.apple.CoreSimulator.SimRuntime.iOS-27-0` gives `iOS 27.0`. */
-export const runtimeDisplayName = (identifier: string) => {
+const runtimeDisplayName = (identifier: string) => {
   const match = /SimRuntime\.([A-Za-z]+)-([\d-]+)$/.exec(identifier);
   return match ? `${match[1]} ${match[2]!.replace(/-/g, ".")}` : identifier;
 };

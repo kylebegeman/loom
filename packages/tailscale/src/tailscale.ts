@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+// fork: tailnet-ownership
 import * as Result from "effect/Result";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -26,6 +27,7 @@ const TAILSCALE_KILL_GRACE = Duration.millis(500);
 const TAILSCALE_SERVE_TIMEOUT = Duration.seconds(10);
 const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
 
+// fork: tailnet-ownership -- these candidates replace tailscaleCommandForPlatform
 /** Labels, not paths: the per-user bundle path would put the username in logs. */
 const TailscaleExecutable = Schema.Literals([
   "tailscale",
@@ -68,6 +70,7 @@ const tailscaleExecutableCandidates = (
 };
 
 const TailscaleCommandContext = {
+  // fork: tailnet-ownership
   executable: TailscaleExecutable,
   subcommand: TailscaleSubcommand,
   argumentCount: Schema.Number,
@@ -153,6 +156,7 @@ export class TailscaleCommandTimeoutError extends Schema.TaggedError<TailscaleCo
   }
 }
 
+// fork: tailnet-ownership
 const TailscaleLookupFailureCode = Schema.Literals(["ENOENT", "EACCES"]);
 
 export class TailscaleCliUnavailableError extends Schema.TaggedError<TailscaleCliUnavailableError>()(
@@ -170,7 +174,7 @@ export class TailscaleCliUnavailableError extends Schema.TaggedError<TailscaleCl
 }
 
 export type TailscaleCommandError =
-  | TailscaleCliUnavailableError
+  | TailscaleCliUnavailableError // fork: tailnet-ownership
   | TailscaleCommandSpawnError
   | TailscaleCommandOutputError
   | TailscaleCommandExitError
@@ -192,7 +196,7 @@ const TailscaleStatusSelf = Schema.Struct({
 });
 
 const TailscaleStatusJson = Schema.Struct({
-  BackendState: Schema.optional(Schema.Unknown),
+  BackendState: Schema.optional(Schema.Unknown), // fork: tailnet-ownership
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
@@ -207,10 +211,12 @@ export interface TailscaleStatus {
    * CLI reports no capability map (older CLI), so callers still attempt serve.
    */
   readonly httpsServeEnabled: boolean | null;
+  // fork: tailnet-ownership
   /** `null` when the CLI reports no backend state. */
   readonly loggedIn: boolean | null;
 }
 
+// fork: tailnet-ownership
 const LOGGED_OUT_BACKEND_STATES: ReadonlySet<string> = new Set(["NeedsLogin", "NeedsMachineAuth"]);
 
 const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
@@ -278,6 +284,7 @@ export const parseTailscaleStatus = (
           typeof capMap === "object" && capMap !== null && !Array.isArray(capMap)
             ? Object.hasOwn(capMap, "https")
             : null,
+        // fork: tailnet-ownership
         loggedIn:
           typeof parsed.BackendState === "string"
             ? !LOGGED_OUT_BACKEND_STATES.has(parsed.BackendState)
@@ -286,6 +293,7 @@ export const parseTailscaleStatus = (
     }),
   );
 
+// fork: tailnet-ownership -- spawnTailscale and runTailscale replace readTailscaleOutput
 const errnoCodeOf = (cause: unknown, depth = 0): string | undefined => {
   if (depth > 3 || typeof cause !== "object" || cause === null) return undefined;
   if ("code" in cause && typeof cause.code === "string") return cause.code;
@@ -305,6 +313,7 @@ const spawnTailscale = Effect.fnUntraced(function* (
   args: readonly string[],
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  // fork: tailnet-ownership
   const candidates = tailscaleExecutableCandidates(
     yield* HostProcess.Platform,
     yield* HostProcess.HomeDirectory,
@@ -344,6 +353,7 @@ const spawnTailscale = Effect.fnUntraced(function* (
   return yield* new TailscaleCliUnavailableError({ subcommand, attempts });
 });
 
+// fork: tailnet-ownership
 const runTailscale = Effect.fn("tailscale.runTailscale")(function* (
   subcommand: TailscaleSubcommand,
   args: readonly string[],
@@ -352,13 +362,16 @@ const runTailscale = Effect.fn("tailscale.runTailscale")(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const platform = yield* HostProcess.Platform;
   const commandContext = {
+    // fork: tailnet-ownership
     executable: (
       resolvedExecutables.get(spawner) ?? tailscaleExecutableCandidates(platform, "")[0]!
     ).label,
     subcommand,
     argumentCount: args.length,
   };
+  // fork: tailnet-ownership -- spawnTailscale makes the command for each CLI candidate
   return yield* Effect.gen(function* () {
+    // fork: tailnet-ownership
     const { child, commandContext } = yield* spawnTailscale(subcommand, args);
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
@@ -371,25 +384,26 @@ const runTailscale = Effect.fn("tailscale.runTailscale")(function* (
       Effect.mapError((cause) => new TailscaleCommandOutputError({ ...commandContext, cause })),
     );
     if (exitCode !== 0) {
-      const stderrDiagnostic = stderrDiagnosticOf(stderr);
+      const stderrDiagnostic = stderrDiagnosticOf(stderr); // fork: tailnet-ownership
       return yield* new TailscaleCommandExitError({
         ...commandContext,
         exitCode,
         stdoutLength: stdout.length,
         stderrLength: stderr.length,
+        // fork: tailnet-ownership
         ...(stderrDiagnostic !== undefined ? { stderrDiagnostic } : {}),
       });
     }
     return stdout;
   }).pipe(
     Effect.scoped,
-    Effect.timeout(timeout),
+    Effect.timeout(timeout), // fork: tailnet-ownership
     Effect.catchTags({
       TimeoutError: (cause) =>
         Effect.fail(
           new TailscaleCommandTimeoutError({
             ...commandContext,
-            timeoutMs: Duration.toMillis(timeout),
+            timeoutMs: Duration.toMillis(timeout), // fork: tailnet-ownership
             cause,
           }),
         ),
@@ -397,6 +411,7 @@ const runTailscale = Effect.fn("tailscale.runTailscale")(function* (
   );
 });
 
+// fork: tailnet-ownership
 const readTailscaleOutput = (subcommand: "status" | "debug", args: readonly string[]) =>
   runTailscale(subcommand, args, TAILSCALE_STATUS_TIMEOUT);
 
@@ -491,6 +506,7 @@ export function buildTailscaleHttpsBaseUrl(input: {
   return url.toString();
 }
 
+// fork: tailnet-ownership -- runTailscale above replaces runTailscaleCommand
 const runTailscaleServeCommand = (args: readonly string[]) =>
   runTailscale("serve", args, TAILSCALE_SERVE_TIMEOUT).pipe(Effect.asVoid);
 
@@ -501,6 +517,7 @@ export const ensureTailscaleServe = (input: {
 }): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> => {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
+  // fork: tailnet-ownership
   return runTailscaleServeCommand([
     "serve",
     "--bg",
@@ -509,6 +526,7 @@ export const ensureTailscaleServe = (input: {
   ]);
 };
 
+// fork: tailnet-ownership
 /**
  * Removes only the `/` mount. Without `--set-path` the CLI deletes every mount
  * on the port, other apps' included, because its confirmation prompt defaults
@@ -520,9 +538,11 @@ export const disableTailscaleServe = Effect.fn("tailscale.disableTailscaleServe"
   } = {},
 ): Effect.fn.Return<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> {
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
+  // fork: tailnet-ownership
   return yield* runTailscaleServeCommand(["serve", `--https=${servePort}`, "--set-path=/", "off"]);
 });
 
+// fork: tailnet-ownership
 export const readTailscaleServeStatusJson = runTailscale(
   "serve",
   ["serve", "status", "--json"],
@@ -535,6 +555,7 @@ const EnvironmentIdentityJson = Schema.Struct({ environmentId: Schema.String });
 export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdentity")(
   function* (input: { readonly baseUrl: string; readonly timeout?: Duration.Input }) {
     const client = yield* HttpClient.HttpClient;
+    // fork: tailnet-ownership
     const url = new URL("/.well-known/t3/environment", input.baseUrl);
     const identity = yield* client
       .execute(HttpClientRequest.get(url.toString()))
@@ -548,6 +569,7 @@ export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdent
   Effect.orElseSucceed(() => Option.none<string>()),
 );
 
+// fork: tailnet-ownership
 /** Any HTTP server can answer 2xx; only a matching environment ID proves it is this one. */
 export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
   function* (input: {
@@ -558,4 +580,5 @@ export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHt
     const identity = yield* readEnvironmentIdentity(input);
     return Option.contains(identity, input.environmentId);
   },
+  // fork: tailnet-ownership -- readEnvironmentIdentity above already falls back to none
 );

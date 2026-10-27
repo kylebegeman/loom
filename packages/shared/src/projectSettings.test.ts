@@ -373,7 +373,7 @@ describe("resolveWorktreeCleanup", () => {
       worktreeAfterDays: null,
       worktreeSettledAfterDays: null,
       worktreeOnDelete: false,
-      worktreeOnSettle: false,
+      worktreeOnSettle: false, // fork: project-lifecycle
       worktreeOnMerge: false,
       worktreeUnchanged: false,
       worktreeOnLand: false, // fork: project-lifecycle
@@ -415,7 +415,7 @@ describe("resolveWorktreeCleanup", () => {
       worktreeAfterDays: 15,
       worktreeSettledAfterDays: 0,
       worktreeOnDelete: true,
-      worktreeOnSettle: false,
+      worktreeOnSettle: false, // fork: project-lifecycle
       worktreeOnMerge: true,
       worktreeUnchanged: false,
       worktreeOnLand: true, // fork: project-lifecycle

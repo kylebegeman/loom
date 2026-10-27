@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /** The history list shows this many runs per workspace. */
-export const RUNS_LISTED = 20;
+const RUNS_LISTED = 20;
 
 /** A run as stored: the public record plus where its files live. */
 export interface StoredRun {

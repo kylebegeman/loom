@@ -1,5 +1,7 @@
 # Development
 
+<!-- fork: dev-fixtures -->
+
 ## Reproducible development data
 
 Run `vp run dev:fixtures` to start this checkout with synthetic projects and stopped
@@ -18,6 +20,8 @@ these stages. It waits for setup to finish before starting the agent.
 
 Use `migrate-dev-db` separately when you specifically need to test migration or
 rendering against a read-only snapshot of installed-app state.
+
+<!-- fork: setup-reuse -->
 
 ## Repeatable workspace setup
 
@@ -109,7 +113,7 @@ different preference when needed.
 
 `vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
 for that origin. Give the tester the complete URL, including its token. The dev runner removes
-its mapping on exit. It never replaces another app's mapping on the port: sharing fails and names
+its mapping on exit. It never replaces another app's mapping on the port: sharing fails and names <!-- fork: tailnet-ownership -->
 what holds it. A mapping left by a killed run is recorded in the T3 home's `tailscale-serve.json`,
 so the next run takes it back.
 

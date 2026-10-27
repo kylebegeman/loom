@@ -21,7 +21,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: everyday-workflows
 import { SettingsActionRow } from "./components/SettingsActionRow";
 import {
   AndroidSettingsEnvironmentFilter,
@@ -39,6 +39,7 @@ export function SettingsProviderAccountsRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
+      {/* fork: everyday-workflows */}
       <SettingsScreen title="Agent accounts" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScreenScrollView
           className="flex-1"
@@ -47,6 +48,7 @@ export function SettingsProviderAccountsRouteScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           {selectedTargets.length === 0 ? (
+            // fork: everyday-workflows
             <SettingsComputerNotice />
           ) : (
             selectedTargets.map((environment) => (
@@ -79,6 +81,7 @@ export function SettingsProviderAccountsRouteScreen() {
                         (provider.driver === "acpRegistry" && provider.installed),
                     ) ? (
                       <Text className="p-4 text-foreground-muted">
+                        {/* fork: everyday-workflows */}
                         Add an agent in Loom Settings on your computer, then return here to sign in.
                       </Text>
                     ) : null}
@@ -203,7 +206,8 @@ function ProviderAccount({
               : isDiscovering
                 ? "Discovering sign-in methods…"
                 : needsExternalSetup
-                  ? "Sign in to this agent on your computer, or open its setup guide."
+                  ? // fork: everyday-workflows
+                    "Sign in to this agent on your computer, or open its setup guide."
                   : "Sign in to use this agent on this computer."}
         </Text>
         {signedIn && !active && provider.auth.email?.trim() ? (
@@ -277,6 +281,7 @@ function ProviderAccount({
             {error ?? auth.error}
           </Text>
         ) : null}
+        {/* fork: everyday-workflows */}
         {auth.error ? (
           <SettingsActionRow
             icon="arrow.clockwise"
@@ -327,7 +332,7 @@ function ProviderAccount({
       {needsExternalSetup && provider.setup?.documentationUrl ? (
         <SettingsActionRow
           icon="globe"
-          label="Open setup guide"
+          label="Open setup guide" // fork: everyday-workflows
           onPress={() => {
             void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
               setError("Could not open the provider docs."),
@@ -361,6 +366,7 @@ function ProviderAccount({
           onPress={() =>
             Dialog.alert(
               "Sign out?",
+              // fork: everyday-workflows
               `Running conversations sharing this sign-in on ${environment.label} will stop. Conversation history is kept.`,
               [
                 { text: "Cancel", style: "cancel" },

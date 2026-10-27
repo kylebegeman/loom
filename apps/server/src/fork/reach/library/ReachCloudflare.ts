@@ -21,11 +21,11 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import { readReachCredential, reachLibraryConfig } from "./credentials.ts";
 
-export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
+const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 export const WAF_PHASE = "http_request_firewall_custom";
 export const RATE_LIMIT_PHASE = "http_ratelimit";
-export const ALLOWLIST_RULE_PREFIX = `${REACH_EDGE_RULE_PREFIX}allowlist`;
-export const RATE_LIMIT_RULE_PREFIX = `${REACH_EDGE_RULE_PREFIX}ratelimit`;
+const ALLOWLIST_RULE_PREFIX = `${REACH_EDGE_RULE_PREFIX}allowlist`;
+const RATE_LIMIT_RULE_PREFIX = `${REACH_EDGE_RULE_PREFIX}ratelimit`;
 /** Every computer's tunnel; the name is how a lost store finds it again. */
 export const reachTunnelName = (environmentId: string) => `loom-reach-${environmentId}`;
 export const reachTunnelTarget = (tunnelId: string) => `${tunnelId}.cfargotunnel.com`;

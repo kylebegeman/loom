@@ -60,6 +60,7 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
+  // fork: brand -- the kept brand tests below need these
   bundlesWslRuntime,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_EXTRA_RESOURCES,
@@ -483,6 +484,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
+  // fork: brand -- kept after upstream deleted it, for the product name check
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.1.0"), "Loom"); // fork: brand
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Loom (Nightly)"); // fork: brand
@@ -557,6 +559,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
+  // fork: brand -- kept after upstream deleted it, for the DMG title and protocol checks
   it.effect("applies platform-specific packaging to the build config", () =>
     Effect.gen(function* () {
       const mac = yield* createBuildConfig(

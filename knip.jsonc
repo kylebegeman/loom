@@ -25,6 +25,8 @@
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
+        // fork: ext-lint -- loom.sh runs this JXA script through osascript.
+        "fork/running-apps.js",
         "knip-schemas.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
@@ -42,6 +44,7 @@
       "entry": [
         "src/bin.ts!",
         "src/claude-history-worker.ts!",
+        "src/fork/model-preview-3d/check/model-check-worker.ts!", // fork: ext-lint
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
         "scripts/fetch-expo-schema.ts",
@@ -51,6 +54,10 @@
         "src/provider/testFixtures/*.mjs",
         // graphqlgen reads its config.
         "graphql.config.ts",
+        // fork: ext-lint -- benchmarks/loom imports the Library fixture from outside any
+        // workspace, and the model check timing script runs by hand with node.
+        "scripts/benchmark-library.ts",
+        "src/fork/model-preview-3d/check/bench.ts",
       ],
       // The generated operations export every selection's class.
       "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
@@ -58,7 +65,13 @@
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
       // CLI archive and desktop sidecar stage them from this manifest.
-      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web", "@napi-rs/keyring"],
+      "ignoreDependencies": [
+        "@effect/platform-node-shared",
+        "@t3tools/web",
+        "@napi-rs/keyring",
+        // fork: ext-lint -- the Library embedder resolves it through createRequire.
+        "onnxruntime-web",
+      ],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.
@@ -85,7 +98,7 @@
       // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
       // fixtures run under node.
       "entry": ["scripts/warm-dep-cache.ts", "test/fixtures/**/*.mjs"],
-      // Archived thread inspector source stays available without shipping its UI.
+      // fork: ext-lint -- the archived thread inspector stays in source without shipping its UI.
       "ignore": ["src/fork/thread-inspector/**"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still

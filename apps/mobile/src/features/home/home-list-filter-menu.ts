@@ -28,12 +28,12 @@ type HomeListFilterMenuSubmenu = {
 
 export interface HomeListFilterMenu {
   readonly title: string;
-  readonly accessibilityLabel: string;
+  readonly accessibilityLabel: string; // fork: project-navigation
   readonly items: Array<HomeListFilterMenuAction | HomeListFilterMenuSubmenu>;
 }
 
 export function buildHomeListFilterMenu(props: {
-  readonly navigationView?: LoomNavigatorView;
+  readonly navigationView?: LoomNavigatorView; // fork: project-navigation
   readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly selectedEnvironmentId: EnvironmentId | null;
@@ -41,16 +41,17 @@ export function buildHomeListFilterMenu(props: {
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
 }): HomeListFilterMenu {
-  const projectsView = props.navigationView === "projects";
+  const projectsView = props.navigationView === "projects"; // fork: project-navigation
   const items: Array<HomeListFilterMenuAction | HomeListFilterMenuSubmenu> = [];
 
   items.push({
     type: "submenu",
-    title: "Computer",
+    title: "Computer", // fork: fleet-connections
     items: [
       {
         type: "action",
-        title: "All computers",
+        title: "All computers", // fork: fleet-connections
+        // fork: project-navigation
         subtitle: projectsView
           ? "Show projects from every computer"
           : "Show threads from every computer",
@@ -69,6 +70,7 @@ export function buildHomeListFilterMenu(props: {
     ],
   });
 
+  // fork: project-navigation
   if (!projectsView && props.projects.length > 0) {
     items.push({
       type: "submenu",
@@ -92,6 +94,7 @@ export function buildHomeListFilterMenu(props: {
   }
 
   return {
+    // fork: project-navigation
     title: projectsView ? "Project list options" : "Thread list options",
     accessibilityLabel: projectsView ? "Filter projects" : "Filter threads",
     items,

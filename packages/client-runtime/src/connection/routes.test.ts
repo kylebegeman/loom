@@ -83,6 +83,7 @@ describe("connection routes", () => {
     expect(insertRoute([LAN, TAILNET], RELAY)).toEqual([LAN, TAILNET, RELAY]);
   });
 
+  // fork: reach
   it("puts HTTPS and DNS names ahead of a raw-IP plain HTTP route of the same kind", () => {
     const tailnetIp = direct("tailnet-ip", "http://[fd7a:115c:a1e0::1]:3773/");
     expect(insertRoute([tailnetIp, PUBLIC, RELAY], TAILNET)).toEqual([
@@ -133,6 +134,7 @@ describe("learned routes", () => {
     });
   });
 
+  // fork: identity-renewal
   it("preserves Identity provenance and shared credential when learning a tailnet route", () => {
     const identity = { issuer: "https://id.example.test", subject: "owner" };
     const source = {
@@ -297,8 +299,9 @@ describe("learned routes", () => {
       allowInsecure: true,
     });
     expect(ids(routes)).toEqual([
+      // fork: reach -- HTTPS names sort ahead of a raw IP of the same kind
       `learned:${ENVIRONMENT_ID}:https://desk.tail1234.ts.net@public`,
-      `learned:${ENVIRONMENT_ID}:http://100.101.102.103:3773@public`,
+      `learned:${ENVIRONMENT_ID}:http://100.101.102.103:3773@public`, // fork: reach
       "public",
       "relay",
     ]);
@@ -446,6 +449,7 @@ describe("learned routes", () => {
     }
   });
 
+  // fork: directory-computers
   it("marks directory routes, drops them when a listing does, and keeps the server's", () => {
     const fromLan = entryWithRoutes(relayOnly, [LAN, RELAY]);
     const directoryOnly = mergeLearnedRoutes({

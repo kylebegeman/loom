@@ -36,7 +36,7 @@ export type AssemblyGeometry = {
   files: CheckFile[];
   geometryRevision: string;
 };
-export const assemblyVariant = (file: ModelFileRef, part: AssemblyPart, check = true) =>
+const assemblyVariant = (file: ModelFileRef, part: AssemblyPart, check = true) =>
   `${check ? "asmchk" : "asm"}-${NodeCrypto.createHash("sha256").update(file.path).digest("hex").slice(0, 8)}-${part.id}`;
 export const makeAssemblyGeometry = Effect.fn("Assembly.makeGeometry")(function* (deps: {
   resolveFile: (

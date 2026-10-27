@@ -148,10 +148,10 @@ import type { QueuedThreadMessage } from "./thread-outbox-model";
 import * as composerDrafts from "./use-composer-drafts";
 import { recoverFailedThreadDraft } from "./recover-failed-thread-draft";
 import { editingQueuedMessageIdsAtom } from "./use-thread-outbox";
-import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery";
+import { threadOutboxDeliveryAtom } from "./thread-outbox-delivery"; // fork: failed-run-retry
 import {
   completeQueuedMessageDelivery,
-  markQueuedMessageDeliveryAttempted,
+  markQueuedMessageDeliveryAttempted, // fork: failed-run-retry
   prepareQueuedMessageAttachments,
   recoverEditedCreationAfterDelivery,
   removeAcknowledgedExistingThreadMessage,
@@ -209,7 +209,7 @@ function remainingMessages(): ReadonlyArray<QueuedThreadMessage> {
 
 beforeEach(() => {
   appAtomRegistry.set(acknowledgedThreadMessagesAtom, []);
-  appAtomRegistry.set(threadOutboxDeliveryAtom, null);
+  appAtomRegistry.set(threadOutboxDeliveryAtom, null); // fork: failed-run-retry
   harness.canOperate = true;
   harness.draftFile.setDocument({ schemaVersion: 1, drafts: {} });
 });
@@ -334,6 +334,7 @@ describe("thread outbox attachment preparation", () => {
   });
 });
 
+// fork: failed-run-retry
 describe("durable interrupted-send recovery", () => {
   it("persists uncertainty without changing the command or message identity", async () => {
     const message = queuedMessage({ messageId: "uncertain-send", text: "Send once" });
@@ -766,6 +767,7 @@ describe("thread outbox recovery rollback", () => {
   });
 
   it("rolls a failed recovery merge back so the retry cannot duplicate the text", async () => {
+    // fork: failed-run-retry
     const message = {
       ...queuedMessage({ messageId: "message-restore", text: "queued text" }),
       deliveryAttempted: true,

@@ -277,6 +277,7 @@ const COMPOSER_ATTACHMENT_ENTERING =
 const AnimatedGlassSurface = Animated.createAnimatedComponent(GlassSurface);
 
 const FOLLOW_UP_ACTION_LABEL = {
+  // fork: everyday-workflows
   queue: "Send next",
   steer: "Send now",
   restart: "Restart turn",
@@ -284,7 +285,7 @@ const FOLLOW_UP_ACTION_LABEL = {
 
 const FOLLOW_UP_ACTION_SUBTITLE = {
   queue: "Run after the current turn",
-  steer: "Guide the agent during the current turn",
+  steer: "Guide the agent during the current turn", // fork: everyday-workflows
   restart: "Start the turn over with this message",
 } as const;
 
@@ -679,7 +680,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     armAgentAwarenessLiveActivityForLocalWork({
       environmentId: props.environmentId,
       threadTitle: props.selectedThread.title,
-      projectTitle: props.environmentLabel ?? BRAND_NAME,
+      projectTitle: props.environmentLabel ?? BRAND_NAME, // fork: brand
     });
   };
 
@@ -808,6 +809,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         style={{ maxWidth: props.contentMaxWidth }}
       >
         {props.draftControls}
+        {/* fork: everyday-workflows */}
         {isFocused && !isSubmissionLocked && composerMenu.trigger ? (
           <ComposerPopoverAnchor>
             <ComposerCommandPopover
@@ -1185,6 +1187,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           </Animated.View>
         </ComposerSurface>
 
+        {/* fork: everyday-workflows */}
         {hasContent && sendBlockedReason !== null ? (
           <Text accessibilityLiveRegion="polite" className="pt-2 text-xs text-foreground-muted">
             {sendBlockedReason}

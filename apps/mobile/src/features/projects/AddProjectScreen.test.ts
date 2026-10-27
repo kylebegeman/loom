@@ -8,6 +8,7 @@ import * as NodeModule from "node:module";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { workspaceDetailRouter } from "../workspace/workspace-detail-selection";
 import type { NavigationState } from "@react-navigation/native";
+// fork: project-home
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -16,7 +17,7 @@ import {
   type ProjectCloneSnapshot,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
+import * as Option from "effect/Option"; // fork: fleet-connections
 import { AsyncResult } from "effect/reactivity";
 import { act, createElement, isValidElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,9 +25,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const state = vi.hoisted(() => ({
   scopes: new Set<string>(),
-  otherScopes: new Set<string>(),
+  otherScopes: new Set<string>(), // fork: fleet-connections
   baseDirectory: "",
   projects: [] as string[],
+  // fork: fleet-connections
   createRequests: [] as { environmentId: string; workspaceRoot: string }[],
   newProjectName: "",
   newProjectRequests: [] as { environmentId: string; name: string }[],
@@ -35,6 +37,7 @@ const state = vi.hoisted(() => ({
   offerPublishTarget: false,
   revokePublishAfterCreate: false,
   checkDirectories: false,
+  // fork: project-home
   connected: true,
   disconnectAfterReceiptSave: false,
   revokeAfterReceiptSave: false,
@@ -47,6 +50,7 @@ const state = vi.hoisted(() => ({
   >,
   trackedCloneRequests: [] as {
     environmentId: string;
+    // fork: project-home
     input: {
       projectId: string;
       title: string;
@@ -138,6 +142,7 @@ vi.mock("../../components/ui/ErrorBanner", () => ({ ErrorBanner: "ErrorBanner" }
 vi.mock("./SourceControlIcon", () => ({ SourceControlIcon: "SourceControlIcon" }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "project" }));
 vi.mock("../../state/session", () => ({
+  // fork: fleet-connections
   useEnvironmentScope: (environmentId: string, scope: string) =>
     (environmentId === "other-environment" ? state.otherScopes : state.scopes).has(scope),
   readEnvironmentScope: (environmentId: string, scope: string) =>
@@ -159,6 +164,7 @@ vi.mock("../../state/entities", () => ({
           settings: { addProjectBaseDirectory: state.baseDirectory },
         },
       ],
+      // fork: fleet-connections
       [
         "other-environment",
         {
@@ -188,11 +194,13 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => () => {} }));
+// fork: project-home
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: unknown) =>
     atom === "project-clones"
       ? { data: state.cloneSnapshots, isSuccess: true }
       : {
+          // fork: fleet-connections
           data: state.offerPublishTarget
             ? {
                 versionControlSystems: [],
@@ -218,6 +226,7 @@ vi.mock("../../state/query", () => ({
 }));
 vi.mock("../../state/presentation", () => ({
   useEnvironmentPresentation: () => ({ isReady: true, presentation: null }),
+  // fork: project-home
   environmentPresentations: { presentationAtom: () => "presentation" },
 }));
 vi.mock("../../state/atom-registry", () => ({
@@ -231,8 +240,9 @@ vi.mock("../../state/atom-registry", () => ({
 vi.mock("../../state/filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: {
-    projectClones: () => "project-clones",
+    projectClones: () => "project-clones", // fork: project-home
     discovery: (input: unknown) => input,
+    // fork: project-home
     startProjectClone: async (request: {
       environmentId: string;
       input: {
@@ -260,6 +270,7 @@ vi.mock("../../state/sourceControl", () => ({
         Cause.fail(new Error("Connection lost after the project was saved")),
       );
     },
+    // fork: fleet-connections
     publishRepository: async (request: { environmentId: string; input: { cwd: string } }) => {
       state.publishRequests.push({ environmentId: request.environmentId, cwd: request.input.cwd });
       return AsyncResult.success(undefined);
@@ -271,6 +282,7 @@ vi.mock("../../state/sourceControl", () => ({
     },
   },
 }));
+// fork: project-home
 vi.mock("../../fork/project-home/useProjectPreparationReceipt", () => ({
   useProjectPreparationReceipt: (key: string | null) => ({
     loaded: true,
@@ -290,6 +302,7 @@ vi.mock("../../fork/project-home/useProjectPreparationReceipt", () => ({
 }));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: {
+    // fork: fleet-connections
     createNew: (request: { environmentId: string; input: { name: string } }) => {
       state.newProjectRequests.push({
         environmentId: request.environmentId,
@@ -320,6 +333,7 @@ vi.mock("../../state/projects", () => ({
           AsyncResult.failure(Cause.fail(new Error("Project creation denied"))),
         );
       }
+      // fork: fleet-connections
       if (state.checkDirectories && !NodeFS.existsSync(input.workspaceRoot)) {
         if (!input.createWorkspaceRootIfMissing) {
           return Promise.resolve(
@@ -410,6 +424,7 @@ function cloneAction() {
   return action;
 }
 
+// fork: fleet-connections -- upstream pruned this helper; the existing-folder tests below still use it
 function localProjectAction(environmentId = "environment") {
   const action = findAction(
     renderScreen(() => AddProjectLocalFolderScreen({ environmentId })),
@@ -420,6 +435,7 @@ function localProjectAction(environmentId = "environment") {
   return action;
 }
 
+// fork: project-home
 function destinationScreen(params: Parameters<typeof AddProjectDestinationScreen>[0]) {
   return renderScreen(() => AddProjectDestinationScreen(params));
 }
@@ -1063,6 +1079,7 @@ describe("local project navigation", () => {
   );
 });
 
+// fork: fleet-connections
 describe("new project permissions", () => {
   beforeEach(() => {
     state.baseDirectory = "/workspace/projects";
@@ -1154,7 +1171,9 @@ describe("new project permissions", () => {
         AuthOrchestrationOperateScope,
       );
 
-      await (await newProjectAction("other-environment"))();
+      await (
+        await newProjectAction("other-environment")
+      )();
 
       expect(state.newProjectRequests).toEqual(
         allowSelectedEnvironment
@@ -1191,7 +1210,9 @@ describe("new project permissions", () => {
     state.scopes = new Set([AuthOrchestrationOperateScope, AuthSourceControlWriteScope]);
     state.newProjectPublishes = true;
     state.offerPublishTarget = true;
-    await (await newProjectAction())();
+    await (
+      await newProjectAction()
+    )();
     expect(state.newProjectRequests).toEqual([
       { environmentId: "environment", name: "New project" },
     ]);
@@ -1205,7 +1226,9 @@ describe("new project permissions", () => {
     state.newProjectPublishes = true;
     state.offerPublishTarget = true;
     state.revokePublishAfterCreate = true;
-    await (await newProjectAction())();
+    await (
+      await newProjectAction()
+    )();
     expect(state.newProjectRequests).toEqual([
       { environmentId: "environment", name: "New project" },
     ]);
@@ -1213,6 +1236,7 @@ describe("new project permissions", () => {
   });
 });
 
+// fork: fleet-connections
 describe("open an existing folder", () => {
   let temporaryRoot: string;
   beforeEach(async () => {

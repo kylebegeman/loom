@@ -37,7 +37,7 @@ import { meshContentHash, prepareSliceMesh, type SliceMesh } from "./prepare.ts"
 import { bambuArgs, readBambuOutput } from "./bambu.ts";
 import { prusaArgs, readPrusaOutput } from "./prusa.ts";
 const isModelError = Schema.is(ModelPreviewError);
-export const SLICER_ADAPTER_VERSION = 1;
+const SLICER_ADAPTER_VERSION = 1;
 export const sliceCacheKey = (input: {
   app: SlicerApp;
   version: string | null;

@@ -1,4 +1,4 @@
-import { assert, expect, it, vi } from "@effect/vitest";
+import { assert, expect, it, vi } from "@effect/vitest"; // fork: checkpoint-capable
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,8 +6,8 @@ import * as Option from "effect/Option";
 
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
 import type { OrchestrationProjectShell } from "@t3tools/contracts"; // fork: project-root-worktree
-import { LibraryError } from "@t3tools/contracts/fork";
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import { LibraryError } from "@t3tools/contracts/fork"; // fork: checkpoint-capable
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: checkpoint-capable
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -21,6 +21,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
 
+// fork: project-lifecycle
 const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }).pipe(
   Layer.provide(NodeServices.layer),
 );
@@ -29,7 +30,7 @@ function layer(input: {
   readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
 }) {
   return GitWorkflowService.layer.pipe(
-    Layer.provide(layerConfig),
+    Layer.provide(layerConfig), // fork: project-lifecycle
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         detect: input.detect,
@@ -37,7 +38,7 @@ function layer(input: {
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(NodeServices.layer), // fork: project-lifecycle
   );
 }
 
@@ -134,8 +135,8 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
     const status = vi.fn();
 
     const layerTest = GitWorkflowService.layer.pipe(
-      Layer.provide(layerConfig),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(layerConfig), // fork: project-lifecycle
+      Layer.provide(NodeServices.layer), // fork: project-lifecycle
       Layer.provide(
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
           detect: () => Effect.succeed(null),
@@ -163,6 +164,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
     }).pipe(Effect.provide(layerTest));
   });
 
+  // fork: checkpoint-capable
   it.effect(
     "reports checkpoint capability for a registered nongit parent without enabling Git workflows",
     () =>
@@ -332,7 +334,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
       Effect.scoped,
       Effect.provide(
         GitWorkflowService.layer.pipe(
-          Layer.provide(layerConfig),
+          Layer.provide(layerConfig), // fork: project-lifecycle
           Layer.provide(
             Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
               resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),

@@ -149,6 +149,7 @@ export function AgentActivity(
   const showCompactGlyph = !attentionRow && !failedRow && !allDone && !environment.isStale;
   const summary = attentionSuffix || activeLabel;
 
+  // fork: mobile-identity
   // Keep widget taps in the app variant that created the activity.
   const appScheme = /^(loom|t3code)(-dev|-preview)?$/.test(props.appScheme ?? "")
     ? props.appScheme
@@ -156,7 +157,7 @@ export function AgentActivity(
   const deepLinkRow = attentionRow ?? row0;
   const deepLink =
     deepLinkRow && deepLinkRow.deepLink.startsWith("/") && !deepLinkRow.deepLink.startsWith("//")
-      ? `${appScheme}://${deepLinkRow.deepLink.slice(1)}`
+      ? `${appScheme}://${deepLinkRow.deepLink.slice(1)}` // fork: mobile-identity
       : null;
   const linkModifiers = deepLink ? [widgetURL(deepLink)] : [];
 

@@ -129,6 +129,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
+        // fork: everyday-workflows
         accessibilityLabel={`Show questions, ${questionCount} question${
           questionCount === 1 ? "" : "s"
         }`}
@@ -136,6 +137,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
       >
         <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+          {/* fork: everyday-workflows */}
           Reply needed
         </Text>
         <Text className="font-sans text-xs text-foreground-muted">
@@ -151,7 +153,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       </Pressable>
       {props.onStopThread ? (
         <ControlPill
-          accessibilityLabel="Stop agent"
+          accessibilityLabel="Stop agent" // fork: everyday-workflows
           icon="stop.fill"
           variant="danger"
           className="h-9 w-9"
@@ -182,14 +184,16 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Hide questions"
+        accessibilityLabel="Hide questions" // fork: everyday-workflows
         onPress={props.onToggleCollapsed}
         className="flex-row items-start gap-2"
       >
         <View className="flex-1 gap-2.5">
           <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+            {/* fork: everyday-workflows */}
             Reply needed
           </Text>
+          {/* fork: everyday-workflows */}
           <Text className="font-t3-bold text-lg text-foreground">Reply to continue</Text>
         </View>
         <View className="h-8 w-8 items-center justify-center rounded-full bg-subtle-strong">

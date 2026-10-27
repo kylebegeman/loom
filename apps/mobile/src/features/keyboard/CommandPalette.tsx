@@ -56,7 +56,7 @@ import { useWorkspaceEnvironments } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
-import { ThreadSearchNotice } from "../threads/ThreadSearchNotice";
+import { ThreadSearchNotice } from "../threads/ThreadSearchNotice"; // fork: everyday-workflows
 import {
   filterCommandPaletteItems,
   nextPaletteIndex,
@@ -677,6 +677,7 @@ export function CommandPalette(props: {
                   index,
                 })}
                 contentContainerClassName="pb-2"
+                // fork: everyday-workflows
                 ListHeaderComponent={
                   search.failedEnvironmentIds.length > 0 ? (
                     <ThreadSearchNotice pending={search.isPending} onRetry={search.retry} />
@@ -684,6 +685,7 @@ export function CommandPalette(props: {
                 }
                 ListEmptyComponent={
                   <Text className="p-5 text-center text-foreground-muted">
+                    {/* fork: everyday-workflows */}
                     {search.isPending
                       ? "Searching…"
                       : search.failedEnvironmentIds.length > 0

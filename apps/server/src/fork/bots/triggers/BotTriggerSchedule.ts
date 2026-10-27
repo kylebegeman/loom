@@ -12,7 +12,7 @@ import { scheduleStep } from "./scheduleStep.ts";
 const MAX_SLEEP_MS = 60_000;
 
 /** Fires every due schedule trigger once; returns the earliest time one is due next. */
-export const scheduleTick = Effect.fnUntraced(function* (
+const scheduleTick = Effect.fnUntraced(function* (
   triggers: Pick<BotTriggers["Service"], "scheduled" | "advanceSchedule">,
   now: DateTime.Zoned,
 ) {

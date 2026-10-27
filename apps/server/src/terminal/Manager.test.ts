@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
-  ProjectId,
+  ProjectId, // fork: project-lifecycle
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalOpenInput,
@@ -32,6 +32,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
+// fork: project-lifecycle
 import {
   markManagedProjectCheckout,
   readManagedProjectCheckout,
@@ -278,7 +279,7 @@ const createManager = (
   | Path.Path
   | Scope.Scope
   | ProcessRunner.ProcessRunner
-  | ServerConfig.ServerConfig
+  | ServerConfig.ServerConfig // fork: project-lifecycle
 > =>
   Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
     Effect.gen(function* () {
@@ -426,6 +427,7 @@ it("bounds long partial lines and joins surrogate pairs across chunk boundaries"
 });
 
 it.layer(
+  // fork: project-lifecycle -- checkout receipts live under the test server state
   Layer.mergeAll(
     NodeServices.layer,
     ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer)),

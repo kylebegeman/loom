@@ -7,16 +7,16 @@ import type { ProjectLifecycleSettings } from "@t3tools/contracts/fork";
 /** Finder and `diskutil` sizes are decimal. */
 export const GB = 1_000_000_000;
 
-export const STEER_RATIO = 0.75;
-export const CLEAR_RATIO = 0.9;
+const STEER_RATIO = 0.75;
+const CLEAR_RATIO = 0.9;
 /** A lane must fall this low before its running agent can be steered again. */
-export const STEER_RESET_RATIO = 0.6;
-export const GROW_FACTOR = 1.5;
+const STEER_RESET_RATIO = 0.6;
+const GROW_FACTOR = 1.5;
 /** The machine notice ends once free space is this far above the reserve. */
-export const RESERVE_RECOVERY_BYTES = 10 * GB;
+const RESERVE_RECOVERY_BYTES = 10 * GB;
 /** Remount an idle lane when its image holds this much more than the volume uses. */
-export const REMOUNT_SLACK_BYTES = 10 * GB;
-export const REMOUNT_SLACK_RATIO = 0.25;
+const REMOUNT_SLACK_BYTES = 10 * GB;
+const REMOUNT_SLACK_RATIO = 0.25;
 
 const APPLE_MARKERS = new Set(["Package.swift", "project.yml", "Project.swift", "Tuist", "ios"]);
 
@@ -70,7 +70,7 @@ export const projectFolder = (input: {
     : base;
 };
 
-export const threadSettled = (thread: OrchestrationV2ThreadShell) =>
+const threadSettled = (thread: OrchestrationV2ThreadShell) =>
   thread.settledOverride === "settled" ||
   (thread.settledAt !== null && thread.settledOverride !== "active");
 

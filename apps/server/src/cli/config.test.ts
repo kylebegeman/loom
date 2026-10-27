@@ -913,6 +913,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   );
 });
 
+// fork: mini-managed-projects
 const managedRootFlags = (base: string) => ({
   mode: Option.some("web" as const),
   port: Option.some(0),

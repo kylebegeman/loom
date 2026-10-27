@@ -17,7 +17,7 @@ import { isLibraryAuthorityEnv } from "./authority.ts";
  * runs single-threaded in a worker and holds about 250 MB; restarting it fragments the heap.
  */
 
-export const LIBRARY_EMBEDDINGS_DIR_ENV = "LOOM_LIBRARY_EMBEDDINGS_DIR";
+const LIBRARY_EMBEDDINGS_DIR_ENV = "LOOM_LIBRARY_EMBEDDINGS_DIR";
 
 /** The pinned model. Changing it re-embeds the Library, because stored vectors carry its id. */
 export const LIBRARY_EMBEDDING_MODEL = {
@@ -36,7 +36,7 @@ export const LIBRARY_EMBEDDING_MODEL = {
 } as const;
 
 // The model was trained on 128-token inputs; longer inputs cost quadratically more and add little.
-export const LIBRARY_EMBEDDING_MAX_TOKENS = 128;
+const LIBRARY_EMBEDDING_MAX_TOKENS = 128;
 // About four characters per token; enough to fill the token budget without tokenizing a long paste.
 export const LIBRARY_EMBEDDING_MAX_CHARS = 2000;
 const MAX_WORD_CHARS = 100;

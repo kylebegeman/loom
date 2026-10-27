@@ -106,7 +106,7 @@ const SimctlDevices = Schema.fromJsonString(
 
 const decodeSimctlDevices = Schema.decodeEffect(SimctlDevices);
 
-export const parseSimulators = (stdout: string) =>
+const parseSimulators = (stdout: string) =>
   decodeSimctlDevices(stdout).pipe(
     Effect.map(
       (list) =>
@@ -256,7 +256,7 @@ const CONTAINER_RUNTIME =
   /^(com\.docker\.|vpnkit|docker-proxy|dockerd|rootlesskit|rootlessport|slirp4netns|orbstack|limactl|gvproxy)/i;
 
 /** A command name or, as macOS `ps -o comm` prints it, an executable path. */
-export const isContainerRuntime = (command: string) =>
+const isContainerRuntime = (command: string) =>
   CONTAINER_RUNTIME.test(command.slice(command.lastIndexOf("/") + 1));
 
 /** Output of `ps -Ao pid=,comm=`: the pids of container runtime processes. */
@@ -275,7 +275,7 @@ export const parseRuntimeProcesses = (stdout: string) => {
  * every container on the computer. `published` is null when Docker is missing or not running;
  * then nothing proves a port unpublished, and the name is the only evidence left.
  */
-export const runtimeOwned = (listener: Listener, published: ReadonlySet<number> | null) =>
+const runtimeOwned = (listener: Listener, published: ReadonlySet<number> | null) =>
   isContainerRuntime(listener.command) ||
   (published !== null && [...listener.ports].some((port) => published.has(port)));
 

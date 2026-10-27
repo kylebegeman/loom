@@ -3,6 +3,8 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
+<!-- fork: project-navigation -->
+
 ## Find work by project
 
 The app opens with your threads. Use the existing project filter above the thread list
@@ -35,6 +37,8 @@ To reopen an archived conversation, go to **Settings → Archive**, search its t
 
 ## Start a thread
 
+<!-- fork: library-projects -->
+
 On web and desktop, hover a thread or focus it with the keyboard and choose **+**
 to start a fresh conversation with that thread's project, computer and settings.
 A Library project's conversation starts in the project's folder, or in a new worktree
@@ -42,6 +46,8 @@ of its own when you choose **Workspace → New worktree**. It does not continue 
 source thread's worktree.
 Review or change the selections before starting. The main **New thread** action
 remains available when you want to choose a different setup.
+
+<!-- fork: library-projects -->
 
 For local projects on web and desktop, a new thread keeps the current project and carries your model
 and mode selections, unless the destination project has its own model default.
@@ -52,6 +58,8 @@ When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
 
 ### Start without a project
+
+<!-- fork: no-project-first -->
 
 A thread does not need a project. To start one without a project, click **or
 start without a project** under a new thread's heading, pick **No project** at
@@ -183,6 +191,8 @@ sending an answer or restarting the agent. Settling also closes the thread's
 terminals that wait at an idle prompt, and keeps their output. A terminal that
 runs a command, such as a dev server, stays open.
 
+<!-- fork: project-checkout-management -->
+
 To release a published managed worktree once every thread using it has settled, enable
 **Settings → Storage → Release settled worktrees**. For the primary project folder, choose
 **Release when settled** in the project's storage settings, or use the computer's
@@ -193,6 +203,8 @@ selected. Worktree cleanup remains separate. Local data, unpublished work, pinne
 and busy workspaces are kept. Continuing a released conversation restores its checkout and
 runs workspace setup before the agent starts. See [Project storage](project-settings.md#storage-cleanup)
 for review, retention and recovery details.
+
+<!-- fork: project-lifecycle -->
 
 To remove build output while keeping the checkout, turn on **Run in the thread's worktree when the
 thread settles** for one of the project's actions, or set `"runOnSettle": true` on a
@@ -274,7 +286,7 @@ When the provider reports a reset time, choose **Resume at reset** to schedule a
 continuation. You can cancel it from the thread. Enable **Resume after
 usage limits** in **Settings → General** on web and desktop, or **Settings → Thread
 behavior** on mobile, to schedule limit stops by default.
-When Claude routes through Switchboard, a compatible proxy can report when the
+When Claude routes through Switchboard, a compatible proxy can report when the <!-- fork: switchboard -->
 pool becomes available again. Auto-resume uses that time, which may be earlier
 than the current account's own reset.
 The environment must be running when the reset arrives; it resumes overdue

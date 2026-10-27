@@ -148,7 +148,6 @@ import {
   type PickTool,
 } from "./WorkspaceTools";
 
-export { ModelPicker } from "./ModelPicker";
 const idleEditor = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, never>());
 const ViewerCanvas = lazy(() => import("./viewer/ViewerCanvas"));
 const failureMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));

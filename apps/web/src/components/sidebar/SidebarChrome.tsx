@@ -1,8 +1,8 @@
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
-  FolderKanbanIcon,
-  GlobeIcon,
+  FolderKanbanIcon, // fork: project-home
+  GlobeIcon, // fork: sites-navigation
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -31,7 +31,7 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
-import { useNavigateToMainApp } from "./mainAppLocation";
+import { useNavigateToMainApp } from "./mainAppLocation"; // fork: bots
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -135,9 +135,9 @@ function SidebarUtilityItem({
   icon,
   label,
   onClick,
-  active = false,
+  active = false, // fork: bots
 }: {
-  active?: boolean;
+  active?: boolean; // fork: bots
   icon: ReactNode;
   label: string;
   onClick: () => void;
@@ -147,6 +147,7 @@ function SidebarUtilityItem({
       <Tooltip>
         <TooltipTrigger
           render={
+            // fork: bots
             <SidebarMenuButton
               aria-label={label}
               aria-current={active ? "page" : undefined}
@@ -170,6 +171,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigateToMainApp = useNavigateToMainApp();
   const pathname = useLocation({ select: (location) => location.pathname }); // fork: sites-navigation
   const { isMobile, setOpenMobile } = useSidebar();
+  // fork: bots -- isOnUtilityPage became the pathname check below
   const pullRequestsSupported = usePullRequestsSupported();
   const botsEntry = useBotsFooterEntry(); // fork: bots
   const closeMobileSidebar = () => {
@@ -189,6 +191,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   };
 
+  // fork: project-home
   const handleProjectsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/projects" });
@@ -201,10 +204,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   };
 
+  // fork: bots
   if (/^\/(?:settings|pull-requests|usage)(?:\/|$)/.test(pathname))
     return (
       <SidebarMenu className="flex-row items-center">
         <SidebarMenuItem className="min-w-0 flex-1">
+          {/* fork: bots */}
           <SidebarMenuButton
             onClick={() => {
               closeMobileSidebar();
@@ -225,29 +230,31 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       <SidebarUtilityItem
         icon={<SettingsIcon />}
         label="Settings"
-        active={/^\/settings(?:\/|$)/.test(pathname)}
+        active={/^\/settings(?:\/|$)/.test(pathname)} // fork: bots
         onClick={handleSettingsClick}
       />
       {pullRequestsSupported ? (
         <SidebarUtilityItem
           icon={<PullRequestGlyph.pullRequest />}
           label="Pull requests"
-          active={/^\/pull-requests(?:\/|$)/.test(pathname)}
+          active={/^\/pull-requests(?:\/|$)/.test(pathname)} // fork: bots
           onClick={handlePullRequestsClick}
         />
       ) : null}
       <SidebarUtilityItem
         icon={<ChartNoAxesColumnIcon />}
         label="Usage"
-        active={/^\/usage(?:\/|$)/.test(pathname)}
+        active={/^\/usage(?:\/|$)/.test(pathname)} // fork: bots
         onClick={handleUsageClick}
       />
+      {/* fork: project-home */}
       <SidebarUtilityItem
         icon={<FolderKanbanIcon />}
         label="Projects"
         active={/^\/(?:projects|library)(?:\/|$)/.test(pathname)}
         onClick={handleProjectsClick}
       />
+      {/* fork: sites-navigation */}
       <SidebarUtilityItem
         icon={<GlobeIcon />}
         label="Sites"

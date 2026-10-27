@@ -84,6 +84,7 @@ describe("applyShellStreamEvent", () => {
     expect(moved.projects[0]?.repositoryIdentity).toBeNull();
   });
 
+  // fork: file-placement
   it("keeps project and conversation identities when a folder location changes", () => {
     const threads = [
       v2ThreadShell,

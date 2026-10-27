@@ -14,8 +14,8 @@ import * as Schema from "effect/Schema";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
-import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts"; // fork: library-launch-files
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 
 export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyResolveError>()(
   "RuntimePolicyResolveError",
@@ -46,7 +46,7 @@ export interface RuntimePolicyV2Shape {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
     /** Provider startup restores files before taking its non-reentrant workspace lease. */
-    readonly libraryFilesPrepared?: boolean;
+    readonly libraryFilesPrepared?: boolean; // fork: library-launch-files
   }) => Effect.Effect<ProviderAdapter.ProviderAdapterV2RuntimePolicy, RuntimePolicyV2Error>;
 }
 
@@ -83,8 +83,9 @@ export const layerFromProjectStore: Layer.Layer<
   RuntimePolicyV2,
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
+    // fork: library-projects
     const workspaceStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore);
-    const workspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace);
+    const workspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace); // fork: library-launch-files
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
@@ -135,6 +136,7 @@ export const layerFromProjectStore: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
+          // fork: library-projects -- a Library-bound thread runs only in its copy.
           cwd: Option.isNone(workspaceStore)
             ? cwd
             : yield* workspaceStore.value

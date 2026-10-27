@@ -312,6 +312,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
 
     return (
       <View className="flex-1 bg-screen">
+        {/* fork: everyday-workflows */}
         <EmptyState title="Thread unavailable" detail="Open a conversation to use its terminal." />
       </View>
     );
@@ -819,6 +820,7 @@ function ThreadTerminal(props: {
     }
   };
 
+  // fork: everyday-workflows
   const handleRetryTerminal = () => {
     terminalSession.refresh();
     if (routeEnvironmentId === null) return;
@@ -848,6 +850,7 @@ function ThreadTerminal(props: {
       <View className="flex-1 bg-screen">
         <EmptyState
           title="Terminal unavailable"
+          // fork: everyday-workflows
           detail="This conversation needs a project folder before it can open a terminal."
         />
       </View>
@@ -942,11 +945,13 @@ function ThreadTerminal(props: {
                 terminalSession.error ??
                 "This connection does not have permission to view terminals."
               }
+              // fork: everyday-workflows
               actionLabel={terminalSession.error ? "Try again" : undefined}
               onAction={terminalSession.error ? terminalSession.refresh : undefined}
             />
           ) : canOperateTerminal && launchLocation === null ? (
             sessionsError !== null ? (
+              // fork: everyday-workflows
               <EmptyState
                 title="Could not load terminals"
                 detail={sessionsError}
@@ -959,6 +964,7 @@ function ThreadTerminal(props: {
           ) : !canOperateTerminal && !hasTerminalTarget && sessionsPending ? (
             <EmptyState title="Loading terminals" detail="Reading existing terminal sessions." />
           ) : !canOperateTerminal && !hasTerminalTarget && sessionsError !== null ? (
+            // fork: everyday-workflows
             <EmptyState
               title="Could not load terminals"
               detail={sessionsError}
@@ -971,6 +977,7 @@ function ThreadTerminal(props: {
               detail="Existing terminals will appear here when another client opens one."
             />
           ) : terminal.error !== null && terminal.buffer.length === 0 ? (
+            // fork: everyday-workflows
             <EmptyState
               title="Terminal unavailable"
               detail={terminal.error}
@@ -979,6 +986,7 @@ function ThreadTerminal(props: {
             />
           ) : (
             <>
+              {/* fork: everyday-workflows */}
               {terminal.error !== null ? (
                 <View className="gap-1 bg-card px-4 py-2">
                   <Text accessibilityRole="alert" className="text-xs text-foreground-muted">

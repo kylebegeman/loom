@@ -36,8 +36,8 @@ const testState = vi.hoisted(() => {
     setDraftThreadContext: vi.fn(),
     setLogicalProjectDraftThreadId: vi.fn(),
     setModelSelection: vi.fn(),
-    setRuntimeMode: vi.fn(),
-    setInteractionMode: vi.fn(),
+    setRuntimeMode: vi.fn(), // fork: library-projects
+    setInteractionMode: vi.fn(), // fork: library-projects
   };
 
   const startLibraryFolder = vi.fn(async () => false); // fork: library-projects
@@ -239,6 +239,7 @@ describe.each([
     },
   ],
 ])("useNewThreadHandler with a %s draft", (_, draft) => {
+  // fork: library-projects
   it("applies the hovered thread's settings before opening the local draft", async () => {
     testState.reset(draft);
     const sourceSettings = {
@@ -280,6 +281,7 @@ describe.each([
     );
   });
 
+  // fork: library-projects
   it("keeps the source checkout on its computer so its lane is reused", async () => {
     testState.reset(draft, { envMode: "local", startFromOrigin: true });
     const projectRef = {

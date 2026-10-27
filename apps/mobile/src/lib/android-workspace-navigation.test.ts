@@ -30,7 +30,7 @@ const router = StackRouter({});
 const options = {
   routeNames: [
     "Home",
-    "Library",
+    "Library", // fork: library
     "Thread",
     "ThreadFiles",
     "ThreadTerminal",

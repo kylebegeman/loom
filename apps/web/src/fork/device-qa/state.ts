@@ -23,7 +23,7 @@ import { attachEvidence } from "./attach";
 export const deviceQa = createDeviceQaAtoms(connectionAtomRuntime);
 
 export const FEATURE = "device-qa";
-export const PANEL_ID = "device-qa";
+const PANEL_ID = "device-qa";
 
 export async function runCommand<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
   const result = await command.run(appAtomRegistry, input);
@@ -37,9 +37,6 @@ export const errorText = (error: unknown) =>
     : typeof error === "object" && error !== null && "message" in error
       ? String(error.message)
       : String(error);
-
-export const sameTarget = (a: DeviceQaTarget, b: DeviceQaTarget) =>
-  a.hostId === b.hostId && a.deviceId === b.deviceId;
 
 const threadKey = (threadRef: ScopedThreadRef) =>
   `${threadRef.environmentId}:${threadRef.threadId}`;
@@ -161,7 +158,7 @@ export async function captureScreenshot(threadRef: ScopedThreadRef, target?: Dev
   }
 }
 
-export async function attachOrToast(threadRef: ScopedThreadRef, item: DeviceQaEvidence) {
+async function attachOrToast(threadRef: ScopedThreadRef, item: DeviceQaEvidence) {
   try {
     await attachEvidence(threadRef, item);
   } catch (error) {

@@ -17,6 +17,7 @@ if (
   // Guard sockets before either dispatch path can load outbound-capable modules.
   const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
   ignoreMacosTypeOfServiceEinval();
+  // fork: mini-native-retention
   if (command === "runtime-capabilities") {
     const { LOOM_SERVER_FEATURES } = await import("./fork/features.ts");
     process.stdout.write(

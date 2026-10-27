@@ -62,7 +62,7 @@ export interface ThreadOutcome {
 }
 
 /** Fake launch and thread services: a test decides when and how each run thread ends. */
-export const makeHarness = Effect.gen(function* () {
+const makeHarness = Effect.gen(function* () {
   const launched = yield* Queue.unbounded<ThreadLaunch.ThreadLaunchInput>();
   const launches: Array<ThreadLaunch.ThreadLaunchInput> = [];
   const interrupted: Array<string> = [];

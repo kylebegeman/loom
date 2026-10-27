@@ -150,6 +150,7 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
   };
 }
 
+// fork: switchboard
 const presentationKeyResolver = (presentations: LimitPresentations) =>
   accountKeyResolver(
     [...presentations.values()].flatMap((presentation) => [
@@ -234,7 +235,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       },
     });
   };
-  const resolveKey = presentationKeyResolver(presentations);
+  const resolveKey = presentationKeyResolver(presentations); // fork: switchboard
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
@@ -293,6 +294,7 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
   const notices: string[] = [];
+  // fork: switchboard
   // A source account without a reading is left off the page, so it is named
   // here unless another login or source shows the same account.
   const resolveKey = presentationKeyResolver(presentations);
@@ -322,10 +324,12 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
     for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
       if (source.error) {
         notices.push(`${label(environmentLabel, source.label)}: ${source.error}`);
+        // fork: switchboard
         continue;
       }
       if (source.accounts.length === 0) {
         notices.push(`${label(environmentLabel, source.label)}: No accounts reported.`);
+        // fork: switchboard
         continue;
       }
       const unread = new Map<string, Set<string>>();

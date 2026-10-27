@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthFilesystemWriteScope,
-  AuthOrchestrationOperateScope,
+  AuthOrchestrationOperateScope, // fork: file-placement
   EnvironmentId,
   ProjectId,
   ProjectReadFileInput,
@@ -145,6 +145,7 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
   return { registry, storedProject, openScratch, commands, metadataRequests, readResponse };
 });
 
+// fork: file-placement
 describe("project update permission", () => {
   it.effect("follows the destination computer's current operate grant", () =>
     Effect.gen(function* () {

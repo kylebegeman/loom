@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, type ProjectScript } from "@t3tools/contracts";
+import { ProjectId, ThreadId, type ProjectScript } from "@t3tools/contracts"; // fork: project-lifecycle
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   projectScriptRuntimeEnv,
@@ -17,7 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
+import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts"; // fork: project-lifecycle
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -77,6 +77,7 @@ export class ProjectSetupScriptOperationError extends Schema.TaggedError<Project
     projectId: Schema.optional(Schema.String),
     projectCwd: Schema.optional(Schema.String),
     worktreePath: Schema.String,
+    // fork: project-lifecycle
     operation: Schema.Literals(["resolveProject", "readSettings", "prepareLane", "openTerminal"]),
     cause: Schema.Defect(),
   },
@@ -405,6 +406,7 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
+    // fork: project-lifecycle
     if (trigger === "setup") {
       // Resolve at execution: settlement also uses this runner and must not depend on lanes.
       const lifecycle = yield* Effect.serviceOption(ProjectLifecycle.ProjectLifecycleService);
@@ -474,6 +476,7 @@ export const make = Effect.gen(function* () {
             onStartupPrompt: observed?.flushPartialLine ?? Effect.void,
           });
 
+    // fork: project-lifecycle
     const terminalInput = {
       threadId: input.threadId,
       terminalId,
@@ -495,6 +498,7 @@ export const make = Effect.gen(function* () {
             cause,
           }),
       ),
+      // fork: project-lifecycle
       Effect.onError(() =>
         Effect.sync(() => {
           observed?.unsubscribe();

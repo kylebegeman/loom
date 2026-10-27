@@ -121,8 +121,10 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
   );
 
   const targetRef = { environmentId: input.target.environmentId, projectId: input.projectId };
+  // fork: file-placement -- copyKey comes from the project the start reply names
   // Marked before the start request, since the clone list can arrive before its reply.
   silenceProjectCloneToasts(targetRef);
+  // fork: file-placement -- the copying phase starts once that project is known
   const started = await runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.startProjectClone,

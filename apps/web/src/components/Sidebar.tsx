@@ -993,7 +993,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           chosenProjectGroup.memberProjectRefs.map(
             (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
           ),
-        ));
+        )); // fork: library-projects
   const threads = useQuietThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
@@ -3149,7 +3149,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             timestampFormat={timestampFormat}
                             onThreadClick={handleThreadClick}
                             onThreadActivate={navigateToThread}
-                            onNewThread={handleNewThreadFromThread}
+                            onNewThread={handleNewThreadFromThread} // fork: library-projects
                             onStartRename={startThreadRename}
                             onRenameTitleChange={setRenamingTitle}
                             onCommitRename={commitThreadRename}
@@ -3361,6 +3361,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               )}
             </div>
           ) : null}
+          {/* fork: library-projects */}
           <LibrarySavedThreads
             localThreads={threads}
             projectKeys={scopedProjectKeys}

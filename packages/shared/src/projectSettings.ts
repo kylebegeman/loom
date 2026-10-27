@@ -229,7 +229,7 @@ export function resolveWorktreeCleanup(
       worktreeSettledAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
-      worktreeOnSettle: false,
+      worktreeOnSettle: false, // fork: project-lifecycle
       worktreeUnchanged: false,
       worktreeOnLand: false, // fork: project-lifecycle
     };
@@ -239,7 +239,7 @@ export function resolveWorktreeCleanup(
     worktreeSettledAfterDays,
     worktreeOnMerge,
     worktreeOnDelete,
-    worktreeOnSettle,
+    worktreeOnSettle, // fork: project-lifecycle
     worktreeUnchanged,
     worktreeOnLand, // fork: project-lifecycle
   } = settings.storageCleanup;
@@ -249,7 +249,7 @@ export function resolveWorktreeCleanup(
     worktreeSettledAfterDays,
     worktreeOnMerge,
     worktreeOnDelete,
-    worktreeOnSettle,
+    worktreeOnSettle, // fork: project-lifecycle
     worktreeUnchanged,
     worktreeOnLand, // fork: project-lifecycle
   };

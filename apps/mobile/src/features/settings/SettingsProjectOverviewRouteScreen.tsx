@@ -18,6 +18,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+// fork: project-navigation
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -79,7 +80,7 @@ export function SettingsProjectOverviewRouteScreen({
     selectedProjectKey,
     selectProject,
     getSelectedProjectKey,
-    selectAll,
+    selectAll, // fork: project-navigation
   } = useSettingsEnvironmentFilter();
   // The filter can move to another project while a removal is still running.
   const finishProjectRemoval = (projectKey: string | null) => {
@@ -89,6 +90,7 @@ export function SettingsProjectOverviewRouteScreen({
     // Otherwise the filter keeps pointing at the removed project as an unavailable one.
     selectProject(null);
   };
+  // fork: project-navigation
   const initialEnvironmentId = route.params?.initialEnvironmentId;
   const initialProjectId = route.params?.initialProjectId;
   const appliedProjectRef = useRef<string | undefined>(undefined);
@@ -106,6 +108,7 @@ export function SettingsProjectOverviewRouteScreen({
     selectProject(settingsScope);
   }, [initialEnvironmentId, initialProjectId, projectGroups, selectAll, selectProject]);
   const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
+  // fork: project-navigation
   // Folder paths can change grouping keys, while the selected project IDs stay the same.
   const previousSelection = useRef<(typeof projectGroups)[number] | null>(null);
   useEffect(() => {
@@ -129,6 +132,7 @@ export function SettingsProjectOverviewRouteScreen({
   return (
     <>
       <SettingsEnvironmentFilterHeader />
+      {/* fork: library */}
       <SettingsScreen title="Computer folders" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
@@ -139,11 +143,13 @@ export function SettingsProjectOverviewRouteScreen({
         >
           {members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
+              {/* fork: everyday-workflows */}
               This project has no folder on the selected connected computers. Change the filter
               above.
             </Text>
           ) : (
             <ProjectOverviewContent
+              // fork: project-checkout-management
               key={`${selectedProjectKey}:${members.map((member) => `${member.environmentId}:${member.id}:${member.workspaceRoot}`).join(",")}`}
               members={members}
               environments={selectedTargets}
@@ -174,6 +180,7 @@ function ProjectOverviewContent(props: {
   readonly onProjectRemoved: (projectKey: string | null) => void;
 }) {
   const { isRemoving, setIsRemoving, startRemoval, finishRemoval } = props;
+  // fork: library
   const navigation = useNavigation();
   const authority = useLibraryAuthority();
   const copies = useEnvironmentQuery(
@@ -309,6 +316,7 @@ function ProjectOverviewContent(props: {
 
   return (
     <>
+      {/* fork: library */}
       {sharedProjectId ? (
         <View className="gap-3 rounded-2xl bg-grouped-card p-4">
           <Text className="text-sm text-foreground-muted">
@@ -365,6 +373,7 @@ function ProjectOverviewContent(props: {
         </View>
       </SettingsSection>
 
+      {/* fork: library */}
       <SettingsSection title="Computer folders">
         {props.members.map((member, index) => {
           const environment = props.environments.find(
@@ -382,6 +391,7 @@ function ProjectOverviewContent(props: {
                     : "text-lg text-foreground"
                 }
               >
+                {/* fork: everyday-workflows */}
                 {environment?.label ?? "Computer"}
               </Text>
               {environment?.displayUrl ? (
@@ -392,6 +402,7 @@ function ProjectOverviewContent(props: {
               <Text className="text-sm leading-normal text-foreground-muted" selectable>
                 {member.workspaceRoot}
               </Text>
+              {/* fork: project-navigation */}
               <ProjectFolderLocation
                 project={member}
                 computerLabel={environment?.label ?? "Computer"}

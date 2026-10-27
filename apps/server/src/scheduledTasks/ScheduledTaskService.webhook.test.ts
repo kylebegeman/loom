@@ -18,7 +18,7 @@ import * as Queue from "effect/Queue";
 import * as EffectScheduler from "effect/Scheduler";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as Stream from "effect/Stream";
+import * as Stream from "effect/Stream"; // fork: webhook-delivery-issues
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 
@@ -232,6 +232,7 @@ const withService = <A, E>(
           }),
       }),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
         isScratchProject: () => Effect.succeed(false),
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),

@@ -29,7 +29,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient"; // fork: detached-session-recovery
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
@@ -44,6 +44,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
+// fork: detached-session-recovery
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -52,7 +53,7 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
-import * as NativeResources from "./NativeWorkloadResources.ts";
+import * as NativeResources from "./NativeWorkloadResources.ts"; // fork: mini-native-retention
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -351,6 +352,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     })),
   );
   // Register after countClose to wedge teardown before its finalizer, matching a provider stream that never yields.
+  // fork: mini-native-retention
   const hangClose = Effect.addFinalizer(() =>
     (options.scopeCloseReached === undefined
       ? Effect.void
@@ -482,7 +484,7 @@ function layerTest(input: {
   };
   readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;
   readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
-  readonly nativeResources?: NativeResources.NativeWorkloadResources["Service"];
+  readonly nativeResources?: NativeResources.NativeWorkloadResources["Service"]; // fork: mini-native-retention
   readonly scopeCloseGate?: Effect.Effect<void>; // fork: mini-native-retention
   readonly backgroundTasksEndWithProcess?: boolean;
   readonly hangSessionScopeClose?: boolean;
@@ -515,6 +517,7 @@ function layerTest(input: {
       ...(input.hasPendingBackgroundWorkForThread === undefined
         ? {}
         : { hasPendingBackgroundWorkForThread: input.hasPendingBackgroundWorkForThread }),
+      // fork: mini-native-retention
       ...(input.scopeCloseGate === undefined ? {} : { scopeCloseGate: input.scopeCloseGate }),
       ...(input.backgroundTasksEndWithProcess === undefined
         ? {}
@@ -568,6 +571,7 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
           layerTestStores,
+          // fork: mini-native-retention
           ...(input.nativeResources === undefined
             ? []
             : [Layer.succeed(NativeResources.NativeWorkloadResources, input.nativeResources)]),
@@ -3158,6 +3162,7 @@ it.effect(
     }),
 );
 
+// fork: detached-session-recovery
 it.effect.each(["server_shutdown", "idle_timeout", "runtime_error"] as const)(
   "records a shared session's $0 after all app threads detach",
   (reason) =>
@@ -3670,6 +3675,7 @@ it.effect(
     }),
 );
 
+// fork: mini-native-retention
 const openResourceFixture = Effect.gen(function* () {
   const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const eventSink = yield* EventSink.EventSinkV2;
@@ -3713,6 +3719,7 @@ const openResourceFixture = Effect.gen(function* () {
   return { manager, runtime, startTurn, open, providerSessionId, providerThread, ids, threadId };
 });
 
+// fork: mini-native-retention
 it.effect("Mini admission holds the provider and cancellation clears the waiting turn", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -3753,6 +3760,7 @@ it.effect("Mini admission holds the provider and cancellation clears the waiting
   }),
 );
 
+// fork: mini-native-retention
 it.effect.each([false, true, undefined])(
   "Mini terminal capacity retention with background probe %s",
   (background) =>
@@ -3824,6 +3832,7 @@ it.effect.each([false, true, undefined])(
     }),
 );
 
+// fork: mini-native-retention
 it.effect("late provider teardown releases only its original runtime generation", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -3880,11 +3889,13 @@ it.effect("late provider teardown releases only its original runtime generation"
   }),
 );
 
+// fork: detached-session-recovery
 const providerSessionRecoveryCases = [
   { binding: "detached", status: "ready" },
   { binding: "detached", status: "error" },
   { binding: "bound", status: "error" },
 ] as const;
+// fork: detached-session-recovery
 it.effect.each(
   providerSessionRecoveryCases.flatMap(({ binding, status }) =>
     [

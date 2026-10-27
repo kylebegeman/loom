@@ -10,6 +10,7 @@ import {
 import * as Cause from "effect/Cause";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+// fork: failed-run-retry
 import {
   decodeQueuedThreadMessage,
   encodeQueuedThreadMessage,
@@ -28,6 +29,7 @@ const state = vi.hoisted(() => ({
   interaction: vi.fn(),
   prepare: vi.fn(),
   checkout: vi.fn(),
+  // fork: failed-run-retry
   persist: vi.fn(async () => {}),
   connectionState: "connected",
   manager: null as unknown as ReturnType<
@@ -97,6 +99,7 @@ vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: state.prepar
 vi.mock("./use-remote-environment-registry", () => ({
   setPendingConnectionError: vi.fn(),
   useRemoteConnectionStatus: () => ({
+    // fork: failed-run-retry
     connectedEnvironments: [{ environmentId: "secondary", connectionState: state.connectionState }],
   }),
 }));
@@ -107,7 +110,7 @@ vi.mock("./thread-outbox", async () => {
     registry: appAtomRegistry,
     storage: {
       load: async () => ({ messages: [], errors: [] }),
-      write: () => state.persist(),
+      write: () => state.persist(), // fork: failed-run-retry
       remove: async () => {},
     },
   });
@@ -182,6 +185,7 @@ function runDrain() {
 beforeEach(() => {
   state.grantedEnvironments = new Set(["primary"]);
   state.draftText = "Keep this draft separate";
+  // fork: failed-run-retry
   state.connectionState = "connected";
   state.persist.mockReset().mockResolvedValue(undefined);
   appAtomRegistry.set(threadOutboxDeliveryAtom, null);
@@ -370,6 +374,7 @@ describe("queued task operation access", () => {
       );
       await drained;
 
+      // fork: failed-run-retry
       expect(remaining()).toEqual(accepted ? [] : [{ ...queued, deliveryAttempted: true }]);
       expect(state.draftText).toBe("Keep this draft separate");
       if (!accepted) {
@@ -425,6 +430,7 @@ describe("queued task operation access", () => {
   );
 });
 
+// fork: failed-run-retry
 describe("interrupted mobile message delivery", () => {
   it.each([false, true])(
     "retries the same request after a lost acknowledgement and restart (accepted before interruption: %s)",

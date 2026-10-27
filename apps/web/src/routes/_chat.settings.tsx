@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { FORK_SETTINGS_SECTIONS } from "../fork/settings/registry";
+import { FORK_SETTINGS_SECTIONS } from "../fork/settings/registry"; // fork: ext-settings
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
@@ -45,7 +45,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   const { scope, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const hash = useLocation({ select: (location) => location.hash });
-  const section = useLocation({ select: (location) => location.search.section });
+  const section = useLocation({ select: (location) => location.search.section }); // fork: ext-settings
   const searchTarget = getSettingsSearchTargetScope(hash);
   const autoSettlementAvailability = searchTarget?.requiresThreadAutoSettlement
     ? getThreadAutoSettlementSearchAvailability(environments, scope)
@@ -85,6 +85,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
       </SettingsScopeNotice>
     );
   }
+  // fork: ext-settings
   if (
     SETTINGS_DEVICE_ONLY_PATHS.has(pathname) ||
     pathname === "/settings/projects" ||
@@ -117,7 +118,8 @@ function SettingsContentLayout() {
   const contentScopeKey =
     location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
       ? environment?.environmentId
-      : JSON.stringify(
+      : // fork: ext-settings
+        JSON.stringify(
           location.pathname === "/settings/loom"
             ? validateSettingsRouteSearch({ ...search })
             : search,
@@ -158,6 +160,7 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
+      // fork: ext-settings
       singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/loom"}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.

@@ -1,6 +1,6 @@
-export const LIBRARY_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const LIBRARY_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 export const LIBRARY_CACHE_ENTRY_MAX_BYTES = 8 * 1024 * 1024;
-export const LIBRARY_CACHE_MAX_ENTRIES = 200;
+const LIBRARY_CACHE_MAX_ENTRIES = 200;
 export const LIBRARY_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export interface CachedQuery {
   readonly payload: string;

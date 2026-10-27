@@ -249,7 +249,7 @@ const utcMinute = (iso: string) => {
  * A failed run's error from what its provider recorded, so a caller can tell a usage limit from a
  * broken bot. The class leads, since lists show only an error's first line.
  */
-export const providerFailureError = (failure: OrchestrationV2ProviderFailure): string => {
+const providerFailureError = (failure: OrchestrationV2ProviderFailure): string => {
   const resets =
     failure.class === "usage_limit" && failure.resetAt != null
       ? `, resets ${utcMinute(failure.resetAt)}`
@@ -268,7 +268,7 @@ const formatDuration = (ms: number) => {
 const VERDICT_LABELS = { pass: "pass", fail: "fail", needs_attention: "needs attention" } as const;
 
 /** `fail (3 findings)`, the verdict as a run's headline. */
-export const verdictLabel = (verdict: BotVerdict): string => {
+const verdictLabel = (verdict: BotVerdict): string => {
   const count = verdict.findings.length;
   const label = VERDICT_LABELS[verdict.verdict];
   if (count === 0) return label;

@@ -1305,6 +1305,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           "--no-color",
           "--no-ext-diff",
           "--no-textconv",
+          // fork: library-projects -- nested Library repositories prefix their diff paths
           ...(input.pathPrefix
             ? [`--src-prefix=a/${input.pathPrefix}/`, `--dst-prefix=b/${input.pathPrefix}/`]
             : PATCH_RENDER_PREFIX_ARGS),

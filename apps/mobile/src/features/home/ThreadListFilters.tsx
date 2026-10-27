@@ -16,7 +16,7 @@ export function ThreadListFilters(
   > & {
     /** List padding the scroller bleeds through so pills start where row content does. */
     readonly gutter: number;
-    readonly projectView?: boolean;
+    readonly projectView?: boolean; // fork: project-navigation
   },
 ) {
   const selectedEnvironment = props.environments.find(
@@ -33,7 +33,8 @@ export function ThreadListFilters(
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 2, paddingBottom: 10, gap: 8 }}
     >
       <ListFilterMenu
-        label={selectedEnvironment?.label ?? "All computers"}
+        label={selectedEnvironment?.label ?? "All computers"} // fork: fleet-connections
+        // fork: project-navigation
         accessibilityLabel={
           props.projectView ? "Filter projects by computer" : "Filter threads by computer"
         }
@@ -41,7 +42,7 @@ export function ThreadListFilters(
         actions={[
           {
             id: "all",
-            title: "All computers",
+            title: "All computers", // fork: fleet-connections
             state: props.selectedEnvironmentId === null ? "on" : "off",
           },
           ...props.environments.map((environment) => ({
@@ -63,6 +64,7 @@ export function ThreadListFilters(
           }
         }}
       />
+      {/* fork: project-navigation */}
       {!props.projectView ? (
         <ListFilterMenu
           label={selectedProject?.label ?? "All projects"}
@@ -95,12 +97,13 @@ export function ThreadListFilters(
       (!props.projectView && props.selectedProjectKey !== null) ? (
         <Pressable
           accessibilityRole="button"
+          // fork: project-navigation
           accessibilityLabel={props.projectView ? "Reset project filters" : "Reset thread filters"}
           className="h-8 w-8 items-center justify-center"
-          hitSlop={6}
+          hitSlop={6} // fork: everyday-workflows
           onPress={() => {
             props.onEnvironmentChange(null);
-            if (!props.projectView) props.onProjectChange(null);
+            if (!props.projectView) props.onProjectChange(null); // fork: project-navigation
           }}
         >
           <SymbolView name="xmark.circle.fill" size={18} tintColorClassName="accent-icon-muted" />

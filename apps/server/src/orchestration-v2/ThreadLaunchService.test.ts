@@ -1,3 +1,4 @@
+// fork: project-lifecycle
 import {
   markManagedProjectCheckout,
   readManagedProjectCheckout,
@@ -14,7 +15,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as ServerConfig from "../config.ts";
-import * as SetupMarker from "../workspace/setupMarker.ts";
+import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: project-lifecycle
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
 import { assert, it, vi } from "@effect/vitest";
@@ -24,7 +25,7 @@ import {
   ComposerContextId,
   type ChatAttachment,
   CommandId,
-  EnvironmentId,
+  EnvironmentId, // fork: library-projects
   DEFAULT_SERVER_SETTINGS,
   GitCommandError,
   MessageId,
@@ -42,7 +43,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
+import * as Fiber from "effect/Fiber"; // fork: project-lifecycle
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -134,6 +135,7 @@ const claudeAdapter = {
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 
 interface HarnessOptions {
+  // fork: project-lifecycle
   readonly workspaceRoot?: string;
   readonly serverConfig?: ServerConfig.ServerConfig["Service"];
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
@@ -155,6 +157,7 @@ interface HarnessOptions {
 }
 
 function makeHarness(options: HarnessOptions = {}) {
+  // fork: project-lifecycle
   const currentProject = {
     ...project,
     workspaceRoot: options.workspaceRoot ?? project.workspaceRoot,
@@ -210,7 +213,7 @@ function makeHarness(options: HarnessOptions = {}) {
       getById: (id) =>
         Effect.succeed(
           id === projectId
-            ? Option.some(currentProject)
+            ? Option.some(currentProject) // fork: project-lifecycle
             : id === otherProjectId
               ? Option.some(otherProject)
               : Option.none(),
@@ -244,11 +247,13 @@ function makeHarness(options: HarnessOptions = {}) {
     ProviderRegistryMock.layer(options.providers),
     options.managedFolders ??
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
         isScratchProject: () => Effect.succeed(false),
         folderForThread: () => Effect.succeedNone,
       }),
   );
   const layerLaunch = ThreadLaunch.layer.pipe(
+    // fork: project-lifecycle
     Layer.provide(
       options.serverConfig === undefined
         ? ServerConfig.layerTest(process.cwd(), { prefix: "t3-launch-state-" })
@@ -273,7 +278,7 @@ function makeHarness(options: HarnessOptions = {}) {
           ? Option.some({
               projectId,
               title: project.title,
-              workspaceRoot: currentProject.workspaceRoot,
+              workspaceRoot: currentProject.workspaceRoot, // fork: project-lifecycle
               defaultModelSelection: project.defaultModelSelection,
               defaultThreadEnvMode: null,
               autoPull: false,
@@ -312,6 +317,7 @@ function makeHarness(options: HarnessOptions = {}) {
   };
 }
 
+// fork: project-lifecycle
 // Projections commit with their events, so launch state can only change at a stored thread event.
 const waitForThread = Effect.fnUntraced(function* <E, R>(
   threadId: ThreadId,
@@ -597,6 +603,7 @@ it.effect("provisions independent launches concurrently instead of behind a glob
   }),
 );
 
+// fork: workspace-handoff
 it.effect.each([0, 17])(
   "destination preparation waits for async setup ending with $0",
   (exitCode) =>
@@ -651,6 +658,7 @@ it.effect.each([0, 17])(
     }),
 );
 
+// fork: workspace-handoff
 it.effect("retries awaited setup in the same empty destination worktree", () => {
   let attempts = 0;
   const harness = makeHarness({
@@ -686,6 +694,7 @@ it.effect("retries awaited setup in the same empty destination worktree", () => 
   }).pipe(Effect.provide(harness.layer));
 });
 
+// fork: project-lifecycle
 it.effect.each(
   [
     { type: "root" } as const,
@@ -759,6 +768,7 @@ it.effect.each(
   }),
 );
 
+// fork: project-lifecycle
 it.effect(
   "cancelling root initialization closes its setup terminal and preserves the checkout",
   () =>
@@ -1162,6 +1172,7 @@ function scratchHarness() {
     });
   const harness = makeHarness({
     managedFolders: Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+      // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
       isScratchProject: (id) => Effect.succeed(id === projectId),
       folderForThread: (input) =>
         Effect.sync(() => {
@@ -2355,6 +2366,7 @@ it.effect("reports one concurrent same-command launch as new and the rest as res
     const bothRead = yield* Deferred.make<void>();
     const harness = makeHarness({
       managedFolders: Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
         isScratchProject: () => Effect.succeed(false),
         folderForThread: () =>
           Ref.updateAndGet(arrived, (count) => count + 1).pipe(

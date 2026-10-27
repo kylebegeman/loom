@@ -285,6 +285,7 @@ export function resolveQuickAction(
     };
   }
 
+  // fork: source-control-cockpit -- a diverged ref now asks the agent to sync, above
   if (isBehind) {
     return {
       label: "Pull",

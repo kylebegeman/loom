@@ -33,7 +33,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const bin = yield* fs.makeTempDirectoryScoped();
-    yield* fs.writeFileString(path.join(bin, "loom"), "#!/bin/sh\n", { mode: 0o755 });
+    yield* fs.writeFileString(path.join(bin, "loom"), "#!/bin/sh\n", { mode: 0o755 }); // fork: brand
     return bin;
   });
 
@@ -52,7 +52,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           entry: "/home/theo/.local/lib/node_modules/t3/dist/bin.mjs",
           path: yield* pathWithT3,
         }),
-      ).toBe('sudo env "PATH=$PATH" loom browser setup');
+      ).toBe('sudo env "PATH=$PATH" loom browser setup'); // fork: brand
     }).pipe(Effect.scoped),
   );
 
@@ -73,7 +73,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
 
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
-        'sudo env "PATH=$PATH" loom browser setup',
+        'sudo env "PATH=$PATH" loom browser setup', // fork: brand
       );
 
       expect(
@@ -86,7 +86,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
       expect(
         yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
-      ).toBe('sudo env "PATH=$PATH" loom browser setup');
+      ).toBe('sudo env "PATH=$PATH" loom browser setup'); // fork: brand
     }).pipe(Effect.scoped),
   );
 });
@@ -114,7 +114,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
         `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
       );
       expect((yield* hostCommand("win32", {})).command).toBe(
-        'loom doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+        'loom doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"', // fork: brand
       );
       expect(
         (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
@@ -124,7 +124,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Arguments, ["C:\\t3.exe", "C:\\bin.mjs"]),
           Effect.provideService(HostProcess.IsExecutable, false),
         )).command,
-      ).toBe('loom doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
+      ).toBe('loom doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"'); // fork: brand
       // POSIX hosts keep single quotes for the same input. The shim prefix is
       // a host path, so only the arguments are asserted.
       expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(

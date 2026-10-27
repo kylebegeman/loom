@@ -203,6 +203,7 @@ it.effect(
                     ),
                 }),
                 Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                  // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
                   isScratchProject: () => Effect.succeed(false),
                 }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
@@ -299,6 +300,7 @@ it.effect(
                     ),
                 }),
                 Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                  // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
                   isScratchProject: () => Effect.succeed(false),
                 }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
@@ -354,6 +356,7 @@ it.effect("thread cleanup notifies subscribers and a finishing run cannot recrea
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,

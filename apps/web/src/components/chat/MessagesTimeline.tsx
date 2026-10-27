@@ -305,6 +305,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   worktreeSetup = null,
   footer = null,
   onCancelWorktreeSetup,
+  // fork: library-launch-files
   onRetryWorktreeSetup,
   worktreeSetupComputerLabel = null,
   retryableWorkspacePreparationRunIds = EMPTY_RUN_IDS,
@@ -1028,6 +1029,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onToggleWorkGroup,
     onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
+    // fork: library-launch-files
     onRetryWorktreeSetup: onRetryWorktreeSetup ?? null,
     worktreeSetupComputerLabel,
     retryableWorkspacePreparationRunIds,
@@ -1489,6 +1491,7 @@ function WorktreeSetupTimelineRow({
           : null
       }
       onOpenTerminal={onOpenTerminal}
+      // fork: library-launch-files
       onRetry={row.embedded ? null : ctx.onRetryWorktreeSetup}
       computerLabel={ctx.worktreeSetupComputerLabel}
     />

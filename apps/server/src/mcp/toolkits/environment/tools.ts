@@ -5,18 +5,18 @@ import {
   ExecutionEnvironmentDescriptor,
   OrchestratorMcpFailure,
   ServerSettings,
-  ServerFolders,
+  ServerFolders, // fork: file-placement
   ServerSettingsPatch,
-  StorageCleanupReport,
+  StorageCleanupReport, // fork: mini-native-retention
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
-import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
-import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
-import * as StorageCleanup from "../../../storageCleanup.ts";
+import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
+import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -45,6 +45,7 @@ const shared = {
 };
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
   ...shared,
+  // fork: file-placement
   description:
     "Read this server's identity, preferences and the folders Loom places projects, worktrees, lanes and scratch work in. Providers and models: `orchestrator_capabilities`.",
   success: Schema.Struct({
@@ -53,8 +54,9 @@ const EnvironmentReadTool = Tool.make("t3_environment_read", {
     serverVersion: Schema.String,
     platform: ExecutionEnvironmentDescriptor.fields.platform,
     preferences: Schema.Struct(PreferenceFields),
-    folders: ServerFolders,
+    folders: ServerFolders, // fork: file-placement
   }),
+  // fork: file-placement
   dependencies: [
     ...shared.dependencies,
     ProjectPlacement.ProjectPlacement,
@@ -76,6 +78,7 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
   }),
   success: Schema.Struct(PreferenceFields),
 }).annotate(Tool.Destructive, true);
+// fork: mini-native-retention
 const StorageCleanupReportTool = Tool.make("loom_storage_cleanup_report", {
   ...shared,
   description:
@@ -88,5 +91,5 @@ const StorageCleanupReportTool = Tool.make("loom_storage_cleanup_report", {
 export const EnvironmentToolkit = Toolkit.make(
   EnvironmentReadTool,
   EnvironmentPreferencesTool,
-  StorageCleanupReportTool,
+  StorageCleanupReportTool, // fork: mini-native-retention
 );

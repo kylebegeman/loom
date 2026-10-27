@@ -7,7 +7,7 @@ export const LOOM_SETTINGS_GROUPS = [
 
 export type LoomSettingsGroupId = (typeof LOOM_SETTINGS_GROUPS)[number]["id"];
 
-export const DEFAULT_LOOM_SETTINGS_SECTION = "project-lifecycle";
+const DEFAULT_LOOM_SETTINGS_SECTION = "project-lifecycle";
 
 type SearchableSection = {
   readonly id: string;

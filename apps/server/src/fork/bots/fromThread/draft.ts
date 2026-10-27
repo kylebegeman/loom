@@ -7,7 +7,7 @@ import type {
 import { slugFromName, type BotDefinitionInput, type BotParameter } from "@t3tools/contracts/fork";
 
 /** Values a draft turns into parameters; later ones stay as written. */
-export const DRAFT_MAX_PLACEHOLDERS = 6;
+const DRAFT_MAX_PLACEHOLDERS = 6;
 const INSTRUCTIONS_MAX = 20_000;
 const NAME_MAX = 120;
 const DESCRIPTION_MAX = 500;
@@ -137,7 +137,7 @@ const nameFrom = (title: string, placeholders: ReadonlyArray<Placeholder>) => {
 };
 
 /** `base`, or `base-2`, `base-3` and so on when taken, always a valid bot id. */
-export const uniqueBotId = (name: string, taken: ReadonlySet<string>) => {
+const uniqueBotId = (name: string, taken: ReadonlySet<string>) => {
   const base = slugFromName(name) || "bot";
   if (!taken.has(base)) return base;
   for (let n = 2; ; n += 1) {

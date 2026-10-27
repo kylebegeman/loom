@@ -472,6 +472,7 @@ export function NewTaskDraftScreen(props: {
           directProject,
         );
         if (props.initialProjectRef?.branch) {
+          // fork: project-home
           if (directSelection.kind === "select") {
             setProject(directSelection.project);
             return;
@@ -488,9 +489,11 @@ export function NewTaskDraftScreen(props: {
           });
         }
         appliedInitialProjectKeyRef.current = directProjectKey;
+        // fork: project-home
         if (directSelection.kind === "select") {
           setProject(directSelection.project);
         }
+        // fork: project-home -- a non-select result keeps the current project
         return;
       }
 
@@ -521,6 +524,7 @@ export function NewTaskDraftScreen(props: {
     props.pendingTaskId,
     props.draftId,
     navigation,
+    // fork: project-home -- the effect reads directSelection, not selectedProject
     selectedProjectKey,
     setProject,
   ]);

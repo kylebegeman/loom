@@ -390,7 +390,7 @@ export const PcbComparison = Schema.Struct({
   log: Schema.String,
 });
 export type PcbComparison = typeof PcbComparison.Type;
-export const PCB_HISTORY_PAGE_MAX = 50;
+const PCB_HISTORY_PAGE_MAX = 50;
 
 export const PcbHistoryInput = Schema.Struct({
   threadId: ThreadId,

@@ -26,6 +26,8 @@ Test with meaningful project and thread data. Read the shared
 [SQLite fixture reference](../test-t3-app/references/sqlite-fixtures.md) only
 when inspecting or seeding SQLite. Stop the test server before fixture writes.
 
+<!-- fork: brand -->
+
 ## Launch Loom Dev
 
 From the checkout being tested on the selected device host, run:
@@ -49,7 +51,7 @@ opens it against Metro) and never builds.
 
 Start `vp run dev:client` from `apps/mobile`, or reuse a healthy Metro belonging
 to this checkout. Open its printed development-client URL with AgentDevice
-`open com.kylebegeman.loom.dev <url>` on iOS (the Android package remains
+`open com.kylebegeman.loom.dev <url>` on iOS (the Android package remains <!-- fork: mobile-identity -->
 `com.t3tools.t3code.dev`) and all returned target arguments. The pairing helper
 selects the package from those platform arguments.
 The device must be able to reach both Metro and the isolated backend.
@@ -69,7 +71,7 @@ arguments stored in `agent_device_command` and the Bash array
   "$agent_device_command" "${agent_device_target_args[@]}"
 ```
 
-It issues a fresh credential and opens Loom Dev's existing pairing route
+It issues a fresh credential and opens Loom Dev's existing pairing route <!-- fork: brand -->
 through AgentDevice. For a backend on the device host, use
 `http://127.0.0.1:<server-port>` on iOS or `http://10.0.2.2:<server-port>`
 on Android. For a remote backend, use its reachable origin.

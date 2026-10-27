@@ -9,7 +9,7 @@ import type * as Path from "effect/Path";
  * file keeps it fresh, so a week without a write means no running build needs it. A build
  * downgraded after that rescans, and loses usage from transcripts already removed.
  */
-export const LEGACY_SCAN_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const LEGACY_SCAN_CACHE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Runs after the current cache saved, so a failed save never leaves usage with no cache. */
 export const pruneLegacyUsageCaches = Effect.fn("UsageService.pruneLegacyScanCaches")(function* (

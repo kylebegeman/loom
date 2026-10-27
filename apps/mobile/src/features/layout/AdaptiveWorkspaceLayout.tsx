@@ -569,7 +569,7 @@ function AdaptiveWorkspaceLayoutContent(
   const { openPendingTask: handleOpenPendingTask } =
     usePendingTaskListActions(handleSelectThreadRoute);
 
-  const handleNewThreadOnBranch = useNewTaskFromSource();
+  const handleNewThreadOnBranch = useNewTaskFromSource(); // fork: library
 
   const handleNewThreadInProject = (project: EnvironmentProject) => {
     handleSelectThreadRoute({

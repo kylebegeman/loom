@@ -76,7 +76,7 @@ const storageError = (cause: unknown) =>
   );
 
 /** "Fix: Fixer has no input named file." */
-export const problemMessage = (problem: BotPipelineProblem) =>
+const problemMessage = (problem: BotPipelineProblem) =>
   problem.stepId === null ? problem.message : `${stepLabel(problem.stepId)}: ${problem.message}`;
 
 const firstError = (problems: ReadonlyArray<BotPipelineProblem>) =>

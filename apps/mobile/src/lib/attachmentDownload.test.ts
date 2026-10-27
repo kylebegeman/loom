@@ -231,6 +231,7 @@ describe("downloadAndShareAttachment", () => {
 });
 
 describe("attachment preview files", () => {
+  // fork: library
   it("leases custom authenticated bytes through the preview cache without a native unauthenticated download", async () => {
     const download = vi.fn(async () => undefined);
     const file = await downloadAttachmentForPreview({

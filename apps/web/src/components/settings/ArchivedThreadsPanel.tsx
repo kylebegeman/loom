@@ -209,7 +209,7 @@ export function ArchivedThreadsPanel() {
                   ? "Loading archived threads"
                   : archiveError
                     ? "Could not load archived threads"
-                    : titleFilter.trim()
+                    : titleFilter.trim() // fork: attention-status
                       ? "No archived threads match this search"
                       : "No archived threads"}
               </span>
@@ -218,7 +218,7 @@ export function ArchivedThreadsPanel() {
               // fork: attention-status
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ??
+                : (archiveError ?? // fork: attention-status
                   (titleFilter.trim()
                     ? "Try a different title."
                     : "Archived threads will appear here."))
@@ -281,7 +281,7 @@ export function ArchivedThreadsPanel() {
                         // fork: attention-status
                         const result = await unarchiveThread(
                           scopeThreadRef(thread.environmentId, thread.id),
-                          { navigate: true },
+                          { navigate: true }, // fork: attention-status
                         );
                         if (result._tag === "Success") {
                           refreshArchivedThreads();

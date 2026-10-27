@@ -285,7 +285,7 @@ function CopyHealth({
 }
 
 /** The two ways to put a project on a computer, shared by the copies view and the setup steps. */
-export function GetCopyMenu({
+function GetCopyMenu({
   disabled,
   label = "Add files",
   variant = "ghost",

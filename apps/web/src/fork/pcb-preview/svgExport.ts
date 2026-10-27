@@ -2,7 +2,7 @@ import type { PcbBounds } from "@t3tools/contracts/fork";
 export const LIGHT_CANVAS = "#f1f3f5";
 export const MAX_EXPORT_PIXELS = 16_777_216;
 export const MAX_EXPORT_SIDE = 8192;
-export const SVG_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
+const SVG_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const bytes = (text: string) => new TextEncoder().encode(text).byteLength;
 

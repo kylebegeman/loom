@@ -151,8 +151,7 @@ saved by a future version with a looser rule still loads.
 `BUILT_IN_PRINTERS` replaces `BUILD_PLATE_PRESETS` as the source of preset data in
 `model-beds.ts`. It keeps the same ids, labels, kinds, volumes and notes, and adds
 `bedShape: "rectangle"`, `nozzlesMm`, `zones` (L34's values for `bambu-h2d` and `bambu-h2c`)
-and `excludedAreasMm`. `BUILD_PLATE_PRESETS` stays as a derived alias so code on other
-branches keeps compiling; `BuildPlatePresetId` is still built from its keys.
+and `excludedAreasMm`. `BuildPlatePresetId` is built from its keys.
 
 Nozzle sizes come from the vendor data where Loom has verified it (Bambu Studio's
 `machine/Bambu Lab H2D.json` lists `"0.4;0.2;0.6;0.8"`); other printers list the stock
@@ -267,7 +266,7 @@ Runs once, when no `printers` row exists:
 2. Each L33 `customBeds` entry becomes a printer with the same `id` and `name`, `volumeMm`
    unchanged, `kind: volumeMm[2] === null ? "surface" : "printer"`, `bedShape: "rectangle"`,
    empty nozzles, materials, zones and notes, `source: { kind: "user", app: null,
-profileName: null }`, `basedOn: null`.
+   profileName: null }`, `basedOn: null`.
 3. L33 `hiddenPresets` are copied into `hiddenBuiltIns`.
 4. The settings row is not changed: `preset`, `customBedId` and `customMm` already resolve
    through the new `activeBed`.

@@ -8,7 +8,7 @@ import type {
   OrchestrationV2Subagent,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime"; // fork: agent-receipts
 import { useEffect, useState } from "react";
 import { AppState, Pressable, View, type ColorValue } from "react-native";
 
@@ -21,11 +21,12 @@ import { serverEnvironment } from "../../state/server";
 import { environmentThreadDetails } from "../../state/threads";
 import { subagentCardElapsed } from "./subagent-card-presentation";
 import { SubagentRow } from "./SubagentRow";
-import { SubagentReceipt } from "../../fork/agent-receipts/SubagentReceipt";
+import { SubagentReceipt } from "../../fork/agent-receipts/SubagentReceipt"; // fork: agent-receipts
 import { WorkLogBlock } from "./work-log-layout";
 
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 
+// fork: agent-receipts
 const FINISHED_STATUSES: ReadonlySet<string> = new Set([
   "completed",
   "failed",
@@ -160,11 +161,13 @@ export function ThreadSubagentGroup(props: {
         <View className="mb-1 gap-px rounded-xl border border-border bg-card/30 p-1">
           {agents.map((agent) => {
             const threadId = agent.childThreadId;
+            // fork: agent-receipts
             const finishedAt =
               !FINISHED_STATUSES.has(agent.status) || agent.completedAt === null
                 ? null
                 : DateTime.formatIso(agent.completedAt);
             return (
+              // fork: agent-receipts -- the row and its receipt share one keyed wrapper
               <View key={agent.item.id}>
                 <Pressable
                   accessible
@@ -181,7 +184,7 @@ export function ThreadSubagentGroup(props: {
                         { type: "thread", environmentId: props.environmentId, threadId },
                       )
                     )
-                      return;
+                      return; // fork: agent-receipts
                     navigation.dispatch(
                       StackActions.push("Thread", {
                         environmentId: String(props.environmentId),

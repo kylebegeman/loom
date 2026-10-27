@@ -34,7 +34,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
-import { managedWorktreesDirectories } from "../worktreesDirectory.ts";
+import { managedWorktreesDirectories } from "../worktreesDirectory.ts"; // fork: file-placement
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import {
   createTranscriptJsonReader,
@@ -637,6 +637,7 @@ export const make = Effect.gen(function* () {
   const homeDir = yield* HostProcess.HomeDirectory;
   // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
   const excludedProjectRoots = new Set(
+    // fork: file-placement -- baseDir itself, not everything below it.
     [homeDir, baseDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
       normalizeProjectPathForComparison(path.resolve(directory)),
     ),
@@ -646,6 +647,7 @@ export const make = Effect.gen(function* () {
     path.join(homeDir, "Documents", "Codex"),
   ];
 
+  // fork: file-placement
   const managedRoot = path.resolve(serverConfig.managedProjectsRoot ?? baseDir);
   // The default Projects folder sits beside these, so exclude Loom's folders rather than baseDir.
   const readLoomRoots = serverSettings.getSettings.pipe(
@@ -660,11 +662,13 @@ export const make = Effect.gen(function* () {
 
   const isExcludedProjectPath = (candidatePath: string, loomRoots: ReadonlyArray<string>) =>
     excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
+    // fork: file-placement
     [...excludedProjectAncestors, ...loomRoots].some((ancestor) =>
       normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
         normalizeForWorktreeMatch(ancestor, foldWorktreeCase),
       ),
     ) ||
+    // fork: file-placement -- readLoomRoots replaces the blanket baseDir ancestor check.
     isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
 
   const listDirectory = (directory: string) =>
@@ -1196,7 +1200,7 @@ export const make = Effect.gen(function* () {
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
-    const loomRoots = yield* readLoomRoots;
+    const loomRoots = yield* readLoomRoots; // fork: file-placement
 
     const merged = new Map<
       string,
@@ -1215,7 +1219,7 @@ export const make = Effect.gen(function* () {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
-      if (isExcludedProjectPath(resolved, loomRoots)) continue;
+      if (isExcludedProjectPath(resolved, loomRoots)) continue; // fork: file-placement
       let key = directoryKeys.get(resolved);
       if (key === undefined) {
         const stats = yield* statOption(resolved);
@@ -1227,6 +1231,7 @@ export const make = Effect.gen(function* () {
           .realPath(resolved)
           .pipe(Effect.orElseSucceed(() => resolved));
         // Symlinks can disguise excluded worktree paths; re-check their targets.
+        // fork: file-placement
         if (isExcludedProjectPath(realPath, loomRoots)) {
           key = "";
         } else {
@@ -1319,6 +1324,7 @@ export const make = Effect.gen(function* () {
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
+    // fork: file-placement
     const loomRoots = yield* readLoomRoots;
     if (isExcludedProjectPath(root, loomRoots) || isExcludedProjectPath(realRoot, loomRoots))
       return Stream.empty;

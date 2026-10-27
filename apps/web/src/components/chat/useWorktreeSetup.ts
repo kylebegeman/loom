@@ -9,6 +9,7 @@ import type {
 import { workspacePreparationRetryRunIds } from "@t3tools/client-runtime/state/turn-item-presentation";
 import { useState } from "react";
 import { useStableCallback } from "../../hooks/useStableCallback";
+// fork: library-launch-files
 import { projectLibrary, useLibraryPermission } from "../../fork/project-library/state";
 import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -19,7 +20,7 @@ import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import type { Thread } from "../../types";
 import { focusTerminal } from "../../lib/terminalFocus";
 import { resolveVisibleWorktreeSetup, resolveWorktreeSetupProgress } from "../ChatView.logic";
-import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup";
+import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup"; // fork: library-launch-files
 
 // Share in-flight preparation retries across ChatView instances.
 const retryingWorkspacePreparationRunIds = new Set<RunId>();
@@ -111,6 +112,7 @@ export function useWorktreeSetup(input: {
   // After agent handoff, sends queue behind setup without awaiting its scripts.
   const blocksSend =
     !sendQueuesBehindSetup &&
+    // fork: library-launch-files
     (worktreeSetup !== null ? worktreeSetupBlocksSend(worktreeSetup) : isPreparingWorktree);
 
   const retryableRunIdsKey = [
@@ -134,6 +136,7 @@ export function useWorktreeSetup(input: {
     (thread: { readonly environmentId: EnvironmentId; readonly threadId: ThreadId } | null) =>
       setStartedSetup(thread === null ? null : { ...thread, ownerKey }),
   );
+  // fork: library-launch-files
   const filesOperationId =
     worktreeSetup?.kind === "project-files" ? (worktreeSetup.operationId ?? null) : null;
   const canControlFiles = useLibraryPermission(
@@ -143,6 +146,7 @@ export function useWorktreeSetup(input: {
   const filesComputerLabel =
     useEnvironment(filesOperationId ? target.environmentId : null)?.label ?? null;
   const cancel = useStableCallback(async () => {
+    // fork: library-launch-files
     if (worktreeSetup && filesOperationId) {
       const result = await cancelOperation({
         environmentId: target.environmentId,
@@ -157,6 +161,7 @@ export function useWorktreeSetup(input: {
     });
     return result._tag === "Success" && result.value.cancelled;
   });
+  // fork: library-launch-files
   const retryFiles = useStableCallback(() => {
     if (!filesOperationId) return;
     void resumeOperation({
@@ -189,6 +194,7 @@ export function useWorktreeSetup(input: {
     retryableRunIds: retryableRunIds.ids,
     begin,
     cancel,
+    // fork: library-launch-files
     // A project-files card without its operation, or without access to it, offers neither action.
     canCancel: filesOperationId === null || canControlFiles,
     retryFiles: filesOperationId && canControlFiles ? retryFiles : null,

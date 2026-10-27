@@ -122,6 +122,7 @@ export function sortHomeProjectScopes(input: {
   }
 
   return Arr.sort(
+    // fork: project-navigation -- derive each scope's sort key once, not on every comparison
     input.scopes.map((scope) => ({
       scope,
       timestamp:
@@ -133,11 +134,11 @@ export function sortHomeProjectScopes(input: {
         ),
       title: scope.title,
       key: scope.key,
-    })),
+    })), // fork: project-navigation
     Order.Struct({
       timestamp: Order.flip(Order.Number),
       title: Order.String,
       key: Order.String,
     }),
-  ).map(({ scope }) => scope);
+  ).map(({ scope }) => scope); // fork: project-navigation
 }

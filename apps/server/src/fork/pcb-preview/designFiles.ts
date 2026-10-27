@@ -18,7 +18,7 @@ export const designReferences = (kind: "kicad" | "tscircuit", text: string) =>
     ),
     (match) => match[1]!,
   );
-export const isDesignFile = (kind: "kicad" | "tscircuit", name: string) =>
+const isDesignFile = (kind: "kicad" | "tscircuit", name: string) =>
   kind === "kicad" ? /\.kicad_(?:pro|sch|pcb|dru)$/i.test(name) : /\.(?:[cm]?[jt]sx?)$/i.test(name);
 const ignored = new Set([
   "node_modules",

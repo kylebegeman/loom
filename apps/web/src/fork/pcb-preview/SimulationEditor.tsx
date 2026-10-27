@@ -40,7 +40,7 @@ import { Plot, type PlotTrace } from "./Plot";
 import k from "./inspector.module.css";
 
 const idleSimulation = Atom.make(AsyncResult.initial<PcbSimulationResult, never>());
-export const defaultSimulation = (): PcbSimulationSetup => ({
+const defaultSimulation = (): PcbSimulationSetup => ({
   id: randomUUID(),
   name: "Circuit response",
   analysis: "tran",

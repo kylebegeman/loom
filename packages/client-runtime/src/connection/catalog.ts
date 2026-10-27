@@ -1,5 +1,5 @@
 import { DesktopSshEnvironmentTargetSchema, EnvironmentId } from "@t3tools/contracts";
-import { LoomIdentityAccount } from "@t3tools/contracts/fork";
+import { LoomIdentityAccount } from "@t3tools/contracts/fork"; // fork: identity-renewal
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -23,7 +23,7 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
-    identity: Schema.optionalKey(LoomIdentityAccount),
+    identity: Schema.optionalKey(LoomIdentityAccount), // fork: identity-renewal
     learned: Schema.optionalKey(Schema.Literal(true)),
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
     /**
@@ -31,6 +31,7 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
      * interface. A bare 100.64.0.0/10 address could belong to any VPN.
      */
     network: Schema.optionalKey(Schema.Literal("tailscale")),
+    // fork: directory-computers
     /**
      * "directory" on a learned route only a Library's directory listed. A fresh listing that
      * drops it removes it; the live server reporting it clears the mark.
@@ -68,6 +69,7 @@ export class BearerConnectionCredential extends Schema.TaggedClass<BearerConnect
   "BearerConnectionCredential",
   {
     token: Schema.String,
+    // fork: identity-renewal
     identity: Schema.optionalKey(
       Schema.Struct({
         ...LoomIdentityAccount.fields,

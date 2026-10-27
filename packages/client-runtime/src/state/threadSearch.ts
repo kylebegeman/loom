@@ -50,7 +50,7 @@ export interface EnvironmentThreadSearchMatch extends OrchestrationThreadSearchM
 export interface ThreadSearchResultsState {
   readonly matches: ReadonlyArray<EnvironmentThreadSearchMatch>;
   readonly isLoading: boolean;
-  readonly failedEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  readonly failedEnvironmentIds: ReadonlyArray<EnvironmentId>; // fork: fleet-connections
   /** Rows of matching older settled threads, which shells that omit them do not hold. */
   readonly rows: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -120,6 +120,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
     Atom.make((get): ThreadSearchResultsState => {
       const parsedKey = parseThreadSearchKey(key);
       if (Option.isNone(parsedKey)) {
+        // fork: fleet-connections
         return { matches: [], isLoading: false, failedEnvironmentIds: [], rows: EMPTY_SEARCH_ROWS };
       }
 
@@ -130,7 +131,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
       const matches: EnvironmentThreadSearchMatch[] = [];
       const rows: Array<ThreadSearchResultsState["rows"][number]> = [];
       let isLoading = false;
-      const failedEnvironmentIds: EnvironmentId[] = [];
+      const failedEnvironmentIds: EnvironmentId[] = []; // fork: fleet-connections
 
       for (const environmentId of environmentIds) {
         const before = options.olderSettledBefore
@@ -152,7 +153,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
           }),
         );
         isLoading ||= result.waiting;
-        if (AsyncResult.isFailure(result)) failedEnvironmentIds.push(environmentId);
+        if (AsyncResult.isFailure(result)) failedEnvironmentIds.push(environmentId); // fork: fleet-connections
         const value = Option.getOrNull(AsyncResult.value(result));
         if (value !== null) {
           matches.push(...value.matches.map((match) => ({ ...match, environmentId })));
@@ -165,6 +166,7 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
         }
       }
 
+      // fork: fleet-connections
       return {
         matches,
         isLoading,

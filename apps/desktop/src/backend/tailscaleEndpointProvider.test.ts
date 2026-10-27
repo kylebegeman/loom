@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientResponse } from "effect/http"; // fork: tailnet-ownership
 import { ChildProcessSpawner } from "effect/process";
 
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
@@ -80,6 +80,7 @@ describe("tailscale endpoint provider", () => {
       }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
 
+  // fork: tailnet-ownership
   it.effect("marks Tailscale HTTPS available only when Serve answers as this backend", () =>
     Effect.gen(function* () {
       const resolveServedBy = (servedEnvironmentId: string) =>

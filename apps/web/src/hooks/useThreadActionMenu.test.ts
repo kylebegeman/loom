@@ -1,8 +1,8 @@
 import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
-  ProjectId,
-  ProviderInstanceId,
+  ProjectId, // fork: library-projects
+  ProviderInstanceId, // fork: library-projects
   ThreadId,
   type ContextMenuItem,
 } from "@t3tools/contracts";
@@ -23,8 +23,8 @@ const state = vi.hoisted(() => ({
   granted: new Set<string>(),
   effects: [] as string[],
   completed: deferred<void>(),
-  createThread: vi.fn(),
-  worktreePath: null as string | null,
+  createThread: vi.fn(), // fork: library-projects
+  worktreePath: null as string | null, // fork: library-projects
   show: vi.fn<
     (
       items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>,
@@ -38,15 +38,18 @@ function recordEffect(action: string) {
   state.completed.resolve();
 }
 
+// fork: workspace-handoff
 vi.mock("~/fork/workspace-handoff/state", () => ({
   openWorkspaceHandoff: () => recordEffect("workspace-handoff"),
 }));
+// fork: bots
 vi.mock("~/fork/bots/fromThread/state", () => ({
   openSaveAsBot: () => recordEffect("save-as-bot"),
   threadCanBeSavedAsBot: () => false,
 }));
+// fork: workspace-handoff
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => new Map() } }));
-vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
+vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} })); // fork: workspace-handoff
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
@@ -71,6 +74,7 @@ vi.mock("../state/entities", () => ({
     projectId: "project",
     title: "Thread",
     branch: "main",
+    // fork: library-projects
     worktreePath: state.worktreePath,
     modelSelection: {
       instanceId: ProviderInstanceId.make("codex"),
@@ -131,7 +135,7 @@ vi.mock("./useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: () => recordEffect("copy") }),
 }));
 vi.mock("./useHandleNewThread", () => ({
-  useNewThreadHandler: () => state.createThread,
+  useNewThreadHandler: () => state.createThread, // fork: library-projects
 }));
 vi.mock("./useSettings", () => ({
   useClientSettings: (select: (settings: unknown) => unknown) =>
@@ -183,6 +187,7 @@ beforeEach(() => {
   state.granted = new Set(["primary"]);
   state.effects = [];
   state.completed = deferred<void>();
+  // fork: library-projects
   state.worktreePath = null;
   state.createThread.mockReset().mockImplementation(async () => recordEffect("draft"));
   state.show.mockReset().mockResolvedValue(null);
@@ -196,7 +201,7 @@ describe("thread menu permissions", () => {
     "pin",
     "settle",
     "archive",
-    "workspace-handoff",
+    "workspace-handoff", // fork: workspace-handoff
   ] as const)("%s rechecks after the native menu closes", async (action) => {
     state.granted.add("secondary");
     const choice = deferred<ThreadActionMenuId | null>();
@@ -209,6 +214,7 @@ describe("thread menu permissions", () => {
   });
 });
 
+// fork: library-projects
 describe("new thread on branch", () => {
   it.each([null, "/project/checkouts/feature"])(
     "preserves the selected thread's checkout and settings for %s",
@@ -216,7 +222,7 @@ describe("new thread on branch", () => {
       state.worktreePath = worktreePath;
       state.show.mockResolvedValue("new-thread-on-branch");
       createMenu().openMenu(position);
-      await state.completed.promise;
+      await state.completed.promise; // fork: library-projects
 
       expect(state.createThread).toHaveBeenCalledExactlyOnceWith(
         { environmentId: target.environmentId, projectId: ProjectId.make("project") },

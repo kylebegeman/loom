@@ -1,5 +1,5 @@
 import { WS_METHODS } from "@t3tools/contracts";
-import { LIBRARY_WS_METHODS, PROJECT_WORKFLOW_WS_METHODS } from "@t3tools/contracts/fork";
+import { LIBRARY_WS_METHODS, PROJECT_WORKFLOW_WS_METHODS } from "@t3tools/contracts/fork"; // fork: library-launch-files
 import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
@@ -7,9 +7,10 @@ import { appAtomRegistry } from "./atomRegistry";
 const SLOW_RPC_ACK_THRESHOLD_MS = 15_000;
 /**
  * Updates wait for package installs; VCS refreshes may wait for background work and network calls.
- * Library project files clone whole repositories, and older computers launch only once they land.
  * Give these requests longer than the normal 15s warning threshold.
  */
+// fork: library-launch-files: Library project files clone whole repositories,
+// and older computers launch only once they land.
 const LONG_RUNNING_RPC_ACK_THRESHOLD_MS = 120_000;
 const MAX_TRACKED_RPC_ACK_REQUESTS = 256;
 let slowRpcAckThresholdMs = SLOW_RPC_ACK_THRESHOLD_MS;
@@ -41,7 +42,7 @@ const longRunningRpcAckMethods = new Set<string>([
   WS_METHODS.vcsRefreshStatus,
   LIBRARY_WS_METHODS.prepareCopy, // fork: library-launch-files
   PROJECT_WORKFLOW_WS_METHODS.execute, // fork: library-launch-files
-  PROJECT_WORKFLOW_WS_METHODS.resume,
+  PROJECT_WORKFLOW_WS_METHODS.resume, // fork: library-launch-files
 ]);
 
 const slowRpcAckRequestsAtom = Atom.make<ReadonlyArray<SlowRpcAckRequest>>([]).pipe(
@@ -65,6 +66,7 @@ function shouldTrackRpcAck(method: string): boolean {
   );
 }
 
+// fork: library-launch-files
 export function rpcAckThresholdMs(method: string): number {
   return longRunningRpcAckMethods.has(method)
     ? Math.max(slowRpcAckThresholdMs, LONG_RUNNING_RPC_ACK_THRESHOLD_MS)

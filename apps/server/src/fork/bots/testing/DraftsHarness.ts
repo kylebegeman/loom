@@ -20,7 +20,7 @@ import { runForkMigrationSet } from "../../persistence/migrations.ts";
 import { make } from "../fromThread/BotDrafts.ts";
 import { BotsMigrations } from "../migrations.ts";
 
-export const projectId = ProjectId.make("project-a");
+const projectId = ProjectId.make("project-a");
 export const scratchId = ProjectId.make("scratch");
 
 let messageCount = 0;
@@ -54,7 +54,7 @@ export const messageEvent = (payload: OrchestrationV2ConversationMessage) =>
   ({ type: "message.updated", threadId: payload.threadId, payload }) as OrchestrationV2DomainEvent;
 
 /** Fake thread, launch and folder services for drafts and suggestions. */
-export const makeDraftsHarness = Effect.sync(() => {
+const makeDraftsHarness = Effect.sync(() => {
   const shells = new Map<string, Partial<OrchestrationV2ThreadShell>>();
   const messages = new Map<string, Array<OrchestrationV2ConversationMessage>>();
   const launches: Array<ThreadLaunch.ThreadLaunchInput> = [];

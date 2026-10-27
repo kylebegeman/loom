@@ -2,8 +2,8 @@ import * as Schema from "effect/Schema";
 
 export const PcbLengthUnit = Schema.Literals(["mm", "mil", "in"]);
 export type PcbLengthUnit = typeof PcbLengthUnit.Type;
-export const MM_PER_INCH = 25.4;
-export const MM_PER_MIL = 0.0254;
+const MM_PER_INCH = 25.4;
+const MM_PER_MIL = 0.0254;
 const MM_PER = { mm: 1, mil: MM_PER_MIL, in: MM_PER_INCH } as const;
 export const toMm = (value: number, unit: PcbLengthUnit) => value * MM_PER[unit];
 export const fromMm = (mm: number, unit: PcbLengthUnit) => mm / MM_PER[unit];

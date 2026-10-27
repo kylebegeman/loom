@@ -661,7 +661,7 @@ export const BotsRpcGroup = RpcGroup.make(
 );
 
 export const BOTS_BATCH_MAX_ITEMS = 200;
-export const BOTS_BATCH_LINES_MAX_BYTES = 64 * 1024;
+const BOTS_BATCH_LINES_MAX_BYTES = 64 * 1024;
 export const BOTS_LIST_BATCHES_MAX_LIMIT = 50;
 /** A failed item is run at most this many times in all. */
 export const BOTS_BATCH_MAX_ATTEMPTS = 5;

@@ -53,7 +53,7 @@ const fetchedAtMs = (stored: StoredDirectoryListing | null) =>
   stored === null ? Number.NEGATIVE_INFINITY : Date.parse(stored.fetchedAt);
 
 /** One short line for a failed read. Never the server's own wording, which names internals. */
-export function directoryListingErrorText(cause: Cause.Cause<unknown>): string {
+function directoryListingErrorText(cause: Cause.Cause<unknown>): string {
   const error = Option.getOrNull(Cause.findErrorOption(cause));
   if (isDirectoryError(error))
     return error.reason === "not-authority"

@@ -6,7 +6,7 @@ export const SUGGEST_RESULT_MAX_BYTES = 4096;
 export const SUGGEST_DOWN_RUNS = 10;
 export const SUGGEST_UP_RUNS = 5;
 
-export const SUGGEST_EDIT_REQUEST = `You are improving a reusable bot: a fixed brief that runs again and again with different inputs.
+const SUGGEST_EDIT_REQUEST = `You are improving a reusable bot: a fixed brief that runs again and again with different inputs.
 
 Below are the bot as JSON, runs a person marked as bad, and runs they marked as good. Work out what the bad runs have in common that the brief allowed or caused, and change the brief so later runs avoid it without losing what made the good runs good.
 

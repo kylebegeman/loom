@@ -38,9 +38,7 @@ const RETRY_MAX_MS = 5 * 60_000;
  */
 const EXPIRED_RECHECK_MS = 60_000;
 
-export function isIdentityCredential(
-  credential: ConnectionCredential,
-): credential is IdentityCredential {
+function isIdentityCredential(credential: ConnectionCredential): credential is IdentityCredential {
   return credential.identity !== undefined;
 }
 
@@ -58,7 +56,7 @@ export function nextIdentityRetryDelayMs(previousMs: number | null): number {
 }
 
 /** Returns the credential to save in place of the current one, with the identity binding kept. */
-export const renewIdentityCredential = Effect.fn("IdentityRenewal.renewCredential")(function* (
+const renewIdentityCredential = Effect.fn("IdentityRenewal.renewCredential")(function* (
   renewal: IdentityRenewalService,
   input: {
     readonly httpBaseUrl: string;

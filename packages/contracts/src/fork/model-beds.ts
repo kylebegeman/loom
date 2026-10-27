@@ -170,11 +170,9 @@ export const BUILT_IN_PRINTERS = {
   "mat-12in": builtin("mat-12in"),
   "plane-1m": builtin("plane-1m"),
 } as const;
-/** Compatibility alias for callers that predate the printer library. */
-export const BUILD_PLATE_PRESETS = BUILT_IN_PRINTERS;
 
 export const BuildPlatePresetId = Schema.Literals([
-  ...(Object.keys(BUILD_PLATE_PRESETS) as (keyof typeof BUILD_PLATE_PRESETS)[]),
+  ...(Object.keys(BUILT_IN_PRINTERS) as (keyof typeof BUILT_IN_PRINTERS)[]),
   "custom",
 ]);
 
@@ -183,7 +181,7 @@ export const BuildPlatePattern = Schema.Literals(["grid-mm", "grid-inch", "plain
 
 const axisMm = Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 }));
 export const CUSTOM_BED_LIMIT = 24;
-export const DEFAULT_BUILD_PLATE_PRESET = "bambu-h2d" as const;
+const DEFAULT_BUILD_PLATE_PRESET = "bambu-h2d" as const;
 export const CustomBedId = Schema.String.check(Schema.isPattern(/^custom-[0-9a-f-]{8,36}$/));
 export const CustomBed = Schema.Struct({
   id: CustomBedId,
@@ -199,7 +197,7 @@ const customBeds = Schema.Array(CustomBed).check(
   }),
 );
 const PresetOnlyId = Schema.Literals(
-  Object.keys(BUILD_PLATE_PRESETS) as (keyof typeof BUILD_PLATE_PRESETS)[],
+  Object.keys(BUILT_IN_PRINTERS) as (keyof typeof BUILT_IN_PRINTERS)[],
 );
 const hiddenPresets = Schema.Array(PresetOnlyId).check(Schema.isMaxLength(64));
 export const BuildPlateSetting = Schema.Struct({
@@ -252,7 +250,7 @@ export const listBeds = (
   setting: BuildPlateSetting,
   options: BedListOptions = {},
 ): readonly Bed[] => [
-  ...Object.entries(BUILD_PLATE_PRESETS)
+  ...Object.entries(BUILT_IN_PRINTERS)
     .filter(
       ([id]) =>
         options.includeHidden ||
@@ -312,7 +310,7 @@ export const selectBed = (
   id: string,
   options: BedListOptions = {},
 ): BuildPlateSetting => {
-  if (id === "custom" || Object.hasOwn(BUILD_PLATE_PRESETS, id))
+  if (id === "custom" || Object.hasOwn(BUILT_IN_PRINTERS, id))
     return { ...setting, preset: id as BuildPlatePresetId, customBedId: null };
   return (options.library?.printers ?? setting.customBeds).some((bed) => bed.id === id)
     ? { ...setting, preset: "custom", customBedId: id }

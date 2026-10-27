@@ -46,12 +46,12 @@ function noticeDetail(
       return `Cached data remains available. The ${resourceName} will load when your connection returns.`;
     case "connecting":
     case "reconnecting":
-      return `The ${resourceName} will load as soon as the computer reconnects.`;
+      return `The ${resourceName} will load as soon as the computer reconnects.`; // fork: fleet-connections
     case "unsupported":
       return "Use compatible versions of the app and server to connect.";
     case "available":
     case "error":
-      return `Reconnect the computer to load the ${resourceName}.`;
+      return `Reconnect the computer to load the ${resourceName}.`; // fork: fleet-connections
     case "connected":
       return "";
   }

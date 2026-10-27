@@ -4,7 +4,7 @@ import type {
   PcbInspection,
   PcbNetChange,
 } from "./pcb-workspace.ts";
-export const MOVE_TOLERANCE_MM = 0.01;
+const MOVE_TOLERANCE_MM = 0.01;
 export interface PcbChangeSet {
   readonly components: ReadonlyArray<PcbComponentChange>;
   readonly nets: ReadonlyArray<PcbNetChange>;

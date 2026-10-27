@@ -30,6 +30,7 @@ import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkC
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
+// fork: library-sign-in
 import {
   clearLoomSignInDestination,
   rememberLoomSignInDestination,
@@ -93,6 +94,7 @@ export const Route = createRootRoute({
     }
 
     const authGateState = await resolveInitialServerAuthGateState();
+    // fork: library-sign-in
     if (authGateState.status === "requires-auth") {
       rememberLoomSignInDestination(new URL(location.href, window.location.origin).href);
     } else if (authGateState.status === "authenticated") {

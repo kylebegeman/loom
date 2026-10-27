@@ -1,5 +1,5 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { setupGitHubHost } from "./github.ts";
+import { setupGitHubHost } from "./github.ts"; // fork: github-host-setup
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -125,6 +125,7 @@ const serviceReconcileFlags = {
   ),
 };
 
+// fork: github-host-setup
 const serviceInstallCommand = Command.make("install", {
   ...serviceReconcileFlags,
   github: Flag.Boolean("github").pipe(
@@ -137,7 +138,7 @@ const serviceInstallCommand = Command.make("install", {
     runServiceCommand(
       flags,
       Effect.gen(function* () {
-        if (flags.github) yield* setupGitHubHost(true);
+        if (flags.github) yield* setupGitHubHost(true); // fork: github-host-setup
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(

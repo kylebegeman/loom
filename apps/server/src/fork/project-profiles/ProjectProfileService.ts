@@ -27,7 +27,7 @@ import { makeStore } from "./ProfileStore.ts";
 import { serverLocalDay } from "./budget.ts";
 import { buildVarlockCommandLine } from "./varlock.ts";
 
-export function resolveIntent(
+function resolveIntent(
   profile: ProjectProfile,
   scripts: ReadonlyArray<ProjectScript>,
   input: VarlockCommandInput["target"],
@@ -41,7 +41,7 @@ export function resolveIntent(
     ? target.command
     : (scripts.find((s) => s.id === target.scriptId)?.command ?? null);
 }
-export function profileSummary(
+function profileSummary(
   profile: ProjectProfile,
   scripts: ReadonlyArray<ProjectScript>,
   report: EnvReport | null,

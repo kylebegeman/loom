@@ -1,5 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
+import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts"; // fork: project-lifecycle
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -115,7 +115,7 @@ const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
 const layerGitWorkflowTest = Layer.mock(GitWorkflow.GitWorkflowService)({
   pruneWorktrees: () => Effect.void,
   createWorktree: () => Effect.succeed({} as never),
-}).pipe(Layer.provideMerge(ProviderTurnStartTestkit.layerWorkspacePreparation));
+}).pipe(Layer.provideMerge(ProviderTurnStartTestkit.layerWorkspacePreparation)); // fork: project-lifecycle
 const layerProjectServiceTest = Layer.mock(ProjectService.ProjectService)({
   getById: () => Effect.succeedNone,
 });
@@ -311,6 +311,7 @@ const layerScheduledTasksTest = ScheduledTaskService.layer.pipe(
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
       Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        // fork: file-placement -- no namedProjectsRoot: ProjectPlacement owns the Projects folder.
         isScratchProject: () => Effect.succeed(false),
       }),
       Scheduler.layer,
@@ -1872,6 +1873,7 @@ it.layer(layerLegacyImportTest)("OrchestrationV2 legacy import", (it) => {
 });
 
 it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
+  // fork: workspace-handoff
   it.effect(
     "conditional handoff settlement rejects stale source state and honors a fresh explicit handoff",
     () =>

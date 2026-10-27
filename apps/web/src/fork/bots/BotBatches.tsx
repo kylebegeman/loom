@@ -148,7 +148,7 @@ const PROGRESS_FILL: Record<ProgressTone, string> = {
  * Where a batch or pipeline stands, as one calm bar of state-toned segments sized by their counts.
  * The caller prints the counts beside it, so the bar never has to carry a legend.
  */
-export function ProgressBar({
+function ProgressBar({
   segments,
   label,
   className,

@@ -56,7 +56,7 @@ export function libraryTidyReasonLabel(reason: LibraryTidyReason): string {
  * health read on that computer covers every repository it holds with nothing uncommitted or
  * unpushed. Missing, mismatched or unreadable health is never treated as clean.
  */
-export function libraryCopyTidyReasons(
+function libraryCopyTidyReasons(
   copy: LibraryWorkingCopy,
   health: LibraryCopyHealth | undefined,
   connected: boolean,

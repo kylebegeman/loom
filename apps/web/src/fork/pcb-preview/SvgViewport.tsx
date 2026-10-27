@@ -18,7 +18,7 @@ import { composeSvg, exportFactor, visibleArea, LIGHT_CANVAS } from "./svgExport
 import { ToolButton } from "./ToolButton";
 import styles from "./workspace.module.css";
 
-export const OverlayScaleContext = createContext(1);
+const OverlayScaleContext = createContext(1);
 export const useOverlayScale = () => useContext(OverlayScaleContext);
 
 export type ViewTransform = { x: number; y: number; scale: number };

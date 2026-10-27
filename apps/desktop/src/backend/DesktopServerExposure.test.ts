@@ -9,7 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcess from "effect/process/ChildProcess"; // fork: tailnet-ownership
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -67,11 +67,13 @@ function layerMockSpawner(statusJson: string | (() => string) = "{}", onSpawn?: 
   );
 }
 
+// fork: tailnet-ownership
 const TAILSCALE_RUNNING_STATUS = JSON.stringify({
   BackendState: "Running",
   Self: { DNSName: "desktop.tail.ts.net.", CapMap: { https: null } },
 });
 
+// fork: tailnet-ownership
 /** Answers `tailscale status` and `tailscale serve status` the way the CLI does. */
 function layerTailscaleSpawner(serveStatus: () => string, spawned: Array<string>) {
   return Layer.succeed(
@@ -100,6 +102,7 @@ function layerTailscaleSpawner(serveStatus: () => string, spawned: Array<string>
   );
 }
 
+// fork: tailnet-ownership
 const serveStatusProxying = (port: number, proxy: string) =>
   JSON.stringify({
     TCP: { [String(port)]: { HTTPS: true } },
@@ -249,7 +252,7 @@ describe("DesktopServerExposure", () => {
           advertisedHost: "192.168.1.20",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
-          tailscaleServe: null,
+          tailscaleServe: null, // fork: tailnet-ownership
         });
 
         const backendConfig = yield* serverExposure.backendConfig;
@@ -279,6 +282,7 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
+  // fork: tailnet-ownership
   it.effect(
     "saves Serve settings, and enabling again retries until the backend holds the port",
     () => {
@@ -328,6 +332,7 @@ describe("DesktopServerExposure", () => {
     },
   );
 
+  // fork: tailnet-ownership
   it.effect("refuses a Serve port another app or the backend holds, without saving it", () => {
     const spawned: Array<string> = [];
     return withHarness(
@@ -338,12 +343,14 @@ describe("DesktopServerExposure", () => {
         yield* settings.load;
         yield* serverExposure.configureFromSettings({ port: 4173 });
 
+        // fork: tailnet-ownership
         const held = yield* serverExposure
           .setTailscaleServeEnabled({ enabled: true, port: 443 })
           .pipe(Effect.flip);
         assert.equal(held._tag, "DesktopTailscaleServeRefusedError");
         assert.include(held.message, "http://127.0.0.1:8397");
 
+        // fork: tailnet-ownership
         spawned.length = 0;
         const backendPort = yield* serverExposure
           .setTailscaleServeEnabled({ enabled: true, port: 4173 })
@@ -352,6 +359,7 @@ describe("DesktopServerExposure", () => {
         assert.deepEqual(spawned, []);
 
         const persisted = yield* settings.get;
+        // fork: tailnet-ownership
         assert.equal(persisted.tailscaleServeEnabled, false);
         assert.equal(persisted.tailscaleServePort, 443);
       }),
@@ -402,7 +410,7 @@ describe("DesktopServerExposure", () => {
           assert.equal(state.tailscaleServePort, 8443);
         }),
         {},
-        layerTailscaleSpawner(() => "{}", []),
+        layerTailscaleSpawner(() => "{}", []), // fork: tailnet-ownership
         settingsLayer,
       );
     }),

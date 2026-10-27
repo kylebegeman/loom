@@ -763,6 +763,7 @@ export const make = Effect.gen(function* () {
       closedRequests += result.closedRequests;
       retiredEffects += result.retiredEffects;
     }
+    // fork: detached-session-recovery
     // Detached sessions and errors can outlive thread recovery, including a
     // deleted owner. At this process-loss boundary every transport is gone.
     const remainingSessions = yield* projections
@@ -772,6 +773,7 @@ export const make = Effect.gen(function* () {
           (cause) => new ProviderRuntimeRecoveryError({ operation: "read-projections", cause }),
         ),
       );
+    // fork: detached-session-recovery
     for (const { threadId, session } of remainingSessions) {
       const now = yield* DateTime.now;
       yield* eventSink

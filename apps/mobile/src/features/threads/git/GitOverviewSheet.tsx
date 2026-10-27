@@ -115,7 +115,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const gitOperationLabel = gitState.gitOperationLabel;
   const busy = gitOperationLabel !== null;
   const isRepo = gitStatus.data?.isRepo ?? true;
-  const canReviewChanges = gitStatus.data?.checkpointCapable ?? isRepo;
+  const canReviewChanges = gitStatus.data?.checkpointCapable ?? isRepo; // fork: checkpoint-capable
   const hasPrimaryRemote = gitStatus.data?.hasPrimaryRemote ?? false;
   const isDefaultRef = gitStatus.data?.isDefaultRef ?? false;
 
@@ -290,7 +290,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
           icon="text.bubble"
           label="Review changes"
           description="Inspect changes, uncommitted edits, and turn diffs"
-          disabled={busy || !canReviewChanges}
+          disabled={busy || !canReviewChanges} // fork: checkpoint-capable
           onPress={() => {
             const params = { environmentId, threadId };
             navigation.dispatch(

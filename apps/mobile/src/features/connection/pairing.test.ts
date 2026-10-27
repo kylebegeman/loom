@@ -31,6 +31,7 @@ describe("extractPairingUrlFromQrPayload", () => {
     ).toBe("https://remote.example.com/pair#token=pairing-token");
   });
 
+  // fork: fleet-connections
   it.each([
     "This is not a pairing link",
     "https://example.com/",

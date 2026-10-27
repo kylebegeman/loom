@@ -492,13 +492,14 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }),
           );
 
+          // fork: tailnet-ownership
           // Sharing records its claim in the home, so give each run a throwaway one.
           const t3Home = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({
             prefix: "t3-dev-share-",
           });
           yield* runDevRunnerWithInput({
             ...devServerInput,
-            t3Home,
+            t3Home, // fork: tailnet-ownership
             mode: "dev",
             port: undefined,
             share: true,

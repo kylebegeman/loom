@@ -332,8 +332,8 @@ const CLAUDE_GROUP_WATCH_SCRIPT = [
 export function spawnClaudeProcessGroup(
   options: ClaudeSpawnOptions,
   onExit?: () => void,
-  registry?: ReturnType<typeof ProviderProcesses.defaultValue>,
-  registration?: Omit<ProviderProcessRegistration, "pid">,
+  registry?: ReturnType<typeof ProviderProcesses.defaultValue>, // fork: server-weight
+  registration?: Omit<ProviderProcessRegistration, "pid">, // fork: server-weight
 ): ClaudeSpawnedProcess {
   const child = NodeChildProcess.spawn(
     "/bin/sh",
@@ -9100,6 +9100,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     code: "compaction_failed",
                   })
                 : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+            // fork: switchboard
             const terminalFailure =
               resultFailure?.class === "usage_limit"
                 ? {
@@ -9690,7 +9691,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
           const terminalMcpSession = yield* mcpSessions.read(turnInput.threadId); // fork: ext-vault-terminal
           const mcpOverrides = claudeMcpQueryOverrides({
-            mcpSession: terminalMcpSession,
+            mcpSession: terminalMcpSession, // fork: ext-vault-terminal
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
             ...(queryPolicy.allowedTools === undefined

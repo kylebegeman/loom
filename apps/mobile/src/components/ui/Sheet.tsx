@@ -26,7 +26,7 @@ export function Sheet(props: SheetProps) {
   return (
     <FormSheet
       isOpen={isOpen}
-      preventNativeDismiss={!dismissible}
+      preventNativeDismiss={!dismissible} // fork: sites-editor-dismiss
       detents={formSheetDetents(0.5, 0.9)}
       prefersGrabberVisible
       // The header holds the close button, so the Duo needs no rail inside this sheet.
@@ -35,7 +35,7 @@ export function Sheet(props: SheetProps) {
       onDismiss={props.onClose}
       onNativeDismiss={props.onClose}
     >
-      {/* Pin content to the native sheet bounds; flex sizing can grow with long forms. */}
+      {/* fork: sites-editor-dismiss -- pin content to the native sheet bounds; flex sizing grows with long forms. */}
       <View collapsable={false} className="absolute inset-0 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
           <NativeScreen
@@ -61,7 +61,7 @@ export function Sheet(props: SheetProps) {
                 {
                   type: "button",
                   icon: { name: "xmark", type: "sfSymbol" },
-                  disabled: !dismissible,
+                  disabled: !dismissible, // fork: sites-editor-dismiss
                   accessibilityLabel: `Close ${props.title}`,
                   identifier: `app-sheet-close-${screenId}`,
                   onPress: close,

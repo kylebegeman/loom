@@ -47,23 +47,23 @@ export function SettingsEnvironmentFilterHeader(props: {
       options={{
         unstable_headerRightItems: () => [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "Choose computers and projects for settings",
+            accessibilityLabel: "Choose computers and projects for settings", // fork: everyday-workflows
             icon: { name: filterIcon, type: "sfSymbol" },
             label: "",
             type: "menu",
             menu: {
-              title: "Apply settings to",
+              title: "Apply settings to", // fork: everyday-workflows
               items: [
                 {
                   type: "submenu",
                   label:
                     selectedIds === null
-                      ? "All computers"
+                      ? "All computers" // fork: everyday-workflows
                       : `${selectedTargets.length} ${selectedTargets.length === 1 ? "computer" : "computers"}`,
                   items: [
                     {
                       type: "action",
-                      label: "All connected computers",
+                      label: "All connected computers", // fork: everyday-workflows
                       state: selectedIds === null ? "on" : undefined,
                       onPress: selectAll,
                     },

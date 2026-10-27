@@ -1,6 +1,6 @@
-import { GitHubHostSetupSettings } from "./components/GitHubHostSetupSettings";
+import { GitHubHostSetupSettings } from "./components/GitHubHostSetupSettings"; // fork: github-host-setup
 import { useNavigation } from "@react-navigation/native";
-import { SettingsComputerNotice } from "./components/SettingsComputerNotice";
+import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: everyday-workflows
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
@@ -45,7 +45,7 @@ import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 type SettingsPage = "new-threads" | "source-control" | "agent-behavior" | "maintenance";
 
 const PAGE_TITLES: Record<SettingsPage, string> = {
-  "new-threads": "New conversations",
+  "new-threads": "New conversations", // fork: everyday-workflows
   "source-control": "Source control",
   "agent-behavior": "Agent behavior",
   maintenance: "Maintenance",
@@ -261,6 +261,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           {!hasConnectedSelection || reference === null ? (
+            // fork: everyday-workflows
             <SettingsComputerNotice />
           ) : (
             <>
@@ -353,6 +354,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "source-control" ? (
                 <>
+                  {/* fork: github-host-setup */}
                   {selectedTargets
                     .filter((environment) => environment.connection.phase === "connected")
                     .map((environment) => (
@@ -449,13 +451,14 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     />
                   ) : null}
                   {!projectSelected ? (
+                    // fork: everyday-workflows
                     <SettingsSection title="Manage computers">
                       {selectedTargets.map((target) => (
                         <SettingsRow
                           key={target.environmentId}
                           icon="server.rack"
                           label={target.label}
-                          value="Loom and agent updates"
+                          value="Loom and agent updates" // fork: everyday-workflows
                           onPress={() =>
                             navigation.navigate("SettingsEnvironmentDetail", {
                               environmentId: target.environmentId,
@@ -471,7 +474,7 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       label="Check provider updates"
                       subtitle={
                         projectSelected
-                          ? "Applies to the whole computer. Select All projects to change it."
+                          ? "Applies to the whole computer. Select All projects to change it." // fork: everyday-workflows
                           : "Check installed provider CLIs for newer versions and fetch model catalog updates. When off, new models may not appear."
                       }
                       value={uniform("enableProviderUpdateChecks")}

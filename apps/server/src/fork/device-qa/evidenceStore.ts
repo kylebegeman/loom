@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /** watchEvidence sends at most this many items; totals cover all of them. */
-export const EVIDENCE_LISTED = 200;
+const EVIDENCE_LISTED = 200;
 
 interface EvidenceRow {
   readonly id: string;

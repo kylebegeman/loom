@@ -6,7 +6,7 @@ import {
 import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
-import { isBotRunThreadId } from "@t3tools/contracts/fork";
+import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import type { ClientSettings } from "@t3tools/contracts/settings";
 // fork: respectful-notifications
 import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
@@ -34,6 +34,7 @@ import {
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
+  // fork: respectful-notifications -- startAttentionBadge sets the badge
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
@@ -285,7 +286,7 @@ export function startThreadNotifications(
         status === "request" ||
         status === "approval" ||
         status === "failed" ||
-        status === "limited" ||
+        status === "limited" || // fork: respectful-notifications
         status === "paused"
           ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
           : null;
@@ -395,6 +396,7 @@ export function startThreadNotifications(
       entry.notification.close();
       pending.delete(tag);
     }
+    // fork: respectful-notifications -- startAttentionBadge keeps the badge count
   };
 
   // Listeners that only exist for some notification modes, rebuilt when the mode changes.

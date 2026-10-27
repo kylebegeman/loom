@@ -78,7 +78,7 @@ import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./T
 import { draftRouteIdentity } from "./thread-route-state";
 import { NewTaskDraftRouteScreen, type NewTaskDraftRouteParams } from "./NewTaskDraftRouteScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"; // fork: attention-status
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -110,7 +110,7 @@ import {
 import { threadRouteIsHydrating } from "./thread-route-hydration";
 import { useThreadPromptLink } from "../prompt-links/useThreadPromptLink";
 import { ThreadHeader } from "./ThreadHeader";
-import { useThreadConversationDetails } from "./useThreadConversationDetails";
+import { useThreadConversationDetails } from "./useThreadConversationDetails"; // fork: library
 import {
   useAndroidWorkspaceBack,
   useWorkspaceBackNavigation,
@@ -342,6 +342,7 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
   });
 
   if (stillHydrating || (canUseArchive && saved.isPending)) {
+    // fork: library
     return withInspectorHeader(<OpeningThreadLoadingScreen />);
   }
 
@@ -751,11 +752,12 @@ function ThreadRouteContent(
 
   const handleResumeQueue = async () => {
     if (!selectedThread) return;
+    // fork: attention-status -- a failed resume reaches the composer
     const result = await resumeThreadQueue({
       environmentId: selectedThread.environmentId,
       input: { threadId: selectedThread.id },
     });
-    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result); // fork: attention-status
   };
 
   // fork: failed-run-retry
@@ -1004,11 +1006,11 @@ function ThreadRouteContent(
       ).length +
         composer.selectedThreadQueueCount >
       1,
-    resumedAfter: filesResumedAfter,
+    resumedAfter: filesResumedAfter, // fork: library-launch-files
   });
   const awaitingBootstrapTurn =
     worktreeSetup !== null
-      ? worktreeSetupBlocksSend(worktreeSetup)
+      ? worktreeSetupBlocksSend(worktreeSetup) // fork: library-launch-files
       : (selectedThreadDetail?.runs.some((run) => run.status === "preparing") ?? false);
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup);
   const handleCancelWorktreeSetup = () => {
@@ -1148,7 +1150,7 @@ function ThreadRouteContent(
             props.inspectorPresentation ? null : (
               <ThreadHeader
                 title={selectedThread.title}
-                onOpenDetails={openConversationDetails}
+                onOpenDetails={openConversationDetails} // fork: library
                 subtitle={headerSubtitle}
                 headerColor={headerColor}
                 usesNativeHeaderGlass={usesNativeHeaderGlass}
@@ -1164,7 +1166,7 @@ function ThreadRouteContent(
               />
             )
           }
-          onOpenConversationDetails={openConversationDetails}
+          onOpenConversationDetails={openConversationDetails} // fork: library
           canOperateThread={canOperateThread}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}
@@ -1203,6 +1205,7 @@ function ThreadRouteContent(
                   turnStartedAt: setupTurnStartedAt,
                   working: composer.activeWorkStartedAt !== null,
                   turnStarted: setupTurnStartedAt !== null,
+                  // fork: library-launch-files
                   onCancel:
                     worktreeSetup.kind === "project-files"
                       ? handleCancelFiles

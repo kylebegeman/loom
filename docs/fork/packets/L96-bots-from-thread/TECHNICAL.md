@@ -27,7 +27,7 @@ Suggestions (under forkParked)
   explains choices the editor should show ("2 values became parameters", "The thread used a
   worktree, so the bot does too").
 - `BotSuggestion = { id, shape (at most 400 characters, with placeholders), threadIds (newest
-first, at most 10), count, firstSeenAt, lastSeenAt, startedBy: BotCreator, dismissedAt }`.
+  first, at most 10), count, firstSeenAt, lastSeenAt, startedBy: BotCreator, dismissedAt }`.
 
 | Tag                           | Payload                                   | Success           | Scope                   |
 | ----------------------------- | ----------------------------------------- | ----------------- | ----------------------- |
@@ -70,7 +70,7 @@ carried over; `notes` says so when the message had any.
    web agree), suffixed `-2`, `-3` when the id is taken.
 4. **Settings** from the thread (`:362-366`): `modelSelection`, `runtimeMode`,
    `interactionMode`; workspace `{ type: "project", projectId: thread.projectId, worktree:
-thread.worktreePath !== null }`; `scopeProjectId: thread.projectId`; L89 defaults for timeout
+   thread.worktreePath !== null }`; `scopeProjectId: thread.projectId`; L89 defaults for timeout
    (30 minutes) and concurrency (2).
 
 The draft is returned, never saved. The web editor maps it with the existing `botDraft`
@@ -85,7 +85,7 @@ The draft is returned, never saved. The web editor maps it with the existing `bo
   (`ManagedProjectFolders.ensureScratchProject`, as L89 uses for scratch bots), with the source
   thread's model, `runtimeMode: "approval-required"` and `interactionMode: "plan"`, so the
   drafting agent cannot change files;
-- the prompt is `REFINE_DRAFT_REQUEST` (in `fromThread/refine.ts`) plus the draft as JSON and the
+- the prompt is `REFINE_DRAFT_REQUEST` (in `fromThread/BotDrafts.ts`) plus the draft as JSON and the
   original brief, asking for a JSON reply with `name`, `description`, `instructions` and
   `parameters` only;
 - `waitForThread` with 180 seconds, then `interruptThread` on timeout; the reply is decoded with
@@ -151,12 +151,12 @@ out.
 Migration 8 `Suggestions` (next free id if another bots migration landed first):
 
 - `fork_bots_brief_threads(thread_id TEXT PRIMARY KEY, shape_key TEXT NOT NULL, created_at TEXT
-NOT NULL)`.
+  NOT NULL)`.
 - `fork_bots_brief_shapes(shape_key TEXT PRIMARY KEY, shape TEXT NOT NULL, thread_ids_json TEXT
-NOT NULL, user_count INTEGER NOT NULL, agent_count INTEGER NOT NULL, first_seen_at TEXT NOT
-NULL, last_seen_at TEXT NOT NULL)`.
+  NOT NULL, user_count INTEGER NOT NULL, agent_count INTEGER NOT NULL, first_seen_at TEXT NOT
+  NULL, last_seen_at TEXT NOT NULL)`.
 - `fork_bots_suggestions(id TEXT PRIMARY KEY, shape_key TEXT NOT NULL UNIQUE, created_at TEXT NOT
-NULL, updated_at TEXT NOT NULL, dismissed_at TEXT, reopened INTEGER NOT NULL DEFAULT 0)`.
+  NULL, updated_at TEXT NOT NULL, dismissed_at TEXT, reopened INTEGER NOT NULL DEFAULT 0)`.
 
 Brief text is not stored beyond the 400-character shape, which already has inputs replaced.
 

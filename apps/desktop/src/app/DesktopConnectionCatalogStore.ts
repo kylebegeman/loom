@@ -504,6 +504,7 @@ export const make = Effect.gen(function* () {
           ),
         );
         return Option.some(decrypted);
+        // fork: restart-continuity
       }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get.decrypt"));
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {

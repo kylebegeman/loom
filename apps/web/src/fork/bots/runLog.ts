@@ -124,7 +124,7 @@ export interface RunDay {
 const pad = (value: number) => String(value).padStart(2, "0");
 
 /** The local calendar day of an instant, as `YYYY-MM-DD`. */
-export const localDayKey = (at: number) => {
+const localDayKey = (at: number) => {
   const date = new Date(at);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };

@@ -1,9 +1,9 @@
 import {
   AdvertisedEndpoint,
   DesktopServerExposureModeSchema,
-  DesktopServerExposureStateRequestSchema,
+  DesktopServerExposureStateRequestSchema, // fork: tailnet-ownership
   DesktopServerExposureStateSchema,
-  PortSchema,
+  PortSchema, // fork: tailnet-ownership
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -13,18 +13,21 @@ import * as DesktopServerExposure from "../../backend/DesktopServerExposure.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
+// fork: tailnet-ownership
 // An out-of-range port is a caller bug; saving a substitute would claim a port nobody chose.
 const SetTailscaleServeEnabledInput = Schema.Struct({
   enabled: Schema.Boolean,
-  port: Schema.optionalKey(PortSchema),
+  port: Schema.optionalKey(PortSchema), // fork: tailnet-ownership
 });
 
 export const getServerExposureState = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_SERVER_EXPOSURE_STATE_CHANNEL,
-  payload: DesktopServerExposureStateRequestSchema,
+  payload: DesktopServerExposureStateRequestSchema, // fork: tailnet-ownership
   result: DesktopServerExposureStateSchema,
+  // fork: tailnet-ownership
   handler: Effect.fn("desktop.ipc.serverExposure.getState")(function* (request) {
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    // fork: tailnet-ownership
     const state = yield* serverExposure.getState;
     if (request?.inspectTailscale !== true || state.tailscaleServe !== null) {
       return state;

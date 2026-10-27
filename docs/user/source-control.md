@@ -18,6 +18,8 @@ and choose **Rescan**.
 
 ### GitHub
 
+<!-- fork: github-host-setup -->
+
 In Loom, open **Settings → Source Control → GitHub access** on the host you want to prepare and
 choose **Set up GitHub**. Setup installs GitHub CLI if needed and reuses saved authorization.
 If approval is needed, copy the displayed code, open GitHub, and approve only if its code matches.
@@ -142,6 +144,8 @@ Line comments are not available for GitCafe pull requests yet.
 Merging a stack lands it through GitCafe, and updating a branch restacks the layers above it.
 
 ## Start, clone, or publish a project
+
+<!-- fork: library-projects -->
 
 Choose **New project** in the command palette (`Cmd/Ctrl+K`) or on the Projects page, or use any
 **Add project** button, then pick how the project starts:

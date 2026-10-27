@@ -155,7 +155,7 @@ const OFFLINE_NOTICE = "Saved check results and traffic below may be out of date
  */
 const SITE_PAGE_WIDTH = "expanded";
 
-export const SITE_SORTS = ["attention", "name", "visits"] as const;
+const SITE_SORTS = ["attention", "name", "visits"] as const;
 export type SiteSort = (typeof SITE_SORTS)[number];
 const SORT_LABELS: Record<SiteSort, string> = {
   attention: "Needs attention first",
@@ -172,7 +172,7 @@ const SitesPreferences = Schema.Struct({
 type SitesPreferences = typeof SitesPreferences.Type;
 const DEFAULT_PREFERENCES: SitesPreferences = { view: "cards", sort: "attention", previews: false };
 
-export const SERVICE_FILTERS = ["all", "failing", "paused"] as const;
+const SERVICE_FILTERS = ["all", "failing", "paused"] as const;
 export type ServiceFilter = (typeof SERVICE_FILTERS)[number];
 const SERVICE_FILTER_LABELS: Record<ServiceFilter, string> = {
   all: "All",

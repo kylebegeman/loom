@@ -1,7 +1,7 @@
 import type { PanelPickerAction } from "./types";
 
 /** Recent rows shown above the full list when the search is empty. */
-export const RECENT_ROWS = 3;
+const RECENT_ROWS = 3;
 
 const UPSTREAM_SURFACE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   Browser: "Preview a page in the built-in browser.",

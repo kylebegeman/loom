@@ -385,6 +385,7 @@ function GitProgressLabel({
   fallback: string;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/react-effect-budget -- Own the one-shot timer that re-renders when a quiet push becomes stalled; clear it on change or unmount.
   useEffect(() => {
     if (!state.isRunning || state.phase !== "push" || state.hookName) return;
     const last = state.lastProgressAtMs ?? state.phaseStartedAtMs;
@@ -1182,6 +1183,7 @@ export default function GitActionsControl({
   const changeRequestTerminology = sourceControlPresentation.terminology;
   const SourceControlIcon = sourceControlPresentation.Icon;
   const isRepo = gitStatus?.isRepo ?? true;
+  // fork: checkpoint-capable
   const isProjectCheckpointParent = !isRepo && gitStatus?.checkpointCapable === true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
@@ -1536,6 +1538,7 @@ export default function GitActionsControl({
     }
     void runGitActionWithToast({ action: request.action });
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Consume a palette request from the external store once this control has mounted and git status is ready.
   useEffect(() => {
     if (
       !requestedGitAction ||
@@ -1820,7 +1823,7 @@ export default function GitActionsControl({
         </Button>
       )}
       {presentation === "menu" ? (
-        isProjectCheckpointParent ? (
+        isProjectCheckpointParent ? ( // fork: checkpoint-capable
           <MenuItem density="touch" disabled={!onOpenChanges} onClick={onOpenChanges}>
             <FileDiffIcon className="size-4" aria-hidden />
             <MenuItemLabel>Turn changes</MenuItemLabel>
@@ -1870,7 +1873,7 @@ export default function GitActionsControl({
             </MenuSub>
           </>
         )
-      ) : isProjectCheckpointParent ? null : !isRepo ? (
+      ) : isProjectCheckpointParent ? null : !isRepo ? ( // fork: checkpoint-capable
         <ThreadDetailsControl
           size="xs"
           variant={isPanel ? "ghost" : "outline"}
@@ -2027,6 +2030,7 @@ export default function GitActionsControl({
         </ActionGroup>
       )}
 
+      {/* fork: checkpoint-capable */}
       {isPanel && (isRepo || isProjectCheckpointParent) && !quietEmptyDraft ? (
         <ThreadDetailsControl
           type="button"
@@ -2038,8 +2042,10 @@ export default function GitActionsControl({
         >
           <FileDiffIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
           <span className={cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
+            {/* fork: checkpoint-capable */}
             {isProjectCheckpointParent ? "Turn changes" : "Changes"}
           </span>
+          {/* fork: checkpoint-capable */}
           {isRepo ? (
             <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
               <span
@@ -2291,7 +2297,7 @@ export default function GitActionsControl({
               className="w-full max-w-full sm:w-auto"
               variant="default" // fork: source-control-cockpit -- keep shared checkouts on their current branch.
               size="sm-multiline"
-              onClick={() => void continuePendingDefaultBranchAction(false)}
+              onClick={() => void continuePendingDefaultBranchAction(false)} // fork: source-control-cockpit
               disabled={!canWriteSourceControl}
             >
               {pendingDefaultBranchActionCopy?.continueLabel ?? "Continue"}

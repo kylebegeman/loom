@@ -3,7 +3,7 @@ import { Trash2Icon } from "lucide-react";
 import {
   activeBed,
   addCustomBed,
-  BUILD_PLATE_PRESETS,
+  BUILT_IN_PRINTERS,
   CUSTOM_BED_LIMIT,
   customBedNameError,
   listBeds,
@@ -160,7 +160,7 @@ export function ManageBeds({
               {listBeds(value, { includeHidden: true })
                 .filter((bed) => bed.kind === kind)
                 .map((bed) => {
-                  const id = bed.id as keyof typeof BUILD_PLATE_PRESETS;
+                  const id = bed.id as keyof typeof BUILT_IN_PRINTERS;
                   const inUse = value.preset === id;
                   return (
                     <label

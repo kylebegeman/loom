@@ -2830,10 +2830,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         NSLocalNetworkUsageDescription:
           BRAND_NAME +
           " connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
+        // fork: brand
         NSScreenCaptureUsageDescription:
           BRAND_NAME + " captures the active window when you use the window capture shortcut.",
+        // fork: brand
         NSCameraUsageDescription:
           BRAND_NAME + " lets commands run by terminals and coding agents use the camera.",
+        // fork: brand
         NSMicrophoneUsageDescription:
           BRAND_NAME + " lets commands run by terminals and coding agents use the microphone.",
         // macOS lists an app under Default web browser only when it opens web
@@ -4042,6 +4045,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     });
   }
 
+  // fork: update-signing
   if (options.platform === "mac" && !options.signed) {
     yield* Effect.log(
       "[desktop-artifact] Development artifact with signing disabled. Use the signed publisher before replacing a signed installed app.",

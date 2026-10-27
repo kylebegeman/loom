@@ -3,10 +3,13 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
+// fork: project-lifecycle -- storage cleanup comes from RuntimeLayer.layerStorageCleanup
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 import * as DelegatedTaskQuestionReactor from "./orchestration-v2/DelegatedTaskQuestionReactor.ts";
+// fork: library-sign-in -- the raw Node HTTP server is created in ./httpServer.ts
 // @effect-diagnostics nodeBuiltinImport:off
+// fork: library-sign-in -- the node:http import moved to ./httpServer.ts
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -17,7 +20,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
+import * as Path from "effect/Path"; // fork: tailnet-ownership
 import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -27,6 +30,7 @@ import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
+// fork: library-sign-in -- createHttpServer applies the write-error guard and the proxy keep-alive
 import { rejectRequestsUntilServing } from "./httpResponseErrorGuard.ts";
 import { createHttpServer } from "./httpServer.ts";
 import { fixPath } from "./os-jank.ts";
@@ -119,7 +123,7 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
-import * as ProjectPlacement from "./project/ProjectPlacement.ts";
+import * as ProjectPlacement from "./project/ProjectPlacement.ts"; // fork: file-placement
 import * as LanesRoots from "./fork/project-lifecycle/lanesRoots.ts"; // fork: file-placement
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
@@ -131,8 +135,8 @@ import * as ReachPublicRoute from "./fork/reach/publicRoute.ts"; // fork: reach
 import * as BackgroundChecks from "./fork/background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
-import * as PocketId from "./auth/PocketId.ts";
-import * as PocketIdHttp from "./auth/pocketIdHttp.ts";
+import * as PocketId from "./auth/PocketId.ts"; // fork: library-sign-in
+import * as PocketIdHttp from "./auth/pocketIdHttp.ts"; // fork: library-sign-in
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
@@ -203,6 +207,7 @@ import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
+// fork: tailnet-ownership
 import {
   claimTailscaleServe,
   releaseTailscaleServe,
@@ -312,7 +317,7 @@ const layerHttpServer = Layer.unwrap(
     const config = yield* ServerConfig.ServerConfig;
     return NodeHttpServer.layer(
       () => {
-        const server = rejectRequestsUntilServing(createHttpServer());
+        const server = rejectRequestsUntilServing(createHttpServer()); // fork: library-sign-in
         if (config.privateNetworkOnly) {
           server.on("connection", (socket) => {
             if (!acceptsPrivateNetworkConnection(socket)) {
@@ -371,7 +376,7 @@ const layerRepositoryIdentityResolver = Layer.effect(
 ).pipe(Layer.provide(layerSourceControlProviderRegistry), Layer.provide(ProcessRunner.layer));
 
 const layerPullRequestService = PullRequestService.layer.pipe(
-  Layer.provide(RuntimeLayer.layerProjectService),
+  Layer.provide(RuntimeLayer.layerProjectService), // fork: project-lifecycle
   Layer.provide(PullRequestProviderRegistry.layer),
   Layer.provide(PullRequestFilesViewed.layer),
   Layer.provide(PullRequestReadCache.layer),
@@ -400,18 +405,20 @@ const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerGit),
 );
 
+// fork: file-placement -- the checkpoint store moved up so layerProjectPlacement can use it
 const layerCheckpointStore = CheckpointStore.layer.pipe(
   Layer.provide(layerVcsDriverRegistry),
   Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
 );
 
+// fork: file-placement
 const layerProjectPlacement = ProjectPlacement.layerWithProjectStore.pipe(
   Layer.provide(LanesRoots.layer), // fork: file-placement -- clones must stay out of lanes folders.
   Layer.provide(GitVcsDriver.layer),
 );
 
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
-  Layer.provideMerge(layerProjectPlacement),
+  Layer.provideMerge(layerProjectPlacement), // fork: file-placement
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
 );
@@ -453,6 +460,7 @@ const layerVcs = Layer.empty.pipe(
   ),
 );
 
+// fork: file-placement -- layerCheckpointStore is defined before layerProjectPlacement
 const layerPortScanner = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
 
 const layerTerminal = TerminalManager.layer.pipe(
@@ -532,7 +540,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerProjectLifecycle), // fork: project-lifecycle
-  Layer.provide(layerPullRequestService),
+  Layer.provide(layerPullRequestService), // fork: project-lifecycle
   Layer.provide(layerLibraryWorkspace), // fork: library-projects
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
@@ -556,6 +564,7 @@ const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
 const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
+  // fork: project-lifecycle
   Effect.gen(function* () {
     const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
     yield* service.start();
@@ -711,6 +720,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerRepositoryIdentityResolver),
   Layer.provideMerge(CodexManagedTokenBroker.layer),
   Layer.provideMerge(layerServerEnvironment),
+  // fork: library-sign-in
   Layer.provideMerge(
     PocketId.layer.pipe(
       Layer.provide(FetchHttpClient.layer),
@@ -738,6 +748,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
+  // fork: tailnet-ownership
   Layer.provideMerge(DirectEndpoints.layer.pipe(Layer.provide(layerServerEnvironment))),
   Layer.provideMerge(ReachPublicRoute.layer), // fork: reach
   Layer.provideMerge(BackgroundChecks.layer), // fork: background-check-health
@@ -775,7 +786,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
     ForkRoutesLayer, // fork: ext-core
-    PocketIdHttp.layer,
+    PocketIdHttp.layer, // fork: library-sign-in
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
@@ -849,6 +860,7 @@ const layerMakeServer = Layer.unwrap(
           );
       }),
     );
+    // fork: tailnet-ownership
     // Claimed on start and released on stop: the mapping proxies to a loopback port
     // that exists only while this process runs. Both steps touch only Loom's `/` mount.
     const layerTailscaleServe = config.tailscaleServeEnabled
@@ -858,30 +870,34 @@ const layerMakeServer = Layer.unwrap(
               yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);
               yield* awaitActivation;
               const server = yield* HttpServer.HttpServer;
-              const path = yield* Path.Path;
+              const path = yield* Path.Path; // fork: tailnet-ownership
               const address = server.address;
               if (typeof address === "string" || !("port" in address)) {
                 return null;
               }
 
+              // fork: tailnet-ownership
               const target = {
                 claimsPath: path.join(config.stateDir, TAILSCALE_SERVE_CLAIMS_FILE),
                 servePort: config.tailscaleServePort,
-                localPort: address.port,
+                localPort: address.port, // fork: tailnet-ownership
                 localHost: loopbackUrlHostForAddress(address),
               };
               const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
+              // fork: tailnet-ownership
               return yield* claimTailscaleServe(target).pipe(
                 Effect.tap((claim) =>
                   Effect.logInfo("Tailscale Serve configured", {
+                    // fork: tailnet-ownership
                     localPort: target.localPort,
                     servePort: target.servePort,
                     changed: claim.changed,
                   }),
                 ),
                 Effect.tap(() => checks.clear("tailscale-serve")), // fork: background-check-health
-                Effect.as(target),
+                Effect.as(target), // fork: tailnet-ownership
                 Effect.catch((cause) =>
+                  // fork: tailnet-ownership
                   Effect.logWarning("Tailscale Serve not configured", {
                     reason: cause._tag,
                     cause,
@@ -897,6 +913,7 @@ const layerMakeServer = Layer.unwrap(
                 ),
               );
             }),
+            // fork: tailnet-ownership
             (target) =>
               target
                 ? releaseTailscaleServe(target).pipe(
@@ -911,7 +928,7 @@ const layerMakeServer = Layer.unwrap(
                     Effect.catch((cause) =>
                       Effect.logWarning("Failed to disable Tailscale Serve", {
                         cause,
-                        servePort: target.servePort,
+                        servePort: target.servePort, // fork: tailnet-ownership
                       }),
                     ),
                   )

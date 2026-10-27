@@ -1,8 +1,8 @@
 import { modelFormatOf, type TurnModel } from "@t3tools/contracts/fork";
 import { PREVIEWABLE_FORMATS } from "./formats.ts";
 
-export const TURN_MODEL_LIMIT = 50;
-export const SCAD_DEPENDENT_LIMIT = 200;
+const TURN_MODEL_LIMIT = 50;
+const SCAD_DEPENDENT_LIMIT = 200;
 
 /** Collect transitive reverse include edges in checkpoint order, terminating cycles. */
 export const dependentModels = (

@@ -20,7 +20,7 @@ import { type LibraryWorkspaceStore, placedCopy } from "./LibraryWorkspaceStore.
 /** How often a computer rereads its copies' health. Only a change is published. */
 export const HEALTH_REPORT_INTERVAL = Duration.minutes(5);
 /** Quiet time after a status change in a copy folder before its health is read again. */
-export const HEALTH_CHANGE_DEBOUNCE = Duration.seconds(30);
+const HEALTH_CHANGE_DEBOUNCE = Duration.seconds(30);
 
 /** Reads copy health and watches copy folders, so replication tests need no Git. */
 export class LibraryCopyHealthSource extends Context.Service<
@@ -61,14 +61,14 @@ export const layerSource = Layer.effect(
 );
 
 /** Copies whose health is worth publishing: still registered and not prepared or removed. */
-export const publishesHealth = (copy: LibraryWorkingCopy) =>
+const publishesHealth = (copy: LibraryWorkingCopy) =>
   copy.registered !== false && (copy.state === "ready" || copy.state === "missing");
 
 /**
  * What a health report says, without the read times that change on every check. The commit count
  * only describes a head change, which the head itself already shows.
  */
-export const copyHealthFingerprint = (health: LibraryCopyHealth) =>
+const copyHealthFingerprint = (health: LibraryCopyHealth) =>
   JSON.stringify(
     health.repositories.map(
       ({

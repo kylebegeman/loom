@@ -9,7 +9,7 @@ import { forkPanelSurface } from "../panels/registry";
 import { pcbDesignName } from "./usePcbPreview.logic";
 import { pcb } from "./state";
 import { runModelCommand } from "../model-preview-3d/state";
-export const MAX_AGENT_DESIGN_TABS = 8;
+const MAX_AGENT_DESIGN_TABS = 8;
 export const pcbSurface = (designId: string) => ({
   ...forkPanelSurface("pcb-preview", designId),
   title: pcbDesignName(designId),

@@ -46,7 +46,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const profileError = (cause: unknown) =>
   isModelError(cause) ? cause : failure("The slicer profile could not be read or saved.");
 const isModelError = Schema.is(ModelPreviewError);
-export const canonicalProfile = (value: unknown): string => {
+const canonicalProfile = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalProfile).join(",")}]`;
   if (value !== null && typeof value === "object")
     return `{${Object.entries(value)
@@ -57,7 +57,7 @@ export const canonicalProfile = (value: unknown): string => {
 };
 export const profileHash = (json: unknown): string =>
   NodeCrypto.createHash("sha256").update(canonicalProfile(json)).digest("hex");
-export const compareProfileVersion = (a: string | null, b: string | null): number => {
+const compareProfileVersion = (a: string | null, b: string | null): number => {
   const left = (a ?? "0").split(/\D+/).map(Number),
     right = (b ?? "0").split(/\D+/).map(Number);
   for (let index = 0; index < Math.max(left.length, right.length); index++) {
@@ -242,7 +242,7 @@ const firstNumber = (value: unknown): number | null => {
       : NaN;
   return Number.isFinite(result) && result > 0 ? result : null;
 };
-export const profileEntry = (
+const profileEntry = (
   name: string,
   source: SlicerProfileEntry["source"],
   json: Readonly<Record<string, unknown>>,

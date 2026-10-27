@@ -55,7 +55,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
 /** A firing row's reason until its outcome is written, so a crash in between explains itself. */
 const INTERRUPTED = "The server stopped before this firing finished.";
-export const BATCH_NEEDS_LATEST =
+const BATCH_NEEDS_LATEST =
   "A batch runs the bot's latest version; pin this trigger to it or let it follow the latest.";
 const BOTH_FOLLOWS = "A trigger follows either the latest or the stable version, not both.";
 const PIPELINE_PER_FILE = "A pipeline runs once per event, not once per conflicting file.";
@@ -96,7 +96,7 @@ const sha256 = (text: string) =>
   );
 
 /** The bot's inputs from an event's fields; a field the event lacks is left out. */
-export const mapInputs = (
+const mapInputs = (
   mapping: BotTriggerMapping,
   fields: Readonly<Record<string, BotInputValue>>,
 ): BotInputs => {
