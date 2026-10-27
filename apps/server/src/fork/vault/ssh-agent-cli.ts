@@ -37,10 +37,9 @@ export const sshAgentExecCommand = Command.make("ssh-agent-exec", {
       const code = yield* terminal.execute(request);
       if (code !== 0) return yield* new SshChildExit({ code: Math.min(255, Math.max(1, code)) });
     }).pipe(
-      Effect.catch((error) =>
-        error._tag === "SshChildExit"
-          ? Effect.fail(error)
-          : Console.error(error.message).pipe(Effect.andThen(new SshChildExit({ code: 1 }))),
+      Effect.catchIf(
+        (error) => error._tag !== "SshChildExit",
+        (error) => Console.error(error.message).pipe(Effect.andThen(new SshChildExit({ code: 1 }))),
       ),
       Effect.provide(runtime),
     ),

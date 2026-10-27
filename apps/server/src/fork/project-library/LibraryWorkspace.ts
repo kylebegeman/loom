@@ -1298,7 +1298,7 @@ const make = Effect.gen(function* () {
         ...receipt,
         copy: { ...receipt.copy, state: "failed", updatedAt: yield* now },
       });
-      return yield* Effect.fail(prepared.failure);
+      return yield* prepared.failure;
     }
     return prepared.success;
   });
@@ -1794,10 +1794,9 @@ const make = Effect.gen(function* () {
       if (changes !== "") return false;
       const publication = yield* proveGitPublication((args) =>
         git(repository.path, args).pipe(
-          Effect.flatMap((output) =>
-            output === null
-              ? Effect.fail(new LibraryError({ reason: "io" }))
-              : Effect.succeed(output),
+          Effect.filterOrFail(
+            (output): output is string => output !== null,
+            () => new LibraryError({ reason: "io" }),
           ),
         ),
       );
@@ -3012,13 +3011,21 @@ const make = Effect.gen(function* () {
     });
   }, mapIo);
 
+  // Members wrapping a same-named Effect.fn stay untraced; the inner function owns the span.
   return LibraryWorkspace.of({
-    threadProject: (input) => store.getBoundProject(input.threadId),
-    threadBinding: (input) =>
-      store.getBinding(input.threadId).pipe(Effect.map((resolved) => resolved?.binding ?? null)),
-    inspectFolder: (input) => mapIo(inspectFolder(input)),
-    preparation: (input) =>
-      store.receipts.pipe(
+    threadProject: Effect.fn("LibraryWorkspace.threadProject")(function (input) {
+      return store.getBoundProject(input.threadId);
+    }),
+    threadBinding: Effect.fn("LibraryWorkspace.threadBinding")(function (input) {
+      return store
+        .getBinding(input.threadId)
+        .pipe(Effect.map((resolved) => resolved?.binding ?? null));
+    }),
+    inspectFolder: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(inspectFolder(input));
+    }),
+    preparation: Effect.fn("LibraryWorkspace.preparation")(function (input) {
+      return store.receipts.pipe(
         Effect.map(
           (receipts) =>
             receipts.find(
@@ -3029,9 +3036,10 @@ const make = Effect.gen(function* () {
                 ),
             )?.copy ?? null,
         ),
-      ),
-    prepareCopy: (input) =>
-      locks
+      );
+    }),
+    prepareCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           "prepare",
           mapIo(
@@ -3041,9 +3049,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap((copy) => fillProfile(input, copy))),
-    restoreCopy: (input) =>
-      locks
+        .pipe(Effect.tap((copy) => fillProfile(input, copy)));
+    }),
+    restoreCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           "prepare",
           mapIo(
@@ -3053,9 +3062,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    readiness: (input) =>
-      mapIo(
+        .pipe(Effect.tap(publishCopy));
+    }),
+    readiness: Effect.fn("LibraryWorkspace.readiness")(function (input) {
+      return mapIo(
         Effect.gen(function* () {
           const recorded =
             input.profile === undefined
@@ -3071,36 +3081,42 @@ const make = Effect.gen(function* () {
             profile: input.profile ?? recorded?.project.profile ?? {},
           });
         }),
-      ),
-    profileSettings: (input) => mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read))),
-    applyProfile: (input) =>
-      locks.withLock(
+      );
+    }),
+    profileSettings: Effect.fn("LibraryWorkspace.profileSettings")(function (input) {
+      return mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read)));
+    }),
+    applyProfile: Effect.fn("LibraryWorkspace.applyProfile")(function (input) {
+      return locks.withLock(
         "prepare",
         mapIo(
           settingsCopy(input).pipe(
             Effect.flatMap((copy) => settings.apply({ ...copy, reviewToken: input.reviewToken })),
           ),
         ),
-      ),
-    status: (input) =>
-      mapIo(
+      );
+    }),
+    status: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(
         Effect.gen(function* () {
           const { contentsDigest: _contentsDigest, ...review } = yield* status(input);
           if (review.copy.state === "released" || review.copy.registered === false) return review;
           return { ...review, health: yield* readHealth(review.copy) };
         }),
-      ),
-    health: (input) =>
-      mapIo(
+      );
+    }),
+    health: Effect.fn("LibraryWorkspace.health")(function (input) {
+      return mapIo(
         Effect.gen(function* () {
           const { copy } = yield* store.get(input.workingCopyId);
           if (copy.state === "released" || copy.registered === false)
             return yield* new LibraryError({ reason: "invalid" });
           return yield* readHealth(copy, { refreshRemote: input.refreshRemote });
         }),
-      ),
-    setCopyRetention: (input) =>
-      Effect.acquireUseRelease(
+      );
+    }),
+    setCopyRetention: Effect.fnUntraced(function* (input) {
+      return yield* Effect.acquireUseRelease(
         // A Keep request can arrive while automatic cleanup uploads its archive under the lock.
         Effect.sync(() => {
           if (input.keepOnComputer)
@@ -3114,9 +3130,10 @@ const make = Effect.gen(function* () {
             if (remaining === 0) pendingKeeps.delete(input.workingCopyId);
             else pendingKeeps.set(input.workingCopyId, remaining);
           }),
-      ).pipe(Effect.tap(publishCopy)),
-    reopenCopy: (input) =>
-      locks
+      ).pipe(Effect.tap(publishCopy));
+    }),
+    reopenCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           "prepare",
           mapIo(
@@ -3126,9 +3143,10 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    snapshotCopy: (input) =>
-      locks
+        .pipe(Effect.tap(publishCopy));
+    }),
+    snapshotCopy: Effect.fnUntraced(function* (input) {
+      return yield* locks
         .withLock(
           "prepare",
           mapIo(
@@ -3138,13 +3156,19 @@ const make = Effect.gen(function* () {
             }),
           ),
         )
-        .pipe(Effect.tap(publishCopy)),
-    prepareThreadFiles: (input) => locks.withLock("prepare", mapIo(prepareThreadFiles(input))),
-    cleanupTemporaryCopies: (isHistoryAcknowledged) =>
-      locks.withLock("prepare", mapIo(cleanupTemporaryCopies(isHistoryAcknowledged))),
-    unregister: (input) => locks.withLock("prepare", mapIo(unregister(input))),
-    release: (input) =>
-      locks.withLock(
+        .pipe(Effect.tap(publishCopy));
+    }),
+    prepareThreadFiles: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock("prepare", mapIo(prepareThreadFiles(input)));
+    }),
+    cleanupTemporaryCopies: Effect.fnUntraced(function* (isHistoryAcknowledged) {
+      return yield* locks.withLock("prepare", mapIo(cleanupTemporaryCopies(isHistoryAcknowledged)));
+    }),
+    unregister: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock("prepare", mapIo(unregister(input)));
+    }),
+    release: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(
         "prepare",
         mapIo(
           Effect.gen(function* () {
@@ -3152,10 +3176,13 @@ const make = Effect.gen(function* () {
             return yield* withWorkspaceLease(receipt.copy.rootPath, release(input));
           }),
         ),
-      ),
-    resolveBinding: (input) => mapIo(resolveBinding(input)),
-    bindThread: (input) =>
-      locks.withLock(
+      );
+    }),
+    resolveBinding: Effect.fnUntraced(function* (input) {
+      return yield* mapIo(resolveBinding(input));
+    }),
+    bindThread: Effect.fn("LibraryWorkspace.bindThread")(function (input) {
+      return locks.withLock(
         "prepare",
         mapIo(
           Effect.gen(function* () {
@@ -3198,7 +3225,8 @@ const make = Effect.gen(function* () {
             return resolved;
           }),
         ),
-      ),
+      );
+    }),
   });
 });
 

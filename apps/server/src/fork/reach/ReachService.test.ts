@@ -252,10 +252,9 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
       : (options.env ?? REMOTE);
 
     const next: Effect.Effect<Event> = Queue.take(events).pipe(
-      Effect.flatMap((event) =>
-        event.kind === "sleep" && event.millis === LIBRARY_TIMEOUT_MS
-          ? next
-          : Effect.succeed(event),
+      Effect.filterOrElse(
+        (event) => !(event.kind === "sleep" && event.millis === LIBRARY_TIMEOUT_MS),
+        () => next,
       ),
     );
 

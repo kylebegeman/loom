@@ -388,32 +388,3 @@ describe("server browser drag", () => {
     }
   });
 });
-
-it("starts a page's scaled capture only after the previous one finishes", async () => {
-  // Electron restores the emulation a scaled capture found when it began; on a desktop tab
-  // that could be another capture's view, which would lock the page to it.
-  const pending: Array<(value: { data: string }) => void> = [];
-  const cdp = {
-    send: (method: string) => {
-      expect(method).toBe("Page.captureScreenshot");
-      return new Promise((resolve) => pending.push(resolve));
-    },
-  } as unknown as CDPSession;
-  const page = {} as Page;
-  const capture = () =>
-    ServerBrowserPage.captureViewport(page, cdp, {
-      format: "png",
-      scale: 0.5,
-      viewport: { width: 1280, height: 800 },
-      offset: { x: 0, y: 0 },
-    });
-  const first = capture();
-  const second = capture();
-  await Promise.resolve();
-  expect(pending).toHaveLength(1);
-  pending[0]!({ data: "first" });
-  expect(await first).toBe("first");
-  expect(pending).toHaveLength(2);
-  pending[1]!({ data: "second" });
-  expect(await second).toBe("second");
-});

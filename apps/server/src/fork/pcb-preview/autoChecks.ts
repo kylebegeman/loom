@@ -175,7 +175,7 @@ export const makeAutoChecks = Effect.fn("PcbPreview.makeAutoChecks")(function* <
               }
             }),
           );
-        }).pipe(Effect.catch(() => Effect.void));
+        }).pipe(Effect.ignore);
         // Pending identity remains until replaced, so clients joining the same hash share the job.
         const fiber = yield* work.pipe(Effect.forkIn(scope));
         s.pending = fiber;

@@ -25,7 +25,6 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
@@ -83,22 +82,20 @@ export const sshFixture = (
       }),
       Layer.mock(ProjectStoreV2)({
         get: (projectId) =>
-          Effect.succeed(
-            Option.some({
-              projectId,
-              title: "Disposable project",
-              workspaceRoot: "/private/project",
-              defaultModelSelection: null,
-              defaultThreadEnvMode: null,
-              autoPull: false,
-              faviconPath: null,
-              projectIcon: null,
-              scripts: [],
-              createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
-              updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
-              deletedAt: null,
-            }),
-          ),
+          Effect.succeedSome({
+            projectId,
+            title: "Disposable project",
+            workspaceRoot: "/private/project",
+            defaultModelSelection: null,
+            defaultThreadEnvMode: null,
+            autoPull: false,
+            faviconPath: null,
+            projectIcon: null,
+            scripts: [],
+            createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+            updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+            deletedAt: null,
+          }),
       }),
       BrokerCrypto.layer,
       SshCrypto.layer,

@@ -147,8 +147,8 @@ export class SshCrypto extends Context.Service<
   }
 >()("t3/fork/vault/SshCrypto") {}
 export const layer = Layer.succeed(SshCrypto, {
-  importKey: (value) =>
-    Effect.try({
+  importKey: Effect.fn("SshCrypto.importKey")(function (value) {
+    return Effect.try({
       try: () => {
         const key = importKey(Redacted.value(value));
         return {
@@ -157,7 +157,8 @@ export const layer = Layer.succeed(SshCrypto, {
         };
       },
       catch: invalid,
-    }),
+    });
+  }),
   create: Effect.try({
     try: () => {
       const pair = NodeCrypto.generateKeyPairSync("ed25519");
@@ -170,19 +171,21 @@ export const layer = Layer.succeed(SshCrypto, {
     },
     catch: invalid,
   }),
-  publicKey: (privateKey) =>
-    Effect.try({
+  publicKey: Effect.fn("SshCrypto.publicKey")(function (privateKey) {
+    return Effect.try({
       try: () => publicLine(NodeCrypto.createPrivateKey(Redacted.value(privateKey))),
       catch: invalid,
-    }),
-  fingerprint: (publicKey) =>
-    Effect.try({
+    });
+  }),
+  fingerprint: Effect.fn("SshCrypto.fingerprint")(function (publicKey) {
+    return Effect.try({
       try: () =>
         `SHA256:${NodeCrypto.createHash("sha256").update(blob(publicKey)).digest("base64").replace(/=+$/, "")}`,
       catch: invalid,
-    }),
-  respond: (input) =>
-    Effect.try({
+    });
+  }),
+  respond: Effect.fn("SshCrypto.respond")(function (input) {
+    return Effect.try({
       try: () => {
         if (!input.target.hostKey) throw new Error("Untrusted host");
         const reader = new SshReader(input.frame),
@@ -276,5 +279,6 @@ export const layer = Layer.succeed(SshCrypto, {
         };
       },
       catch: invalid,
-    }),
+    });
+  }),
 });

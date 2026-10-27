@@ -147,7 +147,7 @@ it.effect("sends desktop main the Library's directory for a typed address", () =
       httpBaseUrl: URL,
       typedAddressLibrary: LIBRARY,
       verify: () => REFUSED,
-      signal: new AbortController().signal,
+      signal: yield* Effect.abortSignal,
     }).pipe(Effect.flip, Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry));
 
     expect(signInToLoom).toHaveBeenCalledWith({
@@ -173,6 +173,7 @@ it.effect("never opens the browser for a sign-in cancelled while it reads the di
     });
     // A Library that never answers keeps the sign-in reading until it is cancelled.
     const registry = yield* libraryRegistry(() => Effect.never);
+    // @effect-diagnostics-next-line abortControllerInEffect:off - The test cancels the sign-in mid-read, independently of its fiber.
     const abort = new AbortController();
     const fiber = yield* execute({
       httpBaseUrl: URL,

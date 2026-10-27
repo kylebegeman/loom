@@ -6,7 +6,6 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -60,7 +59,7 @@ const dependencies = Layer.mergeAll(
       } as never),
   }),
   Layer.mock(ProjectStoreV2)({
-    get: () => Effect.succeed(Option.some({ id: projectId } as never)),
+    get: () => Effect.succeedSome({ id: projectId } as never),
   }),
   NodeServices.layer,
   store,

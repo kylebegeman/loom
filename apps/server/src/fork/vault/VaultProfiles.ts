@@ -198,7 +198,7 @@ const make = Effect.gen(function* () {
       return { ...base, state: "missing" as const };
     if (binding.kind === "github") {
       const info = yield* github.info(binding.itemId).pipe(
-        Effect.map(Option.some),
+        Effect.asSome,
         Effect.catchTags({
           VaultError: (error) =>
             error.reason === "not-found" ? Effect.succeedNone : Effect.fail(error),
@@ -229,12 +229,12 @@ const make = Effect.gen(function* () {
       };
     }
     const info = yield* ssh.info(binding.itemId).pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       Effect.catchTags({
         VaultError: (error) =>
-          error.reason === "not-found" ? Effect.succeed(Option.none()) : Effect.fail(error),
+          error.reason === "not-found" ? Effect.succeedNone : Effect.fail(error),
         VaultSshError: (error) =>
-          error.reason === "invalid-key" ? Effect.succeed(Option.none()) : Effect.fail(error),
+          error.reason === "invalid-key" ? Effect.succeedNone : Effect.fail(error),
       }),
     );
     if (Option.isNone(info) || info.value.item.state !== "active")
@@ -496,14 +496,15 @@ const make = Effect.gen(function* () {
       );
       return (yield* describePin(input.projectId, input.id)).summary;
     }),
-    assertActive: (projectId, profileId) =>
-      load(projectId).pipe(
+    assertActive: Effect.fn("VaultProfiles.assertActive")(function (projectId, profileId) {
+      return load(projectId).pipe(
         Effect.flatMap((s) =>
           s.value.profiles.some((p) => p.id === profileId && p.state === "active")
             ? Effect.void
             : Effect.fail(fail("denied")),
         ),
-      ),
+      );
+    }),
     list,
     listForThread: Effect.fn("VaultProfiles.listForThread")(function* (id) {
       return yield* list((yield* threadOf(id)).projectId);
@@ -584,8 +585,8 @@ const make = Effect.gen(function* () {
       const thread = yield* threadOf(threadId);
       return yield* readRunPin(yield* project(thread.projectId), thread);
     }),
-    resolve: (threadId, profileId) => resolve(threadId, profileId),
-    prepare: (threadId, profileId, version, runId) => resolve(threadId, profileId, version, runId),
+    resolve,
+    prepare: resolve,
   });
 });
 export const layer = Layer.effect(VaultProfiles, make);

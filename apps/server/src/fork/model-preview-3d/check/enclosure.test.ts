@@ -34,7 +34,7 @@ const f: BoardFeatures = {
   connectors: [],
   warnings: [],
 };
-const requirements = Schema.decodeUnknownSync(EnclosureRequirements)({});
+const requirements = Schema.decodeSync(EnclosureRequirements)({});
 const check = (
   soup: Float32Array,
   features: BoardFeatures = f,

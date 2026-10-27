@@ -3,7 +3,6 @@ import { VaultError } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
@@ -62,22 +61,20 @@ export const launchFixture = (
     });
     const project = Layer.mock(ProjectStoreV2)({
       get: () =>
-        Effect.succeed(
-          Option.some({
-            projectId: f.state.thread.projectId,
-            title: "Disposable project",
-            workspaceRoot: "/private/project",
-            defaultModelSelection: null,
-            defaultThreadEnvMode: null,
-            autoPull: false,
-            faviconPath: null,
-            projectIcon: null,
-            scripts: [],
-            createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
-            updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
-            deletedAt: null,
-          }),
-        ),
+        Effect.succeedSome({
+          projectId: f.state.thread.projectId,
+          title: "Disposable project",
+          workspaceRoot: "/private/project",
+          defaultModelSelection: null,
+          defaultThreadEnvMode: null,
+          autoPull: false,
+          faviconPath: null,
+          projectIcon: null,
+          scripts: [],
+          createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+          updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
+          deletedAt: null,
+        }),
     });
     const launch = yield* VaultLaunch.VaultLaunch.pipe(
       Effect.provide(

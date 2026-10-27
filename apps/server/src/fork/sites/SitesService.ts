@@ -230,7 +230,9 @@ const make = Effect.gen(function* () {
         authorize,
       );
     }),
-    runChecks: (authorize) => write("/v1/integrations/sites/checks/run", undefined, authorize),
+    runChecks: Effect.fn("SitesService.runChecks")(function (authorize) {
+      return write("/v1/integrations/sites/checks/run", undefined, authorize);
+    }),
     snapshot: configured
       ? read("/v1/integrations/sites", SitesSnapshot).pipe(
           Effect.map((snapshot) => ({ configured: true, managementConfigured, snapshot })),

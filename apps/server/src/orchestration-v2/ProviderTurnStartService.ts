@@ -661,9 +661,7 @@ export const layer: Layer.Layer<
         );
         if (preparation._tag === "Failure") {
           if (input.willRetry === true)
-            return yield* Effect.fail(
-              new ProviderTurnStartError({ runId, cause: preparation.failure }),
-            );
+            return yield* new ProviderTurnStartError({ runId, cause: preparation.failure });
           yield* settleRunBeforeStart({
             signal: "workspace-preparation-failed",
             status: "failed",

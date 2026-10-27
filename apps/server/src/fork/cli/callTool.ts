@@ -21,7 +21,7 @@ export const callForkTool = Effect.fn("callForkTool")(function* (
   const result = yield* callTerminalTool({ endpoint, authorization, tool, arguments: args });
   yield* Console.log(yield* encodeResult(result));
   if (Schema.is(toolFailure)(result))
-    return yield* Effect.fail(
-      new ForkCliError({ message: "The Loom tool failed. See the JSON result for details." }),
-    );
+    return yield* new ForkCliError({
+      message: "The Loom tool failed. See the JSON result for details.",
+    });
 });

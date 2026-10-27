@@ -44,6 +44,7 @@ const layerTest = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(ProviderLatestVersions.layer),
   Layer.provideMerge(
     Layer.succeed(ModelCatalog.ModelCatalog, {
+      // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
       current: () => Effect.succeed(undefined),
       bundled: () => undefined,
       refreshInBackground: Effect.void,

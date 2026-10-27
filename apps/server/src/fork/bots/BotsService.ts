@@ -405,7 +405,10 @@ export const make = Effect.gen(function* () {
   });
 
   /** What every saved definition, and every draft a replay runs, must satisfy. */
-  const checkDefinition = (definition: BotDefinitionInput, caller: BotCaller) => {
+  const checkDefinition = Effect.fn("BotsService.checkDefinition")(function (
+    definition: BotDefinitionInput,
+    caller: BotCaller,
+  ): Effect.Effect<void, BotsError> {
     // A trigger following the latest version would repeat a run's edit on every firing.
     if (caller.threadId !== null && isBotRunThreadId(caller.threadId))
       return Effect.fail(fail("permission", "A bot run cannot change bots."));
@@ -426,7 +429,7 @@ export const make = Effect.gen(function* () {
         ),
       );
     return Effect.void;
-  };
+  });
 
   /** The one write path for definitions; `origin` is set only by the starter paths. */
   const write = Effect.fnUntraced(function* (
@@ -1118,7 +1121,7 @@ export const make = Effect.gen(function* () {
     if (bot.budget === undefined) return;
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const refusal = budgetRefusal(bot.name, yield* budgetFor(bot, nowMs), nowMs);
-    if (refusal !== null) return yield* Effect.fail(refusal);
+    if (refusal !== null) return yield* refusal;
   });
 
   /** The bot's budget as it stands now. */

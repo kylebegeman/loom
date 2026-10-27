@@ -12,7 +12,7 @@ const source = {
   environmentId: EnvironmentId.make("source-host"),
   threadId: ThreadId.make("source-thread"),
 };
-const offer = Schema.decodeUnknownSync(WorkspaceHandoffOffer)({
+const offer = Schema.decodeSync(WorkspaceHandoffOffer)({
   requestId: "request-1234",
   sourceEnvironmentId: "source-host",
   sourceThreadId: "source-thread",
@@ -26,7 +26,7 @@ const offer = Schema.decodeUnknownSync(WorkspaceHandoffOffer)({
   context: "user:\nContinue work",
   contextTruncated: false,
 });
-const receipt = Schema.decodeUnknownSync(WorkspaceHandoffReceipt)({
+const receipt = Schema.decodeSync(WorkspaceHandoffReceipt)({
   requestId: offer.requestId,
   stateKey: offer.stateKey,
   destinationEnvironmentId: "destination-host",

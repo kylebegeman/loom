@@ -781,7 +781,9 @@ const make = Effect.gen(function* () {
         return asOriginalStatus(yield* verify(input, actor, authorize, input.original));
       },
     ),
-    originalVerification: (id) => Effect.flatMap(load(id), ({ record }) => originalView(record)),
+    originalVerification: Effect.fn("VaultMigrationInventory.originalVerification")(function (id) {
+      return Effect.flatMap(load(id), ({ record }) => originalView(record));
+    }),
     recoveryPreview: Effect.fn("VaultMigrationInventory.recoveryPreview")(
       function* (input, authorize) {
         if (!isRecoveryInput(input)) return yield* invalid();
@@ -884,7 +886,9 @@ const make = Effect.gen(function* () {
     ),
     preview,
     verify,
-    verification: (id) => Effect.flatMap(load(id), ({ record }) => verificationView(record)),
+    verification: Effect.fn("VaultMigrationInventory.verification")(function (id) {
+      return Effect.flatMap(load(id), ({ record }) => verificationView(record));
+    }),
     inventory: Effect.fn("VaultMigrationInventory.inventory")(function* (input) {
       if (!isInventory(input)) return yield* invalid();
       const all = yield* projects
@@ -904,18 +908,16 @@ const make = Effect.gen(function* () {
               state: "inspected",
               ...metadata,
             })),
-            Effect.catch(() =>
-              Effect.succeed<VaultMigrationProject>({
-                projectId: project.id,
-                title: project.title,
-                state: "unavailable",
-                dependencies: [],
-                omittedDependencies: 0,
-                localSshCommand: false,
-                localCredentialHelper: false,
-                localUrlRewrite: false,
-              }),
-            ),
+            Effect.orElseSucceed((): VaultMigrationProject => ({
+              projectId: project.id,
+              title: project.title,
+              state: "unavailable",
+              dependencies: [],
+              omittedDependencies: 0,
+              localSshCommand: false,
+              localCredentialHelper: false,
+              localUrlRewrite: false,
+            })),
           ),
         { concurrency: 2 },
       );
@@ -929,8 +931,8 @@ const make = Effect.gen(function* () {
         accessVerification: "not-performed",
       };
     }),
-    prepare: (input, actor) =>
-      lock.withPermit(
+    prepare: Effect.fn("VaultMigrationInventory.prepare")(function (input, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!isPrepare(input) || !actor.trim() || actor.length > 512) return yield* invalid();
           const requestFingerprint = yield* hash(
@@ -969,8 +971,11 @@ const make = Effect.gen(function* () {
           yield* save(record, 0);
           return yield* view(record, true);
         }),
-      ),
-    inspect: (id) => Effect.flatMap(load(id), ({ record }) => view(record, true)),
+      );
+    }),
+    inspect: Effect.fn("VaultMigrationInventory.inspect")(function (id) {
+      return Effect.flatMap(load(id), ({ record }) => view(record, true));
+    }),
     list: Effect.fn("VaultMigrationInventory.list")(function* (input) {
       if (!isList(input)) return yield* invalid();
       const keys = [...(yield* store.keys(prefix))].sort();
@@ -985,8 +990,8 @@ const make = Effect.gen(function* () {
         nextCursor: remaining.length > 25 ? page.at(-1)! : null,
       };
     }),
-    review: (input, actor) =>
-      lock.withPermit(
+    review: Effect.fn("VaultMigrationInventory.review")(function (input, actor) {
+      return lock.withPermit(
         Effect.gen(function* () {
           if (!isReview(input) || !actor.trim() || actor.length > 512) return yield* invalid();
           const { record, version } = yield* load(input.id);
@@ -1004,9 +1009,10 @@ const make = Effect.gen(function* () {
           yield* save(updated, version);
           return yield* view(updated, true);
         }),
-      ),
-    cancel: (id) =>
-      lock.withPermit(
+      );
+    }),
+    cancel: Effect.fn("VaultMigrationInventory.cancel")(function (id) {
+      return lock.withPermit(
         Effect.gen(function* () {
           const { record, version } = yield* load(id);
           if (record.plan.state === "cancelled") return yield* view(record, false);
@@ -1014,7 +1020,8 @@ const make = Effect.gen(function* () {
           yield* save(updated, version);
           return yield* view(updated, false);
         }),
-      ),
+      );
+    }),
   });
 });
 export const layer = Layer.effect(VaultMigrationInventory, make);

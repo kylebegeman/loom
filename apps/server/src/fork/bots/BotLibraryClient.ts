@@ -113,20 +113,41 @@ export const inProcessClient = (
   BotLibraryClient.of({
     environmentId,
     label,
-    availability: () => Effect.succeed(library.enabled ? "available" : "none"),
-    publish: (request) => library.publish(environmentId, request),
-    unpublish: (id) =>
-      label.pipe(Effect.flatMap((name) => library.unpublish(environmentId, id, name))),
+    availability: Effect.fn("BotLibraryClient.availability")(function () {
+      return Effect.succeed<BotLibraryAvailability>(library.enabled ? "available" : "none");
+    }),
+    publish: Effect.fn("BotLibraryClient.publish")(function (request) {
+      return library.publish(environmentId, request);
+    }),
+    unpublish: Effect.fn("BotLibraryClient.unpublish")(function (id) {
+      return label.pipe(Effect.flatMap((name) => library.unpublish(environmentId, id, name)));
+    }),
     list: library.list,
-    reportStatus: (report) => library.reportStatus(environmentId, report),
+    reportStatus: Effect.fn("BotLibraryClient.reportStatus")(function (report) {
+      return library.reportStatus(environmentId, report);
+    }),
     targets: library.targets,
-    submit: (request) => library.submit(environmentId, request),
-    nextRequests: (waitMs) => library.nextRequests(environmentId, waitMs),
-    ack: (input) => library.ack(environmentId, input),
-    cancel: (requestId) => library.cancel(environmentId, requestId),
-    postResult: (post) => library.postResult(environmentId, post),
-    nextResults: (waitMs) => library.nextResults(environmentId, waitMs),
-    ackResult: (input) => library.ackResult(environmentId, input),
+    submit: Effect.fn("BotLibraryClient.submit")(function (request) {
+      return library.submit(environmentId, request);
+    }),
+    nextRequests: Effect.fn("BotLibraryClient.nextRequests")(function (waitMs) {
+      return library.nextRequests(environmentId, waitMs);
+    }),
+    ack: Effect.fn("BotLibraryClient.ack")(function (input) {
+      return library.ack(environmentId, input);
+    }),
+    cancel: Effect.fn("BotLibraryClient.cancel")(function (requestId) {
+      return library.cancel(environmentId, requestId);
+    }),
+    postResult: Effect.fn("BotLibraryClient.postResult")(function (post) {
+      return library.postResult(environmentId, post);
+    }),
+    nextResults: Effect.fn("BotLibraryClient.nextResults")(function (waitMs) {
+      return library.nextResults(environmentId, waitMs);
+    }),
+    ackResult: Effect.fn("BotLibraryClient.ackResult")(function (input) {
+      return library.ackResult(environmentId, input);
+    }),
   });
 
 const make = Effect.gen(function* () {
@@ -148,19 +169,43 @@ const make = Effect.gen(function* () {
     return BotLibraryClient.of({
       environmentId,
       label,
-      availability: () => Effect.succeed("none"),
-      publish: () => none,
-      unpublish: () => none,
-      list: () => none,
-      reportStatus: () => none,
+      availability: Effect.fn("BotLibraryClient.availability")(function () {
+        return Effect.succeed("none" as const);
+      }),
+      publish: Effect.fn("BotLibraryClient.publish")(function () {
+        return none;
+      }),
+      unpublish: Effect.fn("BotLibraryClient.unpublish")(function () {
+        return none;
+      }),
+      list: Effect.fn("BotLibraryClient.list")(function () {
+        return none;
+      }),
+      reportStatus: Effect.fn("BotLibraryClient.reportStatus")(function () {
+        return none;
+      }),
       targets: none,
-      submit: () => none,
-      nextRequests: () => none,
-      ack: () => none,
-      cancel: () => none,
-      postResult: () => none,
-      nextResults: () => none,
-      ackResult: () => none,
+      submit: Effect.fn("BotLibraryClient.submit")(function () {
+        return none;
+      }),
+      nextRequests: Effect.fn("BotLibraryClient.nextRequests")(function () {
+        return none;
+      }),
+      ack: Effect.fn("BotLibraryClient.ack")(function () {
+        return none;
+      }),
+      cancel: Effect.fn("BotLibraryClient.cancel")(function () {
+        return none;
+      }),
+      postResult: Effect.fn("BotLibraryClient.postResult")(function () {
+        return none;
+      }),
+      nextResults: Effect.fn("BotLibraryClient.nextResults")(function () {
+        return none;
+      }),
+      ackResult: Effect.fn("BotLibraryClient.ackResult")(function () {
+        return none;
+      }),
     });
   }
 
@@ -228,49 +273,56 @@ const make = Effect.gen(function* () {
     environmentId,
     label,
     availability,
-    publish: (request) =>
-      encoded(encodePublish(request)).pipe(
+    publish: Effect.fn("BotLibraryClient.publish")(function (request) {
+      return encoded(encodePublish(request)).pipe(
         Effect.flatMap((body) => post("/publish", body)),
         Effect.flatMap((response) => readJson(response, decodeRecord)),
-      ),
-    unpublish: (libraryBotId) =>
-      label.pipe(
+      );
+    }),
+    unpublish: Effect.fn("BotLibraryClient.unpublish")(function (libraryBotId) {
+      return label.pipe(
         Effect.flatMap((name) => encoded(encodeUnpublish({ libraryBotId, label: name }))),
         Effect.flatMap((body) => post("/unpublish", body)),
         Effect.asVoid,
-      ),
-    list: (after) =>
-      encoded(encodeList({ after })).pipe(
+      );
+    }),
+    list: Effect.fn("BotLibraryClient.list")(function (after) {
+      return encoded(encodeList({ after })).pipe(
         Effect.flatMap((body) => post("/list", body)),
         Effect.flatMap((response) => readJson(response, decodeList)),
-      ),
-    reportStatus: (report) =>
-      encoded(encodeStatus(report)).pipe(
+      );
+    }),
+    reportStatus: Effect.fn("BotLibraryClient.reportStatus")(function (report) {
+      return encoded(encodeStatus(report)).pipe(
         Effect.flatMap((body) => post("/status", body)),
         Effect.asVoid,
-      ),
+      );
+    }),
     targets: execute(HttpClientRequest.get(endpoint(`${BOT_LIBRARY_ROUTE}/targets`))).pipe(
       Effect.flatMap((response) => readJson(response, decodeTargets)),
       Effect.map((result) => result.targets),
     ),
-    submit: (request) =>
-      encoded(encodeSubmit(request)).pipe(
+    submit: Effect.fn("BotLibraryClient.submit")(function (request) {
+      return encoded(encodeSubmit(request)).pipe(
         Effect.flatMap((body) => post("/requests/submit", body)),
         Effect.asVoid,
-      ),
-    nextRequests: (waitMs) =>
-      encoded(encodeWait({ waitMs })).pipe(
+      );
+    }),
+    nextRequests: Effect.fn("BotLibraryClient.nextRequests")(function (waitMs) {
+      return encoded(encodeWait({ waitMs })).pipe(
         Effect.flatMap((body) => post("/requests/next", body)),
         Effect.flatMap((response) => readJson(response, decodeDeliveries)),
         Effect.map((result) => result.deliveries),
-      ),
-    ack: (input) =>
-      encoded(encodeAck(input)).pipe(
+      );
+    }),
+    ack: Effect.fn("BotLibraryClient.ack")(function (input) {
+      return encoded(encodeAck(input)).pipe(
         Effect.flatMap((body) => post("/requests/ack", body)),
         Effect.asVoid,
-      ),
-    cancel: (requestId) =>
-      encoded(encodeCancel({ requestId })).pipe(
+      );
+    }),
+    cancel: Effect.fn("BotLibraryClient.cancel")(function (requestId) {
+      return encoded(encodeCancel({ requestId })).pipe(
         Effect.flatMap((body) => post("/requests/cancel", body)),
         // A Library from before the answer existed sends none; the target may have the run then.
         Effect.flatMap((response) =>
@@ -278,23 +330,27 @@ const make = Effect.gen(function* () {
             ? Effect.succeed(false)
             : readJson(response, decodeCancelResult).pipe(Effect.map((result) => result.withdrawn)),
         ),
-      ),
-    postResult: (input) =>
-      encoded(encodeResult(input)).pipe(
+      );
+    }),
+    postResult: Effect.fn("BotLibraryClient.postResult")(function (input) {
+      return encoded(encodeResult(input)).pipe(
         Effect.flatMap((body) => post("/results/post", body)),
         Effect.asVoid,
-      ),
-    nextResults: (waitMs) =>
-      encoded(encodeWait({ waitMs })).pipe(
+      );
+    }),
+    nextResults: Effect.fn("BotLibraryClient.nextResults")(function (waitMs) {
+      return encoded(encodeWait({ waitMs })).pipe(
         Effect.flatMap((body) => post("/results/next", body)),
         Effect.flatMap((response) => readJson(response, decodeResults)),
         Effect.map((result) => result.results),
-      ),
-    ackResult: (input) =>
-      encoded(encodeResultAck(input)).pipe(
+      );
+    }),
+    ackResult: Effect.fn("BotLibraryClient.ackResult")(function (input) {
+      return encoded(encodeResultAck(input)).pipe(
         Effect.flatMap((body) => post("/results/ack", body)),
         Effect.asVoid,
-      ),
+      );
+    }),
   });
 });
 
