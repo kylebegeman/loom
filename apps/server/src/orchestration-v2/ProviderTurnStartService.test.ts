@@ -487,6 +487,7 @@ function makeLocalCommandHarness(input: {
     readonly liveSession?: boolean;
     readonly interruptFailure?: boolean;
     readonly interruptCurrentRun?: boolean;
+    readonly prompt?: string; // fork: library-projects
   };
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
@@ -725,6 +726,7 @@ function makeLocalCommandHarness(input: {
   if (input.previousTurn !== undefined) {
     const previousRunId = RunId.make("previous-failed-run");
     const previousAttemptId = RunAttemptId.make("previous-failed-attempt");
+    const previousPromptId = MessageId.make("previous-prompt"); // fork: library-projects
     const previousProviderThreadId = input.previousTurn.differentThread
       ? oldProviderThreadId
       : providerThreadId;
@@ -740,6 +742,7 @@ function makeLocalCommandHarness(input: {
           activeAttemptId: previousAttemptId,
           providerThreadId: previousProviderThreadId,
           completedAt: now,
+          ...(input.previousTurn.prompt === undefined ? {} : { userMessageId: previousPromptId }), // fork: library-projects
         },
         run,
       ],
@@ -766,6 +769,31 @@ function makeLocalCommandHarness(input: {
           completedAt: input.previousTurn.turnStatus === "running" ? null : now,
         },
       ],
+      // fork: library-projects -- the earlier turn's own prompt, attempt and all.
+      ...(input.previousTurn.prompt === undefined
+        ? {}
+        : {
+            messages: [
+              {
+                ...message,
+                id: previousPromptId,
+                runId: previousRunId,
+                text: input.previousTurn.prompt,
+              },
+              ...projection.messages,
+            ],
+            attempts: [
+              ...projection.attempts.map((attempt) => ({
+                ...attempt,
+                id: previousAttemptId,
+                runId: previousRunId,
+                rootNodeId: NodeId.make("previous-root"),
+                providerThreadId: previousProviderThreadId,
+                status: "completed" as const,
+              })),
+              ...projection.attempts,
+            ],
+          }),
     };
   }
   let providerBusy =
@@ -2033,6 +2061,44 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
     expect(hint).not.toContain("\n");
     expect(sent.split(hint)).toHaveLength(2);
     expect(sent.split("loom_library_brief_propose")).toHaveLength(2);
+  }),
+);
+
+// fork: library-projects
+effectIt.effect.each([
+  ["/goal Ship the release", undefined, false],
+  ["Implement the next step", "/goal Ship the release", true],
+  ["Implement the next step", "Plan the work", false],
+] as const)("a bound turn %j after %j carries project context: %s", ([text, prompt, carried]) =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text,
+      libraryProject: {
+        id: "aspectavy",
+        title: "AspectAvy",
+        brief: "Coordinate the app and server contract.",
+        revision: 2,
+        resources: [],
+        archived: false,
+        createdAt: "2026-10-15T00:00:00.000Z",
+        updatedAt: "2026-10-15T00:00:00.000Z",
+      },
+      promptCommandHandled: false,
+      failReadsAfterRunning: true,
+      ...(prompt === undefined
+        ? {}
+        : { previousTurn: { runStatus: "completed", turnStatus: "completed", prompt } }),
+    });
+    yield* harness.start;
+    const sent = harness.startRootRun.mock.calls[0]?.[0].message.text ?? "";
+    if (carried) {
+      expect(sent).toContain("Project: AspectAvy");
+      expect(sent).toContain(`User message:\n${text}`);
+    } else {
+      expect(sent).not.toContain("Project: AspectAvy");
+      expect(sent.endsWith(text)).toBe(true);
+    }
+    if (prompt === undefined) expect(sent).toBe(text);
   }),
 );
 

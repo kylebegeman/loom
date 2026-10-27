@@ -1200,9 +1200,21 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
+      // fork: library-projects -- /goal must open the prompt (see goalCommand below), so project
+      // context waits for the conversation's first turn that is not a goal command.
+      const libraryGoalTurn = (prompt: Parameters<typeof parseGoalCommand>[0]) =>
+        (session.driver === "codex" || session.driver === "claudeAgent") &&
+        parseGoalCommand(prompt) !== null;
+      const libraryContextSent = projection.providerTurns.some((turn) => {
+        const attempt = projection.attempts.find((entry) => entry.id === turn.runAttemptId);
+        const source = projection.runs.find((entry) => entry.id === attempt?.runId);
+        const prompt = projection.messages.find((entry) => entry.id === source?.userMessageId);
+        return prompt === undefined || !libraryGoalTurn(prompt);
+      });
       if (
         Option.isSome(libraryWorkspaces) &&
-        (projection.providerTurns.length === 0 || providerThread.nativeThreadRef === null)
+        !libraryGoalTurn(message) && // fork: library-projects
+        (!libraryContextSent || providerThread.nativeThreadRef === null) // fork: library-projects
       ) {
         const resolved = yield* libraryWorkspaces.value
           .getBinding(projection.thread.id)
