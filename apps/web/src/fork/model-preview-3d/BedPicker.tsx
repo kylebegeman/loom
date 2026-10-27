@@ -2,6 +2,7 @@ import { blankPrinter, usePrinterLibrary } from "./printers";
 import { randomUUID } from "~/lib/utils";
 import styles from "./workspace.module.css";
 import { Link } from "@tanstack/react-router";
+import { forkSettingsTarget } from "../settings/navigation";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ChevronDownIcon, Grid3x3Icon } from "lucide-react";
@@ -481,7 +482,11 @@ export function BedPicker({
           </label>
         </fieldset>
         <div className="mt-2">
-          <Button variant="link" size="xs" render={<Link to="/settings/loom" />}>
+          <Button
+            variant="link"
+            size="xs"
+            render={<Link {...forkSettingsTarget("model-preview-3d")} />}
+          >
             Manage printers
           </Button>
         </div>

@@ -2,7 +2,7 @@
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
-of the sidebar and **Settings → Environments** offer to update it.
+of the sidebar and **Settings → Computers** offer to update it. <!-- fork: fleet-connections -->
 
 <!-- fork: machine-updates -->
 
@@ -11,7 +11,7 @@ of the sidebar and **Settings → Environments** offer to update it.
 The update button at the bottom of the desktop sidebar belongs to the computer
 you are using. It downloads and installs that app and can update providers on
 its local backends, including WSL. Other computers' updates and progress appear
-in **Settings → Environments**.
+in **Settings → Computers**.
 
 Before the app restarts to install, it lists the threads on this computer that
 the restart would interrupt, including threads waiting on a subagent, monitor,
@@ -27,7 +27,7 @@ version comes out first, the wait ends and the button offers that download.
 
 ## Manage fleet updates
 
-Open **Settings → Environments → Fleet updates** for a snapshot of runtime versions
+Open **Settings → Computers → Fleet updates** for a snapshot of runtime versions
 and provider updates across your connected computers. Offline computers show
 their last known version and must reconnect before their status can be checked.
 
@@ -148,7 +148,7 @@ status and refresh it again.
 
 ## Mobile updates
 
-To update an environment from your phone, open **Settings → Environments** and
+To update an environment from your phone, open **Settings → Computers** and <!-- fork: fleet-connections -->
 select it. **Check for updates** finds the latest release on that environment's
 current release channel. Keep the app open while the environment updates and
 reconnects. Hosts that cannot update remotely show instructions for updating on

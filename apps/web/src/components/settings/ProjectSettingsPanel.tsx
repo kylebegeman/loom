@@ -1,4 +1,5 @@
 import { ProjectCheckoutSettings } from "../../fork/project-checkout/ProjectCheckoutSettings"; // fork: project-checkout-management
+import { ForkSettingsTopics } from "../../fork/settings/pages"; // fork: ext-settings
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -585,6 +586,8 @@ function ProjectDetail({
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}
+        {/* fork: ext-settings */}
+        <ForkSettingsTopics page="/settings/projects" />
         <SettingsSection title="Danger">
           <SettingsRow
             // fork: project-home

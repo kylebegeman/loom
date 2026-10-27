@@ -1,4 +1,5 @@
 import { NotificationSettings } from "./NotificationSettings";
+import { ForkSettingsTopics } from "~/fork/settings/pages"; // fork: ext-settings
 // fork: respectful-notifications
 import { NotificationPreviewsSettingsRow } from "~/fork/respectful-notifications/NotificationPreviewsSettingsRow";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
@@ -78,7 +79,6 @@ import { isMacPlatform } from "../../lib/utils";
 import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
-import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -105,7 +105,8 @@ import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
-import { StorageCleanupSections } from "./StorageSettings";
+import { ProjectsDirectoryRow, StorageCleanupSections } from "./StorageSettings"; // fork: path-picker
+import { ScopedPathField } from "~/fork/settings/PathField"; // fork: path-picker
 
 const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
   turn: "Wait for the full response",
@@ -1035,6 +1036,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+      {/* fork: ext-settings */}
+      <ForkSettingsTopics page="/settings/general" />
     </SettingsPageContainer>
   );
 }
@@ -1490,7 +1493,7 @@ export function ThreadsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments, target } = useSettingsScope();
+  const { environment, connectedEnvironments, target, scope } = useSettingsScope(); // fork: path-picker
   const environmentId = environment?.environmentId ?? null;
   const hasServerTargets = connectedEnvironments.length > 0;
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
@@ -1557,32 +1560,23 @@ export function ThreadsSettingsPanel() {
           serverScoped
           settingKeys={["addProjectBaseDirectory"]}
           {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
+          description="The folder the Add Project browser opens on." // fork: path-picker
           control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
-              spellCheck={false}
-              aria-label="Add project base directory"
+            // fork: path-picker
+            <ScopedPathField
+              kind="folder"
+              label="Add project starts in"
+              defaultLabel="Home folder"
+              value={settings.addProjectBaseDirectory}
+              mixed={mixedAddProjectBaseDirectory}
+              onChange={(next) => updateSettings({ addProjectBaseDirectory: next })}
+              className="w-full @min-[32rem]/settings-row:w-80"
             />
           }
         />
+        {scope.kind !== "project" && scope.kind !== "checkout" && (
+          <ProjectsDirectoryRow /> // fork: path-picker
+        )}
       </SettingsSection>
 
       <ProjectDefaultsSettings category="general" />

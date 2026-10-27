@@ -5,11 +5,14 @@ import {
   useUpdateScopedSettings,
 } from "~/components/settings/useScopedSettings";
 import { Switch } from "~/components/ui/switch";
+import { hasDesktopNotifications } from "~/threadNotifications";
 
-/** The previews switch, shown under Thread notifications in General settings. */
+/** The previews switch under Thread notifications, shown only while they send system alerts. */
 export function NotificationPreviewsSettingsRow() {
+  const mode = useScopedSettings((settings) => settings.notificationMode);
   const previews = useScopedSettings((settings) => settings.notificationPreviewsEnabled);
   const updateSettings = useUpdateScopedSettings();
+  if (!hasDesktopNotifications(mode)) return null;
   return (
     <SettingsRow
       {...searchableSetting("notification-previews")}

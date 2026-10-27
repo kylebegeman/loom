@@ -1,4 +1,5 @@
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { ForkSettingsTopics } from "~/fork/settings/pages"; // fork: ext-settings
 
 import { AdvancedSettings } from "./AdvancedSettings";
 import { BranchNamingSettings } from "./BranchNamingSettings";
@@ -12,11 +13,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import {
-  ProjectsDirectoryRow, // fork: file-placement
-  WorktreeCleanupSection,
-  WorktreesDirectoryRow,
-} from "./StorageSettings";
+import { WorktreeCleanupSection, WorktreesDirectoryRow } from "./StorageSettings";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 function StartFromRemoteRow() {
@@ -62,7 +59,6 @@ export function WorktreesSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="worktree-creation" title="Creation">
-        {!isProjectScope && <ProjectsDirectoryRow /> /* fork: file-placement */}
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
         <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
@@ -73,6 +69,8 @@ export function WorktreesSettingsPanel() {
         <BranchNamingSettings />
       </SettingsSection>
       <WorktreeCleanupSection />
+      {/* fork: ext-settings */}
+      <ForkSettingsTopics page="/settings/worktrees" />
     </SettingsPageContainer>
   );
 }

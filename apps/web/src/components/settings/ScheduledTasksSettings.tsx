@@ -1,5 +1,6 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
 import { WebhookDeliveryIssue } from "../../fork/scheduled-task-alerts/WebhookDeliveryIssue"; // fork: webhook-delivery-issues
+import { PathField } from "../../fork/settings/PathField"; // fork: path-picker
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
@@ -1469,16 +1470,17 @@ function ScheduledTaskEditorForm({
             </Field>
           ) : null}
           {draft.workspaceMode === "existing_worktree" ? (
-            <Field label="Checkout path" htmlFor="scheduled-task-checkout">
-              <Input
-                id="scheduled-task-checkout"
+            <Field label="Checkout path">
+              {/* fork: path-picker */}
+              <PathField
+                environmentId={environmentId}
+                kind="folder"
+                label="Checkout path"
                 value={draft.existingWorktreePath}
-                placeholder="/path/to/checkout"
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    existingWorktreePath: event.target.value,
-                  }))
+                startPath={selectedProject?.workspaceRoot}
+                disabled={saving || !connected}
+                onChange={(existingWorktreePath) =>
+                  setDraft((current) => ({ ...current, existingWorktreePath }))
                 }
               />
             </Field>

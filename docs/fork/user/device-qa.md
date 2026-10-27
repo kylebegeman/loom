@@ -99,7 +99,7 @@ refuse. Items an agent captured or ran are marked **Agent**.
 
 ## Settings and shortcuts
 
-**Settings, Loom, Device QA** sets the argent path, how many runs each project keeps,
+**Settings, Devices, Device QA** sets the argent path, how many runs each project keeps,
 whether old evidence is deleted after a number of days, and whether clean status bar is on
 by default.
 

@@ -6,12 +6,12 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { ConnectionFormField } from "../../features/connection/ConnectionFormField";
 import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LibraryFolderPicker } from "../library/LibraryFolderPicker";
 
 /** Where this computer puts new projects and prepared Library files. Shown once it resolves one. */
 export function ComputerProjectsFolderSection({
@@ -24,12 +24,11 @@ export function ComputerProjectsFolderSection({
   const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const allowed = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
-  const [draft, setDraft] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState(false);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const saved = config?.settings.projectsDirectory ?? "";
-  const value = draft ?? saved;
   const canSave = connected && allowed && !pending;
 
   async function save(projectsDirectory: string) {
@@ -45,27 +44,22 @@ export function ComputerProjectsFolderSection({
       setError(cause instanceof Error ? cause.message : "The Projects folder could not be saved.");
       return;
     }
-    setDraft(null);
+    setBrowsing(false);
   }
 
   if (!config?.folders) return null;
   return (
     <SettingsSection
       title="Projects folder"
-      footer="Folder where Loom puts new projects and prepared Library files on this computer. Existing projects stay where they are. Leave empty to use the Loom home folder."
+      footer="Folder where Loom puts new projects and prepared Library files on this computer. Existing projects stay where they are."
     >
       <View className="gap-3 p-4">
-        <ConnectionFormField
-          label="Folder"
-          value={value}
-          onChangeText={setDraft}
-          placeholder={config.folders.projects}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={() => void save(value.trim())}
-          editable={canSave}
-        />
+        <Text
+          selectable
+          className={saved ? "text-sm text-foreground" : "text-sm text-foreground-muted"}
+        >
+          {saved || `Loom home folder (${config.folders.projects})`}
+        </Text>
         {!connected ? (
           <Text className="text-sm text-foreground-muted">
             Reconnect to change this computer's Projects folder.
@@ -82,12 +76,21 @@ export function ComputerProjectsFolderSection({
         ) : null}
       </View>
       <SettingsActionRow
-        icon="checkmark"
-        label="Save folder"
-        disabled={!canSave || value.trim() === saved}
+        icon="folder"
+        label={browsing ? "Stop browsing" : "Choose folder"}
+        disabled={!canSave}
         loading={pending}
-        onPress={() => void save(value.trim())}
+        onPress={() => setBrowsing((current) => !current)}
       />
+      {browsing ? (
+        <View className="p-4">
+          <LibraryFolderPicker
+            environmentId={environmentId}
+            disabled={!canSave}
+            onChoose={(path) => void save(path)}
+          />
+        </View>
+      ) : null}
       <SettingsActionRow
         icon="arrow.uturn.backward"
         label="Use the Loom home folder"

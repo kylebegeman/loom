@@ -591,5 +591,38 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         });
       }),
     );
+
+    // fork: path-picker
+    it.effect("lists files after folders only when asked", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-browse-files-" });
+        yield* writeTextFile(cwd, "a-file.txt", "");
+        yield* writeTextFile(cwd, "b-folder/inner.txt", "");
+        yield* writeTextFile(cwd, ".env.schema", "");
+        const cwdWithSeparator = yield* appendSeparator(cwd);
+
+        const folders = yield* workspaceEntries.browse({ partialPath: cwdWithSeparator });
+        const withFiles = yield* workspaceEntries.browse({
+          partialPath: cwdWithSeparator,
+          includeFiles: true,
+        });
+        const prefixed = yield* workspaceEntries.browse({
+          partialPath: `${cwdWithSeparator}a`,
+          includeFiles: true,
+        });
+
+        expect(folders.entries).toEqual([
+          { name: "b-folder", fullPath: path.join(cwd, "b-folder") },
+        ]);
+        expect(withFiles.entries).toEqual([
+          { name: "b-folder", fullPath: path.join(cwd, "b-folder"), kind: "directory" },
+          { name: ".env.schema", fullPath: path.join(cwd, ".env.schema"), kind: "file" },
+          { name: "a-file.txt", fullPath: path.join(cwd, "a-file.txt"), kind: "file" },
+        ]);
+        expect(prefixed.entries.map((entry) => entry.name)).toEqual(["a-file.txt"]);
+      }),
+    );
   });
 });

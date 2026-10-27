@@ -1,48 +1,59 @@
-export const LOOM_SETTINGS_GROUPS = [
-  { id: "work", title: "Files & work" },
-  { id: "tools", title: "Tools & previews" },
-  { id: "connections", title: "Connections & access" },
-  { id: "maintenance", title: "Maintenance" },
-] as const;
+import type { SettingsSearchItem } from "~/components/settings/settingsSearch";
+import { FORK_SETTINGS_SECTIONS, type ForkSettingsHome } from "./registry";
 
-export type LoomSettingsGroupId = (typeof LOOM_SETTINGS_GROUPS)[number]["id"];
+const LEGACY_DEFAULT_TOPIC = "project-lifecycle";
+const TOPIC_ANCHOR_PREFIX = "loom-";
 
-const DEFAULT_LOOM_SETTINGS_SECTION = "project-lifecycle";
+export const FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS: ReadonlySet<string> =
+  new Set<ForkSettingsHome>(["/settings/vault", "/settings/tools"]);
 
-type SearchableSection = {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
-  readonly keywords: string;
-};
+function findTopic(id: unknown) {
+  return FORK_SETTINGS_SECTIONS.find((section) => section.id === id);
+}
 
-export function filterLoomSettingsSections<T extends SearchableSection>(
-  sections: readonly T[],
-  query: string,
-): readonly T[] {
-  const terms = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return sections;
-  return sections.filter((section) => {
-    const text = `${section.title} ${section.description} ${section.keywords}`.toLocaleLowerCase();
-    return terms.every((term) => text.includes(term));
+/** Where a fork settings topic lives. Unknown ids fall back to Lanes, like old Loom links. */
+export function forkSettingsTarget(id: string): { to: ForkSettingsHome; hash: string } {
+  const topic = findTopic(id) ?? findTopic(LEGACY_DEFAULT_TOPIC)!;
+  return { to: topic.home, hash: `${TOPIC_ANCHOR_PREFIX}${topic.id}` };
+}
+
+/** One settings search result per topic, so sidebar search and the command palette find them. */
+export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
+  return FORK_SETTINGS_SECTIONS.map((section) => {
+    const { to, hash } = forkSettingsTarget(section.id);
+    return {
+      id: hash,
+      targetId: hash,
+      title: section.title,
+      to,
+      searchTerms: [section.description, section.keywords],
+      // Computer topics pick their own computer wherever they render; only a project must be chosen.
+      ...(section.scope === "project" ? { scope: "project" as const } : {}),
+    };
   });
 }
 
-export function loomSettingsSectionForHash(
-  sections: readonly { readonly id: string }[],
-  hash: string,
-): string | null {
-  const target = hash.replace(/^#/, "");
-  return sections.find((section) => target === `loom-${section.id}`)?.id ?? null;
-}
-
-export function resolveLoomSettingsSection<T extends { readonly id: string }>(
-  sections: readonly T[],
-  sectionId: string | undefined,
-): T {
-  const section = sections.find((section) => section.id === sectionId);
-  const fallback = sections.find((section) => section.id === DEFAULT_LOOM_SETTINGS_SECTION);
-  const resolved = section ?? fallback ?? sections[0];
-  if (!resolved) throw new Error("Loom settings must register at least one section.");
-  return resolved;
+/**
+ * Resolves a retired `/settings/loom` link. The topic comes from a `#loom-<id>` hash, then
+ * `?section=<id>`. A hash suffix such as Vault GitHub's `?connection=` repair query is kept.
+ */
+export function legacyLoomSettingsTarget({
+  search,
+  hash,
+}: {
+  search: Record<string, unknown>;
+  hash: string;
+}): { to: ForkSettingsHome; search: Record<string, unknown>; hash: string } {
+  const anchor = hash.replace(/^#/, "");
+  const hashTopic = anchor.startsWith(TOPIC_ANCHOR_PREFIX)
+    ? findTopic(anchor.slice(TOPIC_ANCHOR_PREFIX.length).split("?")[0])
+    : undefined;
+  const target = forkSettingsTarget(
+    (hashTopic ?? findTopic(search.section))?.id ?? LEGACY_DEFAULT_TOPIC,
+  );
+  return {
+    to: target.to,
+    search: Object.fromEntries(Object.entries(search).filter(([key]) => key !== "section")),
+    hash: hashTopic ? anchor : target.hash,
+  };
 }

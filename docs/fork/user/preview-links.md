@@ -32,7 +32,7 @@ wildcard record sends every address to that computer's tunnel.
    you change it there, change it here too.
 3. Cloudflare does not create DNS records for wildcard routes. In the domain's DNS, add a
    CNAME record named `*` pointing at `<tunnel ID>.cfargotunnel.com`, with the proxy on.
-4. In Loom, open **Settings > Loom > Preview links** for that computer. Turn on
+4. In Loom, open **Settings > Sharing & access > Preview links** for that computer. Turn on
    **Share ports as links**, enter the domain in **Link domain**, check **Computer name**,
    paste the token into **Connector token**, and choose **Save**.
 
@@ -96,7 +96,7 @@ Ask an agent to share a built site or a container, and it gets a link like any o
   container. For more time, ask the agent to share it again. If the image is not on the
   computer yet, Docker downloads it first, which can take up to 10 minutes.
 
-Both need lanes on (**Settings > Loom > Storage**), because they use the thread's lane ports
+Both need lanes on (**Settings > Worktrees > Lanes**), because they use the thread's lane ports
 and end with its lane. Container links also need Docker Desktop or OrbStack running on the
 computer. Containers stop when Loom quits. One that could not be removed while Docker was not
 running is removed once Docker answers again.
@@ -107,9 +107,9 @@ are off, **Restore** says so; ask the agent to share the folder again.
 ## Lifetimes and restoring
 
 A link stays open for 1 hour, 12 hours or 24 hours. **Default lifetime** in
-**Settings > Loom > Preview links** sets it for new links; 12 hours unless you change it.
+**Settings > Sharing & access > Preview links** sets it for new links; 12 hours unless you change it.
 
-Manage links from **Manage links** in Settings > Loom > Preview links, the **Preview links** command
+Manage links from **Manage links** in Settings > Sharing & access > Preview links, the **Preview links** command
 in the command palette, or Settings > Previews on mobile:
 
 - **Open** signs a browser in and opens the link.
@@ -131,7 +131,7 @@ An agent can publish a page it rendered, or an HTML file from its workspace such
 Dossier. The page lives in your Library at an address on its own pages host, so it stays
 readable while the computer is asleep.
 
-Each computer's pages are listed under **Pages** in **Settings > Loom > Preview links**, or under
+Each computer's pages are listed under **Pages** in **Settings > Sharing & access > Preview links**, or under
 **Pages on** the computer in Settings > Previews on mobile:
 
 - **Open** opens the page in your browser.
@@ -174,11 +174,11 @@ Library runs on. After your Library is updated, signing in to a computer's links
 up to 30 minutes, until that computer checks in again. Opening links from Loom still works,
 and restarting Loom on that computer is quicker. Removing a computer's access to your Library
 stops sign-in to its links at once. Computers that connected with one shared Library token
-lose it together. **Library** under Connection status in Settings > Loom > Preview links, and
+lose it together. **Library** under Connection status in Settings > Sharing & access > Preview links, and
 on the computer's previews screen in the mobile app, shows whether your Library can sign
 browsers in to this computer's links, and why not when it cannot.
 
-**Sign out preview browsers** in Settings > Loom > Preview links signs out every browser that
+**Sign out preview browsers** in Settings > Sharing & access > Preview links signs out every browser that
 opened any link on that computer, whether it came from Loom or signed in to your Library. It
 also signs every browser out of your published pages, from every computer. Links and pages
 stay open; each browser has to open them from Loom or sign in again. If your Library cannot be

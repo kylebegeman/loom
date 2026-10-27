@@ -40,7 +40,7 @@ const mobilePreviewNavigationDeps: PreviewNavigationDeps = {
     appAtomRegistry.get(environmentPresentations.presentationAtom(environmentId))?.entry.target
       .label ?? "this computer",
   // Setup lives in the desktop and web apps; the phone only shows each computer's status.
-  settingsPath: "Settings > Loom > Previews in the desktop or web app",
+  settingsPath: "Settings > Sharing & access > Preview links in the desktop or web app",
   share: (environmentId, input) => run(previewLinks.share, { environmentId, input }),
   open: (environmentId, input) => run(previewLinks.open, { environmentId, input }),
   reportFailure: (message) => Alert.alert("Unable to open preview", message),

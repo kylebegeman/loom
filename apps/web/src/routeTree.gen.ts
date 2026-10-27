@@ -32,6 +32,8 @@ import { Route as ChatNewRouteImport } from './routes/_chat.new'
 import { Route as ChatComputersRouteImport } from './routes/_chat.computers'
 import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
+import { Route as ChatSettingsVaultRouteImport } from './routes/_chat.settings.vault'
+import { Route as ChatSettingsToolsRouteImport } from './routes/_chat.settings.tools'
 import { Route as ChatSettingsThreadsRouteImport } from './routes/_chat.settings.threads'
 import { Route as ChatSettingsStorageRouteImport } from './routes/_chat.settings.storage'
 import { Route as ChatSettingsSourceControlRouteImport } from './routes/_chat.settings.source-control'
@@ -173,6 +175,16 @@ const LibraryConversationsConversationIdRoute =
 const ChatSettingsWorktreesRoute = ChatSettingsWorktreesRouteImport.update({
   id: '/worktrees',
   path: '/worktrees',
+  getParentRoute: () => ChatSettingsRoute,
+} as any)
+const ChatSettingsVaultRoute = ChatSettingsVaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => ChatSettingsRoute,
+} as any)
+const ChatSettingsToolsRoute = ChatSettingsToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
   getParentRoute: () => ChatSettingsRoute,
 } as any)
 const ChatSettingsThreadsRoute = ChatSettingsThreadsRouteImport.update({
@@ -364,6 +376,8 @@ export interface FileRoutesByFullPath {
   '/settings/source-control': typeof ChatSettingsSourceControlRoute
   '/settings/storage': typeof ChatSettingsStorageRoute
   '/settings/threads': typeof ChatSettingsThreadsRoute
+  '/settings/tools': typeof ChatSettingsToolsRoute
+  '/settings/vault': typeof ChatSettingsVaultRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
@@ -414,6 +428,8 @@ export interface FileRoutesByTo {
   '/settings/source-control': typeof ChatSettingsSourceControlRoute
   '/settings/storage': typeof ChatSettingsStorageRoute
   '/settings/threads': typeof ChatSettingsThreadsRoute
+  '/settings/tools': typeof ChatSettingsToolsRoute
+  '/settings/vault': typeof ChatSettingsVaultRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
@@ -467,6 +483,8 @@ export interface FileRoutesById {
   '/_chat/settings/source-control': typeof ChatSettingsSourceControlRoute
   '/_chat/settings/storage': typeof ChatSettingsStorageRoute
   '/_chat/settings/threads': typeof ChatSettingsThreadsRoute
+  '/_chat/settings/tools': typeof ChatSettingsToolsRoute
+  '/_chat/settings/vault': typeof ChatSettingsVaultRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
@@ -520,6 +538,8 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/settings/threads'
+    | '/settings/tools'
+    | '/settings/vault'
     | '/settings/worktrees'
     | '/library/conversations/$conversationId'
   fileRoutesByTo: FileRoutesByTo
@@ -570,6 +590,8 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/settings/threads'
+    | '/settings/tools'
+    | '/settings/vault'
     | '/settings/worktrees'
     | '/library/conversations/$conversationId'
   id:
@@ -622,6 +644,8 @@ export interface FileRouteTypes {
     | '/_chat/settings/source-control'
     | '/_chat/settings/storage'
     | '/_chat/settings/threads'
+    | '/_chat/settings/tools'
+    | '/_chat/settings/vault'
     | '/_chat/settings/worktrees'
     | '/library/conversations/$conversationId'
   fileRoutesById: FileRoutesById
@@ -803,6 +827,20 @@ declare module '@tanstack/react-router' {
       path: '/worktrees'
       fullPath: '/settings/worktrees'
       preLoaderRoute: typeof ChatSettingsWorktreesRouteImport
+      parentRoute: typeof ChatSettingsRoute
+    }
+    '/_chat/settings/vault': {
+      id: '/_chat/settings/vault'
+      path: '/vault'
+      fullPath: '/settings/vault'
+      preLoaderRoute: typeof ChatSettingsVaultRouteImport
+      parentRoute: typeof ChatSettingsRoute
+    }
+    '/_chat/settings/tools': {
+      id: '/_chat/settings/tools'
+      path: '/tools'
+      fullPath: '/settings/tools'
+      preLoaderRoute: typeof ChatSettingsToolsRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
     '/_chat/settings/threads': {
@@ -1023,6 +1061,8 @@ interface ChatSettingsRouteChildren {
   ChatSettingsSourceControlRoute: typeof ChatSettingsSourceControlRoute
   ChatSettingsStorageRoute: typeof ChatSettingsStorageRoute
   ChatSettingsThreadsRoute: typeof ChatSettingsThreadsRoute
+  ChatSettingsToolsRoute: typeof ChatSettingsToolsRoute
+  ChatSettingsVaultRoute: typeof ChatSettingsVaultRoute
   ChatSettingsWorktreesRoute: typeof ChatSettingsWorktreesRoute
 }
 
@@ -1052,6 +1092,8 @@ const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsSourceControlRoute: ChatSettingsSourceControlRoute,
   ChatSettingsStorageRoute: ChatSettingsStorageRoute,
   ChatSettingsThreadsRoute: ChatSettingsThreadsRoute,
+  ChatSettingsToolsRoute: ChatSettingsToolsRoute,
+  ChatSettingsVaultRoute: ChatSettingsVaultRoute,
   ChatSettingsWorktreesRoute: ChatSettingsWorktreesRoute,
 }
 

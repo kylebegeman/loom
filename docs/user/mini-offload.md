@@ -12,17 +12,16 @@ from the command palette. The list includes all Loom environments: Macs, Linux
 machines running full LoomOS, Mini boards and other hosts. Choose **Connect
 computer** and paste the other computer's pairing link.
 Run `t3 pair` on that computer to get a fresh link. For SSH connections or
-additional routes, use **Settings → Environments → Connect computer**. A Mini
+additional routes, use **Settings → Computers → Connect computer**. A Mini
 server bound to loopback needs an SSH tunnel or another configured route to reach
 it; pairing does not change its network binding.
 
 Choose **Start thread** on a connected computer. Select a project when it has
 several; with none, Loom uses its normal scratch workspace when available.
 Provider setup and status belong to that computer. Use **Set up agents** or
-**Check agents** if it has no ready provider. Provider accounts stay configured
-through normal Loom settings. **Route through Switchboard** is under that
-computer's **Settings → Providers**, and its hub and controller addresses come
-from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
+**Check agents** if it has no ready provider. Provider accounts and **Route
+through Switchboard** are under that computer's **Settings → Providers**. The
+Switchboard hub and controller addresses come from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
 of the server running there.
 
 ## Optional command jobs
@@ -36,7 +35,7 @@ limits and task name**. The default reserves 6 GiB RAM and four CPU cores, with 
 on the worker or installed by your command.
 
 An administrator can add a destination under **Worker connections** or
-**Settings → Loom → Command workers**. SSH keys and verified
+**Settings → Computers → Command workers**. SSH keys and verified
 host keys must already work on the Loom server. Enter a name and its SSH host alias, then use the connection check to see capacity and missing project tools. An administrator can start an already installed queue worker from the setup result. Mini's SSD storage and job queue
 must be enabled on the worker. Disabling a worker prevents new submissions;
 existing jobs remain inspectable, cancellable and recoverable.

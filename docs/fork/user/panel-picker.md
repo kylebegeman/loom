@@ -24,7 +24,7 @@ default.
 
 ## Settings
 
-**Settings > Loom > Panel picker** has two switches, both on by default:
+**Settings > General > Panel picker** has two switches, both on by default:
 
 - **Use the compact panel picker.** Off restores the standard list and **+** menu.
 - **`mod+shift+'` opens the panel picker.** Off leaves that key alone. A binding you set in

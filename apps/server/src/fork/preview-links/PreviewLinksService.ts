@@ -182,7 +182,7 @@ const fail = (reason: PreviewLinksErrorReason, message: string) =>
 const CONTAINER_TIME_MESSAGE =
   "Container links end when the container stops; share it again for more time.";
 const ENDED_MESSAGE =
-  "This link ended. Restore it in Settings > Loom > Previews, or Settings > Previews on mobile.";
+  "This link ended. Restore it in Settings > Sharing & access > Preview links, or Settings > Previews on mobile.";
 const NOT_FOUND_MESSAGE = "That preview link was not found.";
 
 /** The Loom session asking to open a link, as the RPC layer verified it. */
@@ -763,7 +763,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       return Effect.fail(
         fail(
           "not-configured",
-          "Preview links are off. Turn them on in Settings > Loom > Previews in the desktop or web app.",
+          "Preview links are off. Turn them on in Settings > Sharing & access > Preview links in the desktop or web app.",
         ),
       );
     }
@@ -771,7 +771,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       return Effect.fail(
         fail(
           "not-configured",
-          "Preview links need a domain. Add one in Settings > Loom > Previews in the desktop or web app.",
+          "Preview links need a domain. Add one in Settings > Sharing & access > Preview links in the desktop or web app.",
         ),
       );
     }
@@ -857,7 +857,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
   const threadLane = Effect.fn("PreviewLinksService.threadLane")(function* (threadId: ThreadId) {
     const lanesOff = fail(
       "port-not-in-lane",
-      "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+      "Folder and container links need lanes on. Turn them on in Settings > Worktrees > Lanes.",
     );
     // With lanes off, ensureForThread still hands back a lane the thread already had.
     if (!(yield* lifecycle.getSettings).enabled) return yield* lanesOff;
@@ -1394,7 +1394,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     if (status?.enabled === false) {
       return yield* fail(
         "not-restorable",
-        "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
+        "Folder links need lanes on to come back. Turn them on in Settings > Worktrees > Lanes.",
       );
     }
     const lane = status?.lanes.find((each) => each.id === link.laneId);

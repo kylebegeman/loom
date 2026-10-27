@@ -4,7 +4,7 @@ import {
   ensureBrowseDirectoryPath,
   getBrowseParentPath,
 } from "@t3tools/client-runtime/state/projects";
-import { FolderIcon, CornerLeftUpIcon, CheckIcon, HouseIcon } from "lucide-react";
+import { FolderIcon, FileIcon, CornerLeftUpIcon, CheckIcon, HouseIcon } from "lucide-react";
 import { LIBRARY_FOLDER_CHOICE_TITLES, libraryNewFolderPath } from "@t3tools/client-runtime/fork";
 import { filesystemEnvironment, useFilesystemReadAccess } from "~/state/filesystem";
 import { useEnvironmentQuery } from "~/state/query";
@@ -64,11 +64,15 @@ export function LibraryFolderPalette({
   busy = false,
   error,
   children,
+  files = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly computerName: string;
   readonly initialPath: string;
+  /** Receives the chosen folder, or the chosen file when `files` is set. */
   readonly onSelect?: ((path: string) => void) | undefined;
+  /** Lists files too. Folders still open; choosing a file selects it. */
+  readonly files?: boolean | undefined;
   /** Rows that act on the browsed folder, in place of "Use this folder". */
   readonly actions?:
     | ((folder: LibraryBrowsedFolder | null) => readonly LibraryPaletteItem[])
@@ -93,7 +97,12 @@ export function LibraryFolderPalette({
   const chosen = typedPath || history.length > 0 || path !== "~/";
   const listing = useEnvironmentQuery(
     access.canReadFiles
-      ? filesystemEnvironment.browse({ environmentId, input: { partialPath: browsePath } })
+      ? filesystemEnvironment.browse({
+          environmentId,
+          input: files
+            ? { partialPath: browsePath, includeFiles: true }
+            : { partialPath: browsePath },
+        })
       : null,
   );
   const ready = access.canReadFiles && listing.isSuccess && !listing.isPending;
@@ -142,8 +151,8 @@ export function LibraryFolderPalette({
         ];
   return (
     <LibraryPaletteView
-      title={`Folders on ${computerName}`}
-      placeholder="Search folders or enter a path..."
+      title={`${files ? "Files" : "Folders"} on ${computerName}`}
+      placeholder={`Search ${files ? "files" : "folders"} or enter a path...`}
       query={query}
       onQueryChange={setQuery}
       onBack={() => {
@@ -158,7 +167,7 @@ export function LibraryFolderPalette({
       filter={false}
       message={
         listing.isPending || access.isPending
-          ? "Loading folders..."
+          ? `Loading ${files ? "files" : "folders"}...`
           : `${computerName}: ${currentPath ?? browsePath}`
       }
       error={
@@ -169,16 +178,26 @@ export function LibraryFolderPalette({
           : listing.error)
       }
       items={[
-        ...(chosen ? folderActions : []),
-        ...entries.map((entry) => ({
-          id: entry.fullPath,
-          title: entry.name,
-          description: entry.fullPath,
-          icon: <FolderIcon className="size-4" />,
-          next: true,
-          select: () => open(entry.fullPath),
-        })),
-        ...(chosen ? [] : folderActions),
+        ...(chosen && !files ? folderActions : []),
+        ...entries.map((entry) =>
+          entry.kind === "file"
+            ? {
+                id: entry.fullPath,
+                title: entry.name,
+                description: entry.fullPath,
+                icon: <FileIcon className="size-4" />,
+                select: () => onSelect?.(entry.fullPath),
+              }
+            : {
+                id: entry.fullPath,
+                title: entry.name,
+                description: entry.fullPath,
+                icon: <FolderIcon className="size-4" />,
+                next: true,
+                select: () => open(entry.fullPath),
+              },
+        ),
+        ...(chosen || files ? [] : folderActions),
         ...(!filter && parentPath
           ? [
               {

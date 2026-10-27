@@ -24,6 +24,7 @@ export type SettingsFormDefinition = Pick<ProviderClientDefinition, "settingsSch
   readonly driverKind?: ProviderClientDefinition["driverKind"];
 };
 import { SettingsRow } from "./settingsLayout";
+import { ScopedPathField } from "../../fork/settings/PathField"; // fork: path-picker
 
 export interface ProviderSettingsFieldModel {
   readonly key: string;
@@ -364,6 +365,13 @@ function FieldFrame(props: {
   return <div className="grid gap-1.5">{props.children}</div>;
 }
 
+// fork: path-picker - Binaries are picked as files and home or config directories as folders.
+function providerSettingPathKind(field: ProviderSettingsFieldModel): "file" | "folder" | null {
+  if (field.control !== "text" || field.secret) return null;
+  if (field.key === "binaryPath") return "file";
+  return /(?:^home|Home|Directory|Dir)(?:Path)?$/.test(field.key) ? "folder" : null;
+}
+
 interface ProviderSettingsFieldRowProps {
   readonly field: ProviderSettingsFieldModel;
   readonly value: unknown;
@@ -393,6 +401,7 @@ function ProviderSettingsFieldRow({
     const descriptionId = field.description ? `${inputId}-description` : undefined;
     const secretConfigured =
       field.secret === true && readProviderConfigString(value, field.key).length > 0;
+    const pathKind = providerSettingPathKind(field); // fork: path-picker
     const control =
       field.control === "switch" ? (
         <Switch
@@ -447,6 +456,16 @@ function ProviderSettingsFieldRow({
             </Button>
           ) : null}
         </div>
+      ) : pathKind ? (
+        // fork: path-picker
+        <ScopedPathField
+          kind={pathKind}
+          label={field.label}
+          defaultLabel={field.placeholder ?? "Not set"}
+          value={readProviderConfigString(value, field.key)}
+          onChange={(next) => onChange(nextProviderConfigWithFieldValue(value, field, next))}
+          className="w-full max-w-full @min-[32rem]/settings-row:w-72"
+        />
       ) : (
         <DraftInput
           id={inputId}
@@ -467,7 +486,12 @@ function ProviderSettingsFieldRow({
     return (
       <SettingsRow
         title={
-          field.control === "switch" ? field.label : <label htmlFor={inputId}>{field.label}</label>
+          // fork: path-picker
+          field.control === "switch" || pathKind ? (
+            field.label
+          ) : (
+            <label htmlFor={inputId}>{field.label}</label>
+          )
         }
         description={
           field.description ? <span id={descriptionId}>{field.description}</span> : undefined

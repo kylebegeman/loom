@@ -229,23 +229,30 @@ export const make = Effect.gen(function* () {
 
       const showHidden = endsWithSeparator || prefix.startsWith(".");
       const lowerPrefix = prefix.toLowerCase();
-      const entries: Array<{ readonly name: string; readonly fullPath: string }> = [];
+      const entries: Array<FilesystemBrowseResult["entries"][number]> = []; // fork: path-picker
       for (const dirent of dirents) {
         if (
-          dirent.isDirectory() &&
+          (dirent.isDirectory() || (input.includeFiles === true && dirent.isFile())) && // fork: path-picker
           dirent.name.toLowerCase().startsWith(lowerPrefix) &&
           (showHidden || !dirent.name.startsWith("."))
         ) {
           entries.push({
             name: dirent.name,
             fullPath: path.join(parentPath, dirent.name),
+            ...(input.includeFiles === true // fork: path-picker
+              ? { kind: dirent.isDirectory() ? ("directory" as const) : ("file" as const) }
+              : {}),
           });
         }
       }
 
       return {
         parentPath,
-        entries: entries.toSorted((left, right) => left.name.localeCompare(right.name)),
+        entries: entries.toSorted(
+          (left, right) =>
+            Number(left.kind === "file") - Number(right.kind === "file") || // fork: path-picker
+            left.name.localeCompare(right.name),
+        ),
       };
     },
   );

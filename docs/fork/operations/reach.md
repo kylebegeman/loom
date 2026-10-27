@@ -96,7 +96,7 @@ them, including a terminal or an agent on the Library. A Library authority runs 
 off unless `LOOM_EXECUTION_ENABLED` is set; keep it off. That switch is enforced by clients, not
 the server, so it narrows who can reach the files but does not contain them.
 
-After a restart, Settings > Connections on the Library shows a Reach addresses section with the
+After a restart, Settings > Computers on the Library shows a Reach addresses section with the
 zone, the state of both files and, after the first computer turns reach on, the edge rules. The
 section stays hidden while the zone is invalid or the token file variable is unset.
 
@@ -239,8 +239,8 @@ WebSockets through the address can last that long.
   resource and grant stay, because Loom sign-in is the computer's own setting. If the Library is
   unreachable, removal finishes later, including after a restart. If the computer is signed out
   of it, sign it in again and restart Loom, because the Library sign-in is read only at start.
-- **Retire** runs on the Library, from Settings > Connections > Reach addresses on desktop or web
-  or Settings > Computers on iPhone. It does the Library's half of Remove without the computer and
+- **Retire** runs on the Library, from Reach addresses in Settings > Computers on desktop, web
+  or iPhone. It does the Library's half of Remove without the computer and
   forgets the computer's signing key, so the computer can claim its address again with a new key. A
   computer still signed in to the Library sets reach up again on its next start, so revoke its
   Library sign-in too. "Also end Loom sign-in for this computer" deletes its Pocket ID resource.

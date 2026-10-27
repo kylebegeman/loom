@@ -16,7 +16,7 @@ time and can be cancelled. A failed build keeps the last good drawing and its er
 **Rebuild preview** in the **…** menu retries the saved design in the active 2D or 3D view.
 
 Install **KiCad 9 or newer** or **tscircuit with Bun** on the environment host that owns the
-files. Check detection in **Settings, Loom, PCB preview**. Loom searches PATH, standard
+files. Check detection in **Settings, Tools, Circuit boards**. Loom searches PATH, standard
 macOS KiCad installations, and the project's `node_modules/.bin/tsci`; it does not install
 tools. The detection cache can take up to a minute to notice a new installation. tscircuit
 previews run project code, so allow rendering only for projects you trust. Trust is saved
@@ -46,14 +46,14 @@ you to run ERC again to restore locations.
 Nothing is sent automatically. **Copy summary** prepares the same text for another app.
 Large drawings and reports are bounded; open the original design in its editor for all details.
 
-If you use the separate Electronics app, save its URL in the PCB preview settings to open
+If you use the separate Electronics app, save its URL in **Settings, Tools, Circuit boards** to open
 the selected design there. This link is optional and is saved on this device. PCB preview
 supports Loom's web and desktop clients with local or remote environments. It requires a
 Loom server and is not available in the mobile client.
 
 ## Optional editor tools
 
-Choose millimetres, mils or inches from the status bar or **Settings, Loom, PCB preview**.
+Choose millimetres, mils or inches from the status bar or **Settings, Tools, Circuit boards**.
 Lengths and hardware dimension inputs follow that choice, saved on this device. An explicit
 suffix such as `2 in` or `40 mil` overrides the selected unit. Saved files and agent tools
 always use millimetres.

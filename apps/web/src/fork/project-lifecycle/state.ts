@@ -7,8 +7,6 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 export const lanes = createProjectLifecycleAtoms(connectionAtomRuntime);
 
 export const FEATURE = "project-lifecycle";
-/** Anchor of the Storage section on the Loom settings page. */
-export const SETTINGS_HASH = `loom-${FEATURE}`;
 
 export async function runLaneCommand<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
   const result = await command.run(appAtomRegistry, input);

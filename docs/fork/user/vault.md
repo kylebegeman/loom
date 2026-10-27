@@ -3,7 +3,8 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 An administrator must connect the selected computer to an OpenBao service first.
 
-In web or desktop, open **Settings → Loom → Vault** and select the computer you want to manage.
+In web or desktop, open **Settings → Vault** and select the computer you want to manage. The page
+starts with **Vault status**; less frequent tools are under **Advanced** at the end.
 On mobile, open that computer's settings and find **Vault**. The computer owns the connection;
 your phone or browser does not need OpenBao credentials. Servers without Vault support hide or
 disable the controls.
@@ -76,7 +77,7 @@ Authentication connectors and general credential delivery remain selected work.
 
 ## Review temporary access requests
 
-Open **Settings > Loom > Vault access > Remote approvals** on the computer whose credentials
+Open **Settings > Vault > Access > Temporary access requests** on the computer whose credentials
 will be used. The same inbox is available in mobile Vault access settings. Refresh to view
 requests, inspect the thread, record, action and destination scope, then approve for five or
 fifteen minutes, deny, or cancel. A destination shown as unrestricted permits any destination
@@ -100,8 +101,9 @@ or override runner permissions. Older servers without approval support do not sh
 
 ## Import development records
 
-Open **Vault development imports** in the selected computer's Loom settings or command palette.
-On mobile, use that computer's settings. Enter one dedicated development secret or secure note,
+Open **Settings > Vault > Advanced > Imports** for the selected computer, or **Vault development
+imports** in the command palette. On mobile, use **Vault development imports** in that computer's
+settings. Enter one dedicated development secret or secure note,
 confirm that it is separate from your personal accounts, and review the new record and selected
 computer. Confirm the review separately to import. Preparation creates no Vault item and expires
 after ten minutes. Existing records and repository settings are preserved.
@@ -119,7 +121,8 @@ receipts; private imports use the reviewed form. Never put credentials in chat o
 
 ## Import dedicated SSH and GitHub identities
 
-Under **Vault development imports**, use **Typed development imports** for a credential created
+Under **Imports**, use **Import an SSH key or GitHub connection** (**Typed development imports**
+on mobile) for a credential created
 specifically for development. Choose SSH key, GitHub token or GitHub App. Enter its explicit
 destination or expected account/repositories and paste only that credential. SSH accepts
 unencrypted Ed25519 PKCS#8 PEM or OpenSSH keys. Apps require an unencrypted RSA PEM key of at
@@ -135,7 +138,8 @@ management. Cutover, rollback and configuration changes remain unavailable.
 
 ## Plan development replacements
 
-Open **Vault migration plans** in the selected computer's Loom settings or command palette.
+Open **Settings > Vault > Advanced > Import plans** for the selected computer, or **Vault migration
+plans** in the command palette.
 Inspect project dependencies, select a remote and choose an existing dedicated Vault SSH key
 or GitHub connection. Confirm that it is dedicated to development, prepare the plan, then review
 its scope and computer before recording your review. You can reopen, refresh or cancel a plan.
@@ -199,7 +203,7 @@ cutover and rollback execution remain unavailable.
 Use recurring grants for shared or restricted environments, or for actions personal access does
 not include. Personal owner-trusted inspect and brokered use do not need these grants.
 
-Open **Vault access** in the selected computer's settings. Add a grant for one thread or all
+Open **Settings > Vault > Access** for the selected computer (**Vault access** on mobile). Add a grant for one thread or all
 threads in a project, choose exact items and actions, and set its access window. A project grant
 covers future threads in that project. Inspecting metadata, managing an item and using its
 credential are separate permissions. In restricted mode, threads begin without item access;
@@ -236,7 +240,8 @@ their own root grants. Normal responses contain references and safe metadata.
 
 ## Enroll an execution host
 
-Open **Vault brokers** in the selected computer's Loom settings. On the intended macOS/Linux
+Open **Settings > Vault > Advanced > Credential brokers** for the selected computer (**Vault
+brokers** on mobile). On the intended macOS/Linux
 execution host, run `loom vault broker identity` and enter its public key, name and platform in
 **Enroll broker**. Download the invitation, transfer it to that host and run:
 
@@ -542,14 +547,15 @@ personal SSH configuration is changed, and private keys stay in Vault's control 
 
 ## Find references and configure a project profile
 
-In web or desktop **Settings → Loom**, use **Vault references** to search names or item IDs
+In web or desktop, open **Settings → Vault → References** to search names or item IDs
 and copy a stable reference. On mobile, open **Settings → Computers → Manage computer** and
 use **Vault references**. Choose **Search on computer** to inspect another connected computer's
 records. Each computer requires its own inspection permission and reference-search support;
 switching computers clears the current search. This does not move credentials or project bindings.
 References contain no credential values and grant no access. Use **More references** when a sparse search page has no matches but more records remain.
 
-Open **Vault project profiles**, choose the destination computer and project, and create a
+Open **Settings → Vault → Project connections** (**Vault project profiles** on mobile), choose the
+destination computer and project, and create a
 profile with named SSH, Git or GitHub requirements. Choose an SSH key for SSH/Git and, for Git,
 its exact repository path. For GitHub operations, choose a dedicated connection and one of its
 allowed repositories. Switching operation kinds clears the previous binding. Review with a
@@ -635,7 +641,7 @@ This is not secure erasure or remote credential revocation. Human administrators
 
 ## Connect GitHub and approve project access
 
-Open **Settings → Loom → GitHub for agents (Vault)** on web/desktop, or **GitHub for agents (Vault)** under
+Open **Settings → Vault → GitHub for agents** on web/desktop, or **GitHub for agents (Vault)** under
 **Settings → Computers → Manage computer** on mobile. Save a dedicated fine-grained token
 or choose a GitHub App under **Advanced connection settings**. Paste GitHub repository URLs
 or `owner/repository` names. Loom verifies the account and API access before saving.
@@ -784,8 +790,8 @@ agent session's access. Pi and ACP use the connection attached to their own sess
 
 ## Maintenance inbox
 
-Open **Settings → Loom → Vault maintenance**, or search for “Vault maintenance inbox” in
-the command palette. Review expiry warnings and failed development access, recheck a configured
+Open **Settings → Vault → Advanced → Health & recovery**, or search for “Vault maintenance inbox” in
+the command palette. On mobile, it is **Vault maintenance** in the computer's settings. Review expiry warnings and failed development access, recheck a configured
 item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
 item's grant and destination. An outage warning does not mean the credential was revoked.
 
@@ -861,7 +867,8 @@ IDs remain available even when names are not. Names do not verify an external ac
 
 ## Keep dedicated test accounts ready for QA
 
-In Settings > Loom > Vault test accounts, create a collection for an app and its development,
+In **Settings > Vault > Test accounts** (**Vault test accounts** on mobile), create a collection
+for an app and its development,
 staging or test environment. Add a reference to a dedicated **Account** item already stored in
 Vault. Confirm it is separate from personal and production accounts, then review it clean before
 reserving it. The account picker searches names; passwords stay in the original Vault item.
@@ -932,7 +939,7 @@ available yet.
 
 ## Generate a password locally
 
-Open **Settings > Loom > Vault password tools**, or choose **Generate a Vault password** in
+Open **Settings > Vault > Password generator**, or choose **Generate a Vault password** in
 the command palette. On mobile, open a computer's settings and find **Vault password tools**.
 Generation works on the current device without a Vault backend or an active connection once
 settings is accessible. Choose the length and characters, generate, and copy when ready.

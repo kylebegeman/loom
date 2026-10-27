@@ -31,6 +31,7 @@ import {
   LoomSettingsActions,
   LoomSettingsNotice,
 } from "~/fork/settings/parts";
+import { PathField } from "~/fork/settings/PathField";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useEnvironmentQuery } from "~/state/query";
 import { useProjects, useServerConfigs } from "~/state/entities";
@@ -456,15 +457,23 @@ export function ProfileEditor({
           </LoomSettingsField>
         ))}
       </div>
-      <LoomSettingsField label="Env schema path">
-        <Input
-          size="sm"
-          aria-label="Env schema path"
-          maxLength={512}
-          disabled={!allowed || busy}
+      <LoomSettingsField
+        label="Env schema path"
+        description="A file inside the project, saved relative to its folder."
+      >
+        <PathField
+          environmentId={
+            new Set(records.map((record) => record.environmentId)).size === 1
+              ? first.environmentId
+              : null
+          }
+          kind="file"
+          label="Env schema path"
+          rootPath={project?.workspaceRoot}
           value={draft.schemaPath ?? schemaPath.value ?? ""}
-          placeholder={schemaPath.mixed ? "Mixed" : ".env.schema"}
-          onChange={(event) => edit({ schemaPath: event.target.value })}
+          mixed={draft.schemaPath === undefined && schemaPath.mixed}
+          disabled={!allowed || busy || !project}
+          onChange={(next) => edit({ schemaPath: next })}
         />
       </LoomSettingsField>
       <LoomSettingsField label="Use varlock for commands">

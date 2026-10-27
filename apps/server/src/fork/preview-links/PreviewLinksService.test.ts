@@ -710,7 +710,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const error = yield* Effect.flip(service.share({ port: 5173 }, owner));
       expect(error.reason).toBe("not-configured");
       expect(error.message).toBe(
-        "Preview links are off. Turn them on in Settings > Loom > Previews in the desktop or web app.",
+        "Preview links are off. Turn them on in Settings > Sharing & access > Preview links in the desktop or web app.",
       );
     }),
   );
@@ -1212,7 +1212,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(view.route(link.host)).toEqual({ _tag: "Ended" });
       const ended = yield* Effect.flip(harness.service.open({ link: link.url }, session));
       expect(ended.message).toBe(
-        "This link ended. Restore it in Settings > Loom > Previews, or Settings > Previews on mobile.",
+        "This link ended. Restore it in Settings > Sharing & access > Preview links, or Settings > Previews on mobile.",
       );
 
       const restored = yield* harness.service.restore({ linkId: link.id, lifetime: "24h" });
@@ -1637,7 +1637,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(yield* refusal("dist", ThreadId.make("thread-c"))).toMatchObject({
         reason: "port-not-in-lane",
         message:
-          "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+          "Folder and container links need lanes on. Turn them on in Settings > Worktrees > Lanes.",
       });
       for (let port = 41000; port < 41020; port++) harness.busyPorts.add(port);
       expect(yield* refusal("dist")).toMatchObject({
@@ -1651,7 +1651,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       const lanesOff = {
         reason: "port-not-in-lane",
         message:
-          "Folder and container links need lanes on. Turn them on in Settings > Loom > Storage.",
+          "Folder and container links need lanes on. Turn them on in Settings > Worktrees > Lanes.",
       };
       expect(yield* refusal("dist")).toMatchObject(lanesOff);
       expect(
@@ -1769,7 +1769,7 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
       expect(yield* Effect.flip(harness.service.restore({ linkId: link.id }))).toMatchObject({
         reason: "not-restorable",
         message:
-          "Folder links need lanes on to come back. Turn them on in Settings > Loom > Storage.",
+          "Folder links need lanes on to come back. Turn them on in Settings > Worktrees > Lanes.",
       });
       expect(harness.folders.open.size).toBe(0);
     }),

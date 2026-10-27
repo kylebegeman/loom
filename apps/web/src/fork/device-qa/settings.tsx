@@ -14,6 +14,7 @@ import {
 } from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { PathField } from "~/fork/settings/PathField";
 import { Switch } from "~/components/ui/switch";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
@@ -82,7 +83,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
   const canEdit = useAtomValue(deviceQa.updateSettings.permissionAtom(environmentId));
   const save = useAction();
   const [saved, setSaved] = useState(false);
-  const [argentPath, setArgentPath] = useState<string | null>(null);
   const failure = failureOf(result);
   if (failure)
     return (
@@ -112,7 +112,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
     setSaved(done);
     return done;
   };
-  const pathValue = argentPath ?? settings.argentPath ?? "";
 
   return (
     <LoomSettingsContent className="flex flex-col gap-5">
@@ -188,38 +187,27 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
         <SettingsRow
           className="px-0 sm:px-0"
           title="argent executable"
-          description="Leave empty to find argent on PATH and in npm's global folder."
-        >
-          <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
-            <Input
-              aria-label="argent path"
-              placeholder="argent"
+          description="Unset finds argent on PATH and in npm's global folder."
+          control={
+            <PathField
+              environmentId={environmentId}
+              kind="file"
+              label="argent executable"
+              defaultLabel="Found automatically"
+              value={settings.argentPath ?? ""}
               disabled={disabled}
-              autoComplete="off"
-              spellCheck={false}
-              value={pathValue}
-              onChange={(event) => {
-                setArgentPath(event.target.value);
-                setSaved(false);
-              }}
-              onBlur={() => {
-                const next = pathValue.trim() === "" ? null : pathValue.trim();
-                if (next === settings.argentPath) setArgentPath(null);
-                else
-                  void update({ argentPath: next }).then((done) => {
-                    if (done) setArgentPath(null);
-                  });
-              }}
+              onChange={(next) => void update({ argentPath: next === "" ? null : next })}
+              className="w-full @min-[32rem]/settings-row:w-80"
             />
-          </div>
-        </SettingsRow>
+          }
+        />
       </LoomSettingsDetails>
       <LoomSettingsNotice role="status">
         {save.busy
           ? "Saving changes..."
           : saved
             ? "Changes saved."
-            : "Changes save automatically. Text and numbers save when you leave the field."}
+            : "Changes save automatically. Numbers save when you leave the field."}
       </LoomSettingsNotice>
       {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
     </LoomSettingsContent>

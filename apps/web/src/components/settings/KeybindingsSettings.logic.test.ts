@@ -12,6 +12,7 @@ import {
   buildKeybindingRows,
   commandLabel, // fork: ext-keybindings
   filterKeybindingRows, // fork: ext-keybindings
+  groupKeybindingRows, // fork: ext-keybindings
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
@@ -257,6 +258,23 @@ describe("KeybindingsSettings.logic", () => {
     expect(options).not.toContain("loom.thread-inspector.toggle");
     expect(options).not.toContain("loom.thread-inspector.card");
     expect(options).toContain("terminal.toggle");
+  });
+
+  // fork: ext-keybindings
+  it("groups Loom commands under Loom, ahead of Other", () => {
+    const rows = buildKeybindingRows(
+      compileResolvedKeybindingsConfig([
+        { command: "loom.panel-picker.open", key: "mod+shift+p" },
+        { command: "terminal.toggle", key: "mod+j" },
+        { command: "loom.file-outline.toggle", key: "mod+shift+o" },
+      ]),
+    );
+    expect(
+      groupKeybindingRows(rows).map((group) => [group.title, group.rows.map((row) => row.command)]),
+    ).toEqual([
+      ["Terminal", ["terminal.toggle"]],
+      ["Loom", ["loom.file-outline.toggle", "loom.panel-picker.open"]],
+    ]);
   });
 
   it("reports conflicting shortcuts that share an active when context", () => {

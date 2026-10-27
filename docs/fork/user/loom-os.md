@@ -280,7 +280,7 @@ hosting and removal.
 On a workstation, choose **LoomOS → Connect another device**, or run `loom-os pair`.
 The existing background Loom environment prints a short-lived pairing link and QR
 code. Join your Mac, laptop or phone to the same Tailscale network, then add the
-link in Loom's **Settings → Connections → Add environment**. Use a fresh link for
+link in Loom's **Settings → Computers → Connect computer**. Use a fresh link for
 each device. Agent work stays on the workstation when a client closes.
 
 Pairing keeps the running service and its loopback listener in place. Its private
@@ -288,7 +288,7 @@ HTTPS route persists across restarts. If the HTTPS port is occupied, use
 `loom-os pair --tailscale-serve-port 8443`. Tailscale must allow your normal user to
 manage Serve; initial setup may require local administrator authentication.
 
-Revoke a paired device in the host's **Settings → Connections**. To remove the
+Revoke a paired device in the host's **Settings → Sharing & access**. To remove the
 HTTPS route, run `tailscale serve --https=443 --set-path=/ off`, replacing `443`
 with the port you selected. This removes only Loom's route and leaves local Loom,
 the background service and other apps on that port running.
@@ -439,7 +439,7 @@ needs recovery; it never starts a replacement server on your laptop.
 Use **Pair another device with this workstation** for an unconnected laptop or
 phone. Loom's existing pairing screen owns the short-lived approval and QR.
 Other devices use their own login and grants. Review or revoke device access in
-Loom **Settings → Connections** on the workstation. Forgetting a LoomOS shortcut
+Loom **Settings → Sharing & access** on the workstation. Forgetting a LoomOS shortcut
 only removes the shortcut, and does not revoke access.
 
 In the control desk, choose an exact thread or app item and **Continue on another

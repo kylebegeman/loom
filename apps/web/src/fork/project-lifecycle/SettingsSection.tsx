@@ -27,6 +27,7 @@ import {
   LoomSettingsNotice,
   LoomSettingsPanel,
 } from "~/fork/settings/parts";
+import { PathField } from "~/fork/settings/PathField";
 import { ensureLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
@@ -171,16 +172,16 @@ function SettingsForm({
             description={
               hasLanes
                 ? "Discard every lane before moving this folder."
-                : "An absolute path on this environment. Created when needed."
+                : "A folder on this environment. Created when needed."
             }
           >
-            <Input
-              aria-label="Lanes folder"
+            <PathField
+              environmentId={environmentId}
+              kind="folder"
+              label="Lanes folder"
               value={settings.lanesRoot}
               disabled={hasLanes}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => set("lanesRoot", event.target.value)}
+              onChange={(next) => set("lanesRoot", next)}
             />
           </LoomSettingsField>
         </LoomSettingsPanel>

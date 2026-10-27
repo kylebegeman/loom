@@ -2,12 +2,13 @@
 
 For Library projects, portable blueprints and workstreams, see [Projects](./projects.md).
 
-Open **Settings > Loom > Project profile** and choose a project. Keep private notes there,
-map test/build and other command intents to existing project actions or literal commands,
-and set optional token budgets. Profiles belong to that project on that computer. They
-are separate from portable Library profiles and Vault bindings, and create no files in
-the repository. Selecting several checkouts lets you edit them together; unchanged fields
-keep each checkout's existing value. Offline checkouts do not receive changes.
+Open **Settings > Projects**, choose a project, and find **Project profile** on its page.
+Keep private notes there, map test/build and other command intents to existing project
+actions or literal commands, and set optional token budgets. Profiles belong to that project
+on that computer. They are separate from portable Library profiles and Vault bindings, and
+create no files in the repository. Selecting several checkouts lets you edit them together;
+unchanged fields keep each checkout's existing value. Offline checkouts do not receive
+changes.
 
 Type `%` at the start of a word in any provider's composer to insert the notes as visible,
 editable text. When the project has no notes, **Add project notes** opens its profile.

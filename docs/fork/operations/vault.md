@@ -88,7 +88,7 @@ reads the settings file is installed and running. Adjust `dir` for a non-default
 
 3. Quit Loom completely and reopen it. The running server keeps the environment it started
    with, so the file takes effect only after this restart.
-4. Confirm that **Settings → Loom → Vault** says Vault is connected, that
+4. Confirm that **Settings → Vault → Vault status** says Vault is connected, that
    `launchctl getenv LOOM_VAULT_OPENBAO_TOKEN_FILE` prints nothing, and that a new agent
    terminal has no `LOOM_VAULT_OPENBAO_*` values.
 

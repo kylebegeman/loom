@@ -43,7 +43,7 @@ export const appPreviewNavigationDeps: PreviewNavigationDeps = {
   // As before links existed: a typed address stays as typed, and discovered ports arrive mapped.
   keepsTypedLoopbackOnPrivateNetwork: true,
   environmentLabel: readEnvironmentLabel,
-  settingsPath: "Settings > Loom > Previews",
+  settingsPath: "Settings > Sharing & access > Preview links",
   share: (environmentId, input) => runCommand(previewLinks.share, { environmentId, input }),
   open: (environmentId, input) => runCommand(previewLinks.open, { environmentId, input }),
   reportFailure: (description) => {

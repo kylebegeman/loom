@@ -13,7 +13,7 @@ const isPreviewLinksError = Schema.is(PreviewLinksError);
 export const failureOf = <A, E>(result: AsyncResult.AsyncResult<A, E>): string | null =>
   result._tag === "Failure" ? errorText(Cause.squash(result.cause)) : null;
 
-/** A failure toast; one caused by missing setup offers a way to Settings > Loom > Previews. */
+/** A failure toast; one caused by missing setup offers a way to Settings > Sharing & access > Preview links. */
 export function toastFailure(title: string, error: unknown) {
   const needsSetup = isPreviewLinksError(error) && error.reason === "not-configured";
   const toastId = toastManager.add(

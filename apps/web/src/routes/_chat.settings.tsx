@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { FORK_SETTINGS_SECTIONS } from "../fork/settings/registry"; // fork: ext-settings
+import { FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS } from "../fork/settings/navigation"; // fork: ext-settings
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
@@ -37,7 +37,8 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:sr-only">Restore device defaults</span>
+      {/* fork: ext-settings: it also resets environment keys */}
+      <span className="max-sm:sr-only">Restore defaults</span>
     </Button>
   );
 }
@@ -46,7 +47,6 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   const { scope, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const hash = useLocation({ select: (location) => location.hash });
-  const section = useLocation({ select: (location) => location.search.section }); // fork: ext-settings
   const searchTarget = getSettingsSearchTargetScope(hash);
   const autoSettlementAvailability = searchTarget?.requiresThreadAutoSettlement
     ? getThreadAutoSettlementSearchAvailability(environments, scope)
@@ -86,13 +86,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
       </SettingsScopeNotice>
     );
   }
-  // fork: ext-settings
-  if (
-    SETTINGS_DEVICE_ONLY_PATHS.has(pathname) ||
-    pathname === "/settings/projects" ||
-    (pathname === "/settings/loom" &&
-      FORK_SETTINGS_SECTIONS.find((topic) => topic.id === section)?.scope === "device")
-  ) {
+  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname) || pathname === "/settings/projects") {
     return children;
   }
   if (scope.kind === "unavailable")
@@ -117,14 +111,11 @@ function SettingsContentLayout() {
   const location = useLocation();
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
-    location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
+    location.pathname === "/settings/diagnostics" ||
+    location.pathname === "/settings/providers" ||
+    FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(location.pathname) // fork: ext-settings
       ? environment?.environmentId
-      : // fork: ext-settings
-        JSON.stringify(
-          location.pathname === "/settings/loom"
-            ? validateSettingsRouteSearch({ ...search })
-            : search,
-        );
+      : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
@@ -161,8 +152,9 @@ function SettingsRouteLayout() {
   return (
     <SettingsScopeProvider
       search={rawSearch}
-      // fork: ext-settings
-      singleEnvironment={pathname === "/settings/providers" || pathname === "/settings/loom"}
+      singleEnvironment={
+        pathname === "/settings/providers" || FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(pathname) // fork: ext-settings
+      }
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({

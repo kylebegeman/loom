@@ -8,8 +8,6 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 export const previewLinks = createPreviewLinksAtoms(connectionAtomRuntime);
 
 export const FEATURE = PREVIEW_LINKS_FEATURE;
-/** Anchor of the Previews section on the Loom settings page. */
-export const SETTINGS_HASH = `loom-${FEATURE}`;
 
 export async function runCommand<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
   const result = await command.run(appAtomRegistry, input);
@@ -39,7 +37,7 @@ export function openPreviewLinksSheet() {
   for (const callback of sheetListeners) callback();
 }
 
-/** Lets code outside the router open Settings > Loom > Previews through the mounted host. */
+/** Lets code outside the router open Settings > Sharing & access > Preview links through the mounted host. */
 export function onOpenPreviewLinksSettings(callback: () => void) {
   settingsListeners.add(callback);
   return () => {

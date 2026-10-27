@@ -55,7 +55,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
-import { LoomSettingsIcon } from "../../fork/settings/LoomSettingsIcon"; // fork: ext-settings
+import { HammerIcon, KeyRoundIcon } from "lucide-react"; // fork: ext-settings
 import { validateSettingsScopeSearch } from "./settingsScope";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
@@ -105,7 +105,8 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/labs": FlaskConicalIcon,
   "/settings/about": InfoIcon,
   "/settings/archived": ArchiveIcon,
-  "/settings/loom": LoomSettingsIcon, // fork: ext-settings
+  "/settings/vault": KeyRoundIcon, // fork: ext-settings
+  "/settings/tools": HammerIcon, // fork: ext-settings
 };
 
 // Detail pages without a nav entry highlight the page that links to them.

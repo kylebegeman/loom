@@ -26,6 +26,7 @@ vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
 vi.mock("~/components/ui/switch", () => ({ Switch: "button" }));
+vi.mock("~/fork/settings/PathField", () => ({ PathField: "path-field" }));
 vi.mock("~/components/settings/settingsLayout", () => ({
   SettingsRow: ({
     children,
@@ -98,15 +99,13 @@ it("retains a failed numeric save so leaving the field can retry it", async () =
   expect(state.refresh).toHaveBeenCalledOnce();
 });
 
-it("retains a failed executable edit for retry", async () => {
-  state.save.mockRejectedValueOnce(new Error("Connection lost"));
-  await edit("argent path", "/tools/argent");
-  await blur("argent path");
-  expect(input("argent path").props.value).toBe("/tools/argent");
-  await blur("argent path");
-  expect(state.save).toHaveBeenCalledTimes(2);
-  expect(state.save).toHaveBeenLastCalledWith(expect.anything(), {
-    environmentId: "qa-env",
-    input: { argentPath: "/tools/argent" },
-  });
+it("saves a chosen executable and clears it back to automatic discovery", async () => {
+  const executable = () => renderer.root.findByProps({ label: "argent executable" });
+  expect(executable().props.environmentId).toBe("qa-env");
+  await act(async () => executable().props.onChange("/tools/argent"));
+  await act(async () => executable().props.onChange(""));
+  expect(state.save.mock.calls.map(([, request]) => request)).toEqual([
+    { environmentId: "qa-env", input: { argentPath: "/tools/argent" } },
+    { environmentId: "qa-env", input: { argentPath: null } },
+  ]);
 });

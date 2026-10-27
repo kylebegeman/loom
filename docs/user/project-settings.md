@@ -51,7 +51,7 @@ and other phone-only settings ignore the filter.
 ## Projects and files
 
 Shared projects keep their brief, components and saved conversation history independently
-of their execution computers. Configure the Library connection in **Settings → Environments**.
+of their execution computers. Configure the Library connection in **Settings → Computers**.
 If that server has Identity configured, **Sign in with Identity** opens its account sign-in.
 You can enter a Library address on web, desktop, or mobile before saving its connection.
 Sign-in opens your browser and returns to Loom after verification. Each Identity sign-in
@@ -446,14 +446,17 @@ applies when the project and environment are both on **Inherit**.
 ## Worktree location
 
 New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,
-such as another drive, set **Settings → Worktrees → Worktree location** to an absolute path like
-`D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
+such as another drive, select **Choose** beside **Settings → Worktrees → Worktree location** and <!-- fork: path-picker -->
+pick a folder in that machine's folder browser, or type a path like `D:\worktrees` or <!-- fork: path-picker -->
+`~/worktrees` in its search. The setting is per machine. Existing worktrees stay where they <!-- fork: path-picker -->
 are, and cleanup covers both the default folder and the custom one.
 
 <!-- fork: file-placement -->
 
-New projects and prepared Library files go in **Settings → Worktrees → Projects folder** on the
-chosen computer, which reuses a checkout of the same repository it already has there.
+New projects and prepared Library files go in **Settings → Threads → Projects folder** on the
+chosen computer, which reuses a checkout of the same repository it already has there. Select
+**Choose** to pick the folder in that computer's folder browser, or type a path in its search.
+When Settings covers several computers, select one first.
 
 ## Storage cleanup
 
@@ -461,7 +464,7 @@ chosen computer, which reuses a checkout of the same repository it already has t
 
 Open **Settings → Worktrees → Cleanup** for worktree policies and **Settings → Maintenance** for
 browser captures and logs, on one machine or all connected environments. Loom deletes browser
-captures after 14 days unless you choose another period or Off. **Delete landed worktrees** is
+captures after 14 days unless you choose another period or Off. **Delete landed worktrees and branches** is
 also on; other policies are off by default. <!-- fork: project-lifecycle -->
 Policies run on the server at startup, when changed, and hourly. Offline machines keep their
 existing policies.
@@ -475,8 +478,8 @@ Worktrees can be removed after a chosen number of inactive days, after a thread 
 merging, or when they have no commits beyond the default branch. Set settled retention to 0 days
 to remove a worktree at the next cleanup after settlement. Only T3-managed worktrees are eligible.
 Active sessions prevent removal. <!-- fork: project-lifecycle -->
-Other rules keep a worktree that several threads share. **Release settled worktrees** removes it
-once every thread using it is settled, and **Delete landed worktrees** once each is settled or
+Other rules keep a worktree that several threads share. **Release settled worktrees once pushed** removes it
+once every thread using it is settled, and **Delete landed worktrees and branches** once each is settled or
 archived. A thread and its subagents count as one. **Keep worktrees with local changes** defaults
 to **Uncommitted changes**, which protects tracked edits and untracked files but deletes ignored
 files such as `.env` and build output. **Any local files** also protects ignored files other than
@@ -487,7 +490,7 @@ Merge cleanup requires a merged pull request whose commits are included in the r
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default
 branch and the worktree is still at the pull request's last commit.
 
-Enable **Release settled worktrees** to reclaim a managed checkout after its last active thread
+Enable **Release settled worktrees once pushed** to reclaim a managed checkout after its last active thread
 settles. The server waits for settlement actions, open terminals and provider sessions. It fetches
 the branch's upstream and keeps the checkout if its current commits are unpublished. This rule
 always protects local files, including ignored data other than `node_modules`, regardless of the
@@ -497,7 +500,7 @@ Failed setup keeps the checkout and retries when you continue again, including a
 
 <!-- fork: project-lifecycle -->
 
-**Delete landed worktrees** is on by default. Once a managed worktree's commits are in the remote
+**Delete landed worktrees and branches** is on by default. Once a managed worktree's commits are in the remote
 default branch and every thread using it is settled or archived, cleanup removes the worktree and
 deletes its local branch. It uses the default branch as of your last fetch, pull or push and never
 fetches by itself. It keeps worktrees with uncommitted changes, untracked files, ignored files

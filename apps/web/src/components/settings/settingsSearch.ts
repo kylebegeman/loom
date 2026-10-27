@@ -14,9 +14,11 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { buildKeybindingCommandOptions, commandLabel } from "./KeybindingsSettings.logic"; // fork: ext-keybindings
 import type { ResolvedSettingsScope } from "./settingsScope"; // fork: project-home
+import { forkSettingsSearchItems } from "../../fork/settings/navigation"; // fork: ext-settings
 
 export type SettingsPath =
-  | "/settings/loom" // fork: ext-settings
+  | "/settings/vault" // fork: ext-settings
+  | "/settings/tools" // fork: ext-settings
   | "/settings/projects"
   | "/settings/general"
   | "/settings/diagnostics"
@@ -98,13 +100,14 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/scheduled-tasks": "Scheduled tasks",
   "/settings/source-control": "Source control",
   "/settings/worktrees": "Worktrees",
-  "/settings/connections": "Environments",
+  "/settings/connections": "Computers", // fork: fleet-connections
   "/settings/access": "Sharing & access",
   "/settings/maintenance": "Maintenance",
   "/settings/labs": "Labs",
   "/settings/about": "About",
   "/settings/archived": "Archive",
-  "/settings/loom": "Loom", // fork: ext-settings
+  "/settings/vault": "Vault", // fork: ext-settings
+  "/settings/tools": "Tools", // fork: ext-settings
 };
 
 /** Sidebar order. A group without a heading is set apart by space alone. */
@@ -131,22 +134,24 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/browser",
       "/settings/devices",
       "/settings/scheduled-tasks",
+      "/settings/tools", // fork: ext-settings
     ],
   },
   {
     heading: "Code",
     paths: ["/settings/projects", "/settings/source-control", "/settings/worktrees"],
   },
-  { heading: "Connections", paths: ["/settings/connections", "/settings/access"] },
+  {
+    heading: "Connections",
+    paths: [
+      "/settings/connections",
+      "/settings/access",
+      "/settings/vault", // fork: ext-settings
+    ],
+  },
   {
     heading: null,
-    paths: [
-      "/settings/maintenance",
-      "/settings/labs",
-      "/settings/about",
-      "/settings/archived",
-      "/settings/loom", // fork: ext-settings
-    ],
+    paths: ["/settings/maintenance", "/settings/labs", "/settings/about", "/settings/archived"],
   },
 ];
 
@@ -248,7 +253,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "storage-projects-location",
     title: "Projects folder",
-    to: "/settings/worktrees",
+    to: "/settings/threads",
     scope: "environment-defaults",
     searchTerms: ["projects folder directory path clone library files developer location"],
   },
@@ -688,7 +693,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "open-at-login",
     title: "Open at login",
-    to: "/settings/general",
+    to: "/settings/about",
     searchTerms: ["startup launch login item restart reboot background autostart"],
     desktopOnly: true,
   },
@@ -1203,7 +1208,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/labs": null,
   "/settings/about": null,
   "/settings/archived": "project-defaults",
-  "/settings/loom": null, // fork: ext-settings
+  "/settings/vault": null, // fork: ext-settings
+  "/settings/tools": null, // fork: ext-settings
 };
 
 const RENAMED_SETTINGS_PATHS: Readonly<Record<string, SettingsPath>> = {
@@ -1239,7 +1245,10 @@ export function movedSettingsPath(pathname: string, hash: string): SettingsPath 
 }
 
 export function getSettingsSearchTargetScope(targetId: string) {
-  const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
+  const items: readonly SettingsSearchItem[] = [
+    ...SETTINGS_SEARCH_ITEMS,
+    ...forkSettingsSearchItems(), // fork: ext-settings
+  ];
   const item =
     items.find((candidate) => candidate.id === targetId) ??
     items.find((candidate) => candidate.targetId === targetId);
@@ -1327,7 +1336,10 @@ export function searchableSetting(id: SettingsSearchItemId): {
 export function filterAvailableSettingsSearchItems(
   availability: SettingsSearchAvailability,
 ): ReadonlyArray<SettingsSearchItem> {
-  const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
+  const items: ReadonlyArray<SettingsSearchItem> = [
+    ...SETTINGS_SEARCH_ITEMS,
+    ...forkSettingsSearchItems(), // fork: ext-settings
+  ];
   return items.filter(
     (item) =>
       (!item.cloudOnly || availability.hasCloudPublicConfig) &&

@@ -37,7 +37,7 @@ disconnect an otherwise healthy conversation.
 ## Identity sign-in
 
 An administrator can configure Identity sign-in for a computer you can reach directly
-or over a tailnet. In **Settings → Environments**, add the computer's address and choose
+or over a tailnet. In **Settings → Computers**, add the computer's address and choose
 **Check Identity sign-in** on web or desktop, or **Sign in with Identity** on mobile.
 You can use this without a pairing code once that computer has authorized your account.
 A computer appearing in your Library does not itself grant access.
@@ -75,8 +75,8 @@ t3 pair
 ```
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
-in the receiving app. Connection settings are under **Settings → Environments**
-on web and desktop and **Settings → Environments** on mobile. A loopback address
+in the receiving app. Connection settings are under **Settings → Computers** <!-- fork: fleet-connections -->
+on web, desktop and mobile. A loopback address <!-- fork: fleet-connections -->
 such as `127.0.0.1` reaches only the device opening the link.
 
 Pairing authorizes that device for future connections. Use a fresh one-time link
@@ -113,8 +113,8 @@ later route, T3 Code checks the earlier ones when your network changes, when you
 return to the app, and every minute, and moves back as soon as one works.
 
 On web and desktop, select the route count under the machine's name in
-**Settings → Environments** to see its routes. Drag a route to change the order,
-or remove it. On mobile, open the machine under **Settings → Environments** and
+**Settings → Computers** to see its routes. Drag a route to change the order, <!-- fork: fleet-connections -->
+or remove it. On mobile, open the machine under **Settings → Computers** and <!-- fork: fleet-connections -->
 choose **Edit**. Signing out of T3 Connect removes only that route; a machine
 you can still reach another way stays saved.
 
@@ -128,7 +128,7 @@ different permissions.
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in
-**Settings → Environments → Load balancing** to automatically choose a machine for
+**Settings → Computers → Load balancing** to automatically choose a machine for <!-- fork: fleet-connections -->
 new threads in projects grouped across connected environments. The section
 appears once two or more machines are switched on.
 Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
@@ -194,7 +194,7 @@ scheme uses HTTP, so include `https://` when your server uses HTTPS.
 
 ## Desktop-managed SSH
 
-In the desktop app, open **Settings → Environments → Add environment**, choose
+In the desktop app, open **Settings → Computers → Connect computer**, choose <!-- fork: fleet-connections -->
 **SSH**, and enter a host or SSH alias such as `user@example.com`. T3 Code starts
 or reuses a server there and opens the port forward for you. Projects, provider
 credentials, and agent work stay on the remote machine.
@@ -375,7 +375,7 @@ error, where the problem is, and how to fix it.
 ## Using the Desktop App as a Remote Only
 
 If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Environments** and switch off **Local
+desktop app, open **Settings → Computers** <!-- fork: fleet-connections --> and switch off **Local
 environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.

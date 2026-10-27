@@ -7,7 +7,8 @@ import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { toastManager } from "~/components/ui/toast";
 import { useServerConfigs } from "~/state/entities";
-import { FEATURE, SETTINGS_HASH, formatGb, lanes, onOpenStorageSettings } from "./state";
+import { forkSettingsTarget } from "../settings/navigation";
+import { FEATURE, formatGb, lanes, onOpenStorageSettings } from "./state";
 
 /** Shows one notice each time an environment's free space drops below its reserve. */
 function ReserveNotice({
@@ -48,10 +49,7 @@ function ReserveNotice({
 export function ProjectLifecycleHost() {
   const navigate = useNavigate();
   const configs = useServerConfigs();
-  const open = useCallback(
-    () => void navigate({ to: "/settings/loom", hash: SETTINGS_HASH }),
-    [navigate],
-  );
+  const open = useCallback(() => void navigate(forkSettingsTarget(FEATURE)), [navigate]);
   useEffect(() => onOpenStorageSettings(open), [open]);
   return [...configs]
     .filter(([, config]) => loomFeaturesOf(config.environment.capabilities).includes(FEATURE))

@@ -1,4 +1,5 @@
 import { DeviceHostUpdates } from "../device/DeviceHostUpdates";
+import { ForkSettingsTopics } from "~/fork/settings/pages"; // fork: ext-settings
 import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -1645,6 +1646,8 @@ export function DevicesSettingsPanel() {
   return (
     <SettingsPageContainer>
       <DeviceIntegrationSettings />
+      {/* fork: ext-settings */}
+      <ForkSettingsTopics page="/settings/devices" />
     </SettingsPageContainer>
   );
 }

@@ -218,6 +218,7 @@ const KEYBINDING_GROUPS = [
   { id: "preview", title: "Preview & diff", prefixes: ["preview", "diff"] },
   { id: "appearance", title: "Appearance", prefixes: ["theme", "appearance", "themeEditor"] },
   { id: "scripts", title: "Project scripts", prefixes: ["script"] },
+  { id: "loom", title: "Loom", prefixes: ["loom"] }, // fork: ext-keybindings
 ] as const;
 const OTHER_KEYBINDING_GROUP = { id: "other", title: "Other" } as const;
 

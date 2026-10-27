@@ -1,5 +1,6 @@
 import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession"; // fork: library-sign-in
 import { LibrarySignInSettings } from "~/fork/project-library/LibrarySignInSettings"; // fork: library-sign-in
+import { ForkSettingsTopics } from "~/fork/settings/pages"; // fork: ext-settings
 import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
@@ -1497,7 +1498,14 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     </>
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
+  if (showsAccess)
+    return (
+      <SettingsPageContainer>
+        {primarySettings}
+        {/* fork: ext-settings */}
+        <ForkSettingsTopics page="/settings/access" />
+      </SettingsPageContainer>
+    );
 
   return (
     <SettingsPageContainer>
@@ -1576,6 +1584,8 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ) : null}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
+      {/* fork: ext-settings */}
+      <ForkSettingsTopics page="/settings/connections" />
     </SettingsPageContainer>
   );
 }

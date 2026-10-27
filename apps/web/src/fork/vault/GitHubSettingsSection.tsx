@@ -842,13 +842,8 @@ function GitHubRepairEditor({
   const [error, setError] = useState<string | null>(null);
   const close = () => {
     void navigate({
-      to: "/settings/loom",
-      search: {
-        machine: environmentId,
-        section: "vault-github",
-        project: undefined,
-        checkout: undefined,
-      },
+      to: "/settings/vault",
+      search: { machine: environmentId, project: undefined, checkout: undefined },
       hash: "loom-vault-github",
     });
   };

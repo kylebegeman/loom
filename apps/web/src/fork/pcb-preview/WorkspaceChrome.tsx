@@ -327,9 +327,9 @@ export function WorkspaceMenu({
             Stop running circuit code
           </MenuItem>
         )}
-        <MenuItem render={<Link to="/settings/loom" />}>
+        <MenuItem render={<Link to="/settings/tools" hash="loom-pcb-preview" />}>
           <Settings2Icon />
-          PCB preview settings
+          Circuit board settings
         </MenuItem>
       </MenuPopup>
     </Menu>

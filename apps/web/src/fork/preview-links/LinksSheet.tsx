@@ -42,13 +42,13 @@ import { LIFETIME_LABELS, linkSummary, setupStatus, visibleLinks } from "./links
 import { Alert, Muted, copyPreviewLink, failureOf, toastFailure, useAction } from "./parts";
 import {
   FEATURE,
-  SETTINGS_HASH,
   onOpenPreviewLinksSettings,
   onOpenPreviewLinksSheet,
   previewLinks,
   runCommand,
 } from "./state";
 import { openInSystemBrowser, openPreviewLinkExternally } from "./systemBrowser";
+import { forkSettingsTarget } from "../settings/navigation";
 
 const NO_ACCESS = "This connection cannot manage preview links.";
 
@@ -273,7 +273,7 @@ export function PreviewLinksHost() {
   const [open, setOpen] = useState(false);
   const openSettings = () => {
     setOpen(false);
-    void navigate({ to: "/settings/loom", hash: SETTINGS_HASH });
+    void navigate(forkSettingsTarget(FEATURE));
   };
   useEffect(() => onOpenPreviewLinksSheet(() => setOpen(true)), []);
   useEffect(() => onOpenPreviewLinksSettings(openSettings), [openSettings]);

@@ -10,6 +10,7 @@ import { useThreadActions } from "../../hooks/useThreadActions"; // fork: projec
 import { useThreadShells } from "../../state/entities"; // fork: project-lifecycle
 import { useEnvironmentScope } from "../../state/session"; // fork: project-lifecycle
 import { ProjectCheckoutSettings } from "../../fork/project-checkout/ProjectCheckoutSettings"; // fork: project-checkout-management
+import { ScopedPathField } from "../../fork/settings/PathField"; // fork: path-picker
 import type {
   StorageCleanupReport,
   StorageCleanupSettings,
@@ -17,7 +18,7 @@ import type {
 } from "@t3tools/contracts";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork"; // fork: mini-native-retention
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
@@ -32,7 +33,6 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 
-import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import {
@@ -42,7 +42,7 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "../ui/number-field";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { DatabaseStorageNotice } from "./DatabaseStorageNotice";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
@@ -60,11 +60,10 @@ import {
 import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
 
 export function WorktreesDirectoryRow() {
-  const { connectedEnvironments, targets } = useSettingsScope();
+  const { connectedEnvironments } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const mixed = useScopedSettingsMixed(["worktreesDirectory"]);
-  const edited = useRef(false);
   if (
     connectedEnvironments.some(
       (environment) =>
@@ -72,42 +71,26 @@ export function WorktreesDirectoryRow() {
     )
   )
     return null;
-  const scopeKey = targets.map((target) => target.environmentId).join(",");
 
   return (
     <SettingsRow
       {...searchableSetting("storage-worktrees-location")}
       description={
         // fork: brand
-        "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the Loom home folder."
+        "Folder where new worktrees are created, on any drive. Existing worktrees stay where they are. Unset uses the Loom home folder."
       }
       serverScoped
       settingKeys={["worktreesDirectory"]}
-      resetAction={
-        mixed || settings.worktreesDirectory !== "" ? (
-          <SettingResetButton
-            label="worktree location"
-            onClick={() => updateSettings({ worktreesDirectory: "" })}
-          />
-        ) : null
-      }
       control={
-        <Input
-          key={`${scopeKey}:${mixed}:${settings.worktreesDirectory}`}
-          aria-label="Worktree location"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder={mixed ? "Mixed" : "Default"}
-          defaultValue={mixed ? "" : settings.worktreesDirectory}
-          onChange={() => {
-            edited.current = true;
-          }}
-          onBlur={(event) => {
-            const value = event.target.value.trim();
-            if (edited.current && (mixed || value !== settings.worktreesDirectory))
-              updateSettings({ worktreesDirectory: value });
-            edited.current = false;
-          }}
+        // fork: path-picker
+        <ScopedPathField
+          kind="folder"
+          label="Worktree location"
+          defaultLabel="Loom home folder"
+          value={settings.worktreesDirectory}
+          mixed={mixed}
+          onChange={(next) => updateSettings({ worktreesDirectory: next })}
+          className="w-full @min-[32rem]/settings-row:w-80"
         />
       }
     />
@@ -538,45 +521,27 @@ function CleanupSection() {
 
 // fork: file-placement - Each computer's Projects folder, for new projects and Library files.
 export function ProjectsDirectoryRow() {
-  const { connectedEnvironments, targets } = useSettingsScope();
+  const { connectedEnvironments } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const mixed = useScopedSettingsMixed(["projectsDirectory"]);
-  const edited = useRef(false);
   if (connectedEnvironments.some((environment) => !environment.serverConfig?.folders)) return null;
-  const scopeKey = targets.map((target) => target.environmentId).join(",");
 
   return (
     <SettingsRow
       {...searchableSetting("storage-projects-location")}
-      description="Folder where Loom puts new projects and prepared Library files, such as ~/Developer. Existing projects stay where they are. Leave empty to use the Loom home folder."
+      description="Folder where Loom puts new projects and prepared Library files. Existing projects stay where they are. Unset uses the Loom home folder."
       serverScoped
       settingKeys={["projectsDirectory"]}
-      resetAction={
-        mixed || settings.projectsDirectory !== "" ? (
-          <SettingResetButton
-            label="projects folder"
-            onClick={() => updateSettings({ projectsDirectory: "" })}
-          />
-        ) : null
-      }
       control={
-        <Input
-          key={`${scopeKey}:${mixed}:${settings.projectsDirectory}`}
-          aria-label="Projects folder"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder={mixed ? "Mixed" : "Default"}
-          defaultValue={mixed ? "" : settings.projectsDirectory}
-          onChange={() => {
-            edited.current = true;
-          }}
-          onBlur={(event) => {
-            const value = event.target.value.trim();
-            if (edited.current && (mixed || value !== settings.projectsDirectory))
-              updateSettings({ projectsDirectory: value });
-            edited.current = false;
-          }}
+        <ScopedPathField
+          kind="folder"
+          label="Projects folder"
+          defaultLabel="Loom home folder"
+          value={settings.projectsDirectory}
+          mixed={mixed}
+          onChange={(next) => updateSettings({ projectsDirectory: next })}
+          className="w-full @min-[32rem]/settings-row:w-80"
         />
       }
     />
@@ -719,13 +684,13 @@ export function WorktreeCleanupSection() {
           <>
             {/* fork: project-lifecycle */}
             <SettingsRow
-              title="Release settled worktrees"
+              title="Release settled worktrees once pushed"
               status={ruleStatus("worktreeOnSettle")}
-              description="Release a managed worktree after every thread using it settles. Keeps unpublished commits, local files and busy workspaces. Continuing the conversation restores it and runs setup."
+              description="Release a worktree as soon as every thread using it settles and its branch is pushed. Unlike Delete settled worktrees, it never waits and keeps any worktree with local files. Continuing the conversation restores it and runs setup."
               serverScoped={!isProjectScope}
               control={
                 <Switch
-                  aria-label="Release settled worktrees"
+                  aria-label="Release settled worktrees once pushed"
                   checked={settings.worktreeOnSettle}
                   onCheckedChange={(worktreeOnSettle) => updateWorktree({ worktreeOnSettle })}
                 />
@@ -739,13 +704,13 @@ export function WorktreeCleanupSection() {
                 ),
               ) && (
                 <SettingsRow
-                  title="Delete landed worktrees"
+                  title="Delete landed worktrees and branches"
                   status={ruleStatus("worktreeOnLand")}
-                  description="Remove a worktree and its branch once its commits are in the default branch and every thread using it is settled or archived. Worktrees with local changes are kept."
+                  description="Remove a worktree and its local branch once its commits are on the default branch, with or without a pull request, and every thread using it is settled or archived. Worktrees with local changes are kept."
                   serverScoped={!isProjectScope}
                   control={
                     <Switch
-                      aria-label="Delete landed worktrees"
+                      aria-label="Delete landed worktrees and branches"
                       checked={settings.worktreeOnLand}
                       onCheckedChange={(worktreeOnLand) => updateWorktree({ worktreeOnLand })}
                     />
@@ -956,6 +921,22 @@ export function StorageCleanupSections() {
               />
             }
           />
+          {/* fork: project-lifecycle - servers without folders ignore this setting. */}
+          {connectedEnvironments.every((environment) => environment.serverConfig?.folders) && (
+            <SettingsRow
+              title="Release unused Library files"
+              status={ruleStatus("unusedCopiesAfterDays")}
+              description="Release Library files prepared on a computer when no conversation has used them for this many days. Files you chose to keep, existing checkouts Loom reused and unpublished work stay."
+              serverScoped
+              control={
+                <RetentionControl
+                  label="Release unused Library files"
+                  value={settings.unusedCopiesAfterDays}
+                  onChange={(unusedCopiesAfterDays) => update({ unusedCopiesAfterDays })}
+                />
+              }
+            />
+          )}
         </SettingsSection>
       )}
       {/* fork: mini-native-retention */}

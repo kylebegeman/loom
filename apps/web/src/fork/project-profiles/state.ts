@@ -9,7 +9,7 @@ import { useServerConfigs } from "~/state/entities";
 import { forkPanelSurface } from "../panels/registry";
 export const profiles = createProjectProfilesAtoms(connectionAtomRuntime);
 import { FEATURE, PANEL_ID } from "./constants";
-export { FEATURE, SETTINGS_HASH } from "./constants";
+export { FEATURE } from "./constants";
 export function useProfilesSupported(environmentId: EnvironmentId) {
   return loomFeaturesOf(useServerConfigs().get(environmentId)?.environment.capabilities).includes(
     FEATURE,

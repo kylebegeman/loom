@@ -1,6 +1,6 @@
 # Computers and connections
 
-Open **Settings > Connections** or the computer shortcut to choose where to work.
+Open **Settings > Computers** or the computer shortcut to choose where to work.
 A computer runs Loom and keeps its own projects and conversations. Your Mac,
 iPhone and browser are clients that connect to those computers. Usually each
 working computer runs one Loom environment.
@@ -36,9 +36,8 @@ it. A privately configured account service follows its own supported domains.
 ## Connect computers from your Library
 
 Once this device is connected to your Library, Loom lists the other computers in
-your Library that this device has not connected yet. On desktop and in a browser
-they are under **Settings > Connections**. On iPhone they are in the **From your
-Library** section of **Settings > Computers**. Choose **Connect** to sign in to
+your Library that this device has not connected yet, under **Settings > Computers**.
+On iPhone they are in its **From your Library** section. Choose **Connect** to sign in to
 one with Loom Identity, with no pairing code. In a browser, choose **Sign in**
 next, which opens the sign-in window. Loom reaches these computers over
 Tailscale, or at a computer's reach address once reach is on for it (see
@@ -78,7 +77,7 @@ names that app and asks for another port instead of replacing it.
 ## Keep a computer signed in to its Library
 
 A computer renews its Library sign-in automatically before it expires. In
-**Settings > Connections > Connection details**, check **Library sign-in and
+**Settings > Computers > Connection details**, check **Library sign-in and
 directory** for its expiry, reporting state and any repair. The same status is
 available in the computer's details on iPhone. This sign-in is separate from
 your devices' Identity sign-ins.
@@ -143,7 +142,7 @@ whether the token can be read. If you change the zone later, each computer gets
 a new address at its next start, and the list shows anything the token could
 not remove in the old zone.
 
-To turn reach on, open the computer's details in **Settings > Connections** and
+To turn reach on, open the computer's details in **Settings > Computers** and
 turn on **Reach from anywhere**. You can do this on the computer itself, or from
 another device: in the computer's details on desktop or in a browser, or in the
 **Reach** section of the computer's details on iPhone. Another device needs a
@@ -189,8 +188,8 @@ computer takes it over, reach turns off on its own and says so. Turn it on again
 to get an address.
 
 To clean up after a computer you no longer have, use **Retire** in your
-Library's **Reach addresses** list: in **Settings > Connections** on desktop or
-in a browser, or in **Settings > Computers** on iPhone. **Also end Loom sign-in
+Library's **Reach addresses** list in **Settings > Computers**, on desktop, in a
+browser or on iPhone. **Also end Loom sign-in
 for this computer** ends its Loom sign-in too, and devices signed in to it lose
 access when their current sign-in ends. A retired computer that is still signed
 in to your Library sets reach up again on its next start, so revoke its Library
@@ -220,7 +219,7 @@ Library's push key. When the Library no longer had the phone, or Apple no longer
 accepted its notification token, Loom registers the phone again; try the test
 again in a moment. Your Library turns notifications on with
 `LOOM_LIBRARY_PUSH_ENABLED` and an Apple push key in its server environment; its
-**Push notifications** section in **Settings > Connections** on desktop or in a
+**Push notifications** section in **Settings > Computers** on desktop or in a
 browser shows whether they are on, whether it sends agent alerts, which Loom
 builds it sends to, and the iPhones that turned them on. If the iPhone says your
 Library doesn't send notifications to this build of Loom, add that build to

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
+import { forkSettingsTarget } from "../settings/navigation";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { SLICER_LABELS } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
@@ -168,7 +169,11 @@ export function PrintInspector({
               Download {result.app === "prusa-slicer" ? "G-code" : "sliced 3MF"}
             </Button>
           ))}
-        <Button variant="ghost-muted" size="xs" render={<Link to="/settings/loom" />}>
+        <Button
+          variant="ghost-muted"
+          size="xs"
+          render={<Link {...forkSettingsTarget("model-preview-3d")} />}
+        >
           Slicer settings
         </Button>
       </div>

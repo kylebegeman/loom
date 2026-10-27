@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { Link } from "@tanstack/react-router";
+import { forkSettingsTarget } from "../settings/navigation";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useAgentModelMarks } from "./agentModelMarks";
@@ -1943,7 +1944,7 @@ function ModelFile({
                   Reload from disk
                 </MenuItem>
                 <MenuSeparator />
-                <MenuItem render={<Link to="/settings/loom" />}>
+                <MenuItem render={<Link {...forkSettingsTarget("model-preview-3d")} />}>
                   <Settings2Icon />
                   Printer and preview settings
                 </MenuItem>
@@ -2206,7 +2207,11 @@ function ModelFile({
                       </Button>
                     )}
                     {pythonFormat && (
-                      <Button size="sm" variant="outline" render={<Link to="/settings/loom" />}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        render={<Link {...forkSettingsTarget("model-preview-3d")} />}
+                      >
                         Python CAD setup
                       </Button>
                     )}

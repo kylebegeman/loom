@@ -7,7 +7,7 @@ A T3 Connect connection goes through four parts, in this order:
 3. **The host's tunnel** (cloudflared on the host) carries the request to the host.
 4. **T3 Code on the host** answers.
 
-When a connection fails, open **Settings > Environments**, find the environment,
+When a connection fails, open **Settings > Computers**, find the environment, <!-- fork: fleet-connections -->
 and select **Details**. The first part marked as failed is the cause. Find its
 section below.
 

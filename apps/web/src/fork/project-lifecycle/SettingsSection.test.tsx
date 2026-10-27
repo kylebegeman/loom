@@ -38,6 +38,7 @@ vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
 vi.mock("~/components/ui/switch", () => ({ Switch: "button" }));
+vi.mock("~/fork/settings/PathField", () => ({ PathField: "path-field" }));
 vi.mock("~/components/settings/settingsLayout", () => ({
   SettingsRow: ({
     children,

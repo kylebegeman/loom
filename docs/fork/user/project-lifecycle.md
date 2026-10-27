@@ -84,7 +84,7 @@ again. Other shells and processes started outside zsh keep their usual locations
 
 ## Managing storage
 
-Open **Settings, Loom, Lanes**, or choose **Storage and lanes** in the command palette.
+Open **Settings, Worktrees, Lanes**, or choose **Storage and lanes** in the command palette.
 You can turn lanes on or off, change the lanes folder and caps, and set how much free space
 to keep on the disk. Each lane shows its usage and lets you free its `tmp` or `build`
 folder, grow it, mount it again after a restart, or discard it.
@@ -100,5 +100,7 @@ Folders in the lanes folder that Loom has no record of, for example ones left by
 install, appear under **Unrecorded lanes**. Loom never deletes them on its own; **Discard**
 removes one after you confirm.
 
-The lanes folder must be an absolute path and can only be moved while no lanes exist. Lanes settings apply to the
-selected environment and are available in the web and desktop clients.
+To move the lanes folder, select **Choose** and pick a folder in that computer's folder browser,
+or type a path in its search. It can only be moved while no lanes exist. Lanes settings apply to
+one computer at a time; when Settings covers several computers, the section names the one it
+changes. They are available in the web and desktop clients.

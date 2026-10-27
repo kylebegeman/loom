@@ -6,15 +6,15 @@ import { onOpenVaultSsh } from "./ssh-navigation";
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { onOpenVaultAccess } from "./access-navigation";
+import { forkSettingsTarget } from "../settings/navigation";
 export function VaultAccessHost() {
   const navigate = useNavigate();
   useEffect(
     () =>
       onOpenVaultAccess((target) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget("vault-access"),
           search: { machine: target.environmentId, project: undefined, checkout: undefined },
-          hash: "loom-vault-access",
         });
       }),
     [navigate],
@@ -23,9 +23,8 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultSsh((environmentId) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget("vault"),
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: "loom-vault",
         });
       }),
     [navigate],
@@ -34,9 +33,8 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultProfiles(({ environmentId, section }) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget(`vault-${section}`),
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: `loom-vault-${section}`,
         });
       }),
     [navigate],
@@ -45,9 +43,8 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultHealth((environmentId) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget("vault-health"),
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: "loom-vault-health",
         });
       }),
     [navigate],
@@ -56,9 +53,10 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultMigration((environmentId, section) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget(
+            section === "inventory" ? "vault-migration-inventory" : "vault-migration",
+          ),
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: section === "inventory" ? "loom-vault-migration-inventory" : "loom-vault-migration",
         });
       }),
     [navigate],
@@ -67,9 +65,8 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultTestAccounts((environmentId) => {
         void navigate({
-          to: "/settings/loom",
+          ...forkSettingsTarget("vault-test-accounts"),
           search: { machine: environmentId, project: undefined, checkout: undefined },
-          hash: "loom-vault-test-accounts",
         });
       }),
     [navigate],

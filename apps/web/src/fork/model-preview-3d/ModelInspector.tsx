@@ -3,6 +3,7 @@ import { PrintCheckSection, type PrintCheckView } from "./PrintCheckSection";
 import type { PrintFinding } from "@t3tools/contracts/fork";
 import type { KeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
+import { forkSettingsTarget } from "../settings/navigation";
 import {
   ApertureIcon,
   BoxIcon,
@@ -361,7 +362,7 @@ function PrinterMenu({
           ))}
         </MenuRadioGroup>
         <MenuSeparator />
-        <MenuItem render={<Link to="/settings/loom" />}>
+        <MenuItem render={<Link {...forkSettingsTarget("model-preview-3d")} />}>
           <Settings2Icon />
           Manage beds and preview settings
         </MenuItem>

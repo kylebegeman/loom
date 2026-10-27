@@ -13,7 +13,8 @@ import {
 import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
 import { toastManager } from "~/components/ui/toast";
 import { useRouteThread } from "../routeThread";
-import { onProfileAction, profileError, SETTINGS_HASH } from "./state";
+import { onProfileAction, profileError } from "./state";
+import { forkSettingsTarget } from "../settings/navigation";
 import { useRunProfileCommand } from "./runInTerminal";
 function ActiveCommandHost({ threadRef }: { threadRef: ScopedThreadRef }) {
   const run = useRunProfileCommand(threadRef);
@@ -68,14 +69,12 @@ export function ProjectProfileHost() {
         keys.get(derivePhysicalProjectKey(project)) ??
         deriveLogicalProjectKeyFromSettings(project, grouping);
       void navigate({
-        to: "/settings/loom",
+        ...forkSettingsTarget("project-profiles"),
         search: {
           project: key,
           machine: environmentId,
           checkout: derivePhysicalProjectKey(project),
-          section: "project-profiles",
         },
-        hash: SETTINGS_HASH,
       });
     },
   );

@@ -25,7 +25,7 @@ uv tool install "graphifyy==0.9.83"
 ```
 
 `pipx install "graphifyy==0.9.83"` works too. After installing, press **Check again**. To
-run Graphify without installing it, choose **Use uvx** in **Settings, Loom, Code graphs**. A
+run Graphify without installing it, choose **Use uvx** in **Settings, Tools, Code graphs**. A
 different Graphify version still works, but the panel marks it as untested and some graphs
 may not load.
 

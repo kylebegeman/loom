@@ -194,7 +194,7 @@ runs a command, such as a dev server, stays open.
 <!-- fork: project-checkout-management -->
 
 To release a published managed worktree once every thread using it has settled, enable
-**Settings → Worktrees → Cleanup → Release settled worktrees**. For the primary project folder, choose
+**Settings → Worktrees → Cleanup → Release settled worktrees once pushed**. For the primary project folder, choose
 **Release when settled** in the project's storage settings, or use the computer's
 **Release settled project checkouts** default. An existing folder must first be reviewed and
 explicitly registered as managed; opening it or enabling cleanup does not adopt it.

@@ -42,8 +42,8 @@ summary. From there:
   Both appear only when the environment is the Mac you are using. **Download log** works
   everywhere.
 
-Each project keeps its last 20 runs, logs included. Change the number in **Settings, Loom,
-Apple build, Runs kept per project**, or clear the history there.
+Each project keeps its last 20 runs, logs included. Change the number in **Settings, Devices,
+Apple builds, Runs kept per project**, or clear the history there.
 
 Builds use their own DerivedData folder by default, so they do not disturb a project open in
 Xcode. When the thread has a storage lane, builds go there instead and wait for a free build
@@ -78,7 +78,7 @@ again. A locked or disconnected device shows its own message.
 Agents can use `loom_apple_build_tooling_run` and `loom_apple_build_tooling_status` to build,
 test and run through the same pipeline. Their runs appear in the history marked **Agent**, and
 they get the same compact summary you see. To stop agents from starting runs, turn off
-**Settings, Loom, Apple builds, Agent tools**.
+**Settings, Devices, Apple builds, Agent tools**.
 
 ## Xcode's own MCP server
 

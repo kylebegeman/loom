@@ -51,7 +51,7 @@ report it rather than guessing.
 | [4. Background work and reactors](#4-background-work-and-reactors)         | none                        | 0 (part of server core)                             | ext-core               |
 | [5. Web root](#5-web-root-ext-web-root)                                    | `fork: ext-web-root`        | 1                                                   | none                   |
 | [6. Right panels](#6-right-panels-ext-panels)                              | `fork: ext-panels`          | 3                                                   | ext-core               |
-| [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | 2, plus one route file and the generated route tree | none                   |
+| [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | Settings shell, host pages, fork routes, route tree | none                   |
 | [8. Command palette](#8-command-palette-ext-palette)                       | `fork: ext-palette`         | 1                                                   | ext-core               |
 | [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-core, ext-web-root |
 | [CLI commands](#cli-commands-ext-cli)                                      | `fork: ext-cli`             | 1                                                   | ext-core               |
@@ -92,7 +92,7 @@ capability list clients use to hide fork UI on servers that lack it.
 
 - **RPC contract.** Method names are plain constants in `WS_METHODS`
   (`packages/contracts/src/rpc.ts:272`). Each method is `Rpc.make(tag, { payload, success,
-error, stream? })`, e.g. `WsServerProbeRpc` (`rpc.ts:451-455`); every error union includes
+  error, stream? })`, e.g. `WsServerProbeRpc` (`rpc.ts:451-455`); every error union includes
   `EnvironmentAuthorizationError`. All methods form one group,
   `export const WsRpcGroup = RpcGroup.make(...)` (`rpc.ts:1360-1501`), exported through the
   barrel (`packages/contracts/src/index.ts:45`). `packages/contracts/package.json` exports
@@ -339,10 +339,9 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 });
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
-export const ForkRpcGroup =
-  RpcGroup.make(LoomCoreInfoRpc).merge(
-    // SnippetsRpcGroup,
-  );
+export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  // SnippetsRpcGroup,
+);
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
 /** Served by the server and used by every client in place of WsRpcGroup. */
@@ -629,7 +628,7 @@ silently; the repo's own dev script warns about exactly this collision
 - Fork migrations run inside `ForkLayer`, after upstream's migrations (the SQLite layer only
   outputs `SqlClient` once its setup finished) and before any packet service is built.
 - Tables are named `fork_<slug_underscored>_<noun>`, created with `CREATE TABLE IF NOT
-EXISTS`. No foreign keys into upstream tables: projections can be rebuilt, and a cascade
+  EXISTS`. No foreign keys into upstream tables: projections can be rebuilt, and a cascade
   would delete fork data. Clean up orphans in a fork reactor that watches `thread.deleted`
   or `project.deleted` (see [Background work](#4-background-work-and-reactors)).
 - Files that are not rows go under `path.join(config.stateDir, "fork", "<slug>")`, the way
@@ -1257,154 +1256,84 @@ A B D F L M P T; `forkPanelSurface` ids are stable. Typecheck `@t3tools/web`.
 
 ### Purpose
 
-Give packets a settings home in the web and desktop app: one "Loom" page in the settings
-sidebar, with one section per packet.
+Give each packet's settings a home beside the subject it belongs to, in the web and desktop
+settings modal. There is no catch-all Loom page: a topic for lanes sits on Worktrees, a topic for
+command workers on Computers, and topics with no upstream home go on the fork's own **Vault** and
+**Tools** pages.
 
 ### Current upstream mechanism
 
-- Each page is a route file, e.g. `apps/web/src/routes/settings.projects.tsx`
-  (`createFileRoute("/settings/projects")({ component })`), under the layout route
-  `settings.tsx` (`createFileRoute("/settings")` at 218-234). Routes are compiled into the
-  committed, generated `apps/web/src/routeTree.gen.ts` by the TanStack Router Vite plugin
-  (`apps/web/vite.config.ts:173`) on `vp dev` and `vp build`; `tsc --noEmit` does not
-  regenerate it.
-- `SettingsPath` (`apps/web/src/components/settings/settingsSearch.ts:11-21`),
-  `SETTINGS_SECTION_LABELS` in sidebar order (`settingsSearch.ts:74-85`),
-  `SETTINGS_CATEGORY_SCOPES` (`settingsSearch.ts:733-746`) and `SETTINGS_SECTION_ICONS`
-  (`apps/web/src/components/settings/SettingsSidebarNav.tsx:75-88`) are exhaustive records;
-  nav items derive from the labels (`SettingsSidebarNav.tsx:90-98`).
-- Pages outside `DEVICE_ONLY_PATHS` (`apps/web/src/routes/settings.tsx:51-55`) are gated on
-  the selected environment scope.
-- Search items (`SETTINGS_SEARCH_ITEMS`, `settingsSearch.ts:92`) are an upstream list; fork
-  sections are not searchable in this design.
-- Layout primitives: `SettingsPageContainer`, `SettingsSection`, `SettingsRow`
-  (`apps/web/src/components/settings/settingsLayout.tsx:518,176,268`).
+- Settings is a modal over the chat. The layout route is `apps/web/src/routes/_chat.settings.tsx`
+  and each page is a `_chat.settings.<page>.tsx` route. The TanStack Router plugin regenerates the
+  committed `apps/web/src/routeTree.gen.ts` on `vp dev` and `vp build`; typecheck does not.
+- `SettingsPath`, `SETTINGS_SECTION_LABELS`, `SETTINGS_NAV_GROUPS` and the category scopes in
+  `apps/web/src/components/settings/settingsSearch.ts`, and the icons in `SettingsSidebarNav.tsx`,
+  are exhaustive records. `SETTINGS_SEARCH_ITEMS` is the searchable list.
+- Pages are scope-gated unless device-only; `_chat.settings.tsx` decides which pages edit one
+  computer at a time, such as Providers.
+
+### Fork design
+
+- [`apps/web/src/fork/settings/registry.ts`](../../../apps/web/src/fork/settings/registry.ts)
+  lists every topic in `FORK_SETTINGS_SECTIONS`. Each entry carries a `home`
+  (`ForkSettingsHome`, the settings page it appears on) and, on the Vault page, an optional
+  `advanced` flag for the collapsed **Advanced** disclosure. Array order is display order within a
+  page. Ids never change, and each topic keeps the anchor `loom-<id>`.
+- `apps/web/src/fork/settings/pages.tsx` holds `VaultSettingsPage` and `ToolsSettingsPage`
+  (`/settings/vault`, `/settings/tools`) and `ForkSettingsTopics({ page })`, which upstream pages
+  render after their own sections. Upstream pages can target several computers, so
+  `ForkSettingsTopics` wraps each computer-scoped topic in a nested single-environment
+  `SettingsScopeProvider` and, when the page covers more than one computer, names the computer
+  the topic applies to. Device-scoped topics render without the wrapper.
+- `apps/web/src/fork/settings/navigation.ts` owns `forkSettingsTarget(id)` for in-app links,
+  `forkSettingsSearchItems()` (one settings search item per topic), the legacy resolver and the
+  set of single-environment fork pages.
+- `/settings/loom` is a permanent redirect. `?section=<id>` and `#loom-<id>` go to the topic's
+  home with hash `loom-<id>`, keeping the other search params; bare `/settings/loom` goes to
+  Lanes. Agent-facing text in `packages/contracts/src/fork/vault-*.ts` and
+  `apps/server/src/fork/vault/VaultGitHub.ts` still links to `/settings/loom`, because changing
+  model-facing text needs an eval run, so never remove the route.
 
 ### Seams (all `fork: ext-settings`)
 
-**`apps/web/src/components/settings/settingsSearch.ts`** (3 marked lines):
+- `settingsSearch.ts`: the Vault and Tools paths, labels, nav placement and scopes, plus the fork
+  search items.
+- `SettingsSidebarNav.tsx`: icons for the Vault and Tools pages.
+- `_chat.settings.tsx`: Vault and Tools are single-environment pages.
+- Each upstream page component that hosts topics imports `ForkSettingsTopics` and renders it
+  for its page.
+- Fork-owned route files `_chat.settings.vault.tsx`, `_chat.settings.tools.tsx` and
+  `_chat.settings.loom.tsx` live in the routes directory because the router plugin requires it.
+  On an upstream conflict in `routeTree.gen.ts`, take upstream's version, regenerate with
+  `vp run --filter @t3tools/web build`, then typecheck.
 
-```diff
- export type SettingsPath =
-+  | "/settings/loom" // fork: ext-settings
-   | "/settings/projects"
-```
-
-```diff
-   "/settings/archived": "Archive",
-+  "/settings/loom": "Loom", // fork: ext-settings
- };
-```
-
-```diff
-   "/settings/archived": "project-defaults",
-+  "/settings/loom": null, // fork: ext-settings
- };
-```
-
-The label goes last on purpose: the record's key order is the sidebar order.
-
-**`apps/web/src/components/settings/SettingsSidebarNav.tsx`** (2 marked lines):
-
-```diff
- import { validateSettingsScopeSearch } from "./settingsScope";
-+import { LoomSettingsIcon } from "../../fork/settings/LoomSettingsIcon"; // fork: ext-settings
-```
-
-```diff
-   "/settings/archived": ArchiveIcon,
-+  "/settings/loom": LoomSettingsIcon, // fork: ext-settings
- };
-```
-
-**New route file `apps/web/src/routes/settings.loom.tsx`** (fork-owned, lives in the routes
-directory because the router plugin requires it):
-
-```tsx
-import { createFileRoute } from "@tanstack/react-router";
-
-import { LoomSettingsPage } from "../fork/settings/LoomSettingsPage";
-
-export const Route = createFileRoute("/settings/loom")({
-  component: LoomSettingsPage,
-});
-```
-
-**`apps/web/src/routeTree.gen.ts`** is regenerated, not hand-edited: run the web dev server or
-`vp run --filter @t3tools/web build` once and commit the result. On an upstream merge
-conflict in this file, take upstream's version, regenerate the same way, then typecheck.
-
-### Fork-owned files
-
-**`apps/web/src/fork/settings/registry.ts`**
-
-```ts
-import type { ComponentType } from "react";
-
-export interface ForkSettingsSection {
-  /** The packet slug (or an extension point's name); also the page anchor. */
-  readonly id: string;
-  readonly title: string;
-  readonly Component: ComponentType;
-}
-
-/** One line per packet, in page order. */
-export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
-  // snippetsSettings,
-];
-```
-
-**`apps/web/src/fork/settings/LoomSettingsPage.tsx`**
-
-```tsx
-import { SettingsPageContainer, SettingsSection } from "~/components/settings/settingsLayout";
-import { FORK_SETTINGS_SECTIONS } from "./registry";
-
-export function LoomSettingsPage() {
-  return (
-    <SettingsPageContainer>
-      {FORK_SETTINGS_SECTIONS.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No Loom features have settings yet.</p>
-      ) : (
-        FORK_SETTINGS_SECTIONS.map(({ id, title, Component }) => (
-          <SettingsSection key={id} id={`loom-${id}`} title={title}>
-            <Component />
-          </SettingsSection>
-        ))
-      )}
-    </SettingsPageContainer>
-  );
-}
-```
-
-**`apps/web/src/fork/settings/LoomSettingsIcon.tsx`**
-
-```tsx
-export { PuzzleIcon as LoomSettingsIcon } from "lucide-react";
-```
+`docs/fork/seams.tsv` has the exact marker counts.
 
 ### Registering a section
 
-A section component reads client-only preferences with `useClientSettings` /
-`useUpdateClientSettings` only for upstream keys; fork client preferences use localStorage
-keys `loom:<slug>:<name>:v<n>` through `resolveStorage` (`apps/web/src/lib/storage.ts`),
-wrapped in try/catch. Server-side values come from the packet's own RPCs
-([Persistence](#2-persistence)). The page is scope-gated like General, so a section that
-edits environment values reads the selected scope with `useScopedSettings`'s context
-(`apps/web/src/components/settings/useScopedSettings.ts:30`) and shows its own unavailable
-state when the environment lacks `loomFeatures` for it.
+Add an entry to `FORK_SETTINGS_SECTIONS` whose `home` is the page a user would look on first; use
+`/settings/tools` only when no upstream page fits. A new upstream home needs `ForkSettingsTopics`
+on that page and a `ForkSettingsHome` member. Link to a topic with `forkSettingsTarget(id)`, never
+a hand-built URL.
+
+A section reads its computer from `useSettingsScope().environment` and shows its own unavailable
+state when that computer lacks the `loomFeatures` entry it needs. Server values come from the
+packet's own RPCs ([Persistence](#2-persistence)). Fork client preferences use localStorage keys
+`loom:<slug>:<name>:v<n>` through `resolveStorage` (`apps/web/src/lib/storage.ts`), wrapped in
+try/catch; `useClientSettings` is for upstream keys only.
 
 ### Existence check
 
 ```sh
-test -f apps/web/src/routes/settings.loom.tsx \
-  && test "$(git grep -c 'fork: ext-settings' -- apps/web/src/components/settings/settingsSearch.ts | cut -d: -f2)" = 3
+test -f apps/web/src/fork/settings/registry.ts \
+  && test -f apps/web/src/routes/_chat.settings.loom.tsx \
+  && git grep -q 'fork: ext-settings' -- apps/web/src/components/settings/settingsSearch.ts
 ```
 
 ### Tests
 
-`apps/web/src/fork/settings/registry.test.ts`: section ids unique. Typecheck `@t3tools/web`
-after regenerating the route tree.
+`apps/web/src/fork/settings/registry.test.ts` and `navigation.test.ts` cover unique ids, homes
+and the legacy redirect. Typecheck `@t3tools/web` after regenerating the route tree.
 
 ---
 
@@ -1515,7 +1444,7 @@ and the `@t3tools/contracts/fork` export) and [Web root](#5-web-root-ext-web-roo
 ### Current upstream mechanism
 
 - `KeybindingCommand` is `Schema.Union([Schema.Literals(STATIC_KEYBINDING_COMMANDS),
-SCRIPT_RUN_COMMAND_PATTERN])` (`packages/contracts/src/keybindings.ts:57-105`), a closed
+  SCRIPT_RUN_COMMAND_PATTERN])` (`packages/contracts/src/keybindings.ts:57-105`), a closed
   list plus `script.<id>.run`. The server decodes each `keybindings.json` entry and skips
   unknown commands with an issue (`apps/server/src/keybindings.ts:169,370-397`); the client
   drops undecodable rules. So a fork command must be in the list.
@@ -1786,7 +1715,7 @@ one adds it to `onComposerCommandKey`, after the Shift+Tab block, and records it
 ### Current upstream mechanism (`apps/web/src/components/chat/ChatComposer.tsx`)
 
 - `applyPromptReplacement(rangeStart, rangeEnd, replacement, { expectedText,
-focusEditorAfterReplace })` edits the prompt safely; `resolveActiveComposerTrigger()` returns
+  focusEditorAfterReplace })` edits the prompt safely; `resolveActiveComposerTrigger()` returns
   `{ snapshot: { value, cursor, expandedCursor }, trigger }`. Trigger ranges are in
   expanded-cursor coordinates.
 - Footer controls are `restingBlockDefs` (:5088), an array of `{ id, content }`. Blocks are
@@ -2963,8 +2892,8 @@ read `useServerConfigs().get(environmentId)?.environment.capabilities` and pass 
 - **Keybinding defaults.** Fork default shortcuts are `keydown` listeners with an off switch,
   never `keybindings.json` entries, which upstream T3 Code would flag (section 9).
 - **MCP tools** are visible to every session and cost tokens every turn.
-- **Settings search** includes the Loom page through `ext-settings`. Individual packet
-  controls are not automatically indexed by the upstream-owned search list.
+- **Settings search** lists each fork topic through `forkSettingsSearchItems()`. Controls
+  inside a topic are not indexed unless they get their own search item.
 - **Knip.** `knip:check` checks unused exports in apps and packages. If CI runs on the fork,
   empty registries are fine but exported helpers with no consumer yet (for example
   `supportsLoomFeature` before any packet uses it) may be reported. Use them in the first

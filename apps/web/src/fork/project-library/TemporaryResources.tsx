@@ -8,7 +8,8 @@ import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
-import { FEATURE, lanes, SETTINGS_HASH } from "../project-lifecycle/state";
+import { FEATURE, lanes } from "../project-lifecycle/state";
+import { forkSettingsTarget } from "../settings/navigation";
 
 export function TemporaryResources({
   copy,
@@ -42,11 +43,7 @@ export function TemporaryResources({
             variant="link"
             size="xs"
             render={
-              <Link
-                to="/settings/loom"
-                search={{ machine: copy.environmentId }}
-                hash={SETTINGS_HASH}
-              />
+              <Link {...forkSettingsTarget(FEATURE)} search={{ machine: copy.environmentId }} />
             }
           >
             Computer storage settings
