@@ -488,7 +488,7 @@ typecheck_dirs`,
   expect(dirs.split("\n")).toEqual(["apps/web", "packages/shared"]);
 });
 
-it("runs each test file the fork adds or changes since the upstream release HEAD holds", () => {
+it("runs the tests of each file the fork adds or changes since the upstream release HEAD holds", () => {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-fork-tests-"));
   roots.push(root);
   let day = 10;
@@ -519,6 +519,12 @@ it("runs each test file the fork adds or changes since the upstream release HEAD
     "apps/web/src/dropped.test.ts",
     "apps/web/src/later.test.ts",
     "apps/web/src/view.browser.test.tsx",
+    "apps/web/src/model.ts",
+    "apps/web/src/model.test.ts",
+    "apps/web/src/panel.tsx",
+    "apps/web/src/panel.browser.test.tsx",
+    "apps/web/src/untouched.ts",
+    "apps/web/src/untouched.test.ts",
     "packages/shared/src/dirty.test.ts",
   ]) {
     write(path, "upstream\n");
@@ -529,6 +535,8 @@ it("runs each test file the fork adds or changes since the upstream release HEAD
   git("switch", "--quiet", "-c", "main");
   write("apps/web/src/forked.test.ts", "fork\n");
   write("apps/web/src/view.browser.test.tsx", "fork\n");
+  write("apps/web/src/model.ts", "fork\n");
+  write("apps/web/src/panel.tsx", "fork\n");
   write("apps/mobile/src/fork/added.test.ts", "fork\n");
   NodeFS.rmSync(NodePath.join(root, "apps/web/src/dropped.test.ts"));
   git("add", "-A");
@@ -548,6 +556,7 @@ it("runs each test file the fork adds or changes since the upstream release HEAD
   const tests = [
     "apps/mobile/src/fork/added.test.ts",
     "apps/web/src/forked.test.ts",
+    "apps/web/src/model.test.ts",
     "packages/shared/src/dirty.test.ts",
     "scripts/brand.test.ts",
   ];

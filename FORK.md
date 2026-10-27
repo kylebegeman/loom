@@ -911,8 +911,8 @@ merge that piled up over several days never exhausts one session; a session that
 decide leaves its file conflicted and says why, and one that dropped a seam gets one more
 session told which marked lines it lost. Then the fork's checks run, cheapest first and the
 tests last: the seams, fork lint, the web build, a typecheck of every workspace package, and
-every test file the fork adds or changes, beside its own code or upstream's, one check per
-package. Every check runs even after another fails; only a failed install stops the rest. Each failing check gets its own Claude repair session within the seam rules (prompt in
+every test file the fork adds or changes, plus upstream's tests beside any file the fork
+changes (the fork's CI workflow is off, so nothing else runs them), one check per package. Every check runs even after another fails; only a failed install stops the rest. Each failing check gets its own Claude repair session within the seam rules (prompt in
 `scripts/fork/upstream-repair.md`), whose changes become one commit on the same branch, and
 then the checks run again, round after round. A check gets three sessions and none after one
 gives up, no session starts once the run's time budget is spent, and a round that changes

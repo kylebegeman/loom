@@ -11,6 +11,7 @@ import {
   type DesktopAppActivationResponse,
 } from "@t3tools/contracts";
 import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
+import { systemTempDir } from "@t3tools/shared/fork/system-temp-dir"; // fork: project-lifecycle
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -28,7 +29,7 @@ function makeTarget(stateDir: string, platform: NodeJS.Platform, userId: number 
   return resolveDesktopAppControlAddress({
     stateDir,
     platform,
-    tempDir: NodeOS.tmpdir(),
+    tempDir: systemTempDir(process.env, NodeOS.tmpdir()), // fork: project-lifecycle
     userId,
     joinPath: NodePath.join,
   });

@@ -75,7 +75,7 @@ SEAMS_MANIFEST=docs/fork/seams.tsv
 # attribution): path<TAB>trimmed source line. check_brand_copy fails on any other.
 BRAND_COPY_ALLOWLIST=docs/fork/brand-copy-allowlist.tsv
 # Branding tests check upstream files the fork may not have touched since the last merge;
-# fork_tests also runs every test file the fork adds or changes.
+# fork_tests also runs the tests of every file the fork adds or changes.
 BRAND_TESTS=(
   packages/shared/src/brand.test.ts
   apps/web/src/branding.test.ts
@@ -230,16 +230,24 @@ upstream_base() {
   printf '%s\n' "$base"
 }
 
-# The branding tests and every test file the fork adds or changes, beside its own code or
-# upstream's. Browser-mode tests need apps/web's headless Chromium project, which the root
-# config used here lacks.
+# The branding tests, every test file the fork adds or changes, and upstream's tests beside
+# the files the fork changes, which nothing else runs while the fork's CI workflow is off.
+# Browser-mode tests need apps/web's headless Chromium project, which the root config used
+# here lacks.
 fork_tests() {
-  local base
+  local base source test
   base=$(upstream_base) || return 1
   {
     printf '%s\n' "${BRAND_TESTS[@]}"
     git diff --name-only --diff-filter=d "$base" -- '*.test.ts' '*.test.tsx' \
       ':(exclude)*.browser.test.ts' ':(exclude)*.browser.test.tsx'
+    git diff --name-only --diff-filter=d "$base" -- '*.ts' '*.tsx' \
+      ':(exclude)*.test.ts' ':(exclude)*.test.tsx' |
+      while IFS= read -r source; do
+        for test in "${source%.*}.test.ts" "${source%.*}.test.tsx"; do
+          [ ! -f "$test" ] || printf '%s\n' "$test"
+        done
+      done
   } | sort -u
 }
 
