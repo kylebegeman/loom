@@ -393,8 +393,8 @@ describe("deriveInspectorModel plan", () => {
     const structure = (plans: ReadonlyArray<unknown>) =>
       ({
         runs: [
-          { id: otherRun, ordinal: 2 },
-          { id: RUN, ordinal: 1 },
+          { id: RUN, ordinal: 2 },
+          { id: otherRun, ordinal: 1 },
         ],
         plans,
       }) as unknown as ThreadStructure;
@@ -406,7 +406,9 @@ describe("deriveInspectorModel plan", () => {
     ];
     const text = (runId: RunId) => selectActiveTodoList(structure(plans), runId)?.steps[0]?.text;
     expect(text(RUN)).toBe("Current step");
-    expect(text(RunId.make("run-3"))).toBe("Other run");
+    expect(text(otherRun)).toBe("Other run");
+    // Without a list for the run, the latest run wins even when its list is not last.
+    expect(text(RunId.make("run-3"))).toBe("Current step");
     const cleared = structure([...plans, todo("cleared", otherRun, [])]);
     expect(selectActiveTodoList(cleared, otherRun)).toBeNull();
     expect(selectActiveTodoList(null, RUN)).toBeNull();
