@@ -30,7 +30,8 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
   const webViewRef = useRef<WebView<object>>(null);
   const insets = useSafeAreaInsets();
   const columnMetrics = useNativeColumnLayoutMetrics();
-  const pdfTopInset = Platform.OS === "ios" ? (columnMetrics?.safeArea.top ?? insets.top) : 0;
+  // iOS headers float over this column, so content starts below them.
+  const headerInset = Platform.OS === "ios" ? (columnMetrics?.safeArea.top ?? insets.top) : 0;
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [linkedPdf, setLinkedPdf] = useState<string | null>(null);
@@ -42,7 +43,7 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
 
   if (isPdfPreviewUri(props.uri)) {
     return (
-      <View className="flex-1" style={{ paddingTop: pdfTopInset }}>
+      <View className="flex-1" style={{ paddingTop: headerInset }}>
         <PdfPreview uri={props.uri} />
       </View>
     );
@@ -51,7 +52,7 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
   return (
     <View className="relative flex-1 bg-card">
       {linkedPdf ? (
-        <View className="flex-1" style={{ paddingTop: pdfTopInset }}>
+        <View className="flex-1" style={{ paddingTop: headerInset }}>
           <PdfPreview key={linkedPdf} uri={linkedPdf} />
           <SafeAreaView edges={["bottom"]} className="border-t border-border px-4 py-2">
             <ControlPill
@@ -63,32 +64,11 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
         </View>
       ) : null}
       <View className="flex-1" style={linkedPdf ? { display: "none" } : undefined}>
-        {loadProgress > 0 && loadProgress < 1 ? <LoadingStrip progress={loadProgress} /> : null}
-        {loadError ? (
-          <View className="border-b border-border bg-card px-4 py-2">
-            <Text className="text-xs font-t3-bold text-foreground">Preview failed</Text>
-            {/* fork: everyday-workflows */}
-            <Text
-              accessibilityRole="alert"
-              className="mt-0.5 text-xs leading-snug text-foreground-muted"
-            >
-              {loadError}
-            </Text>
-            {/* fork: everyday-workflows */}
-            <Button
-              label="Try again"
-              tone="text"
-              onPress={() => {
-                setLoadError(null);
-                if (props.onRetry) props.onRetry();
-                else webViewRef.current?.reload();
-              }}
-            />
-          </View>
-        ) : null}
         <WebView
           ref={webViewRef} // fork: everyday-workflows
           source={{ uri: props.uri }}
+          // react-native-webview defaults to "never", which starts the page under the header.
+          contentInsetAdjustmentBehavior="automatic"
           originWhitelist={["*"]}
           allowsBackForwardNavigationGestures
           allowsFullscreenVideo
@@ -122,6 +102,31 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
           )}
           style={{ flex: 1, backgroundColor: "transparent" }}
         />
+        <View pointerEvents="box-none" className="absolute inset-x-0" style={{ top: headerInset }}>
+          {loadProgress > 0 && loadProgress < 1 ? <LoadingStrip progress={loadProgress} /> : null}
+          {loadError ? (
+            <View className="border-b border-border bg-card px-4 py-2">
+              <Text className="text-xs font-t3-bold text-foreground">Preview failed</Text>
+              {/* fork: everyday-workflows */}
+              <Text
+                accessibilityRole="alert"
+                className="mt-0.5 text-xs leading-snug text-foreground-muted"
+              >
+                {loadError}
+              </Text>
+              {/* fork: everyday-workflows */}
+              <Button
+                label="Try again"
+                tone="text"
+                onPress={() => {
+                  setLoadError(null);
+                  if (props.onRetry) props.onRetry();
+                  else webViewRef.current?.reload();
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
       </View>
     </View>
   );

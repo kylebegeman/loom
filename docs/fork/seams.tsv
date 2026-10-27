@@ -85,10 +85,11 @@ apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	compaction-recovery	
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	compaction-recovery	1
 packages/client-runtime/src/work-log/presentation.ts	compaction-recovery	2
 packages/client-runtime/src/work-log/presentation.test.ts	compaction-recovery	2
-apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	1
+apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	2
 apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	3
 apps/web/src/components/chat/V2LifecycleRow.tsx	agent-receipts	3
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
+apps/mobile/src/lib/threadActivity.ts	feed-history-reads	2
 apps/web/src/components/chat/TimelineV2EventRow.logic.ts	compaction-recovery	2
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
@@ -237,7 +238,7 @@ apps/mobile/src/features/threads/sidebar-native-header-items.ts	project-navigati
 apps/mobile/src/lib/storage.test.ts	project-navigation	1
 apps/mobile/src/Stack.tsx	project-home	4
 apps/mobile/src/features/projects/AddProjectDestinationRoute.tsx	project-home	2
-apps/mobile/src/features/projects/AddProjectScreen.tsx	project-home	25
+apps/mobile/src/features/projects/AddProjectScreen.tsx	project-home	23
 apps/mobile/src/features/workspace-handoff/WorkspaceHandoffScreen.tsx	project-home	1
 apps/web/src/components/ChatView.tsx	project-home	1
 apps/web/src/components/CommandPalette.tsx	project-home	13
@@ -711,7 +712,7 @@ apps/web/src/components/Sidebar.tsx	no-project-first	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	no-project-first	3
-apps/mobile/src/features/prompt-links/usePromptLinkResolver.ts	no-project-first	2
+apps/mobile/src/features/prompt-links/newTaskPromptLink.ts	no-project-first	2
 apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	no-project-first	2
 apps/desktop/src/ipc/DesktopIpcHandlers.ts	identity-renewal	3
 apps/desktop/src/ipc/channels.ts	identity-renewal	2
@@ -1266,7 +1267,6 @@ apps/mobile/src/features/threads/ComposerCommandPopover.tsx	everyday-workflows	3
 apps/mobile/src/features/threads/ComposerErrorNotice.tsx	library	3
 apps/mobile/src/features/threads/PendingApprovalCard.tsx	everyday-workflows	5
 apps/mobile/src/features/threads/PendingUserInputCard.tsx	everyday-workflows	6
-apps/mobile/src/features/threads/ThreadQueueControl.tsx	everyday-workflows	3
 apps/mobile/src/features/threads/composerSendPresentation.test.ts	everyday-workflows	2
 apps/mobile/src/features/threads/composerSendPresentation.ts	everyday-workflows	2
 apps/mobile/src/features/threads/thread-command-output.tsx	everyday-workflows	5
@@ -1291,12 +1291,14 @@ apps/mobile/src/state/queries.ts	everyday-workflows	3
 apps/mobile/src/state/thread-outbox-model.ts	failed-run-retry	2
 apps/mobile/vite.config.ts	failed-run-retry	1
 apps/mobile/vite.config.ts	library	1
+apps/mobile/src/features/sharing/IncomingShareProvider.tsx	library	1
 apps/mobile/vite.config.ts	source-control-cockpit	1
 apps/server/src/assets/AssetAccess.test.ts	project-lifecycle	2
 apps/server/src/auth/EnvironmentAuth.ts	library-sign-in	5
 apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
 apps/server/src/bin.ts	mini-native-retention	1
+apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/checkpointing/Utils.ts	library-projects	3
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
@@ -1428,6 +1430,8 @@ apps/mobile/src/state/threadOutboxDelivery.test.ts	failed-run-retry	5
 apps/web/src/components/settings/WorktreesSettings.tsx	file-placement	2
 apps/mobile/src/features/threads/use-new-task-project-defaults.ts	file-placement	1
 apps/web/src/components/AddProjectToMachineDialog.browser.test.tsx	file-placement	8
+apps/server/src/provider/AgentContextBudget.test.ts	file-placement	9
 apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
 apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
 packages/provider-fx/src/server/status.ts	brand	2
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899

@@ -135,7 +135,7 @@ vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: () => {},
   useWorkspaceBackNavigation: () => {},
 }));
-vi.mock("../prompt-links/useThreadPromptLink", () => ({ useThreadPromptLink: () => {} }));
+vi.mock("./useRememberThreadProject", () => ({ useRememberThreadProject: () => {} }));
 vi.mock("../files/thread-file-navigator-pane", () => ({ ThreadFileNavigatorPane: () => null }));
 vi.mock("../terminal/terminalLaunchContext", () => ({
   resolvePreferredThreadWorktreePath: () => null,

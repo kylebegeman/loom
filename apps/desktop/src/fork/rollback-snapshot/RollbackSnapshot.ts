@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../../app/DesktopObservability.ts";
@@ -125,8 +126,10 @@ const fingerprintKey = (
 const clone = Effect.fn("desktop.rollbackSnapshot.clone")(function* (from: string, to: string) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   // `cp -c` clones on APFS and copies elsewhere; Node cannot request a clone on macOS.
+  // GNU cp (the Linux test runner) has no -c.
+  const args = (yield* HostProcess.Platform) === "darwin" ? ["-c", from, to] : [from, to];
   const exitCode = yield* spawner.exitCode(
-    ChildProcess.make("/bin/cp", ["-c", from, to], {
+    ChildProcess.make("/bin/cp", args, {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
