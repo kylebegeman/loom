@@ -106,7 +106,6 @@ interface SettingsListSection {
   readonly title?: string;
   readonly rows: readonly SettingsListRow[];
   // fork: fleet-connections - Computer settings explain an empty computer selection.
-  readonly footer?: string;
   readonly notice?: ReactNode;
 }
 
@@ -217,13 +216,9 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         }}
       >
         {sections.length ? (
-          sections.map((section) => (
-            // fork: fleet-connections
-            <SettingsSection
-              key={section.title ?? "tabs"}
-              title={section.title}
-              footer={section.footer}
-            >
+          sections.map((section, index) => (
+            <SettingsSection key={section.title ?? `untitled-${index}`} title={section.title}>
+              {/* fork: fleet-connections */}
               {section.notice}
               {section.rows.map(({ id, ...row }) => (
                 <SettingsRow key={id} {...row} />
@@ -274,11 +269,13 @@ function useSettingsIndexSections(): SettingsListSection[] {
     icon: SettingsListRow["icon"],
     label: string,
   ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
+  // The same pages and groups as Settings on web, minus what mobile has no setting for.
   return [
     {
-      title: "App preferences", // fork: everyday-workflows
       rows: [
+        page("SettingsOrganization", "gearshape", "General"),
         page("SettingsAppearance", "paintbrush", "Appearance"),
+        page("SettingsFollowUp", "bubble.left.and.bubble.right", "Chat"),
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
           : []),
@@ -291,54 +288,41 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ],
     },
     {
-      title: "Automations",
+      title: "Agents",
+      // fork: fleet-connections - Computer pages below are disabled until a computer is selected.
+      ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
       rows: [
+        serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
+        serverPage("SettingsThreads", "text.bubble", "Threads"),
         route("Bots", "bolt.circle", "Bots"), // fork: bots
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
       ],
     },
     {
-      title: "Projects & conversations", // fork: everyday-workflows
+      title: "Code",
       rows: [
-        route("Library", "folder", "Projects"), // fork: library
-        ...(selectedProjectKey !== null
-          ? [
-              // fork: everyday-workflows
-              page("SettingsProjectOverview", "folder", "Computer folders", {
-                value: projectLabel,
-              }),
-            ]
-          : []),
+        // fork: project-home - Library projects are Projects; a computer's checkouts are its folders.
+        route("Library", "folder", "Projects"),
+        page(
+          "SettingsProjectOverview",
+          "folder",
+          "Computer folders",
+          selectedProjectKey !== null ? { value: projectLabel } : undefined,
+        ),
         // fork: project-home - Storage review is reachable without a project filter.
         route("ProjectStorageInventory", "internaldrive", "Files on computers"),
-        page("SettingsOrganization", "folder", "Organization"),
-        page("SettingsThreads", "text.bubble", "Conversation behavior"), // fork: everyday-workflows
-        page("SettingsFollowUp", "arrow.turn.left.up", "Follow-ups"),
-        page("SettingsArchive", "archivebox", "Archived conversations"), // fork: everyday-workflows
-      ],
-    },
-    {
-      // fork: fleet-connections
-      title: "Computer settings",
-      ...(noServerTargets
-        ? { notice: <SettingsComputerNotice /> }
-        : {
-            footer:
-              "Applies to the selected computers. Use the filter above to choose computers or a project.",
-          }),
-      rows: [
-        // fork: everyday-workflows
-        serverPage("SettingsProviderAccounts", "person.crop.circle", "Agent accounts"),
-        serverPage("SettingsEnvironmentNewThreads", "text.bubble", "New conversations"),
         serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
-        serverPage("SettingsEnvironmentAgentBehavior", "text.alignleft", "Agent behavior"),
-        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
+        serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
         page("SettingsPreviewLinks", "globe", "Previews"), // fork: preview-links
       ],
     },
     {
-      title: "App",
-      rows: [page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`)], // fork: brand
+      rows: [
+        serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
+        page("SettingsLabs", "sparkles", "Labs"),
+        page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`), // fork: brand
+        page("SettingsArchive", "archivebox", "Archive"),
+      ],
     },
   ];
 }

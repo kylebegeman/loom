@@ -46,7 +46,6 @@
         "src/claude-history-worker.ts!",
         "src/fork/model-preview-3d/check/model-check-worker.ts!", // fork: ext-lint
         "scripts/cli.ts",
-        "scripts/evaluate-thread-titles.ts",
         "scripts/fetch-expo-schema.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",

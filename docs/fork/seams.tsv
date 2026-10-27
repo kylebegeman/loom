@@ -61,7 +61,7 @@ apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	6
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
-apps/web/src/components/settings/settingsSearch.ts	ext-settings	3
+apps/web/src/components/settings/settingsSearch.ts	ext-settings	4
 apps/web/src/components/settings/SettingsSidebarNav.tsx	ext-settings	2
 apps/web/src/routes/_chat.settings.loom.tsx	-	/settings/loom
 apps/web/src/routeTree.gen.ts	-	/settings/loom
@@ -120,7 +120,7 @@ apps/web/src/components/settings/StorageSettings.browser.test.tsx	project-lifecy
 packages/contracts/src/settings.ts	mini-native-retention	2
 packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	18
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	19
 apps/mobile/app.config.ts	mobile-identity	24
 apps/mobile/src/App.tsx	mobile-identity	1
 apps/mobile/src/lib/appLinking.ts	mobile-identity	1
@@ -194,7 +194,7 @@ apps/server/src/environment/ServerEnvironment.ts	computer-naming	9
 apps/server/src/ws.ts	computer-naming	3
 apps/server/src/ws.test.ts	computer-naming	2
 apps/web/src/cloud/publicConfig.ts	connect-compat	2
-apps/web/src/components/settings/ConnectionsSettings.tsx	fleet-connections	8
+apps/web/src/components/settings/ConnectionsSettings.tsx	fleet-connections	9
 apps/web/src/components/settings/settingsSearch.ts	fleet-connections	6
 apps/web/src/state/environments.ts	computer-naming	3
 packages/client-runtime/src/relay/discovery.test.ts	computer-naming	2
@@ -213,7 +213,7 @@ apps/mobile/src/features/cloud/linkEnvironment.test.ts	fleet-connect	2
 apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx	fleet-connect	1
 apps/server/src/project/ProjectCheckoutManagement.ts	project-checkout-management	1
 apps/server/src/storageCleanupScheduling.test.ts	project-checkout-management	1
-apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-checkout-management	3
+apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-checkout-management	4
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-checkout-management	2
 apps/web/src/components/settings/StorageSettings.tsx	project-checkout-management	6
 apps/web/src/components/Sidebar.tsx	project-navigation	2
@@ -224,7 +224,7 @@ apps/mobile/src/features/home/ThreadListFilters.tsx	fleet-connections	2
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	project-navigation	33
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-navigation	9
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	everyday-workflows	2
-apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	4
+apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	3
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
 apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	43
@@ -233,7 +233,7 @@ apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
 apps/mobile/src/features/threads/sidebar-native-header-items.ts	project-navigation	1
 apps/mobile/src/lib/storage.test.ts	project-navigation	1
-apps/mobile/src/Stack.tsx	project-home	3
+apps/mobile/src/Stack.tsx	project-home	4
 apps/mobile/src/features/projects/AddProjectDestinationRoute.tsx	project-home	2
 apps/mobile/src/features/projects/AddProjectScreen.tsx	project-home	25
 apps/mobile/src/features/workspace-handoff/WorkspaceHandoffScreen.tsx	project-home	1
@@ -271,14 +271,13 @@ apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
 apps/web/src/hooks/useHandleNewThread.ts	project-home	6
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	5
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	2
-apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	4
+apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	5
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
 apps/web/src/components/settings/ProjectsSettings.tsx	project-home	2
 apps/web/src/components/settings/ProjectsSettings.tsx	library-projects	3
-apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	1
 apps/web/src/components/settings/settingsSearch.ts	project-home	3
-apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	2
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	3
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	19
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	44
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
@@ -319,7 +318,7 @@ apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connectio
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	21
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	22
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	12
-apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	9
+apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	8
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	4
 apps/mobile/src/features/threads/new-task-project-selection.ts	fleet-connections	2
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-home	5
@@ -436,7 +435,7 @@ apps/web/src/components/settings/ConnectionsSettings.tsx	runtime-owner	2
 apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	runtime-owner	8
 apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	6
-apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	4
+apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	3
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	runtime-owner	4
 
 apps/web/src/browser/browserTargetResolver.ts	preview-links	5
@@ -1166,8 +1165,7 @@ packages/contracts/src/ipc.ts	tailnet-ownership	5
 packages/contracts/src/worktreeSetup.ts	library-launch-files	2
 apps/desktop/src/app/DesktopClerk.ts	clerk-token-mode	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-sign-in	5
-apps/mobile/src/features/settings/SettingsRouteScreen.tsx	everyday-workflows	6
-apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	2
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	1
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	webhook-delivery-issues	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	library-save	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	library	3
@@ -1197,7 +1195,7 @@ apps/mobile/src/features/projects/AddProjectScreen.tsx	file-placement	5
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	file-placement	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	everyday-workflows	6
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	library-sign-in	1
-apps/web/src/components/settings/StorageSettings.tsx	file-placement	2
+apps/web/src/components/settings/StorageSettings.tsx	file-placement	1
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
 apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	10
@@ -1258,10 +1256,9 @@ apps/mobile/src/features/pull-requests/PullRequestReviewSheet.tsx	everyday-workf
 apps/mobile/src/features/pull-requests/usePullRequestReviewDraft.ts	everyday-workflows	6
 apps/mobile/src/features/settings/EnvironmentRoutesSection.tsx	everyday-workflows	6
 apps/mobile/src/features/settings/SettingsFollowUpRouteScreen.tsx	everyday-workflows	3
-apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx	everyday-workflows	8
-apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx	everyday-workflows	6
+apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx	everyday-workflows	7
+apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx	everyday-workflows	5
 apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx	github-host-setup	2
-apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx	everyday-workflows	2
 apps/mobile/src/features/settings/components/SettingsEnvironmentFilterHeader.tsx	everyday-workflows	4
 apps/mobile/src/features/threads/ComposerCommandPopover.tsx	everyday-workflows	3
 apps/mobile/src/features/threads/ComposerErrorNotice.tsx	library	3
@@ -1290,9 +1287,6 @@ apps/mobile/src/persistence/mobile-database.ts	library	6
 apps/mobile/src/persistence/mobile-database.ts	project-home	1
 apps/mobile/src/state/queries.ts	everyday-workflows	3
 apps/mobile/src/state/thread-outbox-model.ts	failed-run-retry	2
-apps/mobile/src/state/use-thread-outbox-drain.permissions.test.ts	failed-run-retry	7
-apps/mobile/src/state/use-thread-outbox-drain.test.ts	failed-run-retry	5
-apps/mobile/src/state/use-thread-outbox-drain.ts	failed-run-retry	5
 apps/mobile/vite.config.ts	failed-run-retry	1
 apps/mobile/vite.config.ts	library	1
 apps/mobile/vite.config.ts	source-control-cockpit	1
@@ -1425,3 +1419,8 @@ t3.json	-	"name": "Development with sample data"
 t3.json	-	"name": "Reset development data"
 third-party-licenses.config.json	-	"name": "@env-spec/parser"
 third-party-licenses.config.json	-	"name": "onnxruntime-web"
+apps/mobile/src/state/threadOutboxDelivery.ts	failed-run-retry	5
+apps/mobile/src/features/settings/ThreadSettingsSections.tsx	fleet-connections	1
+apps/mobile/src/state/threadOutboxDelivery.permissions.test.ts	failed-run-retry	7
+apps/mobile/src/state/threadOutboxDelivery.test.ts	failed-run-retry	5
+apps/web/src/components/settings/WorktreesSettings.tsx	file-placement	2

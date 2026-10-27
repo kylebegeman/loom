@@ -18,9 +18,7 @@ and choose **Rescan**.
 
 ### GitHub
 
-<!-- fork: github-host-setup -->
-
-In Loom, open **Settings → Source Control → GitHub access** on the host you want to prepare and
+In Loom, open **Settings → Source control → GitHub access** on the host you want to prepare and
 choose **Set up GitHub**. Setup installs GitHub CLI if needed and reuses saved authorization.
 If approval is needed, copy the displayed code, open GitHub, and approve only if its code matches.
 Loom finishes configuring HTTPS Git access automatically. Closing Settings keeps setup running;
@@ -215,7 +213,7 @@ Press **Escape** before releasing to cancel. Failed closes stay in the list so y
 GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
 supports approving waiting fork workflows and opening a revert pull request for a merged change.
 
-Pull request sharing is off by default. In Settings → Connections → Pull request sharing (Pull
+Pull request sharing is off by default. In Settings → Environments → Pull request sharing (Pull
 request routing under Environments on mobile), choose **Read PRs** or **Read and act** for each
 environment you trust to share its source control access.
 Enable both the original environment and the environment answering its requests on this client.

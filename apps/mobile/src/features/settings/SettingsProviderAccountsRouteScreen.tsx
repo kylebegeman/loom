@@ -39,8 +39,7 @@ export function SettingsProviderAccountsRouteScreen() {
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      {/* fork: everyday-workflows */}
-      <SettingsScreen title="Agent accounts" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Providers" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScreenScrollView
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"

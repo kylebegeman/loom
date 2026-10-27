@@ -37,11 +37,11 @@ machine's setting. Every other provider setting stays per machine.
 
 On mobile, open **Settings** and use the filter in its header to choose connected environments
 and a project. The filter stays available in server-setting pages. With **All projects** selected,
-the **Server settings** categories and auto-settle controls in **Thread behavior** edit the
-selected environments' defaults. Choosing a project edits its overrides on the selected
+the server-setting pages, such as Threads, Source control and Worktrees, edit the selected
+environments' defaults. Choosing a project edits its overrides on the selected
 environments. Use **Use defaults** in a page to remove that page's project overrides.
-Open **Settings → Projects & threads → Overview** to rename the project across its selected
-connected checkouts, see where they live, and review each checkout's storage preference. <!-- fork: project-checkout-management -->
+Open **Settings → Computer folders** to rename the project across its selected
+connected checkouts, see where they live, and review each checkout's storage preference.
 Settings that are environment-wide stay read-only while a project is selected. When selected
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
@@ -51,7 +51,7 @@ and other phone-only settings ignore the filter.
 ## Projects and files
 
 Shared projects keep their brief, components and saved conversation history independently
-of their execution computers. Configure the Library connection in **Settings → Connections**.
+of their execution computers. Configure the Library connection in **Settings → Environments**.
 If that server has Identity configured, **Sign in with Identity** opens its account sign-in.
 You can enter a Library address on web, desktop, or mobile before saving its connection.
 Sign-in opens your browser and returns to Loom after verification. Each Identity sign-in
@@ -322,7 +322,7 @@ for a reviewed linked continuation.
 
 ## Worktree branch names
 
-In **Settings → Source control → Worktree branch naming**, choose a static prefix,
+In **Settings → Worktrees → Worktree branch naming**, choose a static prefix,
 a model-selected semantic prefix such as `feat/` or `fix/`, or custom instructions
 for the complete name. The static prefix defaults to `t3/`; a trailing slash is
 optional, and an empty prefix adds nothing. Invalid characters in a static prefix
@@ -412,7 +412,7 @@ requests and the prompt each one produced.
 If the environment is offline, the sender gets an error and nothing runs;
 redeliver from the sender, such as GitHub's **Recent Deliveries**, once it is
 back. To have T3 Connect keep requests instead, turn on **Hold webhooks while
-offline** in **Settings → Connections**. T3 Connect then stores requests to a
+offline** in **Settings → Sharing & access**. T3 Connect then stores requests to a
 T3 Connect URL for up to 24 hours and delivers them when the environment
 returns. Leave it off if you don't want request bodies stored outside your
 machine. To skip requests that waited too long, set **Skip requests older
@@ -420,13 +420,14 @@ than** on the task.
 
 ## Defaults and inheritance
 
-General contains the model and workspace for new threads. Integrations controls agent browser
+Threads contains the model and workspace for new threads. Browser controls agent browser
 access. Source control contains automatic pull, the default pull request merge method and text
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
-The Projects category is always available. Browse projects or review their storage there, <!-- fork: project-home -->
-or choose a project in the scope picker to manage its name, icon, actions, checkouts and removal. Actions belong to a project: editing them creates the project's own list
+The Projects category, under Code, is always available. Browse projects or review their storage
+there, or choose a project in the scope picker to manage its name, icon, actions, checkouts and
+removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
 `t3.json` actions can be imported there.
 
@@ -436,7 +437,7 @@ built-in default. Leave a setting on **Inherit** to let the next tier decide.
 Browser access changes apply when an agent session next starts.
 
 New worktrees initialize git submodules recursively. If that step is slow because the repository
-declares many nested submodules, set **Submodules** in **Settings → General** (with the project
+declares many nested submodules, set **Submodules** in **Settings → Worktrees** under Advanced (with the project
 selected to override it there) to **Top level only** to stop at the ones the repository declares
 itself, or **Skip** to leave them for a setup script. It resolves in the same order as the
 workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
@@ -445,22 +446,23 @@ applies when the project and environment are both on **Inherit**.
 ## Worktree location
 
 New worktrees go in the `worktrees` folder of the T3 home directory. To put them somewhere else,
-such as another drive, set **Settings → Storage → Worktree location** to an absolute path like
+such as another drive, set **Settings → Worktrees → Worktree location** to an absolute path like
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
 
 <!-- fork: file-placement -->
 
-New projects and prepared Library files go in **Settings → Storage → Projects folder** on the
+New projects and prepared Library files go in **Settings → Worktrees → Projects folder** on the
 chosen computer, which reuses a checkout of the same repository it already has there.
 
 ## Storage cleanup
 
 <!-- fork: retention-defaults -->
 
-Open **Settings → Storage** to enable automatic cleanup on one machine or all connected
-environments. Loom deletes browser captures after 14 days unless you choose another period or
-Off. **Delete landed worktrees** is also on; other policies are off by default. <!-- fork: project-lifecycle -->
+Open **Settings → Worktrees → Cleanup** for worktree policies and **Settings → Maintenance** for
+browser captures and logs, on one machine or all connected environments. Loom deletes browser
+captures after 14 days unless you choose another period or Off. **Delete landed worktrees** is
+also on; other policies are off by default. <!-- fork: project-lifecycle -->
 Policies run on the server at startup, when changed, and hourly. Offline machines keep their
 existing policies.
 
@@ -503,7 +505,7 @@ such as `.env` (dependencies and build output excepted), open terminals, or othe
 the folder. The branch stays if it moved since the check, is the default branch, another checkout
 uses it, or a conversation's latest checkpoint is missing or older than the branch. Continuing a
 conversation recreates the branch from its latest checkpoint. Turn the rule off in
-**Settings → Storage**, or for one project with **Off** or **Custom**.
+**Settings → Worktrees → Cleanup**, or for one project with **Off** or **Custom**.
 
 Enable **Release settled project checkouts** or **Release inactive project checkouts**
 to set this computer's defaults for managed primary project folders. Every conversation must
@@ -513,7 +515,7 @@ Loom manage them. Enabling cleanup does not adopt existing folders.
 
 To manage an existing folder, review its working copy in Project home, or select the project
 and open **Settings → Projects → Working files** on web or desktop,
-or **Settings → Projects & threads → Overview** on mobile. Review the folder
+or **Settings → Computer folders** on mobile. Review the folder
 on each computer, choose **Keep files here** or **Free space when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
 Only primary Git repositories with their own Git directory and an origin remote can be adopted;
@@ -541,7 +543,7 @@ more than one computer; each location has its own keep/remove choice. These choi
 working files, while the project and its conversations stay in Loom.
 
 Use **Manage working files** from Projects, or **Settings → Projects → Files on computers**
-on web and desktop and **Settings → Projects & threads → Files on computers** on iPhone, to
+on web and desktop and **Settings → Files on computers** on iPhone, to
 review the working-file locations already registered in Loom. Each project lists its locations
 on your computers. Select the locations you want to change and check their current files.
 Choose **Keep files here**, **Free space when settled**, or **Use computer default** for each

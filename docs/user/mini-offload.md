@@ -12,7 +12,7 @@ from the command palette. The list includes all Loom environments: Macs, Linux
 machines running full LoomOS, Mini boards and other hosts. Choose **Connect
 computer** and paste the other computer's pairing link.
 Run `t3 pair` on that computer to get a fresh link. For SSH connections or
-additional routes, use **Settings → Connections → Add environment**. A Mini
+additional routes, use **Settings → Environments → Connect computer**. A Mini
 server bound to loopback needs an SSH tunnel or another configured route to reach
 it; pairing does not change its network binding.
 
