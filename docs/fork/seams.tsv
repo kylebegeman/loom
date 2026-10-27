@@ -1454,8 +1454,8 @@ apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-pic
 apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
 apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
 apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
-apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	3
-apps/desktop/src/window/DesktopApplicationMenu.test.ts	client-computer	5
+apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
+apps/desktop/src/window/DesktopApplicationMenu.test.ts	client-computer	19
 apps/desktop/src/ipc/methods/localEnvironment.ts	client-computer	1
 apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
 apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
@@ -1464,3 +1464,9 @@ apps/web/src/components/CommandPalette.tsx	library-only	1
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	4
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
 apps/web/src/routes/__root.tsx	client-computer	1
+apps/web/src/state/shell.ts	client-computer	8
+apps/web/src/state/shell.test.ts	client-computer	7
+docs/user/updating.md	client-computer	1
+apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
+apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
+apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3

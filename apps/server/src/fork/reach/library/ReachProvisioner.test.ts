@@ -144,6 +144,34 @@ const recordOf = (store: ReachStore["Service"], environmentId: string = STUDIO) 
     Effect.map((state) => state.computers[environmentId]),
   );
 
+/** A sign-in-only record with nothing in Pocket ID, as earlier Libraries kept for a failed prepare. */
+const holdingNothing = (fixture: Pick<Fixture, "store">) =>
+  fixture.store
+    .update((state) => ({
+      ...state,
+      computers: {
+        ...state.computers,
+        [STUDIO]: {
+          seq: 0,
+          keyFingerprint: null,
+          hostname: null,
+          tunnelId: null,
+          dnsRecordId: null,
+          origin: null,
+          state: "removed",
+          lastError: null,
+          leftoverDnsRecordId: null,
+          publisherSessionId: "session-studio",
+          updatedAt: "2026-10-24T12:00:00.000Z",
+          lastEnsuredAt: null,
+          identity: { apiId: null, resource: RESOURCE, state: "failed", lastError: "unavailable" },
+          zone: null,
+          leftoverZones: [],
+        },
+      },
+    }))
+    .pipe(Effect.orDie);
+
 const liveTunnels = (fixture: Pick<Fixture, "apis">) =>
   [...fixture.apis.tunnels.values()].filter((tunnel) => tunnel.deletedAt === null);
 
@@ -660,6 +688,49 @@ describe("ReachProvisioner.prepareIdentity", () => {
         }),
       { env: { ...NO_REACH, LOOM_IDENTITY_ISSUER: undefined } },
     ),
+  );
+
+  it.effect(
+    "keeps no record for a computer Pocket ID holds nothing for after a failed prepare",
+    () =>
+      withReach(
+        (fixture) =>
+          Effect.gen(function* () {
+            fixture.apis.script("api.create", { status: 503, body: { error: "unavailable" } });
+            expect(yield* prepare(fixture)).toEqual({ state: "failed", reason: "unavailable" });
+            expect(yield* recordOf(fixture.store)).toBeUndefined();
+            const listing = yield* fixture.provisioner.list;
+            expect(listing.computers).toEqual([]);
+            expect(listing.setup.identity).toBe("unavailable");
+
+            // A record an earlier Library kept for such a prepare is not listed, and goes at the
+            // next failed one.
+            yield* holdingNothing(fixture);
+            expect((yield* fixture.provisioner.list).computers).toEqual([]);
+            fixture.apis.script("api.create", { status: 503, body: { error: "unavailable" } });
+            yield* prepare(fixture);
+            expect(yield* recordOf(fixture.store)).toBeUndefined();
+          }),
+        { env: NO_REACH },
+      ),
+  );
+
+  it.effect(
+    "retires a sign-in-only record Pocket ID holds nothing for without ending sign-in",
+    () =>
+      withReach(
+        (fixture) =>
+          Effect.gen(function* () {
+            yield* holdingNothing(fixture);
+            fixture.apis.clearCalls();
+            expect(
+              yield* fixture.provisioner.retire({ environmentId: STUDIO, endIdentity: false }),
+            ).toMatchObject({ state: "removed", identity: null });
+            expect(fixture.apis.calls).toEqual([]);
+            expect(yield* recordOf(fixture.store)).toBeUndefined();
+          }),
+        { env: NO_REACH },
+      ),
   );
 
   it.effect("refuses the Library itself and shares each computer's request budget", () =>

@@ -3,7 +3,9 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue"; // fork: client-computer
 
+import type { DesktopUpdateState } from "@t3tools/contracts"; // fork: client-computer
 import type * as Electron from "electron";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -12,6 +14,7 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts"; // fork: client-computer
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import { createInitialDesktopUpdateState } from "../updates/updateMachine.ts"; // fork: client-computer
 import * as DesktopWindow from "./DesktopWindow.ts";
@@ -114,6 +117,7 @@ const configureMenu = (
   services: {
     readonly updates?: Layer.Layer<DesktopUpdates.DesktopUpdates>;
     readonly dialog?: Layer.Layer<ElectronDialog.ElectronDialog>;
+    readonly settings?: Layer.Layer<DesktopAppSettings.DesktopAppSettings>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -126,6 +130,7 @@ const configureMenu = (
         Layer.provideMerge(layerDesktopWindow(selectedAction)),
         Layer.provideMerge(services.updates ?? layerDesktopUpdates), // fork: client-computer
         Layer.provideMerge(services.dialog ?? layerElectronDialog), // fork: client-computer
+        Layer.provideMerge(services.settings ?? DesktopAppSettings.layerTest()), // fork: client-computer
         Layer.provideMerge(layerElectronApp),
         Layer.provideMerge(
           DesktopEnvironment.layer({ ...environmentInput, ...environment }).pipe(
@@ -135,6 +140,80 @@ const configureMenu = (
       ),
     ),
   );
+
+// fork: client-computer
+const idleUpdate = createInitialDesktopUpdateState(
+  "1.2.3",
+  { hostArch: "arm64", appArch: "arm64", runningUnderArm64Translation: false },
+  "latest",
+);
+// fork: client-computer
+const available: DesktopUpdateState = {
+  ...idleUpdate,
+  enabled: true,
+  status: "available",
+  availableVersion: "1.2.4",
+};
+// fork: client-computer
+const downloaded: DesktopUpdateState = {
+  ...available,
+  status: "downloaded",
+  downloadedVersion: "1.2.4",
+};
+
+// fork: client-computer
+type MenuUpdateEvent = string | Electron.MessageBoxOptions;
+
+// fork: client-computer
+const asDialog = (event: MenuUpdateEvent | undefined) => {
+  if (typeof event !== "object") throw new Error(`Expected a dialog, got ${String(event)}.`);
+  return event;
+};
+
+// fork: client-computer
+const dialogMessage = (event: MenuUpdateEvent | undefined) => asDialog(event).message;
+
+// fork: client-computer: clicks Check for Updates; next(n) takes the next n update calls and dialogs.
+const clickCheckForUpdates = (input: {
+  readonly localEnvironmentEnabled: boolean;
+  readonly updates: (
+    record: (event: MenuUpdateEvent) => Effect.Effect<void>,
+  ) => Partial<DesktopUpdates.DesktopUpdates["Service"]>;
+}) =>
+  Effect.gen(function* () {
+    const events = yield* Queue.unbounded<MenuUpdateEvent>();
+    const record = (event: MenuUpdateEvent) => Queue.offer(events, event).pipe(Effect.asVoid);
+    const applicationMenuTemplate =
+      yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+    yield* configureMenu(
+      yield* Deferred.make<string>(),
+      applicationMenuTemplate,
+      {},
+      {
+        updates: Layer.mock(DesktopUpdates.DesktopUpdates, {
+          disabledReason: Effect.succeedNone,
+          ...input.updates(record),
+        }),
+        dialog: Layer.mock(ElectronDialog.ElectronDialog, {
+          showMessageBox: (options) =>
+            record(options).pipe(Effect.as({ response: 0, checkboxChecked: false })),
+        }),
+        settings: DesktopAppSettings.layerTest({
+          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+          localEnvironmentEnabled: input.localEnvironmentEnabled,
+        }),
+      },
+    );
+    const help = (yield* Deferred.await(applicationMenuTemplate)).find(
+      (item) => item.role === "help",
+    );
+    const checkForUpdates = Array.isArray(help?.submenu) ? help.submenu[0] : undefined;
+    if (typeof checkForUpdates?.click !== "function") {
+      throw new Error("Expected Check for Updates to have a click handler.");
+    }
+    checkForUpdates.click({} as Electron.MenuItem, undefined, {} as KeyboardEvent);
+    return (count: number) => Effect.replicateEffect(Queue.take(events), count);
+  });
 
 describe("DesktopApplicationMenu", () => {
   it.effect("leaves the accelerator to Chromium instead of injecting a paste", () =>
@@ -267,75 +346,109 @@ describe("DesktopApplicationMenu", () => {
   );
 
   // fork: client-computer
-  it.effect("downloads and installs an update from the menu without the web app", () =>
+  it.effect("downloads and installs an update from the menu on a computer without agents", () =>
     Effect.gen(function* () {
-      const applicationMenuTemplate =
-        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
-      const installed = yield* Deferred.make<void>();
-      const steps: Array<string> = [];
-      const idle = createInitialDesktopUpdateState(
-        "1.2.3",
-        { hostArch: "arm64", appArch: "arm64", runningUnderArm64Translation: false },
-        "latest",
-      );
-      const available: typeof idle = {
-        ...idle,
-        enabled: true,
-        status: "available",
-        availableVersion: "1.2.4",
-      };
-      const downloaded: typeof idle = {
-        ...available,
-        status: "downloaded",
-        downloadedVersion: "1.2.4",
-      };
-      const updates = Layer.mock(DesktopUpdates.DesktopUpdates, {
-        disabledReason: Effect.succeedNone,
-        check: () =>
-          Effect.sync(() => void steps.push("check")).pipe(
-            Effect.as({ checked: true, state: available }),
+      const next = yield* clickCheckForUpdates({
+        localEnvironmentEnabled: false,
+        updates: (record) => ({
+          check: () => record("check").pipe(Effect.as({ checked: true, state: available })),
+          download: record("download").pipe(
+            Effect.as({ accepted: true, completed: true, state: downloaded }),
           ),
-        download: Effect.sync(() => void steps.push("download")).pipe(
-          Effect.as({ accepted: true, completed: true, state: downloaded }),
-        ),
-        install: Effect.sync(() => void steps.push("install")).pipe(
-          Effect.andThen(Deferred.succeed(installed, undefined)),
-          Effect.as({ accepted: true, completed: false, state: downloaded }),
-        ),
-      });
-      const dialog = Layer.mock(ElectronDialog.ElectronDialog, {
-        showMessageBox: (options) =>
-          Effect.sync(() => void steps.push(options.message)).pipe(
-            Effect.as({ response: 0, checkboxChecked: false }),
-          ),
+          installPrepared: (version) =>
+            record(`install ${version}`).pipe(
+              Effect.as({ accepted: true, completed: false, failed: false, state: downloaded }),
+            ),
+        }),
       });
 
-      yield* configureMenu(
-        yield* Deferred.make<string>(),
-        applicationMenuTemplate,
-        {},
-        {
-          updates,
-          dialog,
-        },
+      const [check, offer, download, ready] = yield* next(4);
+      assert.deepStrictEqual(
+        [check, dialogMessage(offer), download],
+        ["check", "Loom 1.2.4 is available.", "download"],
       );
-      const help = (yield* Deferred.await(applicationMenuTemplate)).find(
-        (item) => item.role === "help",
-      );
-      const checkForUpdates = Array.isArray(help?.submenu) ? help.submenu[0] : undefined;
-      if (typeof checkForUpdates?.click !== "function") {
-        throw new Error("Expected Check for Updates to have a click handler.");
-      }
-      checkForUpdates.click({} as Electron.MenuItem, undefined, {} as KeyboardEvent);
+      const readyDialog = asDialog(ready);
+      assert.equal(readyDialog.message, "Loom 1.2.4 is ready to install.");
+      assert.deepStrictEqual(readyDialog.buttons, ["Restart and Install", "Later"]);
+      assert.notMatch(readyDialog.detail ?? "", /agent/i);
+      assert.deepStrictEqual(yield* next(1), ["install 1.2.4"]);
+    }),
+  );
 
-      yield* Deferred.await(installed);
-      assert.deepStrictEqual(steps, [
-        "check",
-        "Loom 1.2.4 is available.",
-        "download",
-        "Loom 1.2.4 is ready to install.",
-        "install",
-      ]);
+  // fork: client-computer
+  it.effect("offers to install when agents are idle on a computer that runs them", () =>
+    Effect.gen(function* () {
+      const next = yield* clickCheckForUpdates({
+        localEnvironmentEnabled: true,
+        updates: (record) => ({
+          check: () => record("check").pipe(Effect.as({ checked: true, state: downloaded })),
+          setInstallWhenIdle: (armed) =>
+            record(`install when idle ${armed}`).pipe(
+              Effect.as({ ...downloaded, installWhenIdle: armed }),
+            ),
+        }),
+      });
+
+      const [, ready] = yield* next(2);
+      const readyDialog = asDialog(ready);
+      assert.deepStrictEqual(readyDialog.buttons, ["Install When Idle", "Restart Now", "Later"]);
+      assert.equal(readyDialog.defaultId, 0);
+      assert.match(readyDialog.detail ?? "", /agents running on this computer stop/i);
+      const [armed, scheduled] = yield* next(2);
+      assert.equal(armed, "install when idle true");
+      assert.equal(
+        dialogMessage(scheduled),
+        "Loom 1.2.4 installs once agents on this computer are idle.",
+      );
+    }),
+  );
+
+  // fork: client-computer
+  it.effect("does not report a download another action already started as a failure", () =>
+    Effect.gen(function* () {
+      const next = yield* clickCheckForUpdates({
+        localEnvironmentEnabled: true,
+        updates: (record) => ({
+          check: () => record("check").pipe(Effect.as({ checked: true, state: available })),
+          download: record("download").pipe(
+            Effect.as({
+              accepted: false,
+              completed: false,
+              state: { ...available, status: "downloading", downloadPercent: 40 },
+            }),
+          ),
+        }),
+      });
+
+      const [, , download, notice] = yield* next(4);
+      assert.equal(download, "download");
+      const noticeDialog = asDialog(notice);
+      assert.notEqual(noticeDialog.title, "Update failed");
+      assert.equal(noticeDialog.message, "Loom is already downloading an update.");
+    }),
+  );
+
+  // fork: client-computer
+  it.effect("reports a download that fails", () =>
+    Effect.gen(function* () {
+      const next = yield* clickCheckForUpdates({
+        localEnvironmentEnabled: true,
+        updates: (record) => ({
+          check: () => record("check").pipe(Effect.as({ checked: true, state: available })),
+          download: record("download").pipe(
+            Effect.as({
+              accepted: true,
+              completed: false,
+              state: { ...available, errorContext: "download", message: "Network is offline." },
+            }),
+          ),
+        }),
+      });
+
+      const [, , , failure] = yield* next(4);
+      const failureDialog = asDialog(failure);
+      assert.equal(failureDialog.title, "Update failed");
+      assert.equal(failureDialog.detail, "Network is offline.");
     }),
   );
 });

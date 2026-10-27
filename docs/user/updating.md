@@ -23,6 +23,14 @@ Keep a Loom window open while it waits; minimized is fine. Choose **Cancel** on
 the button, or in **Settings → About**, to stop waiting. If a newer
 version comes out first, the wait ends and the button offers that download.
 
+<!-- fork: client-computer -->
+
+**Loom → Check for Updates** (on Windows and Linux, **Help → Check for Updates**)
+downloads and installs this app's update even when the window does not load. It
+does not list the threads a restart would interrupt. On a computer that runs
+agents, choose **Install When Idle** to wait for them the same way, or
+**Restart Now** to install right away.
+
 <!-- fork: machine-updates -->
 
 ## Manage fleet updates

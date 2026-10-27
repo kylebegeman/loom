@@ -98,7 +98,10 @@ the server, so it narrows who can reach the files but does not contain them.
 
 After a restart, Settings > Computers on the Library shows a Reach addresses section with the
 zone, the state of both files and, after the first computer turns reach on, the edge rules. The
-section stays hidden while the zone is invalid or the token file variable is unset.
+section also shows without a zone once `LOOM_IDENTITY_ISSUER`, `LOOM_IDENTITY_NATIVE_CLIENT_ID`
+and `LOOM_IDENTITY_ADMIN_API_KEY_FILE` are set, because Prepare sign-in keeps a record there. It
+then says the Library prepares Loom sign-in only. The section stays hidden while the Library has
+neither a valid zone with the token file variable nor those three Identity variables.
 
 ## Pocket ID admin key
 
@@ -113,6 +116,12 @@ client. **Prepare sign-in** in a computer's Reach section runs the same step wit
 creates the resource and returns the values without any tunnel, address or Cloudflare call, so a
 computer can use Loom sign-in while reach stays deferred. A computer that had reach before the
 key was installed gets its resource from Prepare sign-in, or by turning reach off and on again.
+
+Reach addresses lists a computer that prepared sign-in without reach as **Sign-in only**. Retire
+it with "Also end Loom sign-in for this computer" to delete its resource and its record; Retire
+without that option leaves both. A Prepare sign-in that Pocket ID refuses or does not answer
+keeps no record, since nothing was created. The computer shows the failure and can try again,
+and the Pocket ID line in the setup listing shows how the call went.
 
 The prepared values carry the Library's `LOOM_IDENTITY_DESKTOP_REDIRECT_URI`, the loopback
 callback registered on the native client, so the desktop app signs in on that fixed port. A
@@ -283,7 +292,8 @@ If the computer turns reach on again, it gets a new address.
 
 1. Retire every computer, ending Loom sign-in where wanted.
 2. Unset `LOOM_REACH_ZONE` and `LOOM_REACH_CLOUDFLARE_TOKEN_FILE` and restart the Library. It
-   stops offering reach.
+   stops offering reach. With Loom Identity and its key file still set, Reach addresses stays to
+   list retired and Sign-in only computers.
 3. Delete the edge rules by hand, in every zone reach used; the Library leaves them in place.
    In the zone's WAF, delete the custom rule whose description starts with
    `loom-reach:allowlist` and the rate-limiting rule whose description starts with

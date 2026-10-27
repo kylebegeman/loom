@@ -1,6 +1,7 @@
 import {
   AVAILABLE_CONNECTION_STATE,
   connectionProjectionPhase,
+  type SupervisorConnectionState, // fork: client-computer
 } from "@t3tools/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
@@ -21,6 +22,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment"; // fork: client-computer
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
@@ -119,27 +121,55 @@ export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
   }).pipe(Atom.withLabel("web-all-environment-project-snapshots-ready"));
 }
 
+// fork: client-computer A desktop that runs no agents never registers a primary, and it loads every
+// fork: client-computer computer it saves before its catalog is ready, so that catalog is final.
+const clientComputer = typeof window !== "undefined" && isLocalEnvironmentDisabled();
+const requiresPrimaryEnvironment = !isHostedStaticApp() && !clientComputer; // fork: client-computer
+
 export const allEnvironmentProjectSnapshotsReadyAtom =
   createAllEnvironmentProjectSnapshotsReadyAtom({
     catalogValueAtom: environmentCatalog.catalogValueAtom,
     shellStateValueAtom: environmentShell.stateValueAtom,
-    requiresPrimaryEnvironment: !isHostedStaticApp(),
+    requiresPrimaryEnvironment, // fork: client-computer
   });
 
-export const allReachableShellsLiveAtom = Atom.make((get) => {
-  const catalog = get(environmentCatalog.catalogValueAtom);
-  if (!catalogIsComplete(catalog, !isHostedStaticApp())) return false;
-  for (const environmentId of enabledEnvironmentIds(catalog)) {
-    const shell = get(environmentShell.stateValueAtom(environmentId));
-    if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;
-    const state = AsyncResult.value(get(environmentCatalog.stateAtom(environmentId)));
-    if (Option.isNone(state)) return false;
-    const connection = state.value;
-    const settledOffline =
-      connection.phase === "offline" ||
-      connection.phase === "blocked" ||
-      (connection.phase === "backoff" && connection.attempt > 2);
-    if (!settledOffline) return false;
-  }
-  return true;
-}).pipe(Atom.withLabel("web-all-reachable-shells-live"));
+// fork: client-computer
+export function createAllReachableShellsLiveAtom(input: {
+  readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
+  readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
+  readonly connectionStateAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<SupervisorConnectionState, unknown>>;
+  readonly requiresPrimaryEnvironment: boolean;
+  readonly clientComputer: boolean;
+}) {
+  return Atom.make((get) => {
+    const catalog = get(input.catalogValueAtom);
+    const complete = input.clientComputer
+      ? catalog.isReady
+      : catalogIsComplete(catalog, input.requiresPrimaryEnvironment);
+    if (!complete) return false;
+    for (const environmentId of enabledEnvironmentIds(catalog)) {
+      const shell = get(input.shellStateValueAtom(environmentId));
+      if (shell.status === "live" && Option.isSome(shell.snapshot)) continue;
+      const state = AsyncResult.value(get(input.connectionStateAtom(environmentId)));
+      if (Option.isNone(state)) return false;
+      const connection = state.value;
+      const settledOffline =
+        connection.phase === "offline" ||
+        connection.phase === "blocked" ||
+        (connection.phase === "backoff" && connection.attempt > 2);
+      if (!settledOffline) return false;
+    }
+    return true;
+  }).pipe(Atom.withLabel("web-all-reachable-shells-live"));
+}
+
+// fork: client-computer
+export const allReachableShellsLiveAtom = createAllReachableShellsLiveAtom({
+  catalogValueAtom: environmentCatalog.catalogValueAtom,
+  shellStateValueAtom: environmentShell.stateValueAtom,
+  connectionStateAtom: environmentCatalog.stateAtom,
+  requiresPrimaryEnvironment,
+  clientComputer,
+});

@@ -22,12 +22,12 @@ import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { REACH_INK, reach } from "./reach";
 
 const FOOTER =
-  "Addresses your Library gave your computers for connecting away from home. Retire one for a computer you lost or no longer use. Turn reach on or off in each computer's details.";
+  "Addresses and Loom sign-in your Library set up for your computers. Retire a computer you lost or no longer use. Turn reach on or off in each computer's details.";
 
 /**
  * The Library's reach records for the Connections screen. It reads when the screen opens (if the
  * last read is a few seconds old), after a retire and on `refresh`, never on a timer. Shown only
- * when the chosen Library hands out reach addresses. No Library secret is read or set here.
+ * when the chosen Library advertises `reach-library`. No Library secret is read or set here.
  */
 export function useLibraryReach(libraryId: EnvironmentId | null) {
   const config = useEnvironmentServerConfig(libraryId);

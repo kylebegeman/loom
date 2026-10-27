@@ -109,7 +109,7 @@ import {
   useRemoteEnvironmentRuntime,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import { addProjectTargets, resolveAddProjectEnvironment } from "./AddProjectScreen.logic"; // fork: library-only
 import {
   createNewTaskDraft,
   setComposerDraftText,
@@ -414,7 +414,12 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
     const runtimeByEnvironmentId = new Map(
       connectedEnvironments.map((environment) => [environment.environmentId, environment] as const),
     );
-    const options = Object.values(savedConnectionsById).map((connection) => {
+    // fork: library-only
+    const computers = addProjectTargets(
+      Object.values(savedConnectionsById),
+      serverConfigByEnvironmentId,
+    );
+    const options = computers.map((connection) => {
       const config = serverConfigByEnvironmentId.get(connection.environmentId);
       const runtime = runtimeByEnvironmentId.get(connection.environmentId);
       return {
@@ -477,7 +482,9 @@ function EmptyEnvironmentState() {
   const navigation = useNavigation();
   // fork: fleet-connections
   const { isLoadingSavedConnection, savedConnectionsById } = useSavedRemoteConnections();
-  const hasSavedComputers = Object.keys(savedConnectionsById).length > 0;
+  // fork: library-only
+  const hasSavedComputers =
+    addProjectTargets(Object.values(savedConnectionsById), useServerConfigs()).length > 0;
 
   return (
     <View className="items-center gap-3 rounded-2xl bg-grouped-card px-5 py-8">

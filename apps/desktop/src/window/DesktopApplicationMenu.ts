@@ -11,6 +11,7 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts"; // fork: client-computer
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -34,6 +35,7 @@ export class DesktopApplicationMenu extends Context.Service<
 >()("@t3tools/desktop/window/DesktopApplicationMenu") {}
 
 type DesktopApplicationMenuRuntimeServices =
+  | DesktopAppSettings.DesktopAppSettings // fork: client-computer
   | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
   | ElectronDialog.ElectronDialog;
@@ -71,18 +73,25 @@ const offerUpdateFromMenu = Effect.fn("desktop.menu.offerUpdate")(function* (
 ) {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
-  const ask = (message: string, detail: string, action: string) =>
+  const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const ask = (message: string, detail: string, buttons: ReadonlyArray<string>) =>
     electronDialog
       .showMessageBox({
         type: "info",
         title: "Update available",
         message,
         detail,
-        buttons: [action, "Later"],
+        buttons: [...buttons],
         defaultId: 0,
-        cancelId: 1,
+        cancelId: buttons.length - 1,
       })
-      .pipe(Effect.map(({ response }) => response === 0));
+      .pipe(Effect.map(({ response }) => buttons[response]));
+  const tell = (title: string, message: string, detail: string) =>
+    electronDialog.showMessageBox({ type: "info", title, message, detail, buttons: ["OK"] });
+  // Another update action holding the updater is a refusal, not a failure.
+  const busy = (message = "Loom is already working on an update.") =>
+    tell("Update in progress", message, "Choose Check for Updates again when it finishes.");
+  const alreadyDownloading = "Loom is already downloading an update.";
   const fail = (message: string, detail: string | null) =>
     electronDialog.showMessageBox({
       type: "warning",
@@ -94,29 +103,56 @@ const offerUpdateFromMenu = Effect.fn("desktop.menu.offerUpdate")(function* (
 
   let version = state.downloadedVersion;
   if (version === null) {
+    if (state.status === "downloading") {
+      yield* busy(alreadyDownloading);
+      return;
+    }
     if (state.status !== "available" || state.availableVersion === null) return;
     const download = yield* ask(
       `Loom ${state.availableVersion} is available.`,
       "Download it now. You choose when Loom restarts.",
-      "Download",
+      ["Download", "Later"],
     );
-    if (!download) return;
+    if (download !== "Download") return;
     const result = yield* updates.download;
-    if (!result.completed) {
+    if (result.accepted && !result.completed) {
       yield* fail("Could not download the update.", result.state.message);
       return;
     }
-    version = result.state.downloadedVersion ?? state.availableVersion;
+    version = result.state.downloadedVersion ?? (result.completed ? state.availableVersion : null);
+    if (version === null) {
+      yield* result.state.status === "downloading" ? busy(alreadyDownloading) : busy();
+      return;
+    }
   }
-  const install = yield* ask(
-    `Loom ${version} is ready to install.`,
-    "Loom restarts to finish. Agents running on this computer stop while it restarts.",
-    "Restart and Install",
-  );
-  if (!install) return;
-  const result = yield* updates.install;
-  if (!result.accepted || result.state.errorContext === "install") {
+
+  const ready = `Loom ${version} is ready to install.`;
+  const choice = (yield* desktopSettings.get).localEnvironmentEnabled
+    ? yield* ask(
+        ready,
+        "Agents running on this computer stop if Loom restarts now. Install When Idle waits until they finish.",
+        ["Install When Idle", "Restart Now", "Later"],
+      )
+    : yield* ask(ready, "Loom restarts to finish.", ["Restart and Install", "Later"]);
+  if (choice === "Install When Idle") {
+    const armed = yield* updates.setInstallWhenIdle(true);
+    if (armed.installWhenIdle === true) {
+      yield* tell(
+        "Update scheduled",
+        `Loom ${version} installs once agents on this computer are idle.`,
+        "Keep a Loom window open until then. Minimized is fine.",
+      );
+    } else if (!(yield* updates.isInstallActive)) {
+      yield* busy();
+    }
+    return;
+  }
+  if (choice !== "Restart Now" && choice !== "Restart and Install") return;
+  const result = yield* updates.installPrepared(version);
+  if (result.failed) {
     yield* fail("Could not install the update.", result.state.message);
+  } else if (!result.accepted && !(yield* updates.isInstallActive)) {
+    yield* busy();
   }
 });
 

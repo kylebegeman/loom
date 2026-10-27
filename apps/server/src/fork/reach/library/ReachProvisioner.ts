@@ -204,6 +204,13 @@ const signInOnly = (updatedAt: string): ReachStoredComputer => ({
 });
 
 /**
+ * `seq` is set by the first ensure, so an unclaimed record holds only its Pocket ID resource and
+ * is kept only while that may exist.
+ */
+const holdsNothing = (seq: number, identity: ReachStoredIdentity | null) =>
+  seq === 0 && (identity === null || identity.apiId === null);
+
+/**
  * What a record set up in an earlier zone may hold there. A removed record holds only a DNS
  * record it left alone.
  */
@@ -1026,18 +1033,22 @@ const make = Effect.gen(function* () {
           if (stored === null) return identity.reply;
           const updatedAt = yield* nowIso;
           yield* store
-            .update((state) => ({
-              ...state,
-              computers: {
-                ...state.computers,
-                [environmentId]: {
-                  ...(state.computers[environmentId] ?? signInOnly(updatedAt)),
-                  identity: stored,
-                  publisherSessionId: input.publisherSessionId,
-                  updatedAt,
+            .update((state) => {
+              const { [environmentId]: current, ...others } = state.computers;
+              if (holdsNothing(current?.seq ?? 0, stored)) return { ...state, computers: others };
+              return {
+                ...state,
+                computers: {
+                  ...others,
+                  [environmentId]: {
+                    ...(current ?? signInOnly(updatedAt)),
+                    identity: stored,
+                    publisherSessionId: input.publisherSessionId,
+                    updatedAt,
+                  },
                 },
-              },
-            }))
+              };
+            })
             .pipe(Effect.mapError(() => provisionError("io")));
           return identity.reply;
         }),
@@ -1148,7 +1159,10 @@ const make = Effect.gen(function* () {
   const list = Effect.gen(function* () {
     if (config.audience === null) return yield* libraryError("not-authority");
     const state = yield* read.pipe(Effect.mapError(() => libraryError("io")));
-    const entries = Object.entries(state.computers);
+    // A record that holds nothing has nothing to show or retire.
+    const entries = Object.entries(state.computers).filter(
+      ([, record]) => !holdsNothing(record.seq, record.identity),
+    );
     const accountId = state.zone?.accountId ?? null;
     const outcome =
       accountId === null || entries.length === 0
@@ -1248,9 +1262,10 @@ const make = Effect.gen(function* () {
             }
           }
           const updatedAt = yield* nowIso;
-          // A record that only held sign-in holds nothing once it ended, and no `seq` to keep.
+          const dropped = holdsNothing(existing.seq, identity);
+          if (dropped) identity = null;
           const state = yield* (
-            !claimed && identity === null
+            dropped
               ? store.update((current) => {
                   const { [input.environmentId]: _ended, ...computers } = current.computers;
                   return { ...current, computers };

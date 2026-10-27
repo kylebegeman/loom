@@ -383,8 +383,10 @@ To switch an installation you already use, open **Settings → Computers** <!-- 
 and turn off **Run agents on this computer**. Loom restarts without a local server: no agents or
 terminals run here, WSL backends stay off, and other devices can no longer connect to this
 computer. Your projects, history, and saved connections are kept, and you keep working through
-your Library, pairing, T3 Connect, or SSH. While no computer is connected, the home screen
-offers **Connect your Library** and **Add a computer**.
+your Library, pairing, T3 Connect, or SSH. To connect your Library or add a computer later, open <!-- fork: fleet-connections -->
+**Settings → Computers**. Connect your Library at the top of the page, or choose **Connect
+computer** to pair another one. While this computer has no saved connections, the home screen
+also offers **Connect your Library** and **Add a computer**.
 
 Turn **Run agents on this computer** back on in the same place to restart with your previous
 local settings.

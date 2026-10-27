@@ -140,7 +140,9 @@ Library's server environment and restart it. Once both are set, a **Reach
 addresses** section appears in the Library's Connections settings and shows
 whether the token can be read. If you change the zone later, each computer gets
 a new address at its next start, and the list shows anything the token could
-not remove in the old zone.
+not remove in the old zone. A Library with Loom sign-in and its Pocket ID key
+shows the section without a zone too, to list computers that prepared Loom
+sign-in.
 
 To turn reach on, open the computer's details in **Settings > Computers** and
 turn on **Reach from anywhere**. You can do this on the computer itself, or from
@@ -158,6 +160,8 @@ open your computers in Settings or when a conversation on that computer can't
 connect. You never need to remove the computer to pick up a new address, and
 removing it deletes its drafts and unsent messages on that device.
 
+To get Loom sign-in for a computer without turning reach on, choose **Prepare
+sign-in** in the Reach section of that computer's own Connections settings.
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow
 settings changes. Enter the allowed Loom account IDs if they are not already
@@ -197,6 +201,12 @@ sign-in as well. If your Library cannot read its Loom sign-in key, it refuses
 that option and changes nothing; retire without it, or fix the key and try
 again. Your Library asks you to retire a computer's reach address before you can
 forget the computer.
+
+A computer that has Loom sign-in from your Library and no reach address shows
+as **Sign-in only**. To end its sign-in, retire it with **Also end Loom sign-in
+for this computer**, or **Retire and end sign-in** on iPhone. It then leaves the
+list. If preparing sign-in fails, nothing is listed; choose **Prepare sign-in**
+on that computer again.
 
 Agents can check reach from any computer signed in to the Library, including connector counts and sign-in state, and can turn reach off or remove an address. They cannot
 turn it on.

@@ -117,4 +117,26 @@ describe("reach credentials", () => {
       reachLibraryAdvertised({ ...library, LOOM_IDENTITY_REDIRECT_URI: "http://library.local/cb" }),
     ).toBe(false);
   });
+
+  it("advertises the records list on a Library that prepares Loom sign-in without a zone", () => {
+    const library = {
+      LOOM_LIBRARY_AUTHORITY: "true",
+      LOOM_IDENTITY_REDIRECT_URI: "https://library.example.com/api/auth/identity/callback",
+      LOOM_IDENTITY_ISSUER: "https://id.example.com",
+      LOOM_IDENTITY_NATIVE_CLIENT_ID: "loom-native",
+      LOOM_IDENTITY_ADMIN_API_KEY_FILE: "/etc/loom/pocket-id-key",
+    };
+    expect(reachLibraryAdvertised(library)).toBe(true);
+    expect(reachLibraryAdvertised({ ...library, LOOM_LIBRARY_AUTHORITY: "false" })).toBe(false);
+    for (const unset of [
+      "LOOM_IDENTITY_ISSUER",
+      "LOOM_IDENTITY_NATIVE_CLIENT_ID",
+      "LOOM_IDENTITY_ADMIN_API_KEY_FILE",
+    ]) {
+      expect(reachLibraryAdvertised({ ...library, [unset]: undefined })).toBe(false);
+    }
+    expect(reachLibraryAdvertised({ ...library, LOOM_IDENTITY_ISSUER: "http://id.local" })).toBe(
+      false,
+    );
+  });
 });

@@ -211,7 +211,12 @@ function ComputerReachBody({
     const outcome = await change();
     setPending(null);
     if (outcome._tag === "Failure")
-      setFailure(reachChangeErrorText(outcome.cause, kind !== "on" && view.throughAddress));
+      setFailure(
+        reachChangeErrorText(
+          outcome.cause,
+          kind !== "on" && kind !== "prepare" && view.throughAddress,
+        ),
+      );
   };
 
   const toggle = async (enabled: boolean) => {

@@ -572,7 +572,7 @@ const CREDENTIAL_LINES = {
     ready: { tone: "success", text: "The Pocket ID key works." },
     missing: {
       tone: "neutral",
-      text: "No Pocket ID key file is in place. Add one while a computer sets up reach so your Library can prepare its Loom sign-in.",
+      text: "No Pocket ID key file is in place. Add one while a computer prepares Loom sign-in or sets up reach.",
     },
     refused: { tone: "danger", text: "Pocket ID refused the admin key." },
     unavailable: { tone: "warning", text: "Pocket ID did not answer the last check." },
@@ -582,7 +582,19 @@ const CREDENTIAL_LINES = {
   Record<ReachLibrarySetup["cloudflare"], ReachLine>
 >;
 
+/** Neither half of reach is set, so the Library holds Loom sign-in only. */
+const isReachOff = (setup: ReachLibrarySetup) =>
+  setup.zone === null && setup.cloudflare === "missing";
+
 function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
+  if (isReachOff(setup))
+    return [
+      {
+        tone: "neutral",
+        text: "No reach zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
+      },
+      CREDENTIAL_LINES.identity[setup.identity],
+    ];
   const lines: ReachLine[] = [
     setup.zone === null
       ? {
@@ -705,6 +717,10 @@ export interface ReachLibraryComputerView {
 
 const END_IDENTITY_KEY_MISSING_TEXT =
   "Ending Loom sign-in needs your Library's Pocket ID key file, which is not in place. You can retire now and end sign-in with another Retire once the key is back.";
+const SIGN_IN_ONLY_KEY_MISSING_TEXT =
+  "Ending Loom sign-in needs your Library's Pocket ID key file, which is not in place. Retire this computer once the key is back.";
+const END_IDENTITY_HINT =
+  "Devices signed in to it with Loom lose access when their current sign-in ends.";
 
 function leftoverZoneText(
   computer: ReachLibraryComputer,
@@ -772,10 +788,16 @@ function computerView(
             action: "Retire",
           },
           endIdentityLabel: "Also end Loom sign-in for this computer",
-          endIdentityHint:
-            "Devices signed in to it with Loom lose access when their current sign-in ends.",
+          // Sign-in is all such a computer holds, so a Retire that keeps it changes nothing.
+          endIdentityHint: signInOnly
+            ? `This computer has nothing else to retire. ${END_IDENTITY_HINT}`
+            : END_IDENTITY_HINT,
           endIdentityDisabledReason:
-            setup.identity === "missing" ? END_IDENTITY_KEY_MISSING_TEXT : null,
+            setup.identity !== "missing"
+              ? null
+              : signInOnly
+                ? SIGN_IN_ONLY_KEY_MISSING_TEXT
+                : END_IDENTITY_KEY_MISSING_TEXT,
         }
       : null,
   };
@@ -851,7 +873,9 @@ export function reachLibraryView(input: ReachLibraryViewInput): ReachLibraryView
     status: computers.length === 0 ? "empty" : "listed",
     notice:
       computers.length === 0
-        ? "No computer has reach yet. Turn it on in a computer's Connections settings."
+        ? isReachOff(listing.setup)
+          ? "No computer has Loom sign-in from your Library yet. Choose Prepare sign-in in a computer's own Connections settings."
+          : "No computer has reach yet. Turn it on in a computer's Connections settings."
         : null,
     error,
     setup: setupLines(listing.setup),

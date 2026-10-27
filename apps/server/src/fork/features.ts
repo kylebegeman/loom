@@ -147,7 +147,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).
   ...(directoryAdvertised(process.env) ? [DIRECTORY_FEATURE] : []),
-  // Only that Library once its reach zone and Cloudflare token file are named.
+  // Only that Library once it can hold reach records, with or without a reach zone.
   ...(reachLibraryAdvertised(process.env) ? [REACH_LIBRARY_FEATURE] : []),
   // Only a Library whose push switch, Identity and APNs key settings are all set (K1).
   ...(libraryPushEffective(process.env) ? [LIBRARY_PUSH_FEATURE] : []),

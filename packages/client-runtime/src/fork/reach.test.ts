@@ -671,6 +671,43 @@ describe("reachLibraryView", () => {
       message: "This computer has Loom sign-in only, with no reach address to delete.",
       action: "Retire",
     });
+    // Retiring it without ending sign-in changes nothing, so the choice says so.
+    expect(row?.retire?.endIdentityHint).toBe(
+      "This computer has nothing else to retire. Devices signed in to it with Loom lose access when their current sign-in ends.",
+    );
+    expect(row?.retire?.endIdentityDisabledReason).toBe(
+      "Ending Loom sign-in needs your Library's Pocket ID key file, which is not in place. Retire this computer once the key is back.",
+    );
+  });
+
+  it("reads as a Library that prepares Loom sign-in only when it has no reach zone", () => {
+    const setup = { zone: null, cloudflare: "missing", identity: "ready", edge: null } as const;
+    const empty = library(AsyncResult.success({ setup, computers: [] }));
+    expect(empty).toMatchObject({
+      status: "empty",
+      notice:
+        "No computer has Loom sign-in from your Library yet. Choose Prepare sign-in in a computer's own Connections settings.",
+    });
+    expect(empty.setup).toEqual([
+      {
+        tone: "neutral",
+        text: "No reach zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
+      },
+      { tone: "success", text: "The Pocket ID key works." },
+    ]);
+    expect(allText(empty)).not.toContain("—");
+
+    // A token file without a valid zone is reach set up wrong, not reach left off.
+    const zoneless = library(
+      AsyncResult.success({ setup: { ...setup, cloudflare: "ready" }, computers: [] }),
+    );
+    expect(zoneless.setup[0]).toEqual({
+      tone: "danger",
+      text: "No reach zone is set. Set LOOM_REACH_ZONE on your Library and restart it.",
+    });
+    expect(zoneless.notice).toBe(
+      "No computer has reach yet. Turn it on in a computer's Connections settings.",
+    );
   });
 
   it("says when the chosen Library is no longer saved on this device", () => {
