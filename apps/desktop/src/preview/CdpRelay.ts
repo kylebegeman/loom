@@ -53,15 +53,11 @@ export function createCdpRelayConnection(
 ): CdpRelayConnection {
   const send = (message: Record<string, unknown>) => write(JSON.stringify(message));
   let attached = false;
-  // Relay connections share Electron's debugger, whose enabled Runtime domain
-  // survives a disconnect. Reset it once so the new client hears existing
-  // default document contexts; Runtime.enable alone does not report them again.
+  // fork: browser-timeout-recovery -- relay connections share Electron's debugger, whose
+  // enabled Runtime domain survives a disconnect. Reset it once so the new client hears
+  // existing default document contexts; Runtime.enable alone does not report them again.
   let runtimeReset: Promise<unknown> | undefined;
-  /**
-   * Sessions this relay invented. Extra page sessions (Playwright's
-   * `newCDPSession`) all reach the one real debugger session, so each gets the
-   * page's events; other ids are the page's own child sessions, such as iframes.
-   */
+  /** Relay-created page sessions share one real debugger; child frame sessions retain their own ids. */
   const sessions = new Map<string, "browser" | "page">([[PAGE_SESSION_ID, "page"]]);
   let sessionSequence = 0;
   const newSession = (kind: "browser" | "page") => {
@@ -144,7 +140,7 @@ export function createCdpRelayConnection(
     }
   };
 
-  const pageCommand = async (command: CdpCommand): Promise<unknown> => {
+  const pageCommand = (command: CdpCommand): Promise<unknown> => {
     const child = sessions.get(command.sessionId!) === "page" ? undefined : command.sessionId;
     const owner =
       child === undefined && command.sessionId !== PAGE_SESSION_ID ? command.sessionId : undefined;
@@ -154,9 +150,12 @@ export function createCdpRelayConnection(
     }
     // Playwright asks for this on every page; the host emulates focus only while it is in use.
     if (command.method === "Emulation.setFocusEmulationEnabled") return Promise.resolve({});
+    // fork: browser-timeout-recovery
     if (command.method === "Runtime.enable" && child === undefined) {
       runtimeReset ??= target.send("Runtime.disable", {}, undefined);
-      await runtimeReset;
+      return runtimeReset.then(() =>
+        target.send(command.method, command.params ?? {}, child, owner),
+      );
     }
     return target.send(command.method, command.params ?? {}, child, owner);
   };

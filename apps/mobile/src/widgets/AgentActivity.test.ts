@@ -10,12 +10,15 @@ vi.mock("@expo/ui/swift-ui", () => ({
 }));
 
 vi.mock("@expo/ui/swift-ui/modifiers", () => ({
+  accessibilityElement: (value: unknown) => value,
+  accessibilityLabel: (value: unknown) => value,
   activityBackgroundTint: (value: unknown) => value,
   font: (value: unknown) => value,
   foregroundStyle: (value: unknown) => value,
   frame: (value: unknown) => value,
   layoutPriority: (value: unknown) => value,
   lineLimit: (value: unknown) => value,
+  minimumScaleFactor: (value: unknown) => value,
   padding: (value: unknown) => value,
   resizable: (value: unknown) => value,
   widgetURL: (value: unknown) => ({ widgetURL: value }),

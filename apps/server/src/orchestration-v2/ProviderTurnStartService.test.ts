@@ -1859,7 +1859,24 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
         }
         let setupCount = 0;
         const order: string[] = [];
-        let listener: Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0];
+        const listeners = new Set<
+          Parameters<TerminalManager.TerminalManager["Service"]["subscribe"]>[0]
+        >();
+        const output = (
+          terminal: { readonly threadId: string; readonly terminalId: string },
+          data: string,
+        ) =>
+          Effect.forEach(
+            [...listeners],
+            (listener) =>
+              listener({
+                type: "output",
+                threadId: terminal.threadId,
+                terminalId: terminal.terminalId,
+                data,
+              }),
+            { discard: true },
+          );
         const scripts = [
           {
             id: "setup",
@@ -1876,15 +1893,18 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                 getById: () => Effect.succeedSome({ workspaceRoot: cwd, scripts } as never),
               }),
               Layer.mock(TerminalManager.TerminalManager)({
-                open: () =>
+                open: (input) =>
                   Effect.sync(() => {
                     expect(order.at(-1)).toBe("lane-ready");
-                    return {} as never;
-                  }),
+                  }).pipe(
+                    // The shell's line editor starts reading, so the runner types the command.
+                    Effect.andThen(output(input, "\x1b[?2004h")),
+                    Effect.as({} as never),
+                  ),
                 subscribe: (onEvent) =>
                   Effect.sync(() => {
-                    listener = onEvent;
-                    return () => undefined;
+                    listeners.add(onEvent);
+                    return () => listeners.delete(onEvent);
                   }),
                 write: (input) =>
                   Effect.gen(function* () {
@@ -1894,12 +1914,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                     setupCount++;
                     order.push("setup");
                     const sentinel = /(__T3_SETUP_DONE___\w+:)/.exec(input.data)![1]!;
-                    yield* listener({
-                      type: "output",
-                      threadId: input.threadId,
-                      terminalId: input.terminalId,
-                      data: `\r\n${sentinel}${setupCount === 1 ? 1 : 0}\r\n$ `,
-                    });
+                    yield* output(input, `\r\n${sentinel}${setupCount === 1 ? 1 : 0}\r\n$ `);
                   }).pipe(Effect.orDie),
                 closeIdle: () => Effect.void,
               }),

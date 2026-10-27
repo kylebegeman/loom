@@ -118,6 +118,7 @@ describe("CDP relay", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  // fork: browser-timeout-recovery
   it("reports existing document contexts again when a server reconnects", async () => {
     let runtimeEnabled = false;
     let relay: ReturnType<typeof createCdpRelayConnection>;
@@ -154,6 +155,7 @@ describe("CDP relay", () => {
     );
   });
 
+  // fork: browser-timeout-recovery
   it("resets Runtime only once and leaves child execution contexts alone", async () => {
     const send = vi.fn<CdpRelayTarget["send"]>(async () => ({}));
     const relay = createCdpRelayConnection(makeTarget(send), () => {});
@@ -168,7 +170,7 @@ describe("CDP relay", () => {
     expect(send.mock.calls.filter(([method]) => method === "Runtime.disable")).toEqual([
       ["Runtime.disable", {}, undefined],
     ]);
-    expect(send).toHaveBeenCalledWith("Runtime.enable", {}, "iframe-session");
+    expect(send).toHaveBeenCalledWith("Runtime.enable", {}, "iframe-session", undefined);
     expect(send.mock.calls.filter(([method]) => method === "Runtime.enable")).toHaveLength(3);
   });
 

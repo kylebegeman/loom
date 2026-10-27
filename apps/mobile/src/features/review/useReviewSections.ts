@@ -11,7 +11,7 @@ import { useEnvironmentPresentation } from "../../state/presentation";
 import { lastReviewGitSectionsAtom, reviewEnvironment } from "../../state/review";
 import { lastReviewTurnDiffsAtom } from "../../state/reviewTurnDiffs";
 import { environmentSession } from "../../state/session";
-import { vcsEnvironment } from "../../state/vcs";
+import { vcsEnvironment } from "../../state/vcs"; // fork: library
 import { useSelectedThreadProjection } from "../../state/use-thread-detail";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import {
@@ -54,14 +54,16 @@ export function useReviewSections(input: {
   const { canReadFiles } = fileAccess;
   const selectedThread = useSelectedThreadProjection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
+  // fork: library - A multi-repository parent folder is no Git repository; only checkpoints review it.
   const gitStatus = useEnvironmentQuery(
     canReadFiles && enabled && environmentId !== undefined && selectedThreadCwd !== null
       ? vcsEnvironment.status({ environmentId, input: { cwd: selectedThreadCwd } })
       : null,
   );
-  const canReadGit = canReadFiles && gitStatus.data?.isRepo === true;
-  const gitAccessPending = fileAccess.isPending || (canReadFiles && gitStatus.isPending);
+  const canReadGit = canReadFiles && gitStatus.data?.isRepo === true; // fork: library
+  const gitAccessPending = fileAccess.isPending || (canReadFiles && gitStatus.isPending); // fork: library
   const diffPreview = useEnvironmentQuery(
+    // fork: library
     canReadGit && enabled && environmentId !== undefined && selectedThreadCwd !== null
       ? reviewEnvironment.diffPreview({
           environmentId,
@@ -91,10 +93,11 @@ export function useReviewSections(input: {
   // Section ids and the selection do not depend on the live query, so they are resolved first.
   const cachedSections = buildReviewSectionItems({
     checkpoints: readyCheckpoints,
+    // fork: library
     gitSections:
       canReadGit || gitAccessPending ? (diffPreview.data?.sources ?? lastGitSections) : [],
     turnDiffById: reviewTurnDiffsBySectionId(readyCheckpoints, lastTurnDiffs),
-    loadingGitSections: gitAccessPending || diffPreview.isPending,
+    loadingGitSections: gitAccessPending || diffPreview.isPending, // fork: library
   });
   const selectedSectionId = resolveReviewSelectedSectionId(
     cachedSections,
@@ -127,7 +130,7 @@ export function useReviewSections(input: {
         : section;
     }
     // Keep the selected section while its grant loads, without displaying cached host files.
-    return gitAccessPending ? { ...section, diff: null, isLoading: true } : section;
+    return gitAccessPending ? { ...section, diff: null, isLoading: true } : section; // fork: library
   });
   const selectedSection =
     reviewSections.find((section) => section.id === selectedSectionId) ?? null;
@@ -151,7 +154,7 @@ export function useReviewSections(input: {
 
   return {
     error:
-      (canReadGit ? diffPreview.error : null) ??
+      (canReadGit ? diffPreview.error : null) ?? // fork: library
       activeTurnDiff.error ??
       (selectedSection === null && !fileAccess.isPending && !canReadFiles
         ? (fileAccess.error ?? "This connection cannot read local diffs.")

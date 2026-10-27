@@ -450,13 +450,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     if (resumingQueue || onResumeQueue === null) return;
     setResumingQueue(true);
     // fork: attention-status - The resume command reports its own failure; the button must come back.
-    try {
-      await onResumeQueue();
-    } catch {
-      // Already reported.
-    } finally {
-      setResumingQueue(false);
-    }
+    await onResumeQueue().catch(() => undefined);
+    setResumingQueue(false);
   };
 
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);

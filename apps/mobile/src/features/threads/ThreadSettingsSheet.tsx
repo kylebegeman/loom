@@ -31,7 +31,7 @@ import {
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
 import {
-  useFocusEffect,
+  useFocusEffect, // fork: library
   useNavigation,
   useRoute,
   type RouteProp,
@@ -39,10 +39,10 @@ import {
 } from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity"; // fork: library
 import {
   createContext,
-  useCallback,
+  useCallback, // fork: library
   use,
   useEffect,
   useEffectEvent,
@@ -93,7 +93,7 @@ import { activeComposerDraftKey, useQueuedRunEdit } from "../../state/queued-run
 import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
-import { appAtomRegistry } from "../../state/atom-registry";
+import { appAtomRegistry } from "../../state/atom-registry"; // fork: library
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -265,7 +265,7 @@ type ThreadSettingsSubmenuPage =
   | { readonly kind: "runtime" };
 
 type ThreadSettingsSessionProps = {
-  readonly conversationDetails?: (onOpenModel: () => void) => ReactNode;
+  readonly conversationDetails?: (onOpenModel: () => void) => ReactNode; // fork: library
   readonly environmentId: EnvironmentId | null;
   readonly projectId: ProjectId | null;
   readonly providerInstanceId?: ProviderInstanceId;
@@ -292,7 +292,7 @@ export type ExistingThreadSettingsRouteParams = {
   readonly draftKey: string;
 };
 
-// Conversation details present their own session instead of a composer draft.
+// fork: library - Conversation details present their own session instead of a composer draft.
 export type ExistingThreadSettingsRouteSession = ThreadSettingsSessionProps & {
   readonly ownerId: string;
 };
@@ -330,7 +330,7 @@ type ThreadSettingsSessionValue = {
   readonly manageHidden: boolean;
   readonly setManageHidden: (value: boolean) => void;
   readonly runtimeMode: RuntimeMode;
-  readonly hideRuntimeMode: boolean;
+  readonly hideRuntimeMode: boolean; // fork: bots
   readonly runtimeModeChoices: ReturnType<typeof runtimeModeChoicesForSupportedModes>;
   readonly onUpdateRuntimeMode: (mode: RuntimeMode) => void;
   readonly displayedDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
@@ -345,7 +345,7 @@ type ThreadSettingsSessionValue = {
   readonly showLegacy: boolean;
   readonly applyOptionChange: (id: string, value: string | boolean) => void;
   readonly commitPendingModel: () => boolean;
-  readonly discardPendingModel: () => void;
+  readonly discardPendingModel: () => void; // fork: library
   readonly isApplied: (option: ModelOption) => boolean;
   readonly isDisplayed: (option: ModelOption) => boolean;
   readonly pressModel: (option: ModelOption) => void;
@@ -519,6 +519,7 @@ function ThreadSettingsSessionProvider(
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const displayedPrompt = pendingModel ? (pendingPrompt ?? props.prompt) : props.prompt;
   const discardPendingModel = useCallback(() => {
+    // fork: library - Returning to conversation details drops an unsaved model.
     setPendingModel(null);
     setPendingPrompt(null);
   }, []);
@@ -645,7 +646,7 @@ function ThreadSettingsSessionProvider(
     toggleHidden,
     pendingHiddenKeys,
     runtimeMode: compatibleRuntimeMode,
-    hideRuntimeMode: props.hideRuntimeMode ?? false,
+    hideRuntimeMode: props.hideRuntimeMode ?? false, // fork: bots
     runtimeModeChoices,
     onUpdateRuntimeMode: props.onUpdateRuntimeMode,
     displayedDescriptors,
@@ -662,7 +663,7 @@ function ThreadSettingsSessionProvider(
     showLegacy: showLegacyToggle,
     applyOptionChange,
     commitPendingModel,
-    discardPendingModel,
+    discardPendingModel, // fork: library
     isApplied,
     isDisplayed,
     pressModel,
@@ -887,6 +888,7 @@ function ThreadSettingsOptionsItem(props: {
             layout={THREAD_SETTINGS_OPTIONS_LAYOUT_TRANSITION}
           >
             {session.displayedDescriptors.map((descriptor, index) => {
+              // fork: bots - Without the runtime row, the last option closes the card.
               const isLast =
                 session.hideRuntimeMode && index === session.displayedDescriptors.length - 1;
               if (descriptor.type === "select") {
@@ -1230,13 +1232,13 @@ function ThreadSettingsChoiceContent(props: {
 }
 
 type ThreadSettingsPickerStackParams = {
-  ThreadSettingsDetails: undefined;
+  ThreadSettingsDetails: undefined; // fork: library
   ThreadSettingsModels: undefined;
   ThreadSettingsChoice: ThreadSettingsSubmenuPage & { readonly title: string };
 };
 
 type ThreadSettingsPickerPresentation = {
-  readonly conversationDetails?: ThreadSettingsSessionProps["conversationDetails"];
+  readonly conversationDetails?: ThreadSettingsSessionProps["conversationDetails"]; // fork: library
   readonly onClose: () => void;
 };
 
@@ -1254,6 +1256,7 @@ function useThreadSettingsPickerPresentation() {
   return value;
 }
 
+// fork: library - Conversation details open the picker on their own page.
 function ThreadSettingsDetailsScreen() {
   const { discardPendingModel } = useThreadSettingsSession();
   useFocusEffect(
@@ -1287,6 +1290,7 @@ function ThreadSettingsModelsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<ThreadSettingsPickerStackParams>>();
   const usesNativeMailSearchToolbar = useThreadSettingsMailSearchToolbar();
   const closeModels = () => {
+    // fork: library - From conversation details, closing the models returns to them.
     if (presentation.conversationDetails) navigation.goBack();
     else presentation.onClose();
   };
@@ -1524,7 +1528,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
   const solidSheetBackground = theme["--color-sheet-solid"];
   const foreground = theme["--color-foreground"];
   const presentation = {
-    conversationDetails: props.conversationDetails,
+    conversationDetails: props.conversationDetails, // fork: library
     onClose: props.onClose,
   };
 
@@ -1553,6 +1557,7 @@ function ThreadSettingsPickerNavigator(props: ThreadSettingsPickerPresentation) 
             : undefined,
         }}
       >
+        {/* fork: library */}
         <ThreadSettingsPickerStack.Screen
           name="ThreadSettingsDetails"
           component={ThreadSettingsDetailsScreen}
@@ -1658,7 +1663,7 @@ export function ExistingThreadSettingsRouteScreen({
   );
 }
 
-// Conversation details push this route without params after presenting their session.
+// fork: library - Conversation details push this route without params after presenting their session.
 export function ThreadSettingsSheetRouteScreen({
   route,
 }: StaticScreenProps<ExistingThreadSettingsRouteParams | undefined>) {

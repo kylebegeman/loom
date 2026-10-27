@@ -84,7 +84,11 @@ import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
-import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import {
+  updateThreadDraftModelSelection, // fork: library
+  useThreadComposerState,
+} from "../../state/use-thread-composer-state";
+import { updateComposerDraftSettings } from "../../state/use-composer-drafts"; // fork: library
 import { resolveMergeBackTargetThreadId } from "@t3tools/client-runtime/state/thread-relationships";
 import { resolveLatestMergeBackRun } from "@t3tools/client-runtime/state/thread-workflows";
 import { threadEnvironment, useThreadFamily } from "../../state/threads";
@@ -556,8 +560,24 @@ function ThreadRouteContent(
           draftKey: composer.composerDraftKey, // fork: library -- Ultrathink edits the composer draft
           canSwitchProvider: composer.canSwitchThreadProvider,
           canOperate: canOperateThread,
-          onUpdateModelSelection: composer.onUpdateModelSelection,
-          onUpdateRuntimeMode: composer.onUpdateRuntimeMode,
+          // fork: library - Draft settings update the way upstream's thread settings screen does.
+          onUpdateModelSelection: (selection) =>
+            updateThreadDraftModelSelection(
+              scopedThreadKey(
+                selectedThreadWithDraftSettings.environmentId,
+                selectedThreadWithDraftSettings.id,
+              ),
+              selection,
+              routeEnvironmentRuntime?.serverConfig?.providers ?? [],
+            ),
+          onUpdateRuntimeMode: (runtimeMode) =>
+            updateComposerDraftSettings(
+              scopedThreadKey(
+                selectedThreadWithDraftSettings.environmentId,
+                selectedThreadWithDraftSettings.id,
+              ),
+              { runtimeMode },
+            ),
         }
       : null,
   );

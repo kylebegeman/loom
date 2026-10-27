@@ -32,6 +32,7 @@ apps/web/src/rightPanelStore.ts	ext-panels	10
 apps/web/src/components/CommandPalette.tsx	ext-palette	4
 packages/contracts/src/keybindings.ts	ext-keybindings	2
 apps/web/src/components/settings/KeybindingsSettings.logic.ts	ext-keybindings	3
+apps/web/src/components/settings/KeybindingsSettings.logic.test.ts	ext-keybindings	2
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
@@ -271,7 +272,7 @@ apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	11
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	21
-apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	5
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library	8
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	fleet-connections	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	fleet-connections	1
 apps/mobile/src/features/threads/new-task-project-selection.ts	fleet-connections	1
@@ -296,7 +297,10 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	10
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	3
 apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	1
+apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
+apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	2
+apps/server/src/project/ProjectSetupScriptRunner.test.ts	project-lifecycle	5
 apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	4
 apps/server/src/storageCleanup.ts	project-checkout-management	1
@@ -434,7 +438,8 @@ apps/web/src/composer-logic.ts	ext-composer-menu	3
 apps/mobile/src/Stack.tsx	bots	2
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	bots	1
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	bots	3
-apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	bots	1
+apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	bots	4
+apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	library	16
 apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	library	1
 apps/web/src/components/CommandPaletteContent.tsx	library-palette	3
 apps/desktop/src/app/DesktopApp.ts	brand	1
@@ -883,8 +888,10 @@ apps/server/src/mcp/toolkits/orchestrator/tools.ts	ext-vault	1
 apps/mobile/src/features/connection/EnvironmentConnectionNotice.tsx	fleet-connections	7
 apps/mobile/src/features/files/WorkspaceFilePreviewError.tsx	fleet-connections	1
 apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx	fleet-connections	3
-apps/mobile/src/features/home/workspace-connection-status.ts	fleet-connections	3
+apps/mobile/src/features/home/workspace-connection-status.ts	fleet-connections	10
+apps/mobile/src/features/home/workspace-connection-status.test.ts	fleet-connections	4
 apps/mobile/src/features/review/ReviewSheet.tsx	fleet-connections	1
+apps/mobile/src/features/review/useReviewSections.ts	library	9
 apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx	fleet-connections	1
 apps/web/src/components/ChatView.tsx	fleet-connections	6
 packages/client-runtime/src/connection/model.ts	fleet-connections	1
@@ -997,7 +1004,7 @@ apps/web/src/components/settings/DatabaseStorageNotice.tsx	restart-compaction	10
 packages/contracts/src/desktopBootstrap.ts	restart-compaction	1
 packages/contracts/src/settings.ts	restart-compaction	2
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	library	1
-apps/mobile/src/lib/android-workspace-navigation.test.ts	library	1
+apps/mobile/src/lib/android-workspace-navigation.test.ts	library	2
 apps/server/src/orchestration-v2/Orchestrator.ts	library-projects	4
 packages/shared/src/keybindings.ts	library-palette	2
 scripts/effect-budget.json	-	/src/fork/
