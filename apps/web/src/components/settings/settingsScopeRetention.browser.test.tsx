@@ -37,13 +37,14 @@ vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: (() => ({ environments: [] })) as never,
 }));
-vi.mock(import("./SettingsSidebarNav"), async (original) => ({
-  ...(await original()),
-  SettingsSidebarNav: (() => null) as never,
+// No spreads below: the real modules load every settings panel, which outlasts the timeout on a busy machine.
+vi.mock(import("./SettingsSidebarNav"), () => ({ SettingsSidebarNav: () => null }));
+vi.mock(import("./SettingsBreadcrumb"), () => ({ SettingsBreadcrumb: () => null }));
+vi.mock(import("./SettingsPanels"), () => ({
+  useSettingsRestore: () => ({ changedSettingLabels: [], restoreDefaults: async () => {} }),
 }));
-vi.mock(import("./SettingsBreadcrumb"), async (original) => ({
-  ...(await original()),
-  SettingsBreadcrumb: (() => null) as never,
+vi.mock(import("../../fork/settings/registry"), () => ({
+  FORK_SETTINGS_SECTIONS: [{ id: "panel-picker", scope: "device" }] as never,
 }));
 vi.mock(import("../sidebar/mainAppLocation"), async (original) => ({
   ...(await original()),
