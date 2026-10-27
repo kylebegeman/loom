@@ -496,16 +496,32 @@ function deriveChanges(inputs: InspectorInputs): InspectorChanges | null {
   };
 }
 
-/** The agent's latest todo list, preferring the given run's; the timeline shows each update. */
+/**
+ * The given run's todo list, else the latest run's; an emptied list clears it. Reads `plans`
+ * because paged projections keep the latest todo list there after trimming its turn item.
+ */
 export function selectActiveTodoList(
   projection: ThreadStructure | null,
   runId: RunId | undefined,
 ): InspectorTodoList | null {
-  const lists = (projection?.turnItems ?? []).filter(
-    (item) => item.type === "todo_list" && item.steps.length > 0,
+  if (projection === null) return null;
+  const lists = projection.plans.filter(
+    (plan) => plan.kind === "todo_list" && plan.status !== "superseded",
   );
-  const list = lists.findLast((item) => item.runId === runId) ?? lists.at(-1);
-  return list?.type === "todo_list" ? list : null;
+  const runOrdinals = new Map<RunId | null, number>(
+    projection.runs.map((run) => [run.id, run.ordinal]),
+  );
+  const list =
+    lists.findLast((plan) => plan.runId === runId) ??
+    lists.reduce<(typeof lists)[number] | null>(
+      (latest, plan) =>
+        latest === null ||
+        (runOrdinals.get(plan.runId) ?? -1) >= (runOrdinals.get(latest.runId) ?? -1)
+          ? plan
+          : latest,
+      null,
+    );
+  return list?.kind === "todo_list" && list.steps.length > 0 ? list : null;
 }
 
 function derivePlan(inputs: InspectorInputs): InspectorPlan {

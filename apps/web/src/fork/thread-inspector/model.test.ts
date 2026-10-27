@@ -377,25 +377,39 @@ describe("deriveInspectorModel plan", () => {
     });
   });
 
-  it("reads the run's latest todo list, else the thread's latest", () => {
-    const todo = (id: string, runId: RunId, text: string) => ({
-      id,
-      type: "todo_list" as const,
-      runId,
-      steps: [{ id: `${id}-step`, text, status: "pending" as const }],
-    });
+  it("reads the run's todo list, else the latest run's, and clears on an empty list", () => {
     const otherRun = RunId.make("run-2");
-    const projection = {
-      turnItems: [
-        todo("first", RUN, "Old step"),
-        todo("second", RUN, "Current step"),
-        { id: "empty", type: "todo_list" as const, runId: otherRun, steps: [] },
-        todo("third", otherRun, "Other run"),
-      ],
-    } as unknown as ThreadStructure;
-    expect(selectActiveTodoList(projection, RUN)?.steps[0]?.text).toBe("Current step");
-    expect(selectActiveTodoList(projection, RunId.make("run-3"))?.steps[0]?.text).toBe("Other run");
-    expect(selectActiveTodoList({ turnItems: [] } as unknown as ThreadStructure, RUN)).toBeNull();
+    const todo = (id: string, runId: RunId, texts: ReadonlyArray<string>, status = "active") => ({
+      id,
+      kind: "todo_list" as const,
+      runId,
+      status,
+      steps: texts.map((text, index) => ({
+        id: `${id}-${index}`,
+        text,
+        status: "pending" as const,
+      })),
+    });
+    const structure = (plans: ReadonlyArray<unknown>) =>
+      ({
+        runs: [
+          { id: otherRun, ordinal: 2 },
+          { id: RUN, ordinal: 1 },
+        ],
+        plans,
+      }) as unknown as ThreadStructure;
+    const plans = [
+      todo("first", RUN, ["Old step"]),
+      todo("second", RUN, ["Current step"]),
+      todo("third", otherRun, ["Other run"]),
+      todo("replaced", otherRun, ["Replaced"], "superseded"),
+    ];
+    const text = (runId: RunId) => selectActiveTodoList(structure(plans), runId)?.steps[0]?.text;
+    expect(text(RUN)).toBe("Current step");
+    expect(text(RunId.make("run-3"))).toBe("Other run");
+    const cleared = structure([...plans, todo("cleared", otherRun, [])]);
+    expect(selectActiveTodoList(cleared, otherRun)).toBeNull();
+    expect(selectActiveTodoList(null, RUN)).toBeNull();
   });
 
   it("marks a completed proposed plan as implemented", () => {
