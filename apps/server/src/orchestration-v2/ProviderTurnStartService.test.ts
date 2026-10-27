@@ -1389,6 +1389,7 @@ effectIt.effect(
           workspaceRoot,
           worktreePath,
           worktreesDir,
+          stateDir: path.join(worktreesDir, "state"), // fork: project-lifecycle
           fileSystem,
           gitWorkflow,
           failReadsAfterRunning: true,
@@ -1447,6 +1448,7 @@ effectIt.effect(
         text: "Continue",
         worktreesDir,
         worktreePath,
+        stateDir: path.join(worktreesDir, "state"), // fork: project-lifecycle
         fileSystem,
         failReadsAfterRunning: true,
       });

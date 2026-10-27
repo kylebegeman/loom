@@ -38,8 +38,8 @@ vi.mock(import("../../state/environments"), async (original) => ({
   useEnvironments: (() => ({ environments: [] })) as never,
 }));
 // No spreads below: the real modules load every settings panel, which outlasts the timeout on a busy machine.
-vi.mock(import("./SettingsSidebarNav"), () => ({ SettingsSidebarNav: () => null }));
-vi.mock(import("./SettingsBreadcrumb"), () => ({ SettingsBreadcrumb: () => null }));
+vi.mock(import("./SettingsSidebarNav"), () => ({ SettingsSidebarNav: (() => null) as never }));
+vi.mock(import("./SettingsBreadcrumb"), () => ({ SettingsBreadcrumb: (() => null) as never }));
 vi.mock(import("./SettingsPanels"), () => ({
   useSettingsRestore: () => ({ changedSettingLabels: [], restoreDefaults: async () => {} }),
 }));
