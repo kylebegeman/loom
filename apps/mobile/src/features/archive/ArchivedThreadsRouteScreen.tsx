@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { isAgentWorkThread } from "@t3tools/client-runtime/fork"; // fork: agent-work
 import { useArchivedThreadListActions } from "../home/useThreadListActions";
 import {
   ArchivedThreadsScreen,
@@ -72,8 +73,13 @@ export function ArchivedThreadsRouteScreen() {
     },
     [],
   );
-  const { unarchiveThread, confirmDeleteThread } =
+  const { unarchiveThread, confirmDeleteThread, confirmDeleteAgentWork, deletingAgentWork } =
     useArchivedThreadListActions(refreshChangedEnvironment);
+  // fork: agent-work
+  const agentWork = useMemo(
+    () => groups.flatMap((group) => group.threads.filter(isAgentWorkThread)),
+    [groups],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -83,6 +89,9 @@ export function ArchivedThreadsRouteScreen() {
 
   return (
     <ArchivedThreadsScreen
+      agentWorkCount={agentWork.length}
+      deletingAgentWork={deletingAgentWork}
+      onDeleteAgentWork={() => confirmDeleteAgentWork(agentWork)}
       environments={environments}
       error={error}
       groups={groups}

@@ -6,7 +6,7 @@ import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/threa
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { withThreadDismissal } from "./thread-dismissal";
 import * as Dialog from "../../components/ui/Dialog";
@@ -786,6 +786,9 @@ export function useArchivedThreadListActions(
 ): {
   readonly unarchiveThread: (thread: EnvironmentThreadShell) => void;
   readonly confirmDeleteThread: (thread: EnvironmentThreadShell) => void;
+  // fork: agent-work
+  readonly confirmDeleteAgentWork: (threads: ReadonlyArray<EnvironmentThreadShell>) => void;
+  readonly deletingAgentWork: boolean;
 } {
   const handleCompleted = (_action: ThreadListAction, thread: EnvironmentThreadShell) => {
     onCompleted(thread);
@@ -796,6 +799,49 @@ export function useArchivedThreadListActions(
   };
   const confirmDeleteThread = (thread: EnvironmentThreadShell) =>
     confirmThreadDeletion(executeAction, thread);
+  // fork: agent-work - one delete per thread, then one archive reload per computer rather than
+  // one after every thread.
+  const deleteMutation = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const [deletingAgentWork, setDeletingAgentWork] = useState(false);
+  const deleteAgentWork = async (threads: ReadonlyArray<EnvironmentThreadShell>) => {
+    setDeletingAgentWork(true);
+    let failure: Cause.Cause<unknown> | null = null;
+    for (const thread of threads) {
+      const result = await deleteMutation({
+        environmentId: thread.environmentId,
+        input: { threadId: thread.id },
+      });
+      if (result._tag === "Failure") failure ??= result.cause;
+    }
+    for (const environmentId of new Set(threads.map((thread) => thread.environmentId))) {
+      refreshArchivedThreadsForEnvironment(environmentId);
+    }
+    setDeletingAgentWork(false);
+    if (failure !== null) {
+      Dialog.alert(
+        "Some agent conversations were not deleted",
+        actionFailureMessage("delete", failure),
+      );
+    }
+  };
+  const confirmDeleteAgentWork = (threads: ReadonlyArray<EnvironmentThreadShell>) => {
+    const title = actionFailureTitle("delete");
+    if (threads.length === 0 || !threads.every((t) => checkThreadOperationPermission(t, title))) {
+      return;
+    }
+    const count = threads.length;
+    Dialog.confirm({
+      title: `Delete ${count} agent conversation${count === 1 ? "" : "s"}?`,
+      message:
+        "Subagent and bot run history is permanently deleted. Parent conversations keep their agent receipts, and bot runs keep their results.",
+      confirmText: "Delete",
+      destructive: true,
+      onConfirm: () => {
+        selectionHaptic();
+        void deleteAgentWork(threads);
+      },
+    });
+  };
 
-  return { unarchiveThread, confirmDeleteThread };
+  return { unarchiveThread, confirmDeleteThread, confirmDeleteAgentWork, deletingAgentWork };
 }

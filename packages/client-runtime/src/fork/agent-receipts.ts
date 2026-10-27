@@ -1,4 +1,9 @@
-import { AGENT_RECEIPTS_WS_METHODS as R, type AgentReceiptSummary } from "@t3tools/contracts/fork";
+import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import {
+  AGENT_RECEIPTS_WS_METHODS as R,
+  type AgentReceiptSummary,
+  isBotRunThreadId,
+} from "@t3tools/contracts/fork";
 import type { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "../state/runtime.ts";
@@ -34,3 +39,8 @@ export function agentReceiptFacts(
   ].filter((fact) => fact !== null);
   return facts.length === 0 ? null : facts.join(" · ");
 }
+
+/** Subagent conversations and bot runs: their parent's receipts and the run record keep the work. */
+export const isAgentWorkThread = (
+  thread: Pick<OrchestrationV2ThreadShell, "id" | "lineage">,
+): boolean => thread.lineage.relationshipToParent === "subagent" || isBotRunThreadId(thread.id);

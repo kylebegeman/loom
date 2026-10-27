@@ -1,9 +1,10 @@
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { Spinner } from "~/components/ui/spinner";
-import { ArchiveIcon, ArchiveX } from "lucide-react";
+import { ArchiveIcon, ArchiveX, Trash2 } from "lucide-react";
 import { useState } from "react"; // fork: attention-status
 import { type ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { isAgentWorkThread } from "@t3tools/client-runtime/fork"; // fork: agent-work
 import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -26,7 +27,8 @@ export function ArchivedThreadsPanel() {
   // fork: attention-status
   const [titleFilter, setTitleFilter] = useState("");
   const { scope, groups: projectGroups, environments } = useSettingsScope();
-  const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
+  const { unarchiveThread, confirmAndDeleteThread, deleteArchivedThreads } = useThreadActions();
+  const [deletingAgentWork, setDeletingAgentWork] = useState(false); // fork: agent-work
   const {
     snapshots: archivedSnapshots,
     error: archiveError,
@@ -131,6 +133,38 @@ export function ArchivedThreadsPanel() {
     return { groups: sortedGroups, hasMultipleEnvironments };
   })();
 
+  // fork: agent-work
+  const agentWork = archivedGroups.flatMap(({ threads }) => threads.filter(isAgentWorkThread));
+  const deleteAgentWork = async () => {
+    const count = agentWork.length;
+    const confirmed = await settlePromise(
+      async () =>
+        readLocalApi()?.dialogs.confirm(
+          [
+            `Delete ${count} archived agent conversation${count === 1 ? "" : "s"}?`,
+            "This permanently clears subagent and bot run history. Parent conversations keep their agent receipts, and bot runs keep their results.",
+          ].join("\n"),
+          { variant: "destructive", confirmLabel: "Delete" },
+        ) ?? false,
+    );
+    if (confirmed._tag === "Failure" || !confirmed.value) return;
+    setDeletingAgentWork(true);
+    const failure = await deleteArchivedThreads(
+      agentWork.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+    );
+    setDeletingAgentWork(false);
+    if (failure !== null) {
+      const error = squashAtomCommandFailure(failure);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Some agent conversations were not deleted",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    }
+  };
+
   const handleArchivedThreadContextMenu = async (
     threadRef: ScopedThreadRef,
     position: { x: number; y: number },
@@ -191,6 +225,32 @@ export function ArchivedThreadsPanel() {
         value={titleFilter}
         onChange={(event) => setTitleFilter(event.currentTarget.value)}
       />
+      {/* fork: agent-work */}
+      {agentWork.length > 0 || deletingAgentWork ? (
+        <SettingsSection title="Agent work">
+          <SettingsRow
+            title={`${agentWork.length} archived subagent and bot run conversation${agentWork.length === 1 ? "" : "s"}${titleFilter.trim() ? " match this search" : ""}`}
+            description="Parent conversations keep their agent receipts and bot runs keep their results."
+            control={
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="sm"
+                className="shrink-0"
+                disabled={deletingAgentWork}
+                onClick={() => void deleteAgentWork()}
+              >
+                {deletingAgentWork ? (
+                  <Spinner size="sm" tone="muted" />
+                ) : (
+                  <Trash2 className="size-3.5" />
+                )}
+                <span>{deletingAgentWork ? "Deleting" : "Delete all"}</span>
+              </Button>
+            }
+          />
+        </SettingsSection>
+      ) : null}
       {archivedGroups.length === 0 ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}

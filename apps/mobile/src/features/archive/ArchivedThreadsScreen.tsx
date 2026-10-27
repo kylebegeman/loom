@@ -322,7 +322,36 @@ function ArchiveError(props: { readonly message: string; readonly onRetry: () =>
   );
 }
 
+// fork: agent-work
+function AgentWorkCard(props: {
+  readonly count: number;
+  readonly deleting: boolean;
+  readonly onDelete: () => void;
+}) {
+  return (
+    <View className="mt-2 rounded-[20px] bg-grouped-card p-4">
+      <Text className="text-base font-t3-bold text-foreground">
+        {`${props.count} subagent and bot run conversation${props.count === 1 ? "" : "s"}`}
+      </Text>
+      <Text className="mt-1 text-sm text-foreground-muted">
+        Parent conversations keep their agent receipts and bot runs keep their results.
+      </Text>
+      <View className="mt-3">
+        <Button
+          label={props.deleting ? "Deleting" : "Delete all"}
+          tone="danger"
+          loading={props.deleting}
+          onPress={props.onDelete}
+        />
+      </View>
+    </View>
+  );
+}
+
 export function ArchivedThreadsScreen(props: {
+  readonly agentWorkCount: number; // fork: agent-work
+  readonly deletingAgentWork: boolean; // fork: agent-work
+  readonly onDeleteAgentWork: () => void; // fork: agent-work
   readonly environments: ReadonlyArray<ArchivedThreadsHeaderEnvironment>;
   readonly error: string | null;
   readonly groups: ReadonlyArray<ArchivedThreadGroup>;
@@ -493,7 +522,19 @@ export function ArchivedThreadsScreen(props: {
             keyExtractor={(item) => item.key}
             ListEmptyComponent={listEmptyComponent}
             ListHeaderComponent={
-              props.error ? <ArchiveError message={props.error} onRetry={props.onRefresh} /> : null
+              // fork: agent-work
+              <>
+                {props.error ? (
+                  <ArchiveError message={props.error} onRetry={props.onRefresh} />
+                ) : null}
+                {props.agentWorkCount > 0 || props.deletingAgentWork ? (
+                  <AgentWorkCard
+                    count={props.agentWorkCount}
+                    deleting={props.deletingAgentWork}
+                    onDelete={props.onDeleteAgentWork}
+                  />
+                ) : null}
+              </>
             }
             onScrollBeginDrag={() => openSwipeableRef.current?.close()}
             refreshControl={

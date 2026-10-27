@@ -1,5 +1,6 @@
 import { ThreadId } from "@t3tools/contracts";
 import {
+  BOT_RUN_THREAD_PREFIX,
   LibraryError,
   LibraryHistoryDelta,
   LIBRARY_HISTORY_DELTAS_FEATURE,
@@ -353,12 +354,12 @@ const make = Effect.gen(function* () {
   });
   // A conversation is saved once it has a message: the Library's New conversation flow binds it
   // before then, and a binding replaces what a saved record would upload. Subagent conversations
-  // stay on this computer; their parent's history carries the work.
+  // and bot runs stay on this computer; their parent's history and the run carry the work.
   const withMessages = sql.literal(
     "EXISTS (SELECT 1 FROM orchestration_v2_projection_messages m WHERE m.thread_id=t.thread_id)",
   );
-  const topLevel = sql.literal(
-    "json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'",
+  const saveable = sql.literal(
+    `json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent' AND substr(t.thread_id, 1, ${BOT_RUN_THREAD_PREFIX.length}) <> '${BOT_RUN_THREAD_PREFIX}'`,
   );
   // Finds conversations in folders that save without a binding: all of them when the folders are
   // checked, and otherwise only unknown ones that just reached a milestone.
@@ -376,7 +377,7 @@ const make = Effect.gen(function* () {
         // Newest first, so the backfill reaches recent work before old work.
         const rows = yield* sql<{ thread_id: string }>`
           SELECT thread_id FROM orchestration_v2_projection_threads t
-          WHERE project_id=${resolved.localProjectId} AND deleted_at IS NULL AND ${topLevel}
+          WHERE project_id=${resolved.localProjectId} AND deleted_at IS NULL AND ${saveable}
             AND ${withMessages}
           ORDER BY updated_at DESC`;
         if (rows.length === 0) continue;
@@ -397,15 +398,15 @@ const make = Effect.gen(function* () {
     const rows = yield* sql<{
       thread_id: string;
       project_id: string;
-      top: number;
+      saveable: number;
       messages: number;
     }>`
-      SELECT thread_id, project_id, ${topLevel} AS top, ${withMessages} AS messages
+      SELECT thread_id, project_id, ${saveable} AS saveable, ${withMessages} AS messages
       FROM orchestration_v2_projection_threads t
       WHERE thread_id IN ${sql.in(unknown)} AND deleted_at IS NULL`;
     for (const row of rows) {
       const folder = folders.find(({ resolved }) => resolved.localProjectId === row.project_id);
-      if (folder === undefined || row.top === 0) outside.add(ThreadId.make(row.thread_id));
+      if (folder === undefined || row.saveable === 0) outside.add(ThreadId.make(row.thread_id));
       else if (row.messages === 1) {
         yield* workspaces.saveHistory({
           project: folder.project,

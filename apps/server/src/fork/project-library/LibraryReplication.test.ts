@@ -9,6 +9,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  botRunThreadId,
   LibraryError,
   type LibraryCopyHealth,
   type LibraryInfo,
@@ -1594,8 +1595,10 @@ describe("durable Library history replication", () => {
         const fresh = ThreadId.make("fresh-thread");
         yield* seed(older, "2026-10-01T00:00:00.000Z");
         yield* seed(newer, "2026-10-02T00:00:00.000Z");
-        // Subagent conversations stay on this computer, found by the folder check or a milestone.
+        // Subagent conversations and bot runs stay on this computer, found by the folder check or
+        // a milestone.
         yield* seed(ThreadId.make("subagent-thread"), "2026-10-02T12:00:00.000Z", newer);
+        yield* seed(botRunThreadId("backfill-run"), "2026-10-02T18:00:00.000Z");
         const store = yield* WorkspaceStore.LibraryWorkspaceStore.pipe(
           Effect.provide(WorkspaceStore.layer),
         );
@@ -1623,6 +1626,7 @@ describe("durable Library history replication", () => {
         // A conversation with new work goes ahead of the backlog, and a flush sends only it.
         yield* seed(fresh, "2026-10-03T00:00:00.000Z");
         yield* seed(ThreadId.make("later-subagent-thread"), "2026-10-03T00:00:00.000Z", fresh);
+        yield* seed(botRunThreadId("fresh-run"), "2026-10-03T00:00:00.000Z");
         yield* service.flush;
         expect(yield* uploaded).toEqual([newer, fresh]);
         yield* service.drain;

@@ -22,7 +22,11 @@ import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { useRouter } from "@tanstack/react-router";
 
-import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
+import {
+  deleteSelectedThreadEntries, // fork: agent-work
+  getFallbackThreadIdAfterDelete,
+  pinOrderKeyBetween,
+} from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { environmentSession, readEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -903,6 +907,28 @@ export function useThreadActions() {
       (result) => result._tag === "Success",
     );
 
+  // fork: agent-work - archived threads stay out of the live shell, so each is one delete command
+  // and the archive reloads once at the end rather than after every thread.
+  const deleteArchivedThreads = async (targets: ReadonlyArray<ScopedThreadRef>) => {
+    const { firstFailure } = await deleteSelectedThreadEntries({
+      entries: targets.map((target) => ({ threadKey: scopedThreadKey(target), target })),
+      delete: async ({ target }) => {
+        const result =
+          threadOperationFailure(target) ??
+          (await deleteThreadMutation({
+            environmentId: target.environmentId,
+            input: { threadId: target.threadId },
+          }));
+        if (result._tag === "Success") clearThreadPreviewState(target);
+        return result;
+      },
+    });
+    for (const environmentId of new Set(targets.map((target) => target.environmentId))) {
+      refreshArchivedThreadsForEnvironment(environmentId);
+    }
+    return firstFailure;
+  };
+
   const confirmAndDeleteThread = async (target: ScopedThreadRef) => {
     const permissionFailure = threadOperationFailure(target);
     if (permissionFailure) return permissionFailure;
@@ -935,6 +961,7 @@ export function useThreadActions() {
     archiveThread,
     unarchiveThread,
     deleteThread,
+    deleteArchivedThreads, // fork: agent-work
     confirmAndDeleteThread,
     settleThread,
     unsettleThread,
