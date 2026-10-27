@@ -2,7 +2,8 @@
 #
 # Mention @claude in a pull request comment or review and Claude works on that
 # pull request's branch: fix a failing integration, reapply a seam, answer a
-# question. Only the repository owner can trigger it.
+# question. Only the repository owner can trigger it. Claude runs on Kyle's pooled
+# accounts through Switchboard on Dorothy, reached over the tailnet.
 name: Loom Claude
 
 on:
@@ -13,10 +14,7 @@ on:
   pull_request_review:
     types: [submitted]
 
-permissions:
-  contents: read
-  pull-requests: read
-  id-token: write
+permissions: {}
 
 jobs:
   claude:
@@ -28,11 +26,19 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      pull-requests: read
+      # Tailscale exchanges the job's OIDC token for an ephemeral tag:servers node.
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.LOOM_BOT_TOKEN }}
       # gh treats a remote named "upstream" as the default repository; pin it
       # to the fork so pull requests and comments never land on pingdotgg/t3code.
       GH_REPO: ${{ github.repository }}
+      ANTHROPIC_BASE_URL: http://dorothy.tail1dab34.ts.net:8317
+      # Telemetry and update checks would carry the gateway key to api.anthropic.com.
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -56,10 +62,20 @@ jobs:
           git remote add upstream https://github.com/pingdotgg/t3code.git
           git fetch -q upstream --tags
 
-      - name: Claude
-        uses: anthropics/claude-code-action@v1
+      - name: Join the tailnet
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:servers
+
+      - name: Claude
+        uses: anthropics/claude-code-action@8041f1d17e0e7d2f2cfe35002962e9f26237c0bb # v1.0.263
+        with:
+          # Sent as x-api-key, which Switchboard accepts for this key on Messages routes only.
+          anthropic_api_key: ${{ secrets.SWITCHBOARD_CI_KEY }}
+          # Classifying buffered inline comments posts the key straight to api.anthropic.com.
+          classify_inline_comments: "false"
           github_token: ${{ secrets.LOOM_BOT_TOKEN }}
           claude_args: >-
             --model claude-opus-5-5 --effort high --max-turns 200

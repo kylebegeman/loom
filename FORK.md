@@ -1037,10 +1037,19 @@ runners the fork does not have. Only `loom-*.yml` workflows run. The
 first step of every `Loom upstream` run disables any other active workflow, including ones
 a merge adds, and the default workflow token is read-only.
 
-The workflows need three repository secrets:
+Claude in `Loom upstream` and `Loom Claude` runs on Kyle's pooled Claude accounts through
+Switchboard on Dorothy, so one account's weekly limit does not stop a run. Each job joins
+the tailnet as an ephemeral `tag:servers` node, which can reach only Dorothy's gateway
+port, and `Loom upstream` checks the gateway with one token count before any session
+starts. The workflows need these repository secrets:
 
-- `CLAUDE_CODE_OAUTH_TOKEN`: from `claude setup-token`, so Claude runs on Kyle's Claude
-  subscription.
+- `SWITCHBOARD_CI_KEY`: Switchboard's gateway-only CI key, Keychain `switchboard/ci-api-key`
+  on Dorothy. It reaches only Claude Messages routes for Opus, Sonnet and Haiku 5.5. Set it
+  without echoing it:
+  `/usr/bin/security find-generic-password -s switchboard -a ci-api-key -w | gh secret set SWITCHBOARD_CI_KEY -R kylebegeman/loom`.
+- `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`: the Tailscale workload identity federation
+  credential (GitHub OIDC, subject `repo:kylebegeman/loom:*`, Auth Keys write,
+  `tag:servers`).
 - `LOOM_ALERT_WEBHOOK_URL`: the webhook URL of the `Loom upstream alert` scheduled task in
   the loom project. Rotating the task's webhook token means setting this again.
 - `LOOM_BOT_TOKEN`: a fine-grained personal access token for `kylebegeman/loom` only, with
