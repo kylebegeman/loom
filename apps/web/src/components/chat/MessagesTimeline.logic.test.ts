@@ -887,8 +887,9 @@ describe("deriveMessagesTimelineRows", () => {
       return rows.slice(rows.findIndex((row) => row.id.includes("history-assistant")) + 1);
     };
 
+    // fork: compaction-recovery: an interrupted compaction keeps its distinct label.
     expect(liveRowsFor([prompt, compaction, interruptResult])).toMatchObject([
-      { kind: "context-compaction", label: "Context compaction stopped" },
+      { kind: "context-compaction", label: "Context compaction interrupted" },
     ]);
     // Stopped before the provider started: no compaction row says so, so the interrupt stays.
     expect(liveRowsFor([prompt, interruptResult]).map((row) => row.id)).toContain(

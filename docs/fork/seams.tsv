@@ -83,7 +83,7 @@ apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	compaction-recovery	
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	compaction-recovery	1
 packages/client-runtime/src/work-log/presentation.ts	compaction-recovery	2
 packages/client-runtime/src/work-log/presentation.test.ts	compaction-recovery	2
-apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	1
+apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	2
 apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	3
 apps/web/src/components/chat/V2LifecycleRow.tsx	agent-receipts	3
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
