@@ -296,6 +296,15 @@ check_omarchy_pack() {
   node deploy/omarchy/check.mjs
 }
 
+# Upstream's CI boots the built web client in headless Chromium, since source tests never run
+# the production chunk graph, and that workflow is off here. The browser follows the Playwright
+# this checkout installed, which an upstream merge can bump.
+check_web_boot() {
+  cd apps/web
+  pnpm exec playwright install --only-shell chromium
+  node scripts/verify-built-boot.ts
+}
+
 run_fork_tests() {
   local package=$1 tests=() t
   while IFS= read -r t; do tests+=("$t"); done < <(fork_tests | awk -v p="$package/" 'index($0, p) == 1')
@@ -338,12 +347,17 @@ run_checks() {
   FAILED_CHECKS=""
   run_check "Checking that every fork seam survived" check_seams
   run_check "Checking for new T3 Code product text" check_brand_copy
-  local before=$FAILED_CHECKS dirs d packages package
+  local before=$FAILED_CHECKS built dirs d packages package
   run_check "Installing dependencies" pnpm install --frozen-lockfile
   if [ "$FAILED_CHECKS" = "$before" ]; then
     run_check "Linting fork code" check_fork_lint
     run_check "Running the Omarchy pack's checks" check_omarchy_pack
+    built=$FAILED_CHECKS
     run_check "Regenerating web routes and building the web client" in_dir apps/web pnpm exec vp build
+    # A failed build leaves the previous one in dist, which would boot in its place.
+    if [ "$FAILED_CHECKS" = "$built" ]; then
+      run_check "Booting the built web client" check_web_boot
+    fi
     # One check per package, since vp stops typechecking every package after the first failure.
     # An empty list would skip the checks unseen, so failing to list them is a failure too.
     if dirs=$(typecheck_dirs); then
@@ -1007,7 +1021,7 @@ open_pr() {
   added=$(git diff --name-only --diff-filter=A origin/main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
   say "Pushing $branch and opening its pull request"
   git push -q -u origin "$branch"
-  body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, every test file the fork adds or changes passes, and every package typechecks.
+  body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests and upstream's tests beside the files it changes pass, every package typechecks, and the built web client boots.
 
 Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, publishes the next Loom release and installs it. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
 

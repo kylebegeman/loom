@@ -266,6 +266,9 @@ printf '\\n' >> "$LOOM_TEST_LOG"
 if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = lint ]; then
   exit "$LOOM_TEST_LINT_STATUS"
 fi
+if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = build ]; then
+  exit "$LOOM_TEST_BUILD_STATUS"
+fi
 if [ "$1" = install ]; then
   exit "$LOOM_TEST_INSTALL_STATUS"
 fi
@@ -279,7 +282,11 @@ fi
 function runLint(
   f: ReturnType<typeof lintFixture>,
   command: string,
-  { lint = 0, install = 0 }: { readonly lint?: number; readonly install?: number } = {},
+  {
+    lint = 0,
+    install = 0,
+    build = 0,
+  }: { readonly lint?: number; readonly install?: number; readonly build?: number } = {},
 ) {
   return NodeChildProcess.spawnSync(
     "bash",
@@ -296,6 +303,7 @@ fork_tests() {
 }
 restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
 check_omarchy_pack() { printf 'omarchy-pack\\n' >> "$LOOM_TEST_LOG"; }
+check_web_boot() { printf 'web-boot\\n' >> "$LOOM_TEST_LOG"; }
 typecheck_dirs() { printf '%s\\n' packages/contracts; }
 ${command}
 `,
@@ -310,6 +318,7 @@ ${command}
         LOOM_TEST_LOG: f.log,
         LOOM_TEST_LINT_STATUS: String(lint),
         LOOM_TEST_INSTALL_STATUS: String(install),
+        LOOM_TEST_BUILD_STATUS: String(build),
       },
     },
   );
@@ -372,7 +381,7 @@ it("reports lint failure and exits unsuccessfully", () => {
   expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
 });
 
-it("runs lint after installation, then builds and typechecks, and each package's tests last", () => {
+it("runs lint after installation, then builds, boots and typechecks, and each package's tests last", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks");
   expect(result.status).toBe(0);
@@ -390,6 +399,7 @@ it("runs lint after installation, then builds and typechecks, and each package's
     ],
     ["omarchy-pack"],
     ["exec", "vp", "build"],
+    ["web-boot"],
     ["exec", "vp", "run", "typecheck"],
     ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     [
@@ -427,10 +437,35 @@ it("runs every check after a failing lint and lists the failure at the end", () 
     "vp",
     "omarchy-pack",
     "vp",
+    "web-boot",
     "vp",
     "tsc",
     "vp",
     "vp",
+    "restore-lockfile",
+  ]);
+});
+
+it("boots no stale web client when the build fails, and still runs the rest", () => {
+  const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
+  const result = runLint(f, "run_checks", { build: 1 });
+  expect(result.status).toBe(1);
+  expect(
+    result.stderr
+      .trimEnd()
+      .split("\n")
+      .filter((line) => line.startsWith("loom: ")),
+  ).toEqual(["loom: check failed: Regenerating web routes and building the web client"]);
+  const calls = lintCalls(f).map(([first, second, third]) =>
+    second ? `${second} ${third}` : first,
+  );
+  expect(calls).not.toContain("web-boot");
+  expect(calls.slice(calls.indexOf("vp build"))).toEqual([
+    "vp build",
+    "vp run",
+    "tsc --noEmit",
+    "vp test",
+    "vp test",
     "restore-lockfile",
   ]);
 });

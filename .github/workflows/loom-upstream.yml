@@ -101,6 +101,11 @@ jobs:
       - name: Install pnpm and Claude
         run: npm install -g "$(node -p "require('./package.json').packageManager")" @anthropic-ai/claude-code
 
+      # The check boots the built web client in headless Chromium, which needs Linux libraries
+      # the runner lacks. loom.sh installs the browser itself; this only adds the libraries.
+      - name: Install Chromium system libraries
+        run: npx -y "playwright@$(node -p "require('./apps/web/package.json').devDependencies.playwright")" install-deps chromium
+
       - name: Prepare git
         run: |
           # Global, so the git repositories tests create get an author too.
