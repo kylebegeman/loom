@@ -154,19 +154,29 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
       }
       if (Option.isSome(recovery)) {
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        yield* driver.execute({
-          operation: "Workspace.restoreWorktree.restoreCheckpoint",
-          cwd,
-          args: [
-            "restore",
-            "--source",
-            recovery.value.checkpointCommit,
-            "--worktree",
-            "--staged",
-            "--",
-            ".",
-          ],
-        });
+        yield* driver
+          .execute({
+            operation: "Workspace.restoreWorktree.restoreCheckpoint",
+            cwd,
+            args: [
+              "restore",
+              "--source",
+              recovery.value.checkpointCommit,
+              "--worktree",
+              "--staged",
+              "--",
+              ".",
+            ],
+          })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new WorkspacePreparationError({
+                  message: `Could not restore the saved files for branch '${input.branch}' at ${cwd}.`,
+                  cause: error,
+                }),
+            ),
+          );
         // Once files are restored, setup retries must keep any new work in the checkout.
         yield* fs.writeFileString(
           marker,
@@ -212,15 +222,27 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
       yield* fs.remove(marker);
       yield* tracker.finish(input.threadId, "done");
     }).pipe(
-      Effect.onError((cause) =>
-        tracker
-          .finish(
-            input.threadId,
-            Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
-            Cause.pretty(cause),
-          )
-          .pipe(Effect.asVoid),
-      ),
+      Effect.onError((cause) => {
+        if (Cause.hasInterruptsOnly(cause))
+          return tracker.finish(input.threadId, "cancelled", null).pipe(Effect.asVoid);
+        const error = Cause.squash(cause);
+        // The setup card is client-visible; Git output and stacks stay in the server log.
+        return Effect.logWarning("workspace restore failed", {
+          threadId: input.threadId,
+          cause: Cause.pretty(cause),
+        }).pipe(
+          Effect.andThen(
+            tracker.finish(
+              input.threadId,
+              "failed",
+              isWorkspacePreparationError(error)
+                ? error.message
+                : `Workspace preparation failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          ),
+          Effect.asVoid,
+        );
+      }),
     );
   });
   return yield* input.workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
