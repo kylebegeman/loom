@@ -1,6 +1,8 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   directoryComputersView,
+  directoryCatalogRows,
+  directoryOldMachines,
   supportsLoomFeature,
   type DirectoryCatalogRow,
   type DirectorySavedConnection,
@@ -27,6 +29,7 @@ import {
   type LibraryComputerSignInStep,
 } from "./connect";
 import { directoryComputers } from "./state";
+import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 
 type RowState =
   | { readonly phase: "checking" }
@@ -110,6 +113,15 @@ function LibraryComputersSection({
     saved,
     now,
   });
+  const listing = view.listing.listing;
+  const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
+  const oldIds = new Set(old.environments.map((row) => row.environmentId));
+  const rows = directoryCatalogRows({ listing, saved, connected: [], now }).filter(
+    (row) => row.report !== null && row.environmentId !== libraryId,
+  );
+
+  const recentRows = rows.filter((row) => !oldIds.has(row.environmentId));
+  const oldRows = rows.filter((row) => oldIds.has(row.environmentId));
 
   const updateRowState = (
     environmentId: EnvironmentId,
@@ -199,7 +211,9 @@ function LibraryComputersSection({
           ? "Loading your Library's computers..."
           : view.listing.cacheText;
       case "empty":
-        return "No other computers in your Library";
+        return rows.length === 0 && old.machines.length === 0
+          ? "No other computers in your Library"
+          : null;
       case "listed":
         return null;
       case "failed":
@@ -210,7 +224,7 @@ function LibraryComputersSection({
   return (
     <SettingsSection
       id={LIBRARY_COMPUTERS_TARGET}
-      title="Other computers in your Library"
+      title="Computers in your Library"
       headerAction={
         view.status === "unsupported" ? null : (
           <Button
@@ -238,7 +252,7 @@ function LibraryComputersSection({
           ) : null}
         </div>
       ) : null}
-      {view.rows.map((row) => {
+      {[...recentRows, ...oldRows].map((row, index) => {
         const state = rowStates.get(row.environmentId) ?? null;
         const os = row.report?.platform.os;
         const platform = os === undefined ? null : (PLATFORM_LABELS[os] ?? os);
@@ -257,62 +271,91 @@ function LibraryComputersSection({
                 ? { text: state.message, error: true }
                 : null;
         return (
-          <EnvironmentRow
-            key={row.environmentId}
-            kind={machineKind(os)}
-            label={row.label}
-            subtitle={subtitle}
-            below={
-              note ? (
-                <p
-                  role={note.error ? "alert" : undefined}
-                  className={
-                    note.error
-                      ? "mt-1 text-xs text-destructive"
-                      : "mt-1 text-xs text-muted-foreground"
-                  }
-                >
-                  {note.text}
-                </p>
-              ) : null
-            }
-          >
-            {row.action === "pair" ? (
-              <Button size="xs" variant="outline" onClick={() => onPair(row.environmentId, "")}>
-                Pair instead
-              </Button>
-            ) : row.action === null ? null : state?.phase === "signing-in" ? (
-              <>
-                <span className="text-xs text-muted-foreground">Waiting for sign-in...</span>
+          <div key={row.environmentId}>
+            {oldRows.length > 0 && index === recentRows.length ? (
+              <h3 className="px-4 pt-4 text-xs font-medium">Old machines</h3>
+            ) : null}
+            <EnvironmentRow
+              key={row.environmentId}
+              kind={machineKind(os)}
+              label={row.label}
+              subtitle={subtitle}
+              below={
+                note ? (
+                  <p
+                    role={note.error ? "alert" : undefined}
+                    className={
+                      note.error
+                        ? "mt-1 text-xs text-destructive"
+                        : "mt-1 text-xs text-muted-foreground"
+                    }
+                  >
+                    {note.text}
+                  </p>
+                ) : null
+              }
+            >
+              <ForgetDirectoryEntry
+                request={{ kind: "environment", environmentId: row.environmentId }}
+                label={row.label}
+              />
+              {row.action === "pair" ? (
+                <Button size="xs" variant="outline" onClick={() => onPair(row.environmentId, "")}>
+                  Pair instead
+                </Button>
+              ) : row.action === null ? null : state?.phase === "signing-in" ? (
+                <>
+                  <span className="text-xs text-muted-foreground">Waiting for sign-in...</span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => cancelRow(row.environmentId, state.httpBaseUrl)}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              ) : state?.phase === "ready" ? (
+                <Button size="xs" variant="outline" onClick={() => void signInRow(row, state.step)}>
+                  Sign in
+                </Button>
+              ) : (
                 <Button
                   size="xs"
                   variant="outline"
-                  onClick={() => cancelRow(row.environmentId, state.httpBaseUrl)}
+                  disabled={state?.phase === "checking" || state?.phase === "cancelling"}
+                  onClick={() => void connectRow(row)}
                 >
-                  Cancel
+                  {state?.phase === "checking"
+                    ? "Checking..."
+                    : state?.phase === "cancelling"
+                      ? "Cancelling..."
+                      : "Connect"}
                 </Button>
-              </>
-            ) : state?.phase === "ready" ? (
-              <Button size="xs" variant="outline" onClick={() => void signInRow(row, state.step)}>
-                Sign in
-              </Button>
-            ) : (
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={state?.phase === "checking" || state?.phase === "cancelling"}
-                onClick={() => void connectRow(row)}
-              >
-                {state?.phase === "checking"
-                  ? "Checking..."
-                  : state?.phase === "cancelling"
-                    ? "Cancelling..."
-                    : "Connect"}
-              </Button>
-            )}
-          </EnvironmentRow>
+              )}
+            </EnvironmentRow>
+          </div>
         );
       })}
+      {old.machines.length > 0 ? (
+        <>
+          {oldRows.length === 0 ? (
+            <h3 className="px-4 pt-4 text-xs font-medium">Old machines</h3>
+          ) : null}
+          {old.machines.map((machine) => (
+            <EnvironmentRow
+              key={machine.keyFingerprint}
+              kind="linux"
+              label={machine.hostname}
+              subtitle="Reporting computer is no longer in your Library"
+            >
+              <ForgetDirectoryEntry
+                request={{ kind: "machine", keyFingerprint: machine.keyFingerprint }}
+                label={machine.hostname}
+              />
+            </EnvironmentRow>
+          ))}
+        </>
+      ) : null}
     </SettingsSection>
   );
 }

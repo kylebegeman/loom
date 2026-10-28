@@ -309,3 +309,9 @@ backends. Open **Settings > Computers > Fleet updates** to compare runtime
 versions and provider updates across computers. **Review updates** shows the
 planned updates, skipped computers, and restart impact before you run them.
 Offline computers retain their last known version until they reconnect.
+
+### Forget an old computer
+
+In Settings > Computers, your Library's list offers **Forget** for computers and unattached machines. Computers that have not reported for 30 days appear under **Old machines**. Forget removes the Library entry and its pinned key; it does not remove your saved connection or files. A running computer returns when it reports again, usually within 15 minutes. Retire an active Reach address before forgetting its computer.
+
+When Library reporting says the signing key changed, use **Forget in your Library** there to accept the computer's next signed report. Agents connected to the Library can use `loom_directory_forget`.

@@ -24,6 +24,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
+import { ForgetDirectoryEntry } from "../directory-computers/ForgetDirectoryEntry";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
@@ -182,6 +183,12 @@ export function ComputerReachSection({
               </Text>
             ))}
           </View>
+          {report?.state === "key-changed" ? (
+            <ForgetDirectoryEntry
+              request={{ kind: "environment", environmentId }}
+              label={environmentId}
+            />
+          ) : null}
           <SettingsActionRow
             icon="arrow.clockwise"
             label="Refresh Library status"

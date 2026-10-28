@@ -2,6 +2,8 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   createDirectoryComputersAtoms,
   directoryComputersView,
+  directoryCatalogRows,
+  directoryOldMachines,
   supportsLoomFeature,
   type DirectoryCatalogRow,
 } from "@t3tools/client-runtime/fork";
@@ -10,7 +12,7 @@ import { DIRECTORY_FEATURE } from "@t3tools/contracts/fork";
 import { useFocusEffect } from "@react-navigation/native";
 import { AsyncResult } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useResolveClassNames } from "uniwind";
 
@@ -39,6 +41,7 @@ import {
   type DirectoryPairing,
   type DirectorySectionContent,
 } from "./directoryComputers";
+import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 
 const directoryComputers = createDirectoryComputersAtoms(connectionAtomRuntime);
 
@@ -99,7 +102,30 @@ export function useDirectoryComputers() {
     saved,
     now,
   });
-  return { libraryId, content: directorySectionContent(view, catalog.isReady), refresh } as const;
+  const listing = view.listing.listing;
+  const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
+  const oldIds = new Set(old.environments.map((row) => row.environmentId));
+  const rows = directoryCatalogRows({ listing, saved, connected: [], now }).filter(
+    (row) => row.report !== null && row.environmentId !== libraryId,
+  );
+  rows.sort(
+    (left, right) =>
+      Number(oldIds.has(left.environmentId)) - Number(oldIds.has(right.environmentId)),
+  );
+  return {
+    libraryId,
+    content: directorySectionContent(
+      {
+        ...view,
+        rows,
+        status: view.status === "empty" && rows.length > 0 ? "listed" : view.status,
+      },
+      catalog.isReady,
+    ),
+    old,
+    oldIds,
+    refresh,
+  } as const;
 }
 
 export type DirectoryComputers = ReturnType<typeof useDirectoryComputers>;
@@ -236,7 +262,7 @@ export function DirectoryComputersSection({
   /** Opens the pairing form for this computer with its address filled in. */
   readonly onPair: (pairing: DirectoryPairing) => void;
 }) {
-  const { content, libraryId, refresh } = directory;
+  const { content, libraryId, refresh, old, oldIds } = directory;
   const { active, connect } = useDirectoryConnect(libraryId, onPair);
   if (content.kind === "hidden") return null;
   const retry = <SettingsActionRow icon="arrow.clockwise" label="Try again" onPress={refresh} />;
@@ -267,26 +293,54 @@ export function DirectoryComputersSection({
               {retry}
             </>
           )}
-          {content.computers.map(({ row, description, connectable }) => {
+          {content.computers.map(({ row, description, connectable }, index) => {
             const progress = active?.environmentId === row.environmentId ? active.progress : null;
             return (
-              <DirectoryComputerRow
-                key={row.environmentId}
-                label={row.label}
-                description={description}
-                detail={progress ?? (connectable ? "Connect" : "Pair instead")}
-                loading={progress !== null}
-                disabled={active !== null && progress === null}
-                onPress={() =>
-                  row.action === "pair"
-                    ? onPair({ httpBaseUrl: "", params: { libraryComputer: row.environmentId } })
-                    : connect(row)
-                }
-              />
+              <Fragment key={row.environmentId}>
+                {oldIds.has(row.environmentId) &&
+                (index === 0 || !oldIds.has(content.computers[index - 1]!.row.environmentId)) ? (
+                  <Text className="px-4 pt-4 text-sm text-foreground-muted">Old machines</Text>
+                ) : null}
+                <DirectoryComputerRow
+                  label={row.label}
+                  description={description}
+                  detail={
+                    progress ??
+                    (row.saved ? "Saved on this device" : connectable ? "Connect" : "Pair instead")
+                  }
+                  loading={progress !== null}
+                  disabled={row.action === null || (active !== null && progress === null)}
+                  onPress={() =>
+                    row.action === "pair"
+                      ? onPair({ httpBaseUrl: "", params: { libraryComputer: row.environmentId } })
+                      : connect(row)
+                  }
+                />
+                <ForgetDirectoryEntry
+                  request={{ kind: "environment", environmentId: row.environmentId }}
+                  label={row.label}
+                  title={`Forget ${row.label}`}
+                />
+              </Fragment>
             );
           })}
         </>
       )}
+      {old.machines.length > 0 ? (
+        <>
+          {old.environments.length === 0 ? (
+            <Text className="px-4 pt-4 text-sm text-foreground-muted">Old machines</Text>
+          ) : null}
+          {old.machines.map((machine) => (
+            <ForgetDirectoryEntry
+              key={machine.keyFingerprint}
+              request={{ kind: "machine", keyFingerprint: machine.keyFingerprint }}
+              label={machine.hostname}
+              title={`Forget ${machine.hostname}`}
+            />
+          ))}
+        </>
+      ) : null}
     </SettingsSection>
   );
 }
