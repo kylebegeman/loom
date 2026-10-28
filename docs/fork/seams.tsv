@@ -744,7 +744,7 @@ apps/server/src/provider/EventNdjsonLogger.test.ts	retention-defaults	2
 apps/server/src/serverSettings.test.ts	retention-defaults	1
 apps/server/src/storageCleanup.test.ts	retention-defaults	2
 apps/server/src/usage/UsageService.ts	retention-defaults	3
-apps/server/src/usage/UsageService.test.ts	retention-defaults	1
+apps/server/src/usage/UsageService.test.ts	retention-defaults	2
 apps/server/src/usage/usageScanCache.ts	retention-defaults	1
 packages/contracts/src/settings.ts	retention-defaults	2
 packages/contracts/src/settings.test.ts	retention-defaults	3

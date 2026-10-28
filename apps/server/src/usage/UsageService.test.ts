@@ -87,9 +87,11 @@ const WINDOW: UsageSummaryInput = {
 };
 
 const setup = Effect.gen(function* () {
-  const home = yield* Effect.promise(() =>
-    NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-")),
-  );
+  // fork: retention-defaults: normalize macOS's /var alias before building fixture paths.
+  const home = yield* Effect.promise(async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-"));
+    return NodeFSP.realpath(directory);
+  });
   yield* Effect.addFinalizer(() =>
     Effect.promise(() => NodeFSP.rm(home, { recursive: true, force: true })),
   );
