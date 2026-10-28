@@ -15,6 +15,9 @@ apps/web/src/components/chat/WorktreeSetupCard.tsx	library-launch-files	19
 apps/web/src/components/chat/WorktreeSetupCard.tsx	project-lifecycle	6
 apps/web/src/components/chat/useWorktreeSetup.ts	library-launch-files	8
 apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
+apps/web/src/components/chat/TimelineToolActivityIcon.tsx	brand	2
+apps/web/src/components/chat/V2LifecycleRow.tsx	brand	2
+apps/mobile/src/features/threads/thread-work-log.tsx	brand	2
 apps/web/src/rpc/requestLatencyState.ts	library-launch-files	6
 packages/client-runtime/src/worktreeSetup.ts	library-launch-files	1
 scripts/build-desktop-artifact.test.ts	brand	5
