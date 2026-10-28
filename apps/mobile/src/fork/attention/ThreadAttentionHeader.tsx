@@ -152,23 +152,22 @@ export function ThreadAttentionHeader(props: {
     if (busy) return;
     setSnapshot(rows);
     setBusy(true);
-    try {
-      await runAttentionRetries(
-        selected,
-        async (row) => {
-          if (row.kind === "paused") {
-            const result = await threadEnvironment.resumeThreadQueue.run(appAtomRegistry, {
-              environmentId: row.thread.environmentId,
-              input: { threadId: row.thread.id },
-            });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-          } else if (row.target) await retryAttentionTarget(row.target);
-        },
-        (row, result) => setOutcomes((prior) => ({ ...prior, [key(row)]: result })),
-      );
-    } finally {
-      setBusy(false);
-    }
+    await runAttentionRetries(
+      selected,
+      async (row) => {
+        if (row.kind === "paused") {
+          const result = await threadEnvironment.resumeThreadQueue.run(appAtomRegistry, {
+            environmentId: row.thread.environmentId,
+            input: { threadId: row.thread.id },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        } else if (row.target) await retryAttentionTarget(row.target);
+      },
+      (row, result) => {
+        const rowKey = key(row);
+        setOutcomes((prior) => ({ ...prior, [rowKey]: result }));
+      },
+    ).finally(() => setBusy(false));
   };
   const openThread = (row: AttentionRow) => {
     setOpen(false);
