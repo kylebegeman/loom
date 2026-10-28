@@ -1335,8 +1335,8 @@ const make = Effect.gen(function* () {
       if (!isAuthority) return 0;
       const expired = yield* erasure.expired;
       for (const entry of expired) yield* transact(erasure.erase(entry.id));
-      yield* erasure.cleanup();
       if (expired.length) yield* SubscriptionRef.update(refreshes, (revision) => revision + 1);
+      yield* erasure.cleanup();
       return expired.length;
     }),
     publishDocuments: Effect.fn("LibraryService.publishDocuments")(function (input) {
