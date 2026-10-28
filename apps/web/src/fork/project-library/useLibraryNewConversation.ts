@@ -54,7 +54,9 @@ export function useLibraryNewConversation() {
   const params = useParams({ strict: false });
   const context = libraryRouteParams(params);
   const { environments } = useEnvironments();
-  const filterKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const filterKey = useUiStateStore((store) =>
+    store.sidebarProjectScopeKeys.length === 1 ? (store.sidebarProjectScopeKeys[0] ?? null) : null,
+  );
   const lookup = useAtomQueryRunner(projectLibrary.lookupThread, { reportFailure: false });
   const authority = useLibraryAuthority();
   const loadCopies = useAtomQueryRunner(projectLibrary.copies, {

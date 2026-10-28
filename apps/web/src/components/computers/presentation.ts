@@ -36,7 +36,7 @@ export function recentConversationForComputer(
       .map((project) => `${project.environmentId}:${project.id}`),
   );
   let recent: EnvironmentThreadShell | null = null;
-  for (const thread of filterSidebarV2VisibleThreads(threads, projectKeys)) {
+  for (const thread of filterSidebarV2VisibleThreads(threads, projectKeys, new Set())) {
     if (thread.deletedAt !== null) continue;
     if (
       thread.visibleItemCount === 0 &&

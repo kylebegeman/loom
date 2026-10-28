@@ -74,10 +74,11 @@ function InstallDialog({
       onOpenChange={(open) => {
         if (!open) closeLocalUpdateInstall();
       }}
-      summary={getDesktopUpdateInstallConfirmationTitle(state)}
-      lines={[]}
+      title={getDesktopUpdateInstallConfirmationTitle(state)}
+      version={null}
+      providerCount={0}
+      rows={[]}
       restarts={restarts}
-      skipped={[]}
       confirmLabel="Restart now"
       onConfirm={() => {
         closeLocalUpdateInstall();
