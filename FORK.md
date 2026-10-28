@@ -425,9 +425,9 @@ prunes device QA session folders idle for 14 days before it starts the device da
 `UsageService.ts` (3) deletes usage scan caches from older versions a week after their last
 write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
 `apps/server/src/fork/retention/`. Tests carry the rest: `settings.test.ts` (3),
-`LocalDeviceHost.test.ts` (3), and one each in `EventNdjsonLogger.test.ts`,
-`UsageService.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts` and
-`packages/shared/src/serverSettings.test.ts`.
+`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (2, including canonical fixture paths),
+and one each in `EventNdjsonLogger.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts`
+and `packages/shared/src/serverSettings.test.ts`.
 
 The `deleted-history` seam frees the space deleted conversations hold. `runtimeLayer.ts` (2
 marker lines) wraps the effect executor so `attachment.cleanup` waits while the Library still
