@@ -329,6 +329,20 @@ export const VaultApprovalRequest = Schema.Struct({
   ),
 );
 export type VaultApprovalRequest = typeof VaultApprovalRequest.Type;
+export const VAULT_APPROVAL_CARDS_FEATURE = "vault-approval-cards";
+export const VaultApprovalCardData = Schema.Struct({
+  type: Schema.Literal("vault_access_request"),
+  requestId: VaultItemId,
+  revision: PositiveInt,
+  itemLabel: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  itemKind: Schema.NullOr(VaultItemKind),
+  action: VaultAccessAction,
+  destination: VaultApprovalCreate.fields.destination,
+  state: VaultApprovalRequest.fields.state,
+  requestExpiresAt: Time,
+  approvedUntil: Schema.NullOr(Time),
+});
+export type VaultApprovalCardData = typeof VaultApprovalCardData.Type;
 export const VaultApprovalChange = Schema.Struct({
   id: VaultItemId,
   operationId: VaultItemId,
