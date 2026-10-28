@@ -1,3 +1,5 @@
+import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
+import * as SkillStore from "./skill-registry/SkillStore.ts";
 import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
 import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
 import * as ProjectOperations from "./project-library/ProjectOperations.ts";
@@ -345,6 +347,11 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  SkillRegistry.layer.pipe(
+    Layer.provide(SkillStore.layer),
+    Layer.provide(RuntimeLayer.layerProjectService),
+    Layer.provide(ProcessRunner.layer),
+  ),
   Layer.empty,
   LibraryPublishingCredential.layer,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.

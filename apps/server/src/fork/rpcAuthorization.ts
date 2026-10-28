@@ -1,3 +1,5 @@
+import { SKILL_REGISTRY_WS_METHODS as SK } from "@t3tools/contracts/fork";
+import { AuthFilesystemReadScope, AuthFilesystemWriteScope } from "@t3tools/contracts";
 import { PROJECT_WORKFLOW_WS_METHODS as WF } from "@t3tools/contracts/fork";
 import { LIBRARY_DECISIONS_WS_METHODS as LD } from "@t3tools/contracts/fork";
 import { PROJECT_PROFILES_WS_METHODS as PP } from "@t3tools/contracts/fork";
@@ -68,6 +70,20 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [SK.inventory]: AuthFilesystemReadScope,
+  [SK.sources]: AuthFilesystemReadScope,
+  [SK.watchFetch]: AuthFilesystemReadScope,
+  [SK.readSkill]: AuthFilesystemReadScope,
+  [SK.validate]: AuthFilesystemReadScope,
+  [SK.setEnabled]: AuthSettingsWriteScope,
+  [SK.fetchSource]: AuthFilesystemWriteScope,
+  [SK.cancelFetch]: AuthFilesystemWriteScope,
+  [SK.install]: AuthFilesystemWriteScope,
+  [SK.previewUpdate]: AuthFilesystemWriteScope,
+  [SK.update]: AuthFilesystemWriteScope,
+  [SK.remove]: AuthFilesystemWriteScope,
+  [SK.writeSkill]: AuthFilesystemWriteScope,
+  [SK.scaffold]: AuthFilesystemWriteScope,
   [WF.saveWorkstream]: AuthSettingsWriteScope,
   [WF.applyBlueprint]: AuthSettingsWriteScope,
   [WF.run]: AuthTerminalOperateScope,

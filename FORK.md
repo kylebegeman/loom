@@ -1260,3 +1260,9 @@ See [Connections help](docs/fork/user/connections.md).
 | ----------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `apps/server/src/peer/RemoteDelegation.ts`      | `library-fleet` | Resolve bound Library components and exact destination copies before upstream delegation; preserve origin identity for forks. |
 | `apps/server/src/peer/RemoteDelegation.test.ts` | `library-fleet` | Reject a vanilla checkout sharing the fork's upstream repository.                                                             |
+
+### Skills manager seams
+
+| File                                               | Marker           | Why                                                                                                   |
+| -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `apps/server/src/provider/Drivers/ClaudeSkills.ts` | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |

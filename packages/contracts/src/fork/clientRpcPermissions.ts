@@ -1,3 +1,5 @@
+import { SKILL_REGISTRY_WS_METHODS as SK } from "./skill-registry.ts";
+import { AuthFilesystemWriteScope } from "../auth.ts";
 import { PROJECT_WORKFLOW_WS_METHODS as WF } from "./project-workflows.ts";
 import { PROJECT_PROFILES_WS_METHODS as PP } from "./project-profiles.ts";
 import { VAULT_TEST_ACCOUNT_WS_METHODS as VT } from "./vault-test-accounts.ts";
@@ -49,6 +51,15 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [SK.setEnabled]: AuthSettingsWriteScope,
+  [SK.fetchSource]: AuthFilesystemWriteScope,
+  [SK.cancelFetch]: AuthFilesystemWriteScope,
+  [SK.install]: AuthFilesystemWriteScope,
+  [SK.previewUpdate]: AuthFilesystemWriteScope,
+  [SK.update]: AuthFilesystemWriteScope,
+  [SK.remove]: AuthFilesystemWriteScope,
+  [SK.writeSkill]: AuthFilesystemWriteScope,
+  [SK.scaffold]: AuthFilesystemWriteScope,
   [WF.saveWorkstream]: AuthSettingsWriteScope,
   [WF.applyBlueprint]: AuthSettingsWriteScope,
   [WF.run]: AuthTerminalOperateScope,

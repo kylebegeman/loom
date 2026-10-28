@@ -1499,3 +1499,4 @@ packages/contracts/src/preview.ts	brand	1
 apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
 apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
+apps/server/src/provider/Drivers/ClaudeSkills.ts	skill-registry	2

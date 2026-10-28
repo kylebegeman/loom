@@ -1,3 +1,4 @@
+export * from "./skill-registry.ts";
 export * from "./project-library-decisions.ts";
 export * from "./project-profiles.ts";
 export * from "./vault-connections.ts";
