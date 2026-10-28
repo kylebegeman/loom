@@ -1503,9 +1503,9 @@ apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
 apps/server/src/provider/Drivers/ClaudeSkills.ts	skill-registry	2
 apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	11
 apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
-apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
-apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
-apps/web/src/components/Sidebar.tsx	project-lifecycle	10
+apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	8
+apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	8
+apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6

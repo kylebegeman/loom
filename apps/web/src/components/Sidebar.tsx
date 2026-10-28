@@ -1,5 +1,4 @@
 import { CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
-import { AsyncResult as CheckoutAsyncResult } from "effect/reactivity"; // fork: project-lifecycle
 // fork: attention-status
 import { ThreadAttentionButton } from "../fork/attention/ThreadAttention";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner"; // fork: library-projects
@@ -14,7 +13,7 @@ import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: pro
 import {
   releaseThreadCheckout,
   restoreThreadCheckout,
-  lanes,
+  readThreadCheckoutReleased,
 } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { useNoProjectStart } from "~/fork/project-library/useNoProjectStart"; // fork: no-project-first
@@ -2629,17 +2628,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
               // fork: project-lifecycle
-              checkoutReleased: supportsLoomFeature(
-                serverConfigs.get(thread.environmentId)?.environment.capabilities,
-                CHECKOUT_RESTORE_FEATURE,
-              )
-                ? (CheckoutAsyncResult.getOrElse(
-                    appAtomRegistry.get(
-                      lanes.status({ environmentId: thread.environmentId, input: {} }),
-                    ),
-                    () => null,
-                  )?.releasedCheckouts?.includes(thread.id) ?? null)
-                : null,
+              checkoutReleased: readThreadCheckoutReleased(threadRef),
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),

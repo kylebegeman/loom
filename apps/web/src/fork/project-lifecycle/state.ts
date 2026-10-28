@@ -1,4 +1,4 @@
-import { createProjectLifecycleAtoms } from "@t3tools/client-runtime/fork";
+import { createProjectLifecycleAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import {
   type AtomCommand,
   isAtomCommandInterrupted,
@@ -6,14 +6,29 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "~/state/server";
 
 export const lanes = createProjectLifecycleAtoms(connectionAtomRuntime);
 
 export const FEATURE = "project-lifecycle";
+
+export function readThreadCheckoutReleased(threadRef: ScopedThreadRef): boolean | null {
+  const capabilities = appAtomRegistry
+    .get(environmentServerConfigsAtom)
+    .get(threadRef.environmentId)?.environment.capabilities;
+  if (!supportsLoomFeature(capabilities, CHECKOUT_RESTORE_FEATURE)) return null;
+  const status = AsyncResult.getOrElse(
+    appAtomRegistry.get(lanes.status({ environmentId: threadRef.environmentId, input: {} })),
+    () => null,
+  );
+  return status?.releasedCheckouts?.includes(threadRef.threadId) ?? null;
+}
 
 export async function runLaneCommand<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
   const result = await command.run(appAtomRegistry, input);

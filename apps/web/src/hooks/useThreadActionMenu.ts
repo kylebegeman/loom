@@ -3,8 +3,14 @@ import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/sta
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
 import { appAtomRegistry } from "~/rpc/atomRegistry"; // fork: workspace-handoff
 import { environmentServerConfigsAtom } from "~/state/server"; // fork: workspace-handoff
-import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
-import { releaseThreadCheckout } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
+// fork: project-lifecycle
+import { CHECKOUT_RELEASE_FEATURE, CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork";
+// fork: project-lifecycle
+import {
+  readThreadCheckoutReleased,
+  releaseThreadCheckout,
+  restoreThreadCheckout,
+} from "~/fork/project-lifecycle/state";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
@@ -136,6 +142,7 @@ export function useThreadActionMenu(input: {
         saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
         workspaceHandoff: supportsLoomFeature(capabilities, "workspace-handoff"), // fork: workspace-handoff
         checkoutRelease: supportsLoomFeature(capabilities, CHECKOUT_RELEASE_FEATURE), // fork: project-lifecycle
+        checkoutRestore: supportsLoomFeature(capabilities, CHECKOUT_RESTORE_FEATURE), // fork: project-lifecycle
         settlement: configLoaded,
         autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
         snooze: configLoaded,
@@ -156,6 +163,7 @@ export function useThreadActionMenu(input: {
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
         hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
+        checkoutReleased: readThreadCheckoutReleased(threadRef), // fork: project-lifecycle
         supports,
         snoozePresets,
         canShareWithGuest,
@@ -307,6 +315,10 @@ export function useThreadActionMenu(input: {
           return;
         case "release-checkout": // fork: project-lifecycle
           await releaseThreadCheckout(threadRef);
+          return;
+        // fork: project-lifecycle
+        case "restore-checkout":
+          await restoreThreadCheckout(threadRef);
           return;
         case "archive": {
           if (confirmThreadArchive) {

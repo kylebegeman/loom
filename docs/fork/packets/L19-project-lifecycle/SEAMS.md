@@ -15,6 +15,7 @@ on narrow upstream integrations, so this packet can conflict during an upstream 
   including checkouts removed by retention. Release and restore refresh it immediately.
   Restore uses the same checkpoint recovery and setup path as a provider start; it never
   starts a turn. The `checkout-restore` capability gates these controls on older computers.
+  Sidebar and conversation-header menus read the same checkout status when opened.
 - Project and repository identity remain available after release. Passive status and identity
   queries do not restore directories.
 - Explicit Git, file, terminal, new-thread and provider-start paths restore managed roots.
