@@ -206,6 +206,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/components/Sidebar.tsx`                          | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
 | `apps/web/src/hooks/useThreadActions.ts`                       | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
+| `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `attention-status`    | Isolate retry state and verify header retry permission checks.               |
 | `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
 | `apps/mobile/src/features/home/useThreadListActions.ts`        | `project-library`     | Show confirmed Library retention when deleting a saved conversation.         |
 | `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |

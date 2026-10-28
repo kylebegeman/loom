@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   createThread: vi.fn(), // fork: library-projects
   worktreePath: null as string | null, // fork: library-projects
   checkoutReleased: false, // fork: project-lifecycle
+  retryable: false, // fork: attention-status
   show: vi.fn<
     (
       items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>,
@@ -50,6 +51,11 @@ vi.mock("~/fork/project-lifecycle/state", () => ({
   releaseThreadCheckout: async () => recordEffect("release-checkout"),
   restoreThreadCheckout: async () => recordEffect("restore-checkout"),
   readThreadCheckoutReleased: () => state.checkoutReleased,
+}));
+// fork: attention-status
+vi.mock("~/fork/attention/state", () => ({
+  readRetryTarget: () => (state.retryable ? { runId: "failed-run" } : null),
+  retryThread: async () => recordEffect("retry-failed-run"),
 }));
 // fork: bots
 vi.mock("~/fork/bots/fromThread/state", () => ({
@@ -211,6 +217,7 @@ beforeEach(() => {
   // fork: library-projects
   state.worktreePath = null;
   state.checkoutReleased = false; // fork: project-lifecycle
+  state.retryable = false; // fork: attention-status
   state.createThread.mockReset().mockImplementation(async () => recordEffect("draft"));
   state.show.mockReset().mockResolvedValue(null);
 });
@@ -226,6 +233,7 @@ describe("thread menu permissions", () => {
     "workspace-handoff", // fork: workspace-handoff
     "release-checkout", // fork: project-lifecycle
     "restore-checkout", // fork: project-lifecycle
+    "retry-failed-run", // fork: attention-status
   ] as const)("%s rechecks after the native menu closes", async (action) => {
     state.granted.add("secondary");
     const choice = deferred<ThreadActionMenuId | null>();
@@ -236,6 +244,18 @@ describe("thread menu permissions", () => {
     await state.completed.promise;
     expect(state.effects).toEqual([]);
   });
+});
+
+// fork: attention-status
+it("offers and executes Retry for a retryable failed run in the header menu", async () => {
+  state.granted.add("secondary");
+  state.retryable = true;
+  state.show.mockResolvedValue("retry-failed-run");
+  createMenu().openMenu(position);
+  const items = state.show.mock.calls[0]![0].map((item) => item.id);
+  expect(items).toContain("retry-failed-run");
+  await state.completed.promise;
+  expect(state.effects).toEqual(["retry-failed-run"]);
 });
 
 // fork: project-lifecycle
