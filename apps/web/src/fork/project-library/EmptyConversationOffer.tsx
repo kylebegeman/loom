@@ -80,6 +80,7 @@ export function EmptyConversationOffer() {
     });
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- offers to discard an empty conversation through a toast when the route leaves it
   useEffect(() => {
     const left = shown.current;
     shown.current = current;

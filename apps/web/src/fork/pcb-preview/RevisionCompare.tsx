@@ -319,6 +319,7 @@ export function ComparisonImages({
   afterLabel?: string;
 }) {
   const [urls, setUrls] = useState<string[]>([]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- allocates blob urls for the before and after svgs and revokes them on change or unmount
   useEffect(() => {
     const values = [before, after].map((svg) =>
       URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })),

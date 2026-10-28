@@ -208,9 +208,11 @@ function useTriageSources(bot: BotDefinition | null, dismissed: boolean) {
   const findRun = (runId: string) =>
     changes.runs.get(runId) ?? joined.data?.runs.find((run) => run.id === runId);
   // A server that cannot look a run up opens one only from runs a list has shown.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records runs from the first inbox page in the module run cache so they can be opened by id
   useEffect(() => {
     if (first.data) rememberRuns(first.data.runs);
   }, [first.data]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records runs from the joined inbox page in the module run cache so they can be opened by id
   useEffect(() => {
     if (joined.data) rememberRuns(joined.data.runs);
   }, [joined.data]);
@@ -1190,6 +1192,7 @@ export function NeedsYouView({
   };
   useRefreshOnReconnect(host.connected, refresh);
   useRefreshWhenBotsChangesPruned(changes, refresh);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records runs from the older inbox page in the module run cache so they can be opened by id
   useEffect(() => {
     if (older.data) rememberRuns(older.data.runs);
   }, [older.data]);

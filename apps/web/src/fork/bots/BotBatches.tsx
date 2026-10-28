@@ -839,6 +839,7 @@ function BatchPageContent({
   useRefreshOnReconnect(host.connected, query.refresh);
   const fetched = query.data;
   // A server that cannot look a run up opens one only from runs a list has shown.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records fetched batch runs in the module-level run cache so they can be opened later
   useEffect(() => {
     if (fetched) rememberRuns(fetched.items.flatMap((item) => (item.run ? [item.run] : [])));
   }, [fetched]);
@@ -1776,6 +1777,7 @@ function BatchReport({
   const refresh = report.refresh;
   const status = batch.status;
   const seenStatus = useRef(status);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the batch report from the server when the batch status changes
   useEffect(() => {
     if (seenStatus.current === status) return;
     seenStatus.current = status;

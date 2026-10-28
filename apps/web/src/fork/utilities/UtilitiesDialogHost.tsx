@@ -20,6 +20,7 @@ export function UtilitiesDialogHost() {
   const open = useUtilitiesStore((state) => state.dialogOpen);
   const popupRef = useRef<HTMLDivElement>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the fork command bus for utilities open requests and unsubscribes on unmount
   useEffect(
     () => onForkCommand("loom.utilities.open", () => toggleUtilities(threadRef)),
     [threadRef],
@@ -58,6 +59,7 @@ export function UtilitiesDialogHost() {
 
 /** Moves focus to the tool once the view arrives, unless the user has moved it meanwhile. */
 function FocusToolOnLoad({ popupRef }: { readonly popupRef: RefObject<HTMLDivElement | null> }) {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves dom focus from the popup to the tool heading once the view mounts
   useEffect(() => {
     const popup = popupRef.current;
     if (popup !== null && document.activeElement === popup) toolHeading(popup)?.focus();

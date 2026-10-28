@@ -14,6 +14,7 @@ export function GerberPreview(props: {
   onClose: () => void;
 }) {
   const onClose = props.onClose;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- capturing window keydown listener that closes the outputs view on escape
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

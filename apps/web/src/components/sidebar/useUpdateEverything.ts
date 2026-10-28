@@ -108,9 +108,11 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
   const providers = useProviderUpdates(scopedEnvironmentIds);
   const updateServer = useServerUpdate();
 
-  const { summary, lines } = describeUpdateEverything({
+  const view = describeUpdateEverything({
     localVersion: scope === "local" ? localUpdateVersion : null, // fork: machine-updates
+    localMachines: machines.filter((machine) => machine.hostedByThisApp),
     servers,
+    skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
       label: machine.label,
@@ -126,10 +128,9 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     environments,
     targetVersion,
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    summary,
-    lines,
+    ...view,
     restarts,
-    skipped,
+    skipped, // fork: machine-updates
     run: async ({
       downloadLocal,
       installLocal,

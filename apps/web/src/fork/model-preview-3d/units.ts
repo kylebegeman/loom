@@ -105,6 +105,7 @@ export function useDisplayUnitsSetting(
   const units = pending ?? settings.displayUnits;
   const latest = useRef({ settings, units, getSettings });
   const request = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest settings, units and getter in a ref for async save callbacks
   useLayoutEffect(() => {
     latest.current = { settings, units, getSettings };
   });

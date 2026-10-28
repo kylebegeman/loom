@@ -490,6 +490,7 @@ export function BotVersionsView({ bot }: { readonly bot: BotDefinition }) {
         }),
   );
   const refresh = query.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server's saved versions when the bot's current version changes
   useEffect(() => {
     refresh();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A save or restore adds a version, and versions are not watched.

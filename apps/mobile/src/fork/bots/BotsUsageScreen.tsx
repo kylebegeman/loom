@@ -61,6 +61,7 @@ function UsageScreen({ params }: { params: Params }) {
     .map((run) => `${run.id}:${run.usage?.inputTokens ?? ""}:${run.usage?.outputTokens ?? ""}`)
     .join(",");
   const definitions = collection.changes.bots;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a throttled usage refetch from the server on a timer and clears it on change
   useEffect(() => {
     if (
       (!finished && definitions.size === 0) ||

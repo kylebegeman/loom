@@ -3,7 +3,7 @@ const EVENT = "loom:project-navigation-thread-scope";
 
 /** Project home can scope the existing thread navigator without starting a new draft. */
 export function requestProjectThreadView(projectKey: string) {
-  useUiStateStore.getState().setSidebarProjectScopeKey(projectKey);
+  useUiStateStore.getState().setSidebarProjectScopeKeys([projectKey]);
   window.dispatchEvent(new CustomEvent<string>(EVENT, { detail: projectKey }));
 }
 

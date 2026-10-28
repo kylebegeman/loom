@@ -41,6 +41,7 @@ export function RestoreDesignDialog({
     [remove, setRemove] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests a dry-run restore plan from the server for the chosen version and ignores it after unmount
   useEffect(() => {
     let active = true;
     void runModelCommand(pcb.historyRestore, {

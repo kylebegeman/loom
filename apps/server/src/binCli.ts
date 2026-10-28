@@ -12,6 +12,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { acpMcpBridgeCommand, acpMcpCallCommand } from "./cli/acpMcpBridge.ts";
 import { authCommand } from "./cli/auth.ts";
 import { githubCommand } from "./cli/github.ts"; // fork: github-host-setup
+import { environmentCommand } from "./cli/environment.ts";
 import { appCommand } from "./cli/app.ts";
 import { browserCommand } from "./cli/browser.ts";
 import { connectCommand } from "./cli/connect.ts";
@@ -84,6 +85,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       pairCommand,
       authCommand,
       githubCommand, // fork: github-host-setup
+      environmentCommand,
       browserCommand,
       projectCommand,
       threadCommand,

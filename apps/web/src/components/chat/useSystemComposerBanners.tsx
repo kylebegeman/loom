@@ -32,7 +32,6 @@ import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
-  supportsServerUpdateThreadContinuation,
 } from "../../versionSkew";
 // fork: fleet-connections
 import { computerConnectionBanner } from "../../fork/connection-health/ComputerConnectionBanner";
@@ -154,7 +153,6 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
   const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
-  const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
   const versionMismatchOsManaged = runtimeManagedByOperatingSystem(
     serverConfig?.environment.capabilities,
   ); // fork: runtime-owner
@@ -276,7 +274,6 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             selfUpdate={versionMismatchSelfUpdate}
             installation={versionMismatchInstallation}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
-            threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
             label="Retry"
             variant="ghost"

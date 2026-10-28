@@ -42,6 +42,7 @@ export function PcbPreviewCommandHost() {
   );
   const request = asyncValue(events),
     handled = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles each pcb panel command streamed from the server and reports completion back
   useEffect(() => {
     if (!threadRef || !request || handled.current === request.requestId) return;
     handled.current = request.requestId;
@@ -86,6 +87,7 @@ export function PcbPreviewCommandHost() {
         }).catch(() => undefined),
       );
   }, [request, threadRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the pcb preview toggle fork command and unsubscribes on unmount
   useEffect(() => {
     if (!available || !threadRef) return;
     return onForkCommand("loom.pcb-preview.toggle", () => togglePcbPreview(threadRef));

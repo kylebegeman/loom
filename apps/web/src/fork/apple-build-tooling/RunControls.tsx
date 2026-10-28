@@ -170,6 +170,7 @@ const PHASE_LABEL: Record<AppleRunRecord["phase"], string> = {
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the clock every second while a run is active
   useEffect(() => {
     if (!active) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -255,6 +256,7 @@ export function RunControls({
       destinationFromKey(destinationKey(selection.destination), destinations)) ??
     destinations.find((candidate) => candidate._tag === "simulator" && candidate.booted) ??
     destinations.find((candidate) => candidate._tag === "simulator");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the default container, scheme, and destination from the server's inspection to the parent selection
   useEffect(() => {
     if (!container) return;
     const next: AppleSelection = {

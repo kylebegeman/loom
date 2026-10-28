@@ -24,7 +24,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   getProjectOrderKey,
   selectProjectGroupingSettings,
-} from "../logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { resolveNewThreadEnvMode, resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   readProject,
@@ -97,6 +97,8 @@ export function createNewThreadHandler(
       // fork: project-home keeps explicit computer choices out of automatic routing.
       environmentSelection?: "auto" | "manual";
       replace?: boolean;
+      /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
+      prompt?: string;
       // fork: library-projects
       sourceSettings?: Pick<
         OrchestrationV2ThreadShell,
@@ -145,9 +147,16 @@ export function createNewThreadHandler(
       setDraftThreadContext,
       setLogicalProjectDraftThreadId,
       setModelSelection,
+      setPrompt,
       setRuntimeMode, // fork: library-projects
       setInteractionMode, // fork: library-projects
     } = useComposerDraftStore.getState();
+    // Never over text the user wrote: a draft can gain some while this awaits.
+    const seedPrompt = (draftId: DraftId) => {
+      if (options?.prompt === undefined) return;
+      if (composerDraftHasUserContent(getComposerDraft(draftId))) return;
+      setPrompt(draftId, options.prompt);
+    };
     // fork: library-projects
     const applySourceSettings = (draftId: DraftId) => {
       const source = options?.sourceSettings;
@@ -350,6 +359,7 @@ export function createNewThreadHandler(
           draftId: emptyStoredDraftThread.draftId,
           threadId: emptyStoredDraftThread.threadId,
         };
+        seedPrompt(emptyStoredDraftThread.draftId);
         const routeTargetAfterWrites = getCurrentRouteTarget();
         if (
           routeTargetAfterWrites?.kind === "draft" &&
@@ -389,6 +399,7 @@ export function createNewThreadHandler(
         interactionMode: latestActiveDraftThread.interactionMode,
         ...pickExplicitWorkspaceOptions(options),
       });
+      seedPrompt(currentRouteTarget.draftId);
       applySourceSettings(currentRouteTarget.draftId); // fork: library-projects
       return Promise.resolve({
         draftId: currentRouteTarget.draftId,
@@ -419,6 +430,7 @@ export function createNewThreadHandler(
           interactionMode: racedDraft.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        seedPrompt(racedDraft.draftId);
         applySourceSettings(racedDraft.draftId); // fork: library-projects
         await router.navigate({
           to: "/draft/$draftId",
@@ -448,6 +460,7 @@ export function createNewThreadHandler(
       if (modelSelectionOverride) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
+      seedPrompt(draftId);
       applySourceSettings(draftId); // fork: library-projects
       await router.navigate({
         to: "/draft/$draftId",

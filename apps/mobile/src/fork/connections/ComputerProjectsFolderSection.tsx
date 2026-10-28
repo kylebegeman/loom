@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentScope } from "../../state/session";

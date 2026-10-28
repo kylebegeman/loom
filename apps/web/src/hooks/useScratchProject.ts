@@ -17,8 +17,11 @@ import type { AtomRegistry } from "effect/reactivity";
 import { useContext } from "react";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { type EnvironmentPresentation, useEnvironments } from "~/state/environments";
-import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment"; // fork: no-project-first
+import {
+  type EnvironmentPresentation,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { type NewThreadHandler, useNewThreadHandler } from "./useHandleNewThread";
 
@@ -39,6 +42,7 @@ type ScratchEnvironment = Pick<EnvironmentPresentation, "connection" | "serverCo
 
 export function createScratchProjectActions(input: {
   readonly environments: () => Iterable<ScratchEnvironment>;
+  readonly primaryEnvironmentId: () => EnvironmentId | null;
   readonly registry: AtomRegistry.AtomRegistry;
   readonly handleNewThread: NewThreadHandler;
 }) {
@@ -50,16 +54,16 @@ export function createScratchProjectActions(input: {
     return availableScratchWorkspaceRoot(environment?.connection.phase, environment?.serverConfig);
   };
 
-  // fork: no-project-first: current, then primary, then the first by name that can run work.
+  // fork: no-project-first: primary, then `fallback`, then the first by name that can run work.
   // The Library advertises a scratch folder too, so it is never a target.
-  const scratchEnvironmentId = (current: EnvironmentId | null): EnvironmentId | null =>
+  const scratchEnvironmentId = (fallback: EnvironmentId | null): EnvironmentId | null =>
     noProjectTargetEnvironmentId({
       environments: [...input.environments()].toSorted((a, b) =>
         computerDisplayLabel(a).localeCompare(computerDisplayLabel(b)),
       ),
       canRun: (entry) =>
         noProjectWorkspaceRoot(entry.connection.phase, entry.serverConfig) !== null,
-      preferred: [current, input.registry.get(primaryEnvironmentIdAtom)],
+      preferred: [input.primaryEnvironmentId(), fallback], // fork: no-project-first
     });
 
   const openScratchProject = async (
@@ -96,10 +100,12 @@ export function createScratchProjectActions(input: {
 
 export function useScratchProject() {
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const registry = useContext(RegistryContext);
   const handleNewThread = useNewThreadHandler();
   return createScratchProjectActions({
     environments: () => environments,
+    primaryEnvironmentId: () => primaryEnvironmentId,
     registry,
     handleNewThread,
   });

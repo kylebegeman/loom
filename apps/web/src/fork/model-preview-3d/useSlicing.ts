@@ -97,6 +97,7 @@ export function useSlicing(input: SlicingInput) {
   ]);
   const key = slicingRequestKey(input, bedId, library);
   const latest = useRef({ input, key, scope, bedId });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest input, key, scope and bed in a ref for async slicing callbacks
   useLayoutEffect(() => {
     latest.current = { input, key, scope, bedId };
   });
@@ -164,6 +165,7 @@ export function useSlicing(input: SlicingInput) {
     [canRun, cancel],
   );
   /* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Input changes release RPC and fetch leases before looking up cached toolpaths. */
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases slicing rpc and fetch leases on input changes and looks up cached toolpaths from the server
   useEffect(() => {
     cancel();
     setLayers(null);

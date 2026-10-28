@@ -162,9 +162,6 @@ function testLayer() {
     Layer.succeed(
       MobileStorage.MobileStorage,
       MobileStorage.MobileStorage.of({
-        loadSavedConnections: Effect.succeed([]),
-        saveConnection: () => Effect.void,
-        clearSavedConnection: () => Effect.void,
         loadOrCreateAgentAwarenessDeviceId: Effect.succeed("fixture-device"),
         loadAgentAwarenessDeviceId: Effect.succeed("fixture-device"),
         loadAgentAwarenessRegistrationRecord: Effect.succeed(null),

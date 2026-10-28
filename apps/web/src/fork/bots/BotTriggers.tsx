@@ -238,6 +238,7 @@ function useFirstFirings(
     (newest === null || lastFiredAt > newest);
   const asked = useRef<string | null>(null);
   const { refresh } = query;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the trigger's firings from the server once its last fired time runs ahead of the loaded page
   useEffect(() => {
     if (!behind || asked.current === lastFiredAt) return;
     asked.current = lastFiredAt;

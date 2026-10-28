@@ -352,6 +352,7 @@ function BotEditor({
       },
     });
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules the post-save back navigation on the next animation frame and cancels it on unmount
   useEffect(() => {
     if (!saved) return;
     const frame = requestAnimationFrame(() => {
@@ -359,6 +360,7 @@ function BotEditor({
     });
     return () => cancelAnimationFrame(frame);
   }, [navigation, saved]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async draft results arriving after unmount are dropped
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -412,6 +414,7 @@ function BotEditor({
       });
     else start();
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests a server draft from the source thread once the host is connected and ignores a stale result on cleanup
   useEffect(() => {
     if (!sourceThreadId || !host.connected || !host.fromThreadSupported || !canDraft) return;
     // Reuse one request when effects reconnect or replay during a native development render.

@@ -14,6 +14,7 @@ export function DeviceQaShortcuts() {
     loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities).includes(
       FEATURE,
     );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the device QA fork commands for this thread and unsubscribes on cleanup
   useEffect(() => {
     if (!available || !threadRef) return;
     const unsubscribe = [

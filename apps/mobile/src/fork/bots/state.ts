@@ -105,6 +105,7 @@ export function useRefreshWhenBotsChangesPruned(
   refresh: () => void,
 ) {
   const seen = useRef(changes.pruned);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches from the server when the bots change stream reports pruned history
   useEffect(() => {
     if (seen.current === changes.pruned) return;
     seen.current = changes.pruned;
@@ -114,6 +115,7 @@ export function useRefreshWhenBotsChangesPruned(
 
 export function useBotsReconnect(connected: boolean, refresh: () => void) {
   const previous = useRef(connected);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches from the server when the environment connection comes back
   useEffect(() => {
     if (connected && !previous.current) refresh();
     previous.current = connected;

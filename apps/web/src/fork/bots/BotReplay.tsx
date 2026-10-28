@@ -938,10 +938,12 @@ function ReplaySheet({
   const refreshReplay = query.refresh;
   const refreshRuns = runsQuery.refresh;
   const status = replay?.status;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the replay from the server when the streamed replay progress changes
   useEffect(() => {
     if (progress !== "") refreshReplay();
   }, [progress, refreshReplay]);
   // Once per status, recover results the watch missed, such as after a reconnect.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches replay runs from the server once per replay status to recover missed results
   useEffect(() => {
     if (status !== undefined && botId !== null) refreshRuns();
   }, [status, botId, refreshRuns]);

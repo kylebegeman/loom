@@ -32,7 +32,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useScaledTextRole } from "../../features/settings/appearance/useScaledTextRole";
 import { cn } from "../../lib/cn";

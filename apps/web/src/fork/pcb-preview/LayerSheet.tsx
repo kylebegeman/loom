@@ -34,6 +34,7 @@ export function LayerSheet({
     asyncError(result) ??
     (url && failed === url ? "This layer could not load. Refresh the preview." : null);
   const loading = result.waiting || result._tag === "Initial" || !url || decoded !== url;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- allocates a blob url for the layer svg and revokes it on change or unmount
   useEffect(() => {
     if (!svg) return;
     const value = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -42,6 +43,7 @@ export function LayerSheet({
     setImage({ svg, url: value });
     return () => URL.revokeObjectURL(value);
   }, [svg]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the layer svg to the parent callback once it arrives from the server
   useEffect(() => {
     if (svg) onSvg?.(renderKey, sheetId, svg);
   }, [svg, onSvg, renderKey, sheetId]);

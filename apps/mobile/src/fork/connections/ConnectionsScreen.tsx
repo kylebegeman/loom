@@ -8,7 +8,7 @@ import { Platform, RefreshControl, View } from "react-native";
 import { useAuth } from "@clerk/expo";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { hasCloudPublicConfig } from "../../features/cloud/publicConfig";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -16,6 +16,7 @@ import { SettingsScreen } from "../../features/settings/components/SettingsScree
 import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { CloudEnvironmentRows } from "../../features/connection/CloudEnvironmentRows";
+import { LinkedEnvironmentsSection } from "../../features/connection/LinkedEnvironmentsSection";
 import { LocalEnvironmentList } from "../../features/connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../../features/connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../../features/connection/environmentSections";
@@ -84,6 +85,7 @@ export function ConnectionsScreen() {
   // above this screen, so coming back here, or leaving, means that form has closed.
   const [directoryAddress] = useState(() => directoryPairingAddress(onChangeConnectionPairingUrl));
   useFocusEffect(directoryAddress.close);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the directory pairing address subscription on unmount
   useEffect(() => directoryAddress.close, [directoryAddress]);
   const pairDirectoryComputer = useCallback(
     (pairing: DirectoryPairing) => {
@@ -202,6 +204,15 @@ export function ConnectionsScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={handleUpdateEnvironment}
         />
+        {connectedEnvironments
+          .filter((environment) => environment.connectionState === "connected")
+          .map((environment) => (
+            <LinkedEnvironmentsSection
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              environmentLabel={environment.environmentLabel}
+            />
+          ))}
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
         <LibraryReachSection libraryReach={libraryReach} />
 

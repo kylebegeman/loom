@@ -56,6 +56,7 @@ const fixture = Effect.fn(function* (
           providerInstanceId: ProviderInstanceId.make("codex"),
           runtimeMode: id === targetId ? "full-access" : runtimeMode,
           interactionMode: "default",
+          linkOrigin: undefined,
         }),
       ),
   });

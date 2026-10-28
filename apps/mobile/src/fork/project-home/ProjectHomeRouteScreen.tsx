@@ -288,6 +288,7 @@ function ProjectHomeContent(props: {
         const wake = Date.parse(row.thread.snoozedUntil ?? "");
         return Number.isFinite(wake) && (nearest === null || wake < nearest) ? wake : nearest;
       }, null) ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that advances the clock when the nearest snoozed conversation wakes
   useEffect(() => {
     if (nextSnoozeWakeAt === null) return;
     const timer = setTimeout(

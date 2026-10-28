@@ -84,6 +84,7 @@ function FileControls({
     current.state === "released" ||
     current.registered === false ||
     ((current.state === "missing" || current.state === "failed") && current.recovery !== undefined);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports pending file work to the parent and clears it on unmount
   useEffect(() => {
     onPending(busy || attempt !== null);
     return () => onPending(false);

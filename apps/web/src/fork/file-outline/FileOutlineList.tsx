@@ -50,10 +50,12 @@ export function FileOutlineList(props: {
   const selected = rows[selectedIndex]?.symbol;
   const rowId = (index: number) => id + "-symbol-" + index;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the filter input in the DOM on each focus request
   useEffect(() => {
     if (props.focusRequestId > 0) inputRef.current?.focus();
   }, [props.focusRequestId]);
   const selectedSymbolId = selected?.id;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the selected symbol row into view in the DOM or virtual list
   useEffect(() => {
     if (selectedSymbolId === undefined) return;
     const row = document.getElementById(id + "-symbol-" + selectedIndex);

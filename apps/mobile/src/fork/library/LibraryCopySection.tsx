@@ -70,6 +70,7 @@ export function LibraryCopySection(props: {
     setFolderPending(value);
   }, []);
   const recoveryController = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts an in-flight copy recovery request on unmount
   useEffect(() => () => recoveryController.current?.abort(), []);
   const [retainedCopy, setRetainedCopy] = useState<LibraryWorkingCopy | null>(null);
   const [showSetup, setShowSetup] = useState(false);

@@ -28,6 +28,11 @@ apps/server/src/cloud/bootService.ts	"Description=T3 Code server",
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	description: "Check T3 Code SnapShots in GNOME Extensions, then try again.",
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	description: "Enable T3 Code SnapShots to start capturing windows.",
 
+# The session label a linked environment records; its tests and the forget prompt match it.
+apps/server/src/peer/PeerLinks.testkit.ts	sessions.filter((session) => session.client.label?.startsWith("T3 Code · ")),
+apps/server/src/peer/PeerLinks.ts	const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	`Forget ${link.label}? Agents here stop working there. Revoke "T3 Code · …" in ${link.label}'s Connections to end the session there too.`,
+
 # Names sent to third parties or written as git identities.
 apps/server/src/device/EasDeviceHost.ts	const name = `T3 Code · ${config.label} · ${(yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0")}`;
 apps/server/src/provider/CodexChatGptAuth.ts	: { agent_name_hint: "T3 Code" }),
@@ -41,16 +46,23 @@ packages/provider-opencode/src/server/textGeneration.ts	title: `T3 Code ${input.
 packages/provider-opencode/src/server/v2/textGeneration.ts	title: `T3 Code ${input.operation}`,
 packages/provider-testing/src/replayWorkspace.ts	yield* runGit(cwd, ["config", "user.name", "T3 Code Test"]);
 packages/source-control-github/src/server/githubStackRebase.ts	GIT_CONFIG_VALUE_1: "T3 Code",
+packages/source-control-github/src/shared/definition.ts	appName: "T3 Code for GitHub",
 
 # T3 Code's own issue triage playbook and download link.
 apps/server/src/cli/triage.ts	"Investigate a T3 Code problem on this machine with claude or codex, and help file a good issue.",
-apps/server/src/cli/triagePrompt.ts	- How is T3 Code running on this machine: \`npx t3 serve\` in a terminal, the
-apps/server/src/cli/triagePrompt.ts	Do not patch the T3 Code source as a fix. A good issue with strong repro steps
-apps/server/src/cli/triagePrompt.ts	You are a support engineer for T3 Code (https://github.com/pingdotgg/t3code), working
-apps/server/src/cli/triagePrompt.ts	`Read the file "${promptFilePath}" and follow its instructions exactly: it is your T3 Code triage playbook, and it starts with asking the user what went wrong.`;
-apps/server/src/cli/triagePrompt.ts	export const TRIAGE_PLAYBOOK = `# T3 Code triage playbook
-apps/server/src/cli/triagePrompt.ts	export const buildTriageContext = (input: TriageContextInput) => `# T3 Code triage context
-apps/server/src/cli/triagePrompt.ts	export const buildTriageSeedPrompt = (contextFilePath: string) => `A T3 Code user is \
+apps/server/src/triage/triagePrompt.ts	## This session runs inside T3 Code
+apps/server/src/triage/triagePrompt.ts	- How is T3 Code running on this machine: \`npx t3 serve\` in a terminal, the
+apps/server/src/triage/triagePrompt.ts	Do not patch the T3 Code source as a fix. A good issue with strong repro steps
+apps/server/src/triage/triagePrompt.ts	You are a support engineer for T3 Code (https://github.com/pingdotgg/t3code), working
+apps/server/src/triage/triagePrompt.ts	You are a thread inside the T3 Code server described above. Stopping,
+apps/server/src/triage/triagePrompt.ts	`Read the file "${promptFilePath}" and follow its instructions exactly: it is your T3 Code triage playbook, and it starts with asking the user what went wrong.`;
+apps/server/src/triage/triagePrompt.ts	export const TRIAGE_PLAYBOOK = `# T3 Code triage playbook
+apps/server/src/triage/triagePrompt.ts	generatedBy: "the T3 Code app",
+apps/server/src/triage/triagePrompt.ts	return `# T3 Code triage context
+apps/server/src/triage/triagePrompt.ts	session ${input.entry.kind === "cli" ? "with `t3 triage`" : "from the T3 Code app"}.
+apps/server/src/triage/triagePrompt.ts	}) => `A T3 Code user is having a problem with their install and started this \
+apps/web/src/components/CommandPalette.tsx	description: "An agent investigates a T3 Code problem and helps file an issue",
+apps/web/src/components/chat/TriageDraftHero.tsx	The agent reads T3 Code's logs and source here, and asks before it applies a fix or
 apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	Get T3 Code
 
 # Text inside generated scripts that only ssh reads.

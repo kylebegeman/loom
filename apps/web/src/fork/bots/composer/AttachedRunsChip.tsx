@@ -149,6 +149,7 @@ export function useAttachedBotRunsBlock(context: ForkComposerContext): ForkCompo
 
   // Changes missed while disconnected never arrive, so a reconnect refetches the list.
   const wasConnected = useRef(host.connected);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the thread's attached runs when the host connection comes back
   useEffect(() => {
     if (host.connected && !wasConnected.current) refresh();
     wasConnected.current = host.connected;

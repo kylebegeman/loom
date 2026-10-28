@@ -156,6 +156,7 @@ function PrintContents({
   const allowed = canPrint && (design.kind === "kicad" ? !!design.boardPath : trusted);
   const layers = Array.isArray(options.layers) ? options.layers : [];
   const stale = result ? isPrintStale(result, currentSourceHash) : false;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the in-flight print request and fetch on unmount
   useEffect(
     () => () => {
       generation.current++;

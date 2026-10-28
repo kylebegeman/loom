@@ -1,5 +1,4 @@
 import { expect, it } from "@effect/vitest";
-import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import { ProviderInstanceId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
 import * as Library from "@t3tools/contracts/fork";
 import type * as Context from "effect/Context";
@@ -8,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { Tool } from "effect/ai";
 import * as Stream from "effect/Stream";
+import { fromJSONSchema } from "zod";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { archiveFor, resource, source, threadId } from "./Library.testkit.ts";
@@ -55,7 +55,12 @@ const requestFor = (input: unknown) => ({
   operationId: " launch-operation ",
   request: { kind: "launch", input },
 });
-const validateInput = new AjvJsonSchemaValidator().getValidator(Tool.getJsonSchema(operationTool));
+// The advertised JSON Schema, not the Effect schema, is what MCP clients validate against.
+const jsonSchemaValidator = (schema: object) => {
+  const validator = fromJSONSchema(schema as Parameters<typeof fromJSONSchema>[0]);
+  return (value: unknown) => ({ valid: validator.safeParse(value).success });
+};
+const validateInput = jsonSchemaValidator(Tool.getJsonSchema(operationTool));
 
 it.effect.each([
   { name: "minimal project", input: launch },
@@ -258,9 +263,7 @@ it.effect.each([false, true])(
       const encoded = JSON.stringify(results[0]!.encodedResult);
       expect(encoded).toBe(expected);
       const advertised = Tool.getJsonSchemaFromSchema(historyTool.successSchema);
-      expect(new AjvJsonSchemaValidator().getValidator(advertised)(JSON.parse(encoded)).valid).toBe(
-        true,
-      );
+      expect(jsonSchemaValidator(advertised)(JSON.parse(encoded)).valid).toBe(true);
     }).pipe(Effect.scoped),
 );
 

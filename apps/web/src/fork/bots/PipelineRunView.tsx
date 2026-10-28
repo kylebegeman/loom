@@ -122,6 +122,7 @@ const rerunSeeds = new Map<
 /** Refetches the run when a step moves on, since the report is built from the attempts. */
 function useRefetchOnProgress(progress: string, refresh: () => void) {
   const seen = useRef(progress);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the run from the server when its watched progress changes
   useEffect(() => {
     if (seen.current === progress) return;
     const first = seen.current === "";
@@ -888,6 +889,7 @@ function RunPipelineDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The seed served this form; a later Run from anywhere else starts from the defaults.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops this pipeline's module-level rerun seed once the form has consumed it
   useEffect(() => {
     rerunSeeds.delete(pipeline.id);
   }, [pipeline.id]);

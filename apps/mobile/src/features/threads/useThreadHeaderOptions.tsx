@@ -34,57 +34,51 @@ export function useThreadHeaderOptions(props: {
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
-  const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      ...(!usesDuoHeader
-        ? [
-            {
-              spacing: 18,
-              type: "spacing" as const,
-            },
-          ]
-        : []),
-      ...(props.onReturnToThread
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "Return to chat",
-              icon: { name: "chevron.left", type: "sfSymbol" as const },
-              identifier: "thread-left-return",
-              onPress: props.onReturnToThread,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-      sidebarHeaderItem,
-      ...(!usesDuoHeader && !props.draft
-        ? [
-            withNativeGlassHeaderItem({
-              accessibilityLabel: "New task",
-              icon: { name: "square.and.pencil", type: "sfSymbol" as const },
-              identifier: "thread-left-new-task",
-              label: "New task",
-              onPress: startNewTask,
-              type: "button" as const,
-            }),
-          ]
-        : []),
-    ],
-    [sidebarHeaderItem, props.onReturnToThread, props.draft, startNewTask, usesDuoHeader],
-  );
+  const splitLeftHeaderItems: NativeHeaderItems = [
+    ...(!usesDuoHeader
+      ? [
+          {
+            spacing: 18,
+            type: "spacing" as const,
+          },
+        ]
+      : []),
+    ...(props.onReturnToThread
+      ? [
+          withNativeGlassHeaderItem({
+            accessibilityLabel: "Return to chat",
+            icon: { name: "chevron.left", type: "sfSymbol" as const },
+            identifier: "thread-left-return",
+            onPress: props.onReturnToThread,
+            type: "button" as const,
+          }),
+        ]
+      : []),
+    sidebarHeaderItem,
+    ...(!usesDuoHeader && !props.draft
+      ? [
+          withNativeGlassHeaderItem({
+            accessibilityLabel: "New task",
+            icon: { name: "square.and.pencil", type: "sfSymbol" as const },
+            identifier: "thread-left-new-task",
+            label: "New task",
+            onPress: startNewTask,
+            type: "button" as const,
+          }),
+        ]
+      : []),
+  ];
   // fork: library - Cold starts with Thread as the only route escape to the project library.
   const canGoBack = navigation.canGoBack();
-  const compactHomeHeaderItems = useMemo<NativeHeaderItems>(
-    () => [
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to project library", // fork: library
-        icon: { name: "list.bullet", type: "sfSymbol" as const },
-        identifier: "thread-left-home",
-        onPress: () => navigation.dispatch(StackActions.replace("Library")), // fork: library
-        type: "button" as const,
-      }),
-    ],
-    [navigation],
-  );
+  const compactHomeHeaderItems: NativeHeaderItems = [
+    withNativeGlassHeaderItem({
+      accessibilityLabel: "Go to project library", // fork: library
+      icon: { name: "list.bullet", type: "sfSymbol" as const },
+      identifier: "thread-left-home",
+      onPress: () => navigation.dispatch(StackActions.replace("Library")), // fork: library
+      type: "button" as const,
+    }),
+  ];
 
   // fork: library -- the header offers conversation details beside upstream's right items
   const openDetails = useRef(props.onOpenDetails);

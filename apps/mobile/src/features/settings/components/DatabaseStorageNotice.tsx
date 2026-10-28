@@ -21,7 +21,7 @@ import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../sta
 import { serverEnvironment } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command"; // fork: restart-compaction
 import type { SettingsTarget } from "../settings-environment-filter";
-import { SettingsActionRow } from "./SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../../components/ui/ListActionRow";
 import { SettingsSection } from "./SettingsSection";
 
 const databaseCompaction = createDatabaseCompactionAtoms(connectionAtomRuntime); // fork: restart-compaction

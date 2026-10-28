@@ -85,6 +85,7 @@ export function useChangeHighlights({
         : [{ svg: display.svg, opacity: 1 }],
     };
   }, [display, inspection?.sourceHash, suspended, customLayers, layerSvgs]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the latest drawing snapshot in the module-level change memory
   useEffect(() => {
     if (snapshot && inspection) changeMemory.setDrawing(key, inspection.sourceHash, snapshot);
   }, [key, inspection, snapshot]);
@@ -112,6 +113,7 @@ export function useChangeHighlights({
     }
     return job;
   }, [pair, snapshot, rasterKey]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rasterizes the before and after drawings asynchronously and ignores stale results
   useEffect(() => {
     if (!rasterKey || (!shown && (set.components.length || set.nets.length))) return;
     let active = true;

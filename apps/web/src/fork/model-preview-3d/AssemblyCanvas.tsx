@@ -76,9 +76,11 @@ export function AssemblyCanvas(props: {
     loadedRevisions = useRef(new Map<string, string>()),
     attached = useRef(false),
     first = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest props into a ref read by imperative viewer callbacks
   useEffect(() => {
     latest.current = props;
   }, [props]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the imperative 3D viewer and assembly scene on the host node and disposes them on unmount
   useEffect(() => {
     if (!host.current) return;
     try {
@@ -111,6 +113,7 @@ export function AssemblyCanvas(props: {
       first.current = true;
     };
   }, [viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes visibility and the build plate into the imperative 3D viewer
   useEffect(() => {
     viewerRef.current?.setVisible(props.visible);
     viewerRef.current?.setBed(
@@ -120,6 +123,7 @@ export function AssemblyCanvas(props: {
       props.plate.shape,
     );
   }, [viewerRef, props.visible, props.plate]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes parts, selection, isolation and explode into the imperative assembly scene
   useEffect(() => {
     const current = scene.current;
     if (!current) return;
@@ -143,9 +147,11 @@ export function AssemblyCanvas(props: {
     viewerRef,
   ]);
   const editing = props.workspace.editing;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the length format for the current units into the imperative 3D viewer
   useEffect(() => {
     viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { precision }));
   }, [viewerRef, units, precision]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes navigation mode, display options and reference into the imperative 3D viewer
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;
@@ -157,9 +163,11 @@ export function AssemblyCanvas(props: {
     viewer.setOverhangs(props.display.overhangs);
     viewer.setReference(props.reference);
   }, [viewerRef, props.navigationMode, props.display, props.reference]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the section plane into the imperative 3D viewer
   useEffect(() => {
     viewerRef.current?.setSection(editing.section);
   }, [viewerRef, editing.section]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sets the imperative 3D viewer's pick mode and clears it on change or unmount
   useEffect(() => {
     viewerRef.current?.setPickMode(
       props.workspace.disabled ? null : editing.picking,
@@ -168,9 +176,11 @@ export function AssemblyCanvas(props: {
     );
     return () => viewerRef.current?.setPickMode(null, null);
   }, [viewerRef, props.workspace.disabled, editing.picking, editing.onPick, editing.onCircle]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the measure mode into the imperative 3D viewer
   useEffect(() => {
     viewerRef.current?.setMeasureMode(editing.measureMode);
   }, [viewerRef, editing.measureMode]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers camera, navigation, section cap and wall measure callbacks on the imperative 3D viewer and clears them on cleanup
   useEffect(() => {
     const viewer = viewerRef.current;
     viewer?.onCameraChange(props.onCamera);
@@ -191,6 +201,7 @@ export function AssemblyCanvas(props: {
     props.workspace.disabled,
     editing.onWall,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads part meshes into the imperative assembly scene and viewer, aborting on change or unmount
   useEffect(() => {
     const current = scene.current,
       viewer = viewerRef.current;

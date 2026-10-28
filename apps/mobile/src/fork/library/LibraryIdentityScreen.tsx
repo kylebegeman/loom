@@ -92,6 +92,7 @@ function IdentityContent({
   const [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
   // Aborting closes an open provider sheet; `signInWithNativeIdentity` listens for it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts an in-flight sign-in and its provider sheet on unmount
   useEffect(() => () => active.current?.abort(), []);
 
   function cancel() {

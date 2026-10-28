@@ -191,6 +191,9 @@ it.live("restores checkpoint files before preparing the lane and running worktre
                 ],
               } as never),
           }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getThreadShell: () => Effect.succeed(null),
+          }),
           Layer.mock(TerminalManager.TerminalManager)({
             open: (input, options) =>
               Effect.gen(function* () {

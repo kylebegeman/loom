@@ -132,6 +132,7 @@ export function useBotDefinitionChanges(environmentId: EnvironmentId | null, ena
 /** Refetches a list fetched once when its host comes back, since the watch missed what changed meanwhile. */
 export function useRefreshOnReconnect(connected: boolean, refresh: () => void) {
   const wasConnected = useRef(connected);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the caller's server query when the host connection comes back
   useEffect(() => {
     if (connected && !wasConnected.current) refresh();
     wasConnected.current = connected;
@@ -145,6 +146,7 @@ export function useRefreshWhenBotsChangesPruned(
 ) {
   const { pruned } = changes;
   const seen = useRef(pruned);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server list once the change watch reports it pruned changes
   useEffect(() => {
     if (seen.current === pruned) return;
     seen.current = pruned;

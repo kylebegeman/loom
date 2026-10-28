@@ -215,17 +215,16 @@ export function resolveWorkspacePreparationError(input: {
       readonly type: string;
       readonly runId: string | null;
       readonly title: string | null;
-      readonly failure?: { readonly message: string };
+      readonly failure?: { readonly message: string } | string;
     };
   }>;
 }): string | null {
   if (input.runtimeStatus !== "failed" || input.runId === null) return null;
-  return (
-    input.items.findLast(
-      ({ item }) =>
-        item.runId === input.runId &&
-        item.type === "error" &&
-        item.title === "Workspace preparation failed",
-    )?.item.failure?.message ?? null
-  );
+  const failure = input.items.findLast(
+    ({ item }) =>
+      item.runId === input.runId &&
+      item.type === "error" &&
+      item.title === "Workspace preparation failed",
+  )?.item.failure;
+  return typeof failure === "object" ? failure.message : null;
 }

@@ -137,7 +137,7 @@ export function ClientComputerActions() {
 
 /** Connects a Library once after the restart that made this computer only reach others. */
 export function ClientSetupResume() {
-  // oxlint-disable-next-line t3code/react-effect-budget -- Reads a one-shot intent left in storage before the app restarted.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- consumes a one-shot library connect intent left in storage before the app restarted
   useEffect(() => {
     if (
       takeLibraryConnectAfterRestart() &&

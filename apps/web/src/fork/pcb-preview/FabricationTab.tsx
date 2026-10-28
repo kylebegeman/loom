@@ -104,6 +104,7 @@ export function FabricationTab({
   });
   const downloadController = useRef<AbortController | null>(null),
     generation = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts an in-flight package download and invalidates pending work on unmount
   useEffect(
     () => () => {
       generation.current++;

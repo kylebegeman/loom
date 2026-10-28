@@ -35,11 +35,13 @@ export function useModelHistory(input: {
   const [generation, setGeneration] = useState(0);
   const request = useRef(0);
   const latestPages = useRef(pages);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest history pages in a ref for async page loads
   useEffect(() => {
     latestPages.current = pages;
   }, [pages]);
   const busy = useRef(false);
   const previousKey = useRef(`${threadRef.environmentId}\0${threadRef.threadId}\0${path}`);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the file's history from the server while active and resets it when the file changes
   useEffect(() => {
     const key = `${threadRef.environmentId}\0${threadRef.threadId}\0${path}`;
     const changed = previousKey.current !== key;

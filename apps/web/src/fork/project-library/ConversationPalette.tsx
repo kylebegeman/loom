@@ -134,6 +134,7 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
     if (start) void s.submit();
   };
   const decide = useEffectEvent((start: boolean) => finish(start));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- settles the promised conversation start once the auto-start decision resolves
   useEffect(() => {
     if (autoStart !== null && autoStart !== "wait") decide(autoStart === "start");
   }, [autoStart]);

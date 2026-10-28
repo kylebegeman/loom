@@ -11,6 +11,7 @@ import { toggleThreadInspectorPanel } from "./commands";
  */
 export function InspectorCommandsHost() {
   const routeThread = useRouteThread();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to fork command bus inspector toggles for the routed thread and unsubscribes on change
   useEffect(() => {
     if (routeThread === null || routeThread.isDraft) return;
     const { threadRef } = routeThread;

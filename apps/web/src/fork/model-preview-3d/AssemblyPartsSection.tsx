@@ -281,6 +281,7 @@ function PartParameters({
     [values, setValues] = useState<Record<string, string>>({ ...part.parameters });
   const latest = useRef(values);
   const inspectPart = useEffectEvent(() => loadParameters(part));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the part's parameters on mount and ignores the result after unmount
   useEffect(() => {
     let active = true;
     void inspectPart()

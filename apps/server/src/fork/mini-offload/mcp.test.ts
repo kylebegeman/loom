@@ -59,6 +59,7 @@ const callers = (
             providerInstanceId: ProviderInstanceId.make("codex"),
             runtimeMode,
             interactionMode,
+            linkOrigin: undefined,
           }),
         ),
     }),

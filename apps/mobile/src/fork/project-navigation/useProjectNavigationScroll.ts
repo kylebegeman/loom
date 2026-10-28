@@ -12,6 +12,7 @@ export function useProjectNavigationScroll(
 ) {
   const offsets = useRef({ threads: initialThreadsOffset, projects: 0 });
   const previousView = useRef(view);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the native list's saved scroll offset when the view switches
   useEffect(() => {
     if (previousView.current === view) return;
     previousView.current = view;

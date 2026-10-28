@@ -31,6 +31,7 @@ export function useParameterPreview(
     setApplied(ready ? current : null);
   }
   if (ready && applied === null) setApplied(current);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces applying parameter edits to the preview render on a timer
   useEffect(() => {
     if (!ready || applied === null || !automatic || held || sameState(current, applied)) return;
     const timeout = setTimeout(() => setApplied(current), AUTO_RENDER_MS);

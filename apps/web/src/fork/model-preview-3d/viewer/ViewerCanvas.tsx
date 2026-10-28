@@ -141,6 +141,7 @@ export default function ViewerCanvas({
     orientation,
     closedHint,
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest viewer options in a ref so model loads apply current settings
   useEffect(() => {
     options.current = {
       navigationMode,
@@ -176,6 +177,7 @@ export default function ViewerCanvas({
     orientation,
     closedHint,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the imperative webgl viewer on the host element and disposes it on unmount
   useEffect(() => {
     if (!host.current) return;
     try {
@@ -196,15 +198,19 @@ export default function ViewerCanvas({
       loadedRevision.current = undefined;
     };
   }, [viewerRef, savedViewRef, onError]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the label and description into the imperative viewer
   useEffect(() => {
     viewerRef.current?.describe(label, descriptionId);
   }, [viewerRef, label, descriptionId]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the keep previous setting into the imperative viewer
   useEffect(() => {
     viewerRef.current?.keepPrevious(keepPrevious);
   }, [keepPrevious, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes previous model visibility into the imperative viewer
   useEffect(() => {
     viewerRef.current?.showPrevious(previousShown);
   }, [previousShown, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the print bed into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setBed(
       [plate.volume[0], plate.volume[1]],
@@ -213,27 +219,35 @@ export default function ViewerCanvas({
       plate.shape,
     );
   }, [plate, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the comparison model into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setCompareModel(compareModel);
   }, [compareModel, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes slicing layers into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setLayers(layers);
   }, [layers, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the visible layer range into the imperative viewer
   useEffect(() => {
     viewerRef.current?.showLayersThrough(layer);
   }, [layer, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the overhang angle into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setOverhangAngle(overhangAngleDegrees);
   }, [overhangAngleDegrees, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the reference into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setReference(reference);
   }, [reference, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the length format into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { digits: 2, precision }));
   }, [units, precision, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes visibility into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setVisible(visible);
   }, [visible, viewerRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- downloads the model, loads it into the imperative viewer and aborts the download on change or unmount
   useEffect(() => {
     if (!viewerRef.current) return;
     const abort = new AbortController();
@@ -320,31 +334,39 @@ export default function ViewerCanvas({
     onError,
     onProgress,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the orientation into the imperative viewer and reports the oriented stats
   useEffect(() => {
     const stats = viewerRef.current?.setOrientation(orientation?.quaternion ?? null);
     if (loaded.current && stats) onOriented?.(stats);
   }, [viewerRef, orientation, onOriented]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the closed hint into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setClosedHint(closedHint);
   }, [viewerRef, closedHint]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the section caps status listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onSectionCapsStatus(onSectionCapsStatus ?? null);
     return () => viewerRef.current?.onSectionCapsStatus(null);
   }, [viewerRef, onSectionCapsStatus]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the wall measure listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onWallMeasure(onWall ?? null);
     return () => viewerRef.current?.onWallMeasure(null);
   }, [viewerRef, onWall]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes findings and the selected finding into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setFindings(findings, selectedFindingId, onFinding ?? null);
   }, [viewerRef, findings, selectedFindingId, onFinding]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the navigate listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onNavigate(onNavigate ?? null);
     return () => viewerRef.current?.onNavigate(null);
   }, [viewerRef, onNavigate]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the navigation mode into the imperative viewer
   useEffect(() => {
     if (navigationMode) viewerRef.current?.setNavigationMode(navigationMode);
   }, [viewerRef, navigationMode]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes display settings into the imperative viewer
   useEffect(() => {
     if (!display) return;
     viewerRef.current?.setWireframe(display.wireframe);
@@ -353,34 +375,43 @@ export default function ViewerCanvas({
     viewerRef.current?.setProjection(display.projection);
     viewerRef.current?.setOverhangs(display.overhangs);
   }, [viewerRef, display]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the section into the imperative viewer
   useEffect(() => {
     if (section) viewerRef.current?.setSection(section);
   }, [viewerRef, section]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes extents into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setExtents(extents);
   }, [viewerRef, extents]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the context pick listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onContextPick(onContextPick ?? null);
     return () => viewerRef.current?.onContextPick(null);
   }, [viewerRef, onContextPick]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes measurement and annotation overlays into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setOverlays(measurements, annotations, pendingPoint);
   }, [viewerRef, measurements, annotations, pendingPoint]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sets the pick mode and handlers on the imperative viewer and clears them on cleanup
   useEffect(() => {
     viewerRef.current?.setPickMode(pickMode, onPick ?? null, onCircle ?? null);
     return () => viewerRef.current?.setPickMode(null, null);
   }, [viewerRef, pickMode, onPick, onCircle]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the measure mode into the imperative viewer
   useEffect(() => {
     viewerRef.current?.setMeasureMode(measureMode);
   }, [viewerRef, measureMode]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the snap status listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onSnapStatus(onSnapStatus ?? null);
     return () => viewerRef.current?.onSnapStatus(null);
   }, [viewerRef, onSnapStatus]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the camera change listener on the imperative viewer and removes it on cleanup
   useEffect(() => {
     viewerRef.current?.onCameraChange(onCamera ?? null);
     return () => viewerRef.current?.onCameraChange(null);
   }, [viewerRef, onCamera]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the requested camera in the imperative viewer
   useEffect(() => {
     if (camera) viewerRef.current?.restore(camera);
   }, [viewerRef, camera]);

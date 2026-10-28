@@ -4,7 +4,6 @@ import type { AuthSessionState } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import React, { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
-import { APP_DISPLAY_NAME } from "../../branding";
 import { connectPairing } from "../../connection/onboarding";
 import {
   peekPairingTokenFromUrl,
@@ -19,9 +18,8 @@ import { useAtomCommand } from "../../state/use-atom-command";
 
 export function PairingPendingSurface() {
   return (
-    <StandalonePage tone="pairing">
+    <StandalonePage>
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title="Pairing with this environment"
         description="Validating the pairing link and preparing your session."
       />
@@ -75,6 +73,7 @@ export function PairingRouteSurface({
     void submitCredential(token);
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- strips the pairing token from the URL and submits it once when the route carries one
   useEffect(() => {
     if (!autoPairToken || autoSubmitAttemptedRef.current) {
       return;
@@ -87,6 +86,7 @@ export function PairingRouteSurface({
 
   // fork: library-sign-in
   const lastPairingTokenRef = useRef(autoPairToken);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows pairing links that arrive by hash or history navigation after mount
   useEffect(() => {
     const followPairingLink = () => {
       const token = peekPairingTokenFromUrl();
@@ -154,10 +154,9 @@ export function PairingRouteSurface({
     </>
   );
   return (
-    <StandalonePage tone="pairing">
+    <StandalonePage>
       {/* fork: library-sign-in */}
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title={accountAvailable ? "Welcome to Loom" : "Pair with this environment"}
         description={
           accountAvailable
@@ -243,6 +242,7 @@ export function HostedPairingRouteSurface() {
     void submitHostedPairingRequest();
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- strips the pairing token from the URL and submits the hosted pairing request once on mount
   useEffect(() => {
     if (submitAttemptedRef.current) {
       return;
@@ -254,9 +254,8 @@ export function HostedPairingRouteSurface() {
   }, []);
 
   return (
-    <StandalonePage tone="pairing">
+    <StandalonePage>
       <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
         title={
           status === "paired"
             ? "Backend paired"

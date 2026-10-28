@@ -51,9 +51,11 @@ export type HoldRender = (held: boolean) => void;
 function useHold(onHold: HoldRender | undefined) {
   const latest = useRef(onHold),
     active = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest hold callback in a ref for pointer handlers
   useLayoutEffect(() => {
     latest.current = onHold;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases an active hold through the callback on unmount
   useEffect(
     () => () => {
       if (active.current) latest.current?.(false);
@@ -168,6 +170,7 @@ export function RenameInput({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses and selects the rename input in the dom on mount
   useLayoutEffect(() => {
     ref.current?.focus();
     ref.current?.select();
@@ -234,6 +237,7 @@ export function TitleInput({
  */
 export function useSlidingThumb<T extends HTMLElement>(selector: string, selected: unknown) {
   const ref = useRef<T>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- positions the selection thumb from dom measurements and re-measures on resize
   useLayoutEffect(() => {
     const track = ref.current;
     if (!track) return;
@@ -329,11 +333,13 @@ export function Scrub({
     drag = useRef<{ x: number; start: number; moved: boolean; width: number } | null>(null),
     latest = useRef(value),
     seed = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest value in a ref for drag and key handlers
   useLayoutEffect(() => {
     latest.current = value;
   });
   const [editing, setEditing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the dom input when editing starts and seeds or selects its text
   useLayoutEffect(() => {
     if (!editing || !input.current) return;
     input.current.focus();
@@ -576,6 +582,7 @@ export function useNameScrub({
     latest = useRef(value),
     changed = useRef(false),
     [dragging, setDragging] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest value in a ref for pointer drag handlers
   useLayoutEffect(() => {
     latest.current = value;
   });

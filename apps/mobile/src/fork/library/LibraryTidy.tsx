@@ -242,6 +242,7 @@ function LibraryTidyContent(props: { entry: ProjectEntry }) {
         ),
     ),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads each copy's health from the server and ignores results after change or unmount
   useEffect(() => {
     let cancelled = false;
     // An unreadable copy simply has no health, which keeps it out of the safe list.

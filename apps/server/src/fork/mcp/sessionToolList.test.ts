@@ -25,6 +25,10 @@ import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapter
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
+import * as PeerForwarding from "../../peer/PeerForwarding.ts";
+import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
+import * as PeerLinks from "../../peer/PeerLinks.ts";
+import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
@@ -75,6 +79,10 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
   Layer.mock(DocumentText.DocumentText)({}),
+  Layer.mock(PeerForwarding.PeerForwarding)({}),
+  Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+  Layer.mock(PeerLinks.PeerLinks)({}),
+  Layer.mock(RemoteDelegation.RemoteDelegation)({}),
   McpProviderSessions.layer,
 );
 

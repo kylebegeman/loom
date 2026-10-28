@@ -11,6 +11,7 @@ import styles from "./VariantWorkbench.module.css";
 type Mode = "side" | "overlay" | "before" | "after" | "difference";
 function SvgImage({ svg, label }: { svg: string; label: string }) {
   const [url, setUrl] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- allocates a blob url for the variant svg and revokes it on change or unmount
   useEffect(() => {
     const value = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     // Publish the allocated image resource; cleanup releases it.
@@ -40,6 +41,7 @@ export function VariantCompare({
     const b = await load(variants[1]);
     return current() ? alignSvgPair(a, b) : null;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads both variant images once on mount and ignores results after unmount
   useEffect(() => {
     let alive = true;
     void read(() => alive).then(

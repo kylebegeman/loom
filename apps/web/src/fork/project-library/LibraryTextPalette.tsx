@@ -24,6 +24,7 @@ export function LibraryTextPalette({
   readonly onClose: () => void;
 }) {
   const editor = useRef<HTMLTextAreaElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the textarea on the next animation frame after mount
   useEffect(() => {
     const frame = requestAnimationFrame(() => editor.current?.focus());
     return () => cancelAnimationFrame(frame);

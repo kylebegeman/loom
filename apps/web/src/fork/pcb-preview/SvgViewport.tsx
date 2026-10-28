@@ -209,6 +209,7 @@ export function SvgViewport({
     },
     [physical, restore],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- allocates a blob url for the svg and revokes it on change or unmount
   useEffect(() => {
     imageLoaded.current = false;
     const next = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -218,6 +219,7 @@ export function SvgViewport({
     setLoadError(false);
     return () => URL.revokeObjectURL(next);
   }, [svg]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resize observer and wheel listeners on the viewport container, removed on unmount
   useEffect(() => {
     const node = container.current;
     if (!node) return;
@@ -326,6 +328,7 @@ export function SvgViewport({
       ),
     );
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores dom focus to the viewport when nothing else holds focus
   useLayoutEffect(() => {
     if (restoreFocus && (!document.activeElement || document.activeElement === document.body))
       container.current?.focus({ preventScroll: true });

@@ -87,6 +87,7 @@ function FolderStorage({
   const mounted = useRef(true);
   const savingRef = useRef(false);
   const consentRef = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async storage work skips updates after unmount
   useEffect(() => {
     mounted.current = true;
     return () => {

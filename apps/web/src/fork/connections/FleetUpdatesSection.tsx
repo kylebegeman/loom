@@ -121,10 +121,10 @@ export function FleetUpdatesSection() {
       <UpdateEverythingDialog
         open={confirming}
         onOpenChange={setConfirming}
-        summary={updates.summary}
-        lines={updates.lines}
+        version={updates.version}
+        providerCount={updates.providerCount}
+        rows={updates.rows}
         restarts={updates.restarts}
-        skipped={updates.skipped}
         onConfirm={() => void updateFleet()}
       />
     </SettingsSection>

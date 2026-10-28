@@ -25,7 +25,7 @@ export const layer = Layer.effect(
     const git = yield* GitVcsDriver.GitVcsDriver;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     return SourceControlHost.SourceControlHost.of({
-      settings: { get: serverSettings.getSettings },
+      settings: { get: serverSettings.getSettings, update: serverSettings.updateSettings },
       // fork: github-host-setup -- gh runs from the executable host setup finds
       process: {
         run: (input) =>
@@ -60,6 +60,8 @@ export const layer = Layer.effect(
         fetchRemoteBranch: git.fetchRemoteBranch,
         fetchRemoteTrackingBranch: git.fetchRemoteTrackingBranch,
         setBranchUpstream: git.setBranchUpstream,
+        createBranch: git.createBranch,
+        writeConfigValue: git.writeConfigValue,
         switchRef: git.switchRef,
       },
     });

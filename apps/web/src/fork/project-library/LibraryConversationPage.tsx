@@ -83,6 +83,7 @@ export function LibraryConversationPage({
   const matchRef = useRef<HTMLElement | null>(null);
   const scrolledTo = useRef<string | null>(null);
   // Brings the matched item into view once, without moving the page again as history refreshes.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls and focuses the matched history entry in the dom once per match
   useEffect(() => {
     if (!matchedEntryId || scrolledTo.current === matchedEntryId) return;
     scrolledTo.current = matchedEntryId;
@@ -96,9 +97,11 @@ export function LibraryConversationPage({
     ? `${conversationId}:${archive?.summary.sequence}:${listedThread?.sequence}`
     : null;
   const refreshHistory = history.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the saved history from the library server when the listed thread moves past the archive
   useEffect(() => {
     if (refreshSequence !== null) refreshHistory();
   }, [refreshSequence, refreshHistory]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes the conversation's project to the local storage selection once its archive loads
   useEffect(() => {
     if (savedProjectId) selectProject(savedProjectId);
   }, [savedProjectId, selectProject]);

@@ -57,7 +57,7 @@ function ConfiguredConnectAccount() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const { signOut } = useClerk();
-  const { authPrompt, openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const account = useT3ConnectAccountPage();
   const action = useAction();
   return (
@@ -108,7 +108,6 @@ function ConfiguredConnectAccount() {
         }
       />
       {action.error ? <Alert>{action.error}</Alert> : null}
-      {authPrompt}
       {account.portals}
     </>
   );

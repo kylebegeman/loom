@@ -340,6 +340,19 @@ export function summarizeT3ToolCalls(
     case "environment-update":
       label = phrase("Updated", "update", `environment preferences ${times}`);
       break;
+    case "environment-links":
+      label = phrase("Listed", "list", `linked environments ${times}`);
+      break;
+    case "environment-link":
+      label = phrase("Asked to link", "ask to link", quantity(selected.length, "environment"));
+      break;
+    case "environment-unlink":
+      label = phrase(
+        "Forgot",
+        "forget",
+        quantity(countEntities(entityIds("environmentId")), "linked environment"),
+      );
+      break;
     // fork: mini-native-retention
     case "storage-report":
       label = phrase("Read", "read", `the storage cleanup report ${times}`);

@@ -135,6 +135,7 @@ export function useModelEditing(
   } | null>(null);
   const storedOrientation = workspace.data.orientation;
   const latestStoredOrientation = useRef(storedOrientation);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the stored orientation in a ref for async orientation saves
   useEffect(() => {
     latestStoredOrientation.current = storedOrientation;
   }, [storedOrientation]);
@@ -280,6 +281,7 @@ export function useModelEditing(
     [recordValue, section],
   );
   const shownOrientation = useRef(orientation);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the shown orientation in a ref for async orientation saves
   useLayoutEffect(() => {
     shownOrientation.current = orientation;
   });
@@ -364,7 +366,7 @@ export function useModelEditing(
     [orientation, threadRef, path, perform],
   );
   const measurementCount = workspace.data.measurements.length;
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry replacement invalidates unfinished surface picks.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- cancels unfinished surface picks in the viewer when the geometry changes or on unmount
   useEffect(() => cancel, [sourceRevision, cancel]);
   const onPick = useCallback(
     async (points: ModelPoint[]): Promise<false | { measurement: ModelMeasurement | null }> => {
@@ -593,11 +595,13 @@ export function useModelEditing(
     measurements: new Map<string, PendingSave<ModelMeasurement>>(),
     annotations: new Map<string, PendingSave<ModelAnnotation>>(),
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops pending undo saves once the workspace stream shows them
   useEffect(() => {
     forgetShown(pendingUndo.current.measurements, workspace.data.measurements, same);
     forgetShown(pendingUndo.current.annotations, workspace.data.annotations, samePin);
   }, [workspace.data.measurements, workspace.data.annotations]);
   /** Restores undone fields where nothing else has changed them since. */
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the undo apply function in a ref so the undo history calls it with current workspace data
   useLayoutEffect(() => {
     applyUndo.current = (fields, from) => {
       // A half-made measurement would mix points from two states.

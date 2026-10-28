@@ -73,6 +73,7 @@ export function VariantWorkbench({
     running = useRef(false),
     latest = useRef(data),
     consumed = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest workspace data into a ref read by queued async saves
   useLayoutEffect(() => {
     latest.current = data;
   }, [data]);
@@ -100,6 +101,7 @@ export function VariantWorkbench({
     cancel();
     setProgress(null);
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels in-flight server variant renders when the render session changes or unmounts
   useEffect(() => {
     const key = sessionKey;
     return () => {
@@ -206,6 +208,7 @@ export function VariantWorkbench({
             .map((v) => v.id),
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles each variant request from the parent once by id
   useEffect(() => {
     if (request && consumed.current !== request.id) {
       consumed.current = request.id;

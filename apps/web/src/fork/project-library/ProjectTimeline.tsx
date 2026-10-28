@@ -267,6 +267,7 @@ function TimelineFeed({
   const sentinelRef = useRef<HTMLDivElement>(null);
   // Reading on as the end scrolls into view of the page. Re-armed per cursor, so a short page
   // that leaves the end in view reads the next one too.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- intersection observer on the end sentinel that reads the next older page as it scrolls into view
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!canReadOlder || !sentinel || typeof IntersectionObserver === "undefined") return;

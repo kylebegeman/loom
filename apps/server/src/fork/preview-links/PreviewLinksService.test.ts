@@ -555,6 +555,7 @@ const makeHarness = Effect.fn("makeHarness")(function* (
         }),
         Layer.mock(PortDiscovery)({
           scan: () => Effect.succeed(options.servers ?? []),
+          trackAgent: () => () => undefined,
         }),
         Layer.mock(ProjectLifecycleService)({
           changes: SubscriptionRef.changes(lifecycleChanges),

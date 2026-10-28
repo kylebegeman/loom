@@ -76,6 +76,7 @@ function Inbox({
       : `${review.pendingCount} pending of ${review.totalCount} retained requests.`
     : null;
   const announcedCount = useRef(countMessage);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces approval count changes to VoiceOver through the native accessibility API
   useEffect(() => {
     const previous = announcedCount.current;
     announcedCount.current = countMessage;

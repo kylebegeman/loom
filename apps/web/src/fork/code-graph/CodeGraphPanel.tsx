@@ -87,6 +87,7 @@ function openFile(threadRef: ScopedThreadRef, path: string, line: number | null)
 /** Refreshes `atom` when `key` changes after the first render. */
 function useRefreshOn(atom: Atom.Atom<unknown> | null, key: string | null) {
   const seen = useRef(key);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the query atom in the app registry when the graph is rebuilt
   useEffect(() => {
     if (key === seen.current) return;
     seen.current = key;

@@ -17,6 +17,7 @@ export function IdentityAccessText(props: {
 }) {
   const { environmentId, httpBaseUrl } = props;
   const [renewal, setRenewal] = useState<{ httpBaseUrl: string; text: string } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches the computer's identity metadata over http and aborts it on change or unmount
   useEffect(() => {
     if (httpBaseUrl === undefined) return;
     const abort = new AbortController();

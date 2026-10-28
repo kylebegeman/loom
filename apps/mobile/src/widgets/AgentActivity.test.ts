@@ -28,11 +28,13 @@ vi.mock("expo-widgets", () => ({
   createLiveActivity: vi.fn((name: string, layout: unknown) => ({ layout, name })),
 }));
 
-import {
-  AgentActivity,
-  type AgentActivityProps,
-  type AgentActivityRowProps,
-} from "./AgentActivity";
+import { createLiveActivity } from "expo-widgets";
+
+import "./AgentActivity";
+import type { AgentActivityProps, AgentActivityRowProps } from "./AgentActivity";
+
+// The widget module exports only its factory; the mock above captures the layout it wraps.
+const AgentActivity = vi.mocked(createLiveActivity).mock.calls[0]![1];
 
 function makeRow(overrides: Partial<AgentActivityRowProps>): AgentActivityRowProps {
   return {

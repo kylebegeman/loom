@@ -39,6 +39,7 @@ export function Plot({
   const ref = useRef<HTMLDivElement>(null),
     [width, setWidth] = useState(0),
     [hover, setHover] = useState<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resize observer that tracks the plot container width
   useEffect(() => {
     const node = ref.current;
     if (!node) return;

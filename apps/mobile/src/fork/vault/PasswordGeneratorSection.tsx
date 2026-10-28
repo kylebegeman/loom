@@ -45,6 +45,7 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
     setCopied(false);
     setError(null);
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- AppState listener that clears the generated password when the app leaves the foreground
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") clear();

@@ -14,7 +14,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectionFormField } from "../../features/connection/ConnectionFormField";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 
 const naming = createComputerNamingAtoms(connectionAtomRuntime);
 
@@ -40,6 +40,7 @@ export function ComputerNameSection({
   const name = draft ?? liveLabel ?? query.data?.label ?? "";
   const observedLabel = useRef(liveLabel);
   const refreshNaming = query.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches naming metadata from the server when another client renames the host
   useEffect(() => {
     if (!supported || !connected || !allowed || liveLabel === undefined) return;
     const previous = observedLabel.current;

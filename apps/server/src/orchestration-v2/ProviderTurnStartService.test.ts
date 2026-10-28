@@ -2134,6 +2134,9 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
               Layer.mock(ProjectService.ProjectService)({
                 getById: () => Effect.succeedSome({ workspaceRoot: cwd, scripts } as never),
               }),
+              Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                getThreadShell: () => Effect.succeed(null),
+              }),
               Layer.mock(TerminalManager.TerminalManager)({
                 open: (input) =>
                   Effect.sync(() => {

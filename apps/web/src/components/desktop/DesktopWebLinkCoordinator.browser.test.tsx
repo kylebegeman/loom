@@ -8,12 +8,11 @@ const state = vi.hoisted(() => ({
   projects: [] as never[],
   navigate: vi.fn(async (): Promise<void> => undefined),
   openScratchProject: vi.fn(async () => null),
-  // fork: client-computer A client computer has no primary and starts threads elsewhere.
-  primary: { environmentId: "local", connection: { phase: "connected" }, serverConfig: {} } as {
-    environmentId: string;
-  } | null,
+  confirm: vi.fn(async (_message: string) => true),
+  connectPairing: vi.fn(async (_input: { pairingUrl: string }) => ({ _tag: "Success" })),
+  localEnvironmentDisabled: false,
+  // fork: client-computer A client computer starts threads on another computer.
   scratchEnvironmentId: "local",
-  localEnvironmentEnabled: true,
 }));
 
 // One connected primary environment that can read pull requests. Its project list and
@@ -26,7 +25,17 @@ vi.mock(import("@tanstack/react-router"), async (original) => ({
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   usePrimaryEnvironmentId: () => "local" as EnvironmentId,
-  usePrimaryEnvironment: (() => state.primary) as never,
+  usePrimaryEnvironment: (() =>
+    state.localEnvironmentDisabled
+      ? null
+      : {
+          environmentId: "local",
+          connection: { phase: "connected" },
+          serverConfig: {},
+        }) as never,
+}));
+vi.mock(import("../../localEnvironment"), () => ({
+  isLocalEnvironmentDisabled: () => state.localEnvironmentDisabled,
 }));
 vi.mock(import("../../state/server"), async (original) => {
   const { Atom } = await import("effect/reactivity");
@@ -53,6 +62,25 @@ vi.mock(import("../../hooks/useScratchProject"), async (original) => ({
     openScratchProject: state.openScratchProject,
   })) as never,
 }));
+
+vi.mock(import("../../confirmDialog"), async (original) => ({
+  ...(await original()),
+  requestConfirmDialog: state.confirm,
+}));
+vi.mock(import("../../connection/onboarding"), async (original) => ({
+  ...(await original()),
+  connectPairing: "connectPairing" as never,
+}));
+vi.mock(import("../../state/use-atom-command"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useAtomCommand: ((command: unknown, options: never) =>
+      command === "connectPairing"
+        ? state.connectPairing
+        : actual.useAtomCommand(command as never, options)) as never,
+  };
+});
 
 import { AppAtomRegistryProvider, appAtomRegistry } from "../../rpc/atomRegistry";
 import { allReachableShellsLiveAtom } from "../../state/shell";
@@ -89,14 +117,15 @@ const pullRequestView = {
   },
 };
 
-function setup(client = false) {
+const pairingUrl = "https://vps.example.com/pair#token=ABC123";
+const pairLink = `t3code://pair?pairingUrl=${encodeURIComponent(pairingUrl)}`;
+
+function setup() {
   vi.clearAllMocks();
+  state.confirm.mockResolvedValue(true);
+  state.localEnvironmentDisabled = false;
   state.projects = [];
-  state.primary = client
-    ? null
-    : ({ environmentId: "local", connection: { phase: "connected" }, serverConfig: {} } as never);
-  state.scratchEnvironmentId = client ? "dorothy" : "local";
-  state.localEnvironmentEnabled = !client;
+  state.scratchEnvironmentId = "local";
   appAtomRegistry.set(discoverySettled, false);
 }
 
@@ -107,7 +136,6 @@ async function mount(...urls: string[]) {
   stack.use(
     stubGlobal("desktopBridge", {
       getClientSettings: async () => null,
-      getLocalEnvironmentEnabled: () => state.localEnvironmentEnabled,
       webLinks: {
         onOpen: (listener: (url: string) => void) => {
           deliver = listener;
@@ -147,9 +175,70 @@ it("holds a launch PR link until project discovery settles, then opens the PR vi
   expect(state.openScratchProject).not.toHaveBeenCalled();
 });
 
+it("adds the backend from a pairing link after the user confirms its host", async () => {
+  setup();
+  await using _coordinator = await mount(pairLink);
+  await vi.waitFor(() =>
+    expect(state.connectPairing).toHaveBeenCalledExactlyOnceWith({ pairingUrl }),
+  );
+  expect(state.confirm).toHaveBeenCalledExactlyOnceWith(
+    "Add the backend at https://vps.example.com?",
+  );
+  expect(state.navigate).not.toHaveBeenCalled();
+});
+
+it("does not spend the pairing token when the user declines", async () => {
+  setup();
+  const otherPairingUrl = "https://other.example.com/pair#token=XYZ789";
+  state.confirm.mockResolvedValueOnce(false);
+  await using _coordinator = await mount(
+    pairLink,
+    `t3code://pair?pairingUrl=${encodeURIComponent(otherPairingUrl)}`,
+  );
+  await vi.waitFor(() => expect(state.connectPairing).toHaveBeenCalled());
+  expect(state.confirm).toHaveBeenCalledTimes(2);
+  expect(state.connectPairing).toHaveBeenCalledExactlyOnceWith({ pairingUrl: otherPairingUrl });
+});
+
+it("skips a repeat of a pairing link that already paired", async () => {
+  setup();
+  const otherPairingUrl = "https://other.example.com/pair#token=XYZ789";
+  await using _coordinator = await mount(
+    pairLink,
+    pairLink,
+    `t3code://pair?pairingUrl=${encodeURIComponent(otherPairingUrl)}`,
+  );
+  await vi.waitFor(() =>
+    expect(state.connectPairing).toHaveBeenLastCalledWith({ pairingUrl: otherPairingUrl }),
+  );
+  expect(state.confirm).toHaveBeenCalledTimes(2);
+  expect(state.connectPairing.mock.calls).toEqual([
+    [{ pairingUrl }],
+    [{ pairingUrl: otherPairingUrl }],
+  ]);
+});
+
+it("pairs with Local environment disabled, where there is no primary environment to wait for", async () => {
+  setup();
+  state.localEnvironmentDisabled = true;
+  await using _coordinator = await mount(pairLink);
+  await vi.waitFor(() =>
+    expect(state.connectPairing).toHaveBeenCalledExactlyOnceWith({ pairingUrl }),
+  );
+});
+
+it("does not hold a PR link for project discovery that never settles with Local environment disabled", async () => {
+  setup();
+  state.localEnvironmentDisabled = true;
+  await using _coordinator = await mount(pullRequestUrl);
+  await vi.waitFor(() => expect(state.openScratchProject).toHaveBeenCalledOnce());
+});
+
 // fork: client-computer
 it("opens a web link on another computer once they connect, when this one runs no agents", async () => {
-  setup(true);
+  setup();
+  state.localEnvironmentDisabled = true;
+  state.scratchEnvironmentId = "dorothy";
   await using _coordinator = await mount("https://example.com/");
   expect(state.openScratchProject).not.toHaveBeenCalled();
 

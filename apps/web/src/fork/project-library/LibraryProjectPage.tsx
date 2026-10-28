@@ -112,10 +112,12 @@ export function LibraryProjectPage({
   // Removed copies feed the folded history, so the page always asks for them.
   const library = useLibraryProject(projectId, true);
   const [, selectProject] = useSelectedLibraryProject();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes the open project to the local storage selection
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
   // Leaving before the project loads drops the palette's requests with it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops this project's pending palette requests from the module queues on leave
   useEffect(
     () => () => {
       dropLibraryBriefEdit(projectId);
@@ -177,6 +179,7 @@ function ProjectView({
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
   // The command palette's Open project brief lands here, whether or not this page was open.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for command palette brief edit requests and unsubscribes on unmount
   useEffect(() => {
     const open = () => {
       if (takeLibraryBriefEdit(project.id)) setEditingBrief(true);

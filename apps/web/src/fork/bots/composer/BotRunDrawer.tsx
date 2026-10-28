@@ -42,6 +42,7 @@ function BotRunDrawerForm({
   const errors = runInputErrors(bot.parameters, values);
   const description = shortDescription(bot.description);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the first form control in the DOM when the drawer mounts
   useEffect(() => {
     formRef.current
       ?.querySelector<HTMLElement>("input, textarea, button[role=combobox], button[type=submit]")

@@ -69,6 +69,7 @@ function Checks({
     [controller, setController] = useState<AbortController | null>(null),
     [copied, setCopied] = useState(false);
   const [expired, setExpired] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that marks the readiness report expired at its expiry time
   useEffect(() => {
     if (!report) return;
     const timeout = setTimeout(
@@ -77,6 +78,7 @@ function Checks({
     );
     return () => clearTimeout(timeout);
   }, [report]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight readiness check when it is replaced or on unmount
   useEffect(() => () => controller?.abort(), [controller]);
   const select = (value: string | null) => {
     setThread(value);

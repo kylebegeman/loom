@@ -9,7 +9,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
-} from "~/logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
 import { toastManager } from "~/components/ui/toast";
 import { useRouteThread } from "../routeThread";
@@ -31,6 +31,7 @@ function ActiveCommandHost({ threadRef }: { threadRef: ScopedThreadRef }) {
       }
     },
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for run actions on this thread and unsubscribes on unmount
   useEffect(
     () =>
       onProfileAction((action) => {
@@ -78,6 +79,7 @@ export function ProjectProfileHost() {
       });
     },
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for profile edit actions and unsubscribes on unmount
   useEffect(
     () =>
       onProfileAction((action) => {

@@ -96,6 +96,7 @@ function AssemblyWatch({
     ),
     event = result._tag === "Success" ? result.value : null,
     previous = useRef<{ revision: string | null } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports a revision or dependency change from the server file watch stream to the parent
   useEffect(() => {
     if (!event) return;
     if (
@@ -146,6 +147,7 @@ export default function AssemblyPanel({
       projection: "perspective" as ModelProjection,
     });
   const latestSettings = useRef(settings);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest settings into a ref read by the stable settings reader
   useLayoutEffect(() => {
     latestSettings.current = settings;
   }, [settings]);
@@ -287,6 +289,7 @@ export default function AssemblyPanel({
     },
     [reload, path, invalidate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the pending file watch timer on unmount
   useEffect(
     () => () => {
       if (watchTimer.current) clearTimeout(watchTimer.current);
@@ -306,6 +309,7 @@ export default function AssemblyPanel({
     },
     [assembly.snapshot],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes enclosure findings into the imperative 3D viewer
   useEffect(() => {
     const findings =
       !explode && !assembly.stale ? (assembly.report?.enclosure?.findings ?? []) : [];
@@ -343,6 +347,7 @@ export default function AssemblyPanel({
       );
     else viewerRef.current?.fit();
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes pair regions, measurements and annotations into the imperative 3D viewer
   useEffect(() => {
     viewerRef.current?.setAssemblyPins(
       !explode && !assembly.stale ? (focusedPair?.regions ?? []) : [],
@@ -539,6 +544,7 @@ export default function AssemblyPanel({
         }).catch(() => {}),
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles each new editor request from the server event stream
   useEffect(() => {
     handleEditorRequest(editorRequest);
   }, [editorRequest]);
@@ -554,6 +560,7 @@ export default function AssemblyPanel({
       unitsControl.setUnits(unitsControl.units === "mm" ? "in" : "mm");
     else if (action === "print-check") void assembly.check();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to model palette actions for this thread while visible and unsubscribes on cleanup
   useEffect(() => {
     if (!visible) return;
     return onModelAction(

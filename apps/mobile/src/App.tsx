@@ -17,6 +17,7 @@ import {
   type NavigationAction,
   type NavigationState,
 } from "@react-navigation/native";
+import { pipe } from "effect/Function";
 
 import { RegistryContext } from "@effect/atom-react";
 import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
@@ -52,7 +53,11 @@ import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { APP_LINKING_CONFIG, restoreDraftLinkState, shouldHandleAppLink } from "./lib/appLinking"; // fork: project-navigation
 import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
-import { startDevAutoConnect } from "./features/connection/devAutoConnect";
+import {
+  pairingFormLinkAction,
+  startDevAutoConnect,
+  withoutPairingTarget,
+} from "./features/connection/devAutoConnect";
 import {
   resolvePendingNewTaskPromptLink,
   takeNewTaskPromptLink,
@@ -105,17 +110,15 @@ const linkingConfig = {
 } as const;
 
 function getAppStateFromPath(path: string, options: Parameters<typeof getStateFromPath>[1]) {
-  return takeScheduledTaskNewLink(
-    startDevAutoConnect(
-      takeNewTaskPromptLink(
-        takeThreadPromptLink(
-          restoreSettingsLinkState(
-            restoreDraftLinkState(getStateFromPath(path, options), path),
-            settingsLinkPage(),
-          ),
-        ),
-      ),
-    ),
+  return pipe(
+    getStateFromPath(path, options),
+    (state) => restoreDraftLinkState(state, path),
+    (state) => restoreSettingsLinkState(state, settingsLinkPage()),
+    takeThreadPromptLink,
+    takeNewTaskPromptLink,
+    withoutPairingTarget,
+    startDevAutoConnect,
+    takeScheduledTaskNewLink,
   );
 }
 
@@ -139,6 +142,10 @@ const appLinking = {
   ): ReturnType<typeof getActionFromState> =>
     // Our router handles the selection; React Navigation's type only lists its own actions.
     (workspaceDetailLinkAction(state) as ReturnType<typeof getActionFromState>) ??
+    pairingFormLinkAction(
+      state,
+      rootNavigationRef.isReady() ? rootNavigationRef.getRootState() : undefined,
+    ) ??
     getActionFromState(state, options),
   getStateFromPath: getAppStateFromPath,
 };
@@ -201,6 +208,7 @@ disposeOnFoundationReplace(typeof module === "undefined" ? undefined : module.ho
 function SplashScreenCoordinator() {
   const { isReady } = useAppearancePreferences();
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hides the native splash screen once appearance preferences have loaded
   useEffect(() => {
     if (isReady) void SplashScreen.hide();
   }, [isReady]);

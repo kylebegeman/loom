@@ -115,6 +115,7 @@ function ProjectCheckoutReview({
   const canChange = ready && allowed && token != null && preview?.state !== "blocked";
   const changed = !managed || retention !== preview?.retention;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state and invalidates in-flight checkout requests on unmount
   useEffect(() => {
     mounted.current = true;
     return () => {

@@ -242,6 +242,7 @@ function PipelineRunDetail({
     : "";
   const refreshRun = query.refresh;
   const previous = useRef(progress);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the pipeline run from the server when its streamed progress changes
   useEffect(() => {
     if (previous.current === progress) return;
     const initial = previous.current === "";

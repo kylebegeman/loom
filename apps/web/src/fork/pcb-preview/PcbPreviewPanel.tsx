@@ -272,6 +272,7 @@ export function DesignWorkspace({
     restoreView = useRef<{ sheet: string; camera: { x: number; y: number; scale: number } } | null>(
       null,
     );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- dismisses transient info notices after a timeout
   useEffect(() => {
     if (notice?.tone !== "info" || notice.persistent) return;
     const timeout = setTimeout(() => setNotice(null), 5000);
@@ -298,6 +299,7 @@ export function DesignWorkspace({
     }
     setTab(next);
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves dom focus into the inspector after a keyboard action opens it
   useLayoutEffect(() => {
     if (tab && focusInspector.current) {
       inspector.current?.focus({ preventScroll: true });
@@ -404,6 +406,7 @@ export function DesignWorkspace({
         }),
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to pcb history actions on the module bus for this thread and unsubscribes on unmount
   useEffect(() => onPcbAction(threadRef, historyAction), [threadRef]);
   const refreshPreview = () => {
     if (three) board3d.current?.refresh();
@@ -713,9 +716,11 @@ export function DesignWorkspace({
       waiter.resolve();
     }
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resolves a pending drawing capture once the imperative viewport reports the requested drawing ready
   useLayoutEffect(() => {
     notifyDrawing();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rejects a pending drawing capture waiter on unmount
   useEffect(
     () => () => {
       drawingWaiter.current?.reject(new Error("The PCB drawing closed before capture."));
@@ -724,6 +729,7 @@ export function DesignWorkspace({
     [],
   );
   const requestCommand = useEffectEvent(() => startRequest());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to pcb change requests on the module bus for this thread and unsubscribes on unmount
   useEffect(() => onRequestPcbChange(threadRef, () => requestCommand()), [threadRef]);
   const waitForDrawing = (targetView: PcbView, sheet: string, ids: readonly string[]) =>
     new Promise<void>((resolve, reject) => {
@@ -1553,6 +1559,7 @@ export function DesignWorkspace({
         }).catch(() => undefined),
       );
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles each editor action request streamed from the server for this design
   useEffect(() => {
     handleEditorRequest(request);
   }, [request]);
@@ -1699,6 +1706,7 @@ export function DesignWorkspace({
     notice: notice?.tone === "info" ? notice.text : null,
     step: announceStep,
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces changes in the observed drawing state to assistive technology through a live region
   useEffect(() => {
     const text = announcement(previousAnnouncement.current, announceInput);
     previousAnnouncement.current = announceInput;
@@ -2932,6 +2940,7 @@ function LinkedDrawing({
   );
   const component = workbench.inspection?.components.find((c) => c.reference === selected);
   const { display, selectedSheet, selectSheet } = preview;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- switches to the linked component's sheet and focuses it in the imperative svg viewport
   useEffect(() => {
     const p = view === "pcb" ? component?.pcb : component?.schematic;
     if (view === "schematic" && p?.sheet) selectSheet(p.sheet);

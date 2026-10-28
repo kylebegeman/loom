@@ -47,12 +47,14 @@ function Job({
   const canCollect = useAtomValue(mini.artifacts.permissionAtom(environmentId));
   const [outputs, setOutputs] = useState<Omit<MiniArtifacts, "artifactsBase64"> | null>(null);
   const [collecting, setCollecting] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- interval timer that refreshes the job's inspect atom while the job is active
   useEffect(() => {
     if (!active(detail?.receipt ?? receipt)) return;
     const interval = window.setInterval(() => appAtomRegistry.refresh(atom), 5000);
     return () => window.clearInterval(interval);
   }, [atom, detail?.receipt, receipt]);
   const currentState = detail?.receipt.job?.state;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the parent to refetch its job list when the server reports a new job state
   useEffect(() => {
     if (currentState) onChange();
   }, [currentState, onChange]);

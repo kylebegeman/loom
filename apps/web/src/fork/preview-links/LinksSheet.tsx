@@ -275,8 +275,11 @@ export function PreviewLinksHost() {
     setOpen(false);
     void navigate(forkSettingsTarget(FEATURE));
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to open-sheet requests on the module bus and unsubscribes on unmount
   useEffect(() => onOpenPreviewLinksSheet(() => setOpen(true)), []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to open-settings requests on the module bus and unsubscribes on unmount
   useEffect(() => onOpenPreviewLinksSettings(openSettings), [openSettings]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window click listener that routes preview link clicks
   useEffect(() => {
     window.addEventListener("click", onPreviewLinkClick);
     return () => window.removeEventListener("click", onPreviewLinkClick);

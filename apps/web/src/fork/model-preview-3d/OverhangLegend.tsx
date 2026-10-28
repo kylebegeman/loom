@@ -33,6 +33,7 @@ export function OverhangLegend({
     stats: OverhangStats;
     unsupported: boolean;
   } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- analyses the imperative viewer's mesh for overhangs during idle time when the angle or source changes
   useEffect(() => {
     let active = true;
     const analyse = () => {

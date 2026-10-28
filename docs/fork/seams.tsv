@@ -89,11 +89,9 @@ apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	compaction-reco
 packages/client-runtime/src/work-log/presentation.ts	compaction-recovery	2
 packages/client-runtime/src/work-log/presentation.test.ts	compaction-recovery	2
 apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	2
-apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	3
 apps/web/src/components/chat/V2LifecycleRow.tsx	agent-receipts	3
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.ts	feed-history-reads	2
-apps/web/src/components/chat/TimelineV2EventRow.logic.ts	compaction-recovery	2
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
 apps/server/scripts/migrate-dev-db.ts	dev-db	12
@@ -180,14 +178,14 @@ apps/server/src/relay/AgentAwarenessRelay.ts	library-push	1
 apps/mobile/src/Stack.tsx	fleet-connections	5
 apps/mobile/src/features/cloud/publicConfig.test.ts	fleet-connect	2
 apps/mobile/src/features/cloud/publicConfig.ts	fleet-connect	3
-apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	computer-naming	5
+apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	computer-naming	4
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	fleet-connections	23
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.test.tsx	fleet-connections	2
 apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/connection/LocalEnvironmentList.tsx	fleet-connections	6
 apps/mobile/src/features/connection/useConnectionController.ts	computer-naming	2
 apps/mobile/src/features/keyboard/CommandPalette.tsx	fleet-connections	2
-apps/mobile/src/features/projects/AddProjectScreen.tsx	fleet-connections	52
+apps/mobile/src/features/projects/AddProjectScreen.tsx	fleet-connections	51
 apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx	fleet-connect	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	computer-naming	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	fleet-connections	8
@@ -234,7 +232,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	everyda
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	3
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
-apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	43
+apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	34
 apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	7
 apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
@@ -246,8 +244,6 @@ apps/mobile/src/features/projects/AddProjectScreen.tsx	project-home	23
 apps/mobile/src/features/workspace-handoff/WorkspaceHandoffScreen.tsx	project-home	1
 apps/web/src/components/ChatView.tsx	project-home	1
 apps/web/src/components/CommandPalette.tsx	project-home	5
-apps/web/src/components/LegacySidebar.tsx	project-home	2
-apps/web/src/components/LegacySidebar.tsx	library-projects	3
 apps/web/src/components/Sidebar.tsx	project-home	1
 apps/web/src/hooks/useThreadActionMenu.ts	project-home	2
 apps/web/src/routes/projects.storage.tsx	project-home	1
@@ -335,7 +331,7 @@ apps/mobile/src/persistence/mobile-database.test.ts	library	2
 apps/mobile/src/persistence/mobile-preferences.ts	library	4
 apps/server/src/checkpointing/CheckpointStore.ts	library-projects	22
 apps/server/src/orchestration-v2/ProjectionStore.test.ts	detached-session-recovery	3
-apps/server/src/orchestration-v2/ProjectionStore.ts	detached-session-recovery	9
+apps/server/src/orchestration-v2/ProjectionStore.ts	detached-session-recovery	4
 apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	mini-native-retention	12
 apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	detached-session-recovery	5
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	workspace-handoff	16
@@ -347,10 +343,10 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	3
-apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	26
+apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	19
 apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
 apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
-apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	8
+apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
 apps/server/src/project/ProjectSetupScriptRunner.test.ts	project-lifecycle	5
 apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	8
@@ -361,7 +357,7 @@ apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
 apps/web/src/components/chat/useRightPanelActions.ts	checkpoint-capable	4
-apps/web/src/components/CommandPalette.tsx	fleet-connections	32
+apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
 apps/web/src/components/Sidebar.tsx	library-projects	25
 apps/web/src/routes/_chat.tsx	library-projects	2
@@ -477,7 +473,7 @@ apps/web/src/components/sidebar/SidebarChrome.tsx	bots	14
 apps/web/src/components/sidebar/SidebarChrome.tsx	project-home	3
 apps/web/src/components/sidebar/mainAppLocation.ts	bots	1
 apps/web/src/components/sidebar/mainAppLocation.ts	sites-navigation	1
-apps/web/src/components/Sidebar.logic.ts	bots	4
+apps/web/src/components/Sidebar.logic.ts	bots	2
 packages/client-runtime/src/state/threadShell.ts	bots	2
 apps/web/src/components/ThreadNotificationCoordinator.tsx	bots	5
 packages/provider-core/src/server/orchestrationInstructions.ts	bots	2
@@ -527,7 +523,6 @@ apps/desktop/src/snapShot/NiriCaptureShortcut.ts	brand	1
 apps/desktop/src/snapShot/NiriSnapShot.ts	brand	1
 apps/desktop/src/snapShot/PortalCaptureShortcut.ts	brand	4
 apps/desktop/src/snapShot/SnapShotTransition.ts	brand	1
-apps/desktop/src/snapShot/snapShot.ts	brand	1
 apps/desktop/src/ssh/DesktopSshEnvironment.ts	brand	1
 apps/desktop/src/ssh/DesktopSshPasswordPrompts.ts	brand	1
 apps/desktop/src/window/DesktopApplicationMenu.ts	brand	1
@@ -595,7 +590,6 @@ apps/server/src/preview/PreviewBrowserHost.ts	brand	4
 apps/server/src/project/ManagedProjectFolders.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
-apps/server/src/provider/CodexAuthCallback.ts	brand	1
 apps/server/src/provider/CodexAuthCallbackPage.ts	brand	4
 apps/server/src/provider/CodexDeveloperInstructions.ts	brand	1
 apps/server/src/provider/CodexInstallation.ts	brand	1
@@ -630,7 +624,7 @@ apps/web/src/components/promptLinks/NewThreadLinkView.tsx	brand	2
 apps/web/src/components/promptLinks/linkedPrompt.ts	brand	1
 apps/web/src/components/settings/AcpSessionManagementSection.tsx	brand	1
 apps/web/src/components/settings/BrowserImportWizard.tsx	brand	4
-apps/web/src/components/settings/CaptureShortcutConfig.tsx	brand	5
+apps/web/src/components/settings/CaptureShortcutConfig.tsx	brand	4
 apps/web/src/components/settings/ChatGptWelcomeCoordinator.tsx	brand	1
 apps/web/src/components/settings/CodexSetupSection.tsx	brand	5
 apps/web/src/components/settings/ConnectionsSettings.tsx	brand	10
@@ -642,7 +636,7 @@ apps/web/src/components/settings/NotificationSettings.tsx	brand	1
 apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx	brand	3
 apps/web/src/components/settings/SettingsPanels.logic.ts	brand	1
 apps/web/src/components/settings/SettingsPanels.tsx	brand	2
-apps/web/src/components/settings/SnapShotSettings.tsx	brand	2
+apps/web/src/components/settings/SnapShotSettings.tsx	brand	1
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
@@ -714,6 +708,7 @@ apps/web/src/components/ProjectEnvironmentBadge.tsx	no-project-first	2
 apps/web/src/components/chat/DraftHeroHeadline.tsx	no-project-first	10
 apps/web/src/hooks/useLogicalProjectEnvironments.ts	no-project-first	2
 apps/web/src/hooks/useScratchProject.ts	no-project-first	4
+apps/web/src/hooks/useScratchProject.test.ts	no-project-first	3
 apps/web/src/components/Sidebar.tsx	no-project-first	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8
@@ -772,7 +767,7 @@ apps/web/src/components/settings/ConnectionsSettings.tsx	machine-updates	3
 apps/web/src/components/settings/ConnectionsSettings.tsx	tailnet-ownership	28
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	directory-computers	5
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	library	1
-apps/mobile/src/features/connection/devAutoConnect.ts	directory-computers	3
+apps/mobile/src/features/connection/devAutoConnect.ts	directory-computers	2
 apps/mobile/src/features/connection/devAutoConnect.ts	library	1
 apps/server/src/telemetry/AnalyticsService.ts	telemetry-off	1
 apps/server/src/cloud/http.ts	connect-off	3
@@ -818,7 +813,7 @@ apps/web/src/components/settings/scopedSettings.test.ts	project-lifecycle	12
 apps/server/src/orchestration-v2/ThreadManagementService.ts	library-projects	5
 apps/server/src/mcp/WorktreeMcpService.ts	library-projects	4
 apps/web/src/components/BranchToolbarBranchSelector.tsx	library-projects	2
-apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	4
+apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	3
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	22
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	library-projects	18
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	file-placement	3
@@ -852,10 +847,9 @@ apps/server/src/mcp/OrchestratorMcpService.test.ts	library-projects	3
 apps/server/src/mcp/OrchestratorMcpService.ts	library-projects	11
 apps/server/src/mcp/toolkits/project/handlers.test.ts	library-projects	1
 apps/server/src/mcp/toolkits/project/handlers.test.ts	file-placement	4
-apps/server/src/mcp/toolkits/project/handlers.ts	library-projects	6
-apps/server/src/mcp/toolkits/project/tools.ts	library-projects	3
+apps/server/src/mcp/toolkits/project/handlers.ts	library-projects	4
+apps/server/src/mcp/toolkits/project/tools.ts	library-projects	1
 apps/server/src/mcp/toolkits/project/tools.ts	file-placement	9
-packages/contracts/src/orchestratorMcp.ts	library-projects	1
 packages/provider-core/src/server/orchestrationInstructions.ts	library-projects	1
 docs/user/outside-agents.md	library-projects	1
 docs/user/project-settings.md	library-projects	4
@@ -899,7 +893,7 @@ apps/server/src/orchestration-v2/ProjectionStore.ts	attention-status	6
 apps/server/src/orchestration-v2/ProjectionStore.ts	goal-history	2
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
-apps/web/src/components/Sidebar.logic.ts	attention-status	9
+apps/web/src/components/Sidebar.logic.ts	attention-status	8
 apps/web/src/components/Sidebar.tsx	attention-status	5
 apps/web/src/components/threadActionMenu.logic.test.ts	attention-status	1
 apps/web/src/components/threadActionMenu.logic.ts	attention-status	3
@@ -953,11 +947,11 @@ apps/mobile/src/features/threads/ThreadGitControls.tsx	source-control-cockpit	7
 apps/mobile/src/features/threads/ThreadGitControls.tsx	checkpoint-capable	4
 apps/mobile/src/features/threads/ThreadHeader.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	source-control-cockpit	3
-apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	11
+apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	10
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	checkpoint-capable	2
 apps/mobile/src/features/threads/useThreadHeaderOptions.test.tsx	source-control-cockpit	6
-apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	5
+apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	4
 apps/mobile/src/state/use-vcs-action-state.ts	source-control-cockpit	4
 apps/mobile/src/state/use-vcs-action-state.test.ts	source-control-cockpit	1
 apps/server/src/git/GitManager.test.ts	source-control-cockpit	2
@@ -969,7 +963,7 @@ apps/server/src/git/GitWorkflowService.ts	project-lifecycle	5
 apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
-apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	13
+apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
 apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
@@ -977,10 +971,10 @@ apps/web/src/components/CommandPalette.tsx	bots	1
 apps/web/src/components/GitActionsControl.logic.test.ts	source-control-cockpit	2
 apps/web/src/components/GitActionsControl.logic.ts	source-control-cockpit	8
 apps/web/src/components/GitActionsControl.tsx	source-control-cockpit	22
-apps/web/src/components/GitActionsControl.tsx	checkpoint-capable	6
+apps/web/src/components/GitActionsControl.tsx	checkpoint-capable	5
 apps/web/src/components/chat/ThreadRelationshipsControl.tsx	source-control-cockpit	4
 packages/client-runtime/src/state/commandPermissions.test.ts	source-control-cockpit	1
-packages/client-runtime/src/state/commandPermissions.test.ts	ext-core	3
+packages/client-runtime/src/state/commandPermissions.test.ts	ext-core	2
 packages/client-runtime/src/state/commandPermissions.test.ts	workspace-handoff	3
 packages/client-runtime/src/state/gitActions.test.ts	source-control-cockpit	2
 packages/client-runtime/src/state/gitActions.ts	source-control-cockpit	11
@@ -1013,7 +1007,6 @@ apps/desktop/src/updates/DesktopUpdates.test.ts	machine-updates	2
 apps/desktop/src/updates/DesktopUpdates.ts	machine-updates	5
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	machine-updates	1
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	machine-updates	3
-apps/web/src/components/LegacySidebar.tsx	machine-updates	4
 apps/web/src/components/desktopUpdate.logic.test.ts	machine-updates	4
 apps/web/src/components/desktopUpdate.logic.ts	machine-updates	1
 apps/web/src/components/settings/SettingsPanels.tsx	machine-updates	6
@@ -1090,6 +1083,9 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	file-placement	1
+apps/server/src/mcp/linkOrigin.test.ts	file-placement	3
+apps/server/src/peer/PeerForwarding.test.ts	file-placement	7
+apps/server/src/peer/RemoteDelegation.test.ts	file-placement	2
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	workspace-handoff	1
 apps/web/src/components/ChatView.tsx	failed-run-retry	5
@@ -1165,9 +1161,8 @@ apps/mobile/src/lib/android-workspace-navigation.test.ts	library	3
 apps/server/src/orchestration-v2/Orchestrator.ts	library-projects	4
 apps/server/src/orchestration-v2/Orchestrator.ts	workspace-handoff	2
 packages/shared/src/keybindings.ts	library-palette	2
-scripts/effect-budget.json	-	/src/fork/
 apps/mobile/src/features/home/homeThreadList.test.ts	project-navigation	4
-apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	8
+apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	10
 apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	github-host-setup	1
 apps/desktop/src/app/DesktopApp.ts	rollback-snapshot	2
 apps/desktop/src/updates/DesktopUpdates.ts	rollback-snapshot	3
@@ -1316,7 +1311,6 @@ apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
 apps/server/src/bin.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
-apps/server/src/checkpointing/Utils.ts	library-projects	3
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
 apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	11
@@ -1325,7 +1319,7 @@ apps/server/src/mcp/toolkits/orchestrator/handlers.ts	bots	3
 apps/server/src/orchestration-v2/ClaudeAutomaticDelivery.integration.test.ts	file-placement	1
 apps/server/src/orchestration-v2/ProjectSettingsUpgrade.integration.test.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts	detached-session-recovery	1
-apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts	detached-session-recovery	12
+apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts	detached-session-recovery	13
 apps/server/src/orchestration-v2/ProviderTurnControlService.test.ts	detached-session-recovery	1
 apps/server/src/orchestration-v2/RuntimePolicy.test.ts	library-launch-files	3
 apps/server/src/orchestration-v2/TurnStartReads.test.ts	goal-history	1
@@ -1458,7 +1452,7 @@ apps/web/src/components/settings/ProjectSettingsPanel.tsx	ext-settings	2
 apps/web/src/components/settings/ProviderSettingsForm.tsx	path-picker	5
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	path-picker	2
 apps/web/src/components/settings/SettingsPanels.tsx	ext-settings	2
-apps/web/src/components/settings/SettingsPanels.tsx	path-picker	6
+apps/web/src/components/settings/SettingsPanels.tsx	path-picker	5
 apps/web/src/components/settings/StorageSettings.tsx	path-picker	2
 apps/web/src/components/settings/WorktreesSettings.tsx	ext-settings	2
 packages/contracts/src/filesystem.ts	path-picker	2
@@ -1469,7 +1463,7 @@ apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262295
 apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
 apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
 apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
@@ -1479,9 +1473,8 @@ apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
 apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	4
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	1
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
-apps/web/src/routes/__root.tsx	client-computer	1
 apps/web/src/state/shell.ts	client-computer	8
 apps/web/src/state/shell.test.ts	client-computer	7
 docs/user/updating.md	client-computer	1
@@ -1490,3 +1483,16 @@ apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
 
 apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	2
+apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx	brand	1
+apps/mobile/src/features/threads/ThreadQueueControl.tsx	brand	1
+apps/server/src/cli/environment.ts	brand	2
+apps/server/src/peer/PeerLinks.ts	brand	3
+apps/web/src/components/EnvironmentContextChip.tsx	brand	1
+apps/web/src/components/chat/QueuedRunsControl.browser.test.tsx	brand	1
+apps/web/src/components/chat/QueuedRunsControl.tsx	brand	1
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	brand	1
+apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	brand	2
+apps/web/src/components/ui/standalone-page.tsx	brand	2
+apps/web/src/hooks/useStartTriage.ts	brand	1
+packages/client-runtime/src/state/peerPairingCode.ts	brand	1
+packages/contracts/src/preview.ts	brand	1

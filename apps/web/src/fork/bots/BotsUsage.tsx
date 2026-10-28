@@ -196,6 +196,7 @@ export function useBotUsage(days: BotUsageDays): {
   });
 
   // A finished run changes the numbers.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- adopts or refetches the usage ledger as finished runs arrive and arms a timer for a deferred refetch
   useEffect(() => {
     if (!watching || key === null || until === null) return;
     const next = plan(key, until, signature);
@@ -211,6 +212,7 @@ export function useBotUsage(days: BotUsageDays): {
     if (ledger !== undefined && Date.now() - ledger.fetchedAt >= USAGE_REFETCH_INTERVAL_MS)
       refetch();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches stale usage when the host connection comes back
   useEffect(() => {
     if (host.connected && !wasConnected.current) reconnected();
     wasConnected.current = host.connected;
@@ -222,6 +224,7 @@ export function useBotUsage(days: BotUsageDays): {
     const ledger = key === null ? undefined : ledgers.get(key);
     if (ledger === undefined || ledger.fetchedAt < at) refetch();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that refetches usage when a budget-limited bot reaches its retry time
   useEffect(() => {
     if (!watching || budgets === undefined) return;
     const at = nextBudgetRetryMs(budgets, Date.now());

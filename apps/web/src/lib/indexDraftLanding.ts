@@ -5,7 +5,7 @@ import type {
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
-import type { ThreadSortInput } from "../lib/threadSort";
+import type { ThreadSortInput } from "@t3tools/client-runtime/state/thread-sort";
 
 type LandingProject = Pick<
   EnvironmentProject,

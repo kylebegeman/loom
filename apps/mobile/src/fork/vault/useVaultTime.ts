@@ -6,6 +6,7 @@ export function useVaultTime(deadlines: readonly (number | null)[], observedAt =
   const next = Math.min(
     ...deadlines.filter((value): value is number => value !== null && value > now),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that advances the clock to the next vault deadline
   useEffect(() => {
     if (!Number.isFinite(next)) return;
     let timer: ReturnType<typeof setTimeout>;

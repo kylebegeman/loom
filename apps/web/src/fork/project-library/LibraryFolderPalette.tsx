@@ -169,6 +169,7 @@ export function LibraryFolderPalette({
   const reportFolder = useEffectEvent((path: string | null, repository: boolean) =>
     onFolderChange?.(path === null ? null : { path, repository }),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the browsed folder and its git status to the parent's callback as the server listing changes
   useEffect(() => {
     reportFolder(folderPath, repository);
   }, [folderPath, repository]);

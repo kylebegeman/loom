@@ -23,6 +23,7 @@ function ResolvedChip({ threadRef, runId }: ForkChangedFilesActionProps) {
     }),
   );
   const warned = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- logs a console warning once when the server turn designs query fails
   useEffect(() => {
     if (result._tag === "Failure" && !warned.current) {
       warned.current = true;

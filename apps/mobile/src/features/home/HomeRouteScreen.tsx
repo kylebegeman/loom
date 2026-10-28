@@ -15,7 +15,7 @@ import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Platform, useWindowDimensions } from "react-native";
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -78,18 +78,13 @@ export function HomeRouteScreen() {
     else setLocalSearchQuery(query);
   };
   // fork: library -- live threads open here; Library history falls back below
-  const selectLiveThread = useCallback(
-    (thread: EnvironmentThreadShell) =>
-      selectDetail({
-        name: "Thread",
-        params: { environmentId: String(thread.environmentId), threadId: String(thread.id) },
-      }),
-    [selectDetail],
-  );
-  const selectThreadRoute = useCallback(
-    (params: ReactNavigation.RootParamList["Thread"]) => selectDetail({ name: "Thread", params }),
-    [selectDetail],
-  );
+  const selectLiveThread = (thread: EnvironmentThreadShell) =>
+    selectDetail({
+      name: "Thread",
+      params: { environmentId: String(thread.environmentId), threadId: String(thread.id) },
+    });
+  const selectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>
+    selectDetail({ name: "Thread", params });
   // fork: library - Threads on unreachable computers open their saved Library history.
   const libraryHome = useHomeLibraryProjects(selectLiveThread);
   const handleSelectThread = libraryHome.selectThread;
@@ -112,22 +107,19 @@ export function HomeRouteScreen() {
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } =
     usePendingTaskListActions(selectThreadRoute);
-  const environments = useMemo(() => {
-    const connectionStateByEnvironmentId = new Map(
-      workspaceEnvironments.map(
-        (environment) => [environment.environmentId, environment.connectionState] as const,
-      ),
-    );
-    return Arr.sort(
-      Object.values(savedConnectionsById).map((connection) => ({
-        environmentId: connection.environmentId,
-        label: connection.environmentLabel,
-        connectionState:
-          connectionStateByEnvironmentId.get(connection.environmentId) ?? "available",
-      })),
-      Order.mapInput(Order.String, (environment: { readonly label: string }) => environment.label),
-    );
-  }, [savedConnectionsById, workspaceEnvironments]);
+  const connectionStateByEnvironmentId = new Map(
+    workspaceEnvironments.map(
+      (environment) => [environment.environmentId, environment.connectionState] as const,
+    ),
+  );
+  const environments = Arr.sort(
+    Object.values(savedConnectionsById).map((connection) => ({
+      environmentId: connection.environmentId,
+      label: connection.environmentLabel,
+      connectionState: connectionStateByEnvironmentId.get(connection.environmentId) ?? "available",
+    })),
+    Order.mapInput(Order.String, (environment: { readonly label: string }) => environment.label),
+  );
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
@@ -138,19 +130,15 @@ export function HomeRouteScreen() {
     setSelectedProjectKey,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
-  const projectScopeKey = listOptions.selectedProjectKey;
+  // A legacy per-environment scratch key resolves here on every render; the stored
+  // value is only rewritten when the user picks a filter.
   // fork: library
-  const resolvedProjectKey = isLibraryProjectScopeKey(projectScopeKey)
-    ? projectScopeKey
-    : resolveScratchProjectScopeKey(projectScopeKey, projects, {
+  const resolvedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
+    ? listOptions.selectedProjectKey
+    : resolveScratchProjectScopeKey(listOptions.selectedProjectKey, projects, {
         sidebarProjectGroupingMode: listOptions.projectGroupingMode,
         sidebarProjectGroupingOverrides: {},
       });
-  useEffect(() => {
-    if (resolvedProjectKey !== projectScopeKey) {
-      setSelectedProjectKey(resolvedProjectKey);
-    }
-  }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
   // fork: library -- scopes feed the Library project filter below
   const projectScopes = useMemo(
     () =>

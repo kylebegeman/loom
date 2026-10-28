@@ -47,7 +47,7 @@ vi.mock("~/state/entities", () => {
   };
 });
 vi.mock("~/state/olderSettledShelf", () => ({ readUnloadedThreadCount: () => 0 }));
-vi.mock("~/logicalProject", () => ({
+vi.mock("@t3tools/client-runtime/state/project-grouping", () => ({
   deriveLogicalProjectKeyFromSettings: () => "shared-project",
   selectProjectGroupingSettings: () => ({}),
 }));

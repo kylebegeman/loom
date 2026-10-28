@@ -320,6 +320,7 @@ export function ImportProjectDialog({
   const inspectInitial = useEffectEvent(() => {
     void inspectFolder();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- inspects the initial folder once its host connects and the library query loads
   useEffect(() => {
     if (
       !inspectedInitial.current &&

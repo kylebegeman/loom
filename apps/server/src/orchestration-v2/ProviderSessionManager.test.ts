@@ -2915,6 +2915,92 @@ it.effect("ProviderSessionManagerV2 settles a request the event pump persists du
   }),
 );
 
+it.effect.each(["manual_shutdown", "server_shutdown"] as const)(
+  "ProviderSessionManagerV2 preserves questions only for server shutdown (%s)",
+  (reason) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const projectId = yield* idAllocator.allocate.project({
+          fixtureName: "provider-session-manager-request-expire",
+        });
+        const threadId = yield* idAllocator.allocate.thread({
+          fixtureName: "provider-session-manager-request-expire",
+          projectId,
+        });
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          now,
+        });
+
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const pendingRequest = yield* makePendingRuntimeRequestEvents({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          providerThread,
+          now,
+        });
+        yield* eventSink.write({
+          events: pendingRequest.events.map((event) =>
+            event.type === "turn-item.updated"
+              ? {
+                  ...event,
+                  payload: {
+                    ...event.payload,
+                    type: "user_input_request",
+                    questions: [
+                      { id: "color", header: "Color", question: "Which color?", options: [] },
+                    ],
+                  },
+                }
+              : event.type === "runtime-request.updated"
+                ? { ...event, payload: { ...event.payload, kind: "user_input" } }
+                : event,
+          ),
+        });
+        yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* manager.release({
+          providerSessionId,
+          reason,
+        });
+
+        const projection = yield* projectionStore.getThreadProjection(threadId);
+        const request = projection.runtimeRequests.at(-1);
+        const requestNode = projection.nodes.find((node) => node.id === request?.nodeId);
+        const requestTurnItem = projection.turnItems.find(
+          (item) => item.type === "user_input_request" && item.requestId === request?.id,
+        );
+
+        const preserved = reason === "server_shutdown";
+        assert.equal(request?.status, preserved ? "pending" : "cancelled");
+        assert.equal(request?.responseCapability.type, preserved ? "live" : "not_resumable");
+        assert.equal(requestNode?.status, preserved ? "waiting" : "cancelled");
+        assert.equal(requestTurnItem?.status, preserved ? "waiting" : "cancelled");
+      });
+
+      yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1000 })));
+    }),
+);
+
 it.effect("ProviderSessionManagerV2 persists session-scoped runtime requests without a run", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -3898,26 +3984,15 @@ const providerSessionRecoveryCases = [
 // fork: detached-session-recovery
 it.effect.each(
   providerSessionRecoveryCases.flatMap(({ binding, status }) =>
-    [
-      { store: "SQL", projectionLayer: ProjectionStore.layer },
-      { store: "memory", projectionLayer: ProjectionStore.layerMemory },
-    ].flatMap(({ store, projectionLayer }) =>
-      (["startup", "shutdown"] as const).map((trigger) => ({
-        binding,
-        status,
-        store,
-        projectionLayer,
-        trigger,
-      })),
-    ),
+    (["startup", "shutdown"] as const).map((trigger) => ({ binding, status, trigger })),
   ),
 )(
-  "reconciles a $binding $status shared session after process loss on $trigger ($store)",
-  ({ binding, status, projectionLayer, trigger }) =>
+  "reconciles a $binding $status shared session after process loss on $trigger",
+  ({ binding, status, trigger }) =>
     Effect.gen(function* () {
       const stores = Layer.mergeAll(
         EventStore.layer,
-        projectionLayer,
+        ProjectionStore.layer,
         IdAllocator.layer,
         EffectOutbox.layer,
       ).pipe(Layer.provideMerge(layerTestDatabase));
@@ -3997,14 +4072,13 @@ it.effect.each(
         const summary = yield* recovery.reconcile(trigger);
         assert.equal(summary.stoppedSessions, 1);
         assert.deepEqual(yield* projections.getProviderSessionsForRecovery(), []);
-        if (projectionLayer === ProjectionStore.layer)
-          assert.equal(
-            (yield* sql<{
-              status: string;
-            }>`SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id = ${providerSessionId}`)[0]
-              ?.status,
-            "stopped",
-          );
+        assert.equal(
+          (yield* sql<{
+            status: string;
+          }>`SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id = ${providerSessionId}`)[0]
+            ?.status,
+          "stopped",
+        );
         const after = yield* projections.getThreadProjection(threadId);
         assert.deepEqual({ ...after, providerSessions: [] }, { ...before, providerSessions: [] });
         assert.equal(after.providerSessions.length, binding === "bound" ? 1 : 0);
@@ -4014,7 +4088,7 @@ it.effect.each(
         }
         assert.equal(
           (yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_session_bindings`).length,
-          projectionLayer === ProjectionStore.layer && binding === "bound" ? 1 : 0,
+          binding === "bound" ? 1 : 0,
         );
         assert.equal((yield* recovery.reconcile(trigger)).stoppedSessions, 0);
       }).pipe(Effect.provide(recoveryLayer));

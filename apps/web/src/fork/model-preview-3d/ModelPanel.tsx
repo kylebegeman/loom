@@ -195,6 +195,7 @@ function ModelFile({
   settings: ModelPreviewSettings;
 }) {
   const agentMark = useAgentModelMarks((state) => state.marks[scopedThreadKey(threadRef)]?.[path]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears this file's agent model mark in the store once the panel is visible
   useEffect(() => {
     if (visible && agentMark) useAgentModelMarks.getState().clear(scopedThreadKey(threadRef), path);
   }, [visible, agentMark, threadRef, path]);
@@ -222,6 +223,7 @@ function ModelFile({
     }),
     [settings, unitsControl.units, referenceControl.reference, angleControl.angle],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the display settings into a ref read by the stable settings reader
   useLayoutEffect(() => {
     latestSettings.current = displaySettings;
   }, [displaySettings]);
@@ -284,6 +286,7 @@ function ModelFile({
   const viewingHistory = viewing !== null;
   const historyViewingRef = useRef(viewingHistory);
   const liveMeshRevision = useRef(mesh?.revision ?? "");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors history viewing and the live mesh revision into refs read by async loaders
   useLayoutEffect(() => {
     historyViewingRef.current = viewingHistory;
     liveMeshRevision.current = mesh?.revision ?? "";
@@ -322,7 +325,7 @@ function ModelFile({
   const [focusParameter, setFocusParameter] = useState<{ name: string } | null>(null);
   const linkSource = session?.data.sourceRevision ?? null,
     cancelLinks = links.cancel;
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A source edit or another file ends an analysis of the old part.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- a source edit or another file cancels the in-flight link analysis of the old part, as does unmount
   useEffect(() => cancelLinks, [linkSource, path, cancelLinks]);
   const [geometryRevision, setGeometryRevision] = useState("");
   const [previous, setPrevious] = useState<PreviewGeometry | null>(null);
@@ -376,6 +379,7 @@ function ModelFile({
   const selectedFindingId =
     selection?.report === printCheck.report && !printCheck.stale ? selection.id : null;
   const runPrintCheck = printCheck.run;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a server print check for each new run request
   useEffect(() => {
     if (printRunRequest) void runPrintCheck();
   }, [printRunRequest, runPrintCheck]);
@@ -389,6 +393,7 @@ function ModelFile({
     }
   };
   const { measureMode, setMeasureMode, setSection: setModelSection } = editing;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- falls back to distance measuring when the imperative viewer reports hole snapping is off
   useEffect(() => {
     if (snapStatus === "off" && measureMode === "hole") setMeasureMode("distance");
   }, [snapStatus, measureMode, setMeasureMode]);
@@ -435,6 +440,7 @@ function ModelFile({
     setInspectorOpen(true);
   }, []);
   const showLog = () => openTab("part");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that clears the success message after five seconds
   useEffect(() => {
     if (!success) return;
     const timeout = setTimeout(() => setSuccess(null), 5000);
@@ -584,6 +590,7 @@ function ModelFile({
     else if (direction === -1 && history.pages.at(-1)?.nextCursor) history.loadEarlier();
   };
   const liveCompareMesh = comparing === "now" ? mesh : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the comparison model from the server for the viewer, aborting on change or unmount
   useEffect(() => {
     if (!comparing || !canRenderFormat) return;
     const controller = new AbortController();
@@ -646,6 +653,7 @@ function ModelFile({
     editing.orientation,
     canRenderFormat,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the server history request for this file on change or unmount
   useEffect(
     () => () => {
       if (!supportsHistory) return;
@@ -1089,9 +1097,11 @@ function ModelFile({
         );
     },
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles each new editor request from the server event stream
   useEffect(() => {
     handleEditorRequest(editorRequest);
   }, [editorRequest]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks the next reload as watch-caused when the server-watched revision changes
   useLayoutEffect(() => {
     if (
       watchedRevision !== null &&
@@ -1131,6 +1141,7 @@ function ModelFile({
     setMesh(null);
     setRevision((value) => value + 1);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that releases the loaded geometry after the panel stays hidden for a minute
   useEffect(() => {
     if (visible) return;
     const timeout = setTimeout(() => {
@@ -1221,6 +1232,7 @@ function ModelFile({
     if (value.status === "error")
       setError(value.log.find((line) => line.level === "error")?.text ?? "Render failed.");
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resolves the model mesh url or STEP render from the server, ignoring stale results
   useEffect(() => {
     if (sourceFormat) return;
     if (format === "step") {
@@ -1357,7 +1369,7 @@ function ModelFile({
       : null;
   }, [linking, linkFocus]);
   // Loading a model clears the highlight, so it is drawn again for each new model.
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New stats mean the viewer loaded a model and cleared the highlight.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- new stats mean the imperative viewer loaded a model and cleared the linked face highlight, so it is drawn again
   useEffect(() => viewer.current?.setLinked(linkedFaces), [linkedFaces, shownStats]);
   const pointLinks = useMemo<PointLink[]>(() => {
     if (!pointMenu || !linking || !session) return [];
@@ -1575,6 +1587,7 @@ function ModelFile({
     if (result?.ok) setSuccess(action === "copy" ? "Image copied." : "Download started.");
     else if (result) setCaptureError({ title: result.title, message: result.message });
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to model palette actions for this thread while visible and unsubscribes on cleanup
   useEffect(() => {
     if (!visible) return;
     return onModelAction(
@@ -1675,6 +1688,7 @@ function ModelFile({
           : null;
   const announceFit = stats ? fitPlate(stats.size, plate).fit.status === "fits" : null;
   const bedLabel = buildPlateLabel(settings.buildPlate);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- queues a screen-reader announcement when the visible model state changes
   useEffect(() => {
     if (!visible) return;
     const next: AnnounceInput = {

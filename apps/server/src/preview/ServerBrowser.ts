@@ -312,9 +312,6 @@ interface ServerTab {
   zoomFactor: number;
   loading: boolean;
   closing: boolean;
-  // fork: browser-timeout-recovery
-  /** A late native attachment retired this headless page; its outstanding actions cannot succeed. */
-  replacedByDesktop: boolean;
   recording: Recording | null;
   initialNavigation: Promise<void> | null;
   navigationGeneration: number;
@@ -684,25 +681,17 @@ const make = Effect.gen(function* () {
 
   const sessionOpen = (tab: ServerTab) => !closedSessions.has(tabKey(tab.threadId, tab.tabId));
 
-  // fork: browser-timeout-recovery -- a replaced or timed-out tab reconnects; a timed-out one keeps its context.
-  const dropTab = (
-    tab: ServerTab,
-    closeSession: boolean,
-    replacedByDesktop = false,
-    preserveContext = false,
-  ) => {
+  // fork: browser-timeout-recovery -- a timed-out tab reconnects and keeps its context.
+  const dropTab = (tab: ServerTab, closeSession: boolean, preserveContext = false) => {
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
-    tab.replacedByDesktop = replacedByDesktop; // fork: browser-timeout-recovery
     tab.closing = true;
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
-    // fork: browser-timeout-recovery -- so does a replaced or recovering headless page.
+    // fork: browser-timeout-recovery -- so does a recovering headless page.
     const end =
-      (tab.desktop || replacedByDesktop || preserveContext) && !closeSession && sessionOpen(tab)
-        ? "reconnect"
-        : "gone";
+      (tab.desktop || preserveContext) && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
@@ -718,7 +707,7 @@ const make = Effect.gen(function* () {
   };
 
   const desktopRenders = (snapshot: PreviewSessionSnapshot) =>
-    desktopChannel.available
+    desktopChannel.available && !snapshot.headless
       ? runPromise(
           desktopChannel.awaitAttached(
             { threadId: snapshot.threadId, tabId: snapshot.tabId },
@@ -772,6 +761,14 @@ const make = Effect.gen(function* () {
       adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
+    // Otherwise a desktop that attaches late shows its own page, and the agent drives another.
+    if (!desktop && desktopChannel.available) {
+      await runPromise(
+        manager
+          .markHeadless({ threadId: ThreadId.make(snapshot.threadId), tabId: snapshot.tabId })
+          .pipe(Effect.ignore),
+      );
+    }
     // fork: browser-timeout-recovery -- a failed setup releases the native endpoint (catch below).
     try {
       // An agent tab without a profile (no client reported one) keeps throwaway storage.
@@ -841,7 +838,6 @@ const make = Effect.gen(function* () {
         zoomFactor: 1,
         loading: false,
         closing: false,
-        replacedByDesktop: false, // fork: browser-timeout-recovery
         recording: null,
         recordingStart: null,
         recordingTimeout: null, // fork: browser-timeout-recovery
@@ -959,8 +955,7 @@ const make = Effect.gen(function* () {
       tabs.set(currentKey, tab); // fork: browser-timeout-recovery
       recoveryPages.delete(currentKey); // fork: browser-timeout-recovery
       reportLiveTabs();
-      // fork: browser-timeout-recovery -- a recovered or late-attached tab restores its page.
-      // A late attachment can already be signed in at a different URL than the fallback page.
+      // fork: browser-timeout-recovery -- a recovered tab restores its page.
       if (desktop) void reportLoaded(tab);
       // A popup is already loading its own URL, and the desktop loads its tab's.
       const initialUrl =
@@ -1832,14 +1827,6 @@ const make = Effect.gen(function* () {
     }
   };
 
-  // fork: browser-timeout-recovery -- a late desktop attachment retired this page mid-action.
-  const assertTabNotReplaced = (tab: ServerTab) => {
-    if (tab.replacedByDesktop)
-      throw new BrowserControlInterrupted(
-        "The desktop browser replaced this fallback page. The action was not replayed. Refresh the snapshot before continuing.",
-      );
-  };
-
   const runOperation = async (
     request: PreviewAutomationRequest,
     deadlineMs: number,
@@ -1929,7 +1916,7 @@ const make = Effect.gen(function* () {
             "dialogPending",
           );
         // fork: browser-timeout-recovery
-        const result = await tab.control.agent(
+        return tab.control.agent(
           request.agentSessionId,
           async () => {
             if (tab.dialog)
@@ -1961,8 +1948,6 @@ const make = Effect.gen(function* () {
           },
           deadlineMs,
         );
-        assertTabNotReplaced(tab); // fork: browser-timeout-recovery
-        return result;
       }
       case "recordingStop": {
         if (
@@ -2060,15 +2045,8 @@ const make = Effect.gen(function* () {
     );
   };
 
-  const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
-    // fork: browser-timeout-recovery
-    const result = await executePageOperation(tab, request);
-    assertTabNotReplaced(tab);
-    return result;
-  };
-
   // fork: browser-timeout-recovery -- inner waits end before the operation deadline.
-  const executePageOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
+  const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
     const rawInput = request.input as Readonly<Record<string, unknown>>;
     const requestedTimeout =
       typeof rawInput.timeoutMs === "number" ? rawInput.timeoutMs : NAVIGATION_TIMEOUT_MS;
@@ -2222,7 +2200,7 @@ const make = Effect.gen(function* () {
                     url: tab.page.url(),
                   });
                 // Closing the old page cancels pending clicks; only its context and committed URL survive.
-                dropTab(tab, false, false, !tab.desktop);
+                dropTab(tab, false, !tab.desktop);
               }
             }
             return Effect.fail(
@@ -2679,26 +2657,16 @@ const make = Effect.gen(function* () {
     Stream.runForEach((change) => desktopChannel.turn(change.threadId, change.active)),
     Effect.forkScoped,
   );
-  // fork: browser-timeout-recovery
-  // The page came back, or mounted after the headless fallback started. Always
-  // adopt the desktop's current page; its URL and storage belong to the user.
+  // Reconnect returned pages immediately so all clients keep receiving URL and title changes.
   yield* desktopChannel.attached.pipe(
     Stream.runForEach((key) =>
       Effect.gen(function* () {
-        // fork: browser-timeout-recovery -- a late attachment replaces the headless fallback tab.
-        const id = tabKey(key.threadId, key.tabId);
-        const opening = pendingTabs.get(id);
-        if (opening) yield* Effect.promise(() => opening.catch(constVoid));
-        const existing = tabs.get(id);
-        if (existing?.desktop) return;
+        if (tabs.has(tabKey(key.threadId, key.tabId))) return;
         const { sessions } = yield* manager.list({ threadId: ThreadId.make(key.threadId) });
         const snapshot = sessions.find(
           (session) => session.tabId === key.tabId && session.runtime === "server",
         );
-        // fork: browser-timeout-recovery
-        if (!snapshot || !(yield* desktopChannel.isAttached(key))) return;
-        if (existing) dropTab(existing, false, true);
-        yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
+        if (snapshot) yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
       }).pipe(Effect.ignore),
     ),
     Effect.forkScoped,

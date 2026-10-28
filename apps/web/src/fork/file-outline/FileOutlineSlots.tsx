@@ -23,6 +23,7 @@ export function LoomFileOutlineToggle(props: OutlineSlotProps) {
   const threadKey = scopedThreadKey(props.threadRef);
   const supported =
     props.relativePath !== null && outlineLanguageForPath(props.relativePath) !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the open file's contents to the outline store, or unpublishes them when unsupported
   useEffect(() => {
     const path = props.relativePath;
     if (!supported || path === null || props.contents === null) {
@@ -36,6 +37,7 @@ export function LoomFileOutlineToggle(props: OutlineSlotProps) {
       truncated: props.truncated,
     });
   }, [props.contents, props.relativePath, props.threadRef, props.truncated, supported, threadKey]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- unpublishes the file from the outline store when the path changes or on unmount
   useEffect(() => {
     const path = props.relativePath;
     return () => {
@@ -66,6 +68,7 @@ function OutlineContent(
   const [parsed, setParsed] = useState<{ path: string; result: OutlineResult | null } | null>(null);
   const focusRequestId = useFileOutlineStore((state) => state.focusRequestId);
   const asideRef = useRef<HTMLElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce timer that parses the outline once the contents settle
   useEffect(() => {
     if (deferred === null) return;
     const timer = window.setTimeout(() => {

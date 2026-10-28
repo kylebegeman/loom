@@ -25,6 +25,7 @@ const isReceiptError = Schema.is(AgentReceiptError);
 /** The receipt is written just after the sub-agent finishes, so a new finish asks again. */
 function useRefreshOn(atom: Atom.Atom<unknown>, key: string) {
   const seen = useRef(key);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the receipt atom in the app registry when the sub-agent's finish key changes
   useEffect(() => {
     if (key === seen.current) return;
     seen.current = key;

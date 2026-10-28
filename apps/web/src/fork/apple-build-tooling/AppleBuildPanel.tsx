@@ -81,6 +81,7 @@ function Workspace({
     (run) => run.kind === "xcodegenGenerate" && run.status === "succeeded",
   );
   const seenGenerate = useRef(latestGenerate?.id);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the status and xcodegen atoms in the app registry when a new generate run appears
   useEffect(() => {
     if (latestGenerate === undefined || latestGenerate.id === seenGenerate.current) return;
     seenGenerate.current = latestGenerate.id;
@@ -224,6 +225,7 @@ function Body({ threadRef, projectId }: { threadRef: ScopedThreadRef; projectId:
   const runsResult = useAtomValue(apple.runs({ environmentId, input }));
   const status = valueOf(statusResult);
   const runs = valueOf(runsResult)?.runs;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the thread's active run in the module-level run store when the server's runs change
   useEffect(() => {
     if (runs) noteRuns(threadRef, runs);
   }, [runs, threadRef]);

@@ -437,8 +437,6 @@ export function resolveLiveThreadBranchUpdate(input: {
   };
 }
 
-export { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
-
 // fork: source-control-cockpit -- palette and shortcuts use the same repository guards as the Git control.
 export function gitPaletteActionHint(
   status: VcsStatusResult | null,

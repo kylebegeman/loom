@@ -22,7 +22,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { useProjectStorageRollout } from "~/fork/project-checkout/useProjectStorageRollout";
 import { ProjectStorageRollout } from "~/fork/project-checkout/ProjectStorageRollout";
-import { selectProjectGroupingSettings } from "~/logicalProject";
+import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { buildSidebarProjectSnapshots } from "~/sidebarProjectGrouping";
 import { useClientSettings } from "~/hooks/useSettings";
 import { buildProjectStorageInventory } from "./storageInventory";

@@ -17,7 +17,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
-import { use, useMemo, type ComponentProps, type ReactNode } from "react"; // fork: fleet-connections
+import { use, type ComponentProps, type ReactNode } from "react"; // fork: fleet-connections
 import { Platform, View } from "react-native";
 import { useWorkspaceSurface } from "../workspace/useWorkspaceSurface";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
@@ -65,7 +65,7 @@ export function SettingsListScreen(props: {
   const workspace = useWorkspaceTabs();
   const inSidebar = props.sidebar;
   const selected = props.selected;
-  const sidebar = useMemo(() => (inSidebar ? { selected } : null), [inSidebar, selected]);
+  const sidebar = inSidebar ? { selected } : null;
   const content = hasCloudPublicConfig() ? (
     <ConfiguredSettingsRouteScreen />
   ) : (

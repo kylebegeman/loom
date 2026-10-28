@@ -171,6 +171,7 @@ export function formatBytes(bytes: number) {
 /** Re-renders once a second while `active`, for elapsed times; idle otherwise. */
 export function useNow(active: boolean) {
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-second interval timer that ticks the current time while active
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);

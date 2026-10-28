@@ -68,6 +68,7 @@ export function useUndoHistory({
   const status = useSyncExternalStore(subscribe, () =>
     statusOf(scope && ready ? histories.get(scope) : undefined),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest slice and apply function in refs for the module-level undo history
   useLayoutEffect(() => {
     latest.current = slice;
     applyLatest.current = apply;
@@ -81,6 +82,7 @@ export function useUndoHistory({
     return history;
   }, [scope, ready]);
   const parameters = slice.parameters;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records customizer parameter changes into the module-level undo history for this scope
   useEffect(() => {
     let history = held();
     if (!history) {

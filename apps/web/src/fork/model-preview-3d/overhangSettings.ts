@@ -19,11 +19,13 @@ export function useOverhangAngleSetting(
   const latest = useRef({ angle, getSettings });
   // The settings atom can lag a successful RPC; unrelated local renders must not undo its ack.
   const savedAngle = useRef(settings.overhangAngleDegrees);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the saved overhang angle in a ref for async save callbacks
   useLayoutEffect(() => {
     savedAngle.current = settings.overhangAngleDegrees;
   }, [settings.overhangAngleDegrees]);
   const version = useRef(0);
   const saving = useRef<{ angle: number; operation: Promise<void> } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest angle and settings getter in a ref for async save callbacks
   useLayoutEffect(() => {
     latest.current = { angle, getSettings };
   });

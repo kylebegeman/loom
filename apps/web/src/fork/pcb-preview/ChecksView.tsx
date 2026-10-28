@@ -158,6 +158,7 @@ export function ChecksView({
       setSeverity(null);
     }
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the active finding row into view in the dom
   useEffect(() => {
     if (activeId) activeRow.current?.scrollIntoView?.({ block: "nearest" });
   }, [activeId]);
